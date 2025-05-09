@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"reflect"
 	"strconv"
 	"time"
@@ -59,10 +60,14 @@ type worker struct {
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	workerIdx          int
+	activeJobId        int64
+	refreshClaimJitter time.Duration
 
 	config struct {
 		maxStagingFileReadBufferCapacityInK config.ValueLoader[int]
 		maxConcurrentStagingFiles           config.ValueLoader[int]
+		claimRefreshInterval                config.ValueLoader[time.Duration]
+		enableNotifierHeartbeat             config.ValueLoader[bool]
 	}
 	stats struct {
 		workerIdleTime                 stats.Measurement
@@ -96,6 +101,8 @@ func newWorker(
 	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	// Increasing maxConcurrentStagingFiles config would also require increasing the memory requests for the slave pods
 	s.config.maxConcurrentStagingFiles = s.conf.GetReloadableIntVar(10, 1, "Warehouse.maxStagingFilesInUploadV2Job")
+	s.config.claimRefreshInterval = s.conf.GetReloadableDurationVar(30, time.Second, "Warehouse.claimRefreshIntervalInS")
+	s.config.enableNotifierHeartbeat = s.conf.GetReloadableBoolVar(false, "Warehouse.enableNotifierHeartbeat")
 
 	tags := stats.Tags{
 		"module":   "warehouse",
@@ -105,11 +112,18 @@ func newWorker(
 	s.stats.workerClaimProcessingTime = s.statsFactory.NewTaggedStat("worker_claim_processing_time", stats.TimerType, tags)
 	s.stats.workerClaimProcessingSucceeded = s.statsFactory.NewTaggedStat("worker_claim_processing_succeeded", stats.CountType, tags)
 	s.stats.workerClaimProcessingFailed = s.statsFactory.NewTaggedStat("worker_claim_processing_failed", stats.CountType, tags)
+	s.refreshClaimJitter = time.Duration(rand.Int63n(5)) * time.Second // Random jitter between [0-5) seconds
 	return s
 }
 
 func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
 	workerIdleTimeStart := time.Now()
+
+	if w.config.enableNotifierHeartbeat.Load() {
+		refreshCtx, refreshCancel := context.WithCancel(ctx)
+		defer refreshCancel()
+		go w.runClaimRefresh(refreshCtx)
+	}
 
 	for {
 		select {
@@ -132,6 +146,9 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 				logger.NewField("jobType", claimedJob.Job.Type),
 			)
 
+			// Set active job ID
+			w.activeJobId = claimedJob.Job.ID
+
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
 				w.processClaimedSourceJob(ctx, claimedJob)
@@ -144,8 +161,32 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 				logger.NewField("workerIdx", w.workerIdx),
 				logger.NewField("slaveId", slaveID),
 			)
+			// Clear active job ID after processing
+			w.activeJobId = 0
 
 			workerIdleTimeStart = time.Now()
+		}
+	}
+}
+
+// run claimRefresh periodically to make sure that job is not orphaned
+func (w *worker) runClaimRefresh(ctx context.Context) {
+	baseInterval := w.config.claimRefreshInterval.Load()
+	// Distribute claim refresh requests across workers by adding random delay
+	// This will prevent database load spikes from synchronized refresh attempts
+	ticker := time.NewTicker(baseInterval + w.refreshClaimJitter)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if w.activeJobId != 0 {
+				if err := w.notifier.RefreshClaim(ctx, w.activeJobId); err != nil {
+					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId, err)
+				}
+			}
 		}
 	}
 }
