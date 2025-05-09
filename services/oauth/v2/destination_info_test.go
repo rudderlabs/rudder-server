@@ -1,6 +1,8 @@
 package v2_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -23,151 +25,147 @@ type destInfoTestCase struct {
 }
 
 var isOAuthDestTestCases = []destInfoTestCase{
-	// {
-	// 	description: "should pass for a destination which contains OAuth and rudderScopes",
-	// 	flow:        common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{
-	// 		"auth": map[string]interface{}{
-	// 			"type":         "OAuth",
-	// 			"rudderScopes": []interface{}{"delivery"},
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: true,
-	// 	},
-	// },
-	// {
-	// 	description: "should pass for a destination which contains OAuth but not rudderScopes",
-	// 	flow:        common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{
-	// 		"auth": map[string]interface{}{
-	// 			"type": "OAuth",
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: true,
-	// 	},
-	// },
-	// {
-	// 	description: "should return 'false' without error for a destination which contains OAuth with delete rudderScopes when flow is delivery",
-	// 	flow:        common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{
-	// 		"auth": map[string]interface{}{
-	// 			"type":         "OAuth",
-	// 			"rudderScopes": []interface{}{"delete"},
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 	},
-	// },
-	// {
-	// 	description: "should return 'true' without error for a destination which contains OAuth withoutrudderScopes when flow is delivery",
-	// 	flow:        common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{
-	// 		"auth": map[string]interface{}{
-	// 			"type": "OAuth",
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: true,
-	// 	},
-	// },
-	// {
-	// 	description: "should return 'false' with error for a destination which contains OAuth with one of invalid rudderScopes when flow is delivery",
-	// 	flow:        common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{
-	// 		"auth": map[string]interface{}{
-	// 			"type":         "OAuth",
-	// 			"rudderScopes": []interface{}{"delivery", 1},
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 		err:     fmt.Errorf("1 in auth.rudderScopes should be string"),
-	// 	},
-	// },
-	// {
-	// 	description: "should return 'false' with error for a destination which contains OAuth with invalid rudderScopes type when flow is delivery",
-	// 	flow:        common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{
-	// 		"auth": map[string]interface{}{
-	// 			"type":         "OAuth",
-	// 			"rudderScopes": []interface{}{"a"}[0],
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 		err:     fmt.Errorf("rudderScopes should be a interface[]"),
-	// 	},
-	// },
-	// {
-	// 	description:    "should return 'false' without error for a non-OAuth destination when flow is delivery",
-	// 	flow:           common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 	},
-	// },
-	// {
-	// 	description:    "success scenario for a oauth destination where account is present",
-	// 	flow:           common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{},
-	// 	account: &backendconfig.AccountWithDefinition{
-	// 		AccountDefinition: backendconfig.AccountDefinition{
-	// 			Config: map[string]interface{}{
-	// 				"refreshOAuthToken": true,
-	// 			},
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: true,
-	// 	},
-	// },
-	// {
-	// 	description:    "success scenario for a non-oauth destination where account is not present",
-	// 	flow:           common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{},
-	// 	account:        nil,
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 	},
-	// },
-	// {
-	// 	description:    "success scenario for a non-oauth destination where account is present",
-	// 	flow:           common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{},
-	// 	account: &backendconfig.AccountWithDefinition{
-	// 		AccountDefinition: backendconfig.AccountDefinition{
-	// 			Config: map[string]interface{}{
-	// 				"refreshOAuthToken": false,
-	// 			},
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 	},
-	// },
-	// {
-	// 	description:    "failure scenario for a oauth destination where account is present and account config is wrong",
-	// 	flow:           common.RudderFlowDelivery,
-	// 	inputDefConfig: map[string]interface{}{},
-	// 	account: &backendconfig.AccountWithDefinition{
-	// 		AccountDefinition: backendconfig.AccountDefinition{
-	// 			Config: map[string]interface{}{
-	// 				"refreshToken": false,
-	// 			},
-	// 		},
-	// 	},
-	// 	expected: isOAuthResult{
-	// 		isOAuth: false,
-	// 		err: &misc.MapLookupError{
-	// 			SearchKey: "refreshOAuthToken",
-	// 			Err:       fmt.Errorf("key: refreshOAuthToken not found"),
-	// 			Level:     0,
-	// 		},
-	// 	},
-	// },
+	{
+		description: "should pass for a destination which contains OAuth and rudderScopes",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description: "should pass for a destination which contains OAuth but not rudderScopes",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": "OAuth",
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description: "should return 'false' without error for a destination which contains OAuth with delete rudderScopes when flow is delivery",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delete"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
+	{
+		description: "should return 'true' without error for a destination which contains OAuth withoutrudderScopes when flow is delivery",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": "OAuth",
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description: "should return 'false' with error for a destination which contains OAuth with one of invalid rudderScopes when flow is delivery",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery", 1},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+			err:     fmt.Errorf("1 in auth.rudderScopes should be string"),
+		},
+	},
+	{
+		description: "should return 'false' with error for a destination which contains OAuth with invalid rudderScopes type when flow is delivery",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"a"}[0],
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+			err:     fmt.Errorf("rudderScopes should be a interface[]"),
+		},
+	},
+	{
+		description:    "should return 'false' without error for a non-OAuth destination when flow is delivery",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
+	{
+		description:    "success scenario for a oauth destination where account is present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Config: map[string]interface{}{
+					"refreshOAuthToken": true,
+				},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description:    "success scenario for a non-oauth destination where account is not present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account:        nil,
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
+	{
+		description:    "success scenario for a non-oauth destination where account is present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Config: map[string]interface{}{
+					"refreshOAuthToken": false,
+				},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
+	{
+		description:    "failure scenario for a oauth destination where account is present and account config is wrong",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Config: map[string]interface{}{
+					"refreshToken": false,
+				},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+			err:     nil,
+		},
+	},
 	{
 		description:    "failure scenario for a oauth destination where account is present and account config is not a boolean",
 		flow:           common.RudderFlowDelivery,
