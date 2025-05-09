@@ -3,8 +3,9 @@ package enricher
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 func TestBotEnricher(t *testing.T) {
