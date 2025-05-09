@@ -87,7 +87,6 @@ func (s *SourceT) IsReplaySource() bool {
 }
 
 type Account struct {
-	Id                    string                 `json:"id"`
 	AccountDefinitionName string                 `json:"accountDefinitionName"`
 	Options               map[string]interface{} `json:"options"`
 	Secret                map[string]interface{} `json:"secret"`
