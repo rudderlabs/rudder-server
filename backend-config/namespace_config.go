@@ -172,11 +172,10 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 			workspace.ApplyReplaySources()
 			workspace.processAccountAssociations()
 			// Process dynamic config with the instance cache
-			cache := make(DynamicConfigMapCache)
 			for i := range workspace.Sources {
 				for j := range workspace.Sources[i].Destinations {
 					dest := &workspace.Sources[i].Destinations[j]
-					dest.UpdateHasDynamicConfig(cache)
+					dest.UpdateHasDynamicConfig(nc.dynamicConfigCache)
 				}
 			}
 		}

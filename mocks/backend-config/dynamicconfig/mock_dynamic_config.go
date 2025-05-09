@@ -70,7 +70,7 @@ func (mr *MockCacheMockRecorder) Len() *gomock.Call {
 }
 
 // Set mocks base method.
-func (m *MockCache) Set(destID string, info dynamicconfig.DestinationRevisionInfo) {
+func (m *MockCache) Set(destID string, info *dynamicconfig.DestinationRevisionInfo) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "Set", destID, info)
 }

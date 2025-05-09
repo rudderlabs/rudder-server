@@ -3,6 +3,8 @@ package backendconfig
 import (
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 )
 
@@ -71,7 +73,7 @@ func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
 
 	// If the destination's RevisionID matches the cached RevisionID,
 	// use the cached HasDynamicConfig value to avoid recomputation
-	if exists && cachedInfo != nil && d.RevisionID == cachedInfo.RevisionID {
+	if exists && d.RevisionID == cachedInfo.RevisionID {
 		d.HasDynamicConfig = cachedInfo.HasDynamicConfig
 		return
 	}
@@ -80,7 +82,7 @@ func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
 	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
 
 	// Update the cache with the new value
-	cache.Set(d.ID, dynamicconfig.DestinationRevisionInfo{
+	cache.Set(d.ID, &dynamicconfig.DestinationRevisionInfo{
 		RevisionID:       d.RevisionID,
 		HasDynamicConfig: d.HasDynamicConfig,
 	})
@@ -243,28 +245,11 @@ type DgSourceTrackingPlanConfigT struct {
 	TrackingPlan        TrackingPlanT                     `json:"trackingPlan"`
 }
 
-// mergeMaps merges two maps, with values from the second map taking precedence
-func mergeMaps(map1, map2 map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-
-	// Copy all key-value pairs from the first map
-	for k, v := range map1 {
-		result[k] = v
-	}
-
-	// Copy all key-value pairs from the second map, overwriting any existing keys
-	for k, v := range map2 {
-		result[k] = v
-	}
-
-	return result
-}
-
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
 	if dgSourceTPConfigT.MergedConfig == nil {
 		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
 		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
-		outputConfig := mergeMaps(globalConfig, eventSpecificConfig)
+		outputConfig := lo.Assign(globalConfig, eventSpecificConfig)
 		dgSourceTPConfigT.MergedConfig = outputConfig
 	}
 	return dgSourceTPConfigT.MergedConfig

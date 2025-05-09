@@ -192,7 +192,7 @@ func TestUpdateDynamicConfigWithMockCache(t *testing.T) {
 	// Expect a call to Get with "dest-2" and return no cached entry
 	mockCache.EXPECT().Get("dest-2").Return(nil, false)
 	// Expect a call to Set with the computed value
-	mockCache.EXPECT().Set("dest-2", dynamicconfig.DestinationRevisionInfo{
+	mockCache.EXPECT().Set("dest-2", &dynamicconfig.DestinationRevisionInfo{
 		RevisionID:       "rev-2",
 		HasDynamicConfig: true,
 	})
@@ -220,7 +220,7 @@ func TestUpdateDynamicConfigWithMockCache(t *testing.T) {
 	}
 	mockCache.EXPECT().Get("dest-3").Return(outdatedInfo, true)
 	// Expect a call to Set with the newly computed value
-	mockCache.EXPECT().Set("dest-3", dynamicconfig.DestinationRevisionInfo{
+	mockCache.EXPECT().Set("dest-3", &dynamicconfig.DestinationRevisionInfo{
 		RevisionID:       "rev-3-new",
 		HasDynamicConfig: false, // Computed value is different from cached
 	})

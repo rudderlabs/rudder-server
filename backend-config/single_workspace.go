@@ -125,11 +125,10 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	sourcesJSON.processAccountAssociations()
 
 	// Process dynamic config with the instance cache
-	cache := make(DynamicConfigMapCache)
 	for i := range sourcesJSON.Sources {
 		for j := range sourcesJSON.Sources[i].Destinations {
 			dest := &sourcesJSON.Sources[i].Destinations[j]
-			dest.UpdateHasDynamicConfig(cache)
+			dest.UpdateHasDynamicConfig(wc.dynamicConfigCache)
 		}
 	}
 	workspaceID := sourcesJSON.WorkspaceID
@@ -169,11 +168,10 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 	configJSON.processAccountAssociations()
 
 	// Process dynamic config with the instance cache
-	cache := make(DynamicConfigMapCache)
 	for i := range configJSON.Sources {
 		for j := range configJSON.Sources[i].Destinations {
 			dest := &configJSON.Sources[i].Destinations[j]
-			dest.UpdateHasDynamicConfig(cache)
+			dest.UpdateHasDynamicConfig(wc.dynamicConfigCache)
 		}
 	}
 	conf[workspaceID] = configJSON

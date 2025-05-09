@@ -18,7 +18,7 @@ type Cache interface {
 	Get(destID string) (*DestinationRevisionInfo, bool)
 
 	// Set stores a cache entry for a destination ID.
-	Set(destID string, info DestinationRevisionInfo)
+	Set(destID string, info *DestinationRevisionInfo)
 
 	// Len returns the number of entries in the cache.
 	Len() int
