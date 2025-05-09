@@ -150,5 +150,15 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 		enrichers = append(enrichers, geoEnricher)
 	}
 
+	if conf.GetBool("BotEnrichment.enabled", true) {
+		log.Infof("Setting up the bot pipeline enricher")
+
+		botEnricher, err := enricher.NewBotEnricher()
+		if err != nil {
+			return nil, fmt.Errorf("starting bot enrichment process for pipeline: %w", err)
+		}
+		enrichers = append(enrichers, botEnricher)
+	}
+
 	return enrichers, nil
 }

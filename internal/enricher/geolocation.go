@@ -63,7 +63,7 @@ func NewGeoEnricher(conf *config.Config, log logger.Logger, statClient stats.Sta
 // Enrich function runs on a request of GatewayBatchRequest which contains
 // multiple singular events from a source. The enrich function augments the
 // geolocation information per event based on IP address.
-func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.GatewayBatchRequest) error {
+func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.GatewayBatchRequest, _ *types.EventParams) error {
 	if !source.GeoEnrichment.Enabled {
 		return nil
 	}
