@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -1417,4 +1418,65 @@ func TestHandleSchemaChange(t *testing.T) {
 			require.NoError(t, convError)
 		})
 	}
+}
+
+func TestSlaveWorkerClaimRefresh(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	refreshCalls := make(chan int64, 10)
+	mockNotifier := &mockSlaveNotifier{
+		refreshClaim: func(ctx context.Context, jobId int64) error {
+			refreshCalls <- jobId
+			return nil
+		},
+	}
+
+	conf := config.New()
+	conf.Set("Warehouse.claimRefreshIntervalInS", "1")
+	conf.Set("Warehouse.enableNotifierHeartbeat", true)
+
+	worker := newWorker(
+		conf,
+		logger.NOP,
+		stats.NOP,
+		mockNotifier,
+		bcm.New(conf, nil, multitenant.New(conf, backendconfig.DefaultBackendConfig), logger.NOP, stats.NOP),
+		constraints.New(conf),
+		encoding.NewFactory(conf),
+		1,
+	)
+	worker.refreshClaimJitter = 0
+
+	job := &notifier.ClaimJob{
+		Job: &notifier.Job{
+			ID:   123,
+			Type: notifier.JobTypeUpload,
+		},
+	}
+
+	// Start worker in background
+	notificationChan := make(chan *notifier.ClaimJob, 1)
+	go worker.start(ctx, notificationChan, "slaveID")
+
+	// Send job to worker
+	notificationChan <- job
+
+	timeout := time.After(3 * time.Second)
+	var callCount int
+
+loop:
+	for {
+		select {
+		case jobId := <-refreshCalls:
+			callCount++
+			require.Equal(t, int64(123), jobId)
+		case <-timeout:
+			break loop
+		}
+	}
+
+	// Verify we got at least 2 refresh calls
+	require.GreaterOrEqual(t, callCount, 2, "Expected at least 2 refresh calls")
+	cancel()
 }

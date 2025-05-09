@@ -485,3 +485,23 @@ func (n *repo) orphanJobIDs(
 
 	return ids, nil
 }
+
+func (n *repo) refreshClaim(ctx context.Context, jobId int64) error {
+	_, err := n.db.ExecContext(ctx, `
+		UPDATE
+		  `+notifierTableName+`
+		SET
+		  last_exec_time = $1
+		WHERE
+		  id = $2
+		  AND status = $3;
+	`,
+		n.now(),
+		jobId,
+		Executing,
+	)
+	if err != nil {
+		return fmt.Errorf("refreshing claim: %w", err)
+	}
+	return nil
+}
