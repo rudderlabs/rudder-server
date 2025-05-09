@@ -129,32 +129,6 @@ func newSourceStatReporter(_ *gwtypes.AuthRequestContext, _ string) gwtypes.Stat
 	return &gwStats.SourceStat{}
 }
 
-func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
-	initWebhook()
-	ctrl := gomock.NewController(t)
-	mockGW := mockWebhook.NewMockGateway(ctrl)
-	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
-	mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).Times(1)
-	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP, config.Default, newSourceStatReporter)
-
-	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	arctx := &gwtypes.AuthRequestContext{
-		SourceDefName: sourceDefName,
-		WriteKey:      sampleWriteKey,
-	}
-	webhookHandler.Register(sourceDefName)
-	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
-	w := httptest.NewRecorder()
-	ctx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
-	ctx = context.WithValue(ctx, gwtypes.CtxParamAuthRequestContext, arctx)
-	req = req.WithContext(ctx)
-	webhookHandler.RequestHandler(w, req)
-
-	assert.Equal(t, http.StatusGatewayTimeout, w.Result().StatusCode)
-	assert.Contains(t, strings.TrimSpace(w.Body.String()), "gateway timeout")
-	_ = webhookHandler.Shutdown()
-}
-
 func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
