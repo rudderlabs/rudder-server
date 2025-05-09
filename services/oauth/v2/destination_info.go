@@ -22,13 +22,11 @@ type DestinationInfo struct {
 
 func (d *DestinationInfo) IsOAuthDestination(flow common.RudderFlow) (bool, error) {
 	if d.Account != nil {
-		authValue, err := misc.NestedMapLookup(d.Account.AccountDefinition.Config, "refreshOAuthToken")
-		if err != nil {
-			return false, err
+		authValue, ok := d.Account.AccountDefinition.Config["refreshOAuthToken"].(bool)
+		if !ok {
+			return false, nil
 		}
-		if authValue != nil {
-			return authValue.(bool), nil
-		}
+		return authValue, nil
 	}
 	authValue, _ := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
 	if authValue == nil {
