@@ -32,6 +32,7 @@ type mockSlaveNotifier struct {
 	subscribeCh    chan *notifier.ClaimJobResponse
 	publishCh      chan *notifier.ClaimJob
 	maintenanceErr error
+	refreshClaim   func(ctx context.Context, jobId int64) error
 }
 
 func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifier.ClaimJob {
@@ -44,6 +45,13 @@ func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifier.ClaimJob,
 
 func (m *mockSlaveNotifier) RunMaintenance(context.Context) error {
 	return m.maintenanceErr
+}
+
+func (m *mockSlaveNotifier) RefreshClaim(ctx context.Context, jobId int64) error {
+	if m.refreshClaim != nil {
+		return m.refreshClaim(ctx, jobId)
+	}
+	return nil
 }
 
 func TestSlave(t *testing.T) {

@@ -100,6 +100,7 @@ type notifierRepo interface {
 	claim(context.Context, string) (*Job, error)
 	onClaimFailed(context.Context, *Job, error, int) error
 	onClaimSuccess(context.Context, *Job, json.RawMessage) error
+	refreshClaim(context.Context, int64) error
 }
 
 type Notifier struct {
@@ -615,4 +616,8 @@ func (n *Notifier) Shutdown() error {
 
 	n.background.groupCancel()
 	return n.background.group.Wait()
+}
+
+func (n *Notifier) RefreshClaim(ctx context.Context, jobId int64) error {
+	return n.repo.refreshClaim(ctx, jobId)
 }
