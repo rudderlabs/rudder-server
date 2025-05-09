@@ -1,11 +1,9 @@
-package warehouse
+package warehouse_test
 
 import (
-	"compress/gzip"
+	"context"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -22,11 +21,11 @@ import (
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestTransformer(t *testing.T) {
@@ -620,8 +619,8 @@ func TestTransformer(t *testing.T) {
 
 			c := setupConfig(transformerResource, tc.configOverride)
 
-			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
-			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+			processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+			warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
 			eventContexts := []testhelper.EventContext{
 				{
@@ -675,21 +674,28 @@ func getTrackMetadata(destinationType, sourceCategory string) types.Metadata {
 	return metadata
 }
 
-func TestTransformer_CompareAndLog(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "transformer_compare_log.*.txt.gz")
+func TestTransformer_CompareResponsesAndUpload(t *testing.T) {
+	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	require.NoError(t, tmpFile.Close())
+	minioResource, err := minio.Setup(pool, t)
+	require.NoError(t, err)
 
+	ctx := context.Background()
 	maxLoggedEvents := 10
 
 	c := config.New()
-	c.Set("Warehouse.maxLoggedEvents", maxLoggedEvents)
+	c.Set("Warehouse.Transformer.Sampling.maxLoggedEvents", maxLoggedEvents)
+	c.Set("Warehouse.Transformer.Sampling.Bucket", minioResource.BucketName)
+	c.Set("Warehouse.Transformer.Sampling.Endpoint", minioResource.Endpoint)
+	c.Set("Warehouse.Transformer.Sampling.AccessKey", minioResource.AccessKeyID)
+	c.Set("Warehouse.Transformer.Sampling.SecretAccessKey", minioResource.AccessKeySecret)
+	c.Set("Warehouse.Transformer.Sampling.S3ForcePathStyle", true)
+	c.Set("Warehouse.Transformer.Sampling.DisableSsl", true)
 
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 
-	trans := New(c, logger.NOP, statsStore)
-	trans.loggedFileName = tmpFile.Name()
+	trans := warehouse.New(c, logger.NOP, statsStore)
 
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt, 50)
 	for index := 0; index < 50; index++ {
@@ -711,53 +717,32 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	}
 
 	for i := 0; i < 1000; i++ {
-		pResponse := types.Response{
-			Events: lo.RepeatBy(50, func(index int) types.TransformerResponse {
-				return types.TransformerResponse{
+		legacyResponse := types.Response{
+			Events: []types.TransformerResponse{
+				{
 					Output: types.SingularEventT{
-						"event": "track" + strconv.Itoa(index+i),
+						"event": "track",
 					},
 					Metadata: types.Metadata{
-						MessageID:       strconv.Itoa(index + i),
+						MessageID:       "messageID",
 						SourceID:        "sourceID",
 						DestinationID:   "destinationID",
 						SourceType:      "sourceType",
 						DestinationType: "destinationType",
 					},
-				}
-			}),
+				},
+			},
 		}
-		wResponse := types.Response{
-			Events: lo.RepeatBy(50, func(index int) types.TransformerResponse {
-				return types.TransformerResponse{
-					Output: types.SingularEventT{
-						"event": "track" + strconv.Itoa(index+i+1),
-					},
-					Metadata: types.Metadata{
-						MessageID:            strconv.Itoa(index + i + 1),
-						SourceID:             "sourceID",
-						DestinationID:        "destinationID",
-						SourceType:           "sourceType",
-						DestinationType:      "destinationType",
-						SourceDefinitionType: "sourceDefinitionType",
-					},
-				}
-			}),
-		}
-
-		trans.CompareAndLog(events, pResponse, wResponse)
+		trans.CompareResponsesAndUpload(ctx, events, legacyResponse)
 	}
 
-	f, err := os.OpenFile(tmpFile.Name(), os.O_RDWR, 0o644)
+	minioContents, err := minioResource.Contents(ctx, "")
 	require.NoError(t, err)
-	gzipReader, err := gzip.NewReader(f)
-	require.NoError(t, err)
-	data, err := io.ReadAll(gzipReader)
-	require.NoError(t, err)
-	require.NoError(t, gzipReader.Close())
-	require.NoError(t, f.Close())
+	require.Len(t, minioContents, maxLoggedEvents)
 
-	differingEvents := strings.Split(strings.Trim(string(data), "\n"), "\n")
+	differingEvents := lo.Map(minioContents, func(item minio.File, index int) string {
+		return item.Content
+	})
 	differingEvents = lo.Filter(differingEvents, func(item string, index int) bool {
 		return strings.Contains(item, "message") // Filtering raw events as the file contains sample diff as well
 	})
@@ -766,102 +751,5 @@ func TestTransformer_CompareAndLog(t *testing.T) {
 	for i := 0; i < maxLoggedEvents; i++ {
 		require.Contains(t, differingEvents[i], "track")
 	}
-	require.EqualValues(t, []float64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())
-}
-
-func TestTransformer_GetColumns(t *testing.T) {
-	testCases := []struct {
-		name        string
-		destType    string
-		data        map[string]any
-		columnTypes map[string]string
-		maxColumns  int32
-		expected    map[string]any
-		wantError   bool
-	}{
-		{
-			name:     "Basic data types",
-			destType: whutils.POSTGRES,
-			data: map[string]any{
-				"field1": "value1", "field2": 123, "field3": true,
-			},
-			columnTypes: map[string]string{
-				"field1": "string", "field2": "int",
-			},
-			maxColumns: 10,
-			expected: map[string]any{
-				"uuid_ts": "datetime", "field1": "string", "field2": "int", "field3": "boolean",
-			},
-		},
-		{
-			name:     "Basic data types (BQ)",
-			destType: whutils.BQ,
-			data: map[string]any{
-				"field1": "value1", "field2": 123, "field3": true,
-			},
-			columnTypes: map[string]string{
-				"field1": "string", "field2": "int",
-			},
-			maxColumns: 10,
-			expected: map[string]any{
-				"uuid_ts": "datetime", "field1": "string", "field2": "int", "field3": "boolean", "loaded_at": "datetime",
-			},
-		},
-		{
-			name:     "Basic data types (SNOWFLAKE)",
-			destType: whutils.SNOWFLAKE,
-			data: map[string]any{
-				"FIELD1": "value1", "FIELD2": 123, "FIELD3": true,
-			},
-			columnTypes: map[string]string{
-				"FIELD1": "string", "FIELD2": "int",
-			},
-			maxColumns: 10,
-			expected: map[string]any{
-				"UUID_TS": "datetime", "FIELD1": "string", "FIELD2": "int", "FIELD3": "boolean",
-			},
-		},
-		{
-			name:     "Key not in columnTypes",
-			destType: whutils.POSTGRES,
-			data: map[string]any{
-				"field1": "value1", "field2": 123, "field3": true,
-			},
-			columnTypes: map[string]string{},
-			maxColumns:  10,
-			expected: map[string]any{
-				"uuid_ts": "datetime", "field1": "string", "field2": "int", "field3": "boolean",
-			},
-		},
-		{
-			name:     "Too many columns",
-			destType: whutils.POSTGRES,
-			data: map[string]any{
-				"field1": "value1", "field2": 123, "field3": true, "field4": "extra",
-			},
-			columnTypes: map[string]string{
-				"field1": "string", "field2": "int",
-			},
-			maxColumns: 3,
-			expected:   nil,
-			wantError:  true,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := config.New()
-			c.Set("WH_MAX_COLUMNS_IN_EVENT", tc.maxColumns)
-
-			trans := New(c, logger.NOP, stats.NOP)
-
-			columns, err := trans.getColumns(tc.destType, tc.data, tc.columnTypes)
-			if tc.wantError {
-				require.Error(t, err)
-				require.Nil(t, columns)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.expected, columns)
-		})
-	}
+	require.EqualValues(t, []float64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())
 }

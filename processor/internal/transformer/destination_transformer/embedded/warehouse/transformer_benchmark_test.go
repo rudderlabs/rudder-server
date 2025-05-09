@@ -1,4 +1,4 @@
-package warehouse
+package warehouse_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -42,14 +43,14 @@ func Benchmark_Transformer(b *testing.B) {
 			}
 		})
 
-		warehouseTransformer := New(config.New(), logger.NOP, stats.NOP)
+		warehouseTransformer := warehouse.New(config.New(), logger.NOP, stats.NOP)
 		ctx := context.Background()
 		b.StartTimer()
 
 		for i := 0; i < t.N; i++ {
-			wResponse := warehouseTransformer.Transform(ctx, events)
-			require.Len(b, wResponse.Events, 2*batchSize)
-			require.Nil(b, wResponse.FailedEvents)
+			embeddedResponse := warehouseTransformer.Transform(ctx, events)
+			require.Len(b, embeddedResponse.Events, 2*batchSize)
+			require.Nil(b, embeddedResponse.FailedEvents)
 		}
 	})
 }

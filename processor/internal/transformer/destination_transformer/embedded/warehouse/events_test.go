@@ -1,4 +1,4 @@
-package warehouse
+package warehouse_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -26,7 +28,6 @@ import (
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 )
 
 func TestEvents(t *testing.T) {
@@ -2656,8 +2657,8 @@ func TestEvents(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				c := setupConfig(transformerResource, tc.configOverride)
 
-				processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
-				warehouseTransformer := New(c, logger.NOP, stats.NOP)
+				processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+				warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
 				eventContexts := []testhelper.EventContext{
 					{
@@ -2766,14 +2767,15 @@ func TestEvents(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				c := setupConfig(transformerResource, map[string]any{})
 
-				processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
-				warehouseTransformer := New(c, logger.NOP, stats.NOP)
-				warehouseTransformer.now = func() time.Time {
-					return now
-				}
-				warehouseTransformer.uuidGenerator = func() string {
-					return uid
-				}
+				processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+				warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP,
+					warehouse.WithNow(func() time.Time {
+						return now
+					}),
+					warehouse.WithUUIDGenerator(func() string {
+						return uid
+					}),
+				)
 
 				var singularEvent types.SingularEventT
 				err := jsonrs.Unmarshal([]byte(tc.eventPayload), &singularEvent)
@@ -2782,20 +2784,20 @@ func TestEvents(t *testing.T) {
 				ctx := context.Background()
 				events := []types.TransformerEvent{{Message: singularEvent, Metadata: tc.metadata, Destination: tc.destination}}
 
-				pResponse := processorTransformer.Destination().Transform(ctx, events)
-				wResponse := warehouseTransformer.Transform(ctx, events)
+				legacyResponse := processorTransformer.Transform(ctx, events)
+				embeddedResponse := warehouseTransformer.Transform(ctx, events)
 
 				nonEmptyFields := []string{"data.id", "data.received_at", "metadata.receivedAt"}
 
-				require.Equal(t, len(wResponse.Events), len(pResponse.Events))
-				require.Nil(t, wResponse.FailedEvents)
-				require.Nil(t, pResponse.FailedEvents)
-				for i := range wResponse.Events {
+				require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+				require.Nil(t, embeddedResponse.FailedEvents)
+				require.Nil(t, legacyResponse.FailedEvents)
+				for i := range embeddedResponse.Events {
 					for _, field := range nonEmptyFields {
-						require.NotEmpty(t, misc.MapLookup(wResponse.Events[i].Output, strings.Split(field, ".")...))
-						require.NotEmpty(t, misc.MapLookup(pResponse.Events[i].Output, strings.Split(field, ".")...))
+						require.NotEmpty(t, misc.MapLookup(embeddedResponse.Events[i].Output, strings.Split(field, ".")...))
+						require.NotEmpty(t, misc.MapLookup(legacyResponse.Events[i].Output, strings.Split(field, ".")...))
 					}
-					tc.verifyResponse(t, wResponse.Events[i])
+					tc.verifyResponse(t, embeddedResponse.Events[i])
 				}
 			})
 		}
@@ -2841,8 +2843,8 @@ func TestEvents(t *testing.T) {
 			t.Run(destination, func(t *testing.T) {
 				c := setupConfig(transformerResource, map[string]any{})
 
-				processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
-				warehouseTransformer := New(c, logger.NOP, stats.NOP)
+				processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+				warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
 				ctx := context.Background()
 				events := []types.TransformerEvent{{
@@ -2850,14 +2852,14 @@ func TestEvents(t *testing.T) {
 					Metadata:    getMetadata("track", destination),
 					Destination: getDestination(destination, map[string]any{}),
 				}}
-				pResponse := processorTransformer.Destination().Transform(ctx, events)
-				wResponse := warehouseTransformer.Transform(ctx, events)
+				legacyResponse := processorTransformer.Transform(ctx, events)
+				embeddedResponse := warehouseTransformer.Transform(ctx, events)
 
-				require.Equal(t, len(wResponse.Events), len(pResponse.Events))
-				require.Nil(t, pResponse.FailedEvents)
-				require.Nil(t, wResponse.FailedEvents)
-				for i := range pResponse.Events {
-					require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+				require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+				require.Nil(t, legacyResponse.FailedEvents)
+				require.Nil(t, embeddedResponse.FailedEvents)
+				for i := range legacyResponse.Events {
+					require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
 				}
 			})
 		}
@@ -2887,40 +2889,39 @@ func TestEvents(t *testing.T) {
 		}}
 
 		t.Run("Reverse", func(t *testing.T) {
-			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
-			warehouseTransformer := New(c, logger.NOP, stats.NOP)
-			warehouseTransformer.sorter = func(i []string) []string {
+			processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+			warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP, warehouse.WithSorter(func(i []string) []string {
 				sort.Strings(i)
 				slices.Reverse(i)
 				return i
-			}
+			}))
 
-			pResponse := processorTransformer.Destination().Transform(ctx, events)
-			wResponse := warehouseTransformer.Transform(ctx, events)
+			legacyResponse := processorTransformer.Transform(ctx, events)
+			embeddedResponse := warehouseTransformer.Transform(ctx, events)
 
-			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
-			require.Nil(t, pResponse.FailedEvents)
-			require.Nil(t, wResponse.FailedEvents)
-			for i := range pResponse.Events {
-				require.Equal(t, "3", misc.MapLookup(pResponse.Events[i].Output, "data", "context_ab_c"))
-				require.Equal(t, "1", misc.MapLookup(wResponse.Events[i].Output, "data", "context_ab_c"))
-				delete(pResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
-				delete(wResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
-				require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+			require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+			require.Nil(t, legacyResponse.FailedEvents)
+			require.Nil(t, embeddedResponse.FailedEvents)
+			for i := range legacyResponse.Events {
+				require.Equal(t, "3", misc.MapLookup(legacyResponse.Events[i].Output, "data", "context_ab_c"))
+				require.Equal(t, "1", misc.MapLookup(embeddedResponse.Events[i].Output, "data", "context_ab_c"))
+				delete(legacyResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
+				delete(embeddedResponse.Events[i].Output["data"].(map[string]any), "context_ab_c")
+				require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
 			}
 		})
 		t.Run("Sorted", func(t *testing.T) {
-			processorTransformer := ptrans.NewClients(c, logger.NOP, stats.Default)
-			warehouseTransformer := New(c, logger.NOP, stats.NOP)
+			processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+			warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
-			pResponse := processorTransformer.Destination().Transform(ctx, events)
-			wResponse := warehouseTransformer.Transform(ctx, events)
+			legacyResponse := processorTransformer.Transform(ctx, events)
+			embeddedResponse := warehouseTransformer.Transform(ctx, events)
 
-			require.Equal(t, len(wResponse.Events), len(pResponse.Events))
-			require.Nil(t, pResponse.FailedEvents)
-			require.Nil(t, wResponse.FailedEvents)
-			for i := range pResponse.Events {
-				require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+			require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+			require.Nil(t, legacyResponse.FailedEvents)
+			require.Nil(t, embeddedResponse.FailedEvents)
+			for i := range legacyResponse.Events {
+				require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
 			}
 		})
 	})

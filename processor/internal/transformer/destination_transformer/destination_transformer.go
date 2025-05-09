@@ -12,11 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
@@ -36,6 +37,11 @@ import (
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+type warehouseClient interface {
+	Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response
+	CompareResponsesAndUpload(ctx context.Context, events []types.TransformerEvent, legacyResponse types.Response)
+}
 
 type Opt func(*Client)
 
@@ -87,6 +93,10 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 		handle.samplingFileManager = nil
 	}
 
+	handle.warehouseClient = warehouse.New(conf, log, stat)
+	handle.config.warehouseTransformations.enable = conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	handle.config.warehouseTransformations.verify = conf.GetReloadableBoolVar(true, "Processor.verifyWarehouseTransformations")
+
 	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
 	for _, opt := range opts {
@@ -107,13 +117,18 @@ type Client struct {
 
 		maxLoggedEvents config.ValueLoader[int]
 
-		compactionEnabled   config.ValueLoader[bool]
+		compactionEnabled        config.ValueLoader[bool]
+		warehouseTransformations struct {
+			enable config.ValueLoader[bool]
+			verify config.ValueLoader[bool]
+		}
 		compactionSupported bool
 	}
-	conf   *config.Config
-	log    logger.Logger
-	stat   stats.Stats
-	client transformerclient.Client
+	conf            *config.Config
+	log             logger.Logger
+	stat            stats.Stats
+	client          transformerclient.Client
+	warehouseClient warehouseClient
 
 	stats struct {
 		comparisonTime   stats.Timer
@@ -384,6 +399,17 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
+	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok && c.config.warehouseTransformations.enable.Load() {
+		if c.config.warehouseTransformations.verify.Load() {
+			legacyResponse := c.transform(ctx, clientEvents)
+			go func() {
+				c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
+			}()
+			return legacyResponse
+		}
+		return c.warehouseClient.Transform(ctx, clientEvents)
+	}
+
 	impl, ok := embeddedTransformerImpls[destType]
 	if !ok {
 		return c.transform(ctx, clientEvents)

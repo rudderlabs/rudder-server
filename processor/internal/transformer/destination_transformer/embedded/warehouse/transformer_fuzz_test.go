@@ -1,4 +1,4 @@
-package warehouse
+package warehouse_test
 
 import (
 	"context"
@@ -8,14 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
-	"github.com/rudderlabs/rudder-server/processor/types"
-
 	"github.com/araddon/dateparse"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
+	"github.com/rudderlabs/rudder-server/processor/types"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -23,7 +25,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -571,8 +572,8 @@ func FuzzTransformer(f *testing.F) {
 
 		conf := setupConfig(transformerResource, map[string]any{})
 
-		processorTransformer := ptrans.NewClients(conf, logger.NOP, stats.Default)
-		warehouseTransformer := New(conf, logger.NOP, stats.NOP)
+		processorTransformer := destination_transformer.New(conf, logger.NOP, stats.Default)
+		warehouseTransformer := warehouse.New(conf, logger.NOP, stats.NOP)
 
 		eventContexts := []testhelper.EventContext{
 			{
@@ -601,7 +602,7 @@ func FuzzTransformer(f *testing.F) {
 	})
 }
 
-func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer ptrans.TransformerClients, dTransformer ptrans.DestinationClient) {
+func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer *destination_transformer.Client, dTransformer *warehouse.Transformer) {
 	t.Helper()
 
 	events := make([]types.TransformerEvent, 0, len(eventContexts))
@@ -619,21 +620,21 @@ func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransform
 
 	ctx := context.Background()
 
-	pResponse := pTransformer.Destination().Transform(ctx, events)
-	wResponse := dTransformer.Transform(ctx, events)
+	legacyResponse := pTransformer.Transform(ctx, events)
+	embeddedResponse := dTransformer.Transform(ctx, events)
 
-	require.Equal(t, len(wResponse.Events), len(pResponse.Events))
-	require.Equal(t, len(wResponse.FailedEvents), len(pResponse.FailedEvents))
+	require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+	require.Equal(t, len(embeddedResponse.FailedEvents), len(legacyResponse.FailedEvents))
 
-	for i := range pResponse.Events {
-		require.EqualValues(t, wResponse.Events[i], pResponse.Events[i])
+	for i := range legacyResponse.Events {
+		require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
 	}
-	for i := range pResponse.FailedEvents {
-		require.NotEmpty(t, pResponse.FailedEvents[i].Error)
-		require.NotEmpty(t, wResponse.FailedEvents[i].Error)
+	for i := range legacyResponse.FailedEvents {
+		require.NotEmpty(t, legacyResponse.FailedEvents[i].Error)
+		require.NotEmpty(t, embeddedResponse.FailedEvents[i].Error)
 
-		require.NotZero(t, pResponse.FailedEvents[i].StatusCode)
-		require.NotZero(t, wResponse.FailedEvents[i].StatusCode)
+		require.NotZero(t, legacyResponse.FailedEvents[i].StatusCode)
+		require.NotZero(t, embeddedResponse.FailedEvents[i].StatusCode)
 	}
 }
 
