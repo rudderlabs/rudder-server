@@ -18,6 +18,7 @@
                         "name": "Destination with dynamic config",
                         "enabled": true,
                         "workspaceId": "workspace-1",
+                        "revisionId": "rev-1",
                         "destinationDefinition": {
                             "name": "HTTP",
                             "displayName": "HTTP"
@@ -31,6 +32,7 @@
                         "name": "Destination without dynamic config",
                         "enabled": true,
                         "workspaceId": "workspace-1",
+                        "revisionId": "rev-2",
                         "destinationDefinition": {
                             "name": "HTTP",
                             "displayName": "HTTP"

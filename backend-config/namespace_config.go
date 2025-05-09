@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -42,6 +43,7 @@ type namespaceConfig struct {
 	incrementalConfigUpdates bool
 	lastUpdatedAt            time.Time
 	workspacesConfig         map[string]ConfigT
+	dynamicConfigCache       dynamicconfig.Cache
 
 	httpCallsStat        stats.Counter
 	httpResponseSizeStat stats.Histogram
@@ -76,6 +78,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		}
 	}
 	nc.workspacesConfig = make(map[string]ConfigT)
+	nc.dynamicConfigCache = make(DynamicConfigMapCache)
 	nc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
 	nc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
 
@@ -168,7 +171,14 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 		} else {
 			workspace.ApplyReplaySources()
 			workspace.processAccountAssociations()
-			workspace.processDynamicConfig()
+			// Process dynamic config with the instance cache
+			cache := make(DynamicConfigMapCache)
+			for i := range workspace.Sources {
+				for j := range workspace.Sources[i].Destinations {
+					dest := &workspace.Sources[i].Destinations[j]
+					dest.UpdateHasDynamicConfig(cache)
+				}
+			}
 		}
 		// always set connection flags to true for hosted and multi-tenant warehouse service
 		workspace.ConnectionFlags.URL = nc.cpRouterURL

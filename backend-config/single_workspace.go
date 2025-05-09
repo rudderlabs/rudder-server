@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -31,6 +32,8 @@ type singleWorkspaceConfig struct {
 	workspaceIDOnce sync.Once
 	workspaceID     string
 
+	dynamicConfigCache dynamicconfig.Cache
+
 	logger               logger.Logger
 	httpCallsStat        stats.Counter
 	httpResponseSizeStat stats.Histogram
@@ -39,6 +42,7 @@ type singleWorkspaceConfig struct {
 func (wc *singleWorkspaceConfig) SetUp() error {
 	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
 	wc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
+	wc.dynamicConfigCache = make(DynamicConfigMapCache)
 
 	if wc.logger == nil {
 		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
@@ -119,7 +123,15 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	}
 	sourcesJSON.ApplyReplaySources()
 	sourcesJSON.processAccountAssociations()
-	sourcesJSON.processDynamicConfig()
+
+	// Process dynamic config with the instance cache
+	cache := make(DynamicConfigMapCache)
+	for i := range sourcesJSON.Sources {
+		for j := range sourcesJSON.Sources[i].Destinations {
+			dest := &sourcesJSON.Sources[i].Destinations[j]
+			dest.UpdateHasDynamicConfig(cache)
+		}
+	}
 	workspaceID := sourcesJSON.WorkspaceID
 
 	wc.workspaceIDOnce.Do(func() {
@@ -155,7 +167,15 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		wc.workspaceID = workspaceID
 	})
 	configJSON.processAccountAssociations()
-	configJSON.processDynamicConfig()
+
+	// Process dynamic config with the instance cache
+	cache := make(DynamicConfigMapCache)
+	for i := range configJSON.Sources {
+		for j := range configJSON.Sources[i].Destinations {
+			dest := &configJSON.Sources[i].Destinations[j]
+			dest.UpdateHasDynamicConfig(cache)
+		}
+	}
 	conf[workspaceID] = configJSON
 	return conf, nil
 }

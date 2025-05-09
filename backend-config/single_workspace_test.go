@@ -93,15 +93,17 @@ func TestDynamicConfigInSingleWorkspace(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID:   "dest-1",
-							Name: "Destination with dynamic config",
+							ID:         "dest-1",
+							Name:       "Destination with dynamic config",
+							RevisionID: "rev-1",
 							Config: map[string]interface{}{
 								"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 							},
 						},
 						{
-							ID:   "dest-2",
-							Name: "Destination without dynamic config",
+							ID:         "dest-2",
+							Name:       "Destination without dynamic config",
+							RevisionID: "rev-2",
 							Config: map[string]interface{}{
 								"apiKey": "static-api-key",
 							},
@@ -197,12 +199,14 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 						{
 							"id": "d1",
 							"name": "processor Disabled",
-							"isProcessorEnabled": false
+							"isProcessorEnabled": false,
+							"revisionID": "rev-d1"
 						},
 						{
 							"id": "d2",
 							"name": "processor Enabled",
-							"isProcessorEnabled": true
+							"isProcessorEnabled": true,
+							"revisionID": "rev-d2"
 						}
 					]
 				}
@@ -236,6 +240,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 						{
 							"id": "dest-1",
 							"name": "Destination with dynamic config",
+							"revisionId": "rev-1",
 							"config": {
 								"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}"
 							}
@@ -243,6 +248,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 						{
 							"id": "dest-2",
 							"name": "Destination without dynamic config",
+							"revisionId": "rev-2",
 							"config": {
 								"apiKey": "static-api-key"
 							}

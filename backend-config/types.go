@@ -3,7 +3,7 @@ package backendconfig
 import (
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 )
 
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
@@ -58,6 +58,32 @@ type DestinationT struct {
 	DeliveryAccount       *AccountWithDefinition `json:"account,omitempty"`
 	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
 	HasDynamicConfig      bool                   `json:"hasDynamicConfig,omitempty"`
+}
+
+// UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns
+// and sets the HasDynamicConfig field accordingly.
+// It uses a cache to avoid recomputing the flag for destinations that haven't changed.
+// The cache is keyed by destination ID and stores the RevisionID and HasDynamicConfig values.
+// When a destination's RevisionID changes, it indicates a config change, and we recompute the flag.
+func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
+	// Check if we have a cached value for this destination
+	cachedInfo, exists := cache.Get(d.ID)
+
+	// If the destination's RevisionID matches the cached RevisionID,
+	// use the cached HasDynamicConfig value to avoid recomputation
+	if exists && cachedInfo != nil && d.RevisionID == cachedInfo.RevisionID {
+		d.HasDynamicConfig = cachedInfo.HasDynamicConfig
+		return
+	}
+
+	// RevisionID is not in cache or has changed, recompute the dynamic config flag
+	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
+
+	// Update the cache with the new value
+	cache.Set(d.ID, dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       d.RevisionID,
+		HasDynamicConfig: d.HasDynamicConfig,
+	})
 }
 
 type SourceT struct {
@@ -217,11 +243,28 @@ type DgSourceTrackingPlanConfigT struct {
 	TrackingPlan        TrackingPlanT                     `json:"trackingPlan"`
 }
 
+// mergeMaps merges two maps, with values from the second map taking precedence
+func mergeMaps(map1, map2 map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// Copy all key-value pairs from the first map
+	for k, v := range map1 {
+		result[k] = v
+	}
+
+	// Copy all key-value pairs from the second map, overwriting any existing keys
+	for k, v := range map2 {
+		result[k] = v
+	}
+
+	return result
+}
+
 func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
 	if dgSourceTPConfigT.MergedConfig == nil {
 		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
 		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
-		outputConfig := misc.MergeMaps(globalConfig, eventSpecificConfig)
+		outputConfig := mergeMaps(globalConfig, eventSpecificConfig)
 		dgSourceTPConfigT.MergedConfig = outputConfig
 	}
 	return dgSourceTPConfigT.MergedConfig
