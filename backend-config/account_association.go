@@ -46,7 +46,7 @@ func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
 					logger.NewStringField("destinationId", dest.ID))
 			}
 			dest.DeliveryAccount = &AccountWithDefinition{
-				Id:                account.Id,
+				Id:                accountID,
 				Options:           account.Options,
 				Secret:            account.Secret,
 				AccountDefinition: accountDefinition,
@@ -69,7 +69,7 @@ func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
 					logger.NewStringField("destinationId", dest.ID))
 			}
 			dest.DeleteAccount = &AccountWithDefinition{
-				Id:                account.Id,
+				Id:                deleteAccountID,
 				Options:           account.Options,
 				Secret:            account.Secret,
 				AccountDefinition: accountDefinition,

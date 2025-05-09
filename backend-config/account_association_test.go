@@ -24,7 +24,6 @@ func TestAccountAssociations(t *testing.T) {
 			},
 			Accounts: map[string]Account{
 				"acc-1": {
-					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 					Secret:                map[string]interface{}{"secret1": "secretValue1"},
@@ -81,7 +80,6 @@ func TestAccountAssociations(t *testing.T) {
 			},
 			Accounts: map[string]Account{
 				"acc-1": {
-					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 				},
@@ -124,7 +122,6 @@ func TestAccountAssociations(t *testing.T) {
 			},
 			Accounts: map[string]Account{
 				"acc-1": {
-					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 				},
@@ -161,7 +158,6 @@ func TestAccountAssociations(t *testing.T) {
 			},
 			Accounts: map[string]Account{
 				"acc-1": {
-					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 				},
 			},
@@ -196,7 +192,6 @@ func TestAccountAssociations(t *testing.T) {
 			},
 			Accounts: map[string]Account{
 				"acc-1": {
-					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 				},
 			},
@@ -230,7 +225,6 @@ func TestAccountAssociations(t *testing.T) {
 			},
 			Accounts: map[string]Account{
 				"acc-1": {
-					Id:                    "acc-1",
 					AccountDefinitionName: "non-existent-def",
 				},
 			},
