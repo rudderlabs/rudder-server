@@ -18,7 +18,7 @@ import (
 func TestNewWebhookAuth(t *testing.T) {
 	tests := []struct {
 		name                      string
-		mockOnFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string)
+		mockOnFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext)
 		mockAuthReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error)
 		writeKey                  string
 		expectedResponseCode      int
@@ -26,7 +26,7 @@ func TestNewWebhookAuth(t *testing.T) {
 	}{
 		{
 			name: "valid write key",
-			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
+			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string, _ *gwtypes.AuthRequestContext) {
 				t.Error("onFailure should not be called for a valid write key")
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
@@ -41,7 +41,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		},
 		{
 			name: "invalid write key",
-			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
+			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string, _ *gwtypes.AuthRequestContext) {
 				http.Error(w, errorMessage, http.StatusUnauthorized)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
@@ -53,7 +53,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		},
 		{
 			name: "empty write key",
-			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
+			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string, _ *gwtypes.AuthRequestContext) {
 				http.Error(w, errorMessage, http.StatusUnauthorized)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
@@ -65,7 +65,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		},
 		{
 			name: "disabled source",
-			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
+			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string, _ *gwtypes.AuthRequestContext) {
 				http.Error(w, errorMessage, http.StatusForbidden)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
@@ -80,7 +80,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		},
 		{
 			name: "error getting auth context",
-			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
+			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string, _ *gwtypes.AuthRequestContext) {
 				http.Error(w, errorMessage, http.StatusInternalServerError)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {
@@ -92,7 +92,7 @@ func TestNewWebhookAuth(t *testing.T) {
 		},
 		{
 			name: "source category not webhook",
-			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string) {
+			mockOnFailure: func(w http.ResponseWriter, r *http.Request, errorMessage string, _ *gwtypes.AuthRequestContext) {
 				http.Error(w, errorMessage, http.StatusBadRequest)
 			},
 			mockAuthReqCtxForWriteKey: func(writeKey string) (*gwtypes.AuthRequestContext, error) {

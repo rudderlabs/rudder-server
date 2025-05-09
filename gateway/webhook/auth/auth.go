@@ -13,12 +13,12 @@ import (
 var ErrSourceNotFound = errors.New("source not found")
 
 type WebhookAuth struct {
-	onFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string)
+	onFailure             func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext)
 	authReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error)
 }
 
 func NewWebhookAuth(
-	onFailure func(w http.ResponseWriter, r *http.Request, errorMessage string),
+	onFailure func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext),
 	authReqCtxForWriteKey func(writeKey string) (*gwtypes.AuthRequestContext, error),
 ) *WebhookAuth {
 	return &WebhookAuth{
@@ -38,24 +38,24 @@ func (wa *WebhookAuth) AuthHandler(next http.HandlerFunc) http.HandlerFunc {
 			writeKey, _, _ = r.BasicAuth()
 		}
 		if writeKey == "" {
-			wa.onFailure(w, r, response.NoWriteKeyInQueryParams)
+			wa.onFailure(w, r, response.NoWriteKeyInQueryParams, nil)
 			return
 		}
 		arctx, err := wa.authReqCtxForWriteKey(writeKey)
 		if err != nil {
 			if errors.Is(err, ErrSourceNotFound) {
-				wa.onFailure(w, r, response.InvalidWriteKey)
+				wa.onFailure(w, r, response.InvalidWriteKey, arctx)
 				return
 			}
-			wa.onFailure(w, r, response.ErrAuthenticatingWebhookRequest)
+			wa.onFailure(w, r, response.ErrAuthenticatingWebhookRequest, arctx)
 			return
 		}
 		if arctx.SourceCategory != "webhook" {
-			wa.onFailure(w, r, response.InvalidWriteKey)
+			wa.onFailure(w, r, response.InvalidWriteKey, arctx)
 			return
 		}
 		if !arctx.SourceEnabled {
-			wa.onFailure(w, r, response.SourceDisabled)
+			wa.onFailure(w, r, response.SourceDisabled, arctx)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), gwtypes.CtxParamAuthRequestContext, arctx)))
