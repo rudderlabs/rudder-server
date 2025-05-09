@@ -36,3 +36,17 @@ func WaitUntilReady(
 		}
 	}
 }
+
+func IsReady(t testing.TB, endpoint string) bool {
+	resp, err := http.Get(endpoint)
+	if err != nil {
+		t.Log("Error while checking application status:", err)
+		return false
+	}
+	func() { httputil.CloseResponse(resp) }()
+	if resp.StatusCode == http.StatusOK {
+		t.Log("Application ready")
+		return true
+	}
+	return false
+}

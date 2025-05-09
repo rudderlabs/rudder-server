@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -42,7 +44,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	webhookModel "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -163,7 +164,7 @@ type testContext struct {
 	mockBackendConfig  *mocksBackendConfig.MockBackendConfig
 	mockRateLimiter    *mockGateway.MockThrottler
 	mockApp            *mocksApp.MockApp
-	mockWebhook        *mockGateway.MockWebhook
+	mockWebhook        *mockGateway.MockWebhookRequestHandler
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
 	// Enterprise mocks
@@ -191,7 +192,7 @@ func (c *testContext) Setup() {
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mockGateway.NewMockThrottler(c.mockCtrl)
-	c.mockWebhook = mockGateway.NewMockWebhook(c.mockCtrl)
+	c.mockWebhook = mockGateway.NewMockWebhookRequestHandler(c.mockCtrl)
 	c.mockWebhook.EXPECT().Shutdown().AnyTimes()
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {

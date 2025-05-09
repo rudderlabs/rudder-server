@@ -23,7 +23,20 @@ type featuresService struct {
 	client   *http.Client
 }
 
+func (t *featuresService) isInitialized() bool {
+	select {
+	case <-t.waitChan:
+		return true
+	default:
+		return false
+	}
+}
+
 func (t *featuresService) SourceTransformerVersion() string {
+	if !t.isInitialized() {
+		// todo: should we panic as SourceTransformerVersion() is called before features are fetched?
+		return V2
+	}
 	// If transformer is upgraded to V2, enable V2 spec communication
 	if gjson.GetBytes(t.features, "upgradedToSourceTransformV2").Bool() {
 		return V2

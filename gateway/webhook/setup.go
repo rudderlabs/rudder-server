@@ -8,6 +8,9 @@ import (
 	"strings"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
+
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
@@ -18,23 +21,31 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
-	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
-	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
 type Gateway interface {
-	TrackRequestMetrics(errorMessage string)
-	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
-	NewSourceStat(arctx *gwtypes.AuthRequestContext, reqType string) *gwstats.SourceStat
+	RequestMetricsTracker
+	WebhookRequestProcessor
+}
+
+type WebhookRequestProcessor interface {
+	// ProcessTransformedWebhookRequest processes the transformed webhook request and save it to the gw jobsDB
+	ProcessTransformedWebhookRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
+	// SaveWebhookFailures saves the webhook failures to the procErr jobsDB
 	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
 
-type WebHookI interface {
-	RequestHandler(w http.ResponseWriter, r *http.Request)
-	Register(name string)
+// StatReporterCreator is a function type that creates StatReporter instances
+type StatReporterCreator func(authContext *gwtypes.AuthRequestContext, requestType string) gwtypes.StatReporter
+
+// RequestMetricsTracker is used to track webhook request metrics on a request basis for OSS customers
+type RequestMetricsTracker interface {
+	TrackRequestMetrics(errorMessage string)
+}
+
+type TransformerFeaturesService interface {
+	SourceTransformerVersion() string
 }
 
 func newWebhookStats(stat stats.Stats) *webhookStatsT {
@@ -47,25 +58,27 @@ func newWebhookStats(stat stats.Stats) *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesService, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesService, stat stats.Stats, conf *config.Config, statReporterCreator StatReporterCreator, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat, logger: logger.NewLogger().Child("gateway").Child("webhook")}
 	// Number of incoming webhooks that are batched before calling source transformer
-	webhook.config.maxWebhookBatchSize = config.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
+	webhook.config.maxWebhookBatchSize = conf.GetReloadableIntVar(32, 1, "Gateway.webhook.maxBatchSize")
 	// Timeout after which batch is formed anyway with whatever webhooks are available
-	webhook.config.webhookBatchTimeout = config.GetReloadableDurationVar(20, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
+	webhook.config.webhookBatchTimeout = conf.GetReloadableDurationVar(20, time.Millisecond, []string{"Gateway.webhook.batchTimeout", "Gateway.webhook.batchTimeoutInMS"}...)
 	// Multiple source transformers are used to generate rudder events from webhooks
-	maxTransformerProcess := config.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
+	maxTransformerProcess := conf.GetIntVar(64, 1, "Gateway.webhook.maxTransformerProcess")
 	// Parse all query params from sources mentioned in this list
-	webhook.config.sourceListForParsingParams = config.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
+	webhook.config.sourceListForParsingParams = conf.GetStringSliceVar([]string{"Shopify", "adjust"}, "Gateway.webhook.sourceListForParsingParams")
 	// Maximum request size to gateway
-	webhook.config.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
+	webhook.config.maxReqSize = conf.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 
 	webhook.config.forwardGetRequestForSrcMap = lo.SliceToMap(
-		config.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
+		conf.GetStringSliceVar([]string{"adjust"}, "Gateway.webhook.forwardGetRequestForSrcs"),
 		func(item string) (string, struct{}) {
 			return strings.ToLower(item), struct{}{}
 		},
 	)
+	// enable webhook v2 handler
+	webhook.config.webhookV2HandlerEnabled = conf.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
 
 	// lowercasing the strings in sourceListForParsingParams
 	for i, s := range webhook.config.sourceListForParsingParams {
@@ -75,14 +88,16 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
-	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
+	webhook.netClient.HTTPClient.Timeout = conf.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
 	webhook.netClient.Logger = nil // to avoid debug logs
-	webhook.netClient.RetryWaitMin = config.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
-	webhook.netClient.RetryWaitMax = config.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
-	webhook.netClient.RetryMax = config.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
+	webhook.netClient.RetryWaitMin = conf.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
+	webhook.netClient.RetryWaitMax = conf.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
+	webhook.netClient.RetryMax = conf.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
+
+	webhook.statReporterCreator = statReporterCreator
 
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {
@@ -91,12 +106,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService transformer.FeaturesServ
 				webhook: webhook,
 				stats:   newWebhookStats(stat),
 				sourceTransformAdapter: func(ctx context.Context) (sourceTransformAdapter, error) {
-					select {
-					case <-ctx.Done():
-						return nil, ctx.Err()
-					case <-transformerFeaturesService.Wait():
-						return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion()), nil
-					}
+					return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion(), conf), nil
 				},
 			}
 			for _, opt := range opts {

@@ -5,17 +5,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
 func TestV1Adapter(t *testing.T) {
 	t.Run("should return the right url", func(t *testing.T) {
-		v1Adapter := newSourceTransformAdapter(transformer.V1)
+		v1Adapter := newSourceTransformAdapter(transformer.V1, config.Default)
 		testSrcType := "testSrcType"
 		testSrcTypeLower := "testsrctype"
 
@@ -25,7 +28,7 @@ func TestV1Adapter(t *testing.T) {
 	})
 
 	t.Run("should return the right adapter version", func(t *testing.T) {
-		v1Adapter := newSourceTransformAdapter(transformer.V1)
+		v1Adapter := newSourceTransformAdapter(transformer.V1, config.Default)
 		adapterVersion := v1Adapter.getAdapterVersion()
 		require.Equal(t, adapterVersion, transformer.V1)
 	})
@@ -39,9 +42,26 @@ func TestV1Adapter(t *testing.T) {
 			Destinations: []backendconfig.DestinationT{{ID: "testDestId"}},
 		}
 
-		v1Adapter := newSourceTransformAdapter(transformer.V1)
+		v1Adapter := newSourceTransformAdapter(transformer.V1, config.Default)
 
-		retBody, err := v1Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{Source: mockSrc}, testBody)
+		retBody, err := v1Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{
+			Source: mockSrc,
+			SourceDetails: struct {
+				ID               string
+				OriginalID       string
+				Name             string
+				SourceDefinition struct {
+					ID       string
+					Name     string
+					Category string
+					Type     string
+				}
+				Enabled     bool
+				WorkspaceID string
+				WriteKey    string
+				Config      map[string]interface{}
+			}{ID: testSrcId},
+		}, testBody)
 		require.Nil(t, err)
 
 		v1TransformerEvent := V1TransformerEvent{
@@ -56,7 +76,7 @@ func TestV1Adapter(t *testing.T) {
 
 func TestV2Adapter(t *testing.T) {
 	t.Run("should return the right url", func(t *testing.T) {
-		v2Adapter := newSourceTransformAdapter(transformer.V2)
+		v2Adapter := newSourceTransformAdapter(transformer.V2, config.Default)
 		testSrcType := "testSrcType"
 		testSrcTypeLower := "testsrctype"
 
@@ -66,7 +86,7 @@ func TestV2Adapter(t *testing.T) {
 	})
 
 	t.Run("should return the right adapter version", func(t *testing.T) {
-		v1Adapter := newSourceTransformAdapter(transformer.V2)
+		v1Adapter := newSourceTransformAdapter(transformer.V2, config.Default)
 		adapterVersion := v1Adapter.getAdapterVersion()
 		require.Equal(t, adapterVersion, transformer.V2)
 	})
@@ -79,10 +99,28 @@ func TestV2Adapter(t *testing.T) {
 			ID:           testSrcId,
 			Destinations: []backendconfig.DestinationT{{ID: "testDestId"}},
 		}
+		arCtx := &gwtypes.AuthRequestContext{
+			Source: mockSrc,
+			SourceDetails: struct {
+				ID               string
+				OriginalID       string
+				Name             string
+				SourceDefinition struct {
+					ID       string
+					Name     string
+					Category string
+					Type     string
+				}
+				Enabled     bool
+				WorkspaceID string
+				WriteKey    string
+				Config      map[string]interface{}
+			}{ID: testSrcId},
+		}
 
-		v2Adapter := newSourceTransformAdapter(transformer.V2)
+		v2Adapter := newSourceTransformAdapter(transformer.V2, config.Default)
 
-		retBody, err := v2Adapter.getTransformerEvent(&gwtypes.AuthRequestContext{Source: mockSrc}, testBody)
+		retBody, err := v2Adapter.getTransformerEvent(arCtx, testBody)
 		require.Nil(t, err)
 
 		v2TransformerEvent := V2TransformerEvent{

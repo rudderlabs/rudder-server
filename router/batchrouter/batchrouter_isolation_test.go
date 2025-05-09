@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
+
 	"github.com/samber/lo/mutable"
 
 	"github.com/google/uuid"
@@ -221,6 +223,10 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 	mockCBE := m.newMockConfigBackend(t, configJsonPath)
 	config.Set("CONFIG_BACKEND_URL", mockCBE.URL)
 	defer mockCBE.Close()
+
+	trServer := transformertest.NewBuilder().Build()
+	defer trServer.Close()
+	config.Set("DEST_TRANSFORM_URL", trServer.URL)
 
 	t.Logf("Setting up the mock warehouse")
 	mockWH := m.newMockWarehouse()
