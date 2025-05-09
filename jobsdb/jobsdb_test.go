@@ -1362,19 +1362,20 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
-	activeWorkspaces, err := jobsDB.GetActiveWorkspaces(context.Background(), "")
+	activeWorkspaces, err := jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 1)
 	require.ElementsMatch(t, []string{"ws-1"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal)
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 1)
 	require.ElementsMatch(t, []string{"ws-1"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal+"_other")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
-	require.Len(t, activeWorkspaces, 0)
+	// customVal filter deprecated
+	require.Len(t, activeWorkspaces, 1)
 
 	// triggerAddNewDS to trigger jobsDB to add new DS
 	triggerAddNewDS <- time.Now()
@@ -1391,19 +1392,20 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), "")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 2)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal)
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 2)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), customVal+"_other")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
-	require.Len(t, activeWorkspaces, 0)
+	// customVal filter deprecated
+	require.Len(t, activeWorkspaces, 2)
 
 	triggerAddNewDS <- time.Now()
 	require.Eventually(
@@ -1430,7 +1432,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	})
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
 
-	activeWorkspaces, err = jobsDB.GetActiveWorkspaces(context.Background(), "")
+	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID)
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 3)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2", "ws-3"}, activeWorkspaces)
@@ -1443,9 +1445,13 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	statStore, err := memstats.New()
 	require.NoError(t, err)
 	triggerAddNewDS := make(chan time.Time)
+	triggerMigrateDS := make(chan time.Time)
 	jobsDB := &Handle{
 		TriggerAddNewDS: func() <-chan time.Time {
 			return triggerAddNewDS
+		},
+		TriggerMigrateDS: func() <-chan time.Time {
+			return triggerMigrateDS
 		},
 		config: c,
 		stats:  statStore,
@@ -1462,7 +1468,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		for i := 0; i < numOfJob; i++ {
 			js[i] = &JobT{
 				WorkspaceId:  "workspace",
-				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":"", "param":"` + paramValue + `"}`),
+				Parameters:   []byte(`{"batch_id":1,"source_job_run_id":"", "source_id":"` + paramValue + `"}`),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1479,7 +1485,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("stored jobs")
 
-	parameterValues, err := jobsDB.GetDistinctParameterValues(context.Background(), "param")
+	parameterValues, err := jobsDB.GetDistinctParameterValues(context.Background(), SourceID)
 	require.NoError(t, err)
 	require.Len(t, parameterValues, 1)
 	require.ElementsMatch(t, []string{"param-1"}, parameterValues)
@@ -1489,7 +1495,6 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
-			t.Logf("tables %d", len(jobsDB.getDSList()))
 			return len(jobsDB.getDSList()) == 2
 		},
 		time.Second*5, time.Millisecond,
@@ -1500,7 +1505,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.NoError(t, err)
 	t.Log("stored jobs again")
 
-	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), "param")
+	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), SourceID)
 	require.NoError(t, err)
 	require.Len(t, parameterValues, 2)
 	require.ElementsMatch(t, []string{"param-1", "param-2"}, parameterValues)
@@ -1518,8 +1523,12 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	err = jobsDB.Store(context.Background(), jobs)
 	require.NoError(t, err)
 	t.Log("and stored jobs again")
+	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), SourceID)
+	require.NoError(t, err)
+	require.Len(t, parameterValues, 3)
+	require.ElementsMatch(t, []string{"param-1", "param-2", "param-3"}, parameterValues)
 
-	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{ParameterFilters: []ParameterFilterT{{Name: "param", Value: "param-3"}}, JobsLimit: 10})
+	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{ParameterFilters: []ParameterFilterT{{Name: "source_id", Value: "param-1"}}, JobsLimit: 10})
 	require.NoError(t, err)
 	statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
 		return &JobStatusT{
@@ -1530,11 +1539,13 @@ func TestGetDistinctParameterValues(t *testing.T) {
 		}
 	})
 	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
+	triggerMigrateDS <- time.Now()
+	triggerMigrateDS <- time.Now()
 
-	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), "param")
+	parameterValues, err = jobsDB.GetDistinctParameterValues(context.Background(), SourceID)
 	require.NoError(t, err)
-	require.Len(t, parameterValues, 3)
-	require.ElementsMatch(t, []string{"param-1", "param-2", "param-3"}, parameterValues)
+	require.Len(t, parameterValues, 2)
+	require.ElementsMatch(t, []string{"param-2", "param-3"}, parameterValues)
 }
 
 func TestPayloadSizeColumnQueries(t *testing.T) {

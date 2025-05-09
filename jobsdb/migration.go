@@ -190,6 +190,11 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			if err != nil {
 				return fmt.Errorf("acquire lock: %w", err)
 			}
+			tx.AddSuccessListener(func() {
+				for _, ds := range migrateFromDatasets {
+					jd.distinctValuesCache.RemoveDataset(ds.JobTable)
+				}
+			})
 			if err = jd.postMigrateHandleDS(tx, migrateFromDatasets); err != nil {
 				return fmt.Errorf("post migrate handle ds: %w", err)
 			}
@@ -207,7 +212,6 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				return fmt.Errorf("refresh ds range list: %w", err)
 			}
 		}
-
 	}
 	return err
 }
