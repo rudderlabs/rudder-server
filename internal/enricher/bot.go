@@ -28,13 +28,13 @@ func (e *botEnricher) Enrich(_ *backendconfig.SourceT, request *types.GatewayBat
 		}
 
 		// if the context section is missing on the event
-		// set it with default as map[string]interface{}
+		// set it with default as map[string]any
 		if _, ok := event["context"]; !ok {
-			event["context"] = map[string]interface{}{}
+			event["context"] = map[string]any{}
 		}
 
-		// if the context is other than map[string]interface{}, add error and continue
-		context, ok := event["context"].(map[string]interface{})
+		// if the context is other than map[string]any, add error and continue
+		context, ok := event["context"].(map[string]any)
 		if !ok {
 			enrichErrs = append(enrichErrs, errors.New("event doesn't have a valid context section"))
 			continue
