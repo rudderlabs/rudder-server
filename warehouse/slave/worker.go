@@ -13,17 +13,12 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
-	rservertypes "github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	whpayload "github.com/rudderlabs/rudder-server/warehouse/internal/payload"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/rudderlabs/rudder-server/services/controlplane"
-	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -34,7 +29,6 @@ import (
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -88,11 +82,6 @@ func newWorker(
 	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 	workerIdx int,
-	db *sqlquerywrapper.DB,
-	stagingRepo *repo.StagingFiles,
-	loadFilesRepo *repo.LoadFiles,
-	reporting rservertypes.Reporting,
-	controlplaneClient *controlplane.Client,
 ) *worker {
 	s := &worker{}
 
@@ -104,18 +93,6 @@ func newWorker(
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
 	s.workerIdx = workerIdx
-
-	s.uploadJobFactory = router.NewUploadJobFactory(
-		reporting,
-		db,
-		validations.NewDestinationValidator(),
-		nil, // loadfile generator can't be nil. 
-		conf,
-		logger,
-		statsFactory,
-		encodingFactory,
-	)
-
 
 	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 
@@ -600,8 +577,8 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 
 func (w *worker) processClaimedUploadStateMachineJob(ctx context.Context, claimedJob *notifier.ClaimJob) error {
 	var (
-		job     whpayload.UploadJobPayload
-		err     error
+		job whpayload.UploadJobPayload
+		err error
 	)
 
 	if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {

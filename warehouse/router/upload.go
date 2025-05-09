@@ -54,7 +54,7 @@ type UploadJobFactory struct {
 	reporting            types.Reporting
 	db                   *sqlquerywrapper.DB
 	destinationValidator validations.DestinationValidator
-	loadFile             *loadfiles.LoadFileGenerator
+	loadFile             loadfiles.Generator
 	conf                 *config.Config
 	logger               logger.Logger
 	statsFactory         stats.Stats
@@ -88,7 +88,7 @@ type UploadJob struct {
 	db                   *sqlquerywrapper.DB
 	reporting            types.Reporting
 	destinationValidator validations.DestinationValidator
-	loadfile             *loadfiles.LoadFileGenerator
+	loadfile             loadfiles.Generator
 	tableUploadsRepo     *repo.TableUploads
 	uploadsRepo          *repo.Uploads
 	stagingFileRepo      *repo.StagingFiles

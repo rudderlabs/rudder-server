@@ -170,17 +170,17 @@ func New(
 		statsFactory:         r.statsFactory,
 		db:                   r.db,
 		destinationValidator: validations.NewDestinationValidator(),
-		loadFile: &loadfiles.LoadFileGenerator{
-			Conf:               r.conf,
-			Logger:             r.logger.Child("loadfile"),
-			Notifier:           r.notifier,
-			StageRepo:          r.stagingRepo,
-			LoadRepo:           repo.NewLoadFiles(db, r.conf),
-			ControlPlaneClient: controlPlaneClient,
-		},
+		loadFile: loadfiles.NewLoadFileGenerator(
+			r.conf,
+			r.logger.Child("loadfile"),
+			r.notifier,
+			r.stagingRepo,
+			repo.NewLoadFiles(db, r.conf),
+			controlPlaneClient,
+			loadfiles.WithConfig(r.conf),
+		),
 		encodingFactory: encodingFactory,
 	}
-	loadfiles.WithConfig(r.uploadJobFactory.loadFile, r.conf)
 
 	r.loadReloadableConfig(warehouseutils.WHDestNameMap[destType])
 	r.loadStats()
