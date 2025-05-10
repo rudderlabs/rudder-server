@@ -277,6 +277,7 @@ func (r *Router) initWorker() chan *UploadJob {
 				r.incrementActiveWorkers()
 
 				if r.config.enableSlaveUpload.Load() {
+					r.logger.Info("using slave for upload emitting job notification")
 					// Create payload with complete job data
 					payload := &whpayload.UploadJobPayload{
 						Upload:       uploadJob.upload,
@@ -296,7 +297,7 @@ func (r *Router) initWorker() chan *UploadJob {
 						Payloads: []stdjson.RawMessage{
 							payloadBytes,
 						},
-						JobType: notifier.JobTypeUpload,
+						JobType: notifier.JobTypeUploadSM,
 					})
 					if err != nil {
 						r.logger.Errorf("[WH] Failed to publish upload job: %+v", err)
@@ -764,6 +765,7 @@ func (r *Router) loadReloadableConfig(whName string) {
 	r.config.warehouseSyncFreqIgnore = r.conf.GetReloadableBoolVar(false, "Warehouse.warehouseSyncFreqIgnore")
 	r.config.cronTrackerRetries = r.conf.GetReloadableInt64Var(5, 1, "Warehouse.cronTrackerRetries")
 	r.config.uploadBufferTimeInMin = r.conf.GetReloadableDurationVar(180, time.Minute, "Warehouse.uploadBufferTimeInMin")
+	r.config.enableSlaveUpload = r.conf.GetReloadableBoolVar(false, "Warehouse.enableSlaveUpload")
 }
 
 func (r *Router) loadStats() {

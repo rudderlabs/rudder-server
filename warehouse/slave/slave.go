@@ -3,9 +3,11 @@ package slave
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 
@@ -18,6 +20,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	rservertypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type slaveNotifier interface {
@@ -34,8 +37,10 @@ type Slave struct {
 	bcManager          *bcm.BackendConfigManager
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
-
-	config struct {
+	reporting          rservertypes.Reporting
+	db                 *sqlquerywrapper.DB
+	controlPlaneClient *controlplane.Client
+	config             struct {
 		noOfSlaveWorkerRoutines config.ValueLoader[int]
 	}
 }
@@ -48,6 +53,9 @@ func New(
 	bcManager *bcm.BackendConfigManager,
 	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
+	reporting rservertypes.Reporting,
+	db *sqlquerywrapper.DB,
+	controlPlaneClient *controlplane.Client,
 ) *Slave {
 	s := &Slave{}
 
@@ -59,6 +67,9 @@ func New(
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
 	s.config.noOfSlaveWorkerRoutines = conf.GetReloadableIntVar(4, 1, "Warehouse.noOfSlaveWorkerRoutines")
+	s.reporting = reporting
+	s.db = db
+	s.controlPlaneClient = controlPlaneClient
 
 	return s
 }
@@ -74,7 +85,7 @@ func (s *Slave) SetupSlave(ctx context.Context) error {
 		idx := workerIdx
 
 		g.Go(crash.NotifyWarehouse(func() error {
-			slaveWorker := newWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingFactory, idx)
+			slaveWorker := newWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingFactory, idx, &s.reporting, s.db)
 			slaveWorker.start(gCtx, jobNotificationChannel, slaveID)
 			return nil
 		}))

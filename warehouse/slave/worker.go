@@ -10,15 +10,21 @@ import (
 	"strconv"
 	"time"
 
+	rservertypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	whpayload "github.com/rudderlabs/rudder-server/warehouse/internal/payload"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/uploadjob"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -61,6 +67,7 @@ type worker struct {
 	workerIdx          int
 	db                 *sqlquerywrapper.DB
 	whManager          manager.WarehouseOperations
+	controlPlaneClient *controlplane.Client
 
 	config struct {
 		maxStagingFileReadBufferCapacityInK config.ValueLoader[int]
@@ -82,6 +89,9 @@ func newWorker(
 	constraintsManager *constraints.Manager,
 	encodingFactory *encoding.Factory,
 	workerIdx int,
+	reporting rservertypes.Reporting,
+	db *sqlquerywrapper.DB,
+	controlPlaneClient *controlplane.Client,
 ) *worker {
 	s := &worker{}
 
@@ -93,6 +103,19 @@ func newWorker(
 	s.constraintsManager = constraintsManager
 	s.encodingFactory = encodingFactory
 	s.workerIdx = workerIdx
+	s.controlPlaneClient = controlPlaneClient
+	lfGenerator := NewSyncGenerator(
+		s.conf,
+		s.log.Child("loadfile-generator"),
+		repo.NewStagingFiles(s.db),
+		repo.NewLoadFiles(s.db, s.conf),
+		s.controlPlaneClient,
+		s.workerIdx,
+		s.encodingFactory,
+		s.statsFactory,
+		s.processStagingFile,
+	)
+	s.uploadJobFactory = uploadjob.NewUploadJobFactory(reporting, db, validations.NewDestinationValidator(), lfGenerator, s.conf, s.log, s.statsFactory, s.encodingFactory)
 
 	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 
@@ -575,14 +598,22 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	return newColumnVal, err
 }
 
-func (w *worker) processClaimedUploadStateMachineJob(ctx context.Context, claimedJob *notifier.ClaimJob) error {
+func (w *worker) processClaimedUploadStateMachineJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	var (
 		job whpayload.UploadJobPayload
 		err error
 	)
 
+	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
+		w.stats.workerClaimProcessingFailed.Increment()
+
+		w.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
+			Err: err,
+		})
+	}
+
 	if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
-		return fmt.Errorf("unmarshalling payload: %w", err)
+		handleErr(err, claimedJob)
 	}
 
 	// Create warehouse manager if not exists
@@ -590,7 +621,7 @@ func (w *worker) processClaimedUploadStateMachineJob(ctx context.Context, claime
 		var err error
 		w.whManager, err = manager.NewWarehouseOperations(job.Upload.DestinationType, w.conf, w.log, w.statsFactory)
 		if err != nil {
-			return fmt.Errorf("creating warehouse manager: %w", err)
+			handleErr(err, claimedJob)
 		}
 	}
 
@@ -599,5 +630,8 @@ func (w *worker) processClaimedUploadStateMachineJob(ctx context.Context, claime
 		Warehouse:    job.Warehouse,
 		StagingFiles: job.StagingFiles,
 	}, w.whManager)
-	return uploadJob.Run()
+	err = uploadJob.Run()
+	if err != nil {
+		handleErr(err, claimedJob)
+	}
 }

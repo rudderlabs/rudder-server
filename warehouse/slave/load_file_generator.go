@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -17,21 +20,47 @@ import (
 	"golang.org/x/sync/errgroup"
 	"slices"
 	"strings"
+	"time"
 )
 
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
+type stagingFileProcessor func(ctx context.Context, job payload) ([]uploadResult, error)
+
 type SyncGenerator struct {
-	Conf   *config.Config
-	Logger logger.Logger
+	Conf                 *config.Config
+	Logger               logger.Logger
+	StageRepo            loadfiles.StageFileRepo
+	LoadRepo             loadfiles.LoadFileRepo
+	ControlPlaneClient   loadfiles.ControlPlaneClient
+	concurrentLoads      int
+	encodingFactory      *encoding.Factory
+	stats                stats.Stats
+	stagingFileProcessor stagingFileProcessor
+}
 
-	StageRepo loadfiles.StageFileRepo
-	LoadRepo  loadfiles.LoadFileRepo
-
-	ControlPlaneClient loadfiles.ControlPlaneClient
-
-	publishBatchSize             int
-	publishBatchSizePerWorkspace map[string]int
+func NewSyncGenerator(
+	conf *config.Config,
+	logger logger.Logger,
+	stageRepo loadfiles.StageFileRepo,
+	loadRepo loadfiles.LoadFileRepo,
+	controlPlaneClient loadfiles.ControlPlaneClient,
+	concurrentLoads int,
+	encodingFactory *encoding.Factory,
+	stats stats.Stats,
+	stagingFileProcessor stagingFileProcessor,
+) *SyncGenerator {
+	return &SyncGenerator{
+		Conf:                 conf,
+		Logger:               logger,
+		StageRepo:            stageRepo,
+		LoadRepo:             loadRepo,
+		ControlPlaneClient:   controlPlaneClient,
+		concurrentLoads:      concurrentLoads,
+		encodingFactory:      encodingFactory,
+		stats:                stats,
+		stagingFileProcessor: stagingFileProcessor,
+	}
 }
 
 func (s *SyncGenerator) ForceCreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
@@ -90,7 +119,7 @@ func (s *SyncGenerator) createFromStaging(ctx context.Context, job *model.Upload
 		}
 	}()
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(s.publishBatchSize)
+	g.SetLimit(s.concurrentLoads)
 	stagingFilesBatcher := stagingfiles.NewBatcher(s.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 128), s.Logger)
 	stagingFileGroups := stagingFilesBatcher.Batch(toProcessStagingFiles)
 	for _, fileGroups := range stagingFileGroups {
@@ -159,5 +188,65 @@ func (s *SyncGenerator) getLoadFileIDs(ctx context.Context, job *model.UploadJob
 }
 
 func (s *SyncGenerator) generateLoadFiles(ctx context.Context, job *model.UploadJob, stagingFiles []*model.StagingFile) error {
+	uniqueLoadGenID := misc.FastUUID().String()
+
+	for _, stagingFile := range stagingFiles {
+		jobPayload := payload{
+			UploadID:                     job.Upload.ID,
+			LoadFileType:                 job.Upload.LoadFileType,
+			SourceID:                     job.Warehouse.Source.ID,
+			SourceName:                   job.Warehouse.Source.Name,
+			DestinationID:                job.Upload.DestinationID,
+			DestinationName:              job.Warehouse.Destination.Name,
+			DestinationType:              job.Upload.DestinationType,
+			DestinationNamespace:         job.Warehouse.Namespace,
+			DestinationConfig:            job.Warehouse.Destination.Config,
+			WorkspaceID:                  job.Warehouse.Destination.WorkspaceID,
+			UniqueLoadGenID:              uniqueLoadGenID,
+			RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+			UseRudderStorage:             job.Upload.UseRudderStorage,
+			StagingUseRudderStorage:      stagingFile.UseRudderStorage,
+			DestinationRevisionID:        job.Warehouse.Destination.RevisionID,
+			StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
+		}
+		destinationRevisionIDMap, err := s.destinationRevisionIDMap(ctx, job)
+		if err != nil {
+			return err
+		}
+		if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
+			jobPayload.StagingDestinationConfig = revisionConfig.Config
+		}
+		if slices.Contains(warehouseutils.TimeWindowDestinations, job.Warehouse.Type) {
+			jobPayload.LoadFilePrefix = s.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
+		}
+
+		_, err = s.stagingFileProcessor(ctx, jobPayload)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *SyncGenerator) GetLoadFilePrefix(timeWindow time.Time, warehouse model.Warehouse) string {
+	switch warehouse.Type {
+	case warehouseutils.GCSDatalake:
+		windowFormat := timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+
+		if windowLayout := warehouse.GetStringDestinationConfig(s.Conf, model.TimeWindowLayoutSetting); windowLayout != "" {
+			windowFormat = timeWindow.Format(windowLayout)
+		}
+		if suffix := warehouse.GetStringDestinationConfig(s.Conf, model.TableSuffixSetting); suffix != "" {
+			windowFormat = fmt.Sprintf("%v/%v", suffix, windowFormat)
+		}
+		return windowFormat
+	case warehouseutils.S3Datalake:
+		if !schemarepository.UseGlue(&warehouse) {
+			return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+		}
+		if windowLayout := warehouse.GetStringDestinationConfig(s.Conf, model.TimeWindowLayoutSetting); windowLayout != "" {
+			return timeWindow.Format(windowLayout)
+		}
+	}
+	return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 }

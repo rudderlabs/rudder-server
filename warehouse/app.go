@@ -388,6 +388,9 @@ func (a *App) Run(ctx context.Context) error {
 				a.bcManager,
 				a.constraintsManager,
 				a.encodingFactory,
+				a.reporting,
+				a.db,
+				a.controlPlaneClient,
 			)
 			return s.SetupSlave(gCtx)
 		}))
