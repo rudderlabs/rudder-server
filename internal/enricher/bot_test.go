@@ -36,6 +36,28 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "non-bot event with name, url and isInvalidBrowser should not be enriched",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:               false,
+				BotName:             "test-bot",
+				BotURL:              "https://test-bot.com",
+				BotIsInvalidBrowser: true,
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+				},
+			},
+			expectError: false,
+		},
+		{
 			name: "bot event without context should be enriched with new context",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
