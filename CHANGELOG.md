@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.49.0](https://github.com/rudderlabs/rudder-server/compare/v1.48.0...v1.49.0) (2025-05-12)
+
+
+### Features
+
+* add support for processing of upload_v2 job type by slave ([#5796](https://github.com/rudderlabs/rudder-server/issues/5796)) ([67988d1](https://github.com/rudderlabs/rudder-server/commit/67988d18a64e89b525ba4b566335a47351cd95d9))
+* batch staging files for creating upload_v2 notifier jobs ([#5765](https://github.com/rudderlabs/rudder-server/issues/5765)) ([7dc3a45](https://github.com/rudderlabs/rudder-server/commit/7dc3a45c4adef714debacb677595bdf566750b09))
+* enable worker-based kafka client batching ([#5788](https://github.com/rudderlabs/rudder-server/issues/5788)) ([66dc19f](https://github.com/rudderlabs/rudder-server/commit/66dc19f7d8e2e844736a617c257a6e2945bfeae5))
+* support claim renewal in notifier jobs ([#5818](https://github.com/rudderlabs/rudder-server/issues/5818)) ([a499d9c](https://github.com/rudderlabs/rudder-server/commit/a499d9c07931cb42ed9803d7c9b0a0cc7c21dff5))
+* support new consent resolution strategy values ([#5798](https://github.com/rudderlabs/rudder-server/issues/5798)) ([181b95b](https://github.com/rudderlabs/rudder-server/commit/181b95ba3b74c81beb6334d95b9fc93c9b878577))
+* update config to add account details with destination in workspaceConfig ([#5753](https://github.com/rudderlabs/rudder-server/issues/5753)) ([dbd46bf](https://github.com/rudderlabs/rudder-server/commit/dbd46bfe4a075d6d4176ac9d5868076c4414a889))
+* update contract for account and accountDefinition ([#5830](https://github.com/rudderlabs/rudder-server/issues/5830)) ([c704b07](https://github.com/rudderlabs/rudder-server/commit/c704b0714aaa172e31b28f01011fb24bf50eb848))
+* use account to decide oauth type of a destination ([#5810](https://github.com/rudderlabs/rudder-server/issues/5810)) ([9165e8c](https://github.com/rudderlabs/rudder-server/commit/9165e8cc3e0978cc0a810e2170815de532e0b108))
+
+
+### Bug Fixes
+
+* add check for nil secret on oauthv2 ([#5807](https://github.com/rudderlabs/rudder-server/issues/5807)) ([fbc4abe](https://github.com/rudderlabs/rudder-server/commit/fbc4abe72fe2b684b316b9ccd33fc8ddbd4ae697))
+* convert bad request errors to 500 errors in oauth interceptor to prevent panics ([#5813](https://github.com/rudderlabs/rudder-server/issues/5813)) ([3a08ec4](https://github.com/rudderlabs/rudder-server/commit/3a08ec4f3f7ccf4246e70ef5b982fba6c72f07de))
+* **jobsdb:** completed datasets don't get deleted without a pair ([#5793](https://github.com/rudderlabs/rudder-server/issues/5793)) ([54aee71](https://github.com/rudderlabs/rudder-server/commit/54aee71bfb586c30be32e03292c017e460f90822))
+* reporting common client path with query ([#5842](https://github.com/rudderlabs/rudder-server/issues/5842)) ([c068920](https://github.com/rudderlabs/rudder-server/commit/c068920d6224631224dca22dfc77412cbfb9b1ec))
+* transformer client recycle ttl bound to connection idle timeout ([#5800](https://github.com/rudderlabs/rudder-server/issues/5800)) ([b13f92c](https://github.com/rudderlabs/rudder-server/commit/b13f92cc87fa0d2154599704c0fb1ecb70440c85))
+* update account type to remove id which we are getting as map key ([#5835](https://github.com/rudderlabs/rudder-server/issues/5835)) ([bc52242](https://github.com/rudderlabs/rudder-server/commit/bc52242c45af55e22483951fc869ee0d7a56dcd1))
+* ut mirroring race condition ([#5824](https://github.com/rudderlabs/rudder-server/issues/5824)) ([a4d579f](https://github.com/rudderlabs/rudder-server/commit/a4d579f85334805d5043cb5d7e1a7c057a7eb5a2))
+* warehouse cached schema mismatch ([#5805](https://github.com/rudderlabs/rudder-server/issues/5805)) ([4656247](https://github.com/rudderlabs/rudder-server/commit/465624782e9abc6761ad0450dcdd61e4a1b74052))
+* warehouse transformations mismatches ([#5779](https://github.com/rudderlabs/rudder-server/issues/5779)) ([01a7b83](https://github.com/rudderlabs/rudder-server/commit/01a7b838f885b55c4c9138a4e29f041d0ca449ae))
+
+
+### Miscellaneous
+
+* **deps:** bump github.com/snowflakedb/gosnowflake from 1.13.2 to 1.13.3 in the go_modules group ([#5787](https://github.com/rudderlabs/rudder-server/issues/5787)) ([41db33e](https://github.com/rudderlabs/rudder-server/commit/41db33e1b4737fd7b62ebd9b33fe5cd0b0ffb3a3))
+* **deps:** bump golangci/golangci-lint-action from 7 to 8 ([#5815](https://github.com/rudderlabs/rudder-server/issues/5815)) ([bf3e808](https://github.com/rudderlabs/rudder-server/commit/bf3e808657c91f3339d6b73b425c1795103fcbf4))
+* **jobsdb:** cache distinct parameters query result for all datasets except last ([#5752](https://github.com/rudderlabs/rudder-server/issues/5752)) ([e85811e](https://github.com/rudderlabs/rudder-server/commit/e85811ec7d82e22969181a4abbd3da01bc7c5b7c))
+* migrate from denisenkom/go-mssqldb to microsoft/go-mssqldb ([#5776](https://github.com/rudderlabs/rudder-server/issues/5776)) ([dbd46bf](https://github.com/rudderlabs/rudder-server/commit/dbd46bfe4a075d6d4176ac9d5868076c4414a889))
+* revert synapse staging table with max varchar length ([#5817](https://github.com/rudderlabs/rudder-server/issues/5817)) ([2418329](https://github.com/rudderlabs/rudder-server/commit/24183299659a9a8a15894fa53df0ebdb2f45c265))
+* **router:** support destination-specific configuration overrides for all options ([#5841](https://github.com/rudderlabs/rudder-server/issues/5841)) ([695cf53](https://github.com/rudderlabs/rudder-server/commit/695cf53c44a1967189d804e5b0fcd0d13f46921a))
+* synapse staging table with max varchar length ([#5775](https://github.com/rudderlabs/rudder-server/issues/5775)) ([2fc5384](https://github.com/rudderlabs/rudder-server/commit/2fc5384a1bbecbb67966e7e8dd9007e360fde175))
+* update accountDefination type with authenticationType ([#5791](https://github.com/rudderlabs/rudder-server/issues/5791)) ([2a24e59](https://github.com/rudderlabs/rudder-server/commit/2a24e593350bb5401d9bee891b282566459aea15))
+* update rudder-go-kit to 0.49.2 ([#5832](https://github.com/rudderlabs/rudder-server/issues/5832)) ([01a7b83](https://github.com/rudderlabs/rudder-server/commit/01a7b838f885b55c4c9138a4e29f041d0ca449ae))
+* upload embedded dt response difference samples to s3 ([#5792](https://github.com/rudderlabs/rudder-server/issues/5792)) ([c81001f](https://github.com/rudderlabs/rudder-server/commit/c81001f94e1187b0e4ec661ab37f88501b171bd0))
+* warehouse transformer migration to embedded destination transformer package ([#5827](https://github.com/rudderlabs/rudder-server/issues/5827)) ([e124bb0](https://github.com/rudderlabs/rudder-server/commit/e124bb0f846d1f21a6acc2c7eefed9aa09569a73))
+* warehouse transformer sample diff ([#5837](https://github.com/rudderlabs/rudder-server/issues/5837)) ([8af55de](https://github.com/rudderlabs/rudder-server/commit/8af55de0e8306e977470627b90051c0f7f36cbd7))
+* warehouse transformer uploader ([#5828](https://github.com/rudderlabs/rudder-server/issues/5828)) ([fc640bf](https://github.com/rudderlabs/rudder-server/commit/fc640bf96a6af9ec9bbd988219126413ecd2580c))
+* webhook integration test module upgrade ([#5665](https://github.com/rudderlabs/rudder-server/issues/5665)) ([f4130d1](https://github.com/rudderlabs/rudder-server/commit/f4130d161575f4698b71b22b4e14221ed8c9ea0e))
+
 ## [1.48.5](https://github.com/rudderlabs/rudder-server/compare/v1.48.4...v1.48.5) (2025-05-08)
 
 
