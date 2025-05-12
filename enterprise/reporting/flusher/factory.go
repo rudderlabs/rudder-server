@@ -45,7 +45,7 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 			return &NOPCronRunner{}, nil
 		}
 
-		commonClient := client.New(client.PathTrackedUsers, conf, log, stats)
+		commonClient := client.New(client.ServiceTrackedUsers, conf, log, stats)
 
 		// DEPRECATED: Remove this after migration to commonClient.
 		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
