@@ -119,6 +119,9 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 		if strings.Contains(diff, "\"0001-01-01T00:00:00.000Z\"") {
 			continue
 		}
+		if strings.Contains(diff, "\"auto-\"") {
+			continue
+		}
 		if differedEventsCount == 0 {
 			sampleDiff = diff
 		}
