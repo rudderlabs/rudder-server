@@ -69,7 +69,7 @@ func TestClientSendMetric(t *testing.T) {
 	conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
 
 	// Create the client
-	c := client.New(client.ServiceMetrics, conf, logger.NOP, statsStore)
+	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 
 	bucket, _ := reporting.GetAggregationBucketMinute(28017690, 10)
 
@@ -152,7 +152,7 @@ func TestClientSendMetric(t *testing.T) {
 	t.Run("ensure metrics are recorded", func(t *testing.T) {
 		// Expected tags for all metrics
 		expectedTags := stats.Tags{
-			"path":       string(client.ServiceMetrics),
+			"path":       string(client.RouteMetrics),
 			"module":     "test-client",
 			"instanceId": instanceID,
 			"endpoint":   serverURL.Host,
@@ -160,7 +160,7 @@ func TestClientSendMetric(t *testing.T) {
 
 		// Expected tags for HTTP metrics
 		expectedHttpTags := stats.Tags{
-			"path":       string(client.ServiceMetrics),
+			"path":       string(client.RouteMetrics),
 			"module":     "test-client",
 			"instanceId": instanceID,
 			"endpoint":   serverURL.Host,
@@ -210,7 +210,7 @@ func TestClientSendErrorMetric(t *testing.T) {
 	conf.Set("REPORTING_URL", server.URL)
 
 	// Create the client
-	c := client.New(client.ServiceMetrics, conf, logger.NOP, statsStore)
+	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 
 	// Create sample event as json.RawMessage
 	sampleEvent := json.RawMessage(`{"event": "test_event", "properties": {"test": "value"}}`)
@@ -272,7 +272,7 @@ func TestClientSendErrorMetric(t *testing.T) {
 
 	// Expected tags for all metrics
 	expectedTags := stats.Tags{
-		"path":       string(client.ServiceMetrics),
+		"path":       string(client.RouteMetrics),
 		"module":     "test-client",
 		"instanceId": "test-instance",
 		"endpoint":   serverURL.Host,
@@ -280,7 +280,7 @@ func TestClientSendErrorMetric(t *testing.T) {
 
 	// Expected tags for HTTP metrics
 	expectedHttpTags := stats.Tags{
-		"path":       string(client.ServiceMetrics),
+		"path":       string(client.RouteMetrics),
 		"module":     "test-client",
 		"instanceId": "test-instance",
 		"endpoint":   serverURL.Host,
@@ -341,7 +341,7 @@ func TestClient5xx(t *testing.T) {
 			conf.Set("REPORTING_URL", server.URL)
 			conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
 
-			c := client.New(client.ServiceMetrics, conf, logger.NOP, statsStore)
+			c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
 
 			// Send the metric and expect an error
 			err = c.Send(context.Background(), metric)
@@ -353,7 +353,7 @@ func TestClient5xx(t *testing.T) {
 
 			// Expected tags for HTTP metrics
 			expectedHttpTags := stats.Tags{
-				"path":       string(client.ServiceMetrics),
+				"path":       string(client.RouteMetrics),
 				"module":     "test-client",
 				"instanceId": "2",
 				"endpoint":   serverURL.Host,
@@ -368,126 +368,126 @@ func TestClient5xx(t *testing.T) {
 	}
 }
 
-func TestServiceEndpointURL(t *testing.T) {
+func TestRouteURL(t *testing.T) {
 	tests := []struct {
 		name        string
-		endpoint    client.ServiceRoute
+		route       client.Route
 		baseURL     string
 		wantURL     string
 		wantErr     bool
 		errContains string
 	}{
 		{
-			name:     "valid metrics endpoint",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "valid metrics endpoint",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "valid record errors endpoint",
-			endpoint: client.ServiceRecordErrors,
-			baseURL:  "https://reporting.dev.rudderlabs.com",
-			wantURL:  "https://reporting.dev.rudderlabs.com/recordErrors",
-			wantErr:  false,
+			name:    "valid record errors endpoint",
+			route:   client.RouteRecordErrors,
+			baseURL: "https://reporting.dev.rudderlabs.com",
+			wantURL: "https://reporting.dev.rudderlabs.com/recordErrors",
+			wantErr: false,
 		},
 		{
-			name:     "valid tracked users endpoint",
-			endpoint: client.ServiceTrackedUsers,
-			baseURL:  "https://reporting.dev.rudderlabs.com",
-			wantURL:  "https://reporting.dev.rudderlabs.com/trackedUser",
-			wantErr:  false,
+			name:    "valid tracked users endpoint",
+			route:   client.RouteTrackedUsers,
+			baseURL: "https://reporting.dev.rudderlabs.com",
+			wantURL: "https://reporting.dev.rudderlabs.com/trackedUser",
+			wantErr: false,
 		},
 		{
 			name:        "invalid base URL",
-			endpoint:    client.ServiceMetrics,
+			route:       client.RouteMetrics,
 			baseURL:     "://invalid-url",
 			wantErr:     true,
 			errContains: "parsing base URL",
 		},
 		{
 			name:        "invalid service endpoint",
-			endpoint:    client.ServiceRoute("://invalid-endpoint"),
+			route:       client.Route("://invalid-endpoint"),
 			baseURL:     "https://reporting.dev.rudderlabs.com",
 			wantErr:     true,
 			errContains: "parsing service endpoint",
 		},
 		{
-			name:     "base URL with trailing slash",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com/",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with trailing slash",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com/",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with trailing dot",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com./",
-			wantURL:  "https://reporting.dev.rudderlabs.com./metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with trailing dot",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com./",
+			wantURL: "https://reporting.dev.rudderlabs.com./metrics?version=v1",
+			wantErr: false,
 		},
 
 		{
-			name:     "base URL with existing path",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com/api",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with existing path",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com/api",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with multiple trailing slashes",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com///",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with multiple trailing slashes",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com///",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with relative path up",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com/api/../",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with relative path up",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com/api/../",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with relative path current",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com/api/./",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with relative path current",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com/api/./",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with complex relative path",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com/api/v1/../v2/./v3/",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with complex relative path",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com/api/v1/../v2/./v3/",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with encoded path",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com/api%2Fv1",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with encoded path",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com/api%2Fv1",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with query parameters",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com?param=value",
-			wantURL:  "https://reporting.dev.rudderlabs.com/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with query parameters",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com?param=value",
+			wantURL: "https://reporting.dev.rudderlabs.com/metrics?version=v1",
+			wantErr: false,
 		},
 		{
-			name:     "base URL with port",
-			endpoint: client.ServiceMetrics,
-			baseURL:  "https://reporting.dev.rudderlabs.com:8080",
-			wantURL:  "https://reporting.dev.rudderlabs.com:8080/metrics?version=v1",
-			wantErr:  false,
+			name:    "base URL with port",
+			route:   client.RouteMetrics,
+			baseURL: "https://reporting.dev.rudderlabs.com:8080",
+			wantURL: "https://reporting.dev.rudderlabs.com:8080/metrics?version=v1",
+			wantErr: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.endpoint.URL(tt.baseURL)
+			got, err := tt.route.URL(tt.baseURL)
 			if tt.wantErr {
 				require.Error(t, err)
 				if tt.errContains != "" {

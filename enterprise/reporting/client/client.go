@@ -31,18 +31,18 @@ const (
 )
 
 const (
-	ServiceMetrics      ServiceRoute = "/metrics?version=v1"
-	ServiceRecordErrors ServiceRoute = "/recordErrors"
-	ServiceTrackedUsers ServiceRoute = "/trackedUser"
+	RouteMetrics      Route = "/metrics?version=v1"
+	RouteRecordErrors Route = "/recordErrors"
+	RouteTrackedUsers Route = "/trackedUser"
 )
 
-// ServiceRoute contains the HTTP path and query string for the service.
-type ServiceRoute string
+// Route contains the HTTP path and query string for the service.
+type Route string
 
-// URL returns the URL for the service endpoint, given the base URL.
-// * baseURL provides only the scheme, host, and port for the URL.
-// * ServiceEndpoint provides path and query parameters.
-func (p ServiceRoute) URL(baseURL string) (url.URL, error) {
+// URL returns the absolute URL for the route, given a base URL.
+// * baseURL provides only the scheme, host, and port.
+// * Route provides path and query parameters.
+func (p Route) URL(baseURL string) (url.URL, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return url.URL{}, fmt.Errorf("parsing base URL: %w", err)
@@ -61,7 +61,7 @@ func (p ServiceRoute) URL(baseURL string) (url.URL, error) {
 
 // Client handles sending metrics to the reporting service
 type Client struct {
-	route               ServiceRoute
+	route               Route
 	reportingServiceURL string
 
 	httpClient *http.Client
@@ -89,7 +89,7 @@ func backOffFromConfig(conf *config.Config) backoff.BackOff {
 }
 
 // New creates a new reporting client
-func New(path ServiceRoute, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
 	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
