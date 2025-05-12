@@ -111,12 +111,12 @@ func (rt *Handle) Setup(
 
 	rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
 
-	rt.drainConcurrencyLimit = config.GetReloadableIntVar(1, 1, "Router."+destType+".eventOrderDrainedConcurrencyLimit", "Router.eventOrderDrainedConcurrencyLimit")
-	rt.eventOrderKeyThreshold = config.GetReloadableIntVar(200, 1, "Router."+destType+".eventOrderKeyThreshold", "Router.eventOrderKeyThreshold")
-	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, "Router."+destType+".eventOrderDisabledStateDuration", "Router.eventOrderDisabledStateDuration")
-	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, "Router."+destType+".eventOrderHalfEnabledStateDuration", "Router.eventOrderHalfEnabledStateDuration")
-	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, "Router."+destType+".reportJobsdbPayload", "Router.reportJobsdbPayload")
-	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, "Router."+destType+".saveDestinationResponseOverride", "Router.saveDestinationResponseOverride")
+	rt.drainConcurrencyLimit = config.GetReloadableIntVar(1, 1, getRouterConfigKeys("eventOrderDrainedConcurrencyLimit", destType)...)
+	rt.eventOrderKeyThreshold = config.GetReloadableIntVar(200, 1, getRouterConfigKeys("eventOrderKeyThreshold", destType)...)
+	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, getRouterConfigKeys("eventOrderDisabledStateDuration", destType)...)
+	rt.eventOrderHalfEnabledStateDuration = config.GetReloadableDurationVar(10, time.Minute, getRouterConfigKeys("eventOrderHalfEnabledStateDuration", destType)...)
+	rt.reportJobsdbPayload = config.GetReloadableBoolVar(true, getRouterConfigKeys("reportJobsdbPayload", destType)...)
+	rt.saveDestinationResponseOverride = config.GetReloadableBoolVar(false, getRouterConfigKeys("saveDestinationResponseOverride", destType)...)
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
@@ -155,11 +155,11 @@ func (rt *Handle) Setup(
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
-	orderingDisabledWorkspaceIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledWorkspaceIDs")
+	orderingDisabledWorkspaceIDs := config.GetReloadableStringSliceVar(nil, getRouterConfigKeys("orderingDisabledWorkspaceIDs", destType)...)
 	rt.eventOrderingDisabledForWorkspace = func(workspaceID string) bool {
 		return slices.Contains(orderingDisabledWorkspaceIDs.Load(), workspaceID)
 	}
-	orderingDisabledDestinationIDs := config.GetReloadableStringSliceVar(nil, "Router.orderingDisabledDestinationIDs")
+	orderingDisabledDestinationIDs := config.GetReloadableStringSliceVar(nil, getRouterConfigKeys("orderingDisabledDestinationIDs", destType)...)
 	rt.eventOrderingDisabledForDestination = func(destinationID string) bool {
 		return slices.Contains(orderingDisabledDestinationIDs.Load(), destinationID)
 	}
@@ -187,11 +187,11 @@ func (rt *Handle) Setup(
 	rt.backgroundWait = g.Wait
 
 	var limiterGroup sync.WaitGroup
-	limiterStatsPeriod := config.GetDuration("Router.Limiter.statsPeriod", 15, time.Second)
+	limiterStatsPeriod := config.GetDurationVar(15, time.Second, getRouterConfigKeys("Limiter.statsPeriod", destType)...)
 	rt.limiter.pickup = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_pickup",
 		getReloadableRouterConfigInt("Limiter.pickup.limit", rt.destType, 100),
 		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.pickup.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, getRouterConfigKeys("Limiter.pickup.dynamicPeriod", destType)...)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
@@ -202,7 +202,7 @@ func (rt *Handle) Setup(
 	rt.limiter.transform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_transform",
 		getReloadableRouterConfigInt("Limiter.transform.limit", rt.destType, 200),
 		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.transform.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, getRouterConfigKeys("Limiter.transform.dynamicPeriod", destType)...)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
@@ -213,7 +213,7 @@ func (rt *Handle) Setup(
 	rt.limiter.batch = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_batch",
 		getReloadableRouterConfigInt("Limiter.batch.limit", rt.destType, 200),
 		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.batch.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, getRouterConfigKeys("Limiter.batch.dynamicPeriod", destType)...)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
@@ -224,7 +224,7 @@ func (rt *Handle) Setup(
 	rt.limiter.process = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_process",
 		getReloadableRouterConfigInt("Limiter.process.limit", rt.destType, 1024),
 		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Router.Limiter.process.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, getRouterConfigKeys("Limiter.process.dynamicPeriod", destType)...)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
@@ -304,29 +304,29 @@ func (rt *Handle) Setup(
 func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.jobsDBCommandTimeout = config.GetReloadableDurationVar(90, time.Second, "JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout")
 	rt.reloadableConfig.jobdDBMaxRetries = config.GetReloadableIntVar(2, 1, "JobsDB.Router.MaxRetries", "JobsDB.MaxRetries")
-	rt.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(20, 1, "Router."+rt.destType+".noOfJobsToBatchInAWorker", "Router.noOfJobsToBatchInAWorker")
-	rt.reloadableConfig.maxFailedCountForJob = config.GetReloadableIntVar(3, 1, "Router."+rt.destType+".maxFailedCountForJob", "Router.maxFailedCountForJob")
-	rt.reloadableConfig.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, "Router.RSources"+rt.destType+".maxFailedCountForJob", "Router.RSources.maxFailedCountForJob")
-	rt.reloadableConfig.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Router."+rt.destType+".PayloadLimit", "Router.PayloadLimit")
-	rt.reloadableConfig.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, "Router."+rt.destType+".retryTimeWindow", "Router.retryTimeWindow")
-	rt.reloadableConfig.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, "Router.RSources"+rt.destType+".retryTimeWindow", "Router.RSources.retryTimeWindow")
-	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, "Router."+rt.destType+".maxDSQuery", "Router.maxDSQuery")
-	rt.reloadableConfig.savePayloadOnError = config.GetReloadableBoolVar(false, "Router."+rt.destType+".savePayloadOnError", "Router.savePayloadOnError")
-	rt.reloadableConfig.transformerProxy = config.GetReloadableBoolVar(false, "Router."+rt.destType+".transformerProxy", "Router.transformerProxy")
-	rt.reloadableConfig.skipRtAbortAlertForTransformation = config.GetReloadableBoolVar(false, "Router."+rt.destType+".skipRtAbortAlertForTf", "Router.skipRtAbortAlertForTf")
-	rt.reloadableConfig.skipRtAbortAlertForDelivery = config.GetReloadableBoolVar(false, "Router."+rt.destType+".skipRtAbortAlertForDelivery", "Router.skipRtAbortAlertForDelivery")
-	rt.reloadableConfig.jobQueryBatchSize = config.GetReloadableIntVar(10000, 1, "Router.jobQueryBatchSize")
-	rt.reloadableConfig.updateStatusBatchSize = config.GetReloadableIntVar(1000, 1, "Router.updateStatusBatchSize")
-	rt.reloadableConfig.readSleep = config.GetReloadableDurationVar(1000, time.Millisecond, "Router.readSleep", "Router.readSleepInMS")
-	rt.reloadableConfig.jobsBatchTimeout = config.GetReloadableDurationVar(5, time.Second, "Router.jobsBatchTimeout", "Router.jobsBatchTimeoutInSec")
-	rt.reloadableConfig.maxStatusUpdateWait = config.GetReloadableDurationVar(5, time.Second, "Router.maxStatusUpdateWait", "Router.maxStatusUpdateWaitInS")
-	rt.reloadableConfig.minRetryBackoff = config.GetReloadableDurationVar(10, time.Second, "Router.minRetryBackoff", "Router.minRetryBackoffInS")
-	rt.reloadableConfig.maxRetryBackoff = config.GetReloadableDurationVar(300, time.Second, "Router.maxRetryBackoff", "Router.maxRetryBackoffInS")
-	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, "Router.pickupFlushInterval")
-	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, "Router.failingJobsPenaltySleep")
-	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, "Router.failingJobsPenaltyThreshold")
-	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, "Router."+rt.destType+".oauthV2Enabled", "Router.oauthV2Enabled")
-	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, "Router."+rt.destType+".oauth.expirationTimeDiff", "Router.oauth.expirationTimeDiff")
+	rt.reloadableConfig.noOfJobsToBatchInAWorker = config.GetReloadableIntVar(20, 1, getRouterConfigKeys("noOfJobsToBatchInAWorker", rt.destType)...)
+	rt.reloadableConfig.maxFailedCountForJob = config.GetReloadableIntVar(3, 1, getRouterConfigKeys("maxFailedCountForJob", rt.destType)...)
+	rt.reloadableConfig.maxFailedCountForSourcesJob = config.GetReloadableIntVar(3, 1, getRouterConfigKeys("RSources.maxFailedCountForJob", rt.destType)...)
+	rt.reloadableConfig.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, getRouterConfigKeys("PayloadLimit", rt.destType)...)
+	rt.reloadableConfig.retryTimeWindow = config.GetReloadableDurationVar(180, time.Minute, getRouterConfigKeys("retryTimeWindow", rt.destType)...)
+	rt.reloadableConfig.sourcesRetryTimeWindow = config.GetReloadableDurationVar(1, time.Minute, getRouterConfigKeys("RSources.retryTimeWindow", rt.destType)...)
+	rt.reloadableConfig.maxDSQuerySize = config.GetReloadableIntVar(10, 1, getRouterConfigKeys("maxDSQuery", rt.destType)...)
+	rt.reloadableConfig.savePayloadOnError = config.GetReloadableBoolVar(false, getRouterConfigKeys("savePayloadOnError", rt.destType)...)
+	rt.reloadableConfig.transformerProxy = config.GetReloadableBoolVar(false, getRouterConfigKeys("transformerProxy", rt.destType)...)
+	rt.reloadableConfig.skipRtAbortAlertForTransformation = config.GetReloadableBoolVar(false, getRouterConfigKeys("skipRtAbortAlertForTf", rt.destType)...)
+	rt.reloadableConfig.skipRtAbortAlertForDelivery = config.GetReloadableBoolVar(false, getRouterConfigKeys("skipRtAbortAlertForDelivery", rt.destType)...)
+	rt.reloadableConfig.jobQueryBatchSize = config.GetReloadableIntVar(10000, 1, getRouterConfigKeys("jobQueryBatchSize", rt.destType)...)
+	rt.reloadableConfig.updateStatusBatchSize = config.GetReloadableIntVar(1000, 1, getRouterConfigKeys("updateStatusBatchSize", rt.destType)...)
+	rt.reloadableConfig.readSleep = config.GetReloadableDurationVar(1000, time.Millisecond, getRouterConfigKeys("readSleep", rt.destType)...)
+	rt.reloadableConfig.jobsBatchTimeout = config.GetReloadableDurationVar(5, time.Second, getRouterConfigKeys("jobsBatchTimeout", rt.destType)...)
+	rt.reloadableConfig.maxStatusUpdateWait = config.GetReloadableDurationVar(5, time.Second, getRouterConfigKeys("maxStatusUpdateWait", rt.destType)...)
+	rt.reloadableConfig.minRetryBackoff = config.GetReloadableDurationVar(10, time.Second, getRouterConfigKeys("minRetryBackoff", rt.destType)...)
+	rt.reloadableConfig.maxRetryBackoff = config.GetReloadableDurationVar(300, time.Second, getRouterConfigKeys("maxRetryBackoff", rt.destType)...)
+	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, getRouterConfigKeys("pickupFlushInterval", rt.destType)...)
+	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, getRouterConfigKeys("failingJobsPenaltySleep", rt.destType)...)
+	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, getRouterConfigKeys("failingJobsPenaltyThreshold", rt.destType)...)
+	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, getRouterConfigKeys("oauthV2Enabled", rt.destType)...)
+	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("expirationTimeDiff", rt.destType)...)
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",
