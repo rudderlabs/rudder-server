@@ -99,15 +99,15 @@ func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (clu
 	}
 
 	if forceStaticMode {
-		log.Info("forcing the use of Static Cluster Manager")
+		log.Infon("forcing the use of Static Cluster Manager")
 		modeProvider = staticModeProvider()
 	} else {
 		switch deploymentType {
 		case deployment.MultiTenantType:
-			log.Info("using ETCD Based Dynamic Cluster Manager")
+			log.Infon("using ETCD Based Dynamic Cluster Manager")
 			modeProvider = state.NewETCDDynamicProvider()
 		case deployment.DedicatedType:
-			log.Info("using Static Cluster Manager")
+			log.Infon("using Static Cluster Manager")
 			modeProvider = staticModeProvider()
 		default:
 			return modeProvider, fmt.Errorf("unsupported deployment type: %q", deploymentType)

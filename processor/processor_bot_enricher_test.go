@@ -88,7 +88,6 @@ func TestProcessorBotEnrichment(t *testing.T) {
 				require.False(t, gjson.Get(event, "context.bot.url").Exists(), "bot URL should not be present when invalid browser")
 			})
 	})
-
 }
 
 type botScenario struct {
