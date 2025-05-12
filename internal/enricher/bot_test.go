@@ -3,7 +3,7 @@ package enricher
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -55,7 +55,7 @@ func TestBotEnricher(t *testing.T) {
 					"event": "test-event",
 					"context": map[string]interface{}{
 						"isBot": true,
-						"bot": BotDetails{
+						"bot": botDetails{
 							Name:             "test-bot",
 							URL:              "https://test-bot.com",
 							IsInvalidBrowser: false,
@@ -83,7 +83,7 @@ func TestBotEnricher(t *testing.T) {
 					"event": "test-event",
 					"context": map[string]interface{}{
 						"isBot": true,
-						"bot": BotDetails{
+						"bot": botDetails{
 							IsInvalidBrowser: true,
 						},
 					},
@@ -114,7 +114,7 @@ func TestBotEnricher(t *testing.T) {
 					"context": map[string]interface{}{
 						"existing": "value",
 						"isBot":    true,
-						"bot": BotDetails{
+						"bot": botDetails{
 							Name:             "test-bot",
 							URL:              "https://test-bot.com",
 							IsInvalidBrowser: false,
@@ -132,7 +132,7 @@ func TestBotEnricher(t *testing.T) {
 						"event": "test-event",
 						"context": map[string]interface{}{
 							"isBot": false,
-							"bot": BotDetails{
+							"bot": botDetails{
 								Name:             "old-bot",
 								URL:              "https://old-bot.com",
 								IsInvalidBrowser: false,
@@ -152,7 +152,7 @@ func TestBotEnricher(t *testing.T) {
 					"event": "test-event",
 					"context": map[string]interface{}{
 						"isBot": true,
-						"bot": BotDetails{
+						"bot": botDetails{
 							Name:             "new-bot",
 							URL:              "https://new-bot.com",
 							IsInvalidBrowser: false,
@@ -188,16 +188,16 @@ func TestBotEnricher(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			enricher, err := NewBotEnricher()
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			err = enricher.Enrich(nil, tt.request, tt.eventParams)
 			if tt.expectError {
-				assert.Error(t, err)
+				require.Error(t, err)
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 
-			assert.Equal(t, tt.expectedEvents, tt.request.Batch)
+			require.Equal(t, tt.expectedEvents, tt.request.Batch)
 		})
 	}
 }

@@ -141,7 +141,7 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	var enrichers []enricher.PipelineEnricher
 
 	if conf.GetBool("GeoEnrichment.enabled", false) {
-		log.Infof("Setting up the geolocation pipeline enricher")
+		log.Infon("Setting up the geolocation pipeline enricher")
 
 		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
 		if err != nil {
@@ -151,7 +151,7 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	}
 
 	if conf.GetBool("BotEnrichment.enabled", true) {
-		log.Infof("Setting up the bot pipeline enricher")
+		log.Infon("Setting up the bot pipeline enricher")
 
 		botEnricher, err := enricher.NewBotEnricher()
 		if err != nil {

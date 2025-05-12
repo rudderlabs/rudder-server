@@ -7,7 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
-type BotDetails struct {
+type botDetails struct {
 	Name             string `json:"name,omitempty"`
 	URL              string `json:"url,omitempty"`
 	IsInvalidBrowser bool   `json:"isInvalidBrowser,omitempty"`
@@ -41,7 +41,7 @@ func (e *botEnricher) Enrich(_ *backendconfig.SourceT, request *types.GatewayBat
 		}
 
 		context["isBot"] = true
-		context["bot"] = BotDetails{
+		context["bot"] = botDetails{
 			Name:             eventParams.BotName,
 			URL:              eventParams.BotURL,
 			IsInvalidBrowser: eventParams.BotIsInvalidBrowser,
