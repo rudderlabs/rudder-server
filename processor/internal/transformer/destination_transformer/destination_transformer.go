@@ -9,18 +9,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -34,6 +37,11 @@ import (
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+type warehouseClient interface {
+	Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response
+	CompareResponsesAndUpload(ctx context.Context, events []types.TransformerEvent, legacyResponse types.Response)
+}
 
 type Opt func(*Client)
 
@@ -72,15 +80,22 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
 
-	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(10000, 1, "Processor.DestinationTransformer.maxLoggedEvents")
+	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.maxLoggedEvents")
 
 	handle.stats.comparisonTime = handle.stat.NewStat("embedded_destination_transform_comparison_time", stats.TimerType)
 	handle.stats.matchedEvents = handle.stat.NewStat("embedded_destination_transform_matched_events", stats.CountType)
 	handle.stats.mismatchedEvents = handle.stat.NewStat("embedded_destination_transform_mismatched_events", stats.CountType)
 
-	handle.loggedEvents = 0
-	handle.loggedEventsMu = sync.Mutex{}
-	handle.loggedFileName = generateLogFileName()
+	var err error
+	handle.samplingFileManager, err = getSamplingUploader(conf, log)
+	if err != nil {
+		log.Errorn("failed to create dt sampling file manager", obskit.Error(err))
+		handle.samplingFileManager = nil
+	}
+
+	handle.warehouseClient = warehouse.New(conf, log, stat)
+	handle.config.warehouseTransformations.enable = conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
+	handle.config.warehouseTransformations.verify = conf.GetReloadableBoolVar(true, "Processor.verifyWarehouseTransformations")
 
 	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 
@@ -102,13 +117,18 @@ type Client struct {
 
 		maxLoggedEvents config.ValueLoader[int]
 
-		compactionEnabled   config.ValueLoader[bool]
+		compactionEnabled        config.ValueLoader[bool]
+		warehouseTransformations struct {
+			enable config.ValueLoader[bool]
+			verify config.ValueLoader[bool]
+		}
 		compactionSupported bool
 	}
-	conf   *config.Config
-	log    logger.Logger
-	stat   stats.Stats
-	client transformerclient.Client
+	conf            *config.Config
+	log             logger.Logger
+	stat            stats.Stats
+	client          transformerclient.Client
+	warehouseClient warehouseClient
 
 	stats struct {
 		comparisonTime   stats.Timer
@@ -116,9 +136,8 @@ type Client struct {
 		mismatchedEvents stats.Counter
 	}
 
-	loggedEventsMu sync.Mutex
-	loggedEvents   int64
-	loggedFileName string
+	loggedEvents        atomic.Int64
+	samplingFileManager *filemanager.S3Manager
 }
 
 func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -380,6 +399,17 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
+	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok && c.config.warehouseTransformations.enable.Load() {
+		if c.config.warehouseTransformations.verify.Load() {
+			legacyResponse := c.transform(ctx, clientEvents)
+			go func() {
+				c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
+			}()
+			return legacyResponse
+		}
+		return c.warehouseClient.Transform(ctx, clientEvents)
+	}
+
 	impl, ok := embeddedTransformerImpls[destType]
 	if !ok {
 		return c.transform(ctx, clientEvents)
@@ -391,7 +421,9 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		legacyTransformerResponse := c.transform(ctx, clientEvents)
 		embeddedTransformerResponse := impl(ctx, clientEvents)
 
-		c.CompareAndLog(embeddedTransformerResponse, legacyTransformerResponse)
+		go func() {
+			c.CompareAndLog(ctx, embeddedTransformerResponse, legacyTransformerResponse)
+		}()
 
 		return legacyTransformerResponse
 	}
@@ -428,4 +460,33 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 
 	}
 	return jsonrs.Marshal(data)
+}
+
+func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+	var (
+		bucket           = conf.GetString("DTSampling.Bucket", "processor-dt-sampling")
+		endpoint         = conf.GetString("DTSampling.Endpoint", "")
+		accessKeyID      = conf.GetStringVar("", "DTSampling.AccessKeyId", "AWS_ACCESS_KEY_ID")
+		accessKey        = conf.GetStringVar("", "DTSampling.AccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBool("DTSampling.S3ForcePathStyle", false)
+		disableSSL       = conf.GetBool("DTSampling.DisableSsl", false)
+		enableSSE        = conf.GetBoolVar(false, "DTSampling.EnableSse", "AWS_ENABLE_SSE")
+		useGlue          = conf.GetBool("DTSampling.UseGlue", false)
+		region           = conf.GetStringVar("us-east-1", "DTSampling.Region", "AWS_DEFAULT_REGION")
+	)
+	s3Config := map[string]any{
+		"bucketName":       bucket,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"accessKey":        accessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
+		"useGlue":          useGlue,
+		"region":           region,
+	}
+
+	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
+		return conf.GetDuration("DTSampling.Timeout", 120, time.Second)
+	})
 }

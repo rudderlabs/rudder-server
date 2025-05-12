@@ -32,6 +32,7 @@ type mockSlaveNotifier struct {
 	subscribeCh    chan *notifier.ClaimJobResponse
 	publishCh      chan *notifier.ClaimJob
 	maintenanceErr error
+	refreshClaim   func(ctx context.Context, jobId int64) error
 }
 
 func (m *mockSlaveNotifier) Subscribe(context.Context, string, int) <-chan *notifier.ClaimJob {
@@ -44,6 +45,13 @@ func (m *mockSlaveNotifier) UpdateClaim(_ context.Context, _ *notifier.ClaimJob,
 
 func (m *mockSlaveNotifier) RunMaintenance(context.Context) error {
 	return m.maintenanceErr
+}
+
+func (m *mockSlaveNotifier) RefreshClaim(ctx context.Context, jobId int64) error {
+	if m.refreshClaim != nil {
+		return m.refreshClaim(ctx, jobId)
+	}
+	return nil
 }
 
 func TestSlave(t *testing.T) {
@@ -112,24 +120,26 @@ func TestSlave(t *testing.T) {
 	}()
 
 	p := payload{
-		UploadID:                     1,
-		StagingFileID:                1,
-		StagingFileLocation:          jobLocation,
-		UploadSchema:                 schemaMap,
-		WorkspaceID:                  "test_workspace_id",
-		SourceID:                     "test_source_id",
-		SourceName:                   "test_source_name",
-		DestinationID:                "test_destination_id",
-		DestinationName:              "test_destination_name",
-		DestinationType:              "test_destination_type",
-		DestinationNamespace:         "test_destination_namespace",
-		DestinationRevisionID:        uuid.New().String(),
-		StagingDestinationRevisionID: uuid.New().String(),
-		DestinationConfig:            destConf,
-		StagingDestinationConfig:     map[string]interface{}{},
-		UniqueLoadGenID:              uuid.New().String(),
-		RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
-		LoadFileType:                 "csv",
+		basePayload: basePayload{
+			UploadID:                     1,
+			UploadSchema:                 schemaMap,
+			WorkspaceID:                  "test_workspace_id",
+			SourceID:                     "test_source_id",
+			SourceName:                   "test_source_name",
+			DestinationID:                "test_destination_id",
+			DestinationName:              "test_destination_name",
+			DestinationType:              "test_destination_type",
+			DestinationNamespace:         "test_destination_namespace",
+			DestinationRevisionID:        uuid.New().String(),
+			StagingDestinationRevisionID: uuid.New().String(),
+			DestinationConfig:            destConf,
+			StagingDestinationConfig:     map[string]interface{}{},
+			UniqueLoadGenID:              uuid.New().String(),
+			RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+			LoadFileType:                 "csv",
+		},
+		StagingFileID:       1,
+		StagingFileLocation: jobLocation,
 	}
 
 	payloadJson, err := jsonrs.Marshal(p)

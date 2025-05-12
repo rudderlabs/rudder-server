@@ -22,16 +22,16 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
+			Accounts: map[string]Account{
+				"acc-1": {
 					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 					Secret:                map[string]interface{}{"secret1": "secretValue1"},
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name: "oauth-def",
 					Config: map[string]interface{}{
 						"OAuth": map[string]interface{}{
@@ -39,6 +39,7 @@ func TestAccountAssociations(t *testing.T) {
 							"refreshTokenInDataplane": true,
 						},
 					},
+					AuthenticationType: "OAuth",
 				},
 			},
 		}
@@ -54,6 +55,7 @@ func TestAccountAssociations(t *testing.T) {
 				"refreshTokenInDataplane": true,
 			},
 		}, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition.Config)
+		require.Equal(t, "OAuth", c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition.AuthenticationType)
 	})
 
 	t.Run("multiple destinations with same account", func(t *testing.T) {
@@ -77,17 +79,18 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
+			Accounts: map[string]Account{
+				"acc-1": {
 					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
-					Name:   "oauth-def",
-					Config: map[string]interface{}{"oauth": true},
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
+					Name:               "oauth-def",
+					Config:             map[string]interface{}{"oauth": true},
+					AuthenticationType: "OAuth",
 				},
 			},
 		}
@@ -97,8 +100,9 @@ func TestAccountAssociations(t *testing.T) {
 		for _, dest := range c.Sources[0].Destinations {
 			require.Equal(t, "acc-1", dest.DeliveryAccount.Id)
 			require.Equal(t, AccountDefinition{
-				Name:   "oauth-def",
-				Config: map[string]interface{}{"oauth": true},
+				Name:               "oauth-def",
+				Config:             map[string]interface{}{"oauth": true},
+				AuthenticationType: "OAuth",
 			}, dest.DeliveryAccount.AccountDefinition)
 		}
 	})
@@ -118,15 +122,15 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
+			Accounts: map[string]Account{
+				"acc-1": {
 					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{"oauth": true},
 				},
@@ -155,14 +159,14 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
+			Accounts: map[string]Account{
+				"acc-1": {
 					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{},
 				},
@@ -190,14 +194,14 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
+			Accounts: map[string]Account{
+				"acc-1": {
 					Id:                    "acc-1",
 					AccountDefinitionName: "oauth-def",
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{},
 				},
@@ -224,14 +228,14 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
+			Accounts: map[string]Account{
+				"acc-1": {
 					Id:                    "acc-1",
 					AccountDefinitionName: "non-existent-def",
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{},
 				},

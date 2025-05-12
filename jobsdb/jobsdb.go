@@ -1949,7 +1949,7 @@ func (jd *Handle) getDistinctValuesPerDataset(
 					(
 						SELECT s.* FROM t, LATERAL(
 							SELECT %[1]s as parameter FROM %[2]q f
-							WHERE custom_val = '%[3]s' AND f.%[1]s > t.workspace_id
+							WHERE custom_val = '%[3]s' AND f.%[1]s > t.parameter
 							ORDER BY %[1]s LIMIT 1
 							)s
 						)

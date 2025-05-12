@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"reflect"
 	"strconv"
 	"time"
@@ -30,6 +31,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type uploadProcessingResult struct {
@@ -42,7 +45,8 @@ type uploadResult struct {
 	Location              string
 	TotalRows             int
 	ContentLength         int64
-	StagingFileID         int64
+	StagingFileID         int64 // Only used for upload jobs
+	UploadID              int64 // Only used for upload_v2 jobs
 	DestinationRevisionID string
 	UseRudderStorage      bool
 }
@@ -56,9 +60,14 @@ type worker struct {
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	workerIdx          int
+	activeJobId        int64
+	refreshClaimJitter time.Duration
 
 	config struct {
 		maxStagingFileReadBufferCapacityInK config.ValueLoader[int]
+		maxConcurrentStagingFiles           config.ValueLoader[int]
+		claimRefreshInterval                config.ValueLoader[time.Duration]
+		enableNotifierHeartbeat             config.ValueLoader[bool]
 	}
 	stats struct {
 		workerIdleTime                 stats.Measurement
@@ -90,6 +99,10 @@ func newWorker(
 	s.workerIdx = workerIdx
 
 	s.config.maxStagingFileReadBufferCapacityInK = s.conf.GetReloadableIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
+	// Increasing maxConcurrentStagingFiles config would also require increasing the memory requests for the slave pods
+	s.config.maxConcurrentStagingFiles = s.conf.GetReloadableIntVar(10, 1, "Warehouse.maxStagingFilesInUploadV2Job")
+	s.config.claimRefreshInterval = s.conf.GetReloadableDurationVar(30, time.Second, "Warehouse.claimRefreshIntervalInS")
+	s.config.enableNotifierHeartbeat = s.conf.GetReloadableBoolVar(false, "Warehouse.enableNotifierHeartbeat")
 
 	tags := stats.Tags{
 		"module":   "warehouse",
@@ -99,16 +112,26 @@ func newWorker(
 	s.stats.workerClaimProcessingTime = s.statsFactory.NewTaggedStat("worker_claim_processing_time", stats.TimerType, tags)
 	s.stats.workerClaimProcessingSucceeded = s.statsFactory.NewTaggedStat("worker_claim_processing_succeeded", stats.CountType, tags)
 	s.stats.workerClaimProcessingFailed = s.statsFactory.NewTaggedStat("worker_claim_processing_failed", stats.CountType, tags)
+	s.refreshClaimJitter = time.Duration(rand.Int63n(5)) * time.Second // Random jitter between [0-5) seconds
 	return s
 }
 
 func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
+	if w.config.enableNotifierHeartbeat.Load() {
+		refreshCtx, refreshCancel := context.WithCancel(ctx)
+		defer refreshCancel()
+		go w.runClaimRefresh(refreshCtx)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
-			w.log.Infof("Slave worker-%d-%s is shutting down", w.workerIdx, slaveID)
+			w.log.Infon("Slave worker is shutting down",
+				logger.NewField("workerIdx", w.workerIdx),
+				logger.NewField("slaveId", slaveID),
+			)
 			return
 		case claimedJob, ok := <-notificationChan:
 			if !ok {
@@ -116,12 +139,15 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			}
 			w.stats.workerIdleTime.Since(workerIdleTimeStart)
 
-			w.log.Debugf("Successfully claimed job:%d by slave worker-%d-%s & job type %s",
-				claimedJob.Job.ID,
-				w.workerIdx,
-				slaveID,
-				claimedJob.Job.Type,
+			w.log.Debugn("Successfully claimed job by slave worker",
+				logger.NewField("jobId", claimedJob.Job.ID),
+				logger.NewField("workerIdx", w.workerIdx),
+				logger.NewField("slaveId", slaveID),
+				logger.NewField("jobType", claimedJob.Job.Type),
 			)
+
+			// Set active job ID
+			w.activeJobId = claimedJob.Job.ID
 
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
@@ -130,17 +156,43 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 				w.processClaimedUploadJob(ctx, claimedJob)
 			}
 
-			w.log.Infof("Successfully processed job:%d by slave worker-%d-%s",
-				claimedJob.Job.ID,
-				w.workerIdx,
-				slaveID,
+			w.log.Infon("Successfully processed job",
+				logger.NewField("jobId", claimedJob.Job.ID),
+				logger.NewField("workerIdx", w.workerIdx),
+				logger.NewField("slaveId", slaveID),
 			)
+			// Clear active job ID after processing
+			w.activeJobId = 0
 
 			workerIdleTimeStart = time.Now()
 		}
 	}
 }
 
+// run claimRefresh periodically to make sure that job is not orphaned
+func (w *worker) runClaimRefresh(ctx context.Context) {
+	baseInterval := w.config.claimRefreshInterval.Load()
+	// Distribute claim refresh requests across workers by adding random delay
+	// This will prevent database load spikes from synchronized refresh attempts
+	ticker := time.NewTicker(baseInterval + w.refreshClaimJitter)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if w.activeJobId != 0 {
+				if err := w.notifier.RefreshClaim(ctx, w.activeJobId); err != nil {
+					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId, err)
+				}
+			}
+		}
+	}
+}
+
+// processClaimedUploadJob processes a claimed upload job from the notifier.
+// It supports both regular upload jobs (one staging file per job) and upload_v2 jobs (multiple staging files per job).
 func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	w.stats.workerClaimProcessingTime.RecordDuration()()
 
@@ -153,26 +205,47 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 	}
 
 	var (
-		job     payload
 		jobJSON []byte
 		err     error
 	)
 
-	if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
-		handleErr(err, claimedJob)
-		return
+	switch claimedJob.Job.Type {
+	case notifier.JobTypeUploadV2:
+		var job payloadV2
+		if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
+			handleErr(err, claimedJob)
+			return
+		}
+		job.BatchID = claimedJob.Job.BatchID
+		w.log.Infon("Starting processing staging-files from claim",
+			logger.NewField("jobId", claimedJob.Job.ID),
+		)
+		job.Output, err = w.processMultiStagingFiles(ctx, &job)
+		if err != nil {
+			handleErr(err, claimedJob)
+			return
+		}
+		jobJSON, err = jsonrs.Marshal(job)
+	default:
+		var job payload
+		if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
+			handleErr(err, claimedJob)
+			return
+		}
+		job.BatchID = claimedJob.Job.BatchID
+		w.log.Infon("Starting processing staging-file from claim",
+			logger.NewField("stagingFileID", job.StagingFileID),
+			logger.NewField("jobId", claimedJob.Job.ID),
+		)
+		job.Output, err = w.processStagingFile(ctx, &job)
+		if err != nil {
+			handleErr(err, claimedJob)
+			return
+		}
+		jobJSON, err = jsonrs.Marshal(job)
 	}
 
-	w.log.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.Job.ID)
-
-	job.BatchID = claimedJob.Job.BatchID
-	job.Output, err = w.processStagingFile(ctx, job)
 	if err != nil {
-		handleErr(err, claimedJob)
-		return
-	}
-
-	if jobJSON, err = jsonrs.Marshal(job); err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
@@ -184,67 +257,45 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 	})
 }
 
-// This function is triggered when warehouse-master creates a new entry in wh_uploads table
-// This is executed in the context of the warehouse-slave/worker and does the following:
-//
-// 1. Download the Staging file into a tmp directory
-// 2. Transform the staging file into multiple load files (One file per output table)
-// 3. Uploads these load files to Object storage
-// 4. Save entries for the generated load files in wh_load_files table
-// 5. Delete the staging and load files from tmp directory
-func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadResult, error) {
-	processStartTime := time.Now()
-
-	jr := newJobRun(job, w.conf, w.log, w.statsFactory, w.encodingFactory)
-
-	w.log.Debugf("Starting processing staging file: %v at %s for %s",
-		job.StagingFileID,
-		job.StagingFileLocation,
-		jr.identifier,
-	)
-
-	defer func() {
-		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Count(1)
-		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Since(processStartTime)
-
-		jr.cleanup()
-	}()
-
-	var (
-		err                  error
-		lineBytesCounter     int
-		interfaceSliceSample []interface{}
-	)
-
-	if jr.stagingFilePath, err = jr.getStagingFilePath(w.workerIdx); err != nil {
-		return nil, err
-	}
-	if err = jr.downloadStagingFile(ctx); err != nil {
-		return nil, err
-	}
-	if jr.stagingFileReader, err = jr.reader(); errors.Is(err, io.EOF) {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-
-	jr.uuidTS = jr.now()
-
-	// Initialize Discards Table
-	discardsTable := job.discardsTable()
-	jr.tableEventCountMap[discardsTable] = 0
-
+// processSingleStagingFile processes a single staging file and writes its data to the appropriate load files.
+// It handles downloading, reading, and processing the file contents.
+func (w *worker) processSingleStagingFile(
+	ctx context.Context,
+	jr *jobRun,
+	job *basePayload,
+	stagingFile stagingFileInfo,
+) error {
 	processingStart := jr.now()
-	sortedTableColumnMap := job.sortedColumnMapForAllTables()
+	var err error
+
+	if err := jr.downloadStagingFile(ctx, stagingFile); err != nil {
+		return fmt.Errorf("downloading staging file %d: %w", stagingFile.ID, err)
+	}
+	var stagingFileReader io.ReadCloser
+
+	if stagingFileReader, err = jr.reader(stagingFile); errors.Is(err, io.EOF) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("creating reader for staging file %d: %w", stagingFile.ID, err)
+	}
+	defer func() {
+		if err := stagingFileReader.Close(); err != nil {
+			jr.logger.Errorf("Error closing staging file reader: %v", err)
+		}
+	}()
 
 	// default scanner buffer maxCapacity is 64K
 	// set it to higher value to avoid read stop on read size error
 	maxCapacity := w.config.maxStagingFileReadBufferCapacityInK.Load() * 1024
 
-	bufScanner := bufio.NewScanner(jr.stagingFileReader)
+	bufScanner := bufio.NewScanner(stagingFileReader)
 	bufScanner.Buffer(make([]byte, maxCapacity), maxCapacity)
 
+	var lineBytesCounter int
+	var interfaceSliceSample []interface{}
 	columnCountLimitMap := integrationsconfig.ColumnCountLimitMap(jr.conf)
+	discardsTable := job.discardsTable()
+	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
 	for {
 		ok := bufScanner.Scan()
@@ -261,11 +312,12 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 		var (
 			batchRouterEvent types.BatchRouterEvent
 			writer           encoding.LoadFileWriter
+			releaseWriter    func()
 		)
 
 		if err := jsonrs.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
 			jr.logger.Warnn("Failed to unmarshal line from staging file to BatchRouterEvent",
-				logger.NewIntField("stagingFileID", job.StagingFileID),
+				logger.NewIntField("stagingFileID", stagingFile.ID),
 				obskit.Error(err),
 			)
 			continue
@@ -275,15 +327,16 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 		columnData := batchRouterEvent.Data
 
 		if job.DestinationType == warehouseutils.S3Datalake && len(sortedTableColumnMap[tableName]) > columnCountLimitMap[warehouseutils.S3Datalake] {
-			return nil, fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d",
-				job.StagingFileID,
+			return fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d, maxAllowedCount: %d",
+				stagingFile.ID,
 				len(sortedTableColumnMap[tableName]),
+				columnCountLimitMap[warehouseutils.S3Datalake],
 			)
 		}
 
 		// Create separate load file for each table
-		if writer, err = jr.writer(tableName); err != nil {
-			return nil, err
+		if writer, releaseWriter, err = jr.writer(tableName, stagingFile); err != nil {
+			return err
 		}
 
 		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
@@ -369,17 +422,18 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 						eventLoader.AddEmptyColumn(columnName)
 					}
 
-					jr.outputFileWritersMap[discardsTable], err = jr.writer(discardsTable)
+					discardWriter, releaseDiscardWriter, err := jr.writer(discardsTable, stagingFile)
 					if err != nil {
-						return nil, err
+						return err
 					}
 
-					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, jr.outputFileWritersMap[discardsTable], reason)
+					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter, reason)
 					if err != nil {
 						jr.logger.Errorf("Failed to write to discards: %v", err)
 					}
+					releaseDiscardWriter()
 
-					jr.tableEventCountMap[discardsTable]++
+					jr.incrementEventCount(discardsTable)
 					continue
 				}
 
@@ -402,29 +456,97 @@ func (w *worker) processStagingFile(ctx context.Context, job payload) ([]uploadR
 		}
 
 		if err = eventLoader.Write(); err != nil {
-			return nil, err
+			return err
 		}
+		releaseWriter()
 
-		jr.tableEventCountMap[tableName]++
+		jr.incrementEventCount(tableName)
 	}
 
-	jr.logger.Debugf("Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
-
+	jr.logger.Debugn("Process bytes from downloaded staging file",
+		logger.NewField("bytes", lineBytesCounter),
+		logger.NewField("location", stagingFile.Location),
+	)
 	jr.processingStagingFileStat.Since(processingStart)
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
 
-	for _, loadFile := range jr.outputFileWritersMap {
-		if err = loadFile.Close(); err != nil {
-			jr.logger.Errorf("Error while closing load file %s : %v", loadFile.GetLoadFile().Name(), err)
-		}
-	}
+	return nil
+}
 
-	uploadsResults, err := jr.uploadLoadFiles(ctx)
-	if err != nil {
+func (w *worker) processStagingFile(ctx context.Context, job *payload) ([]uploadResult, error) {
+	processStartTime := time.Now()
+
+	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory)
+
+	w.log.Debugn("Starting processing staging file",
+		logger.NewField("stagingFileID", job.StagingFileID),
+		logger.NewField("stagingFileLocation", job.StagingFileLocation),
+		logger.NewField("identifier", jr.identifier),
+	)
+
+	defer func() {
+		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Count(1)
+		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Since(processStartTime)
+		jr.cleanup()
+	}()
+
+	// Initialize Discards Table
+	discardsTable := job.discardsTable()
+	jr.tableEventCountMap[discardsTable] = 0
+
+	// Process the staging file
+	if err := w.processSingleStagingFile(ctx, jr, &job.basePayload, stagingFileInfo{
+		ID:       job.StagingFileID,
+		Location: job.StagingFileLocation,
+	}); err != nil {
 		return nil, err
 	}
 
-	return uploadsResults, err
+	jr.closeLoadFiles()
+	return jr.uploadLoadFiles(ctx, func(result uploadResult) uploadResult {
+		result.StagingFileID = job.StagingFileID
+		return result
+	})
+}
+
+func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) ([]uploadResult, error) {
+	processStartTime := time.Now()
+
+	// Create a jobRun for all staging files
+	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory)
+
+	defer func() {
+		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Count(len(job.StagingFiles))
+		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Since(processStartTime)
+		jr.cleanup()
+	}()
+
+	// Initialize Discards Table
+	discardsTable := job.discardsTable()
+	jr.tableEventCountMap[discardsTable] = 0
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(w.config.maxConcurrentStagingFiles.Load())
+
+	for _, stagingFile := range job.StagingFiles {
+		g.Go(func() error {
+			w.log.Infon("Processing staging-file for upload_v2 job",
+				logger.NewField("stagingFileID", stagingFile.ID),
+			)
+			if err := w.processSingleStagingFile(gCtx, jr, &job.basePayload, stagingFile); err != nil {
+				return fmt.Errorf("processing staging file %d: %w", stagingFile.ID, err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	jr.closeLoadFiles()
+	return jr.uploadLoadFiles(ctx, func(result uploadResult) uploadResult {
+		result.UploadID = job.UploadID
+		return result
+	})
 }
 
 func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifier.ClaimJob) {

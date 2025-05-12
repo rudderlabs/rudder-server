@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.48.5](https://github.com/rudderlabs/rudder-server/compare/v1.48.4...v1.48.5) (2025-05-08)
+
+
+### Bug Fixes
+
+* warehouse transformations mismatches ([#5779](https://github.com/rudderlabs/rudder-server/issues/5779)) ([1b1887e](https://github.com/rudderlabs/rudder-server/commit/1b1887e56d1a94bf98b394ed22a7dd9e28d2dea7))
+
+
+### Miscellaneous
+
+* update rudder-go-kit to 0.49.2 ([#5832](https://github.com/rudderlabs/rudder-server/issues/5832)) ([cf03595](https://github.com/rudderlabs/rudder-server/commit/cf03595ccf30a241fa4cae399dcacc8f9aff72a2))
+* upgrade rudder-go-kit to v0.50.1 ([#5831](https://github.com/rudderlabs/rudder-server/issues/5831)) ([4c7f313](https://github.com/rudderlabs/rudder-server/commit/4c7f3130c7c2aaf50f492a52256448c6e64c30c1))
+
+## [1.48.4](https://github.com/rudderlabs/rudder-server/compare/v1.48.3...v1.48.4) (2025-05-05)
+
+
+### Bug Fixes
+
+* warehouse cached schema mismatch ([#5805](https://github.com/rudderlabs/rudder-server/issues/5805)) ([1d3abfd](https://github.com/rudderlabs/rudder-server/commit/1d3abfd961c12bc4a31c97f96b67f049d4a9cdde))
+
 ## [1.48.3](https://github.com/rudderlabs/rudder-server/compare/v1.48.2...v1.48.3) (2025-05-02)
 
 

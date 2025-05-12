@@ -83,57 +83,71 @@ func TestMain(m *testing.M) {
 
 func TestUploads(t *testing.T) {
 	t.Run("tracks loading", func(t *testing.T) {
-		db, minioResource, whClient := setupServer(t, false, nil, nil)
+		testCases := []struct {
+			batchStagingFiles bool
+		}{
+			{batchStagingFiles: false},
+			{batchStagingFiles: true},
+		}
+		for _, tc := range testCases {
+			if tc.batchStagingFiles {
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.queryWithUploadID.enable"), "true")
+			}
+			db, minioResource, whClient := setupServer(t, false, nil, nil)
 
-		var (
-			ctx    = context.Background()
-			events = 100
-			jobs   = 1
-		)
-
-		eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
-			return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
-				uuid.New().String(),
-				uuid.New().String(),
+			var (
+				ctx    = context.Background()
+				events = 100
+				jobs   = 1
 			)
-		}), "\n")
+			eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
+				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+					uuid.New().String(),
+					uuid.New().String(),
+				)
+			}), "\n")
 
-		require.NoError(t, whClient.Process(ctx, whclient.StagingFile{
-			WorkspaceID:           workspaceID,
-			SourceID:              sourceID,
-			DestinationID:         destinationID,
-			Location:              prepareStagingFile(t, ctx, minioResource, eventsPayload).ObjectName,
-			TotalEvents:           events,
-			FirstEventAt:          time.Now().Format(misc.RFC3339Milli),
-			LastEventAt:           time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
-			UseRudderStorage:      false,
-			DestinationRevisionID: destinationID,
-			Schema: map[string]map[string]string{
-				"tracks": {
-					"id":          "string",
-					"user_id":     "string",
-					"received_at": "datetime",
+			require.NoError(t, whClient.Process(ctx, whclient.StagingFile{
+				WorkspaceID:      workspaceID,
+				SourceID:         sourceID,
+				DestinationID:    destinationID,
+				Location:         prepareStagingFile(t, ctx, minioResource, eventsPayload).ObjectName,
+				TotalEvents:      events,
+				FirstEventAt:     time.Now().Format(misc.RFC3339Milli),
+				LastEventAt:      time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
+				UseRudderStorage: false,
+				BytesPerTable: map[string]int64{
+					"tracks": int64(len(eventsPayload)),
 				},
-			},
-		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-			{A: "status", B: succeeded},
-		}...)
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
-			{A: "status", B: exportedData},
-			{A: "wh_uploads.source_id", B: sourceID},
-			{A: "wh_uploads.destination_id", B: destinationID},
-			{A: "wh_uploads.namespace", B: namespace},
-		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
-			{A: "source_id", B: sourceID},
-			{A: "destination_id", B: destinationID},
-			{A: "namespace", B: namespace},
-			{A: "status", B: exportedData},
-		}...)
-		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+				DestinationRevisionID: destinationID,
+				Schema: map[string]map[string]string{
+					"tracks": {
+						"id":          "string",
+						"user_id":     "string",
+						"received_at": "datetime",
+					},
+				},
+			}))
+			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "status", B: succeeded},
+			}...)
+			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+				{A: "status", B: exportedData},
+				{A: "wh_uploads.source_id", B: sourceID},
+				{A: "wh_uploads.destination_id", B: destinationID},
+				{A: "wh_uploads.namespace", B: namespace},
+			}...)
+			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+				{A: "source_id", B: sourceID},
+				{A: "destination_id", B: destinationID},
+				{A: "namespace", B: namespace},
+				{A: "status", B: exportedData},
+			}...)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+		}
 	})
 	t.Run("user and identifies loading", func(t *testing.T) {
 		db, minioResource, whClient := setupServer(t, false, nil, nil)

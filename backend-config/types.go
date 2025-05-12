@@ -93,18 +93,10 @@ type Account struct {
 	Secret                map[string]interface{} `json:"secret"`
 }
 
-type OAuth struct {
-	GenerateOAuthToken      bool `json:"generateOAuthToken"`
-	RefreshTokenInDataplane bool `json:"refreshTokenInDataplane"`
-}
-
-type Config struct {
-	OAuth OAuth `json:"oauth"`
-}
-
 type AccountDefinition struct {
-	Name   string                 `json:"name"`
-	Config map[string]interface{} `json:"config"`
+	Name               string                 `json:"name"`
+	Config             map[string]interface{} `json:"config"`
+	AuthenticationType string                 `json:"authenticationType"`
 }
 type ConfigT struct {
 	EnableMetrics      bool                         `json:"enableMetrics"`
@@ -117,8 +109,8 @@ type ConfigT struct {
 	UpdatedAt          time.Time                    `json:"updatedAt"`
 	Credentials        map[string]Credential        `json:"credentials"`
 	Connections        map[string]Connection        `json:"connections"`
-	Accounts           []Account                    `json:"accounts"`
-	AccountDefinitions []AccountDefinition          `json:"accountDefinitions"`
+	Accounts           map[string]Account           `json:"accounts"`
+	AccountDefinitions map[string]AccountDefinition `json:"accountDefinitions"`
 }
 
 type AccountWithDefinition struct {

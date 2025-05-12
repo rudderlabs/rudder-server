@@ -496,4 +496,56 @@ func TestRepo(t *testing.T) {
 			require.ErrorIs(t, err, context.Canceled)
 		})
 	})
+
+	t.Run("refresh claim", func(t *testing.T) {
+		uNow := now.Add(time.Second * 10).Truncate(time.Second).UTC()
+		ur := newRepo(db, WithNow(func() time.Time {
+			return uNow
+		}))
+
+		t.Run("success", func(t *testing.T) {
+			batchID := uuid.New().String()
+
+			err := r.insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			require.NoError(t, err)
+
+			// Claim a job first
+			claimedJob, err := ur.claim(ctx, workerID)
+			require.NoError(t, err)
+			require.EqualValues(t, claimedJob.Status, Executing)
+
+			// Refresh the claim
+			err = ur.refreshClaim(ctx, claimedJob.ID)
+			require.NoError(t, err)
+
+			// Verify the last_exec_time was updated
+			refreshedJob, err := ur.getByBatchID(ctx, batchID)
+			require.NoError(t, err)
+			require.EqualValues(t, refreshedJob[0].LastExecTime.UTC(), uNow.UTC())
+		})
+
+		t.Run("non-executing job", func(t *testing.T) {
+			batchID := uuid.New().String()
+
+			err := r.insert(ctx, &publishRequest, workspaceIdentifier, batchID)
+			require.NoError(t, err)
+
+			jobs, err := r.getByBatchID(ctx, batchID)
+			require.NoError(t, err)
+
+			// Try to refresh a waiting job
+			err = ur.refreshClaim(ctx, jobs[0].ID)
+			require.NoError(t, err)
+
+			// Verify the last_exec_time was not updated
+			refreshedJob, err := ur.getByBatchID(ctx, batchID)
+			require.NoError(t, err)
+			require.EqualValues(t, refreshedJob[0].LastExecTime, time.Time{})
+		})
+
+		t.Run("context cancelled", func(t *testing.T) {
+			err := ur.refreshClaim(cancelledCtx, 1)
+			require.ErrorIs(t, err, context.Canceled)
+		})
+	})
 }
