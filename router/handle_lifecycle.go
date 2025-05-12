@@ -326,7 +326,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, getRouterConfigKeys("failingJobsPenaltySleep", rt.destType)...)
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, getRouterConfigKeys("failingJobsPenaltyThreshold", rt.destType)...)
 	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, getRouterConfigKeys("oauthV2Enabled", rt.destType)...)
-	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("expirationTimeDiff", rt.destType)...)
+	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("oauth.expirationTimeDiff", rt.destType)...)
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",
