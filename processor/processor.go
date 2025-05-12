@@ -1802,7 +1802,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		}
 
 		for _, e := range proc.enrichers {
-			if err := e.Enrich(source, &gatewayBatchEvent); err != nil {
+			if err := e.Enrich(source, &gatewayBatchEvent, &eventParams); err != nil {
 				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
 			}
 		}
