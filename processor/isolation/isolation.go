@@ -53,7 +53,7 @@ type workspaceStrategy struct{}
 
 // ActivePartitions returns the list of active workspaceIDs in jobsdb
 func (workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID)
+	return db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID, "")
 }
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParams) {
@@ -65,7 +65,7 @@ type sourceStrategy struct{}
 
 // ActivePartitions returns the list of active sourceIDs in jobsdb
 func (sourceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	return db.GetDistinctParameterValues(ctx, jobsdb.SourceID)
+	return db.GetDistinctParameterValues(ctx, jobsdb.SourceID, "")
 }
 
 // AugmentQueryParams augments the given GetQueryParamsT by adding the partition as sourceID parameter filter

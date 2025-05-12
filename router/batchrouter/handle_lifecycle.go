@@ -85,33 +85,14 @@ func (brt *Handle) Setup(
 	if config.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
-	isolationMode := isolation.Mode(config.GetString("BatchRouter.isolationMode", string(defaultIsolationMode)))
-	partitionFilter := func(mode isolation.Mode) func(string) bool {
-		switch mode {
-		case isolation.ModeDestination:
-			return func(destinationID string) bool {
-				brt.configSubscriberMu.RLock()
-				defer brt.configSubscriberMu.RUnlock()
-				_, ok := brt.destinationsMap[destinationID]
-				return ok
-			}
-		case isolation.ModeWorkspace:
-			return func(workspaceID string) bool {
-				brt.configSubscriberMu.RLock()
-				defer brt.configSubscriberMu.RUnlock()
-				for _, destWithSources := range brt.destinationsMap {
-					if destWithSources.Destination.WorkspaceID == workspaceID {
-						return true
-					}
-				}
-				return false
-			}
-		default:
-			return func(s string) bool { return true }
-		}
-	}
+	isolationMode := config.GetString("BatchRouter.isolationMode", string(defaultIsolationMode))
 	var err error
-	if brt.isolationStrategy, err = isolation.GetStrategy(isolationMode, destType, partitionFilter(isolationMode)); err != nil {
+	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
+		brt.configSubscriberMu.RLock()
+		defer brt.configSubscriberMu.RUnlock()
+		_, ok := brt.destinationsMap[destinationID]
+		return ok
+	}); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 	brt.conf = conf

@@ -23,7 +23,7 @@ func GetStrategy(mode Mode, customVal string, partitionFilter func(partition str
 	case ModeNone:
 		return noneStrategy{}, nil
 	case ModeWorkspace:
-		return workspaceStrategy{workspaceFilter: partitionFilter}, nil
+		return workspaceStrategy{customVal: customVal}, nil
 	case ModeDestination:
 		return destinationStrategy{destinationFilter: partitionFilter}, nil
 	default:
@@ -52,18 +52,12 @@ func (noneStrategy) AugmentQueryParams(_ string, _ *jobsdb.GetQueryParams) {
 
 // workspaceStrategy implements isolation at workspace level
 type workspaceStrategy struct {
-	workspaceFilter func(workspaceID string) bool
+	customVal string
 }
 
 // ActivePartitions returns the list of active workspaceIDs in jobsdb
 func (ws workspaceStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	unfiltered, err := db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID)
-	if err != nil {
-		return nil, err
-	}
-	return lo.Filter(unfiltered, func(workspaceID string, _ int) bool {
-		return ws.workspaceFilter(workspaceID)
-	}), nil
+	return db.GetDistinctParameterValues(ctx, jobsdb.WorkspaceID, ws.customVal)
 }
 
 func (workspaceStrategy) AugmentQueryParams(partition string, params *jobsdb.GetQueryParams) {
@@ -77,7 +71,7 @@ type destinationStrategy struct {
 
 // ActivePartitions returns the list of active destinationIDs in jobsdb
 func (ds destinationStrategy) ActivePartitions(ctx context.Context, db jobsdb.JobsDB) ([]string, error) {
-	unfiltered, err := db.GetDistinctParameterValues(ctx, jobsdb.DestinationID)
+	unfiltered, err := db.GetDistinctParameterValues(ctx, jobsdb.DestinationID, "")
 	if err != nil {
 		return nil, err
 	}

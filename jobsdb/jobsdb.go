@@ -296,8 +296,8 @@ type JobsDB interface {
 	// grouped by workspaceId and destination type
 	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
-	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables
-	GetDistinctParameterValues(ctx context.Context, parameter ParameterName) (values []string, err error)
+	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables filtering for the passed customVal
+	GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) (values []string, err error)
 
 	/* Admin */
 
@@ -1923,22 +1923,39 @@ func (jd *Handle) getDistinctValuesPerDataset(
 	ctx context.Context,
 	dsList []string,
 	param ParameterName,
+	customVal string,
 ) (map[string][]string, error) {
 	var queries []string
 	for _, ds := range dsList {
-		queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
-	WITH RECURSIVE t AS (
-		(SELECT %[1]s as parameter FROM %[2]q ORDER BY %[1]s LIMIT 1)
-		UNION ALL
-		(
-			SELECT s.* FROM t, LATERAL(
-				SELECT %[1]s as parameter FROM %[2]q f
-				WHERE f.%[1]s > t.parameter
-				ORDER BY %[1]s LIMIT 1
-			)s
-		)
-	)
-SELECT * FROM t) a`, param.string(), ds))
+		if customVal == "" {
+			queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
+				WITH RECURSIVE t AS (
+					(SELECT %[1]s as parameter FROM %[2]q ORDER BY %[1]s LIMIT 1)
+					UNION ALL
+					(
+						SELECT s.* FROM t, LATERAL(
+							SELECT %[1]s as parameter FROM %[2]q f
+							WHERE f.%[1]s > t.parameter
+							ORDER BY %[1]s LIMIT 1
+							)s
+						)
+					)
+				SELECT * FROM t) a`, param.string(), ds))
+		} else {
+			queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
+				WITH RECURSIVE t AS (
+					(SELECT %[1]s as parameter FROM %[2]q WHERE custom_val = '%[3]s' ORDER BY %[1]s LIMIT 1)
+					UNION ALL
+					(
+						SELECT s.* FROM t, LATERAL(
+							SELECT %[1]s as parameter FROM %[2]q f
+							WHERE custom_val = '%[3]s' AND f.%[1]s > t.workspace_id
+							ORDER BY %[1]s LIMIT 1
+							)s
+						)
+					)
+				SELECT * FROM t) a`, param.string(), ds, customVal))
+		}
 	}
 	query := strings.Join(queries, " UNION ")
 	rows, err := jd.dbHandle.QueryContext(ctx, query)
@@ -1964,7 +1981,7 @@ SELECT * FROM t) a`, param.string(), ds))
 	return result, nil
 }
 
-func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName) ([]string, error) {
+func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) ([]string, error) {
 	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
 		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
 	}
@@ -1975,10 +1992,10 @@ func (jd *Handle) GetDistinctParameterValues(ctx context.Context, parameter Para
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 	return jd.distinctValuesCache.GetDistinctValues(
-		parameter.string(),
+		parameter.string()+customValFilter,
 		lo.Map(dsList, func(ds dataSetT, _ int) string { return ds.JobTable }),
 		func(datasets []string) (map[string][]string, error) {
-			return jd.getDistinctValuesPerDataset(ctx, datasets, parameter)
+			return jd.getDistinctValuesPerDataset(ctx, datasets, parameter, customValFilter)
 		},
 	)
 }
