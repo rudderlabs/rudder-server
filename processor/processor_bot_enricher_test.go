@@ -34,8 +34,8 @@ func TestProcessorBotEnrichment(t *testing.T) {
 			WithBotInfo(true, "test-bot", "https://test-bot.com", false).
 			Run(t, func(t *testing.T, event string) {
 				// missing fields checks
-				require.False(t, gjson.Get(event, "context.isBot").Exists(), "no bot information should be present for non-bot event")
-				require.False(t, gjson.Get(event, "context.bot").Exists(), "bot key should not be present for non-bot event")
+				require.False(t, gjson.Get(event, "context.isBot").Exists(), "no bot information should be present when feature is disabled")
+				require.False(t, gjson.Get(event, "context.bot").Exists(), "bot key should not be present when feature is disabled")
 			})
 	})
 
