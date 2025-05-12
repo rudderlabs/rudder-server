@@ -92,10 +92,7 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		return err
 	}
 
-	u, err := url.JoinPath(c.reportingServiceURL, string(c.path))
-	if err != nil {
-		return err
-	}
+	u := strings.TrimSuffix(c.reportingServiceURL, "/") + string(c.path)
 
 	o := func() error {
 		req, err := http.NewRequestWithContext(ctx, "POST", u, bytes.NewBuffer(payloadBytes))

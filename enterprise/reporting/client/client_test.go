@@ -37,6 +37,19 @@ func TestClientSendMetric(t *testing.T) {
 	// Create a test server to mock the reporting service
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
+
+		if r.URL.Path != "/metrics" {
+			w.WriteHeader(http.StatusNotFound)
+			t.Logf("received request with path: %s", r.URL.Path)
+			return
+		}
+
+		if r.URL.Query().Get("version") != "v1" {
+			w.WriteHeader(http.StatusBadRequest)
+			t.Logf("received request with version: %s", r.URL.Query().Get("version"))
+			return
+		}
+
 		receivedPayload, err = io.ReadAll(r.Body)
 		require.NoError(t, err)
 		payloadChan <- receivedPayload
@@ -53,6 +66,7 @@ func TestClientSendMetric(t *testing.T) {
 	conf.Set("INSTANCE_ID", "test-instance")
 	conf.Set("clientName", "test-client")
 	conf.Set("REPORTING_URL", server.URL)
+	conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
 
 	// Create the client
 	c := client.New(client.PathMetrics, conf, logger.NOP, statsStore)
