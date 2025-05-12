@@ -5,11 +5,11 @@ import (
 )
 
 func getRouterConfigBool(key, destType string, defaultValue bool) bool {
-	return config.GetBoolVar(defaultValue, "Router."+destType+"."+key, "Router."+key)
+	return config.GetBoolVar(defaultValue, getRouterConfigKeys(key, destType)...)
 }
 
 func getRouterConfigInt(key, destType string, defaultValue int) int {
-	return config.GetIntVar(defaultValue, 1, "Router."+destType+"."+key, "Router."+key)
+	return config.GetIntVar(defaultValue, 1, getRouterConfigKeys(key, destType)...)
 }
 
 func getHierarchicalRouterConfigInt(destType string, defaultValue int, keys ...string) int {
@@ -22,5 +22,9 @@ func getHierarchicalRouterConfigInt(destType string, defaultValue int, keys ...s
 }
 
 func getReloadableRouterConfigInt(key, destType string, defaultValue int) config.ValueLoader[int] {
-	return config.GetReloadableIntVar(defaultValue, 1, "Router."+destType+"."+key, "Router."+key)
+	return config.GetReloadableIntVar(defaultValue, 1, getRouterConfigKeys(key, destType)...)
+}
+
+func getRouterConfigKeys(key, destType string) []string {
+	return []string{"Router." + destType + "." + key, "Router." + key}
 }
