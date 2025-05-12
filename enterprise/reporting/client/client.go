@@ -31,18 +31,18 @@ const (
 )
 
 const (
-	ServiceMetrics      ServiceEndpoint = "/metrics?version=v1"
-	ServiceRecordErrors ServiceEndpoint = "/recordErrors"
-	ServiceTrackedUsers ServiceEndpoint = "/trackedUser"
+	ServiceMetrics      ServiceRoute = "/metrics?version=v1"
+	ServiceRecordErrors ServiceRoute = "/recordErrors"
+	ServiceTrackedUsers ServiceRoute = "/trackedUser"
 )
 
-// ServiceEndpoint contains the HTTP path and query string for the service.
-type ServiceEndpoint string
+// ServiceRoute contains the HTTP path and query string for the service.
+type ServiceRoute string
 
 // URL returns the URL for the service endpoint, given the base URL.
 // * baseURL provides only the scheme, host, and port for the URL.
 // * ServiceEndpoint provides path and query parameters.
-func (p ServiceEndpoint) URL(baseURL string) (url.URL, error) {
+func (p ServiceRoute) URL(baseURL string) (url.URL, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return url.URL{}, fmt.Errorf("parsing base URL: %w", err)
@@ -61,7 +61,7 @@ func (p ServiceEndpoint) URL(baseURL string) (url.URL, error) {
 
 // Client handles sending metrics to the reporting service
 type Client struct {
-	service             ServiceEndpoint
+	route               ServiceRoute
 	reportingServiceURL string
 
 	httpClient *http.Client
@@ -89,7 +89,7 @@ func backOffFromConfig(conf *config.Config) backoff.BackOff {
 }
 
 // New creates a new reporting client
-func New(path ServiceEndpoint, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
+func New(path ServiceRoute, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
 	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
@@ -99,7 +99,7 @@ func New(path ServiceEndpoint, conf *config.Config, log logger.Logger, stats sta
 		},
 		reportingServiceURL: reportingServiceURL,
 		backoff:             backOffFromConfig(conf),
-		service:             path,
+		route:               path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		moduleName:          conf.GetString("clientName", ""),
 		stats:               stats,
@@ -113,9 +113,9 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		return err
 	}
 
-	u, err := c.service.URL(c.reportingServiceURL)
+	u, err := c.route.URL(c.reportingServiceURL)
 	if err != nil {
-		return fmt.Errorf("constructing URL for service endpoint (%q, %q): %w", c.service, c.reportingServiceURL, err)
+		return fmt.Errorf("constructing URL for service endpoint (%q, %q): %w", c.route, c.reportingServiceURL, err)
 	}
 
 	o := func() error {
@@ -147,11 +147,11 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading response body: %q: %w", c.service, err)
+			return fmt.Errorf("reading response body: %q: %w", c.route, err)
 		}
 
 		if !c.isHTTPRequestSuccessful(resp.StatusCode) {
-			err = fmt.Errorf("received unexpected response: %q: statusCode: %d body: %v", c.service, resp.StatusCode, string(respBody))
+			err = fmt.Errorf("received unexpected response: %q: statusCode: %d body: %v", c.route, resp.StatusCode, string(respBody))
 		}
 		return err
 	}
@@ -173,7 +173,7 @@ func (c *Client) getTags() stats.Tags {
 		"module":     c.moduleName,
 		"instanceId": c.instanceID,
 		"endpoint":   serverURL.Host,
-		"path":       string(c.service),
+		"path":       string(c.route),
 	}
 }
 

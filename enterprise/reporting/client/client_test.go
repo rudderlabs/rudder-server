@@ -371,7 +371,7 @@ func TestClient5xx(t *testing.T) {
 func TestServiceEndpointURL(t *testing.T) {
 	tests := []struct {
 		name        string
-		endpoint    client.ServiceEndpoint
+		endpoint    client.ServiceRoute
 		baseURL     string
 		wantURL     string
 		wantErr     bool
@@ -407,7 +407,7 @@ func TestServiceEndpointURL(t *testing.T) {
 		},
 		{
 			name:        "invalid service endpoint",
-			endpoint:    client.ServiceEndpoint("://invalid-endpoint"),
+			endpoint:    client.ServiceRoute("://invalid-endpoint"),
 			baseURL:     "https://reporting.dev.rudderlabs.com",
 			wantErr:     true,
 			errContains: "parsing service endpoint",
