@@ -270,8 +270,8 @@ func (s *botScenario) sendEvent(url, writeKey, workspaceID, sourceID string) err
 func (s *botScenario) requireJobsCount(t *testing.T, db *sql.DB, queue, state string, expectedCount int) {
 	require.Eventually(t, func() bool {
 		var jobsCount int
-		require.NoError(t, db.QueryRow(fmt.Sprintf("SELECT count(*) FROM unionjobsdbmetadata('%s',10) WHERE job_state = '%s'", queue, state)).Scan(&jobsCount))
+		err := db.QueryRow(fmt.Sprintf("SELECT count(*) FROM unionjobsdbmetadata('%s',10) WHERE job_state = '%s'", queue, state)).Scan(&jobsCount)
 		t.Logf("%s %s Count: %d", queue, state, jobsCount)
-		return jobsCount == expectedCount
+		return err == nil && jobsCount == expectedCount
 	}, 20*time.Second, 1*time.Second, fmt.Sprintf("%d %s events should be in %s state", expectedCount, queue, state))
 }
