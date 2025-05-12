@@ -107,8 +107,6 @@ func TestDynamicClusterManager(t *testing.T) {
 	defer gwDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch", jobsdb.WithStats(stats.NOP))
 	defer eschDB.TearDown()
-	archiveDB := jobsdb.NewForReadWrite("archive", jobsdb.WithStats(stats.NOP))
-	defer archiveDB.TearDown()
 	rtDB := jobsdb.NewForReadWrite("rt", jobsdb.WithStats(stats.NOP))
 	defer rtDB.TearDown()
 	brtDB := jobsdb.NewForReadWrite("batch_rt", jobsdb.WithStats(stats.NOP))
@@ -199,7 +197,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,
 		Archiver: arc.New(
-			archiveDB,
+			archDB,
 			nil,
 			config.Default,
 			stats.Default,
