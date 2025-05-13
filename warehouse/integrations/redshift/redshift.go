@@ -161,6 +161,7 @@ type Redshift struct {
 		skipComputingUserLatestTraits bool
 		enableDeleteByJobs            bool
 		loadByFolderPath              bool
+		useAWSV2                      bool
 	}
 }
 
@@ -193,7 +194,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 	rs.config.loadByFolderPath = conf.GetBool("Warehouse.redshift.loadByFolderPath", false)
-
+	rs.config.useAWSV2 = conf.GetBool("Warehouse.redshift.useAWSV2", false)
 	return rs
 }
 
@@ -580,7 +581,13 @@ func (rs *Redshift) copyIntoLoadTable(
 	stagingTableName string,
 	strKeys []string,
 ) error {
-	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
+	var tempAccessKeyId, tempSecretAccessKey, token string
+	var err error
+	if rs.config.useAWSV2 {
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3CredV2(&rs.Warehouse.Destination)
+	} else {
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
+	}
 	if err != nil {
 		return fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}
@@ -1398,7 +1405,12 @@ func (rs *Redshift) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 }
 
 func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) (err error) {
-	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
+	var tempAccessKeyId, tempSecretAccessKey, token string
+	if rs.config.useAWSV2 {
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3CredV2(&rs.Warehouse.Destination)
+	} else {
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
+	}
 	if err != nil {
 		rs.logger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return

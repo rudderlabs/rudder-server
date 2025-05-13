@@ -461,14 +461,16 @@ func TestBytesPerTable(t *testing.T) {
 			jobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1), nil)
 		}
 		return &Handle{
-			logger:             logger.NewLogger().Child("batchrouter"),
-			fileManagerFactory: mockFileManagerFactory,
-			datePrefixOverride: config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride"),
-			customDatePrefix:   config.GetReloadableStringVar("", "BatchRouter.customDatePrefix"),
-			dateFormatProvider: &storageDateFormatProvider{dateFormatsCache: make(map[string]string)},
-			conf:               config.New(),
-			now:                timeutil.Now,
-			jobsDB:             jobsDB,
+			logger:                  logger.NewLogger().Child("batchrouter"),
+			fileManagerFactory:      mockFileManagerFactory,
+			datePrefixOverride:      config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride"),
+			customDatePrefix:        config.GetReloadableStringVar("", "BatchRouter.customDatePrefix"),
+			dateFormatProvider:      &storageDateFormatProvider{dateFormatsCache: make(map[string]string)},
+			conf:                    config.New(),
+			now:                     timeutil.Now,
+			jobsDB:                  jobsDB,
+			useAWSV2:                config.GetReloadableBoolVar(false, "BatchRouter.useAWSV2"),
+			useDigitalOceanSpacesV2: config.GetReloadableBoolVar(false, "BatchRouter.useDigitalOceanSpacesV2"),
 		}
 	}
 

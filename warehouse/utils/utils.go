@@ -1,6 +1,7 @@
 package warehouseutils
 
 import (
+	"context"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -27,6 +28,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -620,6 +622,19 @@ func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName
 	}, nil
 }
 
+func CreateAWSSessionConfigV2(destination *backendconfig.DestinationT, serviceName string) (*awsutil_v2.SessionConfig, error) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
+		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
+		return awsutils.NewSessionConfigForDestinationV2(destination, serviceName)
+	}
+	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
+	return &awsutil_v2.SessionConfig{
+		AccessKeyID: accessKeyID,
+		AccessKey:   accessKey,
+		Service:     serviceName,
+	}, nil
+}
+
 func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
 	sessionConfig, err := CreateAWSSessionConfig(destination, s3.ServiceID)
 	if err != nil {
@@ -650,6 +665,22 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 	return *sessionTokenOutput.Credentials.AccessKeyId, *sessionTokenOutput.Credentials.SecretAccessKey, *sessionTokenOutput.Credentials.SessionToken, err
+}
+
+func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, string, string, error) {
+	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3.ServiceID)
+	if err != nil {
+		return "", "", "", err
+	}
+	awsConfig, err := awsutil_v2.CreateAWSConfig(context.Background(), sessionConfig)
+	if err != nil {
+		return "", "", "", err
+	}
+	creds, err := awsConfig.Credentials.Retrieve(context.Background())
+	if err != nil {
+		return "", "", "", err
+	}
+	return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
 }
 
 type Tag struct {

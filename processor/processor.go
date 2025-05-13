@@ -3809,7 +3809,7 @@ func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager
 		"useGlue":          useGlue,
 		"region":           region,
 	}
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
 		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
 	})
 }
