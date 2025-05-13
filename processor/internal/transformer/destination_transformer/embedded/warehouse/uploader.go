@@ -17,11 +17,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-
+	"github.com/rudderlabs/rudder-go-kit/stringify"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stringify"
 
 	wtypes "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/types"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -36,6 +35,12 @@ func (t *Transformer) CompareResponsesAndUpload(ctx context.Context, events []ty
 	}
 	defer t.stats.comparisonTime.RecordDuration()()
 
+	go func() {
+		t.compareResponsesAndUpload(ctx, events, legacyResponse)
+	}()
+}
+
+func (t *Transformer) compareResponsesAndUpload(ctx context.Context, events []types.TransformerEvent, legacyResponse types.Response) {
 	sampleDiff := t.sampleDiff(events, legacyResponse, t.Transform(ctx, events))
 	if len(sampleDiff) == 0 {
 		return
@@ -54,7 +59,7 @@ func (t *Transformer) CompareResponsesAndUpload(ctx context.Context, events []ty
 	objName := path.Join("embedded-wt-samples", t.config.instanceID, uuid.NewString()) + ".log.gz"
 	uploadFile, err := t.loggedSamplesUploader.UploadReader(ctx, objName, &b)
 	if err != nil {
-		t.logger.Warn("Unable to upload sample diff", obskit.Error(err))
+		t.logger.Warnn("Unable to upload sample diff", obskit.Error(err))
 		return
 	}
 
