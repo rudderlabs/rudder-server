@@ -741,17 +741,6 @@ func GetWarehouseURL() (url string) {
 	return
 }
 
-// MergeMaps merging with one level of nesting.
-func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-	for _, m := range maps {
-		for k, v := range m {
-			result[k] = v
-		}
-	}
-	return result
-}
-
 type MapLookupError struct {
 	SearchKey string // indicates the searchkey which is not present in the map
 	Err       error  // contains the error occurred string while looking up the key in the map
