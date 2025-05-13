@@ -399,12 +399,10 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 
 	destType := clientEvents[0].Destination.DestinationDefinition.Name
-	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok && c.config.warehouseTransformations.enable.Load() {
+	if c.canRunWarehouseTransformations(destType) {
 		if c.config.warehouseTransformations.verify.Load() {
 			legacyResponse := c.transform(ctx, clientEvents)
-			go func() {
-				c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
-			}()
+			c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
 			return legacyResponse
 		}
 		return c.warehouseClient.Transform(ctx, clientEvents)
@@ -420,14 +418,20 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	if c.conf.GetBoolVar(true, "Processor.Transformer.Embedded."+destType+".Verify") {
 		legacyTransformerResponse := c.transform(ctx, clientEvents)
 		embeddedTransformerResponse := impl(ctx, clientEvents)
-
-		go func() {
-			c.CompareAndLog(ctx, embeddedTransformerResponse, legacyTransformerResponse)
-		}()
-
+		c.CompareAndLog(ctx, embeddedTransformerResponse, legacyTransformerResponse)
 		return legacyTransformerResponse
 	}
 	return impl(ctx, clientEvents)
+}
+
+func (c *Client) canRunWarehouseTransformations(destType string) bool {
+	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
+		return c.config.warehouseTransformations.enable.Load()
+	}
+	if destType == warehouseutils.SnowpipeStreaming {
+		return c.config.warehouseTransformations.enable.Load()
+	}
+	return false
 }
 
 func (d *Client) compactRequestPayloads() bool {
