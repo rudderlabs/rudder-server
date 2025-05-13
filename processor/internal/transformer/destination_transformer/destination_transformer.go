@@ -402,9 +402,7 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok && c.config.warehouseTransformations.enable.Load() {
 		if c.config.warehouseTransformations.verify.Load() {
 			legacyResponse := c.transform(ctx, clientEvents)
-			go func() {
-				c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
-			}()
+			c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
 			return legacyResponse
 		}
 		return c.warehouseClient.Transform(ctx, clientEvents)
