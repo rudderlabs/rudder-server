@@ -172,12 +172,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 			workspace.ApplyReplaySources()
 			workspace.processAccountAssociations()
 			// Process dynamic config with the instance cache
-			for i := range workspace.Sources {
-				for j := range workspace.Sources[i].Destinations {
-					dest := &workspace.Sources[i].Destinations[j]
-					dest.UpdateHasDynamicConfig(nc.dynamicConfigCache)
-				}
-			}
+			ProcessDestinationsInSources(workspace.Sources, nc.dynamicConfigCache)
 		}
 		// always set connection flags to true for hosted and multi-tenant warehouse service
 		workspace.ConnectionFlags.URL = nc.cpRouterURL

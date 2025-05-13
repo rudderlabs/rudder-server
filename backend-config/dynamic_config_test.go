@@ -232,6 +232,116 @@ func TestUpdateDynamicConfigWithMockCache(t *testing.T) {
 	assert.False(t, dest3.HasDynamicConfig, "Should recompute HasDynamicConfig when RevisionID changes")
 }
 
+// TestProcessDestinationsInSources tests the ProcessDestinationsInSources utility function
+func TestProcessDestinationsInSources(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	// Create a mock cache
+	mockCache := mock_dynamicconfig.NewMockCache(ctrl)
+
+	// Create a test config with sources and destinations
+	sources := []backendconfig.SourceT{
+		{
+			ID: "source-1",
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:         "dest-1",
+					RevisionID: "rev-1",
+					Config: map[string]interface{}{
+						"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
+					},
+				},
+				{
+					ID:         "dest-2",
+					RevisionID: "rev-2",
+					Config: map[string]interface{}{
+						"apiKey": "static-api-key",
+					},
+				},
+			},
+		},
+		{
+			ID: "source-2",
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:         "dest-3",
+					RevisionID: "rev-3",
+					Config: map[string]interface{}{
+						"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
+					},
+				},
+			},
+		},
+	}
+
+	// Set up expectations for the mock cache
+	// For dest-1
+	mockCache.EXPECT().Get("dest-1").Return(nil, false)
+	mockCache.EXPECT().Set("dest-1", &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       "rev-1",
+		HasDynamicConfig: true,
+	})
+
+	// For dest-2
+	mockCache.EXPECT().Get("dest-2").Return(nil, false)
+	mockCache.EXPECT().Set("dest-2", &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       "rev-2",
+		HasDynamicConfig: false,
+	})
+
+	// For dest-3
+	mockCache.EXPECT().Get("dest-3").Return(nil, false)
+	mockCache.EXPECT().Set("dest-3", &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       "rev-3",
+		HasDynamicConfig: true,
+	})
+
+	// Call the utility function
+	backendconfig.ProcessDestinationsInSources(sources, mockCache)
+
+	// Verify that HasDynamicConfig is set correctly for each destination
+	assert.True(t, sources[0].Destinations[0].HasDynamicConfig, "Destination with dynamic config should have HasDynamicConfig=true")
+	assert.False(t, sources[0].Destinations[1].HasDynamicConfig, "Destination without dynamic config should have HasDynamicConfig=false")
+	assert.True(t, sources[1].Destinations[0].HasDynamicConfig, "Destination with dynamic config should have HasDynamicConfig=true")
+
+	// Test with cached values
+	// Reset the HasDynamicConfig flags
+	sources[0].Destinations[0].HasDynamicConfig = false
+	sources[0].Destinations[1].HasDynamicConfig = true
+	sources[1].Destinations[0].HasDynamicConfig = false
+
+	// Set up expectations for the mock cache with cached values
+	// For dest-1 (cached)
+	cachedInfo1 := &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       "rev-1",
+		HasDynamicConfig: true,
+	}
+	mockCache.EXPECT().Get("dest-1").Return(cachedInfo1, true)
+
+	// For dest-2 (cached)
+	cachedInfo2 := &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       "rev-2",
+		HasDynamicConfig: false,
+	}
+	mockCache.EXPECT().Get("dest-2").Return(cachedInfo2, true)
+
+	// For dest-3 (cached)
+	cachedInfo3 := &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       "rev-3",
+		HasDynamicConfig: true,
+	}
+	mockCache.EXPECT().Get("dest-3").Return(cachedInfo3, true)
+
+	// Call the utility function again
+	backendconfig.ProcessDestinationsInSources(sources, mockCache)
+
+	// Verify that HasDynamicConfig is set correctly from the cache
+	assert.True(t, sources[0].Destinations[0].HasDynamicConfig, "Should use cached value when RevisionID matches")
+	assert.False(t, sources[0].Destinations[1].HasDynamicConfig, "Should use cached value when RevisionID matches")
+	assert.True(t, sources[1].Destinations[0].HasDynamicConfig, "Should use cached value when RevisionID matches")
+}
+
 // Helper function to create a test config with a specified number of sources and destinations
 func createTestConfig(numSources, numDestPerSource int, withDynamicConfig bool) *backendconfig.ConfigT {
 	config := &backendconfig.ConfigT{}
@@ -419,5 +529,62 @@ func BenchmarkProcessDynamicConfig_NoDynamicConfig_NoChanges(b *testing.B) {
 				dest.UpdateHasDynamicConfig(cache)
 			}
 		}
+	}
+}
+
+// Benchmark for processing dynamic config using the utility function
+// This simulates the first run where all configs need to be processed
+func BenchmarkProcessDestinationsInSources_FirstRun(b *testing.B) {
+	config := createTestConfig(5, 10, true)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Reset the RevisionID to simulate first run
+		for s := range config.Sources {
+			for d := range config.Sources[s].Destinations {
+				config.Sources[s].Destinations[d].RevisionID = ""
+				config.Sources[s].Destinations[d].HasDynamicConfig = false
+			}
+		}
+
+		// Process with a local cache
+		cache := make(backendconfig.DynamicConfigMapCache)
+		backendconfig.ProcessDestinationsInSources(config.Sources, cache)
+	}
+}
+
+// Benchmark for processing dynamic config using the utility function
+// This simulates subsequent runs where no configs have changed
+func BenchmarkProcessDestinationsInSources_NoChanges(b *testing.B) {
+	config := createTestConfig(5, 10, true)
+
+	// Process once to set up the cache
+	cache := make(backendconfig.DynamicConfigMapCache)
+	backendconfig.ProcessDestinationsInSources(config.Sources, cache)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Reuse the same cache for subsequent runs
+		backendconfig.ProcessDestinationsInSources(config.Sources, cache)
+	}
+}
+
+// Benchmark for processing dynamic config using the utility function with a large config
+func BenchmarkProcessDestinationsInSources_LargeConfig(b *testing.B) {
+	config := createTestConfig(20, 50, true)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Reset the RevisionID to simulate first run
+		for s := range config.Sources {
+			for d := range config.Sources[s].Destinations {
+				config.Sources[s].Destinations[d].RevisionID = ""
+				config.Sources[s].Destinations[d].HasDynamicConfig = false
+			}
+		}
+
+		// Process with a local cache
+		cache := make(backendconfig.DynamicConfigMapCache)
+		backendconfig.ProcessDestinationsInSources(config.Sources, cache)
 	}
 }

@@ -23,3 +23,23 @@ func (c DynamicConfigMapCache) Set(destID string, info *dynamicconfig.Destinatio
 func (c DynamicConfigMapCache) Len() int {
 	return len(c)
 }
+
+// ProcessDestinationsInSources processes all destinations in all sources
+// and updates their HasDynamicConfig flag using the provided cache.
+// This utility function is used to avoid code duplication across different parts of the codebase.
+//
+// Parameters:
+//   - sources: A slice of SourceT containing destinations to process
+//   - cache: A dynamicconfig.Cache implementation to store and retrieve dynamic config information
+//
+// Usage example:
+//
+//	ProcessDestinationsInSources(workspace.Sources, dynamicConfigCache)
+func ProcessDestinationsInSources(sources []SourceT, cache dynamicconfig.Cache) {
+	for i := range sources {
+		for j := range sources[i].Destinations {
+			dest := &sources[i].Destinations[j]
+			dest.UpdateHasDynamicConfig(cache)
+		}
+	}
+}
