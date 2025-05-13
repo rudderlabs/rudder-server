@@ -5,6 +5,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/uploadjob"
 	"math/rand"
 	"slices"
 	"strconv"
@@ -91,7 +92,7 @@ type Router struct {
 
 	tenantManager    *multitenant.Manager
 	bcManager        *bcm.BackendConfigManager
-	uploadJobFactory UploadJobFactory
+	uploadJobFactory *uploadjob.Factory
 	notifier         *notifier.Notifier
 
 	config struct {
@@ -163,14 +164,11 @@ func New(
 	r.scheduledTimesCache = make(map[string][]int)
 	r.inProgressMap = make(map[workerIdentifierMapKey][]jobID)
 
-	r.uploadJobFactory = UploadJobFactory{
-		reporting:            reporting,
-		conf:                 r.conf,
-		logger:               r.logger,
-		statsFactory:         r.statsFactory,
-		db:                   r.db,
-		destinationValidator: validations.NewDestinationValidator(),
-		loadFile: loadfiles.NewLoadFileGenerator(
+	r.uploadJobFactory = uploadjob.NewFactory(
+		reporting,
+		db,
+		validations.NewDestinationValidator(),
+		loadfiles.NewLoadFileGenerator(
 			r.conf,
 			r.logger.Child("loadfile"),
 			r.notifier,
@@ -179,8 +177,11 @@ func New(
 			controlPlaneClient,
 			loadfiles.WithConfig(r.conf),
 		),
-		encodingFactory: encodingFactory,
-	}
+		r.conf,
+		r.logger,
+		r.statsFactory,
+		encodingFactory,
+	)
 
 	r.loadReloadableConfig(warehouseutils.WHDestNameMap[destType])
 	r.loadStats()

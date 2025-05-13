@@ -85,7 +85,7 @@ func (s *Slave) SetupSlave(ctx context.Context) error {
 		idx := workerIdx
 
 		g.Go(crash.NotifyWarehouse(func() error {
-			slaveWorker := newWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingFactory, idx, &s.reporting, s.db)
+			slaveWorker := newWorker(s.conf, s.log, s.stats, s.notifier, s.bcManager, s.constraintsManager, s.encodingFactory, idx, s.reporting, s.db, s.controlPlaneClient)
 			slaveWorker.start(gCtx, jobNotificationChannel, slaveID)
 			return nil
 		}))

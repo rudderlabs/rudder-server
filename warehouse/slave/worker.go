@@ -21,8 +21,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	whpayload "github.com/rudderlabs/rudder-server/warehouse/internal/payload"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/uploadjob"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
+	"github.com/rudderlabs/rudder-server/warehouse/uploadjob"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 

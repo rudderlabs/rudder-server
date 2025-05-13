@@ -1,4 +1,4 @@
-package router
+package uploadjob
 
 import (
 	"context"
@@ -23,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -126,7 +125,6 @@ var (
 		"singer-protocol": {},
 	}
 )
-
 
 func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 	ch := make(chan struct{}, 1)
