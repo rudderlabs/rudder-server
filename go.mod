@@ -35,6 +35,7 @@ require (
 	github.com/apache/pulsar-client-go v0.15.0-candidate-1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go v1.55.7
+	github.com/aws/aws-sdk-go-v2/service/glue v1.110.0
 	github.com/bufbuild/httplb v0.4.0
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
