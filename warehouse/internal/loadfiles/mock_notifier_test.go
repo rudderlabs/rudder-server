@@ -96,8 +96,7 @@ func (n *mockNotifier) publishV2(payload *notifier.PublishRequest) (<-chan *noti
 			loadFileUploads = append(loadFileUploads, loadfiles.LoadFileUpload{
 				TableName:             tableName,
 				Location:              req.UniqueLoadGenID + "/" + tableName,
-				TotalRows:             10,
-				ContentLength:         1000,
+				TotalRows:             len(req.StagingFiles),
 				DestinationRevisionID: destinationRevisionID,
 				UseRudderStorage:      req.UseRudderStorage,
 			})

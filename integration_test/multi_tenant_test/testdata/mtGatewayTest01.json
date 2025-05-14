@@ -17,6 +17,7 @@
           {
             "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
             "name": "Dev WebHook Integration Test 1",
+            "workspaceId": "{{.workspaceId}}",
             "enabled": true,
             "isProcessorEnabled": true,
             "config": {

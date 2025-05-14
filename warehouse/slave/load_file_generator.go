@@ -25,7 +25,7 @@ import (
 
 var warehousesToVerifyLoadFilesFolder = []string{warehouseutils.SNOWFLAKE}
 
-type stagingFileProcessor func(ctx context.Context, job payload) ([]uploadResult, error)
+type stagingFileProcessor func(ctx context.Context, job *payload) ([]uploadResult, error)
 
 type SyncGenerator struct {
 	Conf                 *config.Config

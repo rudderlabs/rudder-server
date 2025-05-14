@@ -99,15 +99,15 @@ func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (clu
 	}
 
 	if forceStaticMode {
-		log.Info("forcing the use of Static Cluster Manager")
+		log.Infon("forcing the use of Static Cluster Manager")
 		modeProvider = staticModeProvider()
 	} else {
 		switch deploymentType {
 		case deployment.MultiTenantType:
-			log.Info("using ETCD Based Dynamic Cluster Manager")
+			log.Infon("using ETCD Based Dynamic Cluster Manager")
 			modeProvider = state.NewETCDDynamicProvider()
 		case deployment.DedicatedType:
-			log.Info("using Static Cluster Manager")
+			log.Infon("using Static Cluster Manager")
 			modeProvider = staticModeProvider()
 		default:
 			return modeProvider, fmt.Errorf("unsupported deployment type: %q", deploymentType)
@@ -141,13 +141,23 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 	var enrichers []enricher.PipelineEnricher
 
 	if conf.GetBool("GeoEnrichment.enabled", false) {
-		log.Infof("Setting up the geolocation pipeline enricher")
+		log.Infon("Setting up the geolocation pipeline enricher")
 
 		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
 		if err != nil {
 			return nil, fmt.Errorf("starting geo enrichment process for pipeline: %w", err)
 		}
 		enrichers = append(enrichers, geoEnricher)
+	}
+
+	if conf.GetBool("BotEnrichment.enabled", true) {
+		log.Infon("Setting up the bot pipeline enricher")
+
+		botEnricher, err := enricher.NewBotEnricher()
+		if err != nil {
+			return nil, fmt.Errorf("starting bot enrichment process for pipeline: %w", err)
+		}
+		enrichers = append(enrichers, botEnricher)
 	}
 
 	return enrichers, nil

@@ -142,6 +142,55 @@ func Test_Namespace_Identity(t *testing.T) {
 	}, ident)
 }
 
+// TestDynamicConfigInNamespace tests that the HasDynamicConfig field is properly set
+// when loading the configuration from the API in a multi-tenant setup.
+func TestDynamicConfigInNamespace(t *testing.T) {
+	var (
+		ctx               = context.Background()
+		namespace         = "dynamic-config-namespace"
+		hostServiceSecret = "service-secret"
+	)
+
+	bcSrv := &backendConfigServer{t: t, token: hostServiceSecret}
+	bcSrv.addNamespace(namespace, "./testdata/namespace_with_dynamic_config.json")
+
+	ts := httptest.NewServer(bcSrv)
+	defer ts.Close()
+	httpSrvURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	client := &namespaceConfig{
+		config: config.New(),
+		logger: logger.NOP,
+
+		client:           ts.Client(),
+		configBackendURL: httpSrvURL,
+
+		namespace:           namespace,
+		hostedServiceSecret: hostServiceSecret,
+	}
+	require.NoError(t, client.SetUp())
+
+	// Get the configuration from the API
+	configs, err := client.Get(ctx)
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+
+	// Get the workspace configuration
+	config, ok := configs["workspace-1"]
+	require.True(t, ok)
+
+	// Verify that the HasDynamicConfig field is properly set for each destination
+	require.Len(t, config.Sources, 1)
+	require.Len(t, config.Sources[0].Destinations, 2)
+
+	// Destination with dynamic config should have HasDynamicConfig=true
+	require.True(t, config.Sources[0].Destinations[0].HasDynamicConfig, "Destination with dynamic config should have HasDynamicConfig=true")
+
+	// Destination without dynamic config should have HasDynamicConfig=false
+	require.False(t, config.Sources[0].Destinations[1].HasDynamicConfig, "Destination without dynamic config should have HasDynamicConfig=false")
+}
+
 func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	var (
 		ctx                  = context.Background()

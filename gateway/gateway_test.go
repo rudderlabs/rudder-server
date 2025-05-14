@@ -2525,6 +2525,53 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(Not(BeNil()))
 			Expect(err.Error()).To(Equal(response.NotRudderEvent))
 		})
+
+		It("adds isBot, botName, botURL, botIsInvalidBrowser in the request parameters", func() {
+			properties := stream.MessageProperties{
+				RequestType:         "dummyRequestType",
+				RoutingKey:          "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:         "workspaceID",
+				SourceID:            "sourceID",
+				ReceivedAt:          time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:           "dummyIP",
+				DestinationID:       "destinationID",
+				IsBot:               true,
+				BotName:             "dummyBotName",
+				BotURL:              "dummyBotURL",
+				BotIsInvalidBrowser: true,
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+
+			// check if the parameters are present in the request
+			type params struct {
+				IsBot               bool   `json:"is_bot"`
+				BotName             string `json:"bot_name"`
+				BotURL              string `json:"bot_url"`
+				BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser"`
+			}
+			var reqParams params
+			err = jsonrs.Unmarshal(jobsWithStats[0].job.Parameters, &reqParams)
+			Expect(err).To(BeNil())
+			Expect(reqParams.IsBot).To(BeTrue())
+			Expect(reqParams.BotName).To(Equal("dummyBotName"))
+			Expect(reqParams.BotURL).To(Equal("dummyBotURL"))
+			Expect(reqParams.BotIsInvalidBrowser).To(BeTrue())
+		})
 	})
 })
 

@@ -255,7 +255,7 @@ type jdWrapper struct {
 	queries *int32
 }
 
-func (jd jdWrapper) GetDistinctParameterValues(context.Context, string) ([]string, error) {
+func (jd jdWrapper) GetDistinctParameterValues(context.Context, jobsdb.ParameterName, string) ([]string, error) {
 	atomic.AddInt32(jd.queries, 1)
 	return []string{}, nil
 }

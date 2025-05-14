@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -31,6 +32,8 @@ type singleWorkspaceConfig struct {
 	workspaceIDOnce sync.Once
 	workspaceID     string
 
+	dynamicConfigCache dynamicconfig.Cache
+
 	logger               logger.Logger
 	httpCallsStat        stats.Counter
 	httpResponseSizeStat stats.Histogram
@@ -39,6 +42,7 @@ type singleWorkspaceConfig struct {
 func (wc *singleWorkspaceConfig) SetUp() error {
 	wc.httpCallsStat = stats.Default.NewStat("backend_config_http_calls", stats.CountType)
 	wc.httpResponseSizeStat = stats.Default.NewStat("backend_config_http_response_size", stats.HistogramType)
+	wc.dynamicConfigCache = make(DynamicConfigMapCache)
 
 	if wc.logger == nil {
 		wc.logger = logger.NewLogger().Child("backend-config").Withn(obskit.WorkspaceID(wc.workspaceID))
@@ -119,6 +123,9 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	}
 	sourcesJSON.ApplyReplaySources()
 	sourcesJSON.processAccountAssociations()
+
+	// Process dynamic config with the instance cache
+	ProcessDestinationsInSources(sourcesJSON.Sources, wc.dynamicConfigCache)
 	workspaceID := sourcesJSON.WorkspaceID
 
 	wc.workspaceIDOnce.Do(func() {
@@ -154,6 +161,9 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		wc.workspaceID = workspaceID
 	})
 	configJSON.processAccountAssociations()
+
+	// Process dynamic config with the instance cache
+	ProcessDestinationsInSources(configJSON.Sources, wc.dynamicConfigCache)
 	conf[workspaceID] = configJSON
 	return conf, nil
 }

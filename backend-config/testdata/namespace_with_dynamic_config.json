@@ -1,0 +1,45 @@
+{
+    "workspace-1": {
+        "updatedAt": "2022-07-20T10:00:00.000Z",
+        "sources": [
+            {
+                "config": {},
+                "id": "source-1",
+                "name": "Test Source",
+                "writeKey": "test-write-key",
+                "enabled": true,
+                "workspaceId": "workspace-1",
+                "destinations": [
+                    {
+                        "config": {
+                            "apiKey": "{{ message.context.apiKey || \"default-api-key\" }}"
+                        },
+                        "id": "dest-1",
+                        "name": "Destination with dynamic config",
+                        "enabled": true,
+                        "workspaceId": "workspace-1",
+                        "revisionId": "rev-1",
+                        "destinationDefinition": {
+                            "name": "HTTP",
+                            "displayName": "HTTP"
+                        }
+                    },
+                    {
+                        "config": {
+                            "apiKey": "static-api-key"
+                        },
+                        "id": "dest-2",
+                        "name": "Destination without dynamic config",
+                        "enabled": true,
+                        "workspaceId": "workspace-1",
+                        "revisionId": "rev-2",
+                        "destinationDefinition": {
+                            "name": "HTTP",
+                            "displayName": "HTTP"
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}

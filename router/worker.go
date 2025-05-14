@@ -803,6 +803,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			WorkspaceID:      destinationJob.Destination.WorkspaceID,
 			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
 			ID:               destinationJob.Destination.ID,
+			Account:          destinationJob.Destination.DeliveryAccount,
 		},
 		Connection: destinationJob.Connection,
 		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),

@@ -22,16 +22,15 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
-					Id:                    "acc-1",
+			Accounts: map[string]Account{
+				"acc-1": {
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 					Secret:                map[string]interface{}{"secret1": "secretValue1"},
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name: "oauth-def",
 					Config: map[string]interface{}{
 						"OAuth": map[string]interface{}{
@@ -79,15 +78,14 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
-					Id:                    "acc-1",
+			Accounts: map[string]Account{
+				"acc-1": {
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:               "oauth-def",
 					Config:             map[string]interface{}{"oauth": true},
 					AuthenticationType: "OAuth",
@@ -122,15 +120,14 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
-					Id:                    "acc-1",
+			Accounts: map[string]Account{
+				"acc-1": {
 					AccountDefinitionName: "oauth-def",
 					Options:               map[string]interface{}{"key1": "value1"},
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{"oauth": true},
 				},
@@ -159,14 +156,13 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
-					Id:                    "acc-1",
+			Accounts: map[string]Account{
+				"acc-1": {
 					AccountDefinitionName: "oauth-def",
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{},
 				},
@@ -194,14 +190,13 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
-					Id:                    "acc-1",
+			Accounts: map[string]Account{
+				"acc-1": {
 					AccountDefinitionName: "oauth-def",
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{},
 				},
@@ -228,14 +223,13 @@ func TestAccountAssociations(t *testing.T) {
 					},
 				},
 			},
-			Accounts: []Account{
-				{
-					Id:                    "acc-1",
+			Accounts: map[string]Account{
+				"acc-1": {
 					AccountDefinitionName: "non-existent-def",
 				},
 			},
-			AccountDefinitions: []AccountDefinition{
-				{
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
 					Name:   "oauth-def",
 					Config: map[string]interface{}{},
 				},

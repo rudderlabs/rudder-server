@@ -162,7 +162,7 @@ func (a *archiver) Start() error {
 		for {
 			if a.config.enabled() {
 				start := time.Now()
-				sources, err := a.jobsDB.GetDistinctParameterValues(ctx, "source_id")
+				sources, err := a.jobsDB.GetDistinctParameterValues(ctx, jobsdb.SourceID, "")
 				a.stats.NewStat("arc_active_partitions_time", stats.TimerType).Since(start)
 				if err != nil {
 					if ctx.Err() != nil {

@@ -18,8 +18,8 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type Factory struct {
@@ -37,7 +37,7 @@ func NewFactory(
 	reporting types.Reporting,
 	db *sqlquerywrapper.DB,
 	destinationValidator validations.DestinationValidator,
-	loadFile *loadfiles.LoadFileGenerator,
+	loadFile loadfiles.Generator,
 	conf *config.Config,
 	logger logger.Logger,
 	statsFactory stats.Stats,

@@ -275,7 +275,7 @@ func scanJob(scan scanFn, job *Job) error {
 	}
 	if jobTypeRaw.Valid {
 		switch jobTypeRaw.String {
-		case string(JobTypeUpload), string(JobTypeAsync):
+		case string(JobTypeUpload), string(JobTypeAsync), string(JobTypeUploadV2):
 			job.Type = JobType(jobTypeRaw.String)
 		default:
 			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
@@ -484,4 +484,24 @@ func (n *repo) orphanJobIDs(
 	}
 
 	return ids, nil
+}
+
+func (n *repo) refreshClaim(ctx context.Context, jobId int64) error {
+	_, err := n.db.ExecContext(ctx, `
+		UPDATE
+		  `+notifierTableName+`
+		SET
+		  last_exec_time = $1
+		WHERE
+		  id = $2
+		  AND status = $3;
+	`,
+		n.now(),
+		jobId,
+		Executing,
+	)
+	if err != nil {
+		return fmt.Errorf("refreshing claim: %w", err)
+	}
+	return nil
 }

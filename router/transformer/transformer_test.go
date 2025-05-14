@@ -571,8 +571,8 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 	},
 	{
-		// panic test-case
-		description: "when transformer response is not unmarshallable for quite sometime, after exhaustion of maxRetries(1) panic should happen",
+		// This was previously a panic test-case, but now we return 500 errors instead of panicking
+		description: "when transformer returns an unmarshallable response, should return 500 error instead of panicking",
 		cpResponses: []testutils.CpResponseParams{
 			// fetch token http request
 			{
@@ -583,6 +583,10 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
 			{JobMetadata: types.JobMetadataT{JobID: 2, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
+		},
+		expected: []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "Reset Content", Destination: oauthDests[0]},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, Error: "Reset Content", Destination: oauthDests[0]},
 		},
 	},
 }
@@ -1113,7 +1117,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			},
 			RespBodys:                map[int64]string{},
 			RespContentType:          "text/plain; charset=utf-8",
-			ProxyRequestResponseBody: `reading response body post roundTrip: unexpected EOF`, // not full error message
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1170,7 +1174,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},
@@ -1221,7 +1225,7 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 			RespBodys:       map[int64]string{},
 			RespContentType: "text/plain; charset=utf-8",
 			// Originally Response Body will look like this "Post \"http://<TF_SERVER>/v1/destinations/salesforce_oauth/proxy\": getting auth error category post roundTrip: LB cannot send to transformer"
-			ProxyRequestResponseBody: `getting auth error category post roundTrip: LB cannot send to transformer`,
+			ProxyRequestResponseBody: `[TransformerProxy Unmarshalling]:: respData: , err: sonnet: unexpected EOF reading a byte`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes:          map[int64]int{},
 		},

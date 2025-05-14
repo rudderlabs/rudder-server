@@ -25,13 +25,19 @@ func (c *Client) CompareAndLog(
 		c.log.Warnn("DestinationTransformer sanity check failed")
 		return
 	}
-
 	if c.loggedEvents.Load() >= int64(c.config.maxLoggedEvents.Load()) {
 		return
 	}
-
 	defer c.stats.comparisonTime.RecordDuration()()
+	go func() {
+		c.compareAndLog(ctx, embeddedResponse, legacyResponse)
+	}()
+}
 
+func (c *Client) compareAndLog(
+	ctx context.Context,
+	embeddedResponse, legacyResponse types.Response,
+) {
 	differingResponse, sampleDiff := c.differingEvents(embeddedResponse, legacyResponse)
 	noOfDifferences := int64(len(differingResponse))
 	if noOfDifferences == 0 && sampleDiff == "" {

@@ -261,6 +261,14 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 	stagingFileInfo, err := os.Stat(stagingFile)
 	require.NoError(t, err)
 
+	bytesPerTable := make(map[string]int64)
+	for _, event := range stagingEvents {
+		tableName := event.Metadata.Table
+		eventJSON, err := jsonrs.Marshal(event.Data)
+		require.NoError(t, err)
+		bytesPerTable[tableName] += int64(len(eventJSON))
+	}
+
 	payload := warehouseclient.StagingFile{
 		WorkspaceID:           testConfig.WorkspaceID,
 		Schema:                schemaMap,
@@ -275,6 +283,7 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 		SourceTaskRunID:       testConfig.TaskRunID,
 		SourceJobRunID:        testConfig.JobRunID,
 		TimeWindow:            warehouseutils.GetTimeWindow(receivedAt),
+		BytesPerTable:         bytesPerTable,
 	}
 	return payload
 }

@@ -3,7 +3,9 @@ package backendconfig
 import (
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 )
 
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
@@ -57,6 +59,33 @@ type DestinationT struct {
 	RevisionID            string
 	DeliveryAccount       *AccountWithDefinition `json:"account,omitempty"`
 	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
+	HasDynamicConfig      bool                   `json:"hasDynamicConfig,omitempty"`
+}
+
+// UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns
+// and sets the HasDynamicConfig field accordingly.
+// It uses a cache to avoid recomputing the flag for destinations that haven't changed.
+// The cache is keyed by destination ID and stores the RevisionID and HasDynamicConfig values.
+// When a destination's RevisionID changes, it indicates a config change, and we recompute the flag.
+func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
+	// Check if we have a cached value for this destination
+	cachedInfo, exists := cache.Get(d.ID)
+
+	// If the destination's RevisionID matches the cached RevisionID,
+	// use the cached HasDynamicConfig value to avoid recomputation
+	if exists && d.RevisionID == cachedInfo.RevisionID {
+		d.HasDynamicConfig = cachedInfo.HasDynamicConfig
+		return
+	}
+
+	// RevisionID is not in cache or has changed, recompute the dynamic config flag
+	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
+
+	// Update the cache with the new value
+	cache.Set(d.ID, &dynamicconfig.DestinationRevisionInfo{
+		RevisionID:       d.RevisionID,
+		HasDynamicConfig: d.HasDynamicConfig,
+	})
 }
 
 type SourceT struct {
@@ -87,7 +116,6 @@ func (s *SourceT) IsReplaySource() bool {
 }
 
 type Account struct {
-	Id                    string                 `json:"id"`
 	AccountDefinitionName string                 `json:"accountDefinitionName"`
 	Options               map[string]interface{} `json:"options"`
 	Secret                map[string]interface{} `json:"secret"`
@@ -109,8 +137,8 @@ type ConfigT struct {
 	UpdatedAt          time.Time                    `json:"updatedAt"`
 	Credentials        map[string]Credential        `json:"credentials"`
 	Connections        map[string]Connection        `json:"connections"`
-	Accounts           []Account                    `json:"accounts"`
-	AccountDefinitions []AccountDefinition          `json:"accountDefinitions"`
+	Accounts           map[string]Account           `json:"accounts"`
+	AccountDefinitions map[string]AccountDefinition `json:"accountDefinitions"`
 }
 
 type AccountWithDefinition struct {
@@ -220,7 +248,7 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType 
 	if dgSourceTPConfigT.MergedConfig == nil {
 		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
 		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
-		outputConfig := misc.MergeMaps(globalConfig, eventSpecificConfig)
+		outputConfig := lo.Assign(globalConfig, eventSpecificConfig)
 		dgSourceTPConfigT.MergedConfig = outputConfig
 	}
 	return dgSourceTPConfigT.MergedConfig

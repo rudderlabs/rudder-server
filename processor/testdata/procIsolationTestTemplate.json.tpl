@@ -24,7 +24,7 @@
                             "webhookMethod": "POST"
                         },
                         "secretConfig": {},
-                        "id": "{{$.destinationId}}",
+                        "id": "{{$.destinationId}}-{{$index}}",
                         "name": "Des WebHook Integration Test 1",
                         "enabled": true,
                         "workspaceId": "{{$workspace}}",
