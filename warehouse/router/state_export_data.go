@@ -806,7 +806,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 		err        error
 	)
 
-	if repository, err = schemarepository.NewSchemaRepository(job.conf, job.logger, job.warehouse, job); err != nil {
+	if repository, err = schemarepository.NewSchemaRepository(job.conf, job.logger, job.warehouse, job, job.conf.GetBool("Warehouse.datalake.useGlueV2", false)); err != nil {
 		return fmt.Errorf("create schema repository: %w", err)
 	}
 
