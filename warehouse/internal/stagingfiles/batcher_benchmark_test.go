@@ -1,25 +1,26 @@
-package loadfiles
+package stagingfiles
 
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
-
 /*
-BenchmarkGroupBySize/few_tables-12                  5968            201541 ns/op
-BenchmarkGroupBySize/few_tables_big_files-12                  99          12081347 ns/op
-BenchmarkGroupBySize/many_tables_few_files-12               1530            798228 ns/op
-BenchmarkGroupBySize/many_tables_many_files-12                31          36100523 ns/op
-BenchmarkGroupBySize/many_tables_many_many_files-12            1        3859127625 ns/op
+BenchmarkGroupBySize
+BenchmarkGroupBySize/few_tables
+BenchmarkGroupBySize/few_tables-12         	    4702	    246746 ns/op	   81794 B/op	      46 allocs/op
+BenchmarkGroupBySize/few_tables_big_files
+BenchmarkGroupBySize/few_tables_big_files-12         	      61	  19053889 ns/op	  146434 B/op	     994 allocs/op
+BenchmarkGroupBySize/many_tables_few_files
+BenchmarkGroupBySize/many_tables_few_files-12        	    1272	    945229 ns/op	   75658 B/op	     117 allocs/op
+BenchmarkGroupBySize/many_tables_many_files
+BenchmarkGroupBySize/many_tables_many_files-12       	      26	  42825492 ns/op	  805009 B/op	     881 allocs/op
+BenchmarkGroupBySize/many_tables_many_many_files
+BenchmarkGroupBySize/many_tables_many_many_files-12  	       1	4784148417 ns/op	 8863280 B/op	    8373 allocs/op
 */
 func BenchmarkGroupBySize(b *testing.B) {
-	lf := &LoadFileGenerator{
-		Logger: logger.NOP,
-		Conf:   config.New(),
-	}
+	batcher := NewBatcher(128, logger.NOP)
 
 	// Helper function to create staging files with specified table sizes
 	createStagingFiles := func(count int, tableSizes map[string]int64) []*model.StagingFile {
@@ -89,7 +90,7 @@ func BenchmarkGroupBySize(b *testing.B) {
 
 			b.ResetTimer() // Reset timer to exclude setup time
 			for i := 0; i < b.N; i++ {
-				groups := lf.GroupStagingFiles(files, 128)
+				groups := batcher.Batch(files)
 				// Prevent compiler from optimizing away the result
 				if len(groups) == 0 {
 					b.Fatal("expected non-zero groups")
