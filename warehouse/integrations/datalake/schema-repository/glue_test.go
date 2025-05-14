@@ -13,7 +13,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	"github.com/aws/aws-sdk-go/service/glue"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -124,8 +123,9 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			ctx := context.Background()
 
-			g, err := NewGlueSchemaRepository(config.New(), logger.NOP, warehouse)
+			glueClient, err := NewGlueClientForWarehouse(warehouse, true)
 			require.NoError(t, err)
+			g := NewGlueSchemaRepository(glueClient, config.New(), logger.NOP, warehouse)
 
 			t.Logf("Creating schema %s", testNamespace)
 			err = g.CreateSchema(ctx)
@@ -137,9 +137,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			t.Cleanup(func() {
 				t.Log("Cleaning up")
-				_, err = g.GlueClient.DeleteDatabase(&glue.DeleteDatabaseInput{
-					Name: &testNamespace,
-				})
+				err = g.DeleteDatabase(ctx, testNamespace)
 				require.NoError(t, err)
 			})
 

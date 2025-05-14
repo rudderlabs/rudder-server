@@ -15,15 +15,7 @@ import (
 const maxCharacterLimit = 65535
 
 var (
-	varcharType  = fmt.Sprintf("varchar(%d)", maxCharacterLimit)
-	dataTypesMap = map[string]string{
-		"boolean":  "boolean",
-		"int":      "bigint",
-		"bigint":   "bigint",
-		"float":    "double",
-		"string":   varcharType,
-		"datetime": "timestamp",
-	}
+	varcharType          = fmt.Sprintf("varchar(%d)", maxCharacterLimit)
 	dataTypesMapToRudder = map[string]string{
 		"boolean":      "boolean",
 		"bigint":       "int",
@@ -44,6 +36,12 @@ type SchemaRepository interface {
 	RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error
 }
 
+type glueRepoWithStub struct{ *GlueSchemaRepository }
+
+func (g *glueRepoWithStub) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
+	return fmt.Errorf("RefreshPartitions not implemented")
+}
+
 func UseGlue(w *model.Warehouse) bool {
 	glueConfig := w.GetBoolDestinationConfig(model.UseGlueSetting)
 	hasAWSRegion := misc.HasAWSRegionInConfig(w.Destination.Config)
@@ -52,7 +50,11 @@ func UseGlue(w *model.Warehouse) bool {
 
 func NewSchemaRepository(conf *config.Config, logger logger.Logger, wh model.Warehouse, uploader warehouseutils.Uploader) (SchemaRepository, error) {
 	if UseGlue(&wh) {
-		return NewGlueSchemaRepository(conf, logger, wh)
+		glueClient, err := NewGlueClientForWarehouse(wh, true) // set to false for v1 if needed
+		if err != nil {
+			return nil, err
+		}
+		return &glueRepoWithStub{NewGlueSchemaRepository(glueClient, conf, logger, wh)}, nil
 	}
 	return NewLocalSchemaRepository(wh, uploader)
 }
