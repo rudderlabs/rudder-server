@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.1](https://github.com/rudderlabs/rudder-server/compare/v1.49.0...v1.49.1) (2025-05-15)
+
+
+### Miscellaneous
+
+* revert support new consent resolution strategy values ([#5855](https://github.com/rudderlabs/rudder-server/issues/5855)) ([8e29ed3](https://github.com/rudderlabs/rudder-server/commit/8e29ed38ab99e3bc728088116deb5d168f2858cb))
+
 ## [1.49.0](https://github.com/rudderlabs/rudder-server/compare/v1.48.0...v1.49.0) (2025-05-13)
 
 
