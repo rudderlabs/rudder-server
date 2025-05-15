@@ -3653,7 +3653,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(6)) // all except D6, D13, and D14
+			).To(Equal(8)) // all except D13
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCM, SourceIDGCM, "")).To(BeTrue())
 			Expect(
@@ -3665,7 +3665,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(6)) // all except D6 and D7
+			).To(Equal(7)) // all except D6 and D7
 
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "")).To(BeTrue())
 			Expect(
@@ -3677,7 +3677,7 @@ var _ = Describe("Processor", Ordered, func() {
 						"destination-definition-name-enabled",
 					),
 				)),
-			).To(Equal(6)) // all except D7
+			).To(Equal(8)) // all except D7
 
 			// some unknown destination ID is passed destination will be unavailable
 			Expect(processor.isDestinationAvailable(eventWithDeniedConsentsGCMKetch, SourceIDGCM, "unknown-destination")).To(BeFalse())
