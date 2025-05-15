@@ -526,7 +526,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 		})
 	})
@@ -557,7 +556,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
@@ -662,7 +660,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
@@ -763,7 +760,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
@@ -855,7 +851,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
 			router.netHandle = mockNetHandle
@@ -948,7 +943,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.netHandle = mockNetHandle
 
@@ -1061,7 +1055,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.netHandle = mockNetHandle
 
@@ -1182,7 +1175,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
@@ -1294,7 +1286,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 
 			router.transformer = mockTransformer
@@ -1461,7 +1452,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 
 			router.transformer = mockTransformer
@@ -1652,7 +1642,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
@@ -1875,7 +1864,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
@@ -2056,7 +2044,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -2229,7 +2216,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
@@ -2389,7 +2375,6 @@ var _ = Describe("router", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
