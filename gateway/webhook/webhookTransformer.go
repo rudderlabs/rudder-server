@@ -12,12 +12,13 @@ import (
 	"strings"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/requesttojson"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
@@ -33,7 +34,9 @@ type sourceTransformAdapter interface {
 
 // ----- v1 adapter ---------
 
-type v1Adapter struct{}
+type v1Adapter struct {
+	baseTransformerURL string
+}
 
 type V1TransformerEvent struct {
 	EventRequest json.RawMessage       `json:"event"`
@@ -41,7 +44,7 @@ type V1TransformerEvent struct {
 }
 
 func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
+	source := authCtx.SourceDetails
 
 	v1TransformerEvent := V1TransformerEvent{
 		EventRequest: eventRequest,
@@ -54,7 +57,6 @@ func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 			Enabled:          source.Enabled,
 			WorkspaceID:      source.WorkspaceID,
 			WriteKey:         source.WriteKey,
-			Transient:        source.Transient,
 		},
 	}
 
@@ -62,7 +64,7 @@ func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 }
 
 func (v1 *v1Adapter) getTransformerURL(sourceType string) (string, error) {
-	return getTransformerURL(transformer.V1, sourceType)
+	return getTransformerURL(transformer.V1, sourceType, v1.baseTransformerURL)
 }
 
 func (v1 *v1Adapter) getAdapterVersion() string {
@@ -71,7 +73,9 @@ func (v1 *v1Adapter) getAdapterVersion() string {
 
 // ----- v2 adapter -----
 
-type v2Adapter struct{}
+type v2Adapter struct {
+	baseTransformerURL string
+}
 
 type V2TransformerEvent struct {
 	EventRequest json.RawMessage       `json:"request"`
@@ -79,7 +83,7 @@ type V2TransformerEvent struct {
 }
 
 func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, eventRequest []byte) ([]byte, error) {
-	source := authCtx.Source
+	source := authCtx.SourceDetails
 
 	v2TransformerEvent := V2TransformerEvent{
 		EventRequest: eventRequest,
@@ -92,7 +96,6 @@ func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 			Enabled:          source.Enabled,
 			WorkspaceID:      source.WorkspaceID,
 			WriteKey:         source.WriteKey,
-			Transient:        source.Transient,
 		},
 	}
 
@@ -100,7 +103,7 @@ func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 }
 
 func (v2 *v2Adapter) getTransformerURL(sourceType string) (string, error) {
-	return getTransformerURL(transformer.V2, sourceType)
+	return getTransformerURL(transformer.V2, sourceType, v2.baseTransformerURL)
 }
 
 func (v2 *v2Adapter) getAdapterVersion() string {
@@ -109,18 +112,22 @@ func (v2 *v2Adapter) getAdapterVersion() string {
 
 // ------------------------------
 
-func newSourceTransformAdapter(version string) sourceTransformAdapter {
+func newSourceTransformAdapter(version string, conf *config.Config) sourceTransformAdapter {
 	// V0 Deprecation: this function returns v1 adapter by default, thereby deprecating v0
+	baseTransformerUrl := conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	if version == transformer.V2 {
-		return &v2Adapter{}
+		return &v2Adapter{
+			baseTransformerURL: baseTransformerUrl,
+		}
 	}
-	return &v1Adapter{}
+	return &v1Adapter{
+		baseTransformerURL: baseTransformerUrl,
+	}
 }
 
 // --- utilities -----
 
-func getTransformerURL(version, sourceType string) (string, error) {
-	baseURL := config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+func getTransformerURL(version, sourceType, baseURL string) (string, error) {
 	return url.JoinPath(baseURL, version, "sources", strings.ToLower(sourceType))
 }
 

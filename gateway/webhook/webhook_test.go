@@ -13,6 +13,8 @@ import (
 	"testing"
 	"testing/iotest"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
@@ -26,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	gwStats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	mockWebhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jsonrs"
@@ -92,13 +93,12 @@ func TestWebhookMaxRequestSize(t *testing.T) {
 
 	mockGW := mockWebhook.NewMockGateway(ctrl)
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).AnyTimes()
 
 	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
 
 	maxReqSizeInKB := 1
 
-	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = func(ctx context.Context) (sourceTransformAdapter, error) {
 			return &mockSourceTransformAdapter{}, nil
 		}
@@ -125,31 +125,8 @@ func TestWebhookMaxRequestSize(t *testing.T) {
 	require.Equal(t, http.StatusRequestEntityTooLarge, resp.Result().StatusCode)
 }
 
-func TestWebhookBlockTillFeaturesAreFetched(t *testing.T) {
-	initWebhook()
-	ctrl := gomock.NewController(t)
-	mockGW := mockWebhook.NewMockGateway(ctrl)
-	mockTransformerFeaturesService := mock_features.NewMockFeaturesService(ctrl)
-	mockTransformerFeaturesService.EXPECT().Wait().Return(make(chan struct{})).Times(1)
-	webhookHandler := Setup(mockGW, mockTransformerFeaturesService, stats.NOP)
-
-	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).AnyTimes()
-	arctx := &gwtypes.AuthRequestContext{
-		SourceDefName: sourceDefName,
-		WriteKey:      sampleWriteKey,
-	}
-	webhookHandler.Register(sourceDefName)
-	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
-	w := httptest.NewRecorder()
-	ctx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
-	ctx = context.WithValue(ctx, gwtypes.CtxParamAuthRequestContext, arctx)
-	req = req.WithContext(ctx)
-	webhookHandler.RequestHandler(w, req)
-
-	assert.Equal(t, http.StatusGatewayTimeout, w.Result().StatusCode)
-	assert.Contains(t, strings.TrimSpace(w.Body.String()), "gateway timeout")
-	_ = webhookHandler.Shutdown()
+func newSourceStatReporter(_ *gwtypes.AuthRequestContext, _ string) gwtypes.StatReporter {
+	return &gwStats.SourceStat{}
 }
 
 func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
@@ -160,12 +137,11 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, sampleError, http.StatusBadRequest)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 	arctx := &gwtypes.AuthRequestContext{
 		SourceDefName: sourceDefName,
@@ -205,12 +181,12 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
@@ -248,12 +224,12 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(2)
+
 	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
@@ -291,11 +267,10 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
@@ -333,18 +308,17 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
 	gwPayload, _ := jsonrs.Marshal(outputToGateway)
 	arctx := &gwtypes.AuthRequestContext{
 		WriteKey:      sampleWriteKey,
 		SourceDefName: sourceDefName,
 	}
-	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
+	mockGW.EXPECT().ProcessTransformedWebhookRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
@@ -380,18 +354,17 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 			respBody, _ := jsonrs.Marshal(responses)
 			_, _ = w.Write(respBody)
 		}))
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, func(bt *batchWebhookTransformerT) {
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
 		bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
 	})
 	mockGW.EXPECT().TrackRequestMetrics("").Times(1)
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).Return(&gwStats.SourceStat{}).Times(1)
 
 	gwPayload, _ := jsonrs.Marshal(outputToGateway)
 	arctx := &gwtypes.AuthRequestContext{
 		WriteKey:      sampleWriteKey,
 		SourceDefName: sourceDefName,
 	}
-	mockGW.EXPECT().ProcessWebRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
+	mockGW.EXPECT().ProcessTransformedWebhookRequest(gomock.Any(), gomock.Any(), "batch", gwPayload, arctx).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook", bytes.NewBufferString(sampleJson))
@@ -412,47 +385,15 @@ func TestRecordWebhookErrors(t *testing.T) {
 	mockGW := mockWebhook.NewMockGateway(ctrl)
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
-	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore)
+	webhookHandler := Setup(mockGW, transformer.NewNoOpService(), statsStore, config.Default, newSourceStatReporter)
 	reqs := []*webhookT{
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w3"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2"}},
-		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2", SourceID: "sourceID2", WorkspaceID: "workspaceID2", SourceCategory: "webhook2"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w3", SourceID: "sourceID3", WorkspaceID: "workspaceID3", SourceCategory: "webhook3"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w2", SourceID: "sourceID2", WorkspaceID: "workspaceID2", SourceCategory: "webhook2"}},
+		{authContext: &gwtypes.AuthRequestContext{WriteKey: "w1", SourceID: "sourceID1", WorkspaceID: "workspaceID1", SourceCategory: "webhook1"}},
 	}
-	mockGW.EXPECT().NewSourceStat(gomock.Any(), gomock.Any()).DoAndReturn(func(arctx *gwtypes.AuthRequestContext, reqType string) *gwStats.SourceStat {
-		switch arctx.WriteKey {
-		case "w1":
-			return &gwStats.SourceStat{
-				Source:      "source1",
-				SourceID:    "sourceID1",
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				WorkspaceID: "workspaceID1",
-				SourceType:  "webhook1",
-			}
-		case "w2":
-			return &gwStats.SourceStat{
-				Source:      "source2",
-				SourceID:    "sourceID2",
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				WorkspaceID: "workspaceID2",
-				SourceType:  "webhook2",
-			}
-		case "w3":
-			return &gwStats.SourceStat{
-				Source:      "source3",
-				SourceID:    "sourceID3",
-				WriteKey:    arctx.WriteKey,
-				ReqType:     reqType,
-				WorkspaceID: "workspaceID3",
-				SourceType:  "webhook3",
-			}
-		}
-		return nil
-	}).Times(3)
 
 	webhookHandler.recordWebhookErrors("cio", "err1", reqs, 400)
 

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -26,11 +27,34 @@ type AuthRequestContext struct {
 	ReplaySource    bool
 	SourceJobRunID  string
 	SourceTaskRunID string
-	Source          backendconfig.SourceT
+	// deprecated in favor of SourceDetails
+	Source backendconfig.SourceT
 	// DestinationID is optional param, destination id will be present for rETL Request
 	DestinationID string
+	SourceDetails struct {
+		ID               string
+		OriginalID       string
+		Name             string
+		SourceDefinition struct {
+			ID       string
+			Name     string
+			Category string
+			Type     string
+		}
+		Enabled     bool
+		WorkspaceID string
+		WriteKey    string
+		Config      map[string]interface{}
+	}
 }
 
 func (arctx *AuthRequestContext) SourceTag() string {
 	return misc.GetTagName(arctx.WriteKey, arctx.SourceName)
+}
+
+type StatReporter interface {
+	Report(s stats.Stats)
+	RequestFailed(errMsg string)
+	RequestDropped()
+	RequestSucceeded()
 }
