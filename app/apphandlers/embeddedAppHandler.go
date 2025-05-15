@@ -301,10 +301,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:                     logger.NewLogger().Child("router"),
-		Reporting:                  reporting,
-		BackendConfig:              backendconfig.DefaultBackendConfig,
-		RouterDB:                   routerDB,
+		Logger:        logger.NewLogger().Child("router"),
+		Reporting:     reporting,
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple routers can share the same cache and not hit the DB every time
+			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
+			routerDB,
+		),
 		ProcErrorDB:                errDBForWrite,
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
@@ -315,9 +318,12 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:             reporting,
-		BackendConfig:         backendconfig.DefaultBackendConfig,
-		RouterDB:              batchRouterDB,
+		Reporting:     reporting,
+		BackendConfig: backendconfig.DefaultBackendConfig,
+		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple batch routers can share the same cache and not hit the DB every time
+			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
+			batchRouterDB,
+		),
 		ProcErrorDB:           errDBForWrite,
 		TransientSources:      transientSources,
 		RsourcesService:       rsourcesService,

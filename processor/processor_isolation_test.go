@@ -48,7 +48,11 @@ func TestProcessorIsolation(t *testing.T) {
 		pipelinesPerPartition = 3
 	)
 
-	for _, isolationMode := range []isolation.Mode{isolation.ModeNone, isolation.ModeWorkspace, isolation.ModeSource} {
+	for _, isolationMode := range []isolation.Mode{
+		isolation.ModeNone,
+		isolation.ModeWorkspace,
+		isolation.ModeSource,
+	} {
 		t.Run(fmt.Sprintf("%s isolation", isolationMode), func(t *testing.T) {
 			t.Run("1 worker", func(t *testing.T) {
 				ProcIsolationScenario(t, NewProcIsolationScenarioSpec(isolationMode, workspaces, jobsPerWorkspace, 1))
@@ -212,6 +216,10 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		"workspaces":    spec.workspaces,
 		"destinationId": destinationID,
 	}
+	var destinationIDs []string
+	for i := 0; i < len(spec.workspaces); i++ {
+		destinationIDs = append(destinationIDs, destinationID+fmt.Sprintf("-%d", i))
+	}
 	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/procIsolationTestTemplate.json.tpl", templateCtx)
 	mockCBE := m.newMockConfigBackend(t, configJsonPath)
 	config.Set("CONFIG_BACKEND_URL", mockCBE.URL)
@@ -237,7 +245,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("JobsDB.backup.enabled", false)
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
 	config.Set("JobsDB.payloadColumnType", "text")
-	config.Set("Router.toAbortDestinationIDs", destinationID)
+	config.Set("Router.toAbortDestinationIDs", destinationIDs)
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)
 

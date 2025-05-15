@@ -82,7 +82,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			err := enricher.Enrich(
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
-					Build(), ip)
+					Build(), ip, nil)
 			require.Nil(t, err)
 			// require.Equal(t, nil, ip)
 			require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[0])
@@ -103,7 +103,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			err := enricher.Enrich(
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
-					Build(), input)
+					Build(), input, nil)
 			require.Nil(t, err)
 
 			require.Equal(t,
@@ -129,7 +129,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			err := enricher.Enrich(
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
-					Build(), input)
+					Build(), input, nil)
 			require.Nil(t, err)
 
 			require.Equal(t,
@@ -174,6 +174,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					WithGeoEnrichment(false). // flag for enrichment is `false`
 					Build(),
 				input,
+				nil,
 			)
 			require.Nil(t, err)
 
@@ -207,7 +208,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			err := enricher.Enrich(
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
-					Build(), input)
+					Build(), input, nil)
 			require.Nil(t, err)
 
 			// In both the events below, we have context section
@@ -259,7 +260,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			err := enricher.Enrich(
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
-					Build(), input)
+					Build(), input, nil)
 			require.NotNil(t, err)
 
 			require.Equal(t, types.SingularEventT{
@@ -320,7 +321,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			err := enricher.Enrich(
 				NewSourceBuilder("source-id").
 					WithGeoEnrichment(true).
-					Build(), input)
+					Build(), input, nil)
 			require.Nil(t, err)
 
 			// here the context.ip is present and invalid but the

@@ -85,34 +85,19 @@ func (mr *MockJobsDBMockRecorder) GetAborted(ctx, params any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAborted", reflect.TypeOf((*MockJobsDB)(nil).GetAborted), ctx, params)
 }
 
-// GetActiveWorkspaces mocks base method.
-func (m *MockJobsDB) GetActiveWorkspaces(ctx context.Context, customVal string) ([]string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetActiveWorkspaces", ctx, customVal)
-	ret0, _ := ret[0].([]string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetActiveWorkspaces indicates an expected call of GetActiveWorkspaces.
-func (mr *MockJobsDBMockRecorder) GetActiveWorkspaces(ctx, customVal any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveWorkspaces", reflect.TypeOf((*MockJobsDB)(nil).GetActiveWorkspaces), ctx, customVal)
-}
-
 // GetDistinctParameterValues mocks base method.
-func (m *MockJobsDB) GetDistinctParameterValues(ctx context.Context, parameterName string) ([]string, error) {
+func (m *MockJobsDB) GetDistinctParameterValues(ctx context.Context, parameter jobsdb.ParameterName, customValFilter string) ([]string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDistinctParameterValues", ctx, parameterName)
+	ret := m.ctrl.Call(m, "GetDistinctParameterValues", ctx, parameter, customValFilter)
 	ret0, _ := ret[0].([]string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetDistinctParameterValues indicates an expected call of GetDistinctParameterValues.
-func (mr *MockJobsDBMockRecorder) GetDistinctParameterValues(ctx, parameterName any) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) GetDistinctParameterValues(ctx, parameter, customValFilter any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDistinctParameterValues", reflect.TypeOf((*MockJobsDB)(nil).GetDistinctParameterValues), ctx, parameterName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDistinctParameterValues", reflect.TypeOf((*MockJobsDB)(nil).GetDistinctParameterValues), ctx, parameter, customValFilter)
 }
 
 // GetFailed mocks base method.
