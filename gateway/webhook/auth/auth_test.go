@@ -132,15 +132,12 @@ func TestNewWebhookAuth(t *testing.T) {
 			defer resp.Body.Close()
 
 			// Validate response
-			if resp.StatusCode != tt.expectedResponseCode {
-				t.Errorf("expected status code %d, got %d", tt.expectedResponseCode, resp.StatusCode)
-			}
+			require.Equal(t, tt.expectedResponseCode, resp.StatusCode)
 
 			respBody, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-			if string(respBody) != tt.expectedResponseMessage {
-				t.Errorf("expected response body %q, got %q", tt.expectedResponseMessage, string(respBody))
-			}
+
+			require.Equal(t, tt.expectedResponseMessage, string(respBody))
 		})
 	}
 }

@@ -262,13 +262,13 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	ss.Report(webhook.stats)
 }
 
-func getWebhookFailureReason(err string, statusCode int) string {
+func getWebhookFailureReason(errMsg string, statusCode int) string {
 	switch {
-	case err == response.RequestBodyTooLarge:
+	case errMsg == response.RequestBodyTooLarge:
 		return response.RequestBodyTooLarge
 	case statusCode != 0:
 		return response.SourceTransformerNonSuccessResponse
-	case err != "":
+	case errMsg != "":
 		return response.SourceTransformerResponseError
 	default:
 		return response.SourceTransformerResponseError
@@ -462,7 +462,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					failureReason = response.SourceTransformerNonSuccessResponse
 				}
 				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
-				bt.webhook.logger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
+				bt.webhook.logger.Errorn("webhook source transformation failed", obskit.SourceType(breq.sourceType), logger.NewStringField("errorMsg", resp.Err), logger.NewIntField("statusCode", int64(resp.StatusCode)))
 				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode), resp.StatusCode, 1)
 			}
 
@@ -472,7 +472,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		// Saving failures to errors jobsdb
 		if len(failedWebhookPayloads) > 0 {
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
-				bt.webhook.logger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
+				bt.webhook.logger.Errorn("Saving webhook failures of sourceType", obskit.SourceType(breq.sourceType), obskit.Error(err))
 			}
 		}
 	}
@@ -585,7 +585,9 @@ func (webhook *HandleT) printStats(ctx context.Context) {
 		if lastRecvCount != webhook.recvCount.Load() || lastAckCount != webhook.ackCount.Load() {
 			lastRecvCount = webhook.recvCount.Load()
 			lastAckCount = webhook.ackCount.Load()
-			webhook.logger.Debug("WebhookRequestHandler Recv/Ack ", webhook.recvCount.Load(), webhook.ackCount.Load())
+			webhook.logger.Debugn("WebhookRequestHandler Recv/Ack ",
+				logger.NewIntField("received", int64(webhook.recvCount.Load())),
+				logger.NewIntField("ack", int64(webhook.ackCount.Load())))
 		}
 
 		select {
