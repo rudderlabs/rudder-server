@@ -31,8 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -133,12 +131,8 @@ func (rt *Handle) Setup(
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 		rt.transformerFeaturesService,
 	)
-	destination := oauthv2.DestinationInfo{
-		Config:  destinationDefinition.Config,
-		Account: account,
-	}
 
-	rt.isOAuthDestination, _ = destination.IsOAuthDestination(common.RudderFlowDelivery)
+	rt.isOAuthDestination = oauth.IsOAuthDestination(destinationDefinition.Config)
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
 	rt.isBackendConfigInitialized = false
