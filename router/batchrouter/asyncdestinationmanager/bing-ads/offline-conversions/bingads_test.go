@@ -576,6 +576,31 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(resp).To(Equal(expectedResp))
 			Expect(err).To(BeNil())
 		})
+
+		It("TestBingAdsTransformWithInvalidTimestamp", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
+
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", nil, true)
+
+			job := &jobsdb.JobT{
+				EventPayload: []byte(`{
+					"Action": "insert",
+					"Fields": {
+						"conversionName": "TestConversion",
+						"conversionTime": "invalid-timestamp",
+						"microsoftClickId": "12345"
+					}
+				}`),
+			}
+
+			result, err := bulkUploader.Transform(job)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("conversionTime must be in ISO 8601 format"))
+			Expect(result).To(Equal(string(job.EventPayload)))
+		})
 	})
 })
 
