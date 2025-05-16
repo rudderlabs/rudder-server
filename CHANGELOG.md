@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.2](https://github.com/rudderlabs/rudder-server/compare/v1.49.1...v1.49.2) (2025-05-15)
+
+
+### Miscellaneous
+
+* revert use account to decide oauth type of a destination ([#5861](https://github.com/rudderlabs/rudder-server/issues/5861)) ([1d0378b](https://github.com/rudderlabs/rudder-server/commit/1d0378b802772754b7ecad46752f3748ffcef007))
+
 ## [1.49.1](https://github.com/rudderlabs/rudder-server/compare/v1.49.0...v1.49.1) (2025-05-15)
 
 
