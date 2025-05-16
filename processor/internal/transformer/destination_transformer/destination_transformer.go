@@ -490,7 +490,7 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S
 		"region":           region,
 	}
 
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
 		return conf.GetDuration("DTSampling.Timeout", 120, time.Second)
 	})
 }

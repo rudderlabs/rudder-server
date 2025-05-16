@@ -451,6 +451,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 			UseRudderStorage: job.upload.UseRudderStorage,
 			WorkspaceID:      job.upload.WorkspaceID,
 		}),
+		S3ManagerV2: job.conf.GetBool("Warehouse.S3ManagerV2", false),
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)

@@ -92,7 +92,7 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S
 		"disableSSL":       disableSSL,
 		"enableSSE":        enableSSE,
 	}
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "wt-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "wt-uploader")), func() time.Duration {
 		return conf.GetDuration("Warehouse.Transformer.Sampling.Timeout", 120, time.Second)
 	})
 }

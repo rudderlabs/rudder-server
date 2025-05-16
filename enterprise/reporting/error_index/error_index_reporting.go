@@ -249,7 +249,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 		"disableSSL":       disableSSL,
 		"enableSSE":        enableSSE,
 	}
-	fm, err := filemanager.NewS3Manager(s3Config, eir.log, func() time.Duration {
+	fm, err := filemanager.NewS3Manager(eir.conf, s3Config, eir.log, func() time.Duration {
 		return eir.conf.GetDuration("ErrorIndex.Uploader.Timeout", 120, time.Second)
 	})
 	if err != nil {
