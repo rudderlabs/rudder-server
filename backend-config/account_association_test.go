@@ -45,7 +45,7 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.Id)
+		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
 		require.Equal(t, map[string]interface{}{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
 		require.Equal(t, map[string]interface{}{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
 		require.Equal(t, map[string]interface{}{
@@ -96,12 +96,12 @@ func TestAccountAssociations(t *testing.T) {
 		c.processAccountAssociations()
 
 		for _, dest := range c.Sources[0].Destinations {
-			require.Equal(t, "acc-1", dest.DeliveryAccount.Id)
+			require.Equal(t, "acc-1", dest.DeliveryAccount.ID)
 			require.Equal(t, AccountDefinition{
 				Name:               "oauth-def",
 				Config:             map[string]interface{}{"oauth": true},
 				AuthenticationType: "OAuth",
-			}, dest.DeliveryAccount.AccountDefinition)
+			}, *dest.DeliveryAccount.AccountDefinition)
 		}
 	})
 
@@ -136,11 +136,11 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeleteAccount.Id)
+		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeleteAccount.ID)
 		require.Equal(t, AccountDefinition{
 			Name:   "oauth-def",
 			Config: map[string]interface{}{"oauth": true},
-		}, c.Sources[0].Destinations[0].DeleteAccount.AccountDefinition)
+		}, *c.Sources[0].Destinations[0].DeleteAccount.AccountDefinition)
 	})
 
 	t.Run("destination with no account configuration", func(t *testing.T) {
@@ -238,7 +238,7 @@ func TestAccountAssociations(t *testing.T) {
 
 		c.processAccountAssociations()
 
-		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.Id)
+		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
 		require.Empty(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
 	})
 }

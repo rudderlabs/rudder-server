@@ -45,11 +45,11 @@ func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
 					logger.NewStringField("accountDefinitionName", account.AccountDefinitionName),
 					logger.NewStringField("destinationId", dest.ID))
 			}
-			dest.DeliveryAccount = &AccountWithDefinition{
-				Id:                accountID,
+			dest.DeliveryAccount = &Account{
+				ID:                accountID,
 				Options:           account.Options,
 				Secret:            account.Secret,
-				AccountDefinition: accountDefinition,
+				AccountDefinition: &accountDefinition,
 			}
 		} else {
 			pkgLogger.Warnn("Account not found in configured accounts for delivery flow",
@@ -68,11 +68,11 @@ func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
 					logger.NewStringField("accountDefinitionName", account.AccountDefinitionName),
 					logger.NewStringField("destinationId", dest.ID))
 			}
-			dest.DeleteAccount = &AccountWithDefinition{
-				Id:                deleteAccountID,
+			dest.DeleteAccount = &Account{
+				ID:                deleteAccountID,
 				Options:           account.Options,
 				Secret:            account.Secret,
-				AccountDefinition: accountDefinition,
+				AccountDefinition: &accountDefinition,
 			}
 		} else {
 			pkgLogger.Warnn("Account not found in configured accounts for regulation flow",
