@@ -26,9 +26,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
@@ -255,7 +255,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
 	sqlStatement = fmt.Sprintf(`
-    SELECT 
+    SELECT
         %s, MAX(reported_at),
         COALESCE(
             (ARRAY_AGG(sample_response ORDER BY id DESC) FILTER (WHERE (sample_event != '{}' AND sample_event IS NOT NULL) OR (sample_response IS NOT NULL AND sample_response != '')))[1],
@@ -267,11 +267,11 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
         ) AS sample_event,
         SUM(count),
         SUM(violation_count)
-    FROM 
+    FROM
         %s
-    WHERE 
+    WHERE
         reported_at >= $1 and reported_at < $2
-		GROUP BY 
+		GROUP BY
         %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()

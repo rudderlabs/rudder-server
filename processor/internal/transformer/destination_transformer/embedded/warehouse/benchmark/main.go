@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	wtrans "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	ptrans "github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"

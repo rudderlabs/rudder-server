@@ -11,8 +11,8 @@ import (
 	"github.com/segmentio/go-hll"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const tableName = `tracked_users_reports`

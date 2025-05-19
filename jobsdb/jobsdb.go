@@ -48,9 +48,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -1866,8 +1866,8 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 	FROM
 		%[1]q j
 		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
-	WHERE 
-		s.job_id is null OR s.job_state = ANY($2) 
+	WHERE
+		s.job_id is null OR s.job_state = ANY($2)
 )
 SELECT
 	workspace_id,

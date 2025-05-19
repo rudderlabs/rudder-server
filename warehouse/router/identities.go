@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
