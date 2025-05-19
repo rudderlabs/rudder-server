@@ -1,6 +1,11 @@
 package backendconfigtest
 
 import (
+	"encoding/json"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
+
+	"github.com/grafana/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -15,7 +20,7 @@ func NewSourceBuilder() *SourceBuilder {
 		Name:     rand.String(5),
 		Enabled:  true,
 		WriteKey: rand.UniqueString(10),
-		Config:   map[string]any{},
+		Config:   json.RawMessage{},
 		SourceDefinition: backendconfig.SourceDefinitionT{
 			ID:       rand.UniqueString(10),
 			Name:     rand.String(5),
@@ -44,9 +49,16 @@ func (b *SourceBuilder) WithWriteKey(writeKey string) *SourceBuilder {
 }
 
 // WithConfigOption sets a config option for the source
-func (b *SourceBuilder) WithConfigOption(key string, value any) *SourceBuilder {
-	b.v.Config[key] = value
-	return b
+func (b *SourceBuilder) WithConfigOption(key string, value any) (*SourceBuilder, error) {
+	valueBytes, err := jsonrs.Marshal(value)
+	if err != nil {
+		return b, err
+	}
+	b.v.Config, err = jsonparser.Set(b.v.Config, valueBytes, key)
+	if err != nil {
+		return b, err
+	}
+	return b, nil
 }
 
 // WithConnection adds a destination to the source

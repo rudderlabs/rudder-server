@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/jsonparser"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
@@ -132,7 +134,8 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
 			if source.Config != nil {
-				if source.Enabled && source.Config["eventUpload"] == true {
+				eventUploadEnabled, _ := jsonparser.GetBoolean(source.Config, "eventUpload")
+				if source.Enabled && eventUploadEnabled == true {
 					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 				}
 			}

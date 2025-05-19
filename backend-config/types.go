@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/samber/lo"
@@ -93,7 +94,7 @@ type SourceT struct {
 	OriginalID                 string
 	Name                       string
 	SourceDefinition           SourceDefinitionT
-	Config                     map[string]interface{}
+	Config                     json.RawMessage
 	Enabled                    bool
 	WorkspaceID                string
 	Destinations               []DestinationT
