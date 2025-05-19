@@ -507,7 +507,7 @@ type mockPendingTablesRepo struct {
 	called        int
 }
 
-func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, int64, string) ([]model.PendingTableUpload, error) {
+func (m *mockPendingTablesRepo) PendingTableUploads(context.Context, string, string, int, time.Time, int64) ([]model.PendingTableUpload, error) {
 	m.called++
 	return m.pendingTables, m.err
 }

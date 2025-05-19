@@ -127,7 +127,7 @@ type UploadJob struct {
 }
 
 type pendingTableUploadsRepo interface {
-	PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error)
+	PendingTableUploads(ctx context.Context, destID, namespace string, priority int, firstEventAt time.Time, uploadID int64) ([]model.PendingTableUpload, error)
 }
 
 var (
