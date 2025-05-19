@@ -21,6 +21,41 @@ func (c *ConfigT) processAccountAssociations() {
 	}
 }
 
+// populateAccountToDestination populates an account to a destination field based on the account ID.
+// It creates an Account object by combining account details with its definition.
+//
+// Parameters:
+//   - accountID: The ID of the account to populate
+//   - dest: Pointer to the destination being configured
+//   - accountField: The field name in the destination config (e.g., "rudderAccountId" or "rudderDeleteAccountId")
+//   - flowType: The type of flow (e.g., "delivery" or "regulation")
+//
+// Returns:
+//   - *Account: The populated account object or nil if the account doesn't exist
+func (c *ConfigT) populateAccountToDestination(accountID string, dest *DestinationT, accountField, flowType string) *Account {
+	if account, exists := c.Accounts[accountID]; exists {
+		accountDefinition, exists := c.AccountDefinitions[account.AccountDefinitionName]
+		if !exists {
+			pkgLogger.Warnn("Account definition not found in configured accountDefinitions for "+flowType+" flow",
+				logger.NewStringField(accountField, accountID),
+				logger.NewStringField("accountDefinitionName", account.AccountDefinitionName),
+				logger.NewStringField("destinationId", dest.ID))
+		}
+		return &Account{
+			ID:                    accountID,
+			AccountDefinitionName: account.AccountDefinitionName,
+			Options:               account.Options,
+			Secret:                account.Secret,
+			AccountDefinition:     &accountDefinition,
+		}
+	} else {
+		pkgLogger.Warnn("Account not found in configured accounts for "+flowType+" flow",
+			logger.NewStringField(accountField, accountID),
+			logger.NewStringField("destinationId", dest.ID))
+	}
+	return nil
+}
+
 // setDestinationAccounts assigns accounts to a destination based on its configuration.
 // It handles two types of account associations:
 // 1. Regular account (rudderAccountId) - Used for normal event delivery flow
@@ -37,47 +72,11 @@ func (c *ConfigT) processAccountAssociations() {
 func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
 	// Check and set the regular account if specified in the destination config
 	if accountID, ok := dest.Config["rudderAccountId"].(string); ok {
-		if account, exists := c.Accounts[accountID]; exists {
-			accountDefinition, exists := c.AccountDefinitions[account.AccountDefinitionName]
-			if !exists {
-				pkgLogger.Warnn("Account definition not found in configured accountDefinitions for delivery flow",
-					logger.NewStringField("rudderAccountId", accountID),
-					logger.NewStringField("accountDefinitionName", account.AccountDefinitionName),
-					logger.NewStringField("destinationId", dest.ID))
-			}
-			dest.DeliveryAccount = &Account{
-				ID:                accountID,
-				Options:           account.Options,
-				Secret:            account.Secret,
-				AccountDefinition: &accountDefinition,
-			}
-		} else {
-			pkgLogger.Warnn("Account not found in configured accounts for delivery flow",
-				logger.NewStringField("rudderAccountId", accountID),
-				logger.NewStringField("destinationId", dest.ID))
-		}
+		dest.DeliveryAccount = c.populateAccountToDestination(accountID, dest, "rudderAccountId", "delivery")
 	}
 
 	// Check and set the delete account if specified in the destination config
 	if deleteAccountID, ok := dest.Config["rudderDeleteAccountId"].(string); ok {
-		if account, exists := c.Accounts[deleteAccountID]; exists {
-			accountDefinition, exists := c.AccountDefinitions[account.AccountDefinitionName]
-			if !exists {
-				pkgLogger.Warnn("Account definition not found in configured accountDefinitions for regulation flow",
-					logger.NewStringField("rudderDeleteAccountId", deleteAccountID),
-					logger.NewStringField("accountDefinitionName", account.AccountDefinitionName),
-					logger.NewStringField("destinationId", dest.ID))
-			}
-			dest.DeleteAccount = &Account{
-				ID:                deleteAccountID,
-				Options:           account.Options,
-				Secret:            account.Secret,
-				AccountDefinition: &accountDefinition,
-			}
-		} else {
-			pkgLogger.Warnn("Account not found in configured accounts for regulation flow",
-				logger.NewStringField("rudderDeleteAccountId", deleteAccountID),
-				logger.NewStringField("destinationId", dest.ID))
-		}
+		dest.DeleteAccount = c.populateAccountToDestination(deleteAccountID, dest, "rudderDeleteAccountId", "regulation")
 	}
 }

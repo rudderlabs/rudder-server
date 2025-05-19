@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 func TestAccountAssociations(t *testing.T) {
@@ -240,5 +242,56 @@ func TestAccountAssociations(t *testing.T) {
 
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
 		require.Empty(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
+	})
+
+	t.Run("json serialization of destination with accounts", func(t *testing.T) {
+		dest := DestinationT{
+			ID: "dest-1",
+			DeliveryAccount: &Account{
+				ID:                    "acc-1",
+				AccountDefinitionName: "oauth-def",
+				Options:               map[string]interface{}{"key1": "value1"},
+				Secret:                map[string]interface{}{"secret1": "secretValue1"},
+				AccountDefinition: &AccountDefinition{
+					Name:               "oauth-def",
+					Config:             map[string]interface{}{"oauth": true},
+					AuthenticationType: "OAuth",
+				},
+			},
+			DeleteAccount: &Account{
+				ID:                    "acc-2",
+				AccountDefinitionName: "oauth-def",
+				Options:               map[string]interface{}{"key2": "value2"},
+				Secret:                map[string]interface{}{"secret2": "secretValue2"},
+				AccountDefinition: &AccountDefinition{
+					Name:               "oauth-def",
+					Config:             map[string]interface{}{"oauth": true},
+					AuthenticationType: "OAuth",
+				},
+			},
+		}
+
+		// Serialize to JSON
+		jsonBytes, err := jsonrs.Marshal(dest)
+		require.NoError(t, err)
+
+		// Verify JSON field names
+		jsonStr := string(jsonBytes)
+		require.Contains(t, jsonStr, `"deliveryAccount":`)
+		require.Contains(t, jsonStr, `"deleteAccount":`)
+
+		// Deserialize from JSON
+		var destFromJSON DestinationT
+		err = jsonrs.Unmarshal(jsonBytes, &destFromJSON)
+		require.NoError(t, err)
+
+		// Verify fields were correctly deserialized
+		require.Equal(t, "dest-1", destFromJSON.ID)
+		require.Equal(t, "acc-1", destFromJSON.DeliveryAccount.ID)
+		require.Equal(t, "acc-2", destFromJSON.DeleteAccount.ID)
+		require.Equal(t, map[string]interface{}{"key1": "value1"}, destFromJSON.DeliveryAccount.Options)
+		require.Equal(t, map[string]interface{}{"key2": "value2"}, destFromJSON.DeleteAccount.Options)
+		require.Equal(t, "OAuth", destFromJSON.DeliveryAccount.AccountDefinition.AuthenticationType)
+		require.Equal(t, "OAuth", destFromJSON.DeleteAccount.AccountDefinition.AuthenticationType)
 	})
 }
