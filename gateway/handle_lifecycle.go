@@ -10,7 +10,11 @@ import (
 	"sync"
 	"time"
 
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/rudderlabs/rudder-server/gateway/validator"
+
+	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
 
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 
@@ -112,6 +116,9 @@ func (gw *Handle) Setup(
 	// enable internal batch enrichment
 	// this is used to enrich the event before sending it to the db writer
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
+	// enable webhook v2 handler. disabled by default
+	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
+
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)
@@ -130,7 +137,7 @@ func (gw *Handle) Setup(
 	gw.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, gw.conf.maxDBWriterProcess)
 	gw.irh = &ImportRequestHandler{Handle: gw}
 	gw.rrh = &RegularRequestHandler{Handle: gw}
-	gw.webhook = webhook.Setup(gw, transformerFeaturesService, gw.stats)
+	gw.webhook = webhook.Setup(gw, transformerFeaturesService, gw.stats, gw.config, newSourceStatReporter)
 	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
 	if err != nil {
 		return fmt.Errorf("invalid warehouse URL %s: %w", whURL, err)
@@ -154,12 +161,26 @@ func (gw *Handle) Setup(
 
 	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
+	gw.webhookAuthMiddleware = auth.NewWebhookAuth(
+		func(w http.ResponseWriter, r *http.Request, errorMessage string, authCtx *gwtypes.AuthRequestContext) {
+			gw.handleHttpError(w, r, errorMessage)
+			gw.handleFailureStats(errorMessage, "webhook", authCtx)
+		},
+		func(writeKey string) (*gwtypes.AuthRequestContext, error) {
+			authCtx := gw.authRequestContextForWriteKey(writeKey)
+			if authCtx == nil {
+				return nil, auth.ErrSourceNotFound
+			}
+			return authCtx, nil
+		})
+
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
 	gw.backgroundCancel = cancel
 	gw.backgroundWait = g.Wait
 	gw.initUserWebRequestWorkers()
 	gw.backendConfigInitialisedChan = make(chan struct{})
+	gw.transformerFeaturesInitialised = transformerFeaturesService.Wait()
 
 	g.Go(crash.Wrapper(func() error {
 		gw.backendConfigSubscriber(ctx)
@@ -236,8 +257,10 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 			for _, source := range wsConfig.Sources {
 				writeKeysSourceMap[source.WriteKey] = source
 				sourceIDSourceMap[source.ID] = source
-				if source.Enabled && source.SourceDefinition.Category == "webhook" {
-					gw.webhook.Register(source.SourceDefinition.Name)
+				if !gw.conf.webhookV2HandlerEnabled {
+					if source.Enabled && source.SourceDefinition.Category == "webhook" {
+						gw.webhook.Register(source.SourceDefinition.Name)
+					}
 				}
 			}
 		}
@@ -387,8 +410,23 @@ StartWebHandler starts all gateway web handlers, listening on gateway port.
 Supports CORS from all origins. This function will block.
 */
 func (gw *Handle) StartWebHandler(ctx context.Context) error {
-	gw.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", gw.conf.webPort)
-	<-gw.backendConfigInitialisedChan
+	g, _ := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		gw.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", gw.conf.webPort)
+		<-gw.backendConfigInitialisedChan
+		gw.logger.Infof("backendConfig initialised")
+		return nil
+	})
+	g.Go(func() error {
+		gw.logger.Infof("WebHandler waiting for transformer feature before starting on %d", gw.conf.webPort)
+		<-gw.transformerFeaturesInitialised
+		gw.logger.Infof("transformer feature initialised")
+		return nil
+	})
+	err := g.Wait()
+	if err != nil {
+		return err
+	}
 	gw.logger.Infof("WebHandler Starting on %d", gw.conf.webPort)
 	component := "gateway"
 	srvMux := chi.NewRouter()
