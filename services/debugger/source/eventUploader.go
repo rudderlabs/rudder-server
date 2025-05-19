@@ -135,7 +135,7 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 		for _, source := range wConfig.Sources {
 			if source.Config != nil {
 				eventUploadEnabled, _ := jsonparser.GetBoolean(source.Config, "eventUpload")
-				if source.Enabled && eventUploadEnabled == true {
+				if source.Enabled && eventUploadEnabled {
 					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 				}
 			}

@@ -1,11 +1,10 @@
 package backendconfigtest
 
 import (
-	"encoding/json"
-
 	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	"github.com/grafana/jsonparser"
+
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -20,7 +19,6 @@ func NewSourceBuilder() *SourceBuilder {
 		Name:     rand.String(5),
 		Enabled:  true,
 		WriteKey: rand.UniqueString(10),
-		Config:   json.RawMessage{},
 		SourceDefinition: backendconfig.SourceDefinitionT{
 			ID:       rand.UniqueString(10),
 			Name:     rand.String(5),
