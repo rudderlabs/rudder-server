@@ -601,6 +601,17 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(err.Error()).To(ContainSubstring("conversionTime must be in ISO 8601 format"))
 			Expect(result).To(Equal(string(job.EventPayload)))
 		})
+
+		It("Transform() Test -> conversionTime is not a string", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\"type\": \"record\", \"action\": \"update\", \"fields\": {\"conversionName\": \"Test-Integration\", \"conversionTime\": 12345, \"conversionValue\": \"100\", \"microsoftClickId\": \"click_id\", \"conversionCurrencyCode\": \"USD\"}}"),
+			}
+			uploader := &BingAdsBulkUploader{}
+			// Execute
+			_, err := uploader.Transform(job)
+			expectedResult := fmt.Errorf("conversionTime is not a valid string")
+			Expect(err.Error()).To(Equal(expectedResult.Error()))
+		})
 	})
 })
 
