@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.3](https://github.com/rudderlabs/rudder-server/compare/v1.49.2...v1.49.3) (2025-05-19)
+
+
+### Bug Fixes
+
+* warehouse pending tables to skip ([#5867](https://github.com/rudderlabs/rudder-server/issues/5867)) ([6133dbc](https://github.com/rudderlabs/rudder-server/commit/6133dbc52aeaf2ca8fc2d164500c3e44851a0d8c))
+
 ## [1.49.2](https://github.com/rudderlabs/rudder-server/compare/v1.49.1...v1.49.2) (2025-05-15)
 
 
