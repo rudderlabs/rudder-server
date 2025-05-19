@@ -32,14 +32,14 @@ func (c *ConfigT) processAccountAssociations() {
 //
 // Returns:
 //   - *Account: The populated account object or nil if the account doesn't exist
-func (c *ConfigT) populateAccountToDestination(accountID string, dest *DestinationT, accountField, flowType string) *Account {
+func (c *ConfigT) populateAccountToDestination(accountID string, destination *DestinationT, accountField, flowType string) *Account {
 	if account, exists := c.Accounts[accountID]; exists {
 		accountDefinition, exists := c.AccountDefinitions[account.AccountDefinitionName]
 		if !exists {
 			pkgLogger.Warnn("Account definition not found in configured accountDefinitions for "+flowType+" flow",
 				logger.NewStringField(accountField, accountID),
 				logger.NewStringField("accountDefinitionName", account.AccountDefinitionName),
-				logger.NewStringField("destinationId", dest.ID))
+				logger.NewStringField("destinationId", destination.ID))
 		}
 		return &Account{
 			ID:                    accountID,
@@ -51,7 +51,7 @@ func (c *ConfigT) populateAccountToDestination(accountID string, dest *Destinati
 	} else {
 		pkgLogger.Warnn("Account not found in configured accounts for "+flowType+" flow",
 			logger.NewStringField(accountField, accountID),
-			logger.NewStringField("destinationId", dest.ID))
+			logger.NewStringField("destinationId", destination.ID))
 	}
 	return nil
 }
