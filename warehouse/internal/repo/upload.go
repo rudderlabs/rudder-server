@@ -543,7 +543,7 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 }
 
 // PendingTableUploads returns a list of pending table uploads for a given upload.
-func (u *Uploads) PendingTableUploads(ctx context.Context, namespace string, uploadID int64, destID string) ([]model.PendingTableUpload, error) {
+func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace string, priority int, firstEventAt time.Time, uploadID int64) ([]model.PendingTableUpload, error) {
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
 	rows, err := u.db.QueryContext(ctx, `
@@ -561,27 +561,31 @@ func (u *Uploads) PendingTableUploads(ctx context.Context, namespace string, upl
 		ON
 			UT.id = TU.wh_upload_id
 		WHERE
-		  	UT.id <= $1 AND
-			UT.destination_id = $2 AND
-		   	UT.namespace = $3 AND
+			UT.destination_id = $1 AND
+		   	UT.namespace = $2 AND
+		  	UT.status != $3 AND
 		  	UT.status != $4 AND
-		  	UT.status != $5 AND
+			COALESCE(UT.metadata->>'priority', '100')::int <= $5 AND
+		  	COALESCE(UT.first_event_at, NOW()) <= $6 AND
+		  	UT.id <= $7 AND
 		  	TU.table_name in (
 				SELECT
 				  table_name
 				FROM
 				  `+tableUploadTableName+` TU1
 				WHERE
-				  TU1.wh_upload_id = $1
+				  TU1.wh_upload_id = $7
 		  )
 		ORDER BY
 		  UT.id ASC;
 `,
-		uploadID,
 		destID,
 		namespace,
 		model.ExportedData,
 		model.Aborted,
+		priority,
+		firstEventAt,
+		uploadID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("pending table uploads: %w", err)
