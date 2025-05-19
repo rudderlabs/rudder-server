@@ -5,6 +5,7 @@ import (
 
 	"github.com/samber/lo"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -16,12 +17,19 @@ type DestinationInfo struct {
 	DefinitionConfig map[string]interface{}
 	ID               string
 	Config           map[string]interface{}
+	Account          *backendconfig.AccountWithDefinition
 }
 
 func (d *DestinationInfo) IsOAuthDestination(flow common.RudderFlow) (bool, error) {
 	authValue, _ := misc.NestedMapLookup(d.DefinitionConfig, "auth", "type")
 	if authValue == nil {
-		// valid use-case for non-OAuth destinations
+		if d.Account != nil {
+			authValue, ok := d.Account.AccountDefinition.Config["refreshOAuthToken"].(bool)
+			if !ok {
+				return false, nil
+			}
+			return authValue, nil
+		}
 		return false, nil
 	}
 	authType, ok := authValue.(string)
