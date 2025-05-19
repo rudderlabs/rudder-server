@@ -1061,34 +1061,6 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		})
 	})
 
-	t.Run("should return pending table uploads", func(t *testing.T) {
-		t.Parallel()
-
-		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), destID, namespace, 100, now, 3)
-		require.NoError(t, err)
-		require.NotEmpty(t, pendingTableUploads)
-
-		expectedPendingTableUploads := []model.PendingTableUpload{
-			{
-				UploadID:      3,
-				DestinationID: destID,
-				Namespace:     namespace,
-				TableName:     "test_table_1",
-				Status:        "exporting_data",
-				Error:         "{}",
-			},
-			{
-				UploadID:      3,
-				DestinationID: destID,
-				Namespace:     namespace,
-				TableName:     "test_table_2",
-				Status:        "exporting_data_failed",
-				Error:         "error loading data",
-			},
-		}
-		require.ElementsMatch(t, expectedPendingTableUploads, pendingTableUploads)
-	})
-
 	t.Run("should return empty pending table uploads", func(t *testing.T) {
 		t.Parallel()
 

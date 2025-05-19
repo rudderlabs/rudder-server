@@ -32,6 +32,7 @@ var syncStatusMap = map[string]string{
 }
 
 const (
+	defaultPriority  = "100"
 	uploadsTableName = warehouseutils.WarehouseUploadsTable
 	uploadColumns    = `
 		id,
@@ -51,7 +52,7 @@ const (
 		timings->0 as firstTiming,
 		timings->-1 as lastTiming,
 		timings,
-		COALESCE(metadata->>'priority', '100')::int,
+		COALESCE(metadata->>'priority', '` + defaultPriority + `')::int,
 		first_event_at,
 		last_event_at
 	`
@@ -298,7 +299,7 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 			`+uploadColumns+`
 			FROM (
 				SELECT
-					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, COALESCE(first_event_at, NOW()) ASC, id ASC) AS row_number,
+					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '`+defaultPriority+`')::int ASC, COALESCE(first_event_at, NOW()) ASC, id ASC) AS row_number,
 					t.*
 				FROM
 					`+uploadsTableName+` t
@@ -313,7 +314,7 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 			WHERE
 				grouped_uploads.row_number = 1
 			ORDER BY
-				COALESCE(metadata->>'priority', '100')::int ASC,
+				COALESCE(metadata->>'priority', '`+defaultPriority+`')::int ASC,
 				COALESCE(first_event_at, NOW()) ASC,
 				id ASC
 			LIMIT %d;
@@ -543,6 +544,7 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 }
 
 // PendingTableUploads returns a list of pending table uploads for a given upload.
+// Filtering conditions neeeds to be in sync with GetToProcess partitioning and pickup condition.
 func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace string, priority int, firstEventAt time.Time, uploadID int64) ([]model.PendingTableUpload, error) {
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
@@ -565,7 +567,7 @@ func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace str
 		   	UT.namespace = $2 AND
 		  	UT.status != $3 AND
 		  	UT.status != $4 AND
-			COALESCE(UT.metadata->>'priority', '100')::int <= $5 AND
+			COALESCE(UT.metadata->>'priority', '`+defaultPriority+`')::int <= $5 AND
 		  	COALESCE(UT.first_event_at, NOW()) <= $6 AND
 		  	UT.id <= $7 AND
 		  	TU.table_name in (
@@ -1005,7 +1007,7 @@ func (u *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destination
 		SELECT
 		  	id,
 		  	status,
-		  	COALESCE(metadata ->> 'priority', '100')::int
+		  	COALESCE(metadata ->> 'priority', '`+defaultPriority+`')::int
 		FROM
 			`+uploadsTableName+`
 		WHERE
