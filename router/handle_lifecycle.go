@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,9 +106,12 @@ func (rt *Handle) Setup(
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destType, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destType, 64)
 	rt.workerInputBufferSize = getRouterConfigInt("noOfJobsPerChannel", destType, 1000)
-
-	rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
-
+	// Explicitly control destination types for which we want to support batching
+	// Avoiding stale configurations still having KAFKA batching enabled to cause issues with later versions of rudder-server
+	batchingSupportedDestinations := config.GetStringSliceVar([]string{"AM"}, "Router.batchingSupportedDestinations")
+	if lo.Contains(batchingSupportedDestinations, strings.ToUpper(rt.destType)) {
+		rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
+	}
 	rt.drainConcurrencyLimit = config.GetReloadableIntVar(1, 1, getRouterConfigKeys("eventOrderDrainedConcurrencyLimit", destType)...)
 	rt.eventOrderKeyThreshold = config.GetReloadableIntVar(200, 1, getRouterConfigKeys("eventOrderKeyThreshold", destType)...)
 	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, getRouterConfigKeys("eventOrderDisabledStateDuration", destType)...)

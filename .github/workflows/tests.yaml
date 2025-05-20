@@ -139,7 +139,6 @@ jobs:
         package:
           - jobsdb
           - integration_test/docker_test
-          - integration_test/kafka_batching
           - integration_test/multi_tenant_test
           - integration_test/reporting_dropped_events
           - integration_test/reporting_error_index
