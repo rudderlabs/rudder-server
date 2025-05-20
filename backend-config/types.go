@@ -94,7 +94,7 @@ type SourceT struct {
 	OriginalID                 string
 	Name                       string
 	SourceDefinition           SourceDefinitionT
-	Config                     json.RawMessage `json:"config,omitempty"`
+	Config                     json.RawMessage
 	Enabled                    bool
 	WorkspaceID                string
 	Destinations               []DestinationT
