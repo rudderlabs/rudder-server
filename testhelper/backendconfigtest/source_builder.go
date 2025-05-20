@@ -1,9 +1,8 @@
 package backendconfigtest
 
 import (
-	"github.com/rudderlabs/rudder-server/jsonrs"
-
 	"github.com/grafana/jsonparser"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
