@@ -23,8 +23,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

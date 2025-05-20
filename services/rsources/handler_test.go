@@ -22,9 +22,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	testlog "github.com/rudderlabs/rudder-server/testhelper/log"
 )
 

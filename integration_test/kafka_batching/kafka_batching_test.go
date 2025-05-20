@@ -34,10 +34,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	thEtcd "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/httputil"

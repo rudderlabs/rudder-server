@@ -3,7 +3,7 @@ package router
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 

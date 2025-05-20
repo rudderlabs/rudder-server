@@ -11,11 +11,11 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )

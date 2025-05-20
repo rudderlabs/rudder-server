@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/iterator"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 type TestCredentials struct {

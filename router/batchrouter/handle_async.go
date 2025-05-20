@@ -17,8 +17,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	common "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	"github.com/rudderlabs/rudder-server/router/types"

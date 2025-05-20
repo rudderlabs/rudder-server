@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -86,7 +86,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 			  updated_at, expires_at
 			)
 			VALUES
-			  ($1, $2, $3, $4, $5, $6, $7, $8) 
+			  ($1, $2, $3, $4, $5, $6, $7, $8)
 			ON CONFLICT (
 				source_id, destination_id, namespace
 			) DO
@@ -94,7 +94,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 			SET
 			  schema = $5,
 			  updated_at = $7,
-			  expires_at = $8 
+			  expires_at = $8
 			RETURNING id;
 		`,
 			whSchema.SourceID,

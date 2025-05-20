@@ -11,7 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"

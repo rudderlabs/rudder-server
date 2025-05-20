@@ -24,7 +24,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"

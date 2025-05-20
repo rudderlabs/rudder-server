@@ -11,12 +11,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"

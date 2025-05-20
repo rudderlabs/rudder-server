@@ -22,8 +22,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"

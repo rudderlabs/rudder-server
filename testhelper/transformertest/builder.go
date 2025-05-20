@@ -10,7 +10,7 @@ import (
 
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
