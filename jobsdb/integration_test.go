@@ -560,7 +560,7 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err, "GetUnprocessed failed")
 		require.EqualValues(t, 19, len(jobsResult.Jobs))
 	})
-	t.Run("should migrate small datasets that have been migrated at least once (except right most one)", func(t *testing.T) {
+	t.Run("should migrate small datasets on pairs", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
@@ -583,7 +583,6 @@ func TestJobsDB(t *testing.T) {
 			config: c,
 		}
 		prefix := strings.ToLower(rand.String(5))
-		c.Set("JobsDB.jobDoneMigrateThreshold", 0.7)
 		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", 0.41)
 		err := jobDB.Setup(ReadWrite, true, prefix)
 		require.NoError(t, err)
@@ -597,16 +596,16 @@ func TestJobsDB(t *testing.T) {
 
 		jobs := genJobs(defaultWorkspaceID, customVal, 20, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
-		trigger()
+		trigger() // create ds_2
 		jobs = genJobs(defaultWorkspaceID, customVal, 20, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
-		trigger()
+		trigger() // create ds_3
 		jobs = genJobs(defaultWorkspaceID, customVal, 11, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
-		trigger()
+		trigger() // create ds_4
 		jobs = genJobs(defaultWorkspaceID, customVal, 11, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
-		trigger()
+		trigger() // create ds_5
 		dsList := getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
 		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable)
@@ -638,15 +637,15 @@ func TestJobsDB(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		trigger() // jobs_1 will be migrated to jobs_1_1 due to the completed threshold (15/20 > 0.7)
+		trigger() // no migration
 
 		dsList = getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable) // 5 jobs
-		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable) // 5 jobs
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable) // 20 jobs
 
 		// process 1 more job
 		for _, job := range jobsResult.Jobs[15:16] {
@@ -664,14 +663,14 @@ func TestJobsDB(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		trigger() // jobs_1_1 will remain as is even though it is now a small table 4/10 = 0.4 < 0.41
+		trigger() // jobs_1 will remain as is even though it is now a small table 4/10 = 0.4 < 0.41
 		dsList = getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable) // 4 jobs
-		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable) // 4 jobs
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable) // 20 jobs
 
 		// process some jobs
 		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
@@ -695,7 +694,7 @@ func TestJobsDB(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		trigger() // both jobs_1_1 and jobs_2 would be migrated to jobs_2_1
+		trigger() // both jobs_1 and jobs_2 would be migrated to jobs_2_1
 		dsList = getDSList()
 		require.Lenf(t, dsList, 4, "dsList length is not 4, got %+v", dsList)
 		require.Equal(t, prefix+"_jobs_2_1", dsList[0].JobTable) // 8 jobs

@@ -535,13 +535,13 @@ type Handle struct {
 		indexOptimizations             config.ValueLoader[bool] // TODO: remove this option after next release (true by default)
 
 		migration struct {
-			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
-			vacuumFullStatusTableThreshold             config.ValueLoader[int64]
-			vacuumAnalyzeStatusTableThreshold          config.ValueLoader[int64]
-			jobDoneMigrateThres, jobStatusMigrateThres config.ValueLoader[float64]
-			jobMinRowsLeftMigrateThreshold             config.ValueLoader[float64]
-			migrateDSLoopSleepDuration                 config.ValueLoader[time.Duration]
-			migrateDSTimeout                           config.ValueLoader[time.Duration]
+			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
+			vacuumFullStatusTableThreshold    config.ValueLoader[int64]
+			vacuumAnalyzeStatusTableThreshold config.ValueLoader[int64]
+			jobStatusMigrateThres             config.ValueLoader[float64]
+			jobMinRowsLeftMigrateThreshold    config.ValueLoader[float64]
+			migrateDSLoopSleepDuration        config.ValueLoader[time.Duration]
+			migrateDSTimeout                  config.ValueLoader[time.Duration]
 		}
 		backup struct {
 			masterBackupEnabled config.ValueLoader[bool]
@@ -940,8 +940,6 @@ func (jd *Handle) loadConfig() {
 	// migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
 	jd.conf.migration.migrateDSLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, jd.configKeys("migrateDSLoopSleepDuration", "migrateDSLoopSleepDurationInS")...)
 	jd.conf.migration.migrateDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("migrateDS.timeout")...)
-	// jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
-	jd.conf.migration.jobDoneMigrateThres = jd.config.GetReloadableFloat64Var(0.8, jd.configKeys("jobDoneMigrateThreshold")...)
 	// jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
 	jd.conf.migration.jobStatusMigrateThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusMigrateThreshold")...)
 	// jobMinRowsLeftMigrateThreshold: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
