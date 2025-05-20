@@ -753,9 +753,8 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 
 func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObjectStorageRequest) error {
 	settings := &filemanager.Settings{
-		Provider:    request.Type,
-		Config:      request.Config,
-		S3ManagerV2: g.conf.GetBool("Warehouse.S3ManagerV2", false),
+		Provider: request.Type,
+		Config:   request.Config,
 	}
 
 	overrideWithEnv(ctx, settings)

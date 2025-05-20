@@ -105,7 +105,6 @@ func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (fi
 			RudderStoragePrefixOverride: p.RudderStoragePrefix,
 			WorkspaceID:                 p.WorkspaceID,
 		}),
-		S3ManagerV2: appConfig.GetBool("Warehouse.S3ManagerV2", false),
 	})
 	return fileManager, err
 }

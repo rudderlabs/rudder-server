@@ -328,9 +328,8 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
 	fm, err := filemanager.New(&filemanager.Settings{
-		Provider:    objectProvider,
-		Config:      destConfig,
-		S3ManagerV2: config.GetBool("Warehouse.S3ManagerV2", false),
+		Provider: objectProvider,
+		Config:   destConfig,
 	})
 	if err != nil {
 		return "", err

@@ -175,7 +175,6 @@ func uploadStagingFile(t testing.TB, testConfig *TestConfig, stagingFile string)
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(testConfig.Config),
 			WorkspaceID:      testConfig.WorkspaceID,
 		}),
-		S3ManagerV2: config.GetBool("Warehouse.S3ManagerV2", false),
 	})
 	require.NoError(t, err)
 

@@ -12,7 +12,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -66,7 +65,6 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 			UseRudderStorage: l.uploader.UseRudderStorage(),
 			WorkspaceID:      l.warehouse.Destination.WorkspaceID,
 		}),
-		S3ManagerV2: config.GetBool("Warehouse.S3ManagerV2", false),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating filemanager for destination: %w", err)

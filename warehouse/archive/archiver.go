@@ -124,9 +124,8 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	defer misc.RemoveFilePaths(path)
 
 	fManager, err := a.fileManager(&filemanager.Settings{
-		Provider:    a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:      filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, a.conf),
-		S3ManagerV2: a.conf.GetBool("Archiver.S3ManagerV2", false),
+		Provider: a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, a.conf),
 	})
 	if err != nil {
 		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w",
