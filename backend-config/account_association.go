@@ -42,8 +42,8 @@ func (c *ConfigT) getAccountDefinition(accountDefinitionName, accountID, account
 		return &accountDefinition
 	}
 
-	// Log warning if account definition not found
-	pkgLogger.Warnn("Account definition not found in configured accountDefinitions for "+flowType+" flow",
+	// Log error if account definition not found
+	pkgLogger.Errorn("Account definition not found in configured accountDefinitions for "+flowType+" flow",
 		logger.NewStringField(accountField, accountID),
 		logger.NewStringField("accountDefinitionName", accountDefinitionName),
 		logger.NewStringField("destinationId", destinationID))
@@ -81,7 +81,7 @@ func (c *ConfigT) populateAccountToDestination(accountID string, destination *De
 		}
 	}
 
-	pkgLogger.Warnn("Account not found in configured accounts for "+flowType+" flow",
+	pkgLogger.Errorn("Account not found in configured accounts for "+flowType+" flow",
 		logger.NewStringField(accountField, accountID),
 		logger.NewStringField("destinationId", destination.ID))
 
