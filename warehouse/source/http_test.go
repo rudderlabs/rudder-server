@@ -16,8 +16,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"

@@ -140,9 +140,11 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 	job.pendingTableUploadsOnce.Do(func() {
 		job.pendingTableUploads, job.pendingTableUploadsError = job.pendingTableUploadsRepo.PendingTableUploads(
 			job.ctx,
-			job.upload.Namespace,
-			job.upload.ID,
 			job.upload.DestinationID,
+			job.upload.Namespace,
+			job.upload.Priority,
+			job.upload.FirstEventAt,
+			job.upload.ID,
 		)
 	})
 

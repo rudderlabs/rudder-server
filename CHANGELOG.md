@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.49.3](https://github.com/rudderlabs/rudder-server/compare/v1.49.2...v1.49.3) (2025-05-19)
+
+
+### Bug Fixes
+
+* warehouse pending tables to skip ([#5867](https://github.com/rudderlabs/rudder-server/issues/5867)) ([6133dbc](https://github.com/rudderlabs/rudder-server/commit/6133dbc52aeaf2ca8fc2d164500c3e44851a0d8c))
+
+## [1.49.2](https://github.com/rudderlabs/rudder-server/compare/v1.49.1...v1.49.2) (2025-05-15)
+
+
+### Miscellaneous
+
+* revert use account to decide oauth type of a destination ([#5861](https://github.com/rudderlabs/rudder-server/issues/5861)) ([1d0378b](https://github.com/rudderlabs/rudder-server/commit/1d0378b802772754b7ecad46752f3748ffcef007))
+
+## [1.49.1](https://github.com/rudderlabs/rudder-server/compare/v1.49.0...v1.49.1) (2025-05-15)
+
+
+### Miscellaneous
+
+* revert support new consent resolution strategy values ([#5855](https://github.com/rudderlabs/rudder-server/issues/5855)) ([8e29ed3](https://github.com/rudderlabs/rudder-server/commit/8e29ed38ab99e3bc728088116deb5d168f2858cb))
+
 ## [1.49.0](https://github.com/rudderlabs/rudder-server/compare/v1.48.0...v1.49.0) (2025-05-13)
 
 

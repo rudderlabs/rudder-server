@@ -24,9 +24,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/sync"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -232,7 +232,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
 				DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
 				ID:               transformMessageCopy.Data[0].Destination.ID,
-				Account:          transformMessageCopy.Data[0].Destination.DeliveryAccount,
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 			resp, err = trans.clientOAuthV2.Do(req)

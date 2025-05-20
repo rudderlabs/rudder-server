@@ -12,8 +12,8 @@ import (
 	"github.com/k3a/html2text"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 const (

@@ -25,9 +25,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"

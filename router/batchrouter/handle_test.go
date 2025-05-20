@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 // TestGenerateSchemaMapCornerCases tests various corner cases for the generateSchemaMap function

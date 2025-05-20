@@ -20,7 +20,6 @@ linters:
           files:
             - $all
             - '!**/uuid_test.go'
-            - '!**/jsonrs/*.go'
           deny:
             - pkg: github.com/gofrs/uuid
               desc: use github.com/google/uuid instead

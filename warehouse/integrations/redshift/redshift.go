@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/tunnelling"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"

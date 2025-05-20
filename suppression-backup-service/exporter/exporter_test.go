@@ -13,11 +13,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	suppressModel "github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/exporter"
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
