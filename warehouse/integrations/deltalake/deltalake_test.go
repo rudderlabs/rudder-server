@@ -550,6 +550,7 @@ func TestIntegration(t *testing.T) {
 				"accountKey":     credentials.AccountKey,
 				"bucketProvider": whutils.AzureBlob,
 			},
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

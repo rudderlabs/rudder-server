@@ -21,6 +21,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -379,6 +380,7 @@ func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
 		Provider: "S3",
 		Config:   minioConfig,
 		Logger:   logger.NOP,
+		Conf:     config.Default,
 	})
 	require.NoError(t, err, "batch verification failed")
 
@@ -478,6 +480,7 @@ func insertMinioData(t *testing.T, minioConfig map[string]interface{}) {
 		Provider: "S3",
 		Config:   minioConfig,
 		Logger:   logger.NOP,
+		Conf:     config.Default,
 	})
 	require.NoError(t, err)
 

@@ -309,6 +309,7 @@ func (brt *Handle) crashRecover() {
 			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
 				Provider: object.Provider,
 				Config:   object.Config,
+				Conf:     brt.conf,
 			})
 			if err != nil {
 				panic(err)

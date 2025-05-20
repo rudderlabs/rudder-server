@@ -330,6 +330,7 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 	fm, err := filemanager.New(&filemanager.Settings{
 		Provider: objectProvider,
 		Config:   destConfig,
+		Conf:     config.Default,
 	})
 	if err != nil {
 		return "", err

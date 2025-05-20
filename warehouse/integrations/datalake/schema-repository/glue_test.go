@@ -177,6 +177,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 					"secretAccessKey": credentials.AccessKey,
 					"region":          credentials.Region,
 				},
+				Conf: config.Default,
 			})
 			require.NoError(t, err)
 
@@ -346,6 +347,7 @@ func TestGlueSchemaRepositoryRoundTrip_V2(t *testing.T) {
 					"secretAccessKey": credentials.AccessKey,
 					"region":          credentials.Region,
 				},
+				Conf: config.Default,
 			})
 			require.NoError(t, err)
 

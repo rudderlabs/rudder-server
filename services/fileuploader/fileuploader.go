@@ -63,6 +63,7 @@ func NewStaticProvider(storageSettings map[string]StorageSettings) Provider {
 				return filemanager.New(&filemanager.Settings{
 					Provider: settings.Bucket.Type,
 					Config:   settings.Bucket.Config,
+					Conf:     config.Default,
 				})
 			})
 		}
@@ -205,6 +206,7 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 				return filemanager.New(&filemanager.Settings{
 					Provider: bucket.Type,
 					Config:   bucket.Config,
+					Conf:     config.Default,
 				})
 			})
 		}
@@ -226,6 +228,7 @@ func (*defaultProvider) GetFileManager(context.Context, string) (filemanager.Fil
 	return filemanager.New(&filemanager.Settings{
 		Provider: defaultConfig.Type,
 		Config:   defaultConfig.Config,
+		Conf:     config.Default,
 	})
 }
 

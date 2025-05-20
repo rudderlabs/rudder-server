@@ -105,6 +105,7 @@ func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (fi
 			RudderStoragePrefixOverride: p.RudderStoragePrefix,
 			WorkspaceID:                 p.WorkspaceID,
 		}),
+		Conf: appConfig.Default,
 	})
 	return fileManager, err
 }

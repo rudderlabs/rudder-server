@@ -226,6 +226,7 @@ func TestWorkerWriter(t *testing.T) {
 					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
+				Conf: c,
 			})
 			require.NoError(t, err)
 
@@ -371,6 +372,7 @@ func TestWorkerWriter(t *testing.T) {
 					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
+				Conf: c,
 			})
 			require.NoError(t, err)
 
@@ -491,6 +493,7 @@ func TestWorkerWriter(t *testing.T) {
 					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
+				Conf: c,
 			})
 			require.NoError(t, err)
 

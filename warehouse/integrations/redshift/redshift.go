@@ -411,6 +411,7 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
 			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
 		}),
+		Conf: rs.conf,
 	})
 	if err != nil {
 		return "", fmt.Errorf("creating uploader: %w", err)

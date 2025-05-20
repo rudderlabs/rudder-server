@@ -873,6 +873,7 @@ func TestIntegration(t *testing.T) {
 				"accessKey":      credentials.AccessKey,
 				"bucketProvider": whutils.S3,
 			},
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

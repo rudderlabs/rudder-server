@@ -329,7 +329,7 @@ func (bm *BatchManager) Delete(
 
 	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
 
-	fm, err := bm.FMFactory(&filemanager.Settings{Provider: destName, Config: destConfig})
+	fm, err := bm.FMFactory(&filemanager.Settings{Provider: destName, Config: destConfig, Conf: config.Default})
 	if err != nil {
 		pkgLogger.Errorf("fetching file manager for destination: %s,  %w", destName, err)
 		return model.JobStatus{Status: model.JobStatusAborted, Error: err}
