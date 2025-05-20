@@ -282,83 +282,73 @@ func TestNewProducer(t *testing.T) {
 }
 
 func TestIntegration(t *testing.T) {
-	t.Run("batch", func(t *testing.T) {
-		config.Default.Set("Router.KAFKA.enableBatching", true)
-		t.Cleanup(func() { config.Default.Set("Router.KAFKA.enableBatching", false) })
-		ctrl := gomock.NewController(t)
-		kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
-		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
-		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(3.0).Times(1)
+	ctrl := gomock.NewController(t)
+	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
 
-		kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithBrokers(1))
-		require.NoError(t, err)
-		kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
-		require.NoError(t, err)
-		destConfig := map[string]interface{}{
-			"topic":    "some-topic",
-			"hostname": kafkaHost,
-			"port":     kafkaPort,
-		}
-		dest := backendconfig.DestinationT{Config: destConfig}
+	kafkaContainer, err := dockerKafka.Setup(pool, &testCleanup{t}, dockerKafka.WithBrokers(1))
+	require.NoError(t, err)
+	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
+	require.NoError(t, err)
+	destConfig := map[string]interface{}{
+		"topic":    "some-topic",
+		"hostname": kafkaHost,
+		"port":     kafkaPort,
+	}
+	dest := backendconfig.DestinationT{Config: destConfig}
 
-		p, err := NewProducer(&dest, common.Opts{})
-		require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
-		require.NoError(t, err)
+	p, err := NewProducer(&dest, common.Opts{})
+	require.NotNilf(t, p, "expected producer to be created, got nil: %v", err)
+	require.NoError(t, err)
 
-		var statusCode int
-		var returnMessage, errMessage string
+	var statusCode int
+	var returnMessage, errMessage string
+	for _, message := range []string{"one", "two", "three"} {
 		require.Eventually(t, func() bool {
-			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`[
-				{"message":"one","topic":"foo-bar","userId":"1234"},
-				{"message":"two","topic":"foo-bar","userId":"1234"},
-				{"message":"three","topic":"foo-bar","userId":"1234"}
-			]`), destConfig)
+			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`{"message":"`+message+`","topic":"foo-bar","userId":"1234"}`), destConfig)
 			return statusCode == http.StatusOK
 		}, 30*time.Second, 100*time.Millisecond)
-		require.Equal(t, "Kafka: Message delivered in batch", returnMessage)
-		require.Equal(t, "Kafka: Message delivered in batch", errMessage)
+		require.Equal(t, "Message delivered to topic: foo-bar", returnMessage)
+		require.Equal(t, "Message delivered to topic: foo-bar", errMessage)
+	}
 
-		c, err := client.New("tcp", kafkaContainer.Brokers, client.Config{})
-		require.NoError(t, err)
-		require.NoError(t, c.Ping(context.Background()))
+	c, err := client.New("tcp", kafkaContainer.Brokers, client.Config{})
+	require.NoError(t, err)
+	require.NoError(t, c.Ping(context.Background()))
 
-		var (
-			msgs     []client.Message
-			consumer = c.NewConsumer("foo-bar", client.ConsumerConfig{})
-		)
+	var (
+		msgs     []client.Message
+		consumer = c.NewConsumer("foo-bar", client.ConsumerConfig{})
+	)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		for i := 0; i < 3; {
-			var message client.Message
-			message, err = consumer.Receive(ctx)
-			if err == nil {
-				i++
-				msgs = append(msgs, message)
-			} else {
-				break
-			}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for i := 0; i < 3; {
+		var message client.Message
+		message, err = consumer.Receive(ctx)
+		if err == nil {
+			i++
+			msgs = append(msgs, message)
+		} else {
+			break
 		}
+	}
 
-		require.NoError(t, err)
-		require.Len(t, msgs, 3)
-		requireEqualMessage(t, "foo-bar", "1234", `"one"`, msgs[0])
-		requireEqualMessage(t, "foo-bar", "1234", `"two"`, msgs[1])
-		requireEqualMessage(t, "foo-bar", "1234", `"three"`, msgs[2])
-	})
+	require.NoError(t, err)
+	require.Len(t, msgs, 3)
+	requireEqualMessage(t, "foo-bar", "1234", `"one"`, msgs[0])
+	requireEqualMessage(t, "foo-bar", "1234", `"two"`, msgs[1])
+	requireEqualMessage(t, "foo-bar", "1234", `"three"`, msgs[2])
 }
 
 func TestAIOKafka(t *testing.T) {
-	config.Default.Set("Router.KAFKA.enableBatching", true)
 	config.Default.Set("Router.KAFKA.compression", int(client.CompressionZstd))
 	t.Cleanup(func() {
-		config.Default.Set("Router.KAFKA.enableBatching", false)
 		config.Default.Set("Router.KAFKA.compression", int(client.CompressionNone))
 	})
 	ctrl := gomock.NewController(t)
@@ -366,8 +356,6 @@ func TestAIOKafka(t *testing.T) {
 	kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
 	kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
 	kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
-	kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
-	kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(3.0).Times(1)
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -398,16 +386,14 @@ func TestAIOKafka(t *testing.T) {
 
 	var statusCode int
 	var returnMessage, errMessage string
-	require.Eventually(t, func() bool {
-		statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`[
-			{"message":"one","topic":"foo-bar","userId":"1234"},
-			{"message":"two","topic":"foo-bar","userId":"1234"},
-			{"message":"three","topic":"foo-bar","userId":"1234"}
-		]`), destConfig)
-		return statusCode == http.StatusOK
-	}, 30*time.Second, 100*time.Millisecond)
-	require.Equal(t, "Kafka: Message delivered in batch", returnMessage)
-	require.Equal(t, "Kafka: Message delivered in batch", errMessage)
+	for _, message := range []string{"one", "two", "three"} {
+		require.Eventually(t, func() bool {
+			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`{"message":"`+message+`","topic":"foo-bar","userId":"1234"}`), destConfig)
+			return statusCode == http.StatusOK
+		}, 30*time.Second, 100*time.Millisecond)
+		require.Equal(t, "Message delivered to topic: foo-bar", returnMessage)
+		require.Equal(t, "Message delivered to topic: foo-bar", errMessage)
+	}
 
 	consumerContainer, err := pool.BuildAndRunWithOptions("./testdata/aiokafka/Dockerfile", &dockertest.RunOptions{
 		Name:      fmt.Sprintf("aiokafka-%s", misc.FastUUID().String()),
@@ -584,97 +570,6 @@ func TestProducerForConfluentCloud(t *testing.T) {
 	})
 }
 
-func TestPrepareBatchOfMessages(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockSkippedDueToUserID := mock_stats.NewMockMeasurement(ctrl)
-	mockSkippedDueToMessage := mock_stats.NewMockMeasurement(ctrl)
-	mockPrepareBatchTime := mock_stats.NewMockMeasurement(ctrl)
-	kafkaStats = managerStats{
-		missingUserID:    mockSkippedDueToUserID,
-		missingMessage:   mockSkippedDueToMessage,
-		prepareBatchTime: mockPrepareBatchTime,
-	}
-	allowReqsWithoutUserIDAndAnonymousID = config.SingleValueLoader(false)
-
-	t.Run("nil", func(t *testing.T) {
-		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
-
-		var data []map[string]interface{}
-		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
-		require.Equal(t, []client.Message(nil), batch)
-		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
-	})
-
-	t.Run("no message", func(t *testing.T) {
-		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
-		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
-		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		data := []map[string]interface{}{{
-			"not-interesting": "some value",
-			"topic":           "some-topic",
-		}}
-		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
-		require.Equal(t, []client.Message(nil), batch)
-		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch: "+
-			"some errors are: [batch from topic some-topic is missing the message attribute]"), err)
-	})
-
-	t.Run("with message and user id", func(t *testing.T) {
-		mockSkippedDueToUserID.EXPECT().Increment().Times(1)
-		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
-		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
-
-		now := time.Now()
-		data := []map[string]interface{}{
-			{"not-interesting": "some value", "topic": "some-topic"},
-			{"message": "msg01", "topic": "some-topic"},
-			{"message": "msg02", "userId": "123", "topic": "some-topic"},
-			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456", "topic": "some-topic"},
-		}
-		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages(data, now, pm, "some-topic")
-		require.NoError(t, err)
-		require.ElementsMatch(t, []client.Message{
-			{
-				Key:       []byte("123"),
-				Value:     []byte(`"msg02"`),
-				Topic:     "some-topic",
-				Timestamp: now,
-			},
-			{
-				Key:       []byte("456"),
-				Value:     []byte(`{"a":1,"b":2}`),
-				Topic:     "some-topic",
-				Timestamp: now,
-			},
-		}, batch)
-	})
-
-	t.Run("with empty user id and allow empty", func(t *testing.T) {
-		mockSkippedDueToMessage.EXPECT().Increment().Times(1)
-		mockPrepareBatchTime.EXPECT().SendTiming(sinceDuration).Times(1)
-
-		now := time.Now()
-		allowReqsWithoutUserIDAndAnonymousID = config.SingleValueLoader(true)
-		data := []map[string]interface{}{
-			{"not-interesting": "some value", "topic": "some-topic"},
-			{"message": "msg01", "topic": "some-topic"},
-		}
-		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages(data, now, pm, "some-topic")
-		require.NoError(t, err)
-		require.ElementsMatch(t, []client.Message{
-			{
-				Key:       []byte(""),
-				Value:     []byte(`"msg01"`),
-				Topic:     "some-topic",
-				Timestamp: now,
-			},
-		}, batch)
-	})
-}
-
 func TestClose(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		pm := &ProducerManager{}
@@ -796,228 +691,6 @@ func TestProduce(t *testing.T) {
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
 		require.Equal(t, "Message delivered to topic: foo-bar", err)
-	})
-}
-
-func TestSendBatchedMessage(t *testing.T) {
-	t.Run("invalid json", func(t *testing.T) {
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage("{{{"),
-			nil,
-			"some-topic",
-		)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "Failure", res)
-		require.Contains(t, err, "Error while unmarshalling json data:")
-	})
-
-	t.Run("invalid data", func(t *testing.T) {
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`{"message":"ciao"}`), // not a slice of map[string]interface{}
-			nil,
-			"some-topic",
-		)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "Failure", res)
-		require.Contains(t, err, "Error while unmarshalling json data: ")
-	})
-
-	t.Run("publisher error", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-
-		p := &pMockErr{error: fmt.Errorf("something bad")}
-		pm := &ProducerManager{p: p}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "something bad error occurred.", res)
-		require.Equal(t, "something bad", err)
-		require.Len(t, p.calls, 1)
-		require.Len(t, p.calls[0], 1)
-		require.Equal(t, []byte("123"), p.calls[0][0].Key)
-		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
-		require.Equal(t, "some-topic", p.calls[0][0].Topic)
-		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
-	})
-
-	t.Run("publisher retryable error", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-
-		p := &pMockErr{error: kafka.LeaderNotAvailable}
-		pm := &ProducerManager{p: p}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 500, sc)
-		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
-		require.Equal(t, err, kafka.LeaderNotAvailable.Error())
-		require.Len(t, p.calls, 1)
-		require.Len(t, p.calls[0], 1)
-		require.Equal(t, []byte("123"), p.calls[0][0].Key)
-		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
-		require.Equal(t, "some-topic", p.calls[0][0].Topic)
-		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
-	})
-
-	t.Run("ok", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
-		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(1.0).Times(1)
-
-		p := &pMockErr{error: nil}
-		pm := &ProducerManager{p: p}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 200, sc)
-		require.Equal(t, "Kafka: Message delivered in batch", res)
-		require.Equal(t, "Kafka: Message delivered in batch", err)
-		require.Len(t, p.calls, 1)
-		require.Len(t, p.calls[0], 1)
-		require.Equal(t, []byte("123"), p.calls[0][0].Key)
-		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
-		require.Equal(t, "some-topic", p.calls[0][0].Topic)
-		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
-	})
-
-	t.Run("default topic test", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.batchSize = mock_stats.NewMockMeasurement(ctrl)
-		kafkaStats.batchSize.(*mock_stats.MockMeasurement).EXPECT().Observe(1.0).Times(1)
-
-		p := &pMockErr{error: nil}
-		pm := &ProducerManager{p: p}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 200, sc)
-		require.Equal(t, "Kafka: Message delivered in batch", res)
-		require.Equal(t, "Kafka: Message delivered in batch", err)
-		require.Len(t, p.calls, 1)
-		require.Len(t, p.calls[0], 1)
-		require.Equal(t, []byte("123"), p.calls[0][0].Key)
-		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
-		require.Equal(t, "some-topic", p.calls[0][0].Topic)
-		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
-	})
-
-	t.Run("schemaId not available", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
-
-		codec, codecErr := goavro.NewCodec(`{
-			"namespace" : "kafkaAvroTest",
-			"name": "myRecord",
-			"type" :  "record",
-			"fields" : [
-			   {"name": "uid", "type": "int"},
-			   {"name": "someField", "type": "string"}
-			]
-		}`)
-		require.NoError(t, codecErr)
-		pm := &pmMockErr{
-			codecs: map[string]*goavro.Codec{
-				"schemaId001": codec,
-			},
-		}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","topic":"some-topic"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch: "+
-			"some errors are: [schemaId is not available for the event at index 0]", err)
-	})
-
-	t.Run("wrong codec", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
-		codec, codecErr := goavro.NewCodec(`{
-			"namespace" : "kafkaAvroTest",
-			"name": "myRecord",
-			"type" :  "record",
-			"fields" : [
-			   {"name": "uid", "type": "int"},
-			   {"name": "someField", "type": "string"}
-			]
-		}`)
-		require.NoError(t, codecErr)
-		pm := &pmMockErr{
-			codecs: map[string]*goavro.Codec{
-				"schemaId001": codec,
-			},
-		}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001","topic":"some-topic"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch: "+
-			"some errors are: [unable to serialize the event with schemaId \"schemaId001\" at index 0: unable convert "+
-			"the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myRecord\": "+
-			"cannot decode textual map: cannot determine codec: \"data\"]", err)
-	})
-
-	t.Run("unavailable schemaId", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
-		codec, codecErr := goavro.NewCodec(`{
-			"namespace" : "kafkaAvroTest",
-			"name": "myRecord",
-			"type" :  "record",
-			"fields" : [
-			   {"name": "uid", "type": "int"},
-			   {"name": "someField", "type": "string"}
-			]
-		}`)
-		require.NoError(t, codecErr)
-		pm := &pmMockErr{
-			codecs: map[string]*goavro.Codec{
-				"schemaId001": codec,
-			},
-		}
-		sc, res, err := sendBatchedMessage(
-			context.Background(),
-			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002","topic":"some-topic"}]`),
-			pm,
-			"some-topic",
-		)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "Failure", res)
-		require.Equal(t, "Error while preparing batched message: unable to process any of the event in the batch: "+
-			"some errors are: [unable to find schema with schemaId \"schemaId002\"]", err)
 	})
 }
 
@@ -1358,13 +1031,6 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, anyTimes bool) *mock_
 		call.Times(1)
 	}
 	return mockedTimer
-}
-
-func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mock_stats.MockMeasurement {
-	t.Helper()
-	mockedCounter := mock_stats.NewMockMeasurement(ctrl)
-	mockedCounter.EXPECT().Increment().Times(1)
-	return mockedCounter
 }
 
 func registerSchema(t *testing.T, schemaName, schemaPath string, c schemaregistry.Client) (schema string, schemaID int) {

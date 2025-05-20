@@ -49,6 +49,7 @@ type testConfig struct {
 }
 
 func TestTracing(t *testing.T) {
+	t.Setenv("RSERVER_ROUTER_BATCHING_SUPPORTED_DESTINATIONS", "WEBHOOK")
 	t.Run("gateway-processor-router tracing", func(t *testing.T) {
 		tc := setup(t)
 
