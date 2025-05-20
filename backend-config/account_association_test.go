@@ -241,7 +241,51 @@ func TestAccountAssociations(t *testing.T) {
 		c.processAccountAssociations()
 
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
-		require.Empty(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
+		require.Nil(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
+	})
+
+	t.Run("blank account definition name", func(t *testing.T) {
+		// Set up test configuration
+		c := &ConfigT{
+			Sources: []SourceT{
+				{
+					ID: "source-1",
+					Destinations: []DestinationT{
+						{
+							ID: "dest-1",
+							Config: map[string]interface{}{
+								"rudderAccountId": "acc-1",
+							},
+						},
+					},
+				},
+			},
+			Accounts: map[string]Account{
+				"acc-1": {
+					AccountDefinitionName: "", // Blank account definition name
+					Options:               map[string]interface{}{"key1": "value1"},
+					Secret:                map[string]interface{}{"secret1": "secretValue1"},
+				},
+			},
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
+					Name:   "oauth-def",
+					Config: map[string]interface{}{},
+				},
+			},
+		}
+
+		c.processAccountAssociations()
+
+		// Verify the account is populated but AccountDefinition is nil
+		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
+		require.Equal(t, "", c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinitionName)
+		require.Equal(t, map[string]interface{}{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
+		require.Equal(t, map[string]interface{}{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
+		require.Nil(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
+
+		// Note: We can't easily test that no warning was logged without mocking the logger,
+		// but the behavior is correct - no warning should be logged for blank AccountDefinitionName
 	})
 
 	t.Run("json serialization of destination with accounts", func(t *testing.T) {
