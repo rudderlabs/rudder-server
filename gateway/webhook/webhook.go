@@ -15,13 +15,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+
+	"github.com/hashicorp/go-retryablehttp"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -81,8 +84,10 @@ type HandleT struct {
 		sourceListForParsingParams []string
 		forwardGetRequestForSrcMap map[string]struct{}
 		webhookV2HandlerEnabled    bool
+		cslbEnabled                config.ValueLoader[bool]
 	}
 	statReporterCreator StatReporterCreator
+	httpClient          transformerclient.RetryableClient
 }
 
 type webhookSourceStatT struct {
