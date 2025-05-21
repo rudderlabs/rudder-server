@@ -52,7 +52,6 @@ type Router struct {
 	db           *sqlquerywrapper.DB
 	stagingRepo  *repo.StagingFiles
 	uploadRepo   *repo.Uploads
-	whSchemaRepo *repo.WHSchema
 
 	triggerStore       *sync.Map
 	createUploadAlways createUploadAlwaysLoader
@@ -145,7 +144,6 @@ func New(
 	r.db = db
 	r.stagingRepo = repo.NewStagingFiles(db)
 	r.uploadRepo = repo.NewUploads(db)
-	r.whSchemaRepo = repo.NewWHSchemas(db)
 
 	r.notifier = notifier
 	r.tenantManager = tenantManager
