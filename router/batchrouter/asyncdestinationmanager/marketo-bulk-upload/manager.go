@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 // MarketoBulkUploaderOptions contains all dependencies needed for the uploader

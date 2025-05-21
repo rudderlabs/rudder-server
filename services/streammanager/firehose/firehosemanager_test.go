@@ -11,8 +11,8 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
 
 	"github.com/stretchr/testify/assert"

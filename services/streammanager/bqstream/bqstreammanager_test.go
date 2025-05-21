@@ -11,9 +11,9 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_bqstream "github.com/rudderlabs/rudder-server/mocks/services/streammanager/bqstream"
 
 	"github.com/stretchr/testify/assert"

@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 

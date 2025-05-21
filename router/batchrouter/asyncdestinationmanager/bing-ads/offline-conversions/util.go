@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

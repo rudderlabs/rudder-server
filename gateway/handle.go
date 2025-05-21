@@ -12,6 +12,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
+
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/samber/lo"
 
 	"github.com/google/uuid"
@@ -29,16 +33,15 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/internal/bot"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -79,19 +82,20 @@ type Handle struct {
 
 	// state initialised during Setup
 
-	diagnosisTicker              *time.Ticker
-	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
-	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
-	irh                          RequestHandler
-	rrh                          RequestHandler
-	webhook                      webhook.Webhook
-	whProxy                      http.Handler
-	suppressUserHandler          types.UserSuppression
-	backgroundCancel             context.CancelFunc
-	backgroundWait               func() error
-	userWebRequestWorkers        []*userWebRequestWorkerT
-	backendConfigInitialisedChan chan struct{}
-	now                          func() time.Time
+	diagnosisTicker                *time.Ticker
+	userWorkerBatchRequestQ        chan *userWorkerBatchRequestT
+	batchUserWorkerBatchRequestQ   chan *batchUserWorkerBatchRequestT
+	irh                            RequestHandler
+	rrh                            RequestHandler
+	webhook                        webhook.WebhookRequestHandler
+	whProxy                        http.Handler
+	suppressUserHandler            types.UserSuppression
+	backgroundCancel               context.CancelFunc
+	backgroundWait                 func() error
+	userWebRequestWorkers          []*userWebRequestWorkerT
+	backendConfigInitialisedChan   chan struct{}
+	transformerFeaturesInitialised chan struct{}
+	now                            func() time.Time
 
 	// other state
 
@@ -124,6 +128,7 @@ type Handle struct {
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
+		webhookV2HandlerEnabled              bool
 	}
 
 	// additional internal http handlers
@@ -133,6 +138,8 @@ type Handle struct {
 
 	// internal batch validator
 	msgValidator messageValidator
+
+	webhookAuthMiddleware *auth.WebhookAuth
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.

@@ -20,12 +20,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"

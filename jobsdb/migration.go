@@ -11,11 +11,11 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
@@ -663,7 +663,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 
 	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
 
-	if needsPair || recordsLeft == 0 || float64(delCount)/float64(totalCount) >= jd.conf.migration.jobDoneMigrateThres.Load() {
+	if needsPair || recordsLeft == 0 {
 		return true, needsPair, recordsLeft, nil
 	}
 

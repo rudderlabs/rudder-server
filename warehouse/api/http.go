@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 

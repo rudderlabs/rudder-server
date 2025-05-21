@@ -14,8 +14,8 @@ import (
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 

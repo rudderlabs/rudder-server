@@ -3,7 +3,7 @@ package encoding
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

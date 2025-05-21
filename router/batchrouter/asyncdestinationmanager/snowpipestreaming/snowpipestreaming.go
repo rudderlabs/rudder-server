@@ -25,9 +25,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	snowpipeapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"

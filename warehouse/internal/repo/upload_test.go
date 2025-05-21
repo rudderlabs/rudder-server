@@ -15,8 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"

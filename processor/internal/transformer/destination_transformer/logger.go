@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 

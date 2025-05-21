@@ -16,8 +16,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"

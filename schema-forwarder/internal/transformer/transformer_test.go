@@ -13,10 +13,10 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/testdata"

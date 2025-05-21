@@ -23,9 +23,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
