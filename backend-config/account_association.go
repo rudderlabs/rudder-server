@@ -1,6 +1,9 @@
 package backendconfig
 
-import "github.com/rudderlabs/rudder-go-kit/logger"
+import (
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+)
 
 // processAccountAssociations processes account configurations and merges them with their corresponding
 // account definitions. It then associates these merged accounts with destinations based on
@@ -26,28 +29,19 @@ func (c *ConfigT) processAccountAssociations() {
 //
 // Parameters:
 //   - accountDefinitionName: The name of the account definition to look up
-//   - accountID: The ID of the account (used for logging)
-//   - accountField: The field name in the destination config (used for logging)
-//   - destinationID: The ID of the destination (used for logging)
-//   - flowType: The type of flow (used for logging)
+//   - accountAssociationLogger: The logger instance to use for logging
 //
 // Returns:
 //   - *AccountDefinition: A pointer to the account definition or nil if not found
-func (c *ConfigT) getAccountDefinition(accountDefinitionName, accountID, accountField, destinationID, flowType string) *AccountDefinition {
+func (c *ConfigT) getAccountDefinition(accountDefinitionName string, accountAssociationLogger logger.Logger) *AccountDefinition {
 	if accountDefinitionName == "" {
 		return nil
 	}
-
 	if accountDefinition, exists := c.AccountDefinitions[accountDefinitionName]; exists {
 		return &accountDefinition
 	}
-
 	// Log error if account definition not found
-	pkgLogger.Errorn("Account definition not found in configured accountDefinitions for "+flowType+" flow",
-		logger.NewStringField(accountField, accountID),
-		logger.NewStringField("accountDefinitionName", accountDefinitionName),
-		logger.NewStringField("destinationId", destinationID))
-
+	accountAssociationLogger.Errorn("Account definition not found in configured accountDefinitions")
 	return nil
 }
 
@@ -56,35 +50,21 @@ func (c *ConfigT) getAccountDefinition(accountDefinitionName, accountID, account
 //
 // Parameters:
 //   - accountID: The ID of the account to populate
-//   - destination: Pointer to the destination being configured
-//   - accountField: The field name in the destination config (e.g., "rudderAccountId" or "rudderDeleteAccountId")
-//   - flowType: The type of flow (e.g., "delivery" or "regulation")
+//   - accountAssociationLogger: The logger instance to use for logging
 //
 // Returns:
 //   - *Account: The populated account object or nil if the account doesn't exist
-func (c *ConfigT) populateAccountToDestination(accountID string, destination *DestinationT, accountField, flowType string) *Account {
+func (c *ConfigT) populateAccountToDestination(accountID string, accountAssociationLogger logger.Logger) *Account {
 	if account, exists := c.Accounts[accountID]; exists {
 		accountDefinitionPtr := c.getAccountDefinition(
 			account.AccountDefinitionName,
-			accountID,
-			accountField,
-			destination.ID,
-			flowType,
+			accountAssociationLogger,
 		)
-
-		return &Account{
-			ID:                    accountID,
-			AccountDefinitionName: account.AccountDefinitionName,
-			Options:               account.Options,
-			Secret:                account.Secret,
-			AccountDefinition:     accountDefinitionPtr,
-		}
+		account.AccountDefinition = accountDefinitionPtr
+		account.ID = accountID
+		return &account
 	}
-
-	pkgLogger.Errorn("Account not found in configured accounts for "+flowType+" flow",
-		logger.NewStringField(accountField, accountID),
-		logger.NewStringField("destinationId", destination.ID))
-
+	accountAssociationLogger.Errorn("Account not found in configured accounts")
 	return nil
 }
 
@@ -96,19 +76,31 @@ func (c *ConfigT) populateAccountToDestination(accountID string, destination *De
 // For each account type, it:
 // 1. Checks if the corresponding account ID exists in the destination config
 // 2. Verifies the account exists in the accounts map
-// 3. Creates an AccountWithDefinition by combining account details with its definition
+// 3. Creates an account by combining account details with its definition
 // 4. Assigns it to the appropriate field in the destination
 //
 // Parameters:
 //   - dest: Pointer to the destination being configured
 func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
-	// Check and set the regular account if specified in the destination config
+	accountAssociationLogger := pkgLogger.Withn(
+		obskit.DestinationID(dest.ID),
+		obskit.DestinationType(dest.DestinationDefinition.Name),
+	)
+	// Check and set the delivery account if specified in the destination config
 	if accountID, ok := dest.Config["rudderAccountId"].(string); ok {
-		dest.DeliveryAccount = c.populateAccountToDestination(accountID, dest, "rudderAccountId", "delivery")
+		accountAssociationLogger = accountAssociationLogger.Withn(
+			logger.NewStringField("rudderAccountId", accountID),
+			logger.NewStringField("flowType", "delivery"),
+		)
+		dest.DeliveryAccount = c.populateAccountToDestination(accountID, accountAssociationLogger)
 	}
 
 	// Check and set the delete account if specified in the destination config
 	if deleteAccountID, ok := dest.Config["rudderDeleteAccountId"].(string); ok {
-		dest.DeleteAccount = c.populateAccountToDestination(deleteAccountID, dest, "rudderDeleteAccountId", "regulation")
+		accountAssociationLogger = accountAssociationLogger.Withn(
+			logger.NewStringField("rudderAccountId", deleteAccountID),
+			logger.NewStringField("flowType", "regulation"),
+		)
+		dest.DeleteAccount = c.populateAccountToDestination(deleteAccountID, accountAssociationLogger)
 	}
 }
