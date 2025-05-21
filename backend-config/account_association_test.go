@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 func TestAccountAssociations(t *testing.T) {
@@ -337,5 +337,71 @@ func TestAccountAssociations(t *testing.T) {
 		require.Equal(t, map[string]interface{}{"key2": "value2"}, destFromJSON.DeleteAccount.Options)
 		require.Equal(t, "OAuth", destFromJSON.DeliveryAccount.AccountDefinition.AuthenticationType)
 		require.Equal(t, "OAuth", destFromJSON.DeleteAccount.AccountDefinition.AuthenticationType)
+	})
+
+	t.Run("we should get nil deliveryAccount when rudderAccountId is an empty string for deliveryAccount", func(t *testing.T) {
+		c := &ConfigT{
+			Sources: []SourceT{
+				{
+					ID: "source-1",
+					Destinations: []DestinationT{
+						{
+							ID: "dest-1",
+							Config: map[string]interface{}{
+								"rudderAccountId": "",
+							},
+						},
+					},
+				},
+			},
+			Accounts: map[string]Account{
+				"acc-1": {
+					AccountDefinitionName: "non-existent-def",
+				},
+			},
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
+					Name:   "oauth-def",
+					Config: map[string]interface{}{},
+				},
+			},
+		}
+
+		c.processAccountAssociations()
+
+		require.Nil(t, c.Sources[0].Destinations[0].DeliveryAccount)
+	})
+
+	t.Run("we should get nil deleteAccount when rudderDeleteAccountId is an empty string", func(t *testing.T) {
+		c := &ConfigT{
+			Sources: []SourceT{
+				{
+					ID: "source-1",
+					Destinations: []DestinationT{
+						{
+							ID: "dest-1",
+							Config: map[string]interface{}{
+								"rudderDeleteAccountId": "",
+							},
+						},
+					},
+				},
+			},
+			Accounts: map[string]Account{
+				"acc-1": {
+					AccountDefinitionName: "non-existent-def",
+				},
+			},
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
+					Name:   "oauth-def",
+					Config: map[string]interface{}{},
+				},
+			},
+		}
+
+		c.processAccountAssociations()
+
+		require.Nil(t, c.Sources[0].Destinations[0].DeleteAccount)
 	})
 }

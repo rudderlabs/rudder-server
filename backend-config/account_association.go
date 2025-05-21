@@ -18,7 +18,7 @@ func (c *ConfigT) processAccountAssociations() {
 		for i := range c.Sources {
 			for j := range c.Sources[i].Destinations {
 				dest := &c.Sources[i].Destinations[j]
-				c.setDestinationAccounts(dest)
+				c.enrichDestinationWithAccounts(dest)
 			}
 		}
 	}
@@ -34,9 +34,6 @@ func (c *ConfigT) processAccountAssociations() {
 // Returns:
 //   - *AccountDefinition: A pointer to the account definition or nil if not found
 func (c *ConfigT) getAccountDefinition(accountDefinitionName string, accountAssociationLogger logger.Logger) *AccountDefinition {
-	if accountDefinitionName == "" {
-		return nil
-	}
 	if accountDefinition, exists := c.AccountDefinitions[accountDefinitionName]; exists {
 		return &accountDefinition
 	}
@@ -45,7 +42,7 @@ func (c *ConfigT) getAccountDefinition(accountDefinitionName string, accountAsso
 	return nil
 }
 
-// populateAccountToDestination populates an account to a destination field based on the account ID.
+// enrichAccountWithDefinition populates an account to a destination field based on the account ID.
 // It creates an Account object by combining account details with its definition.
 //
 // Parameters:
@@ -54,12 +51,15 @@ func (c *ConfigT) getAccountDefinition(accountDefinitionName string, accountAsso
 //
 // Returns:
 //   - *Account: The populated account object or nil if the account doesn't exist
-func (c *ConfigT) populateAccountToDestination(accountID string, accountAssociationLogger logger.Logger) *Account {
+func (c *ConfigT) enrichAccountWithDefinition(accountID string, accountAssociationLogger logger.Logger) *Account {
 	if account, exists := c.Accounts[accountID]; exists {
-		accountDefinitionPtr := c.getAccountDefinition(
-			account.AccountDefinitionName,
-			accountAssociationLogger,
-		)
+		var accountDefinitionPtr *AccountDefinition
+		if account.AccountDefinitionName != "" {
+			accountDefinitionPtr = c.getAccountDefinition(
+				account.AccountDefinitionName,
+				accountAssociationLogger,
+			)
+		}
 		account.AccountDefinition = accountDefinitionPtr
 		account.ID = accountID
 		return &account
@@ -68,7 +68,7 @@ func (c *ConfigT) populateAccountToDestination(accountID string, accountAssociat
 	return nil
 }
 
-// setDestinationAccounts assigns accounts to a destination based on its configuration.
+// enrichDestinationWithAccounts assigns accounts to a destination based on its configuration.
 // It handles two types of account associations:
 // 1. Regular account (rudderAccountId) - Used for normal event delivery flow
 // 2. Delete account (rudderDeleteAccountId) - Used for data deletion/regulation flow
@@ -81,26 +81,26 @@ func (c *ConfigT) populateAccountToDestination(accountID string, accountAssociat
 //
 // Parameters:
 //   - dest: Pointer to the destination being configured
-func (c *ConfigT) setDestinationAccounts(dest *DestinationT) {
+func (c *ConfigT) enrichDestinationWithAccounts(dest *DestinationT) {
 	accountAssociationLogger := pkgLogger.Withn(
 		obskit.DestinationID(dest.ID),
 		obskit.DestinationType(dest.DestinationDefinition.Name),
 	)
 	// Check and set the delivery account if specified in the destination config
-	if accountID, ok := dest.Config["rudderAccountId"].(string); ok {
+	if accountID, ok := dest.Config["rudderAccountId"].(string); ok && accountID != "" {
 		accountAssociationLogger = accountAssociationLogger.Withn(
 			logger.NewStringField("rudderAccountId", accountID),
 			logger.NewStringField("flowType", "delivery"),
 		)
-		dest.DeliveryAccount = c.populateAccountToDestination(accountID, accountAssociationLogger)
+		dest.DeliveryAccount = c.enrichAccountWithDefinition(accountID, accountAssociationLogger)
 	}
 
 	// Check and set the delete account if specified in the destination config
-	if deleteAccountID, ok := dest.Config["rudderDeleteAccountId"].(string); ok {
+	if deleteAccountID, ok := dest.Config["rudderDeleteAccountId"].(string); ok && deleteAccountID != "" {
 		accountAssociationLogger = accountAssociationLogger.Withn(
 			logger.NewStringField("rudderAccountId", deleteAccountID),
 			logger.NewStringField("flowType", "regulation"),
 		)
-		dest.DeleteAccount = c.populateAccountToDestination(deleteAccountID, accountAssociationLogger)
+		dest.DeleteAccount = c.enrichAccountWithDefinition(deleteAccountID, accountAssociationLogger)
 	}
 }
