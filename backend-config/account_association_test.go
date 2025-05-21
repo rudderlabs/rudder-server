@@ -244,7 +244,7 @@ func TestAccountAssociations(t *testing.T) {
 		require.Nil(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
 	})
 
-	t.Run("blank account definition name", func(t *testing.T) {
+	t.Run("blank account definition name for an account which will result in nil accountDefinition for the account added to the destination", func(t *testing.T) {
 		// Set up test configuration
 		c := &ConfigT{
 			Sources: []SourceT{
@@ -288,7 +288,7 @@ func TestAccountAssociations(t *testing.T) {
 		// but the behavior is correct - no warning should be logged for blank AccountDefinitionName
 	})
 
-	t.Run("json serialization of destination with accounts", func(t *testing.T) {
+	t.Run("This test ensures JSON serialization/deserialization works correctly with the Account so that destination will contain deliveryAccount/deleteAccount", func(t *testing.T) {
 		dest := DestinationT{
 			ID: "dest-1",
 			DeliveryAccount: &Account{
