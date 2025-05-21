@@ -1,11 +1,12 @@
 package warehouse
 
 import (
-	"unicode/utf8"
+	"fmt"
+	"math/big"
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/utils"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -43,7 +44,9 @@ func primitiveType(val any) string {
 func getFloatType(v float64) string {
 	// JSON unmarshalling treats all numbers as float64 by default, even if they are whole numbers
 	// So, we need to check if the float is actually an integer
-	if v == float64(int64(v)) {
+	// We are using Number.isInteger(val) for detecting whether datatype is int or float in rudder-transformer
+	// which has higher range then what we have in Golang (9223372036854775807), therefore using big package for determining the type
+	if big.NewFloat(v).IsInt() {
 		return model.IntDataType
 	}
 	return model.FloatDataType
@@ -83,11 +86,14 @@ func overrideForRedshift(val any, isJSONKey bool) string {
 func shouldUseTextForRedshift(data any) bool {
 	switch v := data.(type) {
 	case []any, []types.ValidationError, map[string]any:
-		if jsonVal, _ := jsonrs.Marshal(v); utf8.RuneCount(jsonVal) > redshiftStringLimit {
+		jsonVal, _ := utils.MarshalJSON(v)
+		// Javascript strings are UTF-16 encoded, use utf16 instead of utf8 package for determining the length
+		if utils.UTF16RuneCountInString(string(jsonVal)) > redshiftStringLimit {
 			return true
 		}
 	case string:
-		if utf8.RuneCountInString(v) > redshiftStringLimit {
+		// Javascript strings are UTF-16 encoded, use utf16 instead of utf8 package for determining the length
+		if utils.UTF16RuneCountInString(v) > redshiftStringLimit {
 			return true
 		}
 	}
@@ -141,4 +147,59 @@ func convertToSliceIfViolationErrors(val any) any {
 		return result
 	}
 	return val
+}
+
+func addDataAndMetadataForContextGeoEnrichment(tec *transformEventContext, data map[string]any, metadata map[string]string, key string, val any) error {
+	if geoLocation, ok := val.(enricher.Geolocation); ok {
+		if len(geoLocation.IP) > 0 {
+			ipKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_ip"))
+			if err != nil {
+				return fmt.Errorf("could not get ip column name: %w", err)
+			}
+			data[ipKey], metadata[ipKey] = geoLocation.IP, model.StringDataType
+		}
+		if len(geoLocation.City) > 0 {
+			cityKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_city"))
+			if err != nil {
+				return fmt.Errorf("could not get city column name: %w", err)
+			}
+			data[cityKey], metadata[cityKey] = geoLocation.City, model.StringDataType
+		}
+		if len(geoLocation.Country) > 0 {
+			countryKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_country"))
+			if err != nil {
+				return fmt.Errorf("could not get country column name: %w", err)
+			}
+			data[countryKey], metadata[countryKey] = geoLocation.Country, model.StringDataType
+		}
+		if len(geoLocation.Region) > 0 {
+			regionKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_region"))
+			if err != nil {
+				return fmt.Errorf("could not get region column name: %w", err)
+			}
+			data[regionKey], metadata[regionKey] = geoLocation.Region, model.StringDataType
+		}
+		if len(geoLocation.Postal) > 0 {
+			postalKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_postal"))
+			if err != nil {
+				return fmt.Errorf("could not get postal column name: %w", err)
+			}
+			data[postalKey], metadata[postalKey] = geoLocation.Postal, model.StringDataType
+		}
+		if len(geoLocation.Location) > 0 {
+			locationKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_location"))
+			if err != nil {
+				return fmt.Errorf("could not get location column name: %w", err)
+			}
+			data[locationKey], metadata[locationKey] = geoLocation.Location, model.StringDataType
+		}
+		if len(geoLocation.Timezone) > 0 {
+			timezoneKey, err := safeColumnNameCached(tec, transformColumnNameCached(tec, key+"_timezone"))
+			if err != nil {
+				return fmt.Errorf("could not get timezone column name: %w", err)
+			}
+			data[timezoneKey], metadata[timezoneKey] = geoLocation.Timezone, model.StringDataType
+		}
+	}
+	return nil
 }
