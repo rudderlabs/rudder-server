@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.4](https://github.com/rudderlabs/rudder-server/compare/v1.49.3...v1.49.4) (2025-05-21)
+
+
+### Bug Fixes
+
+* warehouse transformations ([#5875](https://github.com/rudderlabs/rudder-server/issues/5875)) ([a22f901](https://github.com/rudderlabs/rudder-server/commit/a22f90110be3895fd888ab36573feb0cf99e79a4))
+
 ## [1.49.3](https://github.com/rudderlabs/rudder-server/compare/v1.49.2...v1.49.3) (2025-05-19)
 
 
