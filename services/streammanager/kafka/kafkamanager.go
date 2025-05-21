@@ -21,8 +21,8 @@ import (
 	rslogger "github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -147,11 +147,10 @@ type internalProducer interface {
 }
 
 type ProducerManager struct {
-	p                         internalProducer
-	timeout                   time.Duration
-	embedAvroSchemaID         bool
-	codecs                    map[string]*goavro.Codec
-	enableTransformerBatching bool
+	p                 internalProducer
+	timeout           time.Duration
+	embedAvroSchemaID bool
+	codecs            map[string]*goavro.Codec
 }
 
 func (p *ProducerManager) getTimeout() time.Duration {
@@ -182,7 +181,6 @@ type managerStats struct {
 	closeProducerTime          stats.Measurement
 	jsonSerializationMsgErr    stats.Measurement
 	avroSerializationErr       stats.Measurement
-	batchSize                  stats.Measurement
 }
 
 const (
@@ -192,10 +190,9 @@ const (
 var (
 	_ producerManager = &ProducerManager{}
 
-	clientCert, clientKey                []byte
-	allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
-	kafkaStats                           managerStats
-	pkgLogger                            logger
+	clientCert, clientKey []byte
+	kafkaStats            managerStats
+	pkgLogger             logger
 
 	now   = func() time.Time { return time.Now() }                   // skipcq: CRT-A0018
 	since = func(t time.Time) time.Duration { return time.Since(t) } // skipcq: CRT-A0018
@@ -229,7 +226,6 @@ func Init() {
 		closeProducerTime:          stats.Default.NewStat("router.kafka.close_producer_time", stats.TimerType),
 		jsonSerializationMsgErr:    stats.Default.NewStat("router.kafka.json_serialization_msg_err", stats.CountType),
 		avroSerializationErr:       stats.Default.NewStat("router.kafka.avro_serialization_err", stats.CountType),
-		batchSize:                  stats.Default.NewStat("router.kafka.batch_size", stats.HistogramType),
 	}
 }
 
@@ -331,18 +327,16 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
 
-	enableTransformerBatching := config.GetBoolVar(false, "Router.KAFKA.enableBatching")
-	p, err := c.NewProducer(newProducerConfig("KAFKA", enableTransformerBatching))
+	p, err := c.NewProducer(newProducerConfig("KAFKA"))
 	if err != nil {
 		return nil, err
 	}
 
 	return &ProducerManager{
-		p:                         p,
-		timeout:                   o.Timeout,
-		embedAvroSchemaID:         destConfig.EmbedAvroSchemaID,
-		codecs:                    codecs,
-		enableTransformerBatching: enableTransformerBatching,
+		p:                 p,
+		timeout:           o.Timeout,
+		embedAvroSchemaID: destConfig.EmbedAvroSchemaID,
+		codecs:            codecs,
 	}, nil
 }
 
@@ -387,14 +381,12 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
-	enableTransformerBatching := config.GetBoolVar(false, "Router.AZURE_EVENT_HUB.enableBatching")
-	p, err := c.NewProducer(newProducerConfig("AZURE_EVENT_HUB", enableTransformerBatching))
+	p, err := c.NewProducer(newProducerConfig("AZURE_EVENT_HUB"))
 	if err != nil {
 		return nil, err
 	}
 	return &ProducerManager{
 		p: p, timeout: o.Timeout,
-		enableTransformerBatching: enableTransformerBatching,
 	}, nil
 }
 
@@ -441,14 +433,12 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
-	enableTransformerBatching := config.GetBoolVar(false, "Router.CONFLUENT_CLOUD.enableBatching")
-	p, err := c.NewProducer(newProducerConfig("CONFLUENT_CLOUD", enableTransformerBatching))
+	p, err := c.NewProducer(newProducerConfig("CONFLUENT_CLOUD"))
 	if err != nil {
 		return nil, err
 	}
 	return &ProducerManager{
 		p: p, timeout: o.Timeout,
-		enableTransformerBatching: enableTransformerBatching,
 	}, nil
 }
 
@@ -513,81 +503,6 @@ func addAvroSchemaIDHeader(schemaID string, msgBytes []byte) (header []byte, err
 	return buf.Bytes(), nil
 }
 
-func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time, p producerManager, defaultTopic string) (
-	[]client.Message, error,
-) {
-	start := now()
-	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
-
-	var messages []client.Message
-	var errorSamples []error
-	addErrorSample := func(msg string, args ...any) {
-		err := fmt.Errorf(msg, args...)
-		if len(errorSamples) < 3 {
-			errorSamples = append(errorSamples, err)
-		}
-		pkgLogger.Error(err.Error())
-	}
-
-	for i, data := range batch {
-		topic, ok := data["topic"].(string)
-		if !ok || topic == "" {
-			topic = defaultTopic
-		}
-
-		message, ok := data["message"]
-		if !ok {
-			kafkaStats.missingMessage.Increment()
-			addErrorSample("batch from topic %s is missing the message attribute", topic)
-			continue
-		}
-		userID, ok := data["userId"].(string)
-		if !ok && !allowReqsWithoutUserIDAndAnonymousID.Load() {
-			kafkaStats.missingUserID.Increment()
-			addErrorSample("batch from topic %s is missing the userId attribute", topic)
-			continue
-		}
-		marshalledMsg, err := jsonrs.Marshal(message)
-		if err != nil {
-			kafkaStats.jsonSerializationMsgErr.Increment()
-			addErrorSample("unable to marshal message at index %d", i)
-			continue
-		}
-		codecs := p.getCodecs()
-		if len(codecs) > 0 {
-			schemaId, _ := data["schemaId"].(string)
-			if schemaId == "" {
-				kafkaStats.avroSerializationErr.Increment()
-				addErrorSample("schemaId is not available for the event at index %d", i)
-				continue
-			}
-			codec, ok := codecs[schemaId]
-			if !ok {
-				kafkaStats.avroSerializationErr.Increment()
-				addErrorSample("unable to find schema with schemaId %q", schemaId)
-				continue
-			}
-			marshalledMsg, err = serializeAvroMessage(schemaId, p.getEmbedAvroSchemaID(), marshalledMsg, *codec)
-			if err != nil {
-				kafkaStats.avroSerializationErr.Increment()
-				addErrorSample(
-					"unable to serialize the event with schemaId %q at index %d: %s",
-					schemaId, i, err,
-				)
-				continue
-			}
-		}
-		messages = append(messages, prepareMessage(topic, userID, marshalledMsg, timestamp))
-	}
-	if len(messages) == 0 {
-		if len(errorSamples) > 0 {
-			return nil, fmt.Errorf("unable to process any of the event in the batch: some errors are: %v", errorSamples)
-		}
-		return nil, fmt.Errorf("unable to process any of the event in the batch")
-	}
-	return messages, nil
-}
-
 // Close closes a given producer
 func (p *ProducerManager) Close() error {
 	if p == nil || p.p == nil {
@@ -635,35 +550,8 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 
 	ctx, cancel := context.WithTimeout(context.Background(), p.getTimeout())
 	defer cancel()
-	if p.enableTransformerBatching {
-		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
-	}
 
 	return sendMessage(ctx, jsonData, p, conf.Topic)
-}
-
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
-	var batch []map[string]interface{}
-	err := jsonrs.Unmarshal(jsonData, &batch)
-	if err != nil {
-		return 400, "Failure", "Error while unmarshalling json data: " + err.Error()
-	}
-
-	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(batch, timestamp, p, defaultTopic)
-	if err != nil {
-		return 400, "Failure", "Error while preparing batched message: " + err.Error()
-	}
-
-	err = publish(ctx, p, batchOfMessages...)
-	if err != nil {
-		return makeErrorResponse(err) // would retry the messages in batch in case brokers are down
-	}
-
-	kafkaStats.batchSize.Observe(float64(len(batchOfMessages)))
-
-	returnMessage := "Kafka: Message delivered in batch"
-	return 200, returnMessage, returnMessage
 }
 
 func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
@@ -736,15 +624,10 @@ func getStatusCodeFromError(err error) int {
 	return 400
 }
 
-func newProducerConfig(destType string, enableTransformerBatching bool) client.ProducerConfig {
+func newProducerConfig(destType string) client.ProducerConfig {
 	compression := client.CompressionNone
 	batchTimeout := config.GetDurationVar(100, time.Millisecond, "Router."+destType+".batchTimeout")
 	batchSize := config.GetIntVar(64, 1, "Router."+destType+".batchSize", "Router."+destType+".noOfWorkers", "Router.noOfWorkers")
-	if enableTransformerBatching { // if transformer batching is enabled, we use Zstd compression by default
-		compression = client.CompressionZstd
-		batchTimeout = config.GetDurationVar(1, time.Second, "Router.kafkaBatchTimeout", "Router.kafkaBatchTimeoutInSec")
-		batchSize = config.GetIntVar(100, 1, "Router.kafkaBatchSize")
-	}
 	if kc := config.GetIntVar(-1, 1, "Router."+destType+".compression", "Router.kafkaCompression"); kc != -1 {
 		switch client.Compression(kc) {
 		case client.CompressionNone,

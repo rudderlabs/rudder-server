@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 

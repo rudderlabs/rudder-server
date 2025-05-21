@@ -22,6 +22,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/testhelper/tracemodel"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -32,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -49,6 +49,7 @@ type testConfig struct {
 }
 
 func TestTracing(t *testing.T) {
+	t.Setenv("RSERVER_ROUTER_BATCHING_SUPPORTED_DESTINATIONS", "WEBHOOK")
 	t.Run("gateway-processor-router tracing", func(t *testing.T) {
 		tc := setup(t)
 
