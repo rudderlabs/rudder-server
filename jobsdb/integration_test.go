@@ -1056,6 +1056,7 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		{
 			string(JSONB),
 			[]testCase{
+				{"\x00", "", nil},
 				{`\u0000`, "", nil},
 				{`\u0000☺\u0000b☺`, "☺b☺", nil},
 				// NOTE: we are not handling the following:
@@ -1093,8 +1094,9 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		{
 			string(TEXT),
 			[]testCase{
-				{`\u0000`, `\u0000`, nil},
-				{`\u0000☺\u0000b☺`, `\u0000☺\u0000b☺`, nil},
+				{"\x00", "", nil},
+				{`\u0000`, "", nil},
+				{`\u0000☺\u0000b☺`, `☺b☺`, nil},
 
 				{"", "", nil},
 				{"abc", "abc", nil},
@@ -1112,23 +1114,24 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 
 				// {"\ud800", ""},
 				// 15
-				{`\ud800`, `\ud800`, nil},
-				{`\uDEAD`, `\uDEAD`, nil},
+				{`\ud800`, ch(1), nil},
+				{`\uDEAD`, ch(1), nil},
 
-				{`\uD83D\ub000`, `\uD83D\ub000`, nil},
-				{`\uD83D\ude04`, `\uD83D\ude04`, nil},
+				{`\uD83D\ub000`, string([]byte{239, 191, 189, 235, 128, 128}), nil},
+				{`\uD83D\ude04`, `😄`, nil},
 
-				{`\u4e2d\u6587`, `\u4e2d\u6587`, nil},
-				{`\ud83d\udc4a`, `\ud83d\udc4a`, nil},
+				{`\u4e2d\u6587`, `中文`, nil},
+				{`\ud83d\udc4a`, `👊`, nil},
 
 				// 21
-				{`\U0001f64f`, `\U0001f64f`, nil},
-				{`\uD83D\u00`, `\uD83D\u00`, nil},
+				{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
+				{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
 			},
 		},
 		{
 			string(BYTEA),
 			[]testCase{
+				{"\x00", "", nil},
 				{`\u0000`, "", nil},
 				{`\u0000☺\u0000b☺`, "☺b☺", nil},
 				// NOTE: we are not handling the following:
@@ -1180,7 +1183,7 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 				jobs := []*JobT{{
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
-					UserID:       uuid.New().String(),
+					UserID:       uuid.New().String() + "\x00",
 					UUID:         uuid.New(),
 					CustomVal:    customVal,
 					WorkspaceId:  defaultWorkspaceID,
