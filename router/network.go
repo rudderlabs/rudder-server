@@ -83,10 +83,19 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		requestQueryParams := postInfo.QueryParams
 		var bodyFormat string
 		var bodyValue map[string]interface{}
-		for k, v := range requestBody {
-			if len(v.(map[string]interface{})) > 0 {
-				bodyFormat = k
-				bodyValue = v.(map[string]interface{})
+
+		for format, value := range requestBody {
+			bodyData, ok := value.(map[string]interface{})
+			if !ok {
+				return &utils.SendPostResponse{
+					StatusCode:   500,
+					ResponseBody: []byte("500 Invalid Router Payload: body value must be a map"),
+				}
+			}
+
+			if len(bodyData) > 0 {
+				bodyFormat = format
+				bodyValue = bodyData
 				break
 			}
 		}

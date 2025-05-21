@@ -235,8 +235,8 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 		}
 	default:
 		// Handle any other destination types
-		pw.logger.Warnf("Unsupported destination type %s for job buffer. Attempting generic processing.", pw.brt.destType)
-		panic(fmt.Sprintf("Unsupported destination type %s for job buffer. Attempting generic processing.", pw.brt.destType))
+		pw.logger.Warnf("Unsupported destination type %s for job buffer.Panicing", pw.brt.destType)
+		panic(fmt.Sprintf("Unsupported destination type %s for job buffer.Panicing", pw.brt.destType))
 	}
 }
 
