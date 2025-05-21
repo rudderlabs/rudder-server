@@ -49,9 +49,9 @@ type (
 type Router struct {
 	destType string
 
-	db           *sqlquerywrapper.DB
-	stagingRepo  *repo.StagingFiles
-	uploadRepo   *repo.Uploads
+	db          *sqlquerywrapper.DB
+	stagingRepo *repo.StagingFiles
+	uploadRepo  *repo.Uploads
 
 	triggerStore       *sync.Map
 	createUploadAlways createUploadAlwaysLoader
