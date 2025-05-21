@@ -1620,7 +1620,7 @@ type testingT interface {
 func startPostgres(t testingT) *postgres.Resource {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
-	postgresContainer, err := postgres.Setup(pool, t, postgres.WithTag("15-alpine"))
+	postgresContainer, err := postgres.Setup(pool, t, postgres.WithTag("17-alpine"))
 	require.NoError(t, err)
 	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
