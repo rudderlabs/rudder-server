@@ -92,6 +92,23 @@ func TestSendPostWithGzipData(t *testing.T) {
 		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
 		require.Equal(r, resp.ResponseBody, []byte("400 Unable to parse json list. Unexpected transformer response"))
 	})
+
+	t.Run("should send error with invalid body", func(r *testing.T) {
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"key": "value",
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(r, resp.StatusCode, http.StatusInternalServerError)
+		require.Equal(r, resp.ResponseBody, []byte("500 Invalid Router Payload: body value must be a map"))
+	})
 }
 
 var _ = Describe("Network", func() {
