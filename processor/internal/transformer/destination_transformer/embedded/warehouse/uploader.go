@@ -71,7 +71,7 @@ func (t *Transformer) compareResponsesAndUpload(ctx context.Context, events []ty
 	)
 }
 
-func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Warehouse.Transformer.Sampling.Bucket")
 		regionHint       = conf.GetStringVar("us-east-1", "Warehouse.Transformer.Sampling.RegionHint", "AWS_S3_REGION_HINT")
