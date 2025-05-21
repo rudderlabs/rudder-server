@@ -655,3 +655,110 @@ func TestAllowGetReqForWebhookSrc(t *testing.T) {
 		})
 	}
 }
+
+func TestWebhookRequestHandlerWithRetries(t *testing.T) {
+	t.Run("transformer retries - with cslb", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockGW := mockWebhook.NewMockGateway(ctrl)
+		initWebhook()
+		var responses []transformerResponse
+		responses = append(responses, transformerResponse{
+			Output: map[string]interface{}{
+				"hello": "world",
+			},
+			StatusCode: http.StatusOK,
+		})
+		resp, err := jsonrs.Marshal(responses)
+		require.NoError(t, err)
+		transformerServer := newMockTransformerServer(1, resp, []byte(sampleError), http.StatusServiceUnavailable)
+
+		conf := config.Default
+		conf.Set("Gateway.webhook.cslbEnabled", false)
+		webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, conf, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
+			bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
+		})
+		mockGW.EXPECT().TrackRequestMetrics("").Times(1)
+		mockGW.EXPECT().ProcessTransformedWebhookRequest(gomock.Any(), gomock.Any(), "batch", gomock.Any(), gomock.Any()).Times(1)
+
+		webhookHandler.Register(sourceDefName)
+		req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+		w := httptest.NewRecorder()
+		ctx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+		ctx = context.WithValue(ctx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+			SourceDefName: sourceDefName,
+		})
+		req = req.WithContext(ctx)
+		webhookHandler.RequestHandler(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+		_ = webhookHandler.Shutdown()
+	})
+	t.Run("transformer retries - without cslb", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockGW := mockWebhook.NewMockGateway(ctrl)
+		initWebhook()
+		var responses []transformerResponse
+		responses = append(responses, transformerResponse{
+			Output: map[string]interface{}{
+				"hello": "world",
+			},
+			StatusCode: http.StatusOK,
+		})
+		resp, err := jsonrs.Marshal(responses)
+		require.NoError(t, err)
+		transformerServer := newMockTransformerServer(1, resp, []byte(sampleError), http.StatusServiceUnavailable)
+
+		conf := config.Default
+		conf.Set("Gateway.webhook.cslbEnabled", false)
+		webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, config.Default, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
+			bt.sourceTransformAdapter = getMockSourceTransformAdapterFunc(transformerServer.URL)
+		})
+		mockGW.EXPECT().TrackRequestMetrics("").Times(1)
+		mockGW.EXPECT().ProcessTransformedWebhookRequest(gomock.Any(), gomock.Any(), "batch", gomock.Any(), gomock.Any()).Times(1)
+
+		webhookHandler.Register(sourceDefName)
+		req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
+		w := httptest.NewRecorder()
+		ctx := context.WithValue(req.Context(), gwtypes.CtxParamCallType, "webhook")
+		ctx = context.WithValue(ctx, gwtypes.CtxParamAuthRequestContext, &gwtypes.AuthRequestContext{
+			SourceDefName: sourceDefName,
+		})
+		req = req.WithContext(ctx)
+		webhookHandler.RequestHandler(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Result().StatusCode)
+		_ = webhookHandler.Shutdown()
+	})
+}
+
+type mockTransformerServer struct {
+	*httptest.Server
+	retries             int
+	successAfter        int
+	successRespBody     []byte
+	failureRespBody     []byte
+	failureResponseCode int
+}
+
+func newMockTransformerServer(successAfter int, successRespBody, failureRespBody []byte, failureResponseCode int) *mockTransformerServer {
+	mockServer := &mockTransformerServer{
+		successAfter:        successAfter,
+		successRespBody:     successRespBody,
+		failureRespBody:     failureRespBody,
+		failureResponseCode: failureResponseCode,
+		retries:             0,
+	}
+	handler := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if mockServer.retries < mockServer.successAfter {
+				mockServer.retries++
+				w.WriteHeader(mockServer.failureResponseCode)
+				_, _ = w.Write(mockServer.failureRespBody)
+			} else {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write(mockServer.successRespBody)
+			}
+		}))
+	mockServer.Server = handler
+	return mockServer
+}
