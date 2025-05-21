@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-retryablehttp"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	"github.com/tidwall/sjson"
@@ -24,6 +26,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+)
+
+const (
+	contentTypeJsonUTF8 = "application/json; charset=utf-8"
 )
 
 type sourceTransformAdapter interface {
@@ -198,8 +204,19 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	bt.stats.sentStat.Count(len(events))
 	transformStart := time.Now()
 
+	var resp *http.Response
+	var err error
 	payload := misc.MakeJSONArray(events)
-	resp, err := bt.webhook.netClient.Post(sourceTransformerURL, "application/json; charset=utf-8", bytes.NewBuffer(payload))
+	if bt.webhook.config.cslbEnabled.Load() {
+		var req *retryablehttp.Request
+		req, err = retryablehttp.NewRequest("POST", sourceTransformerURL, bytes.NewBuffer(payload))
+		if err == nil {
+			req.Header.Set("Content-Type", contentTypeJsonUTF8)
+			resp, err = bt.webhook.httpClient.Do(req)
+		}
+	} else {
+		resp, err = bt.webhook.netClient.Post(sourceTransformerURL, contentTypeJsonUTF8, bytes.NewBuffer(payload))
+	}
 
 	bt.stats.transformTimerStat.Since(transformStart)
 	if err != nil {
