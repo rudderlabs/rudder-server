@@ -21,6 +21,7 @@ import (
 type MockClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockClientMockRecorder
+	isgomock struct{}
 }
 
 // MockClientMockRecorder is the mock recorder for MockClient.
@@ -41,24 +42,25 @@ func (m *MockClient) EXPECT() *MockClientMockRecorder {
 }
 
 // Do mocks base method.
-func (m *MockClient) Do(arg0 *http.Request) (*http.Response, error) {
+func (m *MockClient) Do(req *http.Request) (*http.Response, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Do", arg0)
+	ret := m.ctrl.Call(m, "Do", req)
 	ret0, _ := ret[0].(*http.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Do indicates an expected call of Do.
-func (mr *MockClientMockRecorder) Do(arg0 any) *gomock.Call {
+func (mr *MockClientMockRecorder) Do(req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockClient)(nil).Do), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockClient)(nil).Do), req)
 }
 
 // MockRetryableClient is a mock of RetryableClient interface.
 type MockRetryableClient struct {
 	ctrl     *gomock.Controller
 	recorder *MockRetryableClientMockRecorder
+	isgomock struct{}
 }
 
 // MockRetryableClientMockRecorder is the mock recorder for MockRetryableClient.
@@ -79,16 +81,16 @@ func (m *MockRetryableClient) EXPECT() *MockRetryableClientMockRecorder {
 }
 
 // Do mocks base method.
-func (m *MockRetryableClient) Do(arg0 *retryablehttp.Request) (*http.Response, error) {
+func (m *MockRetryableClient) Do(req *retryablehttp.Request) (*http.Response, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Do", arg0)
+	ret := m.ctrl.Call(m, "Do", req)
 	ret0, _ := ret[0].(*http.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Do indicates an expected call of Do.
-func (mr *MockRetryableClientMockRecorder) Do(arg0 any) *gomock.Call {
+func (mr *MockRetryableClientMockRecorder) Do(req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockRetryableClient)(nil).Do), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Do", reflect.TypeOf((*MockRetryableClient)(nil).Do), req)
 }
