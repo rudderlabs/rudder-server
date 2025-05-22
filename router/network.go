@@ -155,20 +155,16 @@ func handleQueryParam(param interface{}) string {
 // validateURLAndHandlePrivateIP checks if the URL resolves to a private IP and handles it based on mode
 func (network *netHandle) validateURLAndHandlePrivateIP(urlStr string) (bool, error) {
 	isPrivate, err := network.validateURL(urlStr)
-	if err != nil {
-		return false, fmt.Errorf("URL validation failed: %w", err)
-	}
-
 	if isPrivate {
 		if network.dryRunMode {
-			network.logger.Warnf("URL %s resolves to private IP in dry run mode", urlStr)
+			network.logger.Warnn("URL %s resolves to private IP in dry run mode", logger.NewErrorField(err), logger.NewStringField("url", urlStr))
 			return false, nil
 		}
 		if network.blockPrivateIPs {
-			return true, fmt.Errorf("access to private IPs is blocked")
+			return true, fmt.Errorf("access to private IPs is blocked: %v", err)
 		}
 	}
-	return false, nil
+	return false, err
 }
 
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it

@@ -58,9 +58,9 @@ type DestinationT struct {
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 	RevisionID            string
-	DeliveryAccount       *AccountWithDefinition `json:"account,omitempty"`
-	DeleteAccount         *AccountWithDefinition `json:"deleteAccount,omitempty"`
-	HasDynamicConfig      bool                   `json:"hasDynamicConfig,omitempty"`
+	DeliveryAccount       *Account `json:"deliveryAccount,omitempty"`
+	DeleteAccount         *Account `json:"deleteAccount,omitempty"`
+	HasDynamicConfig      bool     `json:"hasDynamicConfig,omitempty"`
 }
 
 // UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns
@@ -117,9 +117,11 @@ func (s *SourceT) IsReplaySource() bool {
 }
 
 type Account struct {
+	ID                    string                 `json:"id"`
 	AccountDefinitionName string                 `json:"accountDefinitionName"`
 	Options               map[string]interface{} `json:"options"`
 	Secret                map[string]interface{} `json:"secret"`
+	AccountDefinition     *AccountDefinition     `json:"accountDefinition"`
 }
 
 type AccountDefinition struct {
@@ -140,13 +142,6 @@ type ConfigT struct {
 	Connections        map[string]Connection        `json:"connections"`
 	Accounts           map[string]Account           `json:"accounts"`
 	AccountDefinitions map[string]AccountDefinition `json:"accountDefinitions"`
-}
-
-type AccountWithDefinition struct {
-	Id                string                 `json:"id"`
-	Options           map[string]interface{} `json:"options"`
-	Secret            map[string]interface{} `json:"secret"`
-	AccountDefinition AccountDefinition      `json:"accountDefinition"`
 }
 
 type Connection struct {
