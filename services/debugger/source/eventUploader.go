@@ -8,6 +8,10 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/grafana/jsonparser"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
@@ -132,7 +136,11 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
 			if source.Config != nil {
-				if source.Enabled && source.Config["eventUpload"] == true {
+				eventUploadEnabled, err := jsonparser.GetBoolean(source.Config, "eventUpload")
+				if err != nil {
+					h.log.Errorn("error while parsing eventUpload config", obskit.SourceID(source.ID), obskit.Error(err))
+				}
+				if source.Enabled && eventUploadEnabled {
 					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 				}
 			}

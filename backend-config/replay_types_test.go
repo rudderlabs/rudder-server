@@ -1,6 +1,7 @@
 package backendconfig
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,7 +13,7 @@ func TestApplyReplayConfig(t *testing.T) {
 			Sources: []SourceT{
 				{
 					ID:     "s-1",
-					Config: map[string]interface{}{"eventUpload": true},
+					Config: json.RawMessage(`{"eventUpload": true}`),
 					SourceDefinition: SourceDefinitionT{
 						ID:       "sd-1",
 						Type:     "type-1",
@@ -59,7 +60,7 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.Equal(t, "er-s-1", c.Sources[1].ID)
 		require.Equal(t, "s-1", c.Sources[1].OriginalID)
 		require.Equal(t, "er-s-1", c.Sources[1].WriteKey)
-		require.Equal(t, map[string]interface{}{}, c.Sources[1].Config)
+		require.JSONEq(t, "{}", string(c.Sources[1].Config))
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
 		require.Equal(t, true, c.Sources[1].Destinations[0].IsProcessorEnabled)
@@ -71,7 +72,7 @@ func TestApplyReplayConfig(t *testing.T) {
 			Sources: []SourceT{
 				{
 					ID:     "s-1",
-					Config: map[string]interface{}{"eventUpload": true},
+					Config: json.RawMessage(`{"eventUpload": true}`),
 					SourceDefinition: SourceDefinitionT{
 						ID:       "sd-1",
 						Type:     "type-1",
@@ -135,7 +136,7 @@ func TestApplyReplayConfig(t *testing.T) {
 		require.Equal(t, "er-s-1", c.Sources[1].ID)
 		require.Equal(t, "s-1", c.Sources[1].OriginalID)
 		require.Equal(t, "er-s-1", c.Sources[1].WriteKey)
-		require.Equal(t, map[string]interface{}{}, c.Sources[1].Config)
+		require.JSONEq(t, "{}", string(c.Sources[1].Config))
 		require.Len(t, c.Sources[1].Destinations, 1)
 		require.Equal(t, "er-d-1", c.Sources[1].Destinations[0].ID)
 	})

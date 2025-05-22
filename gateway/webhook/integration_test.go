@@ -145,10 +145,7 @@ func TestIntegrationWebhook(t *testing.T) {
 
 		// If source config exists in test case, unmarshal and set it
 		if len(tc.Input.Source.Config) > 0 {
-			var configOptions map[string]interface{}
-			err = jsonrs.Unmarshal([]byte(tc.Input.Source.Config), &configOptions)
-			require.NoError(t, err)
-			sConfig.Config = configOptions
+			sConfig.Config = []byte(tc.Input.Source.Config)
 		}
 
 		bc := backendconfigtest.NewConfigBuilder().WithSource(

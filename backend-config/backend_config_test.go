@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -42,10 +43,12 @@ var sampleBackendConfig = ConfigT{
 			ID:       "1",
 			WriteKey: "d",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 		}, {
 			ID:       "2",
 			WriteKey: "d2",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 			Destinations: []DestinationT{
 				{
 					ID:                 "d1",
@@ -70,10 +73,12 @@ var sampleConfigWithConnection = ConfigT{
 			ID:       "1",
 			WriteKey: "d",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 		}, {
 			ID:       "2",
 			WriteKey: "d2",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 			Destinations: []DestinationT{
 				{
 					ID:                 "d1",
@@ -114,10 +119,12 @@ var sampleFilteredSources = ConfigT{
 			ID:       "1",
 			WriteKey: "d",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 		}, {
 			ID:       "2",
 			WriteKey: "d2",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 			Destinations: []DestinationT{
 				{
 					ID:                 "d2",
@@ -137,10 +144,12 @@ var sampleBackendConfig2 = ConfigT{
 			ID:       "3",
 			WriteKey: "d3",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 		}, {
 			ID:       "4",
 			WriteKey: "d4",
 			Enabled:  false,
+			Config:   json.RawMessage("{}"),
 		},
 	},
 }
