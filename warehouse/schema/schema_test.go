@@ -12,17 +12,23 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/ory/dockertest/v3"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func schemaKey(sourceID, destinationID, namespace string) string {
-	return fmt.Sprintf("%s_%s_%s", sourceID, destinationID, namespace)
+func schemaKey(destinationID, namespace string) string {
+	return fmt.Sprintf("%s_%s", destinationID, namespace)
 }
 
 type mockSchemaRepo struct {
@@ -30,8 +36,8 @@ type mockSchemaRepo struct {
 	mu        sync.RWMutex
 }
 
-func (m *mockSchemaRepo) GetForNamespace(_ context.Context, sourceID, destinationID, namespace string) (model.WHSchema, error) {
-	key := schemaKey(sourceID, destinationID, namespace)
+func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, namespace string) (model.WHSchema, error) {
+	key := schemaKey(destinationID, namespace)
 
 	m.mu.RLock()
 	schema := m.schemaMap[key]
@@ -41,7 +47,7 @@ func (m *mockSchemaRepo) GetForNamespace(_ context.Context, sourceID, destinatio
 }
 
 func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int64, error) {
-	key := schemaKey(schema.SourceID, schema.DestinationID, schema.Namespace)
+	key := schemaKey(schema.DestinationID, schema.Namespace)
 
 	m.mu.Lock()
 	m.schemaMap[key] = *schema
@@ -121,7 +127,7 @@ func TestSchema(t *testing.T) {
 	t.Run("GetTableSchema", func(t *testing.T) {
 		sch := newSchema(t, warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
-				"source_id_dest_id_namespace": {
+				"dest_id_namespace": {
 					Schema: model.Schema{
 						"table1": {
 							"column1": "string",
@@ -145,7 +151,7 @@ func TestSchema(t *testing.T) {
 	t.Run("ExpiredSchema", func(t *testing.T) {
 		sch := newSchema(t, warehouse, &mockSchemaRepo{
 			schemaMap: map[string]model.WHSchema{
-				"source_id_dest_id_namespace": {
+				"dest_id_namespace": {
 					Schema: model.Schema{
 						"table1": {
 							"column1": "string",
@@ -1222,7 +1228,7 @@ func TestSchema(t *testing.T) {
 				conf.Set("Warehouse.enableIDResolution", tc.idResolutionEnabled)
 				sch, err := New(context.Background(), warehouse, conf, logger.NOP, stats.NOP, &mockFetchSchemaRepo{}, &mockSchemaRepo{
 					schemaMap: map[string]model.WHSchema{
-						"test_source_id_test_destination_id_test_namespace": {
+						"test_destination_id_test_namespace": {
 							Schema:    tc.warehouseSchema,
 							ExpiresAt: time.Now().Add(time.Second * 10),
 						},
@@ -1342,4 +1348,86 @@ func TestSchema(t *testing.T) {
 			t.Fatalf("Concurrent operation error: %v", err)
 		}
 	})
+
+	t.Run("SchemaOperationsAcrossSourcesAndNamespaces", func(t *testing.T) {
+		db, ctx := setupDB(t), context.Background()
+		schemaRepo := repo.NewWHSchemas(db)
+
+		// Create initial schema for connection 1
+		warehouse1 := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: "s1",
+			},
+			Destination: backendconfig.DestinationT{
+				ID: "d1",
+			},
+			Namespace: "n1",
+		}
+		sch1, err := New(ctx, warehouse1, config.New(), logger.NOP, stats.NOP, &mockFetchSchemaRepo{}, schemaRepo, nil)
+		require.NoError(t, err)
+
+		// Create and save initial schema
+		initialSchema := model.Schema{
+			"table1": {
+				"column1": "string",
+				"column2": "int",
+			},
+		}
+		err = sch1.UpdateSchema(ctx, initialSchema)
+		require.NoError(t, err)
+
+		// Verify initial schema was saved
+		require.False(t, sch1.IsSchemaEmpty(ctx))
+		require.Equal(t, initialSchema["table1"], sch1.GetTableSchema(ctx, "table1"))
+
+		warehouse2 := model.Warehouse{
+			Source: backendconfig.SourceT{
+				ID: "s2",
+			},
+			Destination: warehouse1.Destination,
+			Namespace:   warehouse1.Namespace,
+		}
+		sch2, err := New(ctx, warehouse2, config.New(), logger.NOP, stats.NOP, &mockFetchSchemaRepo{}, schemaRepo, nil)
+		require.NoError(t, err)
+
+		// Verify schema is same as connection 1
+		require.False(t, sch2.IsSchemaEmpty(ctx))
+		require.Equal(t, initialSchema["table1"], sch1.GetTableSchema(ctx, "table1"))
+
+		// Save new schema for connection 2
+		table2Schema := model.TableSchema{
+			"column3": "string",
+			"column4": "int",
+		}
+		err = sch2.UpdateTableSchema(ctx, "table2", table2Schema)
+		require.NoError(t, err)
+
+		// Verify new schema was saved
+		require.False(t, sch2.IsSchemaEmpty(ctx))
+		require.Equal(t, table2Schema, sch2.GetTableSchema(ctx, "table2"))
+
+		// Verify changes are reflected in connection 1
+		sch1_new, err := New(ctx, warehouse1, config.New(), logger.NOP, stats.NOP, &mockFetchSchemaRepo{}, schemaRepo, nil)
+		require.NoError(t, err)
+		require.False(t, sch1_new.IsSchemaEmpty(ctx))
+		require.Equal(t, initialSchema["table1"], sch1_new.GetTableSchema(ctx, "table1"))
+		require.Equal(t, table2Schema, sch1_new.GetTableSchema(ctx, "table2"))
+	})
+}
+
+func setupDB(t testing.TB) *sqlmiddleware.DB {
+	t.Helper()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	pgResource, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+
+	require.NoError(t, (&migrator.Migrator{
+		Handle:          pgResource.DB,
+		MigrationsTable: "wh_schema_migrations",
+	}).Migrate("warehouse"))
+
+	return sqlmiddleware.New(pgResource.DB)
 }

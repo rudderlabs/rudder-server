@@ -980,7 +980,6 @@ func (job *UploadJob) DTO() *model.UploadJob {
 func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) {
 	whSchema, err := job.whSchemaRepo.GetForNamespace(
 		ctx,
-		job.warehouse.Source.ID,
 		job.warehouse.Destination.ID,
 		job.warehouse.Namespace,
 	)
