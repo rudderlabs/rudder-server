@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
@@ -59,7 +60,7 @@ func TestV1Adapter(t *testing.T) {
 				Enabled     bool
 				WorkspaceID string
 				WriteKey    string
-				Config      map[string]interface{}
+				Config      json.RawMessage
 			}{ID: testSrcId},
 		}, testBody)
 		require.Nil(t, err)
@@ -114,7 +115,7 @@ func TestV2Adapter(t *testing.T) {
 				Enabled     bool
 				WorkspaceID string
 				WriteKey    string
-				Config      map[string]interface{}
+				Config      json.RawMessage
 			}{ID: testSrcId},
 		}
 

@@ -20,6 +20,7 @@ package jobsdb
 //go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -48,9 +49,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -428,6 +429,7 @@ func (job *JobT) String() string {
 }
 
 func (job *JobT) sanitizeJSON() error {
+	job.UserID = string(bytes.ReplaceAll([]byte(job.UserID), []byte("\x00"), []byte("")))
 	var err error
 	job.EventPayload, err = misc.SanitizeJSON(job.EventPayload)
 	if err != nil {
@@ -535,13 +537,13 @@ type Handle struct {
 		indexOptimizations             config.ValueLoader[bool] // TODO: remove this option after next release (true by default)
 
 		migration struct {
-			maxMigrateOnce, maxMigrateDSProbe          config.ValueLoader[int]
-			vacuumFullStatusTableThreshold             config.ValueLoader[int64]
-			vacuumAnalyzeStatusTableThreshold          config.ValueLoader[int64]
-			jobDoneMigrateThres, jobStatusMigrateThres config.ValueLoader[float64]
-			jobMinRowsLeftMigrateThreshold             config.ValueLoader[float64]
-			migrateDSLoopSleepDuration                 config.ValueLoader[time.Duration]
-			migrateDSTimeout                           config.ValueLoader[time.Duration]
+			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
+			vacuumFullStatusTableThreshold    config.ValueLoader[int64]
+			vacuumAnalyzeStatusTableThreshold config.ValueLoader[int64]
+			jobStatusMigrateThres             config.ValueLoader[float64]
+			jobMinRowsLeftMigrateThreshold    config.ValueLoader[float64]
+			migrateDSLoopSleepDuration        config.ValueLoader[time.Duration]
+			migrateDSTimeout                  config.ValueLoader[time.Duration]
 		}
 		backup struct {
 			masterBackupEnabled config.ValueLoader[bool]
@@ -940,8 +942,6 @@ func (jd *Handle) loadConfig() {
 	// migrateDSLoopSleepDuration: How often is the loop (which checks for migrating DS) run
 	jd.conf.migration.migrateDSLoopSleepDuration = jd.config.GetReloadableDurationVar(30, time.Second, jd.configKeys("migrateDSLoopSleepDuration", "migrateDSLoopSleepDurationInS")...)
 	jd.conf.migration.migrateDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("migrateDS.timeout")...)
-	// jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
-	jd.conf.migration.jobDoneMigrateThres = jd.config.GetReloadableFloat64Var(0.8, jd.configKeys("jobDoneMigrateThreshold")...)
 	// jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
 	jd.conf.migration.jobStatusMigrateThres = jd.config.GetReloadableFloat64Var(3, jd.configKeys("jobStatusMigrateThreshold")...)
 	// jobMinRowsLeftMigrateThreshold: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
@@ -1263,12 +1263,12 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	}
 
 	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
-		if time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
+		if time.Since(minJobCreatedAt.Time) >= jd.conf.maxDSRetentionPeriod.Load() {
 			return true, nil
 		}
 	}
 
-	if tableSize > jd.conf.maxTableSize.Load() {
+	if tableSize >= jd.conf.maxTableSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full in size",
 			logger.NewField("ds", ds),
@@ -1278,7 +1278,7 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 		return true, nil
 	}
 
-	if rowCount > jd.conf.MaxDSSize.Load() {
+	if rowCount >= jd.conf.MaxDSSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full by rows",
 			logger.NewField("ds", ds),
@@ -1866,8 +1866,8 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 	FROM
 		%[1]q j
 		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
-	WHERE 
-		s.job_id is null OR s.job_state = ANY($2) 
+	WHERE
+		s.job_id is null OR s.job_state = ANY($2)
 )
 SELECT
 	workspace_id,

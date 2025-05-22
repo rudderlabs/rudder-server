@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.49.5](https://github.com/rudderlabs/rudder-server/compare/v1.49.4...v1.49.5) (2025-05-21)
+
+
+### Bug Fixes
+
+* server panicking with invalid byte sequence for encoding utf8 0x00 ([#5882](https://github.com/rudderlabs/rudder-server/issues/5882)) ([323febf](https://github.com/rudderlabs/rudder-server/commit/323febf2cb97dbb5af922edbd56a60fb749077d7))
+
+## [1.49.4](https://github.com/rudderlabs/rudder-server/compare/v1.49.3...v1.49.4) (2025-05-21)
+
+
+### Bug Fixes
+
+* warehouse transformations ([#5875](https://github.com/rudderlabs/rudder-server/issues/5875)) ([a22f901](https://github.com/rudderlabs/rudder-server/commit/a22f90110be3895fd888ab36573feb0cf99e79a4))
+
+## [1.49.3](https://github.com/rudderlabs/rudder-server/compare/v1.49.2...v1.49.3) (2025-05-19)
+
+
+### Bug Fixes
+
+* warehouse pending tables to skip ([#5867](https://github.com/rudderlabs/rudder-server/issues/5867)) ([6133dbc](https://github.com/rudderlabs/rudder-server/commit/6133dbc52aeaf2ca8fc2d164500c3e44851a0d8c))
+
 ## [1.49.2](https://github.com/rudderlabs/rudder-server/compare/v1.49.1...v1.49.2) (2025-05-15)
 
 

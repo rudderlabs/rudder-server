@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
@@ -189,12 +189,14 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 				{
 					"id": "1",
 					"writeKey": "d",
-					"enabled": false
+					"enabled": false,
+					"config": {}
 				},
 				{
 					"id": "2",
 					"writeKey": "d2",
 					"enabled": false,
+					"config": {},
 					"destinations": [
 						{
 							"id": "d1",

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -35,7 +36,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
@@ -145,10 +145,7 @@ func TestIntegrationWebhook(t *testing.T) {
 
 		// If source config exists in test case, unmarshal and set it
 		if len(tc.Input.Source.Config) > 0 {
-			var configOptions map[string]interface{}
-			err = jsonrs.Unmarshal([]byte(tc.Input.Source.Config), &configOptions)
-			require.NoError(t, err)
-			sConfig.Config = configOptions
+			sConfig.Config = []byte(tc.Input.Source.Config)
 		}
 
 		bc := backendconfigtest.NewConfigBuilder().WithSource(

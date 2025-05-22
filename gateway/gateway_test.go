@@ -18,8 +18,8 @@ import (
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"

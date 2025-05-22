@@ -34,7 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -913,6 +913,7 @@ var jsonfast jsonrs.JSON = jsonrs.NewWithLibrary(jsonrs.JsoniterLib)
 func SanitizeJSON(input json.RawMessage) (json.RawMessage, error) {
 	// Remove null characters
 	v := bytes.ReplaceAll(input, []byte(`\u0000`), []byte(""))
+	v = bytes.ReplaceAll(v, []byte("\x00"), []byte(""))
 
 	if len(v) == 0 {
 		return []byte(`{}`), nil

@@ -12,8 +12,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 )
 
 var _ = Describe("Using StatsCollector", Serial, func() {

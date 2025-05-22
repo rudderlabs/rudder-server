@@ -423,3 +423,48 @@ func TestMarshalJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestUTF16RuneCountInString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+	}{
+		{
+			name:     "Empty string",
+			input:    "",
+			expected: 0,
+		},
+		{
+			name:     "ASCII characters",
+			input:    "hello",
+			expected: 5, // All are single code units
+		},
+		{
+			name:     "BMP characters",
+			input:    "हिन्दी", // All in BMP
+			expected: len([]rune("हिन्दी")),
+		},
+		{
+			name:     "Supplementary characters (Emoji)",
+			input:    "😀", // U+1F600 is supplementary (needs surrogate pair)
+			expected: 2,
+		},
+		{
+			name:     "Mixed BMP and supplementary",
+			input:    "a😀b", // 'a' = 1, 😀 = 2, 'b' = 1
+			expected: 4,
+		},
+		{
+			name:     "Multiple supplementary characters",
+			input:    "👨‍👩‍👧‍👦",
+			expected: 11,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, UTF16RuneCountInString(tt.input))
+		})
+	}
+}
