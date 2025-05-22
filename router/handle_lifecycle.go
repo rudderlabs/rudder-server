@@ -88,7 +88,7 @@ func (rt *Handle) Setup(
 	if rt.netHandle == nil {
 		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false)}
 		netHandle.logger = rt.logger.Child("network")
-		netHandle.Setup(destType, rt.netClientTimeout)
+		netHandle.Setup(config, destType, rt.netClientTimeout)
 		rt.netHandle = netHandle
 	}
 

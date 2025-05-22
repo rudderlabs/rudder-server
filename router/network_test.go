@@ -4,35 +4,303 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 )
 
-type networkContext struct {
-	mockCtrl       *gomock.Controller
-	mockHTTPClient *mocksSysUtils.MockHTTPClientI
+func TestParseCIDRToRange(t *testing.T) {
+	tests := []struct {
+		name    string
+		cidr    string
+		want    IPRange
+		wantErr bool
+	}{
+		{
+			name: "valid IPv4 CIDR",
+			cidr: "10.0.0.0/8",
+			want: IPRange{
+				start: net.ParseIP("10.0.0.0"),
+				end:   net.ParseIP("10.255.255.255"),
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid IPv6 CIDR",
+			cidr: "fc00::/7",
+			want: IPRange{
+				start: net.ParseIP("fc00::"),
+				end:   net.ParseIP("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+			},
+			wantErr: false,
+		},
+		{
+			name:    "invalid CIDR",
+			cidr:    "invalid",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseCIDRToRange(tt.cidr)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want.start, got.start)
+			require.Equal(t, tt.want.end, got.end)
+		})
+	}
 }
 
-// Initialize mocks and common expectations
-func (c *networkContext) Setup() {
-	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
+func TestLoadPrivateIPRanges(t *testing.T) {
+	tests := []struct {
+		name           string
+		envValue       string
+		expectedRanges int
+	}{
+		{
+			name:           "default ranges",
+			envValue:       "",
+			expectedRanges: 7, // Number of ranges in defaultPrivateIPRanges
+		},
+		{
+			name:           "custom ranges",
+			envValue:       "10.0.0.0/8,192.168.0.0/16",
+			expectedRanges: 2,
+		},
+		{
+			name:           "invalid range ignored",
+			envValue:       "10.0.0.0/8,invalid,192.168.0.0/16",
+			expectedRanges: 2,
+		},
+		{
+			name:           "empty ranges ignored",
+			envValue:       "10.0.0.0/8,,192.168.0.0/16",
+			expectedRanges: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.envValue != "" {
+				os.Setenv("RUDDER_PRIVATE_IP_RANGES", tt.envValue)
+				defer os.Unsetenv("RUDDER_PRIVATE_IP_RANGES")
+			}
+
+			ranges := loadPrivateIPRanges(config.Default)
+			require.Len(t, ranges, tt.expectedRanges)
+		})
+	}
 }
 
-func (c *networkContext) Finish() {
-	c.mockCtrl.Finish()
+func TestValidateURL(t *testing.T) {
+	network := &netHandle{
+		logger:          logger.NewLogger().Child("network"),
+		privateIPRanges: loadPrivateIPRanges(config.Default),
+	}
+
+	tests := []struct {
+		name      string
+		url       string
+		isPrivate bool
+		wantErr   bool
+		errMsg    string
+	}{
+		{
+			name:      "public domain",
+			url:       "https://www.google.com",
+			isPrivate: false,
+			wantErr:   false,
+		},
+		{
+			name:      "public IP",
+			url:       "https://8.8.8.8",
+			isPrivate: false,
+			wantErr:   false,
+		},
+		{
+			name:      "private IP in 10.0.0.0/8 range",
+			url:       "https://10.0.0.1",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "private IP in 172.16.0.0/12 range",
+			url:       "https://172.16.0.1",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "private IP in 192.168.0.0/16 range",
+			url:       "https://192.168.1.1",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "localhost",
+			url:       "https://127.0.0.1",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "link-local address",
+			url:       "https://169.254.0.1",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "IPv6 private address",
+			url:       "https://[fc00::1]",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "IPv6 link-local address",
+			url:       "https://[fe80::1]",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "domain with port",
+			url:       "https://example.com:8080",
+			isPrivate: false,
+			wantErr:   false,
+		},
+		{
+			name:      "private IP with port",
+			url:       "https://10.0.0.1:8080",
+			isPrivate: true,
+			wantErr:   false,
+		},
+		{
+			name:      "invalid URL",
+			url:       "not-a-valid-url",
+			isPrivate: false,
+			wantErr:   true,
+			errMsg:    "invalid URL",
+		},
+		{
+			name:      "unresolvable domain",
+			url:       "https://this-domain-does-not-exist.example",
+			isPrivate: false,
+			wantErr:   true,
+			errMsg:    "failed to resolve host",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			isPrivate, err := network.validateURL(tt.url)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					require.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.isPrivate, isPrivate)
+			}
+		})
+	}
+}
+
+func TestValidateURLAndHandlePrivateIP(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		dryRunMode  bool
+		blockMode   bool
+		wantBlocked bool
+		wantErr     bool
+		errMsg      string
+	}{
+		{
+			name:        "public URL in normal mode",
+			url:         "https://8.8.8.8",
+			dryRunMode:  false,
+			blockMode:   false,
+			wantBlocked: false,
+			wantErr:     false,
+		},
+		{
+			name:        "private URL in normal mode",
+			url:         "https://10.0.0.1",
+			dryRunMode:  false,
+			blockMode:   false,
+			wantBlocked: false,
+			wantErr:     false,
+		},
+		{
+			name:        "private URL in dry run mode",
+			url:         "https://10.0.0.1",
+			dryRunMode:  true,
+			blockMode:   false,
+			wantBlocked: false,
+			wantErr:     false,
+		},
+		{
+			name:        "private URL in block mode",
+			url:         "https://10.0.0.1",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: true,
+			wantErr:     true,
+			errMsg:      "access to private IPs is blocked",
+		},
+		{
+			name:        "public URL in block mode",
+			url:         "https://8.8.8.8",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: false,
+			wantErr:     false,
+		},
+		{
+			name:        "invalid URL",
+			url:         "not-a-valid-url",
+			dryRunMode:  false,
+			blockMode:   false,
+			wantBlocked: false,
+			wantErr:     true,
+			errMsg:      "URL validation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			network := &netHandle{
+				logger:          logger.NewLogger().Child("network"),
+				dryRunMode:      tt.dryRunMode,
+				blockPrivateIPs: tt.blockMode,
+				privateIPRanges: loadPrivateIPRanges(config.Default),
+			}
+
+			isBlocked, err := network.validateURLAndHandlePrivateIP(tt.url)
+			if tt.wantErr {
+				require.Error(t, err)
+				if tt.errMsg != "" {
+					require.Contains(t, err.Error(), tt.errMsg)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tt.wantBlocked, isBlocked)
+		})
+	}
 }
 
 func TestSendPostWithGzipData(t *testing.T) {
@@ -53,9 +321,11 @@ func TestSendPostWithGzipData(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(buf.Bytes())
 		}))
-		network := &netHandle{}
-		network.logger = logger.NewLogger().Child("network")
-		network.httpClient = http.DefaultClient
+		network := &netHandle{
+			logger:          logger.NewLogger().Child("network"),
+			httpClient:      http.DefaultClient,
+			privateIPRanges: loadPrivateIPRanges(config.Default),
+		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -74,9 +344,11 @@ func TestSendPostWithGzipData(t *testing.T) {
 	})
 
 	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
-		network := &netHandle{}
-		network.logger = logger.NewLogger().Child("network")
-		network.httpClient = http.DefaultClient
+		network := &netHandle{
+			logger:          logger.NewLogger().Child("network"),
+			httpClient:      http.DefaultClient,
+			privateIPRanges: loadPrivateIPRanges(config.Default),
+		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -94,158 +366,144 @@ func TestSendPostWithGzipData(t *testing.T) {
 	})
 }
 
-var _ = Describe("Network", func() {
-	var c *networkContext
+func TestSendPost(t *testing.T) {
+	network := &netHandle{
+		logger:          logger.NewLogger().Child("network"),
+		privateIPRanges: loadPrivateIPRanges(config.Default),
+	}
 
-	BeforeEach(func() {
-		initRouter()
+	t.Run("should successfully send the request to google analytics", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
+		network.httpClient = mockHTTPClient
 
-		c = &networkContext{}
-		c.Setup()
+		var structData integrations.PostParametersT
+		structData.Type = "REST"
+		structData.URL = "https://www.google-analytics.com/collect"
+		structData.UserID = "anon_id"
+		structData.Headers = map[string]interface{}{}
+		structData.QueryParams = map[string]interface{}{
+			"aiid": "com.rudderlabs.android.sdk",
+			"an":   "RudderAndroidClient",
+			"av":   "1.0",
+			"cid":  "anon_id",
+			"ds":   "android-sdk",
+			"ea":   "Demo Track",
+			"ec":   "Demo Category",
+			"el":   "Demo Label",
+			"ni":   0,
+			"qt":   "5.9190508594e+10",
+			"t":    "event",
+			"tid":  "UA-185645846-1",
+			"uip":  "[::1]",
+			"ul":   "en-US",
+			"v":    1,
+		}
+		structData.Body = map[string]interface{}{
+			"FORM": map[string]interface{}{},
+			"JSON": map[string]interface{}{},
+			"XML":  map[string]interface{}{},
+		}
+		structData.Files = map[string]interface{}{}
+
+		// Response JSON
+		jsonResponse := `[{
+			"full_name": "mock-repo"
+		}]`
+		// New reader with that JSON
+		r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
+
+		mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
+			// asserting http request
+			req.Method = "POST"
+			req.URL.Host = "www.google-analytics.com"
+			req.URL.RawQuery = "aiid=com.rudderlabs.android.sdk&an=RudderAndroidClient&av=1.0&cid=anon_id&ds=android-sdk&ea=Demo+Track&ec=Demo+Category&el=Demo+Label&ni=0&qt=5.9190508594e%2B10&t=event&tid=UA-185645846-1&uip=%5B%3A%3A1%5D&ul=en-US&v=1"
+		}).Return(&http.Response{
+			StatusCode: 200,
+			Body:       r,
+		}, nil)
+
+		network.SendPost(context.Background(), structData)
 	})
 
-	AfterEach(func() {
-		c.Finish()
-	})
+	t.Run("should respect ctx cancelation", func(t *testing.T) {
+		network.httpClient = &http.Client{}
 
-	Context("Send requests", func() {
-		It("should successfully send the request to google analytics", func() {
-			network := &netHandle{}
-			network.logger = logger.NewLogger().Child("network")
-			network.httpClient = c.mockHTTPClient
-
-			var structData integrations.PostParametersT
-			structData.Type = "REST"
-			structData.URL = "https://www.google-analytics.com/collect"
-			structData.UserID = "anon_id"
-			structData.Headers = map[string]interface{}{}
-			structData.QueryParams = map[string]interface{}{
-				"aiid": "com.rudderlabs.android.sdk",
-				"an":   "RudderAndroidClient",
-				"av":   "1.0",
-				"cid":  "anon_id",
-				"ds":   "android-sdk",
-				"ea":   "Demo Track",
-				"ec":   "Demo Category",
-				"el":   "Demo Label",
-				"ni":   0,
-				"qt":   "5.9190508594e+10",
-				"t":    "event",
-				"tid":  "UA-185645846-1",
-				"uip":  "[::1]",
-				"ul":   "en-US",
-				"v":    1,
-			}
-			structData.Body = map[string]interface{}{
-				"FORM": map[string]interface{}{},
-				"JSON": map[string]interface{}{},
-				"XML":  map[string]interface{}{},
-			}
-			structData.Files = map[string]interface{}{}
-
-			// Response JSON
-			jsonResponse := `[{
-				"full_name": "mock-repo"
-   			}]`
-			// New reader with that JSON
-			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
-
-			c.mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
-				// asserting http request
-				req.Method = "POST"
-				req.URL.Host = "www.google-analytics.com"
-				req.URL.RawQuery = "aiid=com.rudderlabs.android.sdk&an=RudderAndroidClient&av=1.0&cid=anon_id&ds=android-sdk&ea=Demo+Track&ec=Demo+Category&el=Demo+Label&ni=0&qt=5.9190508594e%2B10&t=event&tid=UA-185645846-1&uip=%5B%3A%3A1%5D&ul=en-US&v=1"
-			}).Return(&http.Response{
-				StatusCode: 200,
-				Body:       r,
-			}, nil)
-
-			network.SendPost(context.Background(), structData)
-		})
-
-		It("should respect ctx cancelation", func() {
-			network := &netHandle{}
-			network.logger = logger.NewLogger().Child("network")
-			network.httpClient = &http.Client{}
-
-			structData := integrations.PostParametersT{
-				Type: "REST",
-				URL:  "https://www.google-analytics.com/collect",
-			}
-
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-
-			resp := network.SendPost(ctx, structData)
-			Expect(resp.StatusCode).To(Equal(http.StatusGatewayTimeout))
-			fmt.Println(string(resp.ResponseBody))
-			Expect(string(resp.ResponseBody)).To(Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\". Error: Get \"https://www.google-analytics.com/collect\": context canceled"))
-		})
-	})
-
-	Context("Verify response bodies are propagated/filtered based on the response's content-type", func() {
-		const mockResponseBody = `[{"full_name": "mock-repo"}]`
-		var network *netHandle
-		var requestParams integrations.PostParametersT
-		var mockResponse http.Response
-		mockResponseContentType := func(contentType string) {
-			mockResponse.Header.Del("Content-Type")
-			mockResponse.Header.Add("Content-Type", contentType)
-			mockResponse.Body = io.NopCloser(bytes.NewReader([]byte(mockResponseBody)))
+		structData := integrations.PostParametersT{
+			Type: "REST",
+			URL:  "https://www.google-analytics.com/collect",
 		}
 
-		BeforeEach(func() {
-			network = &netHandle{}
-			network.logger = logger.NewLogger().Child("network")
-			network.httpClient = c.mockHTTPClient
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-			// use the same request for all tests
-			requestParams = integrations.PostParametersT{}
-			requestParams.Type = "REST"
-			requestParams.URL = "https://www.google-analytics.com/collect"
-			requestParams.UserID = "anon_id"
-			requestParams.Headers = map[string]interface{}{}
-			requestParams.QueryParams = map[string]interface{}{
-				"aiid": "com.rudderlabs.android.sdk",
-			}
-			requestParams.Body = map[string]interface{}{
-				"FORM": map[string]interface{}{},
-				"JSON": map[string]interface{}{},
-				"XML":  map[string]interface{}{},
-				"GZIP": map[string]interface{}{},
-			}
-			requestParams.Files = map[string]interface{}{}
-
-			mockResponse = http.Response{
-				StatusCode: 200,
-				Header:     make(http.Header, 0),
-			}
-			c.mockHTTPClient.EXPECT().Do(gomock.Any()).AnyTimes().Return(&mockResponse, nil)
-		})
-
-		DescribeTable("depending on the content type",
-			func(contentType string, altered bool) {
-				mockResponseContentType(contentType)
-				resp := network.SendPost(context.Background(), requestParams)
-				if altered {
-					Expect(resp.ResponseBody).To(Equal([]byte("redacted due to unsupported content-type")))
-				} else {
-					Expect(resp.ResponseBody).To(Equal([]byte(mockResponseBody)))
-				}
-			},
-			Entry("'text/html' should result in non-altered body", "text/html", false),
-			Entry("'text/xml' should result in non-altered body", "text/xml", false),
-			Entry("'text/plain;charset=UTF-8' should result in non-altered body", "text/plain;charset=UTF-8", false),
-			Entry("'application/json' should result in non-altered body", "application/json", false),
-			Entry("'application/problem+json; charset=utf-8' should result in non-altered body", "application/problem+json; charset=utf-8", false),
-			Entry("'application/vnd.collection+json' should result in non-altered body", "application/vnd.collection+json", false),
-			Entry("'application/xml' should result in non-altered body", "application/xml", false),
-			Entry("'application/atom+xml; charset=utf-8' should result in non-altered body", "application/atom+xml; charset=utf-8", false),
-			Entry("'application/soap+xml' should result in non-altered body", "application/soap+xml", false),
-			Entry("'application/soap+xml' should result in altered body", "application/jwt", true),
-			Entry("'image/jpeg' should result in altered body", "image/jpeg", true),
-			Entry("'video/mpeg' should result in altered body", "video/mpeg", true),
-			Entry("'invalidcontenttype' should result in altered body", "invalidcontenttype", true),
-		)
+		resp := network.SendPost(ctx, structData)
+		require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
+		require.Equal(t, "504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\". Error: Get \"https://www.google-analytics.com/collect\": context canceled", string(resp.ResponseBody))
 	})
-})
+}
+
+func TestResponseContentType(t *testing.T) {
+	network := &netHandle{
+		logger:          logger.NewLogger().Child("network"),
+		privateIPRanges: loadPrivateIPRanges(config.Default),
+	}
+
+	tests := []struct {
+		name        string
+		contentType string
+		altered     bool
+	}{
+		{"text/html", "text/html", false},
+		{"text/xml", "text/xml", false},
+		{"text/plain;charset=UTF-8", "text/plain;charset=UTF-8", false},
+		{"application/json", "application/json", false},
+		{"application/problem+json; charset=utf-8", "application/problem+json; charset=utf-8", false},
+		{"application/vnd.collection+json", "application/vnd.collection+json", false},
+		{"application/xml", "application/xml", false},
+		{"application/atom+xml; charset=utf-8", "application/atom+xml; charset=utf-8", false},
+		{"application/soap+xml", "application/soap+xml", false},
+		{"application/jwt", "application/jwt", true},
+		{"image/jpeg", "image/jpeg", true},
+		{"video/mpeg", "video/mpeg", true},
+		{"invalidcontenttype", "invalidcontenttype", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+			mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
+			network.httpClient = mockHTTPClient
+
+			const mockResponseBody = `[{"full_name": "mock-repo"}]`
+			mockResponse := http.Response{
+				StatusCode: 200,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader([]byte(mockResponseBody))),
+			}
+			mockResponse.Header.Set("Content-Type", tt.contentType)
+
+			mockHTTPClient.EXPECT().Do(gomock.Any()).Return(&mockResponse, nil)
+
+			requestParams := integrations.PostParametersT{
+				Type: "REST",
+				URL:  "https://www.google-analytics.com/collect",
+				Body: map[string]interface{}{
+					"FORM": map[string]interface{}{},
+					"JSON": map[string]interface{}{},
+					"XML":  map[string]interface{}{},
+					"GZIP": map[string]interface{}{},
+				},
+			}
+
+			resp := network.SendPost(context.Background(), requestParams)
+			if tt.altered {
+				require.Equal(t, []byte("redacted due to unsupported content-type"), resp.ResponseBody)
+			} else {
+				require.Equal(t, []byte(mockResponseBody), resp.ResponseBody)
+			}
+		})
+	}
+}
