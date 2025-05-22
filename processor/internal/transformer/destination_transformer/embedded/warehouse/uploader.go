@@ -124,7 +124,9 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 		if strings.Contains(diff, "\"0001-01-01T00:00:00.000Z\"") {
 			continue
 		}
-		if strings.Contains(diff, "\"auto-\"") {
+		// If messageID's are not present, we add it in rudder-transformer
+		// https://github.com/rudderlabs/rudder-transformer/blob/develop/src/warehouse/index.js#L675-L677
+		if strings.Contains(diff, "\"auto-") {
 			continue
 		}
 		if differedEventsCount == 0 {

@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/araddon/dateparse"
 	"github.com/samber/lo"
@@ -252,4 +253,13 @@ func MarshalJSON(input any) ([]byte, error) {
 		return nil, fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	return bytes.TrimSpace(buf.Bytes()), nil
+}
+
+// UTF16RuneCountInString returns the UTF-16 code unit count of the string.
+func UTF16RuneCountInString(s string) int {
+	count := 0
+	for _, r := range s {
+		count += utf16.RuneLen(r)
+	}
+	return count
 }

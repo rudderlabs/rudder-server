@@ -236,9 +236,7 @@ func (t *Transformer) extractCommonProps(tec *transformEventContext) (map[string
 	if err = setDataAndMetadataFromRules(tec, commonData, commonMetadata, rules.ExtractRules); err != nil {
 		return nil, nil, fmt.Errorf("extract: setting data and column types from rules: %w", err)
 	}
-
-	eventName, _ = commonData[eventColName].(string)
-	if utils.IsEmptyString(eventName) {
+	if len(strings.TrimSpace(utils.ToString(commonData[eventColName]))) == 0 {
 		return nil, nil, response.ErrExtractEventNameEmpty
 	}
 	return commonData, commonMetadata, nil
@@ -358,7 +356,7 @@ func (t *Transformer) identifiesResponse(tec *transformEventContext, commonData 
 
 func (t *Transformer) usersResponse(tec *transformEventContext, commonData map[string]any, commonMetadata map[string]string) ([]map[string]any, error) {
 	userID := misc.MapLookup(tec.event.Message, "userId")
-	if utils.IsEmptyString(userID) {
+	if len(strings.TrimSpace(utils.ToString(userID))) == 0 {
 		return nil, nil
 	}
 	if shouldSkipUsersTable(tec) {

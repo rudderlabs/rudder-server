@@ -35,6 +35,7 @@ func TestDataType(t *testing.T) {
 	}{
 		// Primitive types
 		{"Primitive Type Int", whutils.POSTGRES, "someKey", 42, false, "int"},
+		{"Primitive Type Big Int", whutils.POSTGRES, "someKey", float64(654645465456456400000), false, "int"},
 		{"Primitive Type Float(64)", whutils.POSTGRES, "someKey", 42.0, false, "int"},
 		{"Primitive Type Float(32)", whutils.POSTGRES, "someKey", float32(42.0), false, "int"},
 		{"Primitive Type Float(non-int)", whutils.POSTGRES, "someKey", 42.5, false, "float"},

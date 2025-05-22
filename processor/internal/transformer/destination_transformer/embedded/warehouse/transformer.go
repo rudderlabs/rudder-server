@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	wtypes "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/types"
@@ -41,6 +42,17 @@ var _ = struct {
 	Meta     map[string]string
 	Property string
 }(types.ValidationError{})
+
+// Compile-time check to ensure Geolocation struct remains unchanged
+var _ = struct {
+	IP       string
+	City     string
+	Country  string
+	Region   string
+	Postal   string
+	Location string
+	Timezone string
+}(enricher.Geolocation{})
 
 type Opts func(t *Transformer)
 
