@@ -83,37 +83,40 @@ type Handle struct {
 
 	// state
 
-	logger                         logger.Logger
-	tracer                         stats.Tracer
-	destinationResponseHandler     ResponseHandler
-	telemetry                      *Diagnostic
-	netHandle                      NetHandle
-	customDestinationManager       customDestinationManager.DestinationManager
-	transformer                    transformer.Transformer
-	isOAuthDestination             bool
-	oauth                          oauth.Authorizer
-	destinationsMapMu              sync.RWMutex
-	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
-	connectionsMap                 map[types.SourceDest]types.ConnectionWithID
-	isBackendConfigInitialized     bool
-	backendConfigInitialized       chan bool
-	responseQ                      chan workerJobStatus
-	throttlingCosts                atomic.Pointer[types.EventTypeThrottlingCost]
-	batchInputCountStat            stats.Measurement
-	batchOutputCountStat           stats.Measurement
-	routerTransformInputCountStat  stats.Measurement
-	routerTransformOutputCountStat stats.Measurement
-	batchInputOutputDiffCountStat  stats.Measurement
-	routerResponseTransformStat    stats.Measurement
-	throttlingErrorStat            stats.Measurement
-	throttledStat                  stats.Measurement
-	isolationStrategy              isolation.Strategy
-	backgroundGroup                *errgroup.Group
-	backgroundCtx                  context.Context
-	backgroundCancel               context.CancelFunc
-	backgroundWait                 func() error
-	startEnded                     chan struct{}
-	barrier                        *eventorder.Barrier
+	logger                           logger.Logger
+	tracer                           stats.Tracer
+	destinationResponseHandler       ResponseHandler
+	telemetry                        *Diagnostic
+	netHandle                        NetHandle
+	customDestinationManager         customDestinationManager.DestinationManager
+	transformer                      transformer.Transformer
+	isOAuthDestination               bool
+	oauth                            oauth.Authorizer
+	destinationsMapMu                sync.RWMutex
+	destinationsMap                  map[string]*routerutils.DestinationWithSources // destinationID -> destination
+	connectionsMap                   map[types.SourceDest]types.ConnectionWithID
+	isBackendConfigInitialized       bool
+	backendConfigInitialized         chan bool
+	responseQ                        chan workerJobStatus
+	throttlingCosts                  atomic.Pointer[types.EventTypeThrottlingCost]
+	batchSizeHistogramStat           stats.Measurement
+	batchInputCountStat              stats.Measurement
+	batchOutputCountStat             stats.Measurement
+	routerTransformInputCountStat    stats.Measurement
+	routerTransformOutputCountStat   stats.Measurement
+	batchInputOutputDiffCountStat    stats.Measurement
+	routerResponseTransformStat      stats.Measurement
+	processJobsRequestsHistogramStat stats.Measurement
+	processJobsRequestsCountStat     stats.Measurement
+	throttlingErrorStat              stats.Measurement
+	throttledStat                    stats.Measurement
+	isolationStrategy                isolation.Strategy
+	backgroundGroup                  *errgroup.Group
+	backgroundCtx                    context.Context
+	backgroundCancel                 context.CancelFunc
+	backgroundWait                   func() error
+	startEnded                       chan struct{}
+	barrier                          *eventorder.Barrier
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool
@@ -289,24 +292,32 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				flush()
 			}
 		} else {
-			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error(), "workspaceId": job.WorkspaceId}).Increment()
+			discardedJobCountStat := stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error(), "workspaceId": job.WorkspaceId})
+			discardedJobCountStat.Increment()
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
-				iterator.Stop()
+				discarded := iterator.Stop() // stop the iterator and count all additional jobs discarded by operator by using the same reason as the last job that was discarded
+				discardedJobCountStat.Count(discarded)
 				iterationInterrupted = true
 				break
 			}
 		}
 	}
+
+	flush()
 	iteratorStats := iterator.Stats()
 	stats.Default.NewTaggedStat("router_iterator_stats_query_count", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.QueryCount)
 	stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.TotalJobs)
 	stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.DiscardedJobs)
 
-	flush()
+	// the following stat (in combination with the limiter's timer stats) is used to track the pickup loop's average latency  and max processing capacity
+	stats.Default.NewTaggedStat("router_pickup_total_jobs_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition}).Count(iteratorStats.TotalJobs)
+
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
 	limitsReached = iteratorStats.LimitsReached && !iterationInterrupted
+
+	// sleep for a while if we are discarding too many jobs, so that we don't have a loop running continuously without producing events
 	eligibleForFailingJobsPenalty := iteratorStats.LimitsReached || iterationInterrupted
 	discardedRatio := float64(iteratorStats.DiscardedJobs) / float64(iteratorStats.TotalJobs)
 	// If the discarded ratio is greater than the penalty threshold,
