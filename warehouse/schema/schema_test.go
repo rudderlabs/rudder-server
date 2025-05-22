@@ -1349,7 +1349,7 @@ func TestSchema(t *testing.T) {
 		}
 	})
 
-	t.Run("SchemaOperationsAcrossSourcesAndNamespaces", func(t *testing.T) {
+	t.Run("SchemaOperationsAcrossConnections", func(t *testing.T) {
 		db, ctx := setupDB(t), context.Background()
 		schemaRepo := repo.NewWHSchemas(db)
 
