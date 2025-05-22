@@ -168,15 +168,18 @@ func (ji *Iterator) Discard(_ *jobsdb.JobT) {
 }
 
 // Stop marks the iterator as stopped and prevents it from fetching more jobs.
-// Any jobs that are not yet processed will be discarded.
-func (ji *Iterator) Stop() {
+// Any jobs that are not yet processed will be discarded. The number of discarded jobs is returned.
+func (ji *Iterator) Stop() int {
 	ji.stopped = true
+	var discardedJobs int
 	for i := ji.state.idx; i < len(ji.state.jobs); i++ {
 		ji.state.stats.DiscardedJobs++
 		ji.state.discarded++
 		ji.state.jobsLimit++
 		ji.state.idx++
+		discardedJobs++
 	}
+	return discardedJobs
 }
 
 func (ji *Iterator) Stats() IteratorStats {
