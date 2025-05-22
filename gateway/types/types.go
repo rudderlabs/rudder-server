@@ -1,6 +1,8 @@
 package types
 
 import (
+	"encoding/json"
+
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -44,7 +46,7 @@ type AuthRequestContext struct {
 		Enabled     bool
 		WorkspaceID string
 		WriteKey    string
-		Config      map[string]interface{}
+		Config      json.RawMessage
 	}
 }
 
