@@ -18,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -32,6 +33,7 @@ type netHandle struct {
 	disableEgress bool
 	httpClient    sysUtils.HTTPClientI
 	logger        logger.Logger
+	destType      string
 }
 
 // NetHandle interface
@@ -87,6 +89,9 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		for format, value := range requestBody {
 			bodyData, ok := value.(map[string]interface{})
 			if !ok {
+				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
+					"destType": network.destType,
+				})
 				return &utils.SendPostResponse{
 					StatusCode:   500,
 					ResponseBody: []byte("500 Invalid Router Payload: body value must be a map"),
@@ -250,7 +255,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 }
 
 // Setup initializes the module
-func (network *netHandle) Setup(destType string, netClientTimeout time.Duration) {
+func (network *netHandle) Setup(netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
 	// Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
 	defaultRoundTripper := http.DefaultTransport
@@ -263,10 +268,10 @@ func (network *netHandle) Setup(destType string, netClientTimeout time.Duration)
 	// https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
 	// Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	forceHTTP1 := getRouterConfigBool("forceHTTP1", destType, false)
+	forceHTTP1 := getRouterConfigBool("forceHTTP1", network.destType, false)
 	network.logger.Info("forceHTTP1: ", forceHTTP1)
 	if forceHTTP1 {
-		network.logger.Info("Forcing HTTP1 connection for ", destType)
+		network.logger.Info("Forcing HTTP1 connection for ", network.destType)
 		defaultTransportCopy.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config
 		if defaultTransportCopy.TLSClientConfig != nil {
@@ -274,12 +279,12 @@ func (network *netHandle) Setup(destType string, netClientTimeout time.Duration)
 		}
 		tlsClientConfig.NextProtos = []string{"http/1.1"}
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
-		network.logger.Info(destType, defaultTransportCopy.TLSClientConfig.NextProtos)
+		network.logger.Info(network.destType, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
 	// by default we should have as many idle connections as the number of workers
-	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConns", "noOfWorkers")
-	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
-	network.logger.Info(destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
+	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
+	network.logger.Info(network.destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
