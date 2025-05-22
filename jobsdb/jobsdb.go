@@ -20,6 +20,7 @@ package jobsdb
 //go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -428,6 +429,7 @@ func (job *JobT) String() string {
 }
 
 func (job *JobT) sanitizeJSON() error {
+	job.UserID = string(bytes.ReplaceAll([]byte(job.UserID), []byte("\x00"), []byte("")))
 	var err error
 	job.EventPayload, err = misc.SanitizeJSON(job.EventPayload)
 	if err != nil {
