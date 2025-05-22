@@ -170,7 +170,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				headers["Content-Encoding"] = "gzip"
 				payload = &buf
 			default:
-				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
+				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
+					"destType": network.destType,
+				})
+				return &utils.SendPostResponse{
+					StatusCode:   500,
+					ResponseBody: []byte(fmt.Sprintf("500 Invalid Router Payload: body format must be a map found format %s", bodyFormat)),
+				}
 			}
 		}
 

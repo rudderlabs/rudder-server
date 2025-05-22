@@ -110,6 +110,24 @@ func TestSendPostWithGzipData(t *testing.T) {
 		require.Equal(r, resp.ResponseBody, []byte("500 Invalid Router Payload: body value must be a map"))
 	})
 
+	t.Run("should error with invalid body format", func(r *testing.T) {
+		network := &netHandle{}
+		network.logger = logger.NewLogger().Child("network")
+		network.httpClient = http.DefaultClient
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.UserID = "anon_id"
+		structData.Body = map[string]interface{}{
+			"INVALID": map[string]interface{}{
+				"key": "value",
+			},
+		}
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(r, resp.StatusCode, http.StatusInternalServerError)
+		require.Equal(r, resp.ResponseBody, []byte("500 Invalid Router Payload: body format must be a map found format INVALID"))
+	})
+
 	t.Run("should not error with valid body", func(r *testing.T) {
 		network := &netHandle{}
 		network.logger = logger.NewLogger().Child("network")
