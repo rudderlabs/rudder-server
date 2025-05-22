@@ -132,7 +132,6 @@ func TestSendPostWithGzipData(t *testing.T) {
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(r, resp.StatusCode, http.StatusOK)
 		require.Equal(r, resp.ResponseBody, []byte(""))
-
 	})
 }
 
