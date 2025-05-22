@@ -20,6 +20,7 @@ package jobsdb
 //go:generate mockgen -destination=../mocks/jobsdb/mock_jobsdb.go -package=mocks_jobsdb github.com/rudderlabs/rudder-server/jobsdb JobsDB
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -428,6 +429,7 @@ func (job *JobT) String() string {
 }
 
 func (job *JobT) sanitizeJSON() error {
+	job.UserID = string(bytes.ReplaceAll([]byte(job.UserID), []byte("\x00"), []byte("")))
 	var err error
 	job.EventPayload, err = misc.SanitizeJSON(job.EventPayload)
 	if err != nil {
@@ -1261,12 +1263,12 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	}
 
 	if jd.conf.maxDSRetentionPeriod.Load() > 0 {
-		if time.Since(minJobCreatedAt.Time) > jd.conf.maxDSRetentionPeriod.Load() {
+		if time.Since(minJobCreatedAt.Time) >= jd.conf.maxDSRetentionPeriod.Load() {
 			return true, nil
 		}
 	}
 
-	if tableSize > jd.conf.maxTableSize.Load() {
+	if tableSize >= jd.conf.maxTableSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full in size",
 			logger.NewField("ds", ds),
@@ -1276,7 +1278,7 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 		return true, nil
 	}
 
-	if rowCount > jd.conf.MaxDSSize.Load() {
+	if rowCount >= jd.conf.MaxDSSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full by rows",
 			logger.NewField("ds", ds),

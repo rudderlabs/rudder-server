@@ -311,7 +311,7 @@ func TestJobsDB(t *testing.T) {
 
 		triggerAddNewDS := make(chan time.Time)
 
-		c.Set("jobsdb.maxDSSize", 2)
+		c.Set("jobsdb.maxDSSize", 3)
 		jobDB := Handle{
 			TriggerAddNewDS: func() <-chan time.Time {
 				return triggerAddNewDS
@@ -560,7 +560,7 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err, "GetUnprocessed failed")
 		require.EqualValues(t, 19, len(jobsResult.Jobs))
 	})
-	t.Run("should migrate small datasets on pairs", func(t *testing.T) {
+	t.Run("should migrate small datasets in pairs", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
 		triggerMigrateDS := make(chan time.Time)
@@ -594,25 +594,29 @@ func TestJobsDB(t *testing.T) {
 			return jobDB.getDSList()
 		}
 
-		jobs := genJobs(defaultWorkspaceID, customVal, 20, 1)
+		jobs := genJobs(defaultWorkspaceID, customVal, 10, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger() // create ds_2
-		jobs = genJobs(defaultWorkspaceID, customVal, 20, 1)
+		jobs = genJobs(defaultWorkspaceID, customVal, 10, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger() // create ds_3
-		jobs = genJobs(defaultWorkspaceID, customVal, 11, 1)
+		jobs = genJobs(defaultWorkspaceID, customVal, 10, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger() // create ds_4
-		jobs = genJobs(defaultWorkspaceID, customVal, 11, 1)
+		jobs = genJobs(defaultWorkspaceID, customVal, 10, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger() // create ds_5
+		jobs = genJobs(defaultWorkspaceID, customVal, 10, 1)
+		require.NoError(t, jobDB.Store(context.Background(), jobs))
+		trigger() // create ds_6
 		dsList := getDSList()
-		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
+		require.Len(t, dsList, 6)
 		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable)
 		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
 		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)
 		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)
 		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
+		require.Equal(t, prefix+"_jobs_6", dsList[5].JobTable)
 
 		jobsResult, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
 			CustomValFilters: []string{customVal},
@@ -621,8 +625,7 @@ func TestJobsDB(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		// process first 15 jobs
-		for _, job := range jobsResult.Jobs[:15] {
+		for _, job := range jobsResult.Jobs[:5] { // process first 5 jobs from jobs_1
 			status := JobStatusT{
 				JobID:         job.JobID,
 				JobState:      "succeeded",
@@ -640,15 +643,15 @@ func TestJobsDB(t *testing.T) {
 		trigger() // no migration
 
 		dsList = getDSList()
-		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
+		require.Len(t, dsList, 6)
 		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable) // 5 jobs
-		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable) // 20 jobs
-		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable) // 20 jobs
-		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable) // 20 jobs
-		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[5].JobTable) // 0 jobs
 
-		// process 1 more job
-		for _, job := range jobsResult.Jobs[15:16] {
+		for _, job := range jobsResult.Jobs[5:6] { // process 6th job from jobs_1
 			status := JobStatusT{
 				JobID:         job.JobID,
 				JobState:      "succeeded",
@@ -665,21 +668,15 @@ func TestJobsDB(t *testing.T) {
 
 		trigger() // jobs_1 will remain as is even though it is now a small table 4/10 = 0.4 < 0.41
 		dsList = getDSList()
-		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
+		require.Len(t, dsList, 6)
 		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable) // 4 jobs
-		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable) // 20 jobs
-		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable) // 20 jobs
-		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable) // 20 jobs
-		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable) // 20 jobs
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[5].JobTable) // 10 jobs
 
-		// process some jobs
-		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
-			CustomValFilters: []string{customVal},
-			JobsLimit:        100,
-			ParameterFilters: []ParameterFilterT{},
-		})
-		require.NoError(t, err)
-		for _, job := range jobsResult.Jobs[4:20] { // process 16 jobs from jobs_2
+		for _, job := range jobsResult.Jobs[10:16] { // 6 first jobs from jobs_2
 			status := JobStatusT{
 				JobID:         job.JobID,
 				JobState:      Succeeded.State,
@@ -696,11 +693,95 @@ func TestJobsDB(t *testing.T) {
 
 		trigger() // both jobs_1 and jobs_2 would be migrated to jobs_2_1
 		dsList = getDSList()
-		require.Lenf(t, dsList, 4, "dsList length is not 4, got %+v", dsList)
+		require.Len(t, dsList, 5)
 		require.Equal(t, prefix+"_jobs_2_1", dsList[0].JobTable) // 8 jobs
-		require.Equal(t, prefix+"_jobs_3", dsList[1].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_4", dsList[2].JobTable)   // 20 jobs
-		require.Equal(t, prefix+"_jobs_5", dsList[3].JobTable)   // 20 jobs
+		require.Equal(t, prefix+"_jobs_3", dsList[1].JobTable)   // 10 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[2].JobTable)   // 10 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[3].JobTable)   // 10 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[4].JobTable)   // 0 jobs
+
+		// process some jobs
+		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			ParameterFilters: []ParameterFilterT{},
+		})
+		require.NoError(t, err)
+		require.Len(t, jobsResult.Jobs, 38)
+		for _, job := range jobsResult.Jobs[:14] { // process all 8 jobs from jobs_2_1 and 6 jobs from jobs_3
+			status := JobStatusT{
+				JobID:         job.JobID,
+				JobState:      Succeeded.State,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "202",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+				Parameters:    []byte(`{}`),
+			}
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			require.NoError(t, err)
+		}
+
+		trigger() // jobs_2_1 will be deleted and jobs_3 will remain as is since it needs a pair for migration
+		dsList = getDSList()
+		require.Len(t, dsList, 4)
+		require.Equal(t, prefix+"_jobs_3", dsList[0].JobTable) // 4 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[1].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[2].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[3].JobTable) // 0 jobs
+
+		for _, job := range jobsResult.Jobs[28:34] { // process 6 jobs from jobs_5
+			status := JobStatusT{
+				JobID:         job.JobID,
+				JobState:      Succeeded.State,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "202",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+				Parameters:    []byte(`{}`),
+			}
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			require.NoError(t, err)
+		}
+
+		trigger() // jobs_3 & jobs_5 are small but not consecutive, so they will not be migrated
+		dsList = getDSList()
+		require.Lenf(t, dsList, 4, "dsList length is not 3, got %+v", dsList)
+		require.Equal(t, prefix+"_jobs_3", dsList[0].JobTable) // 4 jobs
+		require.Equal(t, prefix+"_jobs_4", dsList[1].JobTable) // 10 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[2].JobTable) // 4 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[3].JobTable) // 0 jobs
+
+		for _, job := range jobsResult.Jobs[18:24] { // process 6 jobs from jobs_4
+			status := JobStatusT{
+				JobID:         job.JobID,
+				JobState:      Succeeded.State,
+				AttemptNum:    1,
+				ExecTime:      time.Now(),
+				RetryTime:     time.Now(),
+				ErrorCode:     "202",
+				ErrorResponse: []byte(`{"success":"OK"}`),
+				Parameters:    []byte(`{}`),
+			}
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			require.NoError(t, err)
+		}
+
+		trigger() // jobs_3, jobs_4 & jobs_5 will be migrated to jobs_5_1
+		dsList = getDSList()
+		require.Lenf(t, dsList, 2, "dsList length is not 1, got %+v", dsList)
+		require.Equal(t, prefix+"_jobs_5_1", dsList[0].JobTable) // 12 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[1].JobTable)   // 0 jobs
+
+		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			ParameterFilters: []ParameterFilterT{},
+		})
+		require.NoError(t, err)
+		require.Len(t, jobsResult.Jobs, 12)
 	})
 
 	t.Run(`migrates only moves non-terminal jobs to a new DS`, func(t *testing.T) {
@@ -1055,6 +1136,7 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		{
 			string(JSONB),
 			[]testCase{
+				{"\x00", "", nil},
 				{`\u0000`, "", nil},
 				{`\u0000☺\u0000b☺`, "☺b☺", nil},
 				// NOTE: we are not handling the following:
@@ -1092,8 +1174,9 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 		{
 			string(TEXT),
 			[]testCase{
-				{`\u0000`, `\u0000`, nil},
-				{`\u0000☺\u0000b☺`, `\u0000☺\u0000b☺`, nil},
+				{"\x00", "", nil},
+				{`\u0000`, "", nil},
+				{`\u0000☺\u0000b☺`, `☺b☺`, nil},
 
 				{"", "", nil},
 				{"abc", "abc", nil},
@@ -1111,23 +1194,24 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 
 				// {"\ud800", ""},
 				// 15
-				{`\ud800`, `\ud800`, nil},
-				{`\uDEAD`, `\uDEAD`, nil},
+				{`\ud800`, ch(1), nil},
+				{`\uDEAD`, ch(1), nil},
 
-				{`\uD83D\ub000`, `\uD83D\ub000`, nil},
-				{`\uD83D\ude04`, `\uD83D\ude04`, nil},
+				{`\uD83D\ub000`, string([]byte{239, 191, 189, 235, 128, 128}), nil},
+				{`\uD83D\ude04`, `😄`, nil},
 
-				{`\u4e2d\u6587`, `\u4e2d\u6587`, nil},
-				{`\ud83d\udc4a`, `\ud83d\udc4a`, nil},
+				{`\u4e2d\u6587`, `中文`, nil},
+				{`\ud83d\udc4a`, `👊`, nil},
 
 				// 21
-				{`\U0001f64f`, `\U0001f64f`, nil},
-				{`\uD83D\u00`, `\uD83D\u00`, nil},
+				{`\U0001f64f`, ch(1), errors.New(`readEscapedChar: invalid escape char after`)},
+				{`\uD83D\u00`, ch(1), errors.New(`readU4: expects 0~9 or a~f, but found`)},
 			},
 		},
 		{
 			string(BYTEA),
 			[]testCase{
+				{"\x00", "", nil},
 				{`\u0000`, "", nil},
 				{`\u0000☺\u0000b☺`, "☺b☺", nil},
 				// NOTE: we are not handling the following:
@@ -1179,7 +1263,7 @@ func TestJobsdbSanitizeJSON(t *testing.T) {
 				jobs := []*JobT{{
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: bytes.Replace(eventPayload, []byte("track"), []byte(tt.in), 1),
-					UserID:       uuid.New().String(),
+					UserID:       uuid.New().String() + "\x00",
 					UUID:         uuid.New(),
 					CustomVal:    customVal,
 					WorkspaceId:  defaultWorkspaceID,
