@@ -859,27 +859,14 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 func (job *UploadJob) getLoadFilesMetadataQuery(tableFilterSQL, limitSQL string) string {
 	if job.config.queryLoadFilesWithUploadID.Load() {
 		return fmt.Sprintf(`
-			WITH row_numbered_load_files as (
-			  SELECT
-				location,
-				metadata,
-				row_number() OVER (
-				PARTITION BY upload_id,
-				table_name
-				ORDER BY
-					id DESC
-				) AS row_number
-			  FROM
-				%[1]s
-			  WHERE upload_id = %[2]d %[3]s
-			)
 			SELECT
 			  location,
 			  metadata
 			FROM
-			  row_numbered_load_files
+			  %[1]s
 			WHERE
-			  row_number = 1
+			  upload_id = %[2]d
+			%[3]s
 			%[4]s;
 			`,
 			whutils.WarehouseLoadFilesTable,
