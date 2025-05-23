@@ -210,6 +210,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
+	brt.useDigitalOceanSpacesV2 = config.GetReloadableBoolVar(false, "BatchRouter.useDigitalOceanSpacesV2")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
@@ -307,6 +308,7 @@ func (brt *Handle) crashRecover() {
 			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
 				Provider: object.Provider,
 				Config:   object.Config,
+				Conf:     brt.conf,
 			})
 			if err != nil {
 				panic(err)

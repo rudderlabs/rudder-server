@@ -187,6 +187,7 @@ func TestSlaveJob(t *testing.T) {
 				Provider: "MINIO",
 				Config:   conf,
 			}),
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

@@ -137,7 +137,7 @@ type Client struct {
 	}
 
 	loggedEvents        atomic.Int64
-	samplingFileManager *filemanager.S3Manager
+	samplingFileManager filemanager.S3Manager
 }
 
 func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -466,7 +466,7 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 	return jsonrs.Marshal(data)
 }
 
-func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("DTSampling.Bucket", "processor-dt-sampling")
 		endpoint         = conf.GetString("DTSampling.Endpoint", "")
@@ -490,7 +490,7 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S
 		"region":           region,
 	}
 
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
 		return conf.GetDuration("DTSampling.Timeout", 120, time.Second)
 	})
 }

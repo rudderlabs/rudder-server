@@ -424,6 +424,7 @@ func TestIntegration(t *testing.T) {
 						UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(tc.conf),
 						WorkspaceID:      workspaceID,
 					}),
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 

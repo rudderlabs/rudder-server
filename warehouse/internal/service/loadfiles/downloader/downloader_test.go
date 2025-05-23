@@ -13,6 +13,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -113,6 +114,7 @@ func TestDownloader(t *testing.T) {
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: provider,
 				Config:   conf,
+				Conf:     config.Default,
 			})
 			require.NoError(t, err)
 

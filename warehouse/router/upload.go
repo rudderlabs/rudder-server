@@ -451,6 +451,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 			UseRudderStorage: job.upload.UseRudderStorage,
 			WorkspaceID:      job.upload.WorkspaceID,
 		}),
+		Conf: job.conf,
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)

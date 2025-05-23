@@ -399,6 +399,7 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 			Config:           idr.warehouse.Destination.Config,
 			UseRudderStorage: idr.uploader.UseRudderStorage(),
 		}),
+		Conf: config.Default,
 	})
 	if err != nil {
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.warehouse.Destination.DestinationDefinition.Name, err)

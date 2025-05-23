@@ -99,6 +99,7 @@ type Handle struct {
 	transformerURL               string
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
+	useDigitalOceanSpacesV2      config.ValueLoader[bool]
 
 	drainer routerutils.Drainer
 
@@ -371,6 +372,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 			UseRudderStorage: useRudderStorage,
 			WorkspaceID:      batchJobs.Connection.Destination.WorkspaceID,
 		}),
+		Conf: brt.conf,
 	})
 	if err != nil {
 		return UploadResult{

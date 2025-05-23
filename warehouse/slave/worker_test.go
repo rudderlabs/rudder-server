@@ -267,6 +267,7 @@ func TestSlaveWorker(t *testing.T) {
 						Provider: "MINIO",
 						Config:   destConf,
 					}),
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 
@@ -688,6 +689,7 @@ func TestSlaveWorker(t *testing.T) {
 						Provider: "MINIO",
 						Config:   destConf,
 					}),
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 

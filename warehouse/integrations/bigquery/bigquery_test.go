@@ -873,6 +873,7 @@ func TestIntegration(t *testing.T) {
 				"bucketName":  credentials.BucketName,
 				"credentials": credentials.Credentials,
 			},
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

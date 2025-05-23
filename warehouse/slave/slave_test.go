@@ -209,6 +209,7 @@ func uploadFile(t testing.TB, ctx context.Context, destConf map[string]interface
 			Provider: "MINIO",
 			Config:   destConf,
 		}),
+		Conf: config.Default,
 	})
 	require.NoError(t, err)
 

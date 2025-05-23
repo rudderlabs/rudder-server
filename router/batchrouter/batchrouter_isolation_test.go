@@ -317,6 +317,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 						"secretAccessKey": minioDestination.AccessKeySecret,
 					},
 				}),
+				Conf: config.Default,
 			})
 			require.NoError(t, err, "it should be able to create a file manager")
 			fileObjects, err := fm.ListFilesWithPrefix(context.Background(), "", prefix+"/"+workspaceID+"/", int64(count)).Next()

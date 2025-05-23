@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -1106,6 +1107,84 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 	}
 	for _, input := range inputs {
 		config, err := CreateAWSSessionConfig(input.destination, input.service)
+		require.Nil(t, err)
+		require.Equal(t, config, input.expectedConfig)
+	}
+}
+
+func TestCreateAWSSessionConfig_V2(t *testing.T) {
+	rudderAccessKeyID := "rudderAccessKeyID"
+	rudderAccessKey := "rudderAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+
+	someAccessKeyID := "someAccessKeyID"
+	someAccessKey := "someAccessKey"
+	someIAMRoleARN := "someIAMRoleARN"
+	someWorkspaceID := "someWorkspaceID"
+
+	inputs := []struct {
+		destination    *backendconfig.DestinationT
+		service        string
+		expectedConfig *awsutil_v2.SessionConfig
+	}{
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"useRudderStorage": true,
+				},
+			},
+			service: "s3",
+			expectedConfig: &awsutil_v2.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "s3",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"accessKeyID": someAccessKeyID,
+					"accessKey":   someAccessKey,
+				},
+			},
+			service: "glue",
+			expectedConfig: &awsutil_v2.SessionConfig{
+				AccessKeyID: someAccessKeyID,
+				AccessKey:   someAccessKey,
+				Service:     "glue",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"iamRoleARN": someIAMRoleARN,
+				},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutil_v2.SessionConfig{
+				RoleBasedAuth: true,
+				IAMRoleARN:    someIAMRoleARN,
+				ExternalID:    someWorkspaceID,
+				Service:       "redshift",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config:      map[string]interface{}{},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutil_v2.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "redshift",
+			},
+		},
+	}
+	for _, input := range inputs {
+		config, err := CreateAWSSessionConfigV2(input.destination, input.service)
 		require.Nil(t, err)
 		require.Equal(t, config, input.expectedConfig)
 	}
