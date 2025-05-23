@@ -31,7 +31,7 @@ import (
 
 type mockSchemaRepo struct{}
 
-func (m *mockSchemaRepo) GetForNamespace(ctx context.Context, sourceID, destinationID, namespace string) (model.WHSchema, error) {
+func (m *mockSchemaRepo) GetForNamespace(ctx context.Context, destinationID, namespace string) (model.WHSchema, error) {
 	return model.WHSchema{}, nil
 }
 
