@@ -180,7 +180,49 @@ func TestValidateURLAndHandlePrivateIP(t *testing.T) {
 			blockMode:   false,
 			wantBlocked: false,
 			wantErr:     false,
-			errMsg:      "URL validation failed",
+		},
+		{
+			name:        "invalid URL in block mode",
+			url:         "not-a-valid-url",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: false,
+			wantErr:     false,
+		},
+		{
+			name:        "private URL with hostname",
+			url:         "https://internal.example.com",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: false,
+			wantErr:     false,
+		},
+		{
+			name:        "private URL with IPv6",
+			url:         "https://[fc00::1]",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: true,
+			wantErr:     true,
+			errMsg:      "access to private IPs is blocked",
+		},
+		{
+			name:        "private URL with port",
+			url:         "https://10.0.0.1:8080",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: true,
+			wantErr:     true,
+			errMsg:      "access to private IPs is blocked",
+		},
+		{
+			name:        "private URL with path",
+			url:         "https://10.0.0.1/api/v1",
+			dryRunMode:  false,
+			blockMode:   true,
+			wantBlocked: true,
+			wantErr:     true,
+			errMsg:      "access to private IPs is blocked",
 		},
 	}
 
@@ -225,6 +267,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write(buf.Bytes())
 		}))
+		defer testServer.Close()
+
 		network := &netHandle{
 			logger:          logger.NewLogger().Child("network"),
 			httpClient:      http.DefaultClient,
@@ -270,6 +314,114 @@ func TestSendPostWithGzipData(t *testing.T) {
 		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
 		require.Equal(r, resp.ResponseBody, []byte("400 Unable to parse json list. Unexpected transformer response"))
 	})
+
+	t.Run("should fail when gzip compression fails", func(r *testing.T) {
+		network := &netHandle{
+			logger:          logger.NewLogger().Child("network"),
+			httpClient:      http.DefaultClient,
+			privateIPRanges: loadPrivateIPRanges(config.Default),
+		}
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.URL = "https://example.com"
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"payload": make(chan int), // Invalid type that can't be compressed
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(r, resp.StatusCode, http.StatusBadRequest)
+		require.Contains(r, string(resp.ResponseBody), "Unable to parse json list")
+	})
+
+	t.Run("should handle empty gzip payload", func(r *testing.T) {
+		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Encoding") != "gzip" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			body, err := gzip.NewReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer body.Close()
+			buf := new(bytes.Buffer)
+			_, _ = buf.ReadFrom(body)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(buf.Bytes())
+		}))
+		defer testServer.Close()
+
+		network := &netHandle{
+			logger:          logger.NewLogger().Child("network"),
+			httpClient:      http.DefaultClient,
+			privateIPRanges: loadPrivateIPRanges(config.Default),
+		}
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.URL = testServer.URL
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"payload": "",
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(r, resp.StatusCode, http.StatusOK)
+		require.Equal(r, string(resp.ResponseBody), "")
+	})
+
+	t.Run("should handle gzip with custom headers", func(r *testing.T) {
+		testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Content-Encoding") != "gzip" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.Header.Get("X-Custom-Header") != "test" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			body, err := gzip.NewReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			defer body.Close()
+			buf := new(bytes.Buffer)
+			_, _ = buf.ReadFrom(body)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(buf.Bytes())
+		}))
+		defer testServer.Close()
+
+		network := &netHandle{
+			logger:          logger.NewLogger().Child("network"),
+			httpClient:      http.DefaultClient,
+			privateIPRanges: loadPrivateIPRanges(config.Default),
+		}
+		eventData := `[{"event":"Signed Up"}]`
+		var structData integrations.PostParametersT
+		structData.RequestMethod = "POST"
+		structData.Type = "REST"
+		structData.URL = testServer.URL
+		structData.UserID = "anon_id"
+		structData.Headers = map[string]interface{}{
+			"X-Custom-Header": "test",
+		}
+		structData.Body = map[string]interface{}{
+			"GZIP": map[string]interface{}{
+				"payload": eventData,
+			},
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(r, resp.StatusCode, http.StatusOK)
+		require.Equal(r, string(resp.ResponseBody), eventData)
+	})
 }
 
 func TestSendPost(t *testing.T) {
@@ -286,6 +438,7 @@ func TestSendPost(t *testing.T) {
 
 		var structData integrations.PostParametersT
 		structData.Type = "REST"
+		structData.RequestMethod = "POST"
 		structData.URL = "https://www.google-analytics.com/collect"
 		structData.UserID = "anon_id"
 		structData.Headers = map[string]interface{}{}
@@ -322,23 +475,27 @@ func TestSendPost(t *testing.T) {
 
 		mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
 			// asserting http request
-			req.Method = "POST"
-			req.URL.Host = "www.google-analytics.com"
-			req.URL.RawQuery = "aiid=com.rudderlabs.android.sdk&an=RudderAndroidClient&av=1.0&cid=anon_id&ds=android-sdk&ea=Demo+Track&ec=Demo+Category&el=Demo+Label&ni=0&qt=5.9190508594e%2B10&t=event&tid=UA-185645846-1&uip=%5B%3A%3A1%5D&ul=en-US&v=1"
+			require.Equal(t, "POST", req.Method)
+			require.Equal(t, "www.google-analytics.com", req.URL.Host)
+			require.Equal(t, "aiid=com.rudderlabs.android.sdk&an=RudderAndroidClient&av=1.0&cid=anon_id&ds=android-sdk&ea=Demo+Track&ec=Demo+Category&el=Demo+Label&ni=0&qt=5.9190508594e%2B10&t=event&tid=UA-185645846-1&uip=%5B%3A%3A1%5D&ul=en-US&v=1", req.URL.RawQuery)
+			require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
 		}).Return(&http.Response{
 			StatusCode: 200,
 			Body:       r,
 		}, nil)
 
-		network.SendPost(context.Background(), structData)
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, jsonResponse, string(resp.ResponseBody))
 	})
 
 	t.Run("should respect ctx cancelation", func(t *testing.T) {
 		network.httpClient = &http.Client{}
 
 		structData := integrations.PostParametersT{
-			Type: "REST",
-			URL:  "https://www.google-analytics.com/collect",
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           "https://www.google-analytics.com/collect",
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -346,7 +503,124 @@ func TestSendPost(t *testing.T) {
 
 		resp := network.SendPost(ctx, structData)
 		require.Equal(t, http.StatusGatewayTimeout, resp.StatusCode)
-		require.Equal(t, "504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\". Error: Get \"https://www.google-analytics.com/collect\": context canceled", string(resp.ResponseBody))
+		require.Contains(t, string(resp.ResponseBody), "504 Unable to make \"POST\" request for URL")
+		require.Contains(t, string(resp.ResponseBody), "context canceled")
+	})
+
+	t.Run("should handle request construction failure", func(t *testing.T) {
+		network.httpClient = &http.Client{}
+
+		structData := integrations.PostParametersT{
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           "http://[::1]:namedport", // Invalid URL
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		require.Contains(t, string(resp.ResponseBody), "400 Unable to construct")
+	})
+
+	t.Run("should handle private IP in block mode", func(t *testing.T) {
+		network := &netHandle{
+			logger:          logger.NewLogger().Child("network"),
+			privateIPRanges: loadPrivateIPRanges(config.Default),
+			blockPrivateIPs: true,
+			httpClient:      &http.Client{},
+		}
+
+		structData := integrations.PostParametersT{
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           "https://10.0.0.1",
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+		require.Contains(t, string(resp.ResponseBody), "403: access to private IPs is blocked")
+	})
+
+	t.Run("should handle egress disabled", func(t *testing.T) {
+		network := &netHandle{
+			logger:        logger.NewLogger().Child("network"),
+			disableEgress: true,
+		}
+
+		structData := integrations.PostParametersT{
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           "https://example.com",
+		}
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, "200: outgoing disabled", string(resp.ResponseBody))
+	})
+
+	t.Run("should handle JSON body", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
+		network.httpClient = mockHTTPClient
+
+		structData := integrations.PostParametersT{
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           "https://example.com",
+			Body: map[string]interface{}{
+				"JSON": map[string]interface{}{
+					"key": "value",
+				},
+			},
+		}
+
+		mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
+			require.Equal(t, "application/json", req.Header.Get("Content-Type"))
+			require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.Equal(t, `{"key":"value"}`, string(body))
+		}).Return(&http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewReader([]byte("OK"))),
+		}, nil)
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, "OK", string(resp.ResponseBody))
+	})
+
+	t.Run("should handle FORM body", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		defer mockCtrl.Finish()
+		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
+		network.httpClient = mockHTTPClient
+
+		structData := integrations.PostParametersT{
+			Type:          "REST",
+			RequestMethod: "POST",
+			URL:           "https://example.com",
+			Body: map[string]interface{}{
+				"FORM": map[string]interface{}{
+					"key": "value",
+				},
+			},
+		}
+
+		mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
+			require.Equal(t, "application/x-www-form-urlencoded", req.Header.Get("Content-Type"))
+			require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
+			body, err := io.ReadAll(req.Body)
+			require.NoError(t, err)
+			require.Equal(t, "key=value", string(body))
+		}).Return(&http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewReader([]byte("OK"))),
+		}, nil)
+
+		resp := network.SendPost(context.Background(), structData)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, "OK", string(resp.ResponseBody))
 	})
 }
 

@@ -105,8 +105,23 @@ func (network *netHandle) isPrivateIP(ip net.IP) bool {
 		return false
 	}
 
+	// Convert IP to 4-byte representation for IPv4
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+
 	for _, r := range network.privateIPRanges {
-		if bytes.Compare(ip, r.start) >= 0 && bytes.Compare(ip, r.end) <= 0 {
+		// Convert range IPs to same format as input IP
+		start := r.start
+		end := r.end
+		if ip4 := start.To4(); ip4 != nil {
+			start = ip4
+		}
+		if ip4 := end.To4(); ip4 != nil {
+			end = ip4
+		}
+
+		if bytes.Compare(ip, start) >= 0 && bytes.Compare(ip, end) <= 0 {
 			return true
 		}
 	}
@@ -154,17 +169,37 @@ func handleQueryParam(param interface{}) string {
 
 // validateURLAndHandlePrivateIP checks if the URL resolves to a private IP and handles it based on mode
 func (network *netHandle) validateURLAndHandlePrivateIP(urlStr string) (bool, error) {
-	isPrivate, err := network.validateURL(urlStr)
-	if isPrivate {
-		if network.dryRunMode {
-			network.logger.Warnn("URL %s resolves to private IP in dry run mode", logger.NewErrorField(err), logger.NewStringField("url", urlStr))
+	parsedURL, err := url.Parse(urlStr)
+	if err != nil {
+		// If we're not blocking private IPs, just log the error and continue
+		if !network.blockPrivateIPs {
+			network.logger.Warnn("URL validation failed", logger.NewErrorField(err), logger.NewStringField("url", urlStr))
 			return false, nil
 		}
-		if network.blockPrivateIPs {
-			return true, fmt.Errorf("access to private IPs is blocked: %v", err)
+		return false, fmt.Errorf("invalid URL: %w", err)
+	}
+
+	// Extract host without port
+	host := parsedURL.Hostname()
+	if host == "" {
+		return false, nil
+	}
+
+	// Check if the host is a private IP
+	if ip := net.ParseIP(host); ip != nil {
+		if network.isPrivateIP(ip) {
+			if network.dryRunMode {
+				network.logger.Warnn("URL %s contains private IP in dry run mode", logger.NewStringField("url", urlStr))
+				return false, nil
+			}
+			if network.blockPrivateIPs {
+				return true, fmt.Errorf("access to private IPs is blocked")
+			}
 		}
 	}
-	return false, err
+
+	// For non-IP hosts, we don't do DNS resolution
+	return false, nil
 }
 
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
@@ -227,6 +262,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					panic(err)
 				}
 				payload = strings.NewReader(string(jsonValue))
+				headers["Content-Type"] = "application/json"
 			case "JSON_ARRAY":
 				// support for JSON ARRAY
 				jsonListStr, ok := bodyValue["batch"].(string)
@@ -237,6 +273,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				payload = strings.NewReader(jsonListStr)
+				headers["Content-Type"] = "application/json"
 			case "XML":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
@@ -246,12 +283,14 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				payload = strings.NewReader(strValue)
+				headers["Content-Type"] = "application/xml"
 			case "FORM":
 				formValues := url.Values{}
 				for key, val := range bodyValue {
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
 				payload = strings.NewReader(formValues.Encode())
+				headers["Content-Type"] = "application/x-www-form-urlencoded"
 			case "GZIP":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
