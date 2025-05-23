@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -92,6 +93,7 @@ type netHandle struct {
 	dryRunMode      bool
 	blockPrivateIPs bool
 	privateIPRanges []IPRange
+	destType        string
 }
 
 // NetHandle interface
@@ -126,27 +128,6 @@ func (network *netHandle) isPrivateIP(ip net.IP) bool {
 		}
 	}
 	return false
-}
-
-// validateURL checks if the URL resolves to a private IP
-func (network *netHandle) validateURL(urlStr string) (bool, error) {
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		return false, fmt.Errorf("invalid URL: %w", err)
-	}
-
-	host := parsedURL.Hostname()
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return false, fmt.Errorf("failed to resolve host: %w", err)
-	}
-
-	for _, ip := range ips {
-		if network.isPrivateIP(ip) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // temp solution for handling complex query params
@@ -243,10 +224,22 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		requestQueryParams := postInfo.QueryParams
 		var bodyFormat string
 		var bodyValue map[string]interface{}
-		for k, v := range requestBody {
-			if len(v.(map[string]interface{})) > 0 {
-				bodyFormat = k
-				bodyValue = v.(map[string]interface{})
+
+		for format, value := range requestBody {
+			bodyData, ok := value.(map[string]interface{})
+			if !ok {
+				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
+					"destType": network.destType,
+				})
+				return &utils.SendPostResponse{
+					StatusCode:   500,
+					ResponseBody: []byte("500 Invalid Router Payload: body value must be a map"),
+				}
+			}
+
+			if len(bodyData) > 0 {
+				bodyFormat = format
+				bodyValue = bodyData
 				break
 			}
 		}
@@ -320,7 +313,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				headers["Content-Encoding"] = "gzip"
 				payload = &buf
 			default:
-				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
+				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
+					"destType": network.destType,
+				})
+				return &utils.SendPostResponse{
+					StatusCode:   500,
+					ResponseBody: []byte(fmt.Sprintf("500 Invalid Router Payload: body format must be a map found format %s", bodyFormat)),
+				}
 			}
 		}
 
@@ -405,7 +404,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 }
 
 // Setup initializes the module
-func (network *netHandle) Setup(config *config.Config, destType string, netClientTimeout time.Duration) {
+func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) {
 	network.logger.Info("Network Handler Startup")
 
 	network.privateIPRanges = loadPrivateIPRanges(config)
@@ -453,10 +452,10 @@ func (network *netHandle) Setup(config *config.Config, destType string, netClien
 
 	defaultTransportCopy.DialContext = dialContext
 
-	forceHTTP1 := getRouterConfigBool("forceHTTP1", destType, false)
+	forceHTTP1 := getRouterConfigBool("forceHTTP1", network.destType, false)
 	network.logger.Info("forceHTTP1: ", forceHTTP1)
 	if forceHTTP1 {
-		network.logger.Info("Forcing HTTP1 connection for ", destType)
+		network.logger.Info("Forcing HTTP1 connection for ", network.destType)
 		defaultTransportCopy.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config
 		if defaultTransportCopy.TLSClientConfig != nil {
@@ -464,17 +463,17 @@ func (network *netHandle) Setup(config *config.Config, destType string, netClien
 		}
 		tlsClientConfig.NextProtos = []string{"http/1.1"}
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
-		network.logger.Info(destType, defaultTransportCopy.TLSClientConfig.NextProtos)
+		network.logger.Info(network.destType, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
 
-	network.dryRunMode = getRouterConfigBool("dryRunMode", destType, false)
-	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", destType, false)
+	network.dryRunMode = getRouterConfigBool("dryRunMode", network.destType, false)
+	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
 	network.logger.Info("dryRunMode: ", network.dryRunMode)
 	network.logger.Info("blockPrivateIPs: ", network.blockPrivateIPs)
 
-	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConns", "noOfWorkers")
-	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
-	network.logger.Info(destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
+	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
+	network.logger.Info(network.destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
