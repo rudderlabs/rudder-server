@@ -157,7 +157,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.config.retryMinWait = conf.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
 	dl.config.retryMaxWait = conf.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
 	dl.config.maxErrorLength = conf.GetInt("Warehouse.deltalake.maxErrorLength", 64*1024) // 64 KB
-	dl.config.useAWSV2 = conf.GetBool("Warehouse.deltalake.useAWSV2", false)
+	dl.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
 	return dl
 }
 

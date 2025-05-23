@@ -469,7 +469,6 @@ func TestBytesPerTable(t *testing.T) {
 			conf:                    config.New(),
 			now:                     timeutil.Now,
 			jobsDB:                  jobsDB,
-			useAWSV2:                config.GetReloadableBoolVar(false, "BatchRouter.useAWSV2"),
 			useDigitalOceanSpacesV2: config.GetReloadableBoolVar(false, "BatchRouter.useDigitalOceanSpacesV2"),
 		}
 	}

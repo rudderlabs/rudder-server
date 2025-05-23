@@ -210,7 +210,6 @@ func (brt *Handle) setupReloadableVars() {
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
-	brt.useAWSV2 = config.GetReloadableBoolVar(false, "BatchRouter.useAWSV2")
 	brt.useDigitalOceanSpacesV2 = config.GetReloadableBoolVar(false, "BatchRouter.useDigitalOceanSpacesV2")
 }
 
