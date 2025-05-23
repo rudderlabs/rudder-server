@@ -116,12 +116,11 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 	return id, err
 }
 
-func (sh *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error) {
+func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error) {
 	query := `SELECT ` + whSchemaTableColumns + ` FROM ` + whSchemaTableName + `
 	WHERE
-		source_id = $1 AND
-		destination_id = $2 AND
-		namespace = $3
+		destination_id = $1 AND
+		namespace = $2
 	ORDER BY
 		id DESC;
 	`
@@ -129,7 +128,6 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, sourceID, destID, names
 	rows, err := sh.db.QueryContext(
 		ctx,
 		query,
-		sourceID,
 		destID,
 		namespace,
 	)
