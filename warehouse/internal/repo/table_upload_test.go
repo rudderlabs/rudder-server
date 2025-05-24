@@ -380,6 +380,10 @@ func TestTableUploadRepo(t *testing.T) {
 					TableName: tables2[i],
 					TotalRows: i + 1,
 					UploadID:  &uploadId,
+				}, model.LoadFile{
+					TableName: tables2[i],
+					TotalRows: i + 1,
+					UploadID:  &uploadId,
 				})
 			}
 			insertErr := l.Insert(ctx, loadFiles)
@@ -395,7 +399,7 @@ func TestTableUploadRepo(t *testing.T) {
 			require.NoError(t, txErr)
 			for _, loadFile := range loadFiles {
 				tableName := loadFile.TableName
-				expectedTotal := int64(loadFile.TotalRows)
+				expectedTotal := 2 * int64(loadFile.TotalRows) // Since there are 2 load files for each table
 				tableUpload, getErr := r.GetByUploadIDAndTableName(ctx, uploadId, tableName)
 				require.NoError(t, getErr)
 				require.Equal(t, uploadId, tableUpload.UploadID)
