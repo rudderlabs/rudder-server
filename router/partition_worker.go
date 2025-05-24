@@ -33,7 +33,6 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			barrier:                   rt.barrier,
 			rt:                        rt,
 			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
-			batchTimeStat:             stats.Default.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			routerDeliveryLatencyStat: stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			routerProxyStat:           stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
 		}
@@ -68,8 +67,10 @@ type partitionWorker struct {
 func (pw *partitionWorker) Work() bool {
 	start := time.Now()
 	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers)
+	// the following stats are used to track the total time taken for the pickup process and the number of jobs picked up
 	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)
+
 	worked := pw.pickupCount > 0
 	if worked && !pw.limitsReached { // sleep only if we worked and we didn't reach the limits
 		if sleepFor := pw.rt.reloadableConfig.readSleep.Load() - time.Since(start); sleepFor > 0 {
