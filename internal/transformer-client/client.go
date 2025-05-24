@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/transformer-client/mock_transformer_client.go -package=mocks_transformer_client github.com/rudderlabs/rudder-server/internal/transformer-client Client
+//go:generate mockgen -destination=../../mocks/transformer-client/mock_transformer_client.go -package=mocks_transformer_client github.com/rudderlabs/rudder-server/internal/transformer-client Client,RetryableClient
 
 package transformerclient
 
@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/hashicorp/go-retryablehttp"
 
 	"github.com/bufbuild/httplb"
 	"github.com/bufbuild/httplb/conn"
@@ -29,8 +31,19 @@ type ClientConfig struct {
 	RecycleTTL    time.Duration // 60s
 }
 
+type RetryableClientConfig struct {
+	*ClientConfig
+	RetryWaitMin time.Duration // Minimum time to wait
+	RetryWaitMax time.Duration // Maximum time to wait
+	RetryMax     int           // Maximum number of retries
+}
+
 type Client interface {
 	Do(req *http.Request) (*http.Response, error)
+}
+
+type RetryableClient interface {
+	Do(req *retryablehttp.Request) (*http.Response, error)
 }
 
 func NewClient(config *ClientConfig) Client {
@@ -96,6 +109,67 @@ func NewClient(config *ClientConfig) Client {
 	}
 }
 
+func NewRetryableClient(config *RetryableClientConfig) RetryableClient {
+	transport := &http.Transport{
+		DisableKeepAlives:   true,
+		MaxConnsPerHost:     100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   600 * time.Second,
+	}
+	retryableClient := newRetryableClient(client, config)
+
+	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
+	if config.TransportConfig.MaxConnsPerHost != 0 {
+		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
+	}
+	if config.TransportConfig.MaxIdleConnsPerHost != 0 {
+		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
+	}
+	if config.TransportConfig.IdleConnTimeout != 0 {
+		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+	}
+
+	if config.ClientTimeout != 0 {
+		client.Timeout = config.ClientTimeout
+	}
+
+	clientTTL := 10 * time.Second
+	if config.ClientTTL != 0 {
+		clientTTL = config.ClientTTL
+	}
+	recycleTTL := 60 * time.Second
+	if config.RecycleTTL != 0 {
+		recycleTTL = config.RecycleTTL
+	}
+
+	switch config.ClientType {
+	case "httplb":
+		tr := &httplbtransport{
+			MaxConnsPerHost:     transport.MaxConnsPerHost,
+			MaxIdleConnsPerHost: transport.MaxIdleConnsPerHost,
+		}
+		options := []httplb.ClientOption{
+			httplb.WithPicker(getPicker(config.PickerType)),
+			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
+			httplb.WithRequestTimeout(client.Timeout),
+			httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, clientTTL)),
+			httplb.WithTransport("http", tr),
+			httplb.WithTransport("https", tr),
+		}
+		if config.Recycle {
+			options = append(options, httplb.WithRoundTripperMaxLifetime(recycleTTL))
+		}
+
+		return newRetryableClient(httplb.NewClient(options...).Client, config)
+	default:
+		return retryableClient
+	}
+}
+
 func getPicker(pickerType string) func(prev picker.Picker, allConns conn.Conns) picker.Picker {
 	switch pickerType {
 	case "power_of_two":
@@ -136,4 +210,17 @@ func (s httplbtransport) NewRoundTripper(_, _ string, opts httplb.TransportConfi
 		DisableCompression:     opts.DisableCompression,
 	}
 	return httplb.RoundTripperResult{RoundTripper: transport, Close: transport.CloseIdleConnections}
+}
+
+func newRetryableClient(client *http.Client, config *RetryableClientConfig) *retryablehttp.Client {
+	retryableClient := retryablehttp.NewClient()
+	retryableClient.HTTPClient = client
+	retryableClient.Logger = nil
+	if config == nil {
+		return retryableClient
+	}
+	retryableClient.RetryWaitMin = config.RetryWaitMin
+	retryableClient.RetryWaitMax = config.RetryWaitMax
+	retryableClient.RetryMax = config.RetryMax
+	return retryableClient
 }
