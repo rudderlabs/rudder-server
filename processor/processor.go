@@ -3786,7 +3786,7 @@ func shouldSample(samplingPercentage float64) bool {
 }
 
 // getUTSamplingUploader can be completely removed once we get rid of UT sampling
-func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+func getUTSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
 		endpoint         = conf.GetString("UTSampling.Endpoint", "")
@@ -3809,7 +3809,7 @@ func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager
 		"useGlue":          useGlue,
 		"region":           region,
 	}
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
 		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
 	})
 }
