@@ -71,7 +71,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Bing ads supports timestamp of the format 2020-01-01T00:00:00.10000Z
 	conversionTimeStr, ok := fields["conversionTime"].(string)
 	if !ok {
-		return payload, fmt.Errorf("conversionTime field is either not string or an empty string")
+		return payload, fmt.Errorf("conversionTime field is not a string")
 	}
 	if _, err := time.Parse(time.RFC3339, conversionTimeStr); err != nil {
 		return payload, fmt.Errorf("conversionTime must be in ISO 8601 format like 2006-01-02T15:04:05Z07:00")
