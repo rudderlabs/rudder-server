@@ -259,7 +259,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 					rsp := tr.Validate(context.TODO(), events)
 					require.Equal(t, expectedResponse, rsp)
 
-					metrics := statsStore.GetByName("processor.transformer_request_time")
+					metrics := statsStore.GetByName("processor_transformer_request_time")
 					if eventsCount > 0 {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {

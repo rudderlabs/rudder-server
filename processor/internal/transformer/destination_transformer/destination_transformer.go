@@ -174,7 +174,7 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 	batches := lo.Chunk(clientEvents, batchSize)
 
 	d.stat.NewTaggedStat(
-		"processor.transformer_request_batch_count",
+		"processor_transformer_request_batch_count",
 		stats.HistogramType,
 		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
@@ -228,10 +228,10 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (d *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
-	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	if len(data) == 0 {
 		return nil, nil
 	}
+	start := time.Now()
 	compactRequestPayloads := d.compactRequestPayloads() // consistent state for the entire request
 	// Call remote transformation
 	rawJSON, err := d.getRequestPayload(data, compactRequestPayloads)
@@ -268,15 +268,17 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		if err != nil {
 			return nil, err
 		}
-		d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
-		d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	}
+	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+	d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
+	d.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
+
 	return transformerResponses, nil
 }
 
@@ -317,7 +319,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 
 			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			d.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
+			d.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr
