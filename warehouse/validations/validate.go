@@ -491,6 +491,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf),
 			WorkspaceID:      dest.WorkspaceID,
 		}),
+		Conf: config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating file manager: %w", err)
