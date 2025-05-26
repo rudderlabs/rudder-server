@@ -139,8 +139,8 @@ func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerE
 		}
 	}
 
-	t.stat.NewStat("processor.transformer_sent", stats.CountType).Count(len(clientEvents))
-	t.stat.NewStat("processor.transformer_received", stats.CountType).Count(len(outClientEvents))
+	t.stat.NewStat("processor_transformer_sent", stats.CountType).Count(len(clientEvents))
+	t.stat.NewStat("processor_transformer_received", stats.CountType).Count(len(outClientEvents))
 
 	return types.Response{
 		Events:       outClientEvents,

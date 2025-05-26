@@ -213,10 +213,10 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				panic(err)
 			}
 			if statusCode == transformerutils.StatusCPDown {
-				u.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
+				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
 				return fmt.Errorf("control plane not reachable")
 			}
-			u.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(0)
+			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
 		endlessBackoff,
