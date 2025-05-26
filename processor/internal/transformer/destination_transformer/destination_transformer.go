@@ -218,8 +218,8 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 		}
 	}
 
-	d.stat.NewStat("processor.transformer_sent", stats.CountType).Count(len(clientEvents))
-	d.stat.NewStat("processor.transformer_received", stats.CountType).Count(len(outClientEvents))
+	d.stat.NewStat("processor_transformer_sent", stats.CountType).Count(len(clientEvents))
+	d.stat.NewStat("processor_transformer_received", stats.CountType).Count(len(outClientEvents))
 
 	return types.Response{
 		Events:       outClientEvents,
