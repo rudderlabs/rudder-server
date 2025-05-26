@@ -32,7 +32,7 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/allisson/go-pglock/v3 v3.0.0
-	github.com/apache/pulsar-client-go v0.15.1-candidate-2
+	github.com/apache/pulsar-client-go v0.15.1
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go v1.55.7
 	github.com/aws/aws-sdk-go-v2/service/glue v1.113.0
