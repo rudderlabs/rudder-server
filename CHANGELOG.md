@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.50.0](https://github.com/rudderlabs/rudder-server/compare/v1.49.0...v1.50.0) (2025-05-26)
+
+
+### Features
+
+* implement aws v2 implementation ([#5852](https://github.com/rudderlabs/rudder-server/issues/5852)) ([18fd4fb](https://github.com/rudderlabs/rudder-server/commit/18fd4fba5fdf836e532bba7cc6f4ac3781adaf53))
+
+
+### Bug Fixes
+
+* do not panic for invalid router payload ([#5880](https://github.com/rudderlabs/rudder-server/issues/5880)) ([f4a0e7c](https://github.com/rudderlabs/rudder-server/commit/f4a0e7c9df55aaaf1b10586641b0e6b8df4e82e3))
+* server panicking with invalid byte sequence for encoding utf8 0x00 ([#5882](https://github.com/rudderlabs/rudder-server/issues/5882)) ([4c1a0de](https://github.com/rudderlabs/rudder-server/commit/4c1a0de1709964c36021d11a4fb6928fbbb854e6))
+* skip source_id when fetching warehouse schema from database ([#5886](https://github.com/rudderlabs/rudder-server/issues/5886)) ([092ee2a](https://github.com/rudderlabs/rudder-server/commit/092ee2aa719803ebdc63542f7b758efb103896c4))
+* warehouse pending tables to skip ([#5867](https://github.com/rudderlabs/rudder-server/issues/5867)) ([864fd49](https://github.com/rudderlabs/rudder-server/commit/864fd49b1635d0443d5d2ab27bb09399c2cd77bb))
+* warehouse transformations ([#5875](https://github.com/rudderlabs/rudder-server/issues/5875)) ([715ccfa](https://github.com/rudderlabs/rudder-server/commit/715ccfa9c6da279395e8bf8541c1a71ffa1cb94b))
+
+
+### Miscellaneous
+
+* **deps:** bump the go-deps group across 1 directory with 25 updates ([#5890](https://github.com/rudderlabs/rudder-server/issues/5890)) ([3c4ddd8](https://github.com/rudderlabs/rudder-server/commit/3c4ddd8925fc1ad1ae15ffcdbec9fe9b7125017a))
+* **jobsdb:** migrate incomplete datasets in pairs excluding completed ones ([#5876](https://github.com/rudderlabs/rudder-server/issues/5876)) ([9d8b573](https://github.com/rudderlabs/rudder-server/commit/9d8b573fe085b015b0390296442262518b852873))
+* **jobsdb:** remove support for jobDoneMigrateThres ([#5873](https://github.com/rudderlabs/rudder-server/issues/5873)) ([4745d2b](https://github.com/rudderlabs/rudder-server/commit/4745d2b1a91f27261c9a381d78c949a49d4f3c02))
+* make reporting client params configurable ([#5891](https://github.com/rudderlabs/rudder-server/issues/5891)) ([39f7e75](https://github.com/rudderlabs/rudder-server/commit/39f7e7559e2a7f44746271bef7f64d697d57afe0))
+* move house keeping action to commit sha ([#5885](https://github.com/rudderlabs/rudder-server/issues/5885)) ([d379e82](https://github.com/rudderlabs/rudder-server/commit/d379e820075223e728047624c25fa847fe3dd0b9))
+* refactor config change dtype for config to json.RawMessage ([#5874](https://github.com/rudderlabs/rudder-server/issues/5874)) ([940adb0](https://github.com/rudderlabs/rudder-server/commit/940adb02853374a7e23e11e2cb858f2ff457fc8d))
+* refactor webhook pkg to make it reusable in other repos ([#5594](https://github.com/rudderlabs/rudder-server/issues/5594)) ([1ee57bc](https://github.com/rudderlabs/rudder-server/commit/1ee57bc4dc91c0389ff7cdd63d37a0aa7c03c77a))
+* remove redundant structure for account with definition ([#5872](https://github.com/rudderlabs/rudder-server/issues/5872)) ([89bc62b](https://github.com/rudderlabs/rudder-server/commit/89bc62bd9ab21c546be4b9acb7f94c5f240a3ef3))
+* remove support for transformer-based kafka batching ([#5870](https://github.com/rudderlabs/rudder-server/issues/5870)) ([60a571c](https://github.com/rudderlabs/rudder-server/commit/60a571cea9359db1e949f2e4c40ba85ca038a0a6))
+* revert support new consent resolution strategy values ([#5855](https://github.com/rudderlabs/rudder-server/issues/5855)) ([c7e3b37](https://github.com/rudderlabs/rudder-server/commit/c7e3b37e1eeaef04c31fb37b5557208178953cc4))
+* revert use account to decide oauth type of a destination ([#5861](https://github.com/rudderlabs/rudder-server/issues/5861)) ([6232755](https://github.com/rudderlabs/rudder-server/commit/6232755882293157539ad003f11eb7bbc67c2a78))
+* **router:** additional observability metrics ([#5887](https://github.com/rudderlabs/rudder-server/issues/5887)) ([da3ba3c](https://github.com/rudderlabs/rudder-server/commit/da3ba3c5cdbf7e863aac65ae7649b178e0c91cde))
+* sync release v1.49.0 to main branch ([#5851](https://github.com/rudderlabs/rudder-server/issues/5851)) ([78cc5a9](https://github.com/rudderlabs/rudder-server/commit/78cc5a962e30ade3840597f5b597b01846eabb67))
+* use jsonrs from rudder-go-kit ([#5869](https://github.com/rudderlabs/rudder-server/issues/5869)) ([39064af](https://github.com/rudderlabs/rudder-server/commit/39064af0c0f6e7346d7003da45c024dec3228f26))
+
 ## [1.49.5](https://github.com/rudderlabs/rudder-server/compare/v1.49.4...v1.49.5) (2025-05-21)
 
 
