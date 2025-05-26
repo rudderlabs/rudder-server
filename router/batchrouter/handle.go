@@ -99,7 +99,6 @@ type Handle struct {
 	transformerURL               string
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
-	useDigitalOceanSpacesV2      config.ValueLoader[bool]
 
 	drainer routerutils.Drainer
 
