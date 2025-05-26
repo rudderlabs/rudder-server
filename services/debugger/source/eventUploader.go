@@ -138,7 +138,7 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 		for _, source := range wConfig.Sources {
 			if source.Config != nil {
 				eventUploadEnabled, err := jsonparser.GetBoolean(source.Config, "eventUpload")
-				if err != nil && !errors.Is(err, jsonparser.KeyPathNotFoundError) {
+				if err != nil && !errors.Is(err, jsonparser.KeyPathNotFoundError) && !errors.Is(err, jsonparser.NullValueError) {
 					h.log.Errorn("error while parsing eventUpload config", obskit.SourceID(source.ID), obskit.Error(err))
 				}
 				if source.Enabled && eventUploadEnabled {
