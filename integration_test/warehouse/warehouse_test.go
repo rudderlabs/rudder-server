@@ -143,7 +143,7 @@ func TestUploads(t *testing.T) {
 				}), "\n")
 				stagingFile.Location = prepareStagingFileWithFileName(t, ctx, minioResource, eventsPayload2, "staging2.json").ObjectName
 				require.NoError(t, whClient.Process(ctx, stagingFile))
-				requireStagingFileEventsCount(t, ctx, db, 200*events, []lo.Tuple2[string, any]{
+				requireStagingFileEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
 					{A: "source_id", B: sourceID},
 					{A: "destination_id", B: destinationID},
 					{A: "status", B: succeeded},
