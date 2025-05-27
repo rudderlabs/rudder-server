@@ -319,14 +319,15 @@ func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io
 		err  error
 	)
 
-	err = backoff.RetryNotify(
+	_ = backoff.RetryNotify(
 		func() error {
 			var err error
 			req, err := http.NewRequest("POST", transformerURL, body)
 			if err == nil {
 				req.Header.Set("Content-Type", contentTypeJsonUTF8)
 				resp, err = bt.webhook.httpClient.Do(req) // nolint: bodyclose
-				if err == nil && resp.StatusCode != http.StatusOK {
+				// retry 5xx errors
+				if err == nil && (resp.StatusCode > http.StatusInternalServerError) {
 					return fmt.Errorf("non-success status code: %d", resp.StatusCode)
 				}
 			}
