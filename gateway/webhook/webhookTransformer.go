@@ -321,8 +321,8 @@ func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io
 
 	_ = backoff.RetryNotify(
 		func() error {
-			var err error
-			req, err := http.NewRequest("POST", transformerURL, body)
+			var req *http.Request
+			req, err = http.NewRequest("POST", transformerURL, body)
 			if err == nil {
 				req.Header.Set("Content-Type", contentTypeJsonUTF8)
 				resp, err = bt.webhook.httpClient.Do(req) // nolint: bodyclose
