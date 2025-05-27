@@ -88,7 +88,10 @@ func (rt *Handle) Setup(
 	if rt.netHandle == nil {
 		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false), destType: destType}
 		netHandle.logger = rt.logger.Child("network")
-		netHandle.Setup(config, rt.netClientTimeout)
+		err := netHandle.Setup(config, rt.netClientTimeout)
+		if err != nil {
+			panic(fmt.Errorf("error setting up network handler: %w", err))
+		}
 		rt.netHandle = netHandle
 	}
 

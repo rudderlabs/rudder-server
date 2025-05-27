@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,241 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 )
-
-func TestParseCIDRToRange(t *testing.T) {
-	tests := []struct {
-		name    string
-		cidr    string
-		want    IPRange
-		wantErr bool
-	}{
-		{
-			name: "valid IPv4 CIDR",
-			cidr: "10.0.0.0/8",
-			want: IPRange{
-				start: net.ParseIP("10.0.0.0").To4(),
-				end:   net.ParseIP("10.255.255.255").To4(),
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid IPv6 CIDR",
-			cidr: "fc00::/7",
-			want: IPRange{
-				start: net.ParseIP("fc00::"),
-				end:   net.ParseIP("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
-			},
-			wantErr: false,
-		},
-		{
-			name:    "invalid CIDR",
-			cidr:    "invalid",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseCIDRToRange(tt.cidr)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-
-			// Compare IP addresses using String() to ensure proper comparison
-			require.Equal(t, tt.want.start.String(), got.start.String(), "start IP mismatch")
-			require.Equal(t, tt.want.end.String(), got.end.String(), "end IP mismatch")
-		})
-	}
-}
-
-func TestLoadPrivateIPRanges(t *testing.T) {
-	// Create a test config
-	cfg := config.New()
-
-	tests := []struct {
-		name           string
-		configValue    string
-		expectedRanges int
-	}{
-		{
-			name:           "default ranges",
-			configValue:    "",
-			expectedRanges: 7, // Number of ranges in defaultPrivateIPRanges
-		},
-		{
-			name:           "custom ranges",
-			configValue:    "10.0.0.0/8,192.168.0.0/16",
-			expectedRanges: 2,
-		},
-		{
-			name:           "invalid range ignored",
-			configValue:    "10.0.0.0/8,invalid,192.168.0.0/16",
-			expectedRanges: 2,
-		},
-		{
-			name:           "empty ranges ignored",
-			configValue:    "10.0.0.0/8,,192.168.0.0/16",
-			expectedRanges: 2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Set the config value
-			if tt.configValue != "" {
-				cfg.Set("Router.privateIPRanges", tt.configValue)
-			} else {
-				cfg.Set("Router.privateIPRanges", defaultPrivateIPRanges)
-			}
-
-			ranges := loadPrivateIPRanges(cfg)
-			require.Len(t, ranges, tt.expectedRanges)
-
-			// Verify the ranges are valid
-			for _, r := range ranges {
-				require.NotNil(t, r.start, "start IP should not be nil")
-				require.NotNil(t, r.end, "end IP should not be nil")
-			}
-		})
-	}
-}
-
-func TestValidateURLAndHandlePrivateIP(t *testing.T) {
-	// Create a test config
-	cfg := config.New()
-
-	tests := []struct {
-		name        string
-		url         string
-		dryRunMode  bool
-		blockMode   bool
-		wantBlocked bool
-		wantErr     bool
-		errMsg      string
-	}{
-		{
-			name:        "public URL in normal mode",
-			url:         "https://8.8.8.8",
-			dryRunMode:  false,
-			blockMode:   false,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "private URL in normal mode",
-			url:         "https://10.0.0.1",
-			dryRunMode:  false,
-			blockMode:   false,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "private URL in dry run mode",
-			url:         "https://10.0.0.1",
-			dryRunMode:  true,
-			blockMode:   false,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "private URL in block mode",
-			url:         "https://10.0.0.1",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: true,
-			wantErr:     true,
-			errMsg:      "access to private IPs is blocked",
-		},
-		{
-			name:        "public URL in block mode",
-			url:         "https://8.8.8.8",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "invalid URL",
-			url:         "not-a-valid-url",
-			dryRunMode:  false,
-			blockMode:   false,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "invalid URL in block mode",
-			url:         "not-a-valid-url",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "private URL with hostname",
-			url:         "https://internal.example.com",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: false,
-			wantErr:     false,
-		},
-		{
-			name:        "private URL with IPv6",
-			url:         "https://[fc00::1]",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: true,
-			wantErr:     true,
-			errMsg:      "access to private IPs is blocked",
-		},
-		{
-			name:        "private URL with port",
-			url:         "https://10.0.0.1:8080",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: true,
-			wantErr:     true,
-			errMsg:      "access to private IPs is blocked",
-		},
-		{
-			name:        "private URL with path",
-			url:         "https://10.0.0.1/api/v1",
-			dryRunMode:  false,
-			blockMode:   true,
-			wantBlocked: true,
-			wantErr:     true,
-			errMsg:      "access to private IPs is blocked",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			network := &netHandle{
-				logger:          logger.NewLogger().Child("network"),
-				dryRunMode:      tt.dryRunMode,
-				blockPrivateIPs: tt.blockMode,
-				privateIPRanges: loadPrivateIPRanges(cfg),
-			}
-
-			isBlocked, err := network.validateURLAndHandlePrivateIP(tt.url)
-			if tt.wantErr {
-				require.Error(t, err)
-				if tt.errMsg != "" {
-					require.Contains(t, err.Error(), tt.errMsg)
-				}
-			} else {
-				require.NoError(t, err)
-			}
-			require.Equal(t, tt.wantBlocked, isBlocked)
-		})
-	}
-}
 
 func TestSendPostWithGzipData(t *testing.T) {
 	t.Run("should send Gzip data when payload is valid", func(r *testing.T) {
@@ -270,9 +38,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		defer testServer.Close()
 
 		network := &netHandle{
-			logger:          logger.NewLogger().Child("network"),
-			httpClient:      http.DefaultClient,
-			privateIPRanges: loadPrivateIPRanges(config.Default),
+			logger:     logger.NewLogger().Child("network"),
+			httpClient: http.DefaultClient,
 		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
@@ -295,7 +62,6 @@ func TestSendPostWithGzipData(t *testing.T) {
 		network := &netHandle{
 			logger:          logger.NewLogger().Child("network"),
 			httpClient:      http.DefaultClient,
-			privateIPRanges: loadPrivateIPRanges(config.Default),
 			dryRunMode:      false,
 			blockPrivateIPs: false,
 		}
@@ -376,9 +142,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should fail when gzip compression fails", func(r *testing.T) {
 		network := &netHandle{
-			logger:          logger.NewLogger().Child("network"),
-			httpClient:      http.DefaultClient,
-			privateIPRanges: loadPrivateIPRanges(config.Default),
+			logger:     logger.NewLogger().Child("network"),
+			httpClient: http.DefaultClient,
 		}
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -415,9 +180,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		defer testServer.Close()
 
 		network := &netHandle{
-			logger:          logger.NewLogger().Child("network"),
-			httpClient:      http.DefaultClient,
-			privateIPRanges: loadPrivateIPRanges(config.Default),
+			logger:     logger.NewLogger().Child("network"),
+			httpClient: http.DefaultClient,
 		}
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -458,9 +222,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		defer testServer.Close()
 
 		network := &netHandle{
-			logger:          logger.NewLogger().Child("network"),
-			httpClient:      http.DefaultClient,
-			privateIPRanges: loadPrivateIPRanges(config.Default),
+			logger:     logger.NewLogger().Child("network"),
+			httpClient: http.DefaultClient,
 		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
@@ -485,8 +248,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 func TestSendPost(t *testing.T) {
 	network := &netHandle{
-		logger:          logger.NewLogger().Child("network"),
-		privateIPRanges: loadPrivateIPRanges(config.Default),
+		logger: logger.NewLogger().Child("network"),
 	}
 
 	t.Run("should successfully send the request to google analytics", func(t *testing.T) {
@@ -583,7 +345,6 @@ func TestSendPost(t *testing.T) {
 	t.Run("should handle private IP in block mode", func(t *testing.T) {
 		network := &netHandle{
 			logger:          logger.NewLogger().Child("network"),
-			privateIPRanges: loadPrivateIPRanges(config.Default),
 			blockPrivateIPs: true,
 			httpClient:      &http.Client{},
 		}
@@ -685,8 +446,7 @@ func TestSendPost(t *testing.T) {
 
 func TestResponseContentType(t *testing.T) {
 	network := &netHandle{
-		logger:          logger.NewLogger().Child("network"),
-		privateIPRanges: loadPrivateIPRanges(config.Default),
+		logger: logger.NewLogger().Child("network"),
 	}
 
 	tests := []struct {

@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/netutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
@@ -30,61 +31,6 @@ import (
 
 var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
 
-// Default private IP ranges in CIDR notation
-const defaultPrivateIPRanges = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,169.254.0.0/16,fc00::/7,fe80::/10"
-
-// IPRange represents a range of IP addresses
-type IPRange struct {
-	start net.IP
-	end   net.IP
-}
-
-// parseCIDRToRange converts a CIDR block to an IP range
-func parseCIDRToRange(cidr string) (IPRange, error) {
-	_, ipnet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return IPRange{}, fmt.Errorf("invalid CIDR block %s: %w", cidr, err)
-	}
-
-	// Get the network address (start of range)
-	start := ipnet.IP
-
-	// Calculate the broadcast address (end of range)
-	mask := ipnet.Mask
-	end := make(net.IP, len(start))
-	for i := 0; i < len(start); i++ {
-		end[i] = start[i] | ^mask[i]
-	}
-
-	return IPRange{start: start, end: end}, nil
-}
-
-// loadPrivateIPRanges loads private IP ranges from environment variable or uses defaults
-func loadPrivateIPRanges(config *config.Config) []IPRange {
-	cidrBlocks := config.GetString("Router.privateIPRanges", defaultPrivateIPRanges)
-	if cidrBlocks == "" {
-		cidrBlocks = defaultPrivateIPRanges
-	}
-
-	var ranges []IPRange
-	for _, cidr := range strings.Split(cidrBlocks, ",") {
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" {
-			continue
-		}
-
-		ipRange, err := parseCIDRToRange(cidr)
-		if err != nil {
-			// Log error but continue with other ranges
-			fmt.Printf("Error parsing CIDR block %s: %v\n", cidr, err)
-			continue
-		}
-		ranges = append(ranges, ipRange)
-	}
-
-	return ranges
-}
-
 // netHandle is the wrapper holding private variables
 type netHandle struct {
 	disableEgress   bool
@@ -92,42 +38,13 @@ type netHandle struct {
 	logger          logger.Logger
 	dryRunMode      bool
 	blockPrivateIPs bool
-	privateIPRanges []IPRange
+	cidrRanges      netutil.CidrRanges
 	destType        string
 }
 
 // NetHandle interface
 type NetHandle interface {
 	SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse
-}
-
-// isPrivateIP checks if the given IP is in a private range
-func (network *netHandle) isPrivateIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-
-	// Convert IP to 4-byte representation for IPv4
-	if ip4 := ip.To4(); ip4 != nil {
-		ip = ip4
-	}
-
-	for _, r := range network.privateIPRanges {
-		// Convert range IPs to same format as input IP
-		start := r.start
-		end := r.end
-		if ip4 := start.To4(); ip4 != nil {
-			start = ip4
-		}
-		if ip4 := end.To4(); ip4 != nil {
-			end = ip4
-		}
-
-		if bytes.Compare(ip, start) >= 0 && bytes.Compare(ip, end) <= 0 {
-			return true
-		}
-	}
-	return false
 }
 
 // temp solution for handling complex query params
@@ -148,41 +65,6 @@ func handleQueryParam(param interface{}) string {
 	}
 }
 
-// validateURLAndHandlePrivateIP checks if the URL resolves to a private IP and handles it based on mode
-func (network *netHandle) validateURLAndHandlePrivateIP(urlStr string) (bool, error) {
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		// If we're not blocking private IPs, just log the error and continue
-		if !network.blockPrivateIPs {
-			network.logger.Warnn("URL validation failed", logger.NewErrorField(err), logger.NewStringField("url", urlStr))
-			return false, nil
-		}
-		return false, fmt.Errorf("invalid URL: %w", err)
-	}
-
-	// Extract host without port
-	host := parsedURL.Hostname()
-	if host == "" {
-		return false, nil
-	}
-
-	// Check if the host is a private IP
-	if ip := net.ParseIP(host); ip != nil {
-		if network.isPrivateIP(ip) {
-			if network.dryRunMode {
-				network.logger.Warnn("URL %s contains private IP in dry run mode", logger.NewStringField("url", urlStr))
-				return false, nil
-			}
-			if network.blockPrivateIPs {
-				return true, fmt.Errorf("access to private IPs is blocked")
-			}
-		}
-	}
-
-	// For non-IP hosts, we don't do DNS resolution
-	return false, nil
-}
-
 // SendPost takes the EventPayload of a transformed job, gets the necessary values from the payload and makes a call to destination to push the event to it
 // this returns the statusCode, status and response body from the response of the destination call
 func (network *netHandle) SendPost(ctx context.Context, structData integrations.PostParametersT) *utils.SendPostResponse {
@@ -190,20 +72,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		return &utils.SendPostResponse{
 			StatusCode:   200,
 			ResponseBody: []byte("200: outgoing disabled"),
-		}
-	}
-
-	isBlocked, err := network.validateURLAndHandlePrivateIP(structData.URL)
-	if err != nil {
-		return &utils.SendPostResponse{
-			StatusCode:   403,
-			ResponseBody: []byte(fmt.Sprintf("403: %v", err)),
-		}
-	}
-	if isBlocked {
-		return &utils.SendPostResponse{
-			StatusCode:   403,
-			ResponseBody: []byte("403: Access to private IPs is blocked"),
 		}
 	}
 
@@ -404,11 +272,15 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 }
 
 // Setup initializes the module
-func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) {
+func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) error {
 	network.logger.Info("Network Handler Startup")
 
-	network.privateIPRanges = loadPrivateIPRanges(config)
-	network.logger.Info("Loaded private IP ranges:", network.privateIPRanges)
+	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetString("privateIPRanges", netutil.DefaultPrivateIPRanges), ","))
+	if err != nil {
+		network.logger.Error("Error loading private IP ranges", logger.NewErrorField(err))
+		return err
+	}
+	network.cidrRanges = privateIPRanges
 
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
@@ -434,7 +306,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 				return nil, err
 			}
 			for _, ip := range ips {
-				if network.isPrivateIP(ip) {
+				if network.cidrRanges.Contains(ip) {
 					// In dry run mode, just log and allow the connection
 					if network.dryRunMode {
 						network.logger.Warnf("Connection to private IP %s detected in dry run mode", ip)
@@ -477,4 +349,5 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+	return nil
 }
