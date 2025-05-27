@@ -194,27 +194,13 @@ func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmi
 	var queryArgs []any
 	if tu.queryLoadFilesWithUploadID.Load() {
 		subQuery = `
-		WITH row_numbered_load_files as (
-		  SELECT
-			total_events,
-			row_number() OVER (
-			  PARTITION BY upload_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			` + loadTableName + `
-		  WHERE
-			upload_id = $1
-			AND table_name = $2
-		)
 		SELECT
 		  sum(total_events) as total
 		FROM
-		  row_numbered_load_files
+		  ` + loadTableName + `
 		WHERE
-		  row_number = 1
+		  upload_id = $1
+		AND table_name = $2
 `
 		queryArgs = []any{
 			uploadId,
