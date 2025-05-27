@@ -28,8 +28,8 @@ func (c *Client) CompareAndLog(
 	if c.loggedEvents.Load() >= int64(c.config.maxLoggedEvents.Load()) {
 		return
 	}
-	defer c.stats.comparisonTime.RecordDuration()()
 	go func() {
+		defer c.stats.comparisonTime.RecordDuration()()
 		c.compareAndLog(ctx, embeddedResponse, legacyResponse)
 	}()
 }
