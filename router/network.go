@@ -123,7 +123,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					panic(err)
 				}
 				payload = strings.NewReader(string(jsonValue))
-				headers["Content-Type"] = "application/json"
 			case "JSON_ARRAY":
 				// support for JSON ARRAY
 				jsonListStr, ok := bodyValue["batch"].(string)
@@ -134,7 +133,6 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				payload = strings.NewReader(jsonListStr)
-				headers["Content-Type"] = "application/json"
 			case "XML":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
@@ -144,14 +142,12 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 					}
 				}
 				payload = strings.NewReader(strValue)
-				headers["Content-Type"] = "application/xml"
 			case "FORM":
 				formValues := url.Values{}
 				for key, val := range bodyValue {
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
 				payload = strings.NewReader(formValues.Encode())
-				headers["Content-Type"] = "application/x-www-form-urlencoded"
 			case "GZIP":
 				strValue, ok := bodyValue["payload"].(string)
 				if !ok {
@@ -285,7 +281,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
 	if !ok {
-		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed"))
+		return fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")
 	}
 	var defaultTransportCopy http.Transport
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
