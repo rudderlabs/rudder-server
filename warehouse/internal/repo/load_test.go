@@ -159,7 +159,7 @@ func Test_LoadFiles_WithUploadID(t *testing.T) {
 
 		for i := 0; i < 10; i++ {
 			loadFile := model.LoadFile{
-				TableName:             "table_name__" + strconv.Itoa(i),
+				TableName:             "table_name__" + strconv.Itoa(i%3),
 				Location:              "s3://bucket/path/to/file",
 				TotalRows:             10,
 				ContentLength:         1000,
@@ -207,37 +207,6 @@ func Test_LoadFiles_WithUploadID(t *testing.T) {
 		loadFiles, err := r.Get(ctx, uploadID2, []int64{})
 		require.Len(t, loadFiles, 0)
 		require.NoError(t, err)
-	})
-
-	t.Run("get latest for stagingID", func(t *testing.T) {
-		var lastLoadFile model.LoadFile
-		var loadFiles []model.LoadFile
-		for i := 0; i < 10; i++ {
-			loadFile := model.LoadFile{
-				TableName:             "table_name",
-				Location:              fmt.Sprintf("s3://bucket/path/to/file/%d", i),
-				TotalRows:             10,
-				ContentLength:         1000,
-				DestinationRevisionID: "revision_id",
-				UploadID:              &uploadID2,
-				UseRudderStorage:      true,
-				SourceID:              "source_id",
-				DestinationID:         "destination_id",
-				DestinationType:       "RS",
-			}
-			loadFiles = append(loadFiles, loadFile)
-			lastLoadFile = loadFile
-		}
-		err := r.Insert(ctx, loadFiles)
-		require.NoError(t, err)
-
-		gotLoadFiles, err := r.Get(ctx, uploadID2, []int64{})
-		require.NoError(t, err)
-
-		require.Len(t, gotLoadFiles, 1)
-		lastLoadFile.ID = gotLoadFiles[0].ID
-		lastLoadFile.CreatedAt = gotLoadFiles[0].CreatedAt
-		require.Equal(t, lastLoadFile, gotLoadFiles[0])
 	})
 }
 
@@ -408,15 +377,17 @@ func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
 	totalEvents := 0
 	uploadID := createUpload(t, ctx, db)
 	var skipTables []string
+	skipTablesTotalEvents := 0
 
 	for i := 0; i < stagingFilesCount; i++ {
 		for j := 0; j < loadFilesCount; j++ {
 			for k := 0; k < retriesCount; k++ {
 				tableName := "table_name_" + strconv.Itoa(i+1) + "_" + strconv.Itoa(j+1)
+				rows := (i + 1) + (j + 1) + (k + 1)
 				loadFiles = append(loadFiles, model.LoadFile{
 					TableName:             tableName,
 					Location:              "s3://bucket/path/to/file",
-					TotalRows:             (i + 1) + (j + 1) + (k + 1),
+					TotalRows:             rows,
 					ContentLength:         1000,
 					UploadID:              &uploadID,
 					DestinationRevisionID: "revision_id",
@@ -428,9 +399,11 @@ func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
 				if i != 0 || j != 0 {
 					// Skip every table except the first one
 					skipTables = append(skipTables, tableName)
+				} else {
+					skipTablesTotalEvents += rows
 				}
+				totalEvents += rows
 			}
-			totalEvents += (i + 1) + (j + 1) + retriesCount
 		}
 	}
 
@@ -450,7 +423,7 @@ func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
 	t.Run("with skip tables", func(t *testing.T) {
 		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, []int64{}, skipTables)
 		require.NoError(t, err)
-		require.Equal(t, int64(retriesCount+2), exportedEvents)
+		require.Equal(t, int64(skipTablesTotalEvents), exportedEvents)
 	})
 	t.Run("context cancelled", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)

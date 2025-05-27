@@ -748,12 +748,33 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 	testCases := []struct {
 		name              string
 		queryWithUploadID bool
+		tableName         string
+		limit             int64
 		expectedLoadFiles int
 	}{
 		{
 			name:              "query with upload ID",
 			queryWithUploadID: true,
+			expectedLoadFiles: 4,
+		},
+		{
+			name:              "query with upload ID and table name",
+			queryWithUploadID: true,
+			tableName:         "test_table2",
+			expectedLoadFiles: 3,
+		},
+		{
+			name:              "query with upload ID, table name and limit",
+			queryWithUploadID: true,
+			tableName:         "test_table2",
+			limit:             2,
 			expectedLoadFiles: 2,
+		},
+		{
+			name:              "query with upload ID and limit",
+			queryWithUploadID: true,
+			limit:             1,
+			expectedLoadFiles: 1,
 		},
 		{
 			name:              "query with staging file IDs",
@@ -791,10 +812,21 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 					UploadID:  &job.upload.ID,
 					TableName: "test_table2",
 				},
+				{
+					UploadID:  &job.upload.ID,
+					TableName: "test_table2",
+				},
+				{
+					UploadID:  &job.upload.ID,
+					TableName: "test_table2",
+				},
 			}
 			err := repo.NewLoadFiles(db, conf).Insert(ctx, loadFiles)
 			require.NoError(t, err)
-			result, err := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{})
+			result, err := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{
+				Table: tc.tableName,
+				Limit: tc.limit,
+			})
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLoadFiles, len(result))
 		})
