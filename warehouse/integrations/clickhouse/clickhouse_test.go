@@ -623,6 +623,7 @@ func TestIntegration(t *testing.T) {
 						"region":          region,
 						"enableSSE":       false,
 					},
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 

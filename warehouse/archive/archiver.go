@@ -126,6 +126,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	fManager, err := a.fileManager(&filemanager.Settings{
 		Provider: a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanagerutil.GetProviderConfigForBackupsFromEnv(ctx, a.conf),
+		Conf:     a.conf,
 	})
 	if err != nil {
 		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w",
@@ -175,6 +176,7 @@ func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string)
 	fManager, err := a.fileManager(&filemanager.Settings{
 		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
+		Conf:     a.conf,
 	})
 	if err != nil {
 		err = fmt.Errorf("error in creating a file manager for Rudder Storage. Error: %w", err)

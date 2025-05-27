@@ -23,7 +23,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
+	appConfig "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -105,6 +105,7 @@ func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (fi
 			RudderStoragePrefixOverride: p.RudderStoragePrefix,
 			WorkspaceID:                 p.WorkspaceID,
 		}),
+		Conf: appConfig.Default,
 	})
 	return fileManager, err
 }
@@ -133,7 +134,7 @@ type jobRun struct {
 	now func() time.Time
 
 	stats               stats.Stats
-	conf                *config.Config
+	conf                *appConfig.Config
 	uploadTimeStat      stats.Measurement
 	totalUploadTimeStat stats.Measurement
 
@@ -161,7 +162,7 @@ type jobRun struct {
 	tableWriterMutexesMu sync.Mutex // To prevent concurrent access to the tableWriterMutexes
 }
 
-func newJobRun(job basePayload, workerIdx int, conf *config.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) *jobRun {
+func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) *jobRun {
 	jr := &jobRun{
 		job:                  job,
 		workerIdx:            workerIdx,

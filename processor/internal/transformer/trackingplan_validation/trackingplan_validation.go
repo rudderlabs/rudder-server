@@ -139,8 +139,8 @@ func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerE
 		}
 	}
 
-	t.stat.NewStat("processor.transformer_sent", stats.CountType).Count(len(clientEvents))
-	t.stat.NewStat("processor.transformer_received", stats.CountType).Count(len(outClientEvents))
+	t.stat.NewStat("processor_transformer_sent", stats.CountType).Count(len(clientEvents))
+	t.stat.NewStat("processor_transformer_received", stats.CountType).Count(len(outClientEvents))
 
 	return types.Response{
 		Events:       outClientEvents,
@@ -149,7 +149,6 @@ func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerE
 }
 
 func (t *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, clientEvents []types.TransformerEvent) []types.TransformerResponse {
-	t.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
 	data := lo.Map(clientEvents, func(clientEvent types.TransformerEvent, _ int) types.TrackingPlanValidationEvent {
 		return *clientEvent.ToTrackingPlanValidationEvent()
 	})
@@ -157,6 +156,7 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		rawJSON []byte
 		err     error
 	)
+	start := time.Now()
 
 	rawJSON, err = jsonrs.Marshal(data)
 	if err != nil {
@@ -185,10 +185,10 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				panic(err)
 			}
 			if statusCode == transformerutils.StatusCPDown {
-				t.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
+				t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
 				return fmt.Errorf("control plane not reachable")
 			}
-			t.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(0)
+			t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
 		endlessBackoff,
@@ -232,15 +232,16 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			t.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
 			panic(err)
 		}
-		t.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
-		t.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	}
+	t.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
+	t.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
+	t.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
 	return transformerResponses
 }
 
@@ -278,7 +279,7 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			t.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 
 			t.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			t.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
+			t.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 			if reqErr != nil {
 				return reqErr
 			}

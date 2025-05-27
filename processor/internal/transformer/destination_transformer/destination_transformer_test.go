@@ -274,7 +274,7 @@ func TestDestinationTransformer(t *testing.T) {
 					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, expectedResponse, rsp)
 
-					metrics := statsStore.GetByName("processor.transformer_request_time")
+					metrics := statsStore.GetByName("processor_transformer_request_time")
 					if tt.eventsCount > 0 {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {

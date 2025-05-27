@@ -401,6 +401,7 @@ func TestIntegration(t *testing.T) {
 				"enableSSE":        false,
 				"bucketProvider":   whutils.MINIO,
 			},
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

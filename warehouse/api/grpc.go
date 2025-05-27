@@ -755,6 +755,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 	settings := &filemanager.Settings{
 		Provider: request.Type,
 		Config:   request.Config,
+		Conf:     g.conf,
 	}
 
 	overrideWithEnv(ctx, settings)

@@ -235,6 +235,7 @@ func ArchivalScenario(
 					"secretAccessKey": minioResource.AccessKeySecret,
 				},
 			}),
+			Conf: config.Default,
 		})
 		require.NoError(t, err, "it should be able to create a file manager")
 		fileObjects, err := fm.ListFilesWithPrefix(

@@ -121,11 +121,14 @@ func (rt *Handle) Setup(
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
+	rt.batchSizeHistogramStat = stats.Default.NewTaggedStat("router_batch_size", stats.HistogramType, statTags)
 	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)
 	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, statTags)
 	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
 	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
 	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
+	rt.processJobsRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_requests", stats.HistogramType, statTags)
+	rt.processJobsRequestsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)

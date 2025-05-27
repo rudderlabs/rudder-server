@@ -1199,6 +1199,7 @@ func TestGRPC(t *testing.T) {
 						fm := &filemanager.Settings{
 							Provider: "AZURE_BLOB",
 							Config:   map[string]interface{}{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
+							Conf:     config.Default,
 						}
 						overrideWithEnv(ctx, fm)
 						require.Nil(t, fm.Config["accountName"])

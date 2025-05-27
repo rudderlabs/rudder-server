@@ -58,6 +58,13 @@ func TestContainsPattern(t *testing.T) {
 			expected: true,
 		},
 		{
+			name: "pattern with number as default value",
+			input: map[string]interface{}{
+				"timeout": "{{ message.traits.key || 1233 }}",
+			},
+			expected: true,
+		},
+		{
 			name: "no patterns",
 			input: map[string]interface{}{
 				"key": "normal string",
