@@ -225,7 +225,7 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 		return nil
 	}
 
-	deduplicationQuery, err := bq.deduplicationQuery(tableName, columnMap)
+	deduplicationQuery, err := bq.deduplicationQuery(ctx, tableName, columnMap, nil)
 	if err != nil {
 		return fmt.Errorf("deduplication query: %w", err)
 	}
@@ -248,7 +248,18 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 	return nil
 }
 
-func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSchema) (string, error) {
+// fetchPartitioning fetches the partition column from BigQuery table metadata.
+// returns _PARTITIONTIME if the table is partitioned by ingestion time.
+func (bq *BigQuery) fetchPartitioning(ctx context.Context, tableName string) (*bigquery.TimePartitioning, error) {
+	table := bq.db.Dataset(bq.namespace).Table(tableName)
+	meta, err := table.Metadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return meta.TimePartitioning, nil
+}
+
+func (bq *BigQuery) deduplicationQuery(ctx context.Context, tableName string, columnMap model.TableSchema, partitioningInWarehouse *bigquery.TimePartitioning) (string, error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -263,6 +274,17 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 		granularity, partitionFilter   string
 		partitionColumn, partitionType = bq.partitionColumn(), bq.partitionType()
 	)
+
+	if partitioningInWarehouse != nil {
+		if partitionColumn != partitioningInWarehouse.Field {
+			bq.logger.Warnn("partition column mismatch in config and warehouse",
+				logger.NewStringField("partitionColumnInConfig", partitionColumn),
+				logger.NewStringField("partitionColumnInWarehouse", partitioningInWarehouse.Field),
+			)
+		}
+		partitionColumn = partitioningInWarehouse.Field
+		partitionType = strings.ToLower(string(partitioningInWarehouse.Type))
+	}
 
 	if partitionColumn == "" || partitionType == "" {
 		granularity = "DAY"
@@ -659,9 +681,18 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
+	usersTablePartitionInWarehouse, err := bq.fetchPartitioning(ctx, warehouseutils.UsersTable)
+	if err != nil {
+		log.Warnn("Fetching partitioning for users table", obskit.Error(err))
+		errorMap[warehouseutils.UsersTable] = fmt.Errorf("fetching partitioning for users table: %w", err)
+		return
+	}
+
 	deduplicationQuery, err := bq.deduplicationQuery(
+		ctx,
 		warehouseutils.UsersTable,
 		bq.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
+		usersTablePartitionInWarehouse,
 	)
 	if err != nil {
 		log.Warnn("Deduplication query for users table", obskit.Error(err))
@@ -688,7 +719,9 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 
 	log.Infon("Loading data")
 	var partitionedUsersTable string
-	if bq.avoidPartitionDecorator() {
+
+	// avoid writing to partioned table if there is a no or custom partition instead of ingestion time partition i.e _PARTITIONTIME
+	if bq.avoidPartitionDecorator() || usersTablePartitionInWarehouse == nil || usersTablePartitionInWarehouse.Field != "" {
 		partitionedUsersTable = warehouseutils.UsersTable
 	} else {
 		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
