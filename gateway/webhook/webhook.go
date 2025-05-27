@@ -17,8 +17,6 @@ import (
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 
-	"github.com/hashicorp/go-retryablehttp"
-
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -67,7 +65,6 @@ type HandleT struct {
 	requestQMu    sync.RWMutex
 	requestQ      map[string]chan *webhookT
 	batchRequestQ chan *batchWebhookT
-	netClient     *retryablehttp.Client
 	gwHandle      Gateway
 	stats         stats.Stats
 	ackCount      atomic.Uint64
@@ -84,10 +81,16 @@ type HandleT struct {
 		sourceListForParsingParams []string
 		forwardGetRequestForSrcMap map[string]struct{}
 		webhookV2HandlerEnabled    bool
-		cslbEnabled                config.ValueLoader[bool]
+		transformer                struct {
+			maxRetry        config.ValueLoader[int]
+			initialInterval config.ValueLoader[time.Duration]
+			maxInterval     config.ValueLoader[time.Duration]
+			maxElapsedTime  config.ValueLoader[time.Duration]
+			multiplier      config.ValueLoader[float64]
+		}
 	}
 	statReporterCreator StatReporterCreator
-	httpClient          transformerclient.RetryableClient
+	httpClient          transformerclient.Client
 }
 
 type webhookSourceStatT struct {
