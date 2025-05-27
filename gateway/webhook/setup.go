@@ -13,7 +13,6 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -81,7 +80,6 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	)
 	// enable webhook v2 handler
 	webhook.config.webhookV2HandlerEnabled = conf.GetBoolVar(true, "Gateway.webhookV2HandlerEnabled")
-	webhook.config.cslbEnabled = conf.GetReloadableBoolVar(true, "Gateway.webhook.cslbEnabled")
 
 	// lowercasing the strings in sourceListForParsingParams
 	for i, s := range webhook.config.sourceListForParsingParams {
@@ -90,14 +88,27 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
-	webhook.netClient = retryablehttp.NewClient()
-	webhook.netClient.HTTPClient.Timeout = conf.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
-	webhook.netClient.Logger = nil // to avoid debug logs
-	webhook.netClient.RetryWaitMin = conf.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
-	webhook.netClient.RetryWaitMax = conf.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
-	webhook.netClient.RetryMax = conf.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
 
-	webhook.httpClient = transformerclient.NewRetryableClient(transformerHttpClientConfig(conf))
+	webhook.config.transformer.maxRetry = conf.GetReloadableIntVar(5, 1, "Gateway.webhook.maxRetry")
+	webhook.config.transformer.initialInterval = conf.GetReloadableDurationVar(100, time.Millisecond, "Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS")
+	webhook.config.transformer.maxInterval = conf.GetReloadableDurationVar(1000, time.Millisecond, "Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS")
+	webhook.config.transformer.maxElapsedTime = conf.GetReloadableDurationVar(10, time.Second, "Gateway.webhook.maxElapsedTime")
+	webhook.config.transformer.multiplier = conf.GetReloadableFloat64Var(1.5, "Gateway.webhook.backoffMultiplier")
+
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: conf.GetDurationVar(30, time.Second, "HttpClient.sourceTransformer.timeout", "HttpClient.webhook.timeout"),
+		ClientTTL:     conf.GetDurationVar(10, time.Second, "Transformer.Client.sourceTransformer.ttl", "Transformer.Client.ttl"),
+		ClientType:    conf.GetStringVar("httplb", "Transformer.Client.sourceTransformer.type", "Transformer.Client.type"),
+		PickerType:    conf.GetStringVar("power_of_two", "Transformer.Client.sourceTransformer.httplb.pickerType", "Transformer.Client.httplb.pickerType"),
+	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, "Transformer.Client.sourceTransformer.disableKeepAlives", "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, "Transformer.Client.sourceTransformer.maxHTTPConnections", "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(1, 1, "Transformer.Client.sourceTransformer.maxHTTPIdleConnections", "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(5, time.Second, "Transformer.Client.sourceTransformer.maxIdleConnDuration", "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = conf.GetBoolVar(false, "Transformer.Client.sourceTransformer.recycle", "Transformer.Client.recycle")
+	transformerClientConfig.RecycleTTL = conf.GetDurationVar(60, time.Second, "Transformer.Client.sourceTransformer.recycleTTL", "Transformer.Client.recycleTTL")
+
+	webhook.httpClient = transformerclient.NewClient(transformerClientConfig)
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
 
@@ -127,26 +138,4 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	webhook.backgroundWait = g.Wait
 	return webhook
-}
-
-func transformerHttpClientConfig(conf *config.Config) *transformerclient.RetryableClientConfig {
-	transformerClientConfig := &transformerclient.ClientConfig{
-		ClientTimeout: conf.GetDurationVar(30, time.Second, "HttpClient.sourceTransformer.timeout", "HttpClient.webhook.timeout"),
-		ClientTTL:     conf.GetDurationVar(10, time.Second, "Transformer.Client.sourceTransformer.ttl", "Transformer.Client.ttl"),
-		ClientType:    conf.GetStringVar("httplb", "Transformer.Client.sourceTransformer.type", "Transformer.Client.type"),
-		PickerType:    conf.GetStringVar("power_of_two", "Transformer.Client.sourceTransformer.httplb.pickerType", "Transformer.Client.httplb.pickerType"),
-	}
-	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, "Transformer.Client.sourceTransformer.disableKeepAlives", "Transformer.Client.disableKeepAlives")
-	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, "Transformer.Client.sourceTransformer.maxHTTPConnections", "Transformer.Client.maxHTTPConnections")
-	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(1, 1, "Transformer.Client.sourceTransformer.maxHTTPIdleConnections", "Transformer.Client.maxHTTPIdleConnections")
-	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(5, time.Second, "Transformer.Client.sourceTransformer.maxIdleConnDuration", "Transformer.Client.maxIdleConnDuration")
-	transformerClientConfig.Recycle = conf.GetBoolVar(false, "Transformer.Client.sourceTransformer.recycle", "Transformer.Client.recycle")
-	transformerClientConfig.RecycleTTL = conf.GetDurationVar(60, time.Second, "Transformer.Client.sourceTransformer.recycleTTL", "Transformer.Client.recycleTTL")
-	transformerRetryableClientConf := &transformerclient.RetryableClientConfig{
-		ClientConfig: transformerClientConfig,
-		RetryMax:     conf.GetIntVar(5, 1, "Gateway.webhook.maxRetry"),
-		RetryWaitMin: conf.GetDurationVar(100, time.Millisecond, "Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"),
-		RetryWaitMax: conf.GetDurationVar(10, time.Second, "Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"),
-	}
-	return transformerRetryableClientConf
 }

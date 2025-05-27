@@ -12,7 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
+	"github.com/cenkalti/backoff/v4"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
@@ -205,20 +208,9 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	transformStart := time.Now()
 
 	var resp *http.Response
-	var err error
 	payload := misc.MakeJSONArray(events)
-	if bt.webhook.config.cslbEnabled.Load() {
-		var req *retryablehttp.Request
-		req, err = retryablehttp.NewRequest("POST", sourceTransformerURL, bytes.NewBuffer(payload))
-		if err == nil {
-			req.Header.Set("Content-Type", contentTypeJsonUTF8)
-			resp, err = bt.webhook.httpClient.Do(req)
-		}
-	} else {
-		resp, err = bt.webhook.netClient.Post(sourceTransformerURL, contentTypeJsonUTF8, bytes.NewBuffer(payload))
-	}
-
 	bt.stats.transformTimerStat.Since(transformStart)
+	resp, err := bt.postWithRetry(sourceTransformerURL, bytes.NewBuffer(payload))
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection to source transformer (URL: %q): %w", sourceTransformerURL, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
@@ -319,4 +311,43 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 		batchResponse.responses[idx] = resp
 	}
 	return batchResponse
+}
+
+func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io.Reader) (*http.Response, error) {
+	var (
+		resp *http.Response
+		err  error
+	)
+
+	err = backoff.RetryNotify(
+		func() error {
+			var err error
+			req, err := http.NewRequest("POST", transformerURL, body)
+			if err == nil {
+				req.Header.Set("Content-Type", contentTypeJsonUTF8)
+				resp, err = bt.webhook.httpClient.Do(req) // nolint: bodyclose
+				if err == nil && resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("non-success status code: %d", resp.StatusCode)
+				}
+			}
+			return err
+		},
+		backoff.WithMaxRetries(
+			backoff.NewExponentialBackOff(
+				backoff.WithInitialInterval(bt.webhook.config.transformer.initialInterval.Load()),
+				backoff.WithMaxInterval(bt.webhook.config.transformer.maxInterval.Load()),
+				backoff.WithMaxElapsedTime(bt.webhook.config.transformer.maxElapsedTime.Load()),
+				backoff.WithMultiplier(bt.webhook.config.transformer.multiplier.Load()),
+			),
+			uint64(bt.webhook.config.transformer.maxRetry.Load()),
+		),
+		func(err error, duration time.Duration) {
+			bt.webhook.logger.Warnn("Failed to send events to transformer",
+				logger.NewStringField("url", transformerURL),
+				logger.NewDurationField("backoffDelay", duration),
+				obskit.Error(err),
+			)
+		},
+	)
+	return resp, err
 }
