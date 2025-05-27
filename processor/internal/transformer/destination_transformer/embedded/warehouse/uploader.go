@@ -33,9 +33,8 @@ func (t *Transformer) CompareResponsesAndUpload(ctx context.Context, events []ty
 	if t.loggedSamples.Load() >= int64(t.config.maxLoggedEvents.Load()) {
 		return
 	}
-	defer t.stats.comparisonTime.RecordDuration()()
-
 	go func() {
+		defer t.stats.comparisonTime.RecordDuration()()
 		t.compareResponsesAndUpload(ctx, events, legacyResponse)
 	}()
 }
