@@ -3014,6 +3014,43 @@ func TestEvents(t *testing.T) {
 				})
 			}
 		})
+		t.Run("geo (from UT) for safe key", func(t *testing.T) {
+			message := map[string]any{
+				"context": map[string]any{
+					"geo	": "{\"city\":\"Madison\",\"country\":\"US\",\"ip\":\"104.176.44.185\",\"loc\":\"43.0371,-89.3932\",\"postal\":\"53713\",\"region\":\"Wisconsin\",\"timezone\":\"America/Chicago\"}",
+				},
+				"messageId":         "messageId",
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			}
+			for destination := range whutils.WarehouseDestinationMap {
+				t.Run(destination, func(t *testing.T) {
+					c := setupConfig(transformerResource, map[string]any{})
+
+					processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+					warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
+
+					ctx := context.Background()
+					events := []types.TransformerEvent{{
+						Message:     message,
+						Metadata:    getMetadata("track", destination),
+						Destination: getDestination(destination, map[string]any{}),
+					}}
+					legacyResponse := processorTransformer.Transform(ctx, events)
+					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+
+					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+					require.Nil(t, legacyResponse.FailedEvents)
+					require.Nil(t, embeddedResponse.FailedEvents)
+					for i := range legacyResponse.Events {
+						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
+					}
+				})
+			}
+		})
 	})
 
 	t.Run("Multiple fields for the same key", func(t *testing.T) {
