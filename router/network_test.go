@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/netutil"
 	mocksSysUtils "github.com/rudderlabs/rudder-server/mocks/utils/sysUtils"
@@ -356,12 +358,20 @@ func TestSendPost(t *testing.T) {
 	})
 
 	t.Run("should handle private IP in block mode", func(t *testing.T) {
+		// Save original config value and restore after test
+		originalValue := config.GetBool("Router.blockPrivateIPs", false)
+		config.Set("Router.blockPrivateIPs", true)
+		defer config.Set("Router.blockPrivateIPs", originalValue)
+
 		network := &netHandle{
-			logger:          logger.NewLogger().Child("network"),
-			blockPrivateIPs: true,
-			httpClient:      &http.Client{},
-			cidrRanges:      netutil.PrivateCidrRanges,
+			logger:     logger.NewLogger().Child("network"),
+			cidrRanges: netutil.PrivateCidrRanges,
+			destType:   "TEST", // Set a destType for the test
 		}
+
+		// Properly setup the network handler with private IP blocking
+		err := network.Setup(config.Default, 30*time.Second)
+		require.NoError(t, err)
 
 		structData := integrations.PostParametersT{
 			Type:          "REST",
@@ -371,7 +381,7 @@ func TestSendPost(t *testing.T) {
 
 		resp := network.SendPost(context.Background(), structData)
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
-		require.Contains(t, string(resp.ResponseBody), "403: access to private IPs is blocked")
+		require.Contains(t, string(resp.ResponseBody), "access to private IP")
 	})
 
 	t.Run("should handle egress disabled", func(t *testing.T) {
@@ -396,7 +406,11 @@ func TestSendPost(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
-		network.httpClient = mockHTTPClient
+		network := &netHandle{
+			logger:     logger.NewLogger().Child("network"),
+			cidrRanges: netutil.PrivateCidrRanges,
+			httpClient: mockHTTPClient,
+		}
 
 		structData := integrations.PostParametersT{
 			Type:          "REST",
@@ -429,7 +443,11 @@ func TestSendPost(t *testing.T) {
 		mockCtrl := gomock.NewController(t)
 		defer mockCtrl.Finish()
 		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
-		network.httpClient = mockHTTPClient
+		network := &netHandle{
+			logger:     logger.NewLogger().Child("network"),
+			cidrRanges: netutil.PrivateCidrRanges,
+			httpClient: mockHTTPClient,
+		}
 
 		structData := integrations.PostParametersT{
 			Type:          "REST",

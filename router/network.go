@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -29,7 +30,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
-var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
+var (
+	contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
+	ErrDenyPrivateIP = errors.New("access to private IPs is blocked")
+)
 
 // netHandle is the wrapper holding private variables
 type netHandle struct {
@@ -122,6 +126,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				if err != nil {
 					panic(err)
 				}
+				headers["Content-Type"] = "application/json"
 				payload = strings.NewReader(string(jsonValue))
 			case "JSON_ARRAY":
 				// support for JSON ARRAY
@@ -147,6 +152,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				for key, val := range bodyValue {
 					formValues.Set(key, fmt.Sprint(val)) // transformer ensures top level string values, still val.(string) would be restrictive
 				}
+				headers["Content-Type"] = "application/x-www-form-urlencoded"
 				payload = strings.NewReader(formValues.Encode())
 			case "GZIP":
 				strValue, ok := bodyValue["payload"].(string)
@@ -216,6 +222,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		resp, err := client.Do(req)
+		if errors.Is(err, ErrDenyPrivateIP) {
+			return &utils.SendPostResponse{
+				StatusCode:   403,
+				ResponseBody: []byte("403: access to private IPs is blocked"),
+			}
+		}
+
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   http.StatusGatewayTimeout,
@@ -310,7 +323,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 					}
 					// In block mode, reject the connection
 					if network.blockPrivateIPs {
-						return nil, fmt.Errorf("access to private IP %s is not allowed", ip)
+						return nil, ErrDenyPrivateIP
 					}
 				}
 			}
