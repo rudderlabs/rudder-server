@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.50.1](https://github.com/rudderlabs/rudder-server/compare/v1.50.0...v1.50.1) (2025-05-27)
+
+
+### Bug Fixes
+
+* under reporting of load files when using upload id ([#5889](https://github.com/rudderlabs/rudder-server/issues/5889)) ([#5906](https://github.com/rudderlabs/rudder-server/issues/5906)) ([84029f7](https://github.com/rudderlabs/rudder-server/commit/84029f723e50d4f11de91c39e48d366975fb4411))
+* warehouse transformations geo enrichment as string ([#5907](https://github.com/rudderlabs/rudder-server/issues/5907)) ([4caf359](https://github.com/rudderlabs/rudder-server/commit/4caf359c9006d4b702df5e5356b0d416333a5170))
+
 ## [1.50.0](https://github.com/rudderlabs/rudder-server/compare/v1.49.0...v1.50.0) (2025-05-26)
 
 
