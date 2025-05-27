@@ -200,6 +200,8 @@ func addDataAndMetadataForContextGeoEnrichment(tec *transformEventContext, data 
 			}
 			data[timezoneKey], metadata[timezoneKey] = geoLocation.Timezone, model.StringDataType
 		}
+		return nil
 	}
+	data[key] = val
 	return nil
 }
