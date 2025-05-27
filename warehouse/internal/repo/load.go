@@ -119,27 +119,12 @@ func (lf *LoadFiles) Get(ctx context.Context, uploadID int64, stagingFileIDs []i
 
 func (lf *LoadFiles) getByUploadId(ctx context.Context, uploadID int64) ([]model.LoadFile, error) {
 	sqlStatement := `
-		WITH row_numbered_load_files AS (
 		SELECT
-			` + loadTableColumns + `,
-			row_number() OVER (
-				PARTITION BY
-					upload_id,
-					table_name
-				ORDER BY
-					id DESC
-			) AS row_number
+		` + loadTableColumns + `
 		FROM
 			` + loadTableName + `
 		WHERE
 			upload_id = $1
-		)
-		SELECT
-		` + loadTableColumns + `
-		FROM
-			row_numbered_load_files
-		WHERE
-			row_number = 1
 		ORDER BY
 			id ASC;
 	`
@@ -307,28 +292,12 @@ func (lf *LoadFiles) totalExportedEventsByUploadID(
 ) (int64, error) {
 	var count sql.NullInt64
 	sqlStatement := `
-		WITH row_numbered_load_files AS (
 		SELECT
-			total_events,
-			table_name,
-			row_number() OVER (
-				PARTITION BY
-					upload_id,
-					table_name
-				ORDER BY
-					id DESC
-			) AS row_number
+			COALESCE(sum(total_events), 0) AS total_events
 		FROM
 			` + loadTableName + `
 		WHERE
 			upload_id = $1
-		)
-		SELECT
-			COALESCE(sum(total_events), 0) AS total_events
-		FROM
-			row_numbered_load_files
-		WHERE
-			row_number = 1
 		AND
 			table_name != ALL($2);`
 
