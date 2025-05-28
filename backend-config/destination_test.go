@@ -1063,6 +1063,31 @@ func TestSetOAuthFlagsEdgeCases(t *testing.T) {
 			expectedDeliveryByOAuth: true,  // "delivery" is present in the scopes
 			expectedDeleteByOAuth:   false, // "delete" is not present in the scopes
 		},
+		{
+			name: "account definition present but config is nil",
+			destination: &backendconfig.DestinationT{
+				ID:   "test-dest-nil-config",
+				Name: "Test Destination Nil Config",
+				DeliveryAccount: &backendconfig.Account{
+					ID: "delivery-account-1",
+					AccountDefinition: &backendconfig.AccountDefinition{
+						Name:   "test-account-def",
+						Config: nil, // Config is nil
+					},
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:   "dest-def-nil-config",
+					Name: "Test Destination Definition",
+					Config: map[string]interface{}{
+						"auth": map[string]interface{}{
+							"type": "OAuth",
+						},
+					},
+				},
+			},
+			expectedDeliveryByOAuth: false, // Config is nil, so refreshOAuthToken lookup fails
+			expectedDeleteByOAuth:   true,  // Falls back to destination definition
+		},
 	}
 
 	for _, tt := range tests {
