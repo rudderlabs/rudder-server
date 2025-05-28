@@ -202,7 +202,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 		bc.usingCache = false
 	}
 	verbos, _ := jsonrs.Marshal(sourceJSON)
-	pkgLogger.Infon("using backend config", logger.NewStringField("config", string(verbos)))
+	pkgLogger.Infow("using backend config", "config", string(verbos))
 
 	// sorting the sourceJSON.
 	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
@@ -218,6 +218,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 		pkgLogger.Infow("Workspace Config changed",
 			"workspaces", len(sourceJSON),
 			"sources", lo.Sum(lo.Map(lo.Values(sourceJSON), func(c ConfigT, _ int) int { return len(c.Sources) })),
+			"verbos", string(verbos),
 		)
 
 		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
