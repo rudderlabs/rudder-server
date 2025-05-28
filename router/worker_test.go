@@ -517,10 +517,6 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             true,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
 		},
 	}
 	var limiterWg sync.WaitGroup
@@ -533,7 +529,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d1-test1"}`),
 			JobMetadata: types.JobMetadataT{
@@ -542,7 +539,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d2-test2"}`),
 			JobMetadata: types.JobMetadataT{
@@ -551,7 +549,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d1-test3"}`),
 			JobMetadata: types.JobMetadataT{
@@ -560,7 +559,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d3",
+				ID:              "d3",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d3-test4"}`),
 			JobMetadata: types.JobMetadataT{
@@ -569,7 +569,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d1-test5"}`),
 			JobMetadata: types.JobMetadataT{
@@ -578,7 +579,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d2-test6"}`),
 			JobMetadata: types.JobMetadataT{
@@ -592,7 +594,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": ["d1-test1", "d1-test3"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -606,7 +609,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": [ "d1-test5"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -622,7 +626,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": ["d2-test2", "d2-test6"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -677,10 +682,6 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             false,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
 		},
 	}
 	var limiterWg sync.WaitGroup
@@ -693,7 +694,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": "d1-test1"}`),
 			JobMetadata: types.JobMetadataT{
@@ -702,7 +704,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": "d2-test2"}`),
 			JobMetadata: types.JobMetadataT{
@@ -716,7 +719,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": ["d1-test1"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -727,7 +731,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": [ "d2-test2"]}`),
 			JobMetadataArray: []types.JobMetadataT{

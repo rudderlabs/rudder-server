@@ -33,7 +33,7 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
@@ -337,15 +337,20 @@ func TestProxyRequest(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 				defer srv.Close()
-
-				isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 				expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, expTimeDiff, nil)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
 					DestName:     "not_found_dest",
 					Adapter:      &mockAdapter{url: srv.URL},
+					DestInfo: &oauthv2.DestinationInfo{
+						WorkspaceID:      "test_workspace",
+						ID:               "test_destination",
+						DefinitionName:   "not_found_dest",
+						DefinitionConfig: map[string]interface{}{},
+						Config:           map[string]interface{}{},
+					},
 				}
 				r := tr.ProxyRequest(ctx, reqParams)
 				stCd := r.ProxyRequestStatusCode
@@ -362,14 +367,13 @@ func TestProxyRequest(t *testing.T) {
 			srv := httptest.NewServer(mockProxyHandler(tc.proxy.timeout, tc.proxy.code, tc.proxy.response))
 			defer srv.Close()
 			var tr Transformer
-			isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, expTimeDiff, nil)
 			} else {
 				// Just a default value
-				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, expTimeDiff, nil)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -386,6 +390,13 @@ func TestProxyRequest(t *testing.T) {
 				ResponseData: tc.postParameters,
 				DestName:     tc.destName,
 				Adapter:      &mockAdapter{url: srv.URL},
+				DestInfo: &oauthv2.DestinationInfo{
+					WorkspaceID:      "test_workspace",
+					ID:               "test_destination",
+					DefinitionName:   tc.destName,
+					DefinitionConfig: map[string]interface{}{},
+					Config:           map[string]interface{}{},
+				},
 			}
 			r := tr.ProxyRequest(ctx, reqParams)
 			stCd := r.ProxyRequestStatusCode
@@ -636,7 +647,6 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 
 			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
 
-			isOAuthV2EnabledLoader := config.SingleValueLoader(true)
 			defer svr.Close()
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
@@ -646,7 +656,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
-			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff, nil)
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil)
 
 			transformMsg := types.TransformMessageT{
 				Data: tc.inputEvents,
@@ -1675,7 +1685,6 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 
 			cfgBeSvr := httptest.NewServer(cpRespProducer.MockCpRequests())
 
-			isOAuthV2EnabledLoader := config.SingleValueLoader(true)
 			defer svr.Close()
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
@@ -1684,7 +1693,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
-			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, isOAuthV2EnabledLoader, expTimeDiff, nil)
+			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil)
 
 			var adapter transformerProxyAdapter
 			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
@@ -1692,7 +1701,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				adapter = NewTransformerProxyAdapter("v0", loggerOverride)
 			}
 
-			destinationInfo := &v2.DestinationInfo{
+			destinationInfo := &oauthv2.DestinationInfo{
 				Config:           tc.destination.Config,
 				DefinitionConfig: tc.destination.DestinationDefinition.Config,
 				WorkspaceID:      tc.reqPayload.Metadata[0].WorkspaceID,
@@ -1745,11 +1754,10 @@ func TestTransformNoValidationErrors(t *testing.T) {
 		_, err = w.Write(b)
 		require.NoError(t, err)
 	}))
-	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1780,9 +1788,8 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1822,9 +1829,8 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1863,9 +1869,8 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	}))
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
-	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1912,9 +1917,8 @@ func TestDehydrateHydrate(t *testing.T) {
 		require.NoError(t, err)
 	}))
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
-	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, isOAuthV2EnabledLoader, expTimeDiff, nil)
+	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)
 
@@ -1972,20 +1976,14 @@ func TestTransformerMetrics(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	isOAuthV2EnabledLoader := config.SingleValueLoader(false)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
 	t.Setenv("DEST_TRANSFORM_URL", srv.URL)
-	// Create transformer with stats store
-	tr := &handle{
-		stats:                     statsStore,
-		logger:                    logger.NOP,
-		client:                    srv.Client(),
-		proxyClient:               srv.Client(),
-		tr:                        &http.Transport{},
-		oAuthV2EnabledLoader:      isOAuthV2EnabledLoader,
-		expirationTimeDiff:        expTimeDiff,
-		transformRequestTimerStat: statsStore.NewStat("router.transformer_request_time", stats.TimerType), // Add this line
+	// Create transformer with stats store using NewTransformer
+	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
+	// Set the stats store manually for testing
+	if handle, ok := tr.(*handle); ok {
+		handle.stats = statsStore
 	}
 
 	// Create test message

@@ -66,8 +66,6 @@ type handle struct {
 	clientOAuthV2 *http.Client
 	// proxyClientOAuthV2 is the mockable HTTP client for transformer proxy requests using OAuth V2.
 	proxyClientOAuthV2 sysUtils.HTTPClientI
-	// oAuthV2EnabledLoader dynamically loads the OAuth V2 enabled status.
-	oAuthV2EnabledLoader config.ValueLoader[bool]
 	// expirationTimeDiff holds the configured time difference for token expiration.
 	expirationTimeDiff config.ValueLoader[time.Duration]
 
@@ -122,15 +120,13 @@ type Transformer interface {
 func NewTransformer(
 	destinationTimeout, transformTimeout time.Duration,
 	backendConfig backendconfig.BackendConfig,
-	oauthV2Enabled config.ValueLoader[bool],
 	expirationTimeDiff config.ValueLoader[time.Duration],
 	featuresService transformerfs.FeaturesService,
 ) Transformer {
 	cache := oauthv2.NewCache()
 	oauthLock := sync.NewPartitionRWLocker()
 	handle := &handle{
-		oAuthV2EnabledLoader: oauthV2Enabled,
-		expirationTimeDiff:   expirationTimeDiff,
+		expirationTimeDiff: expirationTimeDiff,
 	}
 	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig, featuresService)
 	return handle
@@ -224,20 +220,16 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		req.Header.Set("X-Feature-Gzip-Support", "?1")
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
-		if trans.oAuthV2EnabledLoader.Load() {
-			trans.logger.Debugn("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
-			destinationInfo := &oauthv2.DestinationInfo{
-				Config:           transformMessageCopy.Data[0].Destination.Config,
-				DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
-				WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
-				DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-				ID:               transformMessageCopy.Data[0].Destination.ID,
-			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
-			resp, err = trans.clientOAuthV2.Do(req)
-		} else {
-			resp, err = trans.client.Do(req)
+		trans.logger.Debugn("[router transform]", logger.NewBoolField("oauthV2Enabled", true))
+		destinationInfo := &oauthv2.DestinationInfo{
+			Config:           transformMessageCopy.Data[0].Destination.Config,
+			DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
+			WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
+			DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
+			ID:               transformMessageCopy.Data[0].Destination.ID,
 		}
+		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
+		resp, err = trans.clientOAuthV2.Do(req)
 
 		duration := time.Since(s)
 		trans.stats.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, labels.ToStatsTag()).Count(int(duration.Seconds()))
@@ -285,13 +277,12 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 
 	var transResp oauthv2.TransportResponse
-	if trans.oAuthV2EnabledLoader.Load() {
-		// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
-		// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
-		err = jsonrs.Unmarshal(respData, &transResp)
-		if err == nil && transResp.OriginalResponse != "" {
-			respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
-		}
+
+	// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
+	// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
+	err = jsonrs.Unmarshal(respData, &transResp)
+	if err == nil && transResp.OriginalResponse != "" {
+		respData = []byte(transResp.OriginalResponse) // re-assign originalResponse
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -488,18 +479,18 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		respData will be in ProxyResponseV0 or ProxyResponseV1
 	*/
 	var transportResponse oauthv2.TransportResponse // response that we get from oauth-interceptor in postRoundTrip
-	if trans.oAuthV2EnabledLoader.Load() {
-		_ = jsonrs.Unmarshal(respData, &transportResponse)
-		// unmarshal unsuccessful scenarios
-		// if respData is not a valid json
-		if transportResponse.OriginalResponse != "" {
-			respData = []byte(transportResponse.OriginalResponse)
-		}
 
-		if transportResponse.InterceptorResponse.StatusCode > 0 {
-			respCode = transportResponse.InterceptorResponse.StatusCode
-		}
+	_ = jsonrs.Unmarshal(respData, &transportResponse)
+	// unmarshal unsuccessful scenarios
+	// if respData is not a valid json
+	if transportResponse.OriginalResponse != "" {
+		respData = []byte(transportResponse.OriginalResponse)
 	}
+
+	if transportResponse.InterceptorResponse.StatusCode > 0 {
+		respCode = transportResponse.InterceptorResponse.StatusCode
+	}
+
 	/**
 
 		Structure of TransformerProxy Response:
@@ -527,22 +518,21 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		}
 	}
 
-	if trans.oAuthV2EnabledLoader.Load() {
-		for _, metadata := range proxyReqParams.ResponseData.Metadata {
-			// Conditions for which InterceptorResponse.StatusCode/Response will not be empty
-			// 1. authErrorCategory == CategoryRefreshToken
-			// 2. authErrorCategory == CategoryAuthStatusInactive
-			// 3. Any error occurred while performing authStatusInactive / RefreshToken
-			// Under these conditions, we will have to propagate the response from interceptor to JobsDB
-			if transportResponse.InterceptorResponse.StatusCode > 0 {
-				transResp.routerJobResponseCodes[metadata.JobID] = transportResponse.InterceptorResponse.StatusCode
-			}
-			if transportResponse.InterceptorResponse.Response != "" {
-				transResp.routerJobResponseBodys[metadata.JobID] = transportResponse.InterceptorResponse.Response
-			}
+	for _, metadata := range proxyReqParams.ResponseData.Metadata {
+		// Conditions for which InterceptorResponse.StatusCode/Response will not be empty
+		// 1. authErrorCategory == CategoryRefreshToken
+		// 2. authErrorCategory == CategoryAuthStatusInactive
+		// 3. Any error occurred while performing authStatusInactive / RefreshToken
+		// Under these conditions, we will have to propagate the response from interceptor to JobsDB
+		if transportResponse.InterceptorResponse.StatusCode > 0 {
+			transResp.routerJobResponseCodes[metadata.JobID] = transportResponse.InterceptorResponse.StatusCode
+		}
+		if transportResponse.InterceptorResponse.Response != "" {
+			transResp.routerJobResponseBodys[metadata.JobID] = transportResponse.InterceptorResponse.Response
 		}
 	}
-	if trans.oAuthV2EnabledLoader.Load() && transportResponse.InterceptorResponse.Response != "" {
+
+	if transportResponse.InterceptorResponse.Response != "" {
 		respData = []byte(transportResponse.InterceptorResponse.Response)
 	}
 
@@ -652,14 +642,11 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 	httpReqStTime := time.Now()
 	var resp *http.Response
-	if trans.oAuthV2EnabledLoader.Load() {
-		trans.logger.Debugn("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
-		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
-		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
-		resp, err = trans.proxyClientOAuthV2.Do(req)
-	} else {
-		resp, err = trans.proxyClient.Do(req)
-	}
+
+	trans.logger.Debugn("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
+	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
+	req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
+	resp, err = trans.proxyClientOAuthV2.Do(req)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
