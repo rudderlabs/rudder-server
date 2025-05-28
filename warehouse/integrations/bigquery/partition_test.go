@@ -158,78 +158,59 @@ func TestBigquery_PartitionDate(t *testing.T) {
 func TestBigQuery_AvoidPartitionDecorator(t *testing.T) {
 	testCases := []struct {
 		name                    string
-		destConfig              map[string]interface{}
 		configOverride          map[string]interface{}
+		partitioningInWarehouse *stdbigquery.TimePartitioning
 		avoidPartitionDecorator bool
 	}{
 		{
 			name:                    "partition not defined",
-			destConfig:              map[string]interface{}{},
+			partitioningInWarehouse: nil,
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:                    "loaded_at partition",
+			partitioningInWarehouse: &stdbigquery.TimePartitioning{Field: "loaded_at"},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:                    "received_at partition",
+			partitioningInWarehouse: &stdbigquery.TimePartitioning{Field: "received_at"},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:                    "sent_at partition",
+			partitioningInWarehouse: &stdbigquery.TimePartitioning{Field: "sent_at"},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:                    "timestamp partition",
+			partitioningInWarehouse: &stdbigquery.TimePartitioning{Field: "timestamp"},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:                    "original_timestamp partition",
+			partitioningInWarehouse: &stdbigquery.TimePartitioning{Field: "original_timestamp"},
+			avoidPartitionDecorator: true,
+		},
+		{
+			name:                    "ingestion partition",
+			partitioningInWarehouse: &stdbigquery.TimePartitioning{Field: ""}, // Ingestion time
 			avoidPartitionDecorator: false,
 		},
 		{
-			name: "loaded_at partition",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "loaded_at",
-			},
-			avoidPartitionDecorator: true,
-		},
-		{
-			name: "received_at partition",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "received_at",
-			},
-			avoidPartitionDecorator: true,
-		},
-		{
-			name: "sent_at partition",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "sent_at",
-			},
-			avoidPartitionDecorator: true,
-		},
-		{
-			name: "timestamp partition",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "timestamp",
-			},
-			avoidPartitionDecorator: true,
-		},
-		{
-			name: "original_timestamp partition",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "received_at",
-			},
-			avoidPartitionDecorator: true,
-		},
-		{
-			name: "ingestion partition",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "_PARTITIONTIME",
-			},
-			avoidPartitionDecorator: false,
-		},
-		{
-			name: "unsupported partition column",
-			destConfig: map[string]interface{}{
-				"partitionColumn": "invalid",
-			},
-			avoidPartitionDecorator: false,
-		},
-		{
-			name:       "custom`partition enabled",
-			destConfig: map[string]interface{}{},
+			name: "custom`partition enabled",
 			configOverride: map[string]interface{}{
 				"Warehouse.bigquery.customPartitionsEnabled": true,
 			},
+			partitioningInWarehouse: nil,
 			avoidPartitionDecorator: true,
 		},
 		{
-			name:       "custom`partition enabled workspaceIDs",
-			destConfig: map[string]interface{}{},
+			name: "custom`partition enabled workspaceIDs",
 			configOverride: map[string]interface{}{
 				"Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs": "workspaceID",
 			},
+			partitioningInWarehouse: nil,
 			avoidPartitionDecorator: true,
 		},
 	}
@@ -240,14 +221,14 @@ func TestBigQuery_AvoidPartitionDecorator(t *testing.T) {
 				c.Set(k, v)
 			}
 
-			bq := New(c, logger.NOP)
+			bq := New(c, logger.Default.NewLogger())
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: tc.destConfig,
+					Config: map[string]interface{}{},
 				},
 				WorkspaceID: "workspaceID",
 			}
-			require.Equal(t, tc.avoidPartitionDecorator, bq.avoidPartitionDecorator())
+			require.Equal(t, tc.avoidPartitionDecorator, bq.avoidPartitionDecorator(tc.partitioningInWarehouse))
 		})
 	}
 }

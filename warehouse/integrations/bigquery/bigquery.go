@@ -557,8 +557,13 @@ func (bq *BigQuery) loadTableByAppend(
 		return nil, nil, fmt.Errorf("partition date: %w", err)
 	}
 
+	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching table partitioning: %w", err)
+	}
+
 	var outputTable string
-	if bq.avoidPartitionDecorator() {
+	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
 		outputTable = partitionedTable(tableName, partitionDate)
@@ -719,7 +724,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	var partitionedUsersTable string
 
 	// avoid writing to partioned table if there is a no or custom partition instead of ingestion time partition i.e _PARTITIONTIME
-	if bq.avoidPartitionDecorator() || usersTablePartitionInWarehouse == nil || usersTablePartitionInWarehouse.Field != "" {
+	if bq.avoidPartitionDecorator(usersTablePartitionInWarehouse) {
 		partitionedUsersTable = warehouseutils.UsersTable
 	} else {
 		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
@@ -1252,8 +1257,13 @@ func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName strin
 		return fmt.Errorf("partition date: %w", err)
 	}
 
+	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
+	if err != nil {
+		return fmt.Errorf("fetching table partitioning: %w", err)
+	}
+
 	var outputTable string
-	if bq.avoidPartitionDecorator() {
+	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
 		outputTable = partitionedTable(tableName, partitionDate)
