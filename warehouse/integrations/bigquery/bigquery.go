@@ -225,6 +225,7 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 		return nil
 	}
 
+	// no need to pass partitioningInWarehouse here. dedup query considers the partition column, type from the destination config
 	deduplicationQuery, err := bq.deduplicationQuery(tableName, columnMap, nil)
 	if err != nil {
 		return fmt.Errorf("deduplication query: %w", err)
