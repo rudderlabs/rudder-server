@@ -317,6 +317,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -365,6 +366,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -421,6 +423,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		cpResponses: []testutils.CpResponseParams{
 			{
@@ -464,6 +467,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		cpResponses: []testutils.CpResponseParams{
 			{
@@ -516,6 +520,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		cpResponses:                  []testutils.CpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
@@ -559,6 +564,7 @@ var oauthTests = []oauthTestCases{
 			Config:        map[string]interface{}{},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		cpResponses:                  []testutils.CpResponseParams{},
 		deleteResponses:              []deleteResponseParams{{}},
@@ -597,6 +603,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 
 		oauthHttpClientTimeout: 1 * time.Second,
@@ -646,6 +653,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -693,6 +701,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		deleteResponses: []deleteResponseParams{
 			{
@@ -741,6 +750,7 @@ var oauthTests = []oauthTestCases{
 			},
 			Name:          "GA",
 			DestDefConfig: defaultDestDefConfig,
+			DeleteByOAuth: true,
 		},
 		deleteResponses: []deleteResponseParams{
 			{

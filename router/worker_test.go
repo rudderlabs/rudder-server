@@ -478,6 +478,7 @@ var _ = Describe("Proxy Request", func() {
 							},
 						},
 					},
+					DeliveryByOAuth: true,
 				},
 				Batched:    false,
 				StatusCode: 200,
