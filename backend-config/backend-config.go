@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"reflect"
 	"sort"
@@ -202,7 +203,8 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 		bc.usingCache = false
 	}
 	verbos, _ := jsonrs.Marshal(sourceJSON)
-	pkgLogger.Infow("using backend config", "config", string(verbos))
+	file, _ := dumpConfigToTempFile(verbos)
+	pkgLogger.Infow("using backend config", "config", file)
 
 	// sorting the sourceJSON.
 	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
@@ -216,9 +218,9 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
 
 		pkgLogger.Infow("Workspace Config changed",
+			"conf", file,
 			"workspaces", len(sourceJSON),
 			"sources", lo.Sum(lo.Map(lo.Values(sourceJSON), func(c ConfigT, _ int) int { return len(c.Sources) })),
-			"verbos", string(verbos),
 		)
 
 		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
@@ -239,6 +241,24 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	bc.initializedLock.Lock()
 	bc.initialized = true
 	bc.initializedLock.Unlock()
+}
+
+func dumpConfigToTempFile(configData []byte) (string, error) {
+	// Create a temporary file
+	tempFile, err := ioutil.TempFile("", "config-*.json")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer tempFile.Close()
+
+	// Write the config data to the temporary file
+	_, err = tempFile.Write(configData)
+	if err != nil {
+		return "", fmt.Errorf("failed to write config to temp file: %w", err)
+	}
+
+	// Return the path of the temporary file
+	return tempFile.Name(), nil
 }
 
 func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context) {

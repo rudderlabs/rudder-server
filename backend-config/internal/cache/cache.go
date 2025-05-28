@@ -87,7 +87,6 @@ func (db *cacheStore) set(ctx context.Context, config interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	pkgLogger.Infon("writing config to database", logger.NewStringField("config", string(configBytes)))
 	// encrypt
 	encrypted, err := db.encryptAES(configBytes)
 	if err != nil {
