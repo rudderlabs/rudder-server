@@ -201,6 +201,8 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	} else {
 		bc.usingCache = false
 	}
+	verbos, _ := jsonrs.Marshal(sourceJSON)
+	pkgLogger.Infon("using backend config", logger.NewStringField("config", string(verbos)))
 
 	// sorting the sourceJSON.
 	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
