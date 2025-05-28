@@ -227,6 +227,8 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
 			DefinitionName:   transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
 			ID:               transformMessageCopy.Data[0].Destination.ID,
+			DeliveryByOAuth:  transformMessageCopy.Data[0].Destination.DeliveryByOAuth,
+			DeleteByOAuth:    transformMessageCopy.Data[0].Destination.DeleteByOAuth,
 		}
 		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 		resp, err = trans.clientOAuthV2.Do(req)

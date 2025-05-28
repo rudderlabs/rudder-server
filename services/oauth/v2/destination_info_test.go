@@ -16,97 +16,90 @@ type isOAuthResult struct {
 }
 
 type destInfoTestCase struct {
-	description    string
-	flow           common.RudderFlow
-	inputDefConfig map[string]interface{}
-	expected       isOAuthResult
+	description     string
+	flow            common.RudderFlow
+	deliveryByOAuth bool
+	deleteByOAuth   bool
+	expected        isOAuthResult
 }
 
 var isOAuthDestTestCases = []destInfoTestCase{
 	{
-		description: "should pass for a destination which contains OAuth and rudderScopes",
-		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
-				"type":         "OAuth",
-				"rudderScopes": []interface{}{"delivery"},
-			},
-		},
+		description:     "should return true for delivery flow when DeliveryByOAuth is true",
+		flow:            common.RudderFlowDelivery,
+		deliveryByOAuth: true,
+		deleteByOAuth:   false,
 		expected: isOAuthResult{
 			isOAuth: true,
 		},
 	},
 	{
-		description: "should pass for a destination which contains OAuth but not rudderScopes",
-		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
-				"type": "OAuth",
-			},
+		description:     "should return false for delivery flow when DeliveryByOAuth is false",
+		flow:            common.RudderFlowDelivery,
+		deliveryByOAuth: false,
+		deleteByOAuth:   true,
+		expected: isOAuthResult{
+			isOAuth: false,
 		},
+	},
+	{
+		description:     "should return true for delete flow when DeleteByOAuth is true",
+		flow:            common.RudderFlowDelete,
+		deliveryByOAuth: false,
+		deleteByOAuth:   true,
 		expected: isOAuthResult{
 			isOAuth: true,
 		},
 	},
 	{
-		description: "should return 'false' without error for a destination which contains OAuth with delete rudderScopes when flow is delivery",
-		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
-				"type":         "OAuth",
-				"rudderScopes": []interface{}{"delete"},
-			},
-		},
+		description:     "should return false for delete flow when DeleteByOAuth is false",
+		flow:            common.RudderFlowDelete,
+		deliveryByOAuth: true,
+		deleteByOAuth:   false,
 		expected: isOAuthResult{
 			isOAuth: false,
 		},
 	},
 	{
-		description: "should return 'true' without error for a destination which contains OAuth withoutrudderScopes when flow is delivery",
-		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
-				"type": "OAuth",
-			},
-		},
+		description:     "should return true for delivery flow when both flags are true",
+		flow:            common.RudderFlowDelivery,
+		deliveryByOAuth: true,
+		deleteByOAuth:   true,
 		expected: isOAuthResult{
 			isOAuth: true,
 		},
 	},
 	{
-		description: "should return 'false' with error for a destination which contains OAuth with one of invalid rudderScopes when flow is delivery",
-		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
-				"type":         "OAuth",
-				"rudderScopes": []interface{}{"delivery", 1},
-			},
-		},
+		description:     "should return true for delete flow when both flags are true",
+		flow:            common.RudderFlowDelete,
+		deliveryByOAuth: true,
+		deleteByOAuth:   true,
 		expected: isOAuthResult{
-			isOAuth: false,
-			err:     fmt.Errorf("1 in auth.rudderScopes should be string"),
+			isOAuth: true,
 		},
 	},
 	{
-		description: "should return 'false' with error for a destination which contains OAuth with invalid rudderScopes type when flow is delivery",
-		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
-				"type":         "OAuth",
-				"rudderScopes": []interface{}{"a"}[0],
-			},
-		},
+		description:     "should return false for both flows when both flags are false",
+		flow:            common.RudderFlowDelivery,
+		deliveryByOAuth: false,
+		deleteByOAuth:   false,
 		expected: isOAuthResult{
 			isOAuth: false,
-			err:     fmt.Errorf("rudderScopes should be a interface[]"),
 		},
 	},
+}
+
+var unsupportedFlowTestCases = []struct {
+	description string
+	flow        common.RudderFlow
+	expected    isOAuthResult
+}{
 	{
-		description:    "should return 'false' without error for a non-OAuth destination when flow is delivery",
-		flow:           common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{},
+		description: "should return error for unsupported flow type",
+		flow:        common.RudderFlow("unsupported"),
 		expected: isOAuthResult{
 			isOAuth: false,
+			err:     fmt.Errorf("unsupported flow type: unsupported"),
 		},
 	},
 }
@@ -116,9 +109,10 @@ var _ = Describe("DestinationInfo tests", func() {
 		for _, tc := range isOAuthDestTestCases {
 			It(tc.description, func() {
 				d := &v2.DestinationInfo{
-					DefinitionName: "dest_def_name",
+					DefinitionName:  "dest_def_name",
+					DeliveryByOAuth: tc.deliveryByOAuth,
+					DeleteByOAuth:   tc.deleteByOAuth,
 				}
-				d.DefinitionConfig = tc.inputDefConfig
 				isOAuth, err := d.IsOAuthDestination(tc.flow)
 
 				Expect(isOAuth).To(Equal(tc.expected.isOAuth))
@@ -129,5 +123,25 @@ var _ = Describe("DestinationInfo tests", func() {
 				}
 			})
 		}
+
+		Describe("IsOAuthDestination unsupported flow tests", func() {
+			for _, tc := range unsupportedFlowTestCases {
+				It(tc.description, func() {
+					d := &v2.DestinationInfo{
+						DefinitionName:  "dest_def_name",
+						DeliveryByOAuth: true,
+						DeleteByOAuth:   true,
+					}
+					isOAuth, err := d.IsOAuthDestination(tc.flow)
+
+					Expect(isOAuth).To(Equal(tc.expected.isOAuth))
+					if tc.expected.err != nil {
+						Expect(err).To(Equal(tc.expected.err))
+					} else {
+						Expect(err).To(BeNil())
+					}
+				})
+			}
+		})
 	})
 })

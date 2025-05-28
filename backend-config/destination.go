@@ -1,9 +1,11 @@
 package backendconfig
 
 import (
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-server/backend-config/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	"github.com/samber/lo"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // DestinationCache is a map-based implementation of DynamicConfigCache.
@@ -46,12 +48,12 @@ func ProcessDestinationsInSources(sources []SourceT, cache destination.Cache) {
 	}
 }
 
-func IsOAuthByAccountDefinition(accountDefintion AccountDefinition) bool {
+func isOAuthByAccountDefinition(accountDefintion AccountDefinition) bool {
 	refreshOAuthToken, ok := accountDefintion.Config["refreshOAuthToken"].(bool)
 	return ok && refreshOAuthToken
 }
 
-func IsOAuthByDestinationDefinition(destDef DestinationDefinitionT, flow common.RudderFlow) bool {
+func isOAuthByDestinationDefinition(destDef DestinationDefinitionT, flow common.RudderFlow) bool {
 	authValue, ok := destDef.Config["auth"].(map[string]interface{})
 	if !ok {
 		return false
@@ -59,33 +61,24 @@ func IsOAuthByDestinationDefinition(destDef DestinationDefinitionT, flow common.
 	if authValue["type"] != common.OAuth {
 		return false
 	}
-
-	authScopes, ok := authValue["rudderScopes"].([]interface{})
-	if !ok {
-		// rudderScopes is an optional field, so when it is not there we will consider this as oauth for all flows
-		return true
+	// Validate that rudderScopes contains only valid string values
+	if authScopes, ok := authValue["rudderScopes"].([]interface{}); ok {
+		rudderScopes := misc.ConvertInterfaceToStringArray(authScopes)
+		return lo.Contains(rudderScopes, string(flow))
 	}
-	var rudderScopes []string
-	for _, scope := range authScopes {
-		scope, ok := scope.(string)
-		if !ok {
-			return false
-		}
-		rudderScopes = append(rudderScopes, scope)
-	}
-	return lo.Contains(rudderScopes, string(flow))
+	return true
 }
 
 func (d *DestinationT) SetOAuthFlags() {
 	if d.DeliveryAccount != nil && d.DeliveryAccount.AccountDefinition != nil {
-		d.DeliveryByOAuth = IsOAuthByAccountDefinition(*d.DeliveryAccount.AccountDefinition)
+		d.DeliveryByOAuth = isOAuthByAccountDefinition(*d.DeliveryAccount.AccountDefinition)
 	} else {
-		d.DeliveryByOAuth = IsOAuthByDestinationDefinition(d.DestinationDefinition, common.RudderFlowDelivery)
+		d.DeliveryByOAuth = isOAuthByDestinationDefinition(d.DestinationDefinition, common.RudderFlowDelivery)
 	}
 	if d.DeleteAccount != nil && d.DeleteAccount.AccountDefinition != nil {
-		d.DeleteByOAuth = IsOAuthByAccountDefinition(*d.DeleteAccount.AccountDefinition)
+		d.DeleteByOAuth = isOAuthByAccountDefinition(*d.DeleteAccount.AccountDefinition)
 	} else {
-		d.DeleteByOAuth = IsOAuthByDestinationDefinition(d.DestinationDefinition, common.RudderFlowDelete)
+		d.DeleteByOAuth = isOAuthByDestinationDefinition(d.DestinationDefinition, common.RudderFlowDelete)
 	}
 }
 

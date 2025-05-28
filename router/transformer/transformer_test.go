@@ -350,6 +350,8 @@ func TestProxyRequest(t *testing.T) {
 						DefinitionName:   "not_found_dest",
 						DefinitionConfig: map[string]interface{}{},
 						Config:           map[string]interface{}{},
+						DeliveryByOAuth:  false,
+						DeleteByOAuth:    false,
 					},
 				}
 				r := tr.ProxyRequest(ctx, reqParams)
@@ -396,6 +398,8 @@ func TestProxyRequest(t *testing.T) {
 					DefinitionName:   tc.destName,
 					DefinitionConfig: map[string]interface{}{},
 					Config:           map[string]interface{}{},
+					DeliveryByOAuth:  false,
+					DeleteByOAuth:    false,
 				},
 			}
 			r := tr.ProxyRequest(ctx, reqParams)
@@ -1707,6 +1711,8 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				WorkspaceID:      tc.reqPayload.Metadata[0].WorkspaceID,
 				DefinitionName:   tc.destination.DestinationDefinition.Name,
 				ID:               tc.destination.DestinationDefinition.ID,
+				DeliveryByOAuth:  tc.destination.DeliveryByOAuth,
+				DeleteByOAuth:    tc.destination.DeleteByOAuth,
 			}
 			reqParams := &ProxyRequestParams{
 				ResponseData: tc.reqPayload,

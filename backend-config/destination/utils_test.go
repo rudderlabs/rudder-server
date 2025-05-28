@@ -3,8 +3,9 @@ package destination_test
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/backend-config/destination"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rudderlabs/rudder-server/backend-config/destination"
 )
 
 // Unit tests for ContainsPattern function

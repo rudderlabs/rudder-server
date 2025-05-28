@@ -96,6 +96,8 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 		WorkspaceID:      destination.WorkspaceID,
 		DefinitionName:   destination.DestinationDefinition.Name,
 		ID:               destination.ID,
+		DeliveryByOAuth:  destination.DeliveryByOAuth,
+		DeleteByOAuth:    destination.DeleteByOAuth,
 	}
 	yandexUploadManager := &YandexMetricaBulkUploader{
 		destinationInfo: destinationInfo,

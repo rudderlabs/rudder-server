@@ -590,7 +590,7 @@ func BenchmarkProcessDestinationsInSources_LargeConfig(b *testing.B) {
 }
 
 // TestComputeOAuthInfo tests the ComputeOAuthInfo method of DestinationT
-func TestComputeOAuthInfo(t *testing.T) {
+func TestSetOAuthFlags(t *testing.T) {
 	tests := []struct {
 		name                    string
 		destination             *backendconfig.DestinationT
@@ -849,7 +849,7 @@ func TestComputeOAuthInfo(t *testing.T) {
 }
 
 // TestComputeOAuthInfoEdgeCases tests edge cases for the ComputeOAuthInfo method
-func TestComputeOAuthInfoEdgeCases(t *testing.T) {
+func TestSetOAuthFlagsEdgeCases(t *testing.T) {
 	tests := []struct {
 		name                    string
 		destination             *backendconfig.DestinationT
@@ -1041,8 +1041,27 @@ func TestComputeOAuthInfoEdgeCases(t *testing.T) {
 					},
 				},
 			},
-			expectedDeliveryByOAuth: false,
-			expectedDeleteByOAuth:   false,
+			expectedDeliveryByOAuth: true,  // Non-string values get converted to empty strings, "delivery" is still present
+			expectedDeleteByOAuth:   false, // "delete" is not present in the scopes
+		},
+		{
+			name: "destination definition with invalid scope value",
+			destination: &backendconfig.DestinationT{
+				ID:   "test-dest-invalid-scope-value",
+				Name: "Test Destination Invalid Scope Value",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:   "dest-def-invalid-scope-value",
+					Name: "Test Destination Definition",
+					Config: map[string]interface{}{
+						"auth": map[string]interface{}{
+							"type":         "OAuth",
+							"rudderScopes": []interface{}{"invalid", "delivery"}, // Invalid scope value
+						},
+					},
+				},
+			},
+			expectedDeliveryByOAuth: true,  // "delivery" is present in the scopes
+			expectedDeleteByOAuth:   false, // "delete" is not present in the scopes
 		},
 	}
 
@@ -1062,57 +1081,74 @@ func TestComputeOAuthInfoEdgeCases(t *testing.T) {
 	}
 }
 
-// TestIsOAuthByAccountDefinition tests the IsOAuthByAccountDefinition helper function
-func TestIsOAuthByAccountDefinition(t *testing.T) {
+// TestSetDynamicConfigFlags tests the SetDynamicConfigFlags method directly
+func TestSetDynamicConfigFlags(t *testing.T) {
 	tests := []struct {
-		name           string
-		accountDef     backendconfig.AccountDefinition
-		expectedResult bool
+		name                  string
+		config                map[string]interface{}
+		expectedDynamicConfig bool
 	}{
 		{
-			name: "OAuth enabled with refreshOAuthToken true",
-			accountDef: backendconfig.AccountDefinition{
-				Name: "test-account-def",
-				Config: map[string]interface{}{
-					"refreshOAuthToken": true,
-				},
+			name: "config with dynamic pattern",
+			config: map[string]interface{}{
+				"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 			},
-			expectedResult: true,
+			expectedDynamicConfig: true,
 		},
 		{
-			name: "OAuth disabled with refreshOAuthToken false",
-			accountDef: backendconfig.AccountDefinition{
-				Name: "test-account-def",
-				Config: map[string]interface{}{
-					"refreshOAuthToken": false,
+			name: "config with nested dynamic pattern",
+			config: map[string]interface{}{
+				"credentials": map[string]interface{}{
+					"token": "{{ message.context.token || \"default-token\" }}",
 				},
 			},
-			expectedResult: false,
+			expectedDynamicConfig: true,
 		},
 		{
-			name: "OAuth disabled with missing refreshOAuthToken",
-			accountDef: backendconfig.AccountDefinition{
-				Name:   "test-account-def",
-				Config: map[string]interface{}{},
-			},
-			expectedResult: false,
-		},
-		{
-			name: "OAuth disabled with non-boolean refreshOAuthToken",
-			accountDef: backendconfig.AccountDefinition{
-				Name: "test-account-def",
-				Config: map[string]interface{}{
-					"refreshOAuthToken": "true", // String instead of boolean
+			name: "config with array containing dynamic pattern",
+			config: map[string]interface{}{
+				"headers": []interface{}{
+					map[string]interface{}{
+						"value": "{{ message.context.header || \"default\" }}",
+					},
 				},
 			},
-			expectedResult: false,
+			expectedDynamicConfig: true,
+		},
+		{
+			name: "config without dynamic pattern",
+			config: map[string]interface{}{
+				"apiKey": "static-api-key",
+				"nested": map[string]interface{}{
+					"value": "static-value",
+				},
+			},
+			expectedDynamicConfig: false,
+		},
+		{
+			name:                  "nil config",
+			config:                nil,
+			expectedDynamicConfig: false,
+		},
+		{
+			name:                  "empty config",
+			config:                map[string]interface{}{},
+			expectedDynamicConfig: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := backendconfig.IsOAuthByAccountDefinition(tt.accountDef)
-			assert.Equal(t, tt.expectedResult, result, "IsOAuthByAccountDefinition should return expected value")
+			dest := &backendconfig.DestinationT{
+				ID:     "test-dest",
+				Config: tt.config,
+			}
+
+			// Call the method under test
+			dest.SetDynamicConfigFlags()
+
+			// Verify the result
+			assert.Equal(t, tt.expectedDynamicConfig, dest.HasDynamicConfig, "HasDynamicConfig should match expected value")
 		})
 	}
 }

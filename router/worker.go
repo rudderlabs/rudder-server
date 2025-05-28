@@ -297,9 +297,8 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	var destinationJobs []types.DestinationJobT
 
-	destinationJobs = w.transformJobsPerDestination(routerJobs)
+	destinationJobs := w.transformJobsPerDestination(routerJobs)
 
 	// the following stats (in combination with the limiter's timer stats) are used to capture the transform stage
 	// average latency, batching efficiency and max processing capacity

@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -21,16 +20,6 @@ type workerJobStatus struct {
 	payload    json.RawMessage
 	statTags   map[string]string
 	parameters routerutils.JobParameters
-}
-
-type HandleDestOAuthRespParams struct {
-	ctx            context.Context
-	destinationJob types.DestinationJobT
-	workerID       int
-	trRespStCd     int
-	trRespBody     string
-	secret         json.RawMessage
-	contentType    string
 }
 
 type Diagnostic struct {

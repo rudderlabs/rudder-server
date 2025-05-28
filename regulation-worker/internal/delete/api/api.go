@@ -103,6 +103,8 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		ID:               destination.DestinationID,
 		Config:           destination.Config,
 		DefinitionConfig: destination.DestDefConfig,
+		DeliveryByOAuth:  destination.DeliveryByOAuth,
+		DeleteByOAuth:    destination.DeleteByOAuth,
 	}
 	isOAuth, err := dest.IsOAuthDestination(common.RudderFlowDelete)
 	if err != nil {
