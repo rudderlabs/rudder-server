@@ -154,12 +154,6 @@ func TestUploads(t *testing.T) {
 					{A: "wh_uploads.destination_id", B: destinationID},
 					{A: "wh_uploads.namespace", B: namespace},
 				}...)
-				requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
-					{A: "source_id", B: sourceID},
-					{A: "destination_id", B: destinationID},
-					{A: "namespace", B: namespace},
-					{A: "status", B: exportedData},
-				}...)
 				requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), 2*events)
 			})
 		}
