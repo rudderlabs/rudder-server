@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"path"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -125,6 +127,7 @@ type Handle struct {
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
 	utSamplingFileManager      filemanager.FileManager
+	storeSamplingFileManager   filemanager.FileManager
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
@@ -177,6 +180,7 @@ type Handle struct {
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
+		storeSamplerEnabled                       config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -432,6 +436,11 @@ func (proc *Handle) Setup(
 	if err != nil {
 		proc.logger.Errorn("failed to create ut sampling file manager", obskit.Error(err))
 		proc.utSamplingFileManager = nil
+	}
+	proc.storeSamplingFileManager, err = getStoreSamplingUploader(proc.conf, proc.logger)
+	if err != nil {
+		proc.logger.Errorn("failed to create store sampling file manager", obskit.Error(err))
+		proc.storeSamplingFileManager = nil
 	}
 
 	if proc.adaptiveLimit == nil {
@@ -776,6 +785,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	// UserTransformation mirroring settings
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
+	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 }
 
 type connection struct {
@@ -2606,7 +2616,29 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 						func(tx jobsdb.StoreSafeTx) error {
 							err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 							if err != nil {
-								return fmt.Errorf("storing batch router jobs: %w", err)
+								storeErr := fmt.Errorf("storing batch router jobs: %w", err)
+								if !proc.config.storeSamplerEnabled.Load() {
+									return storeErr
+								}
+								if proc.storeSamplingFileManager == nil {
+									proc.logger.Errorn("Cannot upload as store sampling file manager is nil")
+								} else {
+									batchDestJobsJSON, err := jsonrs.Marshal(batchDestJobs)
+									if err != nil {
+										return fmt.Errorf("marshalling batch router jobs: %w: %w ", storeErr, err)
+									}
+
+									objName := path.Join("proc-samples", proc.instanceID, uuid.NewString())
+									uploadFile, err := proc.storeSamplingFileManager.UploadReader(ctx, objName, strings.NewReader(string(batchDestJobsJSON)))
+									if err != nil {
+										return fmt.Errorf("uploading sample batch router jobs: %w: %w", storeErr, err)
+									}
+									proc.logger.Infon("Successfully upload proc sample",
+										logger.NewStringField("location", uploadFile.Location),
+										logger.NewStringField("objectName", uploadFile.ObjectName),
+									)
+								}
+								return storeErr
 							}
 
 							// rsources stats
@@ -2744,6 +2776,32 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
+}
+
+func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+	var (
+		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Processor.Store.Sampling.Bucket")
+		regionHint       = conf.GetStringVar("us-east-1", "Processor.Store.Sampling.RegionHint", "AWS_S3_REGION_HINT")
+		endpoint         = conf.GetStringVar("", "Processor.Store.Sampling.Endpoint")
+		accessKeyID      = conf.GetStringVar("", "Processor.Store.Sampling.AccessKey", "AWS_ACCESS_KEY_ID")
+		secretAccessKey  = conf.GetStringVar("", "Processor.Store.Sampling.SecretAccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBoolVar(false, "Processor.Store.Sampling.S3ForcePathStyle")
+		disableSSL       = conf.GetBoolVar(false, "Processor.Store.Sampling.DisableSSL")
+		enableSSE        = conf.GetBoolVar(false, "Processor.Store.Sampling.EnableSSE", "AWS_ENABLE_SSE")
+	)
+	s3Config := map[string]any{
+		"bucketName":       bucket,
+		"regionHint":       regionHint,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"secretAccessKey":  secretAccessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
+	}
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "proc-uploader")), func() time.Duration {
+		return conf.GetDuration("Processor.Store.Sampling.Timeout", 120, time.Second)
+	})
 }
 
 // getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type
