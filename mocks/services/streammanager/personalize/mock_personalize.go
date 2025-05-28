@@ -10,9 +10,10 @@
 package mock_personalize
 
 import (
+	context "context"
 	reflect "reflect"
 
-	personalizeevents "github.com/aws/aws-sdk-go/service/personalizeevents"
+	personalizeevents "github.com/aws/aws-sdk-go-v2/service/personalizeevents"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,46 +42,61 @@ func (m *MockPersonalizeClient) EXPECT() *MockPersonalizeClientMockRecorder {
 }
 
 // PutEvents mocks base method.
-func (m *MockPersonalizeClient) PutEvents(input *personalizeevents.PutEventsInput) (*personalizeevents.PutEventsOutput, error) {
+func (m *MockPersonalizeClient) PutEvents(ctx context.Context, input *personalizeevents.PutEventsInput, opts ...func(*personalizeevents.Options)) (*personalizeevents.PutEventsOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutEvents", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutEvents", varargs...)
 	ret0, _ := ret[0].(*personalizeevents.PutEventsOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutEvents indicates an expected call of PutEvents.
-func (mr *MockPersonalizeClientMockRecorder) PutEvents(input any) *gomock.Call {
+func (mr *MockPersonalizeClientMockRecorder) PutEvents(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockPersonalizeClient)(nil).PutEvents), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockPersonalizeClient)(nil).PutEvents), varargs...)
 }
 
 // PutItems mocks base method.
-func (m *MockPersonalizeClient) PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error) {
+func (m *MockPersonalizeClient) PutItems(ctx context.Context, input *personalizeevents.PutItemsInput, opts ...func(*personalizeevents.Options)) (*personalizeevents.PutItemsOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutItems", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutItems", varargs...)
 	ret0, _ := ret[0].(*personalizeevents.PutItemsOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutItems indicates an expected call of PutItems.
-func (mr *MockPersonalizeClientMockRecorder) PutItems(input any) *gomock.Call {
+func (mr *MockPersonalizeClientMockRecorder) PutItems(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutItems", reflect.TypeOf((*MockPersonalizeClient)(nil).PutItems), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutItems", reflect.TypeOf((*MockPersonalizeClient)(nil).PutItems), varargs...)
 }
 
 // PutUsers mocks base method.
-func (m *MockPersonalizeClient) PutUsers(input *personalizeevents.PutUsersInput) (*personalizeevents.PutUsersOutput, error) {
+func (m *MockPersonalizeClient) PutUsers(ctx context.Context, input *personalizeevents.PutUsersInput, opts ...func(*personalizeevents.Options)) (*personalizeevents.PutUsersOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutUsers", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutUsers", varargs...)
 	ret0, _ := ret[0].(*personalizeevents.PutUsersOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutUsers indicates an expected call of PutUsers.
-func (mr *MockPersonalizeClientMockRecorder) PutUsers(input any) *gomock.Call {
+func (mr *MockPersonalizeClientMockRecorder) PutUsers(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutUsers", reflect.TypeOf((*MockPersonalizeClient)(nil).PutUsers), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutUsers", reflect.TypeOf((*MockPersonalizeClient)(nil).PutUsers), varargs...)
 }

@@ -5,17 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/firehose"
-
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -117,12 +116,12 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	sampleRecord := firehose.PutRecordInput{
 		DeliveryStreamName: aws.String(sampleDeliveryStreamName),
-		Record:             &firehose.Record{Data: sampleMessageJson},
+		Record:             &types.Record{Data: sampleMessageJson},
 	}
 
 	mockClient.
 		EXPECT().
-		PutRecord(&sampleRecord).
+		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
 		Return(&firehose.PutRecordOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 200, statusCode)
@@ -133,7 +132,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	errorCode := "errorCode"
 	mockClient.
 		EXPECT().
-		PutRecord(&sampleRecord).
+		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
 		Return(nil, errors.New(errorCode))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
@@ -144,7 +143,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	// return aws error
 	mockClient.
 		EXPECT().
-		PutRecord(&sampleRecord).
+		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
 		Return(nil, awserr.NewRequestFailure(
 			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 		))

@@ -10,9 +10,10 @@
 package mock_lambda
 
 import (
+	context "context"
 	reflect "reflect"
 
-	lambda "github.com/aws/aws-sdk-go/service/lambda"
+	lambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,16 +42,21 @@ func (m *MockLambdaClient) EXPECT() *MockLambdaClientMockRecorder {
 }
 
 // Invoke mocks base method.
-func (m *MockLambdaClient) Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error) {
+func (m *MockLambdaClient) Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Invoke", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "Invoke", varargs...)
 	ret0, _ := ret[0].(*lambda.InvokeOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Invoke indicates an expected call of Invoke.
-func (mr *MockLambdaClientMockRecorder) Invoke(input any) *gomock.Call {
+func (mr *MockLambdaClientMockRecorder) Invoke(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Invoke", reflect.TypeOf((*MockLambdaClient)(nil).Invoke), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Invoke", reflect.TypeOf((*MockLambdaClient)(nil).Invoke), varargs...)
 }

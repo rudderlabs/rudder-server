@@ -7,9 +7,10 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -95,13 +96,13 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	destConfig := map[string]string{}
 
 	var sampleInput lambda.InvokeInput
-	sampleInput.SetFunctionName(sampleFunction)
-	sampleInput.SetPayload([]byte(sampleMessage))
-	sampleInput.SetInvocationType(invocationType)
-	sampleInput.SetLogType("Tail")
+	sampleInput.FunctionName = &sampleFunction
+	sampleInput.Payload = []byte(sampleMessage)
+	sampleInput.InvocationType = types.InvocationType(invocationType)
+	sampleInput.LogType = types.LogTypeTail
 
 	t.Run("success", func(t *testing.T) {
-		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda.InvokeOutput{}, nil)
+		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(&lambda.InvokeOutput{}, nil)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusOK, statusCode)
 		require.Equal(t, "Success", statusMsg)
@@ -110,7 +111,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	t.Run("general error", func(t *testing.T) {
 		errorCode := "errorCode"
-		mockClient.EXPECT().Invoke(&sampleInput).Return(nil, errors.New(errorCode))
+		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(nil, errors.New(errorCode))
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusInternalServerError, statusCode)
@@ -119,8 +120,8 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	})
 
 	t.Run("when lambda invocation is successful, but there is an issue with the payload", func(t *testing.T) {
-		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda.InvokeOutput{
-			StatusCode:      aws.Int64(http.StatusOK),
+		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(&lambda.InvokeOutput{
+			StatusCode:      *aws.Int32(http.StatusOK),
 			FunctionError:   aws.String("Unhandled"),
 			ExecutedVersion: aws.String("$LATEST"),
 		}, nil)
@@ -132,7 +133,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	t.Run("aws error", func(t *testing.T) {
 		errorCode := "errorCode"
-		mockClient.EXPECT().Invoke(&sampleInput).Return(
+		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(
 			nil, awserr.NewRequestFailure(awserr.New(errorCode, errorCode, errors.New(errorCode)), http.StatusBadRequest, "request-id"))
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)

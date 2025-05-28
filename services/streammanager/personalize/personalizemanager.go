@@ -3,13 +3,14 @@
 package personalize
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/service/personalizeevents"
+	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -28,21 +29,21 @@ type PersonalizeProducer struct {
 }
 
 type PersonalizeClient interface {
-	PutEvents(input *personalizeevents.PutEventsInput) (*personalizeevents.PutEventsOutput, error)
-	PutUsers(input *personalizeevents.PutUsersInput) (*personalizeevents.PutUsersOutput, error)
-	PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error)
+	PutEvents(ctx context.Context, input *personalizeevents.PutEventsInput, opts ...func(*personalizeevents.Options)) (*personalizeevents.PutEventsOutput, error)
+	PutUsers(ctx context.Context, input *personalizeevents.PutUsersInput, opts ...func(*personalizeevents.Options)) (*personalizeevents.PutUsersOutput, error)
+	PutItems(ctx context.Context, input *personalizeevents.PutItemsInput, opts ...func(*personalizeevents.Options)) (*personalizeevents.PutItemsOutput, error)
 }
 
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*PersonalizeProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, personalizeevents.ServiceName)
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "personalize")
 	if err != nil {
 		return nil, err
 	}
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &PersonalizeProducer{client: personalizeevents.New(awsSession)}, nil
+	return &PersonalizeProducer{client: personalizeevents.NewFromConfig(awsConfig)}, nil
 }
 
 func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessag string) {
@@ -64,41 +65,28 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}
-
-		if err = input.Validate(); err != nil {
-			return 400, err.Error(), "input does not have required fields"
-		}
-		response, err = client.PutEvents(&input)
+		response, err = client.PutEvents(context.Background(), &input)
 	case "PutUsers":
 		input := personalizeevents.PutUsersInput{}
 		err = jsonrs.Unmarshal(eventPayload, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutUsers input structure"
 		}
-		if err = input.Validate(); err != nil {
-			return 400, err.Error(), "input does not have required fields"
-		}
-		response, err = client.PutUsers(&input)
+		response, err = client.PutUsers(context.Background(), &input)
 	case "PutItems":
 		input := personalizeevents.PutItemsInput{}
 		err = jsonrs.Unmarshal(eventPayload, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutItems input structure"
 		}
-		if err = input.Validate(); err != nil {
-			return 400, err.Error(), "input does not have required fields"
-		}
-		response, err = client.PutItems(&input)
+		response, err = client.PutItems(context.Background(), &input)
 	default:
 		input := personalizeevents.PutEventsInput{}
 		err = jsonrs.Unmarshal(jsonData, &input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}
-		if err = input.Validate(); err != nil {
-			return 400, err.Error(), "input does not have required fields"
-		}
-		response, err = client.PutEvents(&input)
+		response, err = client.PutEvents(context.Background(), &input)
 	}
 
 	if err != nil {

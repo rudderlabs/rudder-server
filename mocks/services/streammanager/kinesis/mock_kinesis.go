@@ -10,9 +10,10 @@
 package mock_kinesis
 
 import (
+	context "context"
 	reflect "reflect"
 
-	kinesis "github.com/aws/aws-sdk-go/service/kinesis"
+	kinesis "github.com/aws/aws-sdk-go-v2/service/kinesis"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,16 +42,21 @@ func (m *MockKinesisClient) EXPECT() *MockKinesisClientMockRecorder {
 }
 
 // PutRecord mocks base method.
-func (m *MockKinesisClient) PutRecord(input *kinesis.PutRecordInput) (*kinesis.PutRecordOutput, error) {
+func (m *MockKinesisClient) PutRecord(ctx context.Context, input *kinesis.PutRecordInput, opts ...func(*kinesis.Options)) (*kinesis.PutRecordOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutRecord", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutRecord", varargs...)
 	ret0, _ := ret[0].(*kinesis.PutRecordOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutRecord indicates an expected call of PutRecord.
-func (mr *MockKinesisClientMockRecorder) PutRecord(input any) *gomock.Call {
+func (mr *MockKinesisClientMockRecorder) PutRecord(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutRecord", reflect.TypeOf((*MockKinesisClient)(nil).PutRecord), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutRecord", reflect.TypeOf((*MockKinesisClient)(nil).PutRecord), varargs...)
 }

@@ -3,12 +3,14 @@
 package lambda
 
 import (
+	"context"
 	"encoding/json"
 
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/mitchellh/mapstructure"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -32,26 +34,26 @@ type LambdaProducer struct {
 }
 
 type LambdaClient interface {
-	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
+	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
 }
 
 var pkgLogger logger.Logger
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("lambda")
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*LambdaProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, lambda.ServiceName)
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "lambda")
 	if err != nil {
 		return nil, err
 	}
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &LambdaProducer{client: lambda.New(awsSession)}, nil
+	return &LambdaProducer{client: lambda.NewFromConfig(awsConfig)}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
@@ -81,18 +83,14 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	}
 
 	var invokeInput lambda.InvokeInput
-	invokeInput.SetFunctionName(config.Lambda)
-	invokeInput.SetPayload([]byte(input.Payload))
-	invokeInput.SetInvocationType(config.InvocationType)
+	invokeInput.FunctionName = &config.Lambda
+	invokeInput.Payload = []byte(input.Payload)
+	invokeInput.InvocationType = types.InvocationType(config.InvocationType)
 	if config.ClientContext != "" {
-		invokeInput.SetClientContext(config.ClientContext)
+		invokeInput.ClientContext = &config.ClientContext
 	}
 
-	if err = invokeInput.Validate(); err != nil {
-		return 400, "Failure", "[Lambda] error :: Invalid invokeInput :: " + err.Error()
-	}
-
-	_, err = client.Invoke(&invokeInput)
+	_, err = client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[Lambda] Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)

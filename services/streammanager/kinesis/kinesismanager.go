@@ -3,14 +3,15 @@
 package kinesis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -28,7 +29,7 @@ type Config struct {
 }
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(kinesis.ServiceName)
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("kinesis")
 }
 
 type KinesisProducer struct {
@@ -36,23 +37,23 @@ type KinesisProducer struct {
 }
 
 type KinesisClient interface {
-	PutRecord(input *kinesis.PutRecordInput) (*kinesis.PutRecordOutput, error)
+	PutRecord(ctx context.Context, input *kinesis.PutRecordInput, opts ...func(*kinesis.Options)) (*kinesis.PutRecordOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*KinesisProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, kinesis.ServiceName)
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "kinesis")
 	if err != nil {
 		return nil, err
 	}
 
 	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.KINESIS.httpMaxIdleConnsPerHost", "Router.KINESIS.noOfWorkers", "Router.noOfWorkers")
 
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &KinesisProducer{client: kinesis.New(awsSession)}, err
+	return &KinesisProducer{client: kinesis.NewFromConfig(awsConfig)}, err
 }
 
 // Produce creates a producer and send data to Kinesis.
@@ -100,10 +101,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 		StreamName:   streamName,
 		PartitionKey: aws.String(partitionKey),
 	}
-	if err = putInput.Validate(); err != nil {
-		return 400, "InvalidInput", err.Error()
-	}
-	putOutput, err := client.PutRecord(&putInput)
+	putOutput, err := client.PutRecord(context.Background(), &putInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[Kinesis] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
