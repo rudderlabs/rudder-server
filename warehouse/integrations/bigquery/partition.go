@@ -42,6 +42,8 @@ func (bq *BigQuery) customPartitionEnabledViaGlobalConfig() bool {
 	return bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID)
 }
 
+// isPartitionedByIngestionTime returns true if the table is partitioned by ingestion time
+// Field is empty for ingestion time partitioned tables
 func (bq *BigQuery) isPartitionedByIngestionTime(partitionInWarehouse *bigquery.TimePartitioning) bool {
 	return partitionInWarehouse != nil && partitionInWarehouse.Field == ""
 }
