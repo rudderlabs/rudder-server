@@ -2529,6 +2529,39 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) storeStage(partition string, in *storeMessage) {
+	lockRouterDestIDs := func() func() {
+		var deferred []func()
+		if len(in.destJobs) == 0 {
+			return func() {}
+		}
+		if len(in.routerDestIDs) > 0 {
+			destIDs := lo.Uniq(in.routerDestIDs)
+			slices.Sort(destIDs)
+			for _, destID := range destIDs {
+				proc.storePlocker.Lock(destID)
+				deferred = append(deferred, func() { proc.storePlocker.Unlock(destID) })
+			}
+		} else {
+			proc.logger.Warnn("empty storeMessage.routerDestIDs",
+				logger.NewStringField("partition", partition),
+				logger.NewStringField("expected",
+					strings.Join(
+						lo.Uniq(
+							lo.Map(in.destJobs, func(j *jobsdb.JobT, _ int) string { return gjson.GetBytes(j.Parameters, "destination_id").String() }),
+						),
+						", ",
+					),
+				),
+			)
+		}
+		return func() {
+			slices.Reverse(deferred)
+			for _, fn := range deferred {
+				fn()
+			}
+		}
+	}
+
 	spanTags := stats.Tags{"partition": partition}
 	_, mainSpan := proc.tracer.Trace(in.ctx, "storeStage", tracing.WithTraceTags(spanTags))
 	defer mainSpan.End()
@@ -2556,6 +2589,9 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 	enableConcurrentStore := proc.config.enableConcurrentStore.Load()
 	if !enableConcurrentStore {
 		g.SetLimit(1)
+	} else {
+		// lock early to avoid deadlocks due to connection pool exhaustion
+		defer lockRouterDestIDs()()
 	}
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
@@ -2599,21 +2635,8 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
 			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
 			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
-			if len(in.routerDestIDs) > 0 {
-				destIDs := lo.Uniq(in.routerDestIDs)
-				slices.Sort(destIDs)
-				for _, destID := range destIDs {
-					proc.storePlocker.Lock(destID)
-					defer proc.storePlocker.Unlock(destID)
-				}
-			} else {
-				proc.logger.Warnw("empty storeMessage.routerDestIDs",
-					"expected",
-					lo.Uniq(
-						lo.Map(destJobs, func(j *jobsdb.JobT, _ int) string {
-							return gjson.GetBytes(j.Parameters, "destination_id").String()
-						}),
-					))
+			if !enableConcurrentStore {
+				defer lockRouterDestIDs()()
 			}
 			err := misc.RetryWithNotify(
 				ctx,

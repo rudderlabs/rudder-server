@@ -151,7 +151,7 @@ func TestCommonPool(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
 	defer db.Close()
-	require.Equal(t, 40, db.Stats().MaxOpenConnections)
+	require.Equal(t, 80, db.Stats().MaxOpenConnections)
 
 	conf.Set("db.test.pool.maxOpenConnections", 5)
 	time.Sleep(100 * time.Millisecond)
