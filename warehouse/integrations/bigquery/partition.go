@@ -34,27 +34,18 @@ var supportedPartitionTypeMap = map[string]bigquery.TimePartitioningType{
 // if we know beforehand that the data is in a single partition, specifying the partition decorator can improve write performance.
 // However, in case of time-unit column and integer-range partitioned tables, the partition ID specified in the decorator must match the data being written. Otherwise, an error occurs.
 // Therefore, if we are not sure about the partition decorator, we should not specify it i.e. in case when it is enabled via destination config.
-func (bq *BigQuery) avoidPartitionDecorator() bool {
-	return bq.customPartitionEnabledViaGlobalConfig() || bq.isTimeUnitPartitionColumn()
+func (bq *BigQuery) avoidPartitionDecorator(partitionInWarehouse *bigquery.TimePartitioning) bool {
+	return bq.customPartitionEnabledViaGlobalConfig() || !bq.isPartitionedByIngestionTime(partitionInWarehouse)
 }
 
 func (bq *BigQuery) customPartitionEnabledViaGlobalConfig() bool {
 	return bq.config.customPartitionsEnabled || slices.Contains(bq.config.customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID)
 }
 
-func (bq *BigQuery) isTimeUnitPartitionColumn() bool {
-	partitionColumn := bq.partitionColumn()
-
-	if partitionColumn == "" {
-		return false
-	}
-	if err := bq.checkValidPartitionColumn(partitionColumn); err != nil {
-		return false
-	}
-	if partitionColumn == "_PARTITIONTIME" {
-		return false
-	}
-	return true
+// isPartitionedByIngestionTime returns true if the table is partitioned by ingestion time
+// Field is empty for ingestion time partitioned tables
+func (bq *BigQuery) isPartitionedByIngestionTime(partitionInWarehouse *bigquery.TimePartitioning) bool {
+	return partitionInWarehouse != nil && partitionInWarehouse.Field == ""
 }
 
 func (bq *BigQuery) partitionColumn() string {
@@ -93,6 +84,21 @@ func (bq *BigQuery) partitionDate() (string, error) {
 	}
 
 	switch bqPartitionType {
+	case bigquery.HourPartitioningType:
+		return bq.now().Format("2006-01-02T15"), nil
+	case bigquery.DayPartitioningType:
+		return bq.now().Format("2006-01-02"), nil
+	default:
+		return "", errPartitionTypeNotSupported
+	}
+}
+
+func (bq *BigQuery) partitionDateByPartitioning(partitioning *bigquery.TimePartitioning) (string, error) {
+	if partitioning == nil {
+		return bq.now().Format("2006-01-02"), nil
+	}
+	partitionType := partitioning.Type
+	switch partitionType {
 	case bigquery.HourPartitioningType:
 		return bq.now().Format("2006-01-02T15"), nil
 	case bigquery.DayPartitioningType:

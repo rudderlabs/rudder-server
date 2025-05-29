@@ -53,10 +53,6 @@ type BigQuery struct {
 	}
 }
 
-type loadTableResponse struct {
-	partitionDate string
-}
-
 const (
 	provider       = warehouseutils.BQ
 	tableNameLimit = 127
@@ -225,7 +221,9 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 		return nil
 	}
 
-	deduplicationQuery, err := bq.deduplicationQuery(tableName, columnMap)
+	// no need to pass partitioningInWarehouse here. dedup query considers the partition column, type from the destination config
+	// should always create a view with partition column and type from destination config
+	deduplicationQuery, err := bq.deduplicationQuery(tableName, columnMap, nil)
 	if err != nil {
 		return fmt.Errorf("deduplication query: %w", err)
 	}
@@ -248,7 +246,16 @@ func (bq *BigQuery) createTableView(ctx context.Context, tableName string, colum
 	return nil
 }
 
-func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSchema) (string, error) {
+func (bq *BigQuery) fetchTablePartitionFromWarehouse(ctx context.Context, tableName string) (*bigquery.TimePartitioning, error) {
+	table := bq.db.Dataset(bq.namespace).Table(tableName)
+	meta, err := table.Metadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return meta.TimePartitioning, nil
+}
+
+func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSchema, partitioningInWarehouse *bigquery.TimePartitioning) (string, error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -263,6 +270,18 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 		granularity, partitionFilter   string
 		partitionColumn, partitionType = bq.partitionColumn(), bq.partitionType()
 	)
+
+	// if partitioningInWarehouse is not nil, then we use the partition column and type from the warehouse
+	if partitioningInWarehouse != nil {
+		if partitionColumn != partitioningInWarehouse.Field {
+			bq.logger.Warnn("partition column mismatch in config and warehouse",
+				logger.NewStringField("partitionColumnInConfig", partitionColumn),
+				logger.NewStringField("partitionColumnInWarehouse", partitioningInWarehouse.Field),
+			)
+		}
+		partitionColumn = partitioningInWarehouse.Field
+		partitionType = strings.ToLower(string(partitioningInWarehouse.Type))
+	}
 
 	if partitionColumn == "" || partitionType == "" {
 		granularity = "DAY"
@@ -447,7 +466,7 @@ func (bq *BigQuery) DeleteBy(ctx context.Context, tableNames []string, params wa
 }
 
 func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
-	*types.LoadTableStats, *loadTableResponse, error,
+	*types.LoadTableStats, error,
 ) {
 	log := bq.logger.Withn(
 		obskit.SourceID(bq.warehouse.Source.ID),
@@ -463,7 +482,7 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 
 	gcsReferences, err := bq.gcsReferences(ctx, tableName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting gcs references: %w", err)
+		return nil, fmt.Errorf("getting gcs references: %w", err)
 	}
 
 	gcsRef := bigquery.NewGCSReference(gcsReferences...)
@@ -471,7 +490,11 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	return bq.loadTableByAppend(ctx, tableName, gcsRef, log)
+	loadTableStats, err := bq.loadTableByAppend(ctx, tableName, gcsRef, log)
+	if err != nil {
+		return nil, fmt.Errorf("loading table by append: %w", err)
+	}
+	return loadTableStats, nil
 }
 
 func (bq *BigQuery) gcsReferences(
@@ -530,23 +553,28 @@ func (bq *BigQuery) loadTableByAppend(
 	tableName string,
 	gcsRef *bigquery.GCSReference,
 	log logger.Logger,
-) (*types.LoadTableStats, *loadTableResponse, error) {
-	partitionDate, err := bq.partitionDate()
+) (*types.LoadTableStats, error) {
+	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("partition date: %w", err)
+		return nil, fmt.Errorf("fetching table partitioning: %w", err)
 	}
 
 	var outputTable string
-	if bq.avoidPartitionDecorator() {
+
+	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
+		partitionDate, err := bq.partitionDateByPartitioning(partitioningInWarehouse)
+		if err != nil {
+			return nil, fmt.Errorf("partition date: %w", err)
+		}
 		outputTable = partitionedTable(tableName, partitionDate)
 	}
 
 	log.Infon("loading data into main table")
 	job, err := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef).Run(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("moving data into main table: %w", err)
+		return nil, fmt.Errorf("moving data into main table: %w", err)
 	}
 
 	log.Debugn("waiting for append job to complete",
@@ -554,16 +582,16 @@ func (bq *BigQuery) loadTableByAppend(
 	)
 	status, err := job.Wait(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("waiting for append job: %w", err)
+		return nil, fmt.Errorf("waiting for append job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("status for append job: %w", err)
+		return nil, fmt.Errorf("status for append job: %w", err)
 	}
 
 	log.Debugn("job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
-		return nil, nil, fmt.Errorf("append job statistics: %w", err)
+		return nil, fmt.Errorf("append job statistics: %w", err)
 	}
 
 	log.Infon("completed loading")
@@ -572,10 +600,7 @@ func (bq *BigQuery) loadTableByAppend(
 	if statistics.Load != nil {
 		tableStats.RowsInserted = statistics.Load.OutputRows
 	}
-	response := &loadTableResponse{
-		partitionDate: partitionDate,
-	}
-	return tableStats, response, nil
+	return tableStats, nil
 }
 
 // jobStatistics returns statistics for a job
@@ -623,7 +648,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 
-	_, identifyLoadTable, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
+	_, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -659,9 +684,17 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
+	usersTablePartitionInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, warehouseutils.UsersTable)
+	if err != nil {
+		log.Warnn("Fetching partitioning for users table", obskit.Error(err))
+		errorMap[warehouseutils.UsersTable] = fmt.Errorf("fetching partitioning for users table: %w", err)
+		return
+	}
+
 	deduplicationQuery, err := bq.deduplicationQuery(
 		warehouseutils.UsersTable,
 		bq.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable),
+		usersTablePartitionInWarehouse,
 	)
 	if err != nil {
 		log.Warnn("Deduplication query for users table", obskit.Error(err))
@@ -688,10 +721,17 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 
 	log.Infon("Loading data")
 	var partitionedUsersTable string
-	if bq.avoidPartitionDecorator() {
+
+	if bq.avoidPartitionDecorator(usersTablePartitionInWarehouse) {
 		partitionedUsersTable = warehouseutils.UsersTable
 	} else {
-		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
+		partitionDate, err := bq.partitionDateByPartitioning(usersTablePartitionInWarehouse)
+		if err != nil {
+			log.Warnn("partition date for users table", obskit.Error(err))
+			errorMap[warehouseutils.UsersTable] = fmt.Errorf("partition date: %w", err)
+			return
+		}
+		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, partitionDate)
 	}
 
 	query := bq.db.Query(sqlStatement)
@@ -889,7 +929,7 @@ func (*BigQuery) TestConnection(_ context.Context, _ model.Warehouse) (err error
 }
 
 func (bq *BigQuery) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	loadTableStat, _, err := bq.loadTable(ctx, tableName)
+	loadTableStat, err := bq.loadTable(ctx, tableName)
 	return loadTableStat, err
 }
 
@@ -1216,15 +1256,19 @@ func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName strin
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	partitionDate, err := bq.partitionDate()
+	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
 	if err != nil {
-		return fmt.Errorf("partition date: %w", err)
+		return fmt.Errorf("fetching table partitioning: %w", err)
 	}
 
 	var outputTable string
-	if bq.avoidPartitionDecorator() {
+	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
+		partitionDate, err := bq.partitionDateByPartitioning(partitioningInWarehouse)
+		if err != nil {
+			return fmt.Errorf("partition date: %w", err)
+		}
 		outputTable = partitionedTable(tableName, partitionDate)
 	}
 
