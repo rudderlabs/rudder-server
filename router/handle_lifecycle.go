@@ -31,7 +31,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -137,7 +136,6 @@ func (rt *Handle) Setup(
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 		rt.transformerFeaturesService,
 	)
-	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
