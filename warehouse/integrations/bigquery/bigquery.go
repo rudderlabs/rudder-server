@@ -654,7 +654,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 
-	_, identifyLoadTable, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
+	_, _, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -731,7 +731,13 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	if bq.avoidPartitionDecorator(usersTablePartitionInWarehouse) {
 		partitionedUsersTable = warehouseutils.UsersTable
 	} else {
-		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, identifyLoadTable.partitionDate)
+		partitionDate, err := bq.partitionDateByPartitioning(usersTablePartitionInWarehouse)
+		if err != nil {
+			log.Warnn("partition date for users table", obskit.Error(err))
+			errorMap[warehouseutils.UsersTable] = fmt.Errorf("partition date: %w", err)
+			return
+		}
+		partitionedUsersTable = partitionedTable(warehouseutils.UsersTable, partitionDate)
 	}
 
 	query := bq.db.Query(sqlStatement)
