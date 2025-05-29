@@ -33,7 +33,7 @@ func (d *DestinationInfo) IsOAuthDestination(flow common.RudderFlow) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	return authType == string(oauth.OAuthAccounts) || (authType == string(oauth.OAuth) && isScopeSupported), nil
+	return (authType == string(oauth.OAuthAccount) || authType == string(oauth.OAuth)) && isScopeSupported, nil
 }
 
 func (d *DestinationInfo) IsOAuthSupportedForFlow(flow string) (bool, error) {
