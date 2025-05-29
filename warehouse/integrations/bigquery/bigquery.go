@@ -53,10 +53,6 @@ type BigQuery struct {
 	}
 }
 
-type loadTableResponse struct {
-	partitionDate string
-}
-
 const (
 	provider       = warehouseutils.BQ
 	tableNameLimit = 127
@@ -470,7 +466,7 @@ func (bq *BigQuery) DeleteBy(ctx context.Context, tableNames []string, params wa
 }
 
 func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
-	*types.LoadTableStats, *loadTableResponse, error,
+	*types.LoadTableStats, error,
 ) {
 	log := bq.logger.Withn(
 		obskit.SourceID(bq.warehouse.Source.ID),
@@ -486,7 +482,7 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 
 	gcsReferences, err := bq.gcsReferences(ctx, tableName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("getting gcs references: %w", err)
+		return nil, fmt.Errorf("getting gcs references: %w", err)
 	}
 
 	gcsRef := bigquery.NewGCSReference(gcsReferences...)
@@ -494,7 +490,11 @@ func (bq *BigQuery) loadTable(ctx context.Context, tableName string) (
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	return bq.loadTableByAppend(ctx, tableName, gcsRef, log)
+	loadTableStats, err := bq.loadTableByAppend(ctx, tableName, gcsRef, log)
+	if err != nil {
+		return nil, fmt.Errorf("loading table by append: %w", err)
+	}
+	return loadTableStats, nil
 }
 
 func (bq *BigQuery) gcsReferences(
@@ -553,23 +553,20 @@ func (bq *BigQuery) loadTableByAppend(
 	tableName string,
 	gcsRef *bigquery.GCSReference,
 	log logger.Logger,
-) (*types.LoadTableStats, *loadTableResponse, error) {
+) (*types.LoadTableStats, error) {
 	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetching table partitioning: %w", err)
+		return nil, fmt.Errorf("fetching table partitioning: %w", err)
 	}
 
-	var (
-		outputTable string
-		partitionDate string
-	)
+	var outputTable string
 
 	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
 		partitionDate, err := bq.partitionDateByPartitioning(partitioningInWarehouse)
 		if err != nil {
-			return nil, nil, fmt.Errorf("partition date: %w", err)
+			return nil, fmt.Errorf("partition date: %w", err)
 		}
 		outputTable = partitionedTable(tableName, partitionDate)
 	}
@@ -577,7 +574,7 @@ func (bq *BigQuery) loadTableByAppend(
 	log.Infon("loading data into main table")
 	job, err := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef).Run(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("moving data into main table: %w", err)
+		return nil, fmt.Errorf("moving data into main table: %w", err)
 	}
 
 	log.Debugn("waiting for append job to complete",
@@ -585,16 +582,16 @@ func (bq *BigQuery) loadTableByAppend(
 	)
 	status, err := job.Wait(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("waiting for append job: %w", err)
+		return nil, fmt.Errorf("waiting for append job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("status for append job: %w", err)
+		return nil, fmt.Errorf("status for append job: %w", err)
 	}
 
 	log.Debugn("job statistics")
 	statistics, err := bq.jobStatistics(ctx, job)
 	if err != nil {
-		return nil, nil, fmt.Errorf("append job statistics: %w", err)
+		return nil, fmt.Errorf("append job statistics: %w", err)
 	}
 
 	log.Infon("completed loading")
@@ -603,10 +600,7 @@ func (bq *BigQuery) loadTableByAppend(
 	if statistics.Load != nil {
 		tableStats.RowsInserted = statistics.Load.OutputRows
 	}
-	response := &loadTableResponse{
-		partitionDate: partitionDate,
-	}
-	return tableStats, response, nil
+	return tableStats, nil
 }
 
 // jobStatistics returns statistics for a job
@@ -654,7 +648,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 
-	_, _, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
+	_, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -935,7 +929,7 @@ func (*BigQuery) TestConnection(_ context.Context, _ model.Warehouse) (err error
 }
 
 func (bq *BigQuery) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	loadTableStat, _, err := bq.loadTable(ctx, tableName)
+	loadTableStat, err := bq.loadTable(ctx, tableName)
 	return loadTableStat, err
 }
 

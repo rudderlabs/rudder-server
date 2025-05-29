@@ -251,3 +251,59 @@ func TestPartitionedTable(t *testing.T) {
 		})
 	}
 }
+
+func TestBigQuery_PartitionDateByPartitioning(t *testing.T) {
+	testCases := []struct {
+		name           string
+		partitioning   *stdbigquery.TimePartitioning
+		expectedResult string
+		expectedError  error
+	}{
+		{
+			name:           "nil partitioning (default to day)",
+			partitioning:   nil,
+			expectedResult: "2023-04-05",
+			expectedError:  nil,
+		},
+		{
+			name: "hour partitioning",
+			partitioning: &stdbigquery.TimePartitioning{
+				Type: stdbigquery.HourPartitioningType,
+			},
+			expectedResult: "2023-04-05T06",
+			expectedError:  nil,
+		},
+		{
+			name: "day partitioning",
+			partitioning: &stdbigquery.TimePartitioning{
+				Type: stdbigquery.DayPartitioningType,
+			},
+			expectedResult: "2023-04-05",
+			expectedError:  nil,
+		},
+		{
+			name: "unsupported partitioning type",
+			partitioning: &stdbigquery.TimePartitioning{
+				Type: "unsupported",
+			},
+			expectedResult: "",
+			expectedError:  errPartitionTypeNotSupported,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bq := &BigQuery{}
+			bq.now = func() time.Time {
+				return time.Date(2023, 4, 5, 6, 7, 8, 9, time.UTC)
+			}
+			result, err := bq.partitionDateByPartitioning(tc.partitioning)
+			if tc.expectedError != nil {
+				require.ErrorIs(t, err, tc.expectedError)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedResult, result)
+		})
+	}
+}
