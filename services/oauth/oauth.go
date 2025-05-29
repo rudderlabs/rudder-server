@@ -33,6 +33,7 @@ type (
 
 const (
 	OAuth           AuthType = "OAuth"
+	OAuthAccounts   AuthType = "OAuth-Account"
 	InvalidAuthType AuthType = "InvalidAuthType"
 
 	RudderFlow_Delivery RudderFlow = "delivery"
@@ -170,7 +171,7 @@ func GetAuthType(config map[string]interface{}) AuthType {
 
 func IsOAuthDestination(config map[string]interface{}) bool {
 	authType := GetAuthType(config)
-	return authType == OAuth
+	return authType == OAuth || authType == OAuthAccounts
 }
 
 // This function creates a new OauthErrorResponseHandler

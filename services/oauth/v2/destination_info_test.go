@@ -49,6 +49,31 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		},
 	},
 	{
+		description: "should pass for a destination which contains OAuth-Account and rudderScopes",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth-Account",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description: "should pass for a destination which contains OAuth-Accounts but not rudderScopes",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": "OAuth-Account",
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
 		description: "should return 'false' without error for a destination which contains OAuth with delete rudderScopes when flow is delivery",
 		flow:        common.RudderFlowDelivery,
 		inputDefConfig: map[string]interface{}{

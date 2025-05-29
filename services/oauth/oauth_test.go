@@ -110,6 +110,11 @@ func TestIsOAuthDestination(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "should return true if destination is OAuth-Accounts",
+			config:   map[string]interface{}{"auth": map[string]interface{}{"type": "OAuth-Account"}},
+			expected: true,
+		},
+		{
 			name:     "should return false if destination is not OAuth",
 			config:   map[string]interface{}{},
 			expected: false,
