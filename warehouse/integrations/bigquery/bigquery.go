@@ -275,6 +275,7 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 		partitionColumn, partitionType = bq.partitionColumn(), bq.partitionType()
 	)
 
+	// if partitioningInWarehouse is not nil, then we use the partition column and type from the warehouse
 	if partitioningInWarehouse != nil {
 		if partitionColumn != partitioningInWarehouse.Field {
 			bq.logger.Warnn("partition column mismatch in config and warehouse",
@@ -553,20 +554,23 @@ func (bq *BigQuery) loadTableByAppend(
 	gcsRef *bigquery.GCSReference,
 	log logger.Logger,
 ) (*types.LoadTableStats, *loadTableResponse, error) {
-	partitionDate, err := bq.partitionDate()
-	if err != nil {
-		return nil, nil, fmt.Errorf("partition date: %w", err)
-	}
-
 	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetching table partitioning: %w", err)
 	}
 
-	var outputTable string
+	var (
+		outputTable string
+		partitionDate string
+	)
+
 	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
+		partitionDate, err := bq.partitionDateByPartitioning(partitioningInWarehouse)
+		if err != nil {
+			return nil, nil, fmt.Errorf("partition date: %w", err)
+		}
 		outputTable = partitionedTable(tableName, partitionDate)
 	}
 
@@ -724,7 +728,6 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	log.Infon("Loading data")
 	var partitionedUsersTable string
 
-	// avoid writing to partioned table if there is a no or custom partition instead of ingestion time partition i.e _PARTITIONTIME
 	if bq.avoidPartitionDecorator(usersTablePartitionInWarehouse) {
 		partitionedUsersTable = warehouseutils.UsersTable
 	} else {
@@ -1253,11 +1256,6 @@ func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName strin
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	partitionDate, err := bq.partitionDate()
-	if err != nil {
-		return fmt.Errorf("partition date: %w", err)
-	}
-
 	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
 	if err != nil {
 		return fmt.Errorf("fetching table partitioning: %w", err)
@@ -1267,6 +1265,10 @@ func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName strin
 	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
+		partitionDate, err := bq.partitionDateByPartitioning(partitioningInWarehouse)
+		if err != nil {
+			return fmt.Errorf("partition date: %w", err)
+		}
 		outputTable = partitionedTable(tableName, partitionDate)
 	}
 

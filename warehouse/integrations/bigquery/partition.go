@@ -93,6 +93,21 @@ func (bq *BigQuery) partitionDate() (string, error) {
 	}
 }
 
+func (bq *BigQuery) partitionDateByPartitioning(partitioning *bigquery.TimePartitioning) (string, error) {
+	if partitioning == nil {
+		return bq.now().Format("2006-01-02"), nil
+	}
+	partitionType := partitioning.Type
+	switch partitionType {
+	case bigquery.HourPartitioningType:
+		return bq.now().Format("2006-01-02T15"), nil
+	case bigquery.DayPartitioningType:
+		return bq.now().Format("2006-01-02"), nil
+	default:
+		return "", errPartitionTypeNotSupported
+	}
+}
+
 func partitionedTable(tableName, partitionDate string) string {
 	cleanedDate := strings.ReplaceAll(partitionDate, "-", "")
 	cleanedDate = strings.ReplaceAll(cleanedDate, "T", "")
