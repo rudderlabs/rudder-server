@@ -670,7 +670,7 @@ func TestWebhookRequestHandlerWithRetries(t *testing.T) {
 		})
 		resp, err := jsonrs.Marshal(responses)
 		require.NoError(t, err)
-		transformerServer := newMockTransformerServer(1, resp, []byte(sampleError), http.StatusServiceUnavailable)
+		transformerServer := newMockTransformerServer(1, resp, []byte(sampleError), http.StatusInternalServerError)
 
 		conf := config.Default
 		webhookHandler := Setup(mockGW, transformer.NewNoOpService(), stats.NOP, conf, newSourceStatReporter, func(bt *batchWebhookTransformerT) {
