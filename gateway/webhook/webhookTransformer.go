@@ -327,7 +327,7 @@ func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io
 				req.Header.Set("Content-Type", contentTypeJsonUTF8)
 				resp, err = bt.webhook.httpClient.Do(req) // nolint: bodyclose
 				// retry 5xx errors
-				if err == nil && (resp.StatusCode > http.StatusInternalServerError) {
+				if err == nil && (resp.StatusCode >= http.StatusInternalServerError) {
 					return fmt.Errorf("non-success status code: %d", resp.StatusCode)
 				}
 			}
