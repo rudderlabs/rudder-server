@@ -478,6 +478,7 @@ var oauthDests = []backendconfig.DestinationT{
 				},
 			},
 		},
+		DeliveryByOAuth: true,
 	},
 }
 
