@@ -103,7 +103,6 @@ func TestUploads(t *testing.T) {
 				var (
 					ctx    = context.Background()
 					events = 100
-					jobs   = 1
 				)
 				eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
