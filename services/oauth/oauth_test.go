@@ -122,6 +122,139 @@ func TestIsOAuthDestination(t *testing.T) {
 	}
 }
 
+func TestFetchAccountInfoFromCp(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+
+	testCases := []struct {
+		name                 string
+		cpStatusCode         int
+		cpResponse           string
+		expectedStatusCode   int
+		expectedErrorType    string
+		expectedErrorMessage string
+		shouldHaveSecret     bool
+	}{
+		{
+			name:               "successful token fetch",
+			cpStatusCode:       200,
+			cpResponse:         `{"secret":{"access_token":"test_token","refresh_token":"test_refresh"},"expirationDate":"2024-12-31T23:59:59Z"}`,
+			expectedStatusCode: http.StatusOK,
+			shouldHaveSecret:   true,
+		},
+		{
+			name:                 "control plane returns 400 (internal service error)",
+			cpStatusCode:         400,
+			cpResponse:           `{"error":"invalid request"}`,
+			expectedStatusCode:   http.StatusInternalServerError,
+			expectedErrorType:    "cp_status_400",
+			expectedErrorMessage: "Control plane returned status 400: {\"error\":\"invalid request\"}",
+		},
+		{
+			name:                 "control plane returns 401 (internal service error)",
+			cpStatusCode:         401,
+			cpResponse:           `{"error":"unauthorized"}`,
+			expectedStatusCode:   http.StatusInternalServerError,
+			expectedErrorType:    "cp_status_401",
+			expectedErrorMessage: "Control plane returned status 401: {\"error\":\"unauthorized\"}",
+		},
+		{
+			name:                 "control plane returns 404 (internal service error)",
+			cpStatusCode:         404,
+			cpResponse:           `{"error":"account not found"}`,
+			expectedStatusCode:   http.StatusInternalServerError,
+			expectedErrorType:    "cp_status_404",
+			expectedErrorMessage: "Control plane returned status 404: {\"error\":\"account not found\"}",
+		},
+		{
+			name:                 "control plane returns 500",
+			cpStatusCode:         500,
+			cpResponse:           `{"error":"internal server error"}`,
+			expectedStatusCode:   http.StatusInternalServerError,
+			expectedErrorType:    "cp_status_500",
+			expectedErrorMessage: "Control plane returned status 500: {\"error\":\"internal server error\"}",
+		},
+		{
+			name:                 "control plane returns 502",
+			cpStatusCode:         502,
+			cpResponse:           `{"error":"bad gateway"}`,
+			expectedStatusCode:   http.StatusInternalServerError,
+			expectedErrorType:    "cp_status_502",
+			expectedErrorMessage: "Control plane returned status 502: {\"error\":\"bad gateway\"}",
+		},
+		{
+			name:               "empty response with 200 status",
+			cpStatusCode:       200,
+			cpResponse:         "",
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErrorType:  "Empty secret",
+		},
+		{
+			name:                 "invalid grant error",
+			cpStatusCode:         200,
+			cpResponse:           `{"body":{"code":"ref_token_invalid_grant","message":"Token has been revoked"}}`,
+			expectedStatusCode:   http.StatusBadRequest,
+			expectedErrorType:    "ref_token_invalid_grant",
+			expectedErrorMessage: "Token has been revoked",
+		},
+		{
+			name:               "unmarshallable response",
+			cpStatusCode:       200,
+			cpResponse:         `invalid json`,
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedErrorType:  "unmarshallableResponse",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cpRespProducer := &cpResponseProducer{
+				responses: []cpResponseParams{
+					{
+						code:     tc.cpStatusCode,
+						response: tc.cpResponse,
+					},
+				},
+			}
+			cfgBeSrv := httptest.NewServer(cpRespProducer.mockCpRequests())
+			defer cfgBeSrv.Close()
+
+			t.Setenv("CONFIG_BACKEND_URL", cfgBeSrv.URL)
+			t.Setenv("CONFIG_BACKEND_TOKEN", "config_backend_token")
+
+			backendconfig.Init()
+			oauth.Init()
+			oauthHandler := oauth.NewOAuthErrorHandler(mockBackendConfig)
+
+			refTokenParams := &oauth.RefreshTokenParams{
+				AccountId:   "test_account",
+				WorkspaceId: "test_workspace",
+				DestDefName: "test_dest",
+				WorkerId:    1,
+			}
+
+			statusCode, authResponse := oauthHandler.FetchToken(refTokenParams)
+
+			require.Equal(t, tc.expectedStatusCode, statusCode)
+
+			if tc.shouldHaveSecret {
+				require.NotNil(t, authResponse)
+				require.NotEmpty(t, authResponse.Account.Secret)
+				require.Empty(t, authResponse.Err)
+			} else {
+				require.NotNil(t, authResponse)
+				if tc.expectedErrorType != "" {
+					require.Equal(t, tc.expectedErrorType, authResponse.Err)
+				}
+				if tc.expectedErrorMessage != "" {
+					require.Equal(t, tc.expectedErrorMessage, authResponse.ErrorMessage)
+				}
+			}
+		})
+	}
+}
+
 func TestMultipleRequestsForOAuth(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)

@@ -354,10 +354,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "timeout",
-				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out")))
+			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out")))
 		})
 
 		It("fetch token function call when cache is empty and cpApiCall returns empty secret", func() {
@@ -654,10 +654,10 @@ var _ = Describe("Oauth", func() {
 			Expect(statusCode).To(Equal(http.StatusInternalServerError))
 			expectedResponse := &v2.AuthResponse{
 				Err:          "timeout",
-				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out",
+				ErrorMessage: "mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out",
 			}
 			Expect(response).To(Equal(expectedResponse))
-			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out")))
+			Expect(err).To(MatchError(fmt.Errorf("error occurred while fetching/refreshing account info from CP: mock mock 127.0.0.1:1234->127.0.0.1:12340: read: operation timed out")))
 		})
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of faulty implementation in some downstream service", func() {
@@ -897,6 +897,188 @@ var _ = Describe("Oauth", func() {
 			})
 			Expect(statusCode).To(Equal(http.StatusBadRequest))
 			Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
+		})
+
+		Describe("Test AuthStatusToggle HTTP status code handling", func() {
+			It("should handle 400 status from control plane", func() {
+				ctrl := gomock.NewController(GinkgoT())
+				mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+				mockTokenProvider.EXPECT().Identity().Return(nil)
+				mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusBadRequest, `{"error":"bad request"}`)
+
+				oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+					v2.WithCache(v2.NewCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpConnector(mockCpConnector),
+				)
+
+				statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
+					Destination:     Destination,
+					WorkspaceID:     "workspaceID",
+					RudderAccountID: "rudderAccountId",
+					StatPrefix:      "AuthStatusInactive",
+					AuthStatus:      common.CategoryAuthStatusInactive,
+				})
+
+				Expect(statusCode).To(Equal(http.StatusBadRequest))
+				Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
+			})
+
+			It("should handle 500 status from control plane", func() {
+				ctrl := gomock.NewController(GinkgoT())
+				mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+				mockTokenProvider.EXPECT().Identity().Return(nil)
+				mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusInternalServerError, `{"error":"internal server error"}`)
+
+				oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+					v2.WithCache(v2.NewCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpConnector(mockCpConnector),
+				)
+
+				statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
+					Destination:     Destination,
+					WorkspaceID:     "workspaceID",
+					RudderAccountID: "rudderAccountId",
+					StatPrefix:      "AuthStatusInactive",
+					AuthStatus:      common.CategoryAuthStatusInactive,
+				})
+
+				Expect(statusCode).To(Equal(http.StatusBadRequest))
+				Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
+			})
+
+			It("should handle malformed JSON response from control plane", func() {
+				ctrl := gomock.NewController(GinkgoT())
+				mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+				mockTokenProvider.EXPECT().Identity().Return(nil)
+				mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `invalid json`)
+
+				oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+					v2.WithCache(v2.NewCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpConnector(mockCpConnector),
+				)
+
+				statusCode, response := oauthHandler.AuthStatusToggle(&v2.AuthStatusToggleParams{
+					Destination:     Destination,
+					WorkspaceID:     "workspaceID",
+					RudderAccountID: "rudderAccountId",
+					StatPrefix:      "AuthStatusInactive",
+					AuthStatus:      common.CategoryAuthStatusInactive,
+				})
+
+				Expect(statusCode).To(Equal(http.StatusBadRequest))
+				Expect(response).To(Equal("problem with user permission or access/refresh token have been revoked"))
+			})
+		})
+
+		Describe("Test FetchToken error response handling", func() {
+			It("should handle malformed JSON response from control plane", func() {
+				fetchTokenParams := &v2.RefreshTokenParams{
+					AccountID:     "123",
+					WorkspaceID:   "456",
+					DestDefName:   "testDest",
+					DestinationID: Destination.ID,
+				}
+
+				ctrl := gomock.NewController(GinkgoT())
+				mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `invalid json`)
+				mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+				mockTokenProvider.EXPECT().Identity().Return(nil)
+
+				oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+					v2.WithCache(v2.NewCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpConnector(mockCpConnector),
+				)
+
+				statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+				Expect(statusCode).To(Equal(http.StatusInternalServerError))
+				Expect(response).ToNot(BeNil())
+				Expect(response.Err).To(Equal("unmarshallableResponse"))
+				Expect(err).To(MatchError(ContainSubstring("error occurred while fetching/refreshing account info from CP")))
+			})
+
+			It("should handle network error response patterns", func() {
+				fetchTokenParams := &v2.RefreshTokenParams{
+					AccountID:     "123",
+					WorkspaceID:   "456",
+					DestDefName:   "testDest",
+					DestinationID: Destination.ID,
+				}
+
+				ctrl := gomock.NewController(GinkgoT())
+				mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{
+					"errorType": "network_error",
+					"message": "Network connection failed"
+				}`)
+				mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+				mockTokenProvider.EXPECT().Identity().Return(nil)
+
+				oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+					v2.WithCache(v2.NewCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpConnector(mockCpConnector),
+				)
+
+				statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+				Expect(statusCode).To(Equal(http.StatusInternalServerError))
+				Expect(response).ToNot(BeNil())
+				Expect(response.Err).To(Equal("network_error"))
+				Expect(response.ErrorMessage).To(Equal("Network connection failed"))
+				Expect(err).To(MatchError(ContainSubstring("error occurred while fetching/refreshing account info from CP")))
+			})
+
+			It("should handle invalid refresh response error", func() {
+				fetchTokenParams := &v2.RefreshTokenParams{
+					AccountID:     "123",
+					WorkspaceID:   "456",
+					DestDefName:   "testDest",
+					DestinationID: Destination.ID,
+				}
+
+				ctrl := gomock.NewController(GinkgoT())
+				mockCpConnector := mock_oauthV2.NewMockConnector(ctrl)
+				mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{
+					"body": {
+						"code": "INVALID_REFRESH_RESPONSE",
+						"message": "Invalid refresh response from destination"
+					}
+				}`)
+				mockTokenProvider := mock_oauthV2.NewMockTokenProvider(ctrl)
+				mockTokenProvider.EXPECT().Identity().Return(nil)
+
+				oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+					v2.WithCache(v2.NewCache()),
+					v2.WithLocker(kitsync.NewPartitionRWLocker()),
+					v2.WithStats(stats.Default),
+					v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+					v2.WithCpConnector(mockCpConnector),
+				)
+
+				statusCode, response, err := oauthHandler.FetchToken(fetchTokenParams)
+				Expect(statusCode).To(Equal(http.StatusInternalServerError))
+				Expect(response).ToNot(BeNil())
+				Expect(response.Err).To(Equal("INVALID_REFRESH_RESPONSE"))
+				Expect(response.ErrorMessage).To(Equal("Invalid refresh response from destination"))
+				Expect(err).To(MatchError(ContainSubstring("error occurred while fetching/refreshing account info from CP")))
+			})
 		})
 	})
 

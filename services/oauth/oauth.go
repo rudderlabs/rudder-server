@@ -342,11 +342,34 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.SendCountStat()
 
 	cpiCallStartTime := time.Now()
-	statusCode, response := authErrHandler.cpApiCall(refreshCpReq)
+	cpStatusCode, response := authErrHandler.cpApiCall(refreshCpReq)
 	authStats.statName = getOAuthActionStatName(`request_latency`)
 	authStats.SendTimerStats(cpiCallStartTime)
 
-	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
+	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, cpStatusCode)
+
+	// Check HTTP status code first - if it's not a success status, handle as error
+	if cpStatusCode < 200 || cpStatusCode >= 300 {
+		authStats.statName = getOAuthActionStatName("failure")
+		authStats.errorMessage = fmt.Sprintf("Control plane returned non-success status: %d", cpStatusCode)
+		authStats.SendCountStat()
+
+		// Log the error response for debugging
+		authErrHandler.logger.Errorf("[%s request] :: Control plane error response (rt-worker-%d, status: %d): %s\n", loggerNm, refTokenParams.WorkerId, cpStatusCode, response)
+
+		// Store error in cache
+		authErrHandler.destAuthInfoMap[refTokenParams.AccountId] = &AuthResponse{
+			Account: AccountSecret{
+				Secret: []byte(""),
+			},
+			Err:          fmt.Sprintf("cp_status_%d", cpStatusCode),
+			ErrorMessage: fmt.Sprintf("Control plane returned status %d: %s", cpStatusCode, response),
+		}
+
+		// Control plane errors are internal service issues and should be retryable
+		// The actual OAuth provider errors are returned in 200 responses with error details in body
+		return http.StatusInternalServerError
+	}
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
@@ -377,7 +400,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 		authStats.statName = getOAuthActionStatName("failure")
 		authStats.errorMessage = refErrMsg
 		authStats.SendCountStat()
-		if refErrMsg == REF_TOKEN_INVALID_GRANT {
+		if errType == REF_TOKEN_INVALID_GRANT {
 			// Should abort the event as refresh is not going to work
 			// until we have new refresh token for the account
 			return http.StatusBadRequest
@@ -396,11 +419,8 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 }
 
 func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (errorType, message string) {
-	if err := jsonrs.Unmarshal([]byte(response), &accountSecret); err != nil {
-		// Some problem with AccountSecret unmarshalling
-		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
-		errorType = "unmarshallableResponse"
-	} else if gjson.Get(response, "body.code").String() == REF_TOKEN_INVALID_GRANT {
+	// Check for specific error patterns first before trying to unmarshal as AccountSecret
+	if gjson.Get(response, "body.code").String() == REF_TOKEN_INVALID_GRANT {
 		// User (or) AccessToken (or) RefreshToken has been revoked
 		bodyMsg := gjson.Get(response, "body.message").String()
 		if bodyMsg == "" {
@@ -411,6 +431,10 @@ func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string
 			message = bodyMsg
 		}
 		errorType = REF_TOKEN_INVALID_GRANT
+	} else if err := jsonrs.Unmarshal([]byte(response), &accountSecret); err != nil {
+		// Some problem with AccountSecret unmarshalling
+		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
+		errorType = "unmarshallableResponse"
 	}
 	return errorType, message
 }
