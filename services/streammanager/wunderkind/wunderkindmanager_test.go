@@ -3,6 +3,7 @@ package wunderkind
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"testing"
 
 	"go.uber.org/mock/gomock"
@@ -10,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -134,7 +135,10 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	t.Run("aws error", func(t *testing.T) {
 		errorCode := "errorCode"
 		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(
-			nil, awserr.NewRequestFailure(awserr.New(errorCode, errorCode, errors.New(errorCode)), http.StatusBadRequest, "request-id"))
+			nil, &smithy.GenericAPIError{
+				Code:    strconv.Itoa(http.StatusBadRequest),
+				Message: errorCode,
+			})
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusBadRequest, statusCode)
