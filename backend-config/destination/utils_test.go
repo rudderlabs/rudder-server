@@ -1,11 +1,11 @@
-package dynamicconfig_test
+package destination_test
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
+	"github.com/rudderlabs/rudder-server/backend-config/destination"
 )
 
 // Unit tests for ContainsPattern function
@@ -78,7 +78,7 @@ func TestContainsPattern(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := dynamicconfig.ContainsPattern(tt.input)
+			result := destination.ContainsDynamicConfigPattern(tt.input)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -92,7 +92,7 @@ func BenchmarkContainsPattern_SinglePattern(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = dynamicconfig.ContainsPattern(data)
+		_ = destination.ContainsDynamicConfigPattern(data)
 	}
 }
 
@@ -118,7 +118,7 @@ func BenchmarkContainsPattern_ComplexMap(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = dynamicconfig.ContainsPattern(data)
+		_ = destination.ContainsDynamicConfigPattern(data)
 	}
 }
 
@@ -144,6 +144,6 @@ func BenchmarkContainsPattern_NoPatterns(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = dynamicconfig.ContainsPattern(data)
+		_ = destination.ContainsDynamicConfigPattern(data)
 	}
 }

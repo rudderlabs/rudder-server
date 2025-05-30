@@ -6,7 +6,7 @@ import (
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
+	"github.com/rudderlabs/rudder-server/backend-config/destination"
 )
 
 // Topic refers to a subset of backend config's updates, received after subscribing using the backend config's Subscribe function.
@@ -61,14 +61,17 @@ type DestinationT struct {
 	DeliveryAccount       *Account `json:"deliveryAccount,omitempty"`
 	DeleteAccount         *Account `json:"deleteAccount,omitempty"`
 	HasDynamicConfig      bool     `json:"hasDynamicConfig,omitempty"`
+	DeliveryByOAuth       bool     `json:"deliveryByOAuth,omitempty"`
+	DeleteByOAuth         bool     `json:"deleteByOAuth,omitempty"`
 }
 
-// UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns
+// UpdateDerivedFields checks if the destination config contains dynamic config patterns
 // and sets the HasDynamicConfig field accordingly.
+// It also checks if the destination is an OAuth destination and sets the IsOAuth field accordingly.
 // It uses a cache to avoid recomputing the flag for destinations that haven't changed.
-// The cache is keyed by destination ID and stores the RevisionID and HasDynamicConfig values.
+// The cache is keyed by destination ID and stores the RevisionID, HasDynamicConfig and IsOAuth values.
 // When a destination's RevisionID changes, it indicates a config change, and we recompute the flag.
-func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
+func (d *DestinationT) UpdateDerivedFields(cache destination.Cache) {
 	// Check if we have a cached value for this destination
 	cachedInfo, exists := cache.Get(d.ID)
 
@@ -76,16 +79,21 @@ func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
 	// use the cached HasDynamicConfig value to avoid recomputation
 	if exists && d.RevisionID == cachedInfo.RevisionID {
 		d.HasDynamicConfig = cachedInfo.HasDynamicConfig
+		d.DeliveryByOAuth = cachedInfo.DeliveryByOAuth
+		d.DeleteByOAuth = cachedInfo.DeleteByOAuth
 		return
 	}
 
 	// RevisionID is not in cache or has changed, recompute the dynamic config flag
-	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
+	d.SetDynamicConfigFlags()
+	d.SetOAuthFlags()
 
 	// Update the cache with the new value
-	cache.Set(d.ID, &dynamicconfig.DestinationRevisionInfo{
+	cache.Set(d.ID, &destination.RevisionInfo{
 		RevisionID:       d.RevisionID,
 		HasDynamicConfig: d.HasDynamicConfig,
+		DeliveryByOAuth:  d.DeliveryByOAuth,
+		DeleteByOAuth:    d.DeleteByOAuth,
 	})
 }
 

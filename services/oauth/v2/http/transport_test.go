@@ -86,6 +86,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 
 			// Create a mock token provider and connector
@@ -150,6 +152,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 
 			// Create a mock token provider and connector
@@ -218,6 +222,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 
 			// Create a mock token provider and connector
@@ -297,6 +303,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 
 			// Create a mock token provider and connector
@@ -385,6 +393,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 						"type": "OAuth",
 					},
 				},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 
 			// Create a mock token provider and connector
@@ -469,6 +479,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 
 			// Create a mock token provider and connector

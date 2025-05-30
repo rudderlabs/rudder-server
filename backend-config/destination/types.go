@@ -1,13 +1,15 @@
-package dynamicconfig
+package destination
 
-//go:generate mockgen -destination=../mocks/backend-config/dynamicconfig/mock_dynamic_config.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/backend-config/dynamicconfig Cache
+//go:generate mockgen -destination=../../mocks/backend-config/destination/mock_destination.go -package=mock_backendconfig github.com/rudderlabs/rudder-server/backend-config/destination Cache
 
-// DestinationRevisionInfo is a struct to store the cached dynamic config information for a destination.
+// RevisionInfo is a struct to store the cached dynamic config information for a destination.
 // It contains the RevisionID and HasDynamicConfig flag for a destination.
 // When a destination's RevisionID changes, it indicates a config change, and we need to recompute the flag.
-type DestinationRevisionInfo struct {
+type RevisionInfo struct {
 	RevisionID       string // The revision ID of the destination config
 	HasDynamicConfig bool   // Whether the destination config contains dynamic config patterns
+	DeliveryByOAuth  bool   // Whether the destination is an OAuth destination
+	DeleteByOAuth    bool   // Whether the destination is an OAuth destination
 }
 
 // Cache is an interface for the dynamic config cache.
@@ -15,10 +17,10 @@ type DestinationRevisionInfo struct {
 type Cache interface {
 	// Get retrieves a cache entry for a destination ID.
 	// It returns a pointer to the entry (nil if not found) and a boolean indicating if the entry exists.
-	Get(destID string) (*DestinationRevisionInfo, bool)
+	Get(destID string) (*RevisionInfo, bool)
 
 	// Set stores a cache entry for a destination ID.
-	Set(destID string, info *DestinationRevisionInfo)
+	Set(destID string, info *RevisionInfo)
 
 	// Len returns the number of entries in the cache.
 	Len() int

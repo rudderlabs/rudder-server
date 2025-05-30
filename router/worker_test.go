@@ -392,113 +392,6 @@ var _ = Describe("Proxy Request", func() {
 			require.Equal(GinkgoT(), expectedRespBodys, respBodys)
 			require.Equal(GinkgoT(), "application/json", contentType)
 		})
-		It("should return responses after going through OAuth handling for every job on transformer.ProxyRequest's non 200 and authType is OAuth", func() {
-			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			router := &Handle{
-				Reporting: &reporting.NOOP{},
-				netHandle: mockNetHandle,
-			}
-			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-
-			mockTransformer.EXPECT().ProxyRequest(gomock.Any(), gomock.Any()).
-				Times(1).
-				DoAndReturn(func(ctx context.Context, proxyReqParams *transformer.ProxyRequestParams) transformer.ProxyRequestResponse {
-					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
-					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
-					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
-					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]interface{}{
-						"x": map[string]interface{}{
-							"y": "z",
-						},
-					}))
-
-					return transformer.ProxyRequestResponse{
-						ProxyRequestStatusCode:   400,
-						ProxyRequestResponseBody: "Err",
-						RespContentType:          "application/json",
-						RespStatusCodes: map[int64]int{
-							1: 500,
-							2: 501,
-						},
-						RespBodys: map[int64]string{
-							1: "err1",
-							2: "err2",
-						},
-					}
-				})
-
-			router.Setup(
-				gaDestinationDefinition,
-				logger.NOP,
-				conf,
-				c.mockBackendConfig,
-				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
-				transientsource.NewEmptyService(),
-				rsources.NewNoOpService(),
-				transformerFeaturesService.NewNoOpService(),
-				destinationdebugger.NewNoOpService(),
-				throttler.NewNoOpThrottlerFactory(),
-				rmetrics.NewPendingEventsRegistry(),
-			)
-			router.transformer = mockTransformer
-
-			<-router.backendConfigInitialized
-			worker := &worker{
-				logger:          router.logger.Child("w-0"),
-				partition:       "partition",
-				id:              1,
-				input:           make(chan workerJob, 1),
-				rt:              router,
-				routerProxyStat: stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
-			}
-
-			destinationJob := types.DestinationJobT{
-				Message: json.RawMessage(`{}`),
-				JobMetadataArray: []types.JobMetadataT{
-					{
-						JobID: 1,
-					},
-					{
-						JobID: 2,
-					},
-				},
-				Destination: backendconfig.DestinationT{
-					ID: gaDestinationID,
-					Config: map[string]interface{}{
-						"x": map[string]interface{}{
-							"y": "z",
-						},
-					},
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Config: map[string]interface{}{
-							"auth": map[string]interface{}{
-								"type": "OAuth",
-							},
-						},
-					},
-				},
-				Batched:    false,
-				StatusCode: 200,
-				Error:      "",
-			}
-
-			postParameters := integrations.PostParametersT{
-				URL: "https://www.test.com",
-			}
-
-			// Note: Taking advantage of empty rudderAccountID check in handleOAuthDestResponse function
-			expectedRespCodes := map[int64]int{
-				1: 400,
-				2: 400,
-			}
-
-			resp := worker.proxyRequest(context.TODO(), destinationJob, postParameters)
-			respCodes, _, contentType := resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
-			require.Equal(GinkgoT(), expectedRespCodes, respCodes)
-			require.Equal(GinkgoT(), "application/json", contentType)
-		})
 	})
 })
 
@@ -517,10 +410,6 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             true,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
 		},
 	}
 	var limiterWg sync.WaitGroup
@@ -533,7 +422,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d1-test1"}`),
 			JobMetadata: types.JobMetadataT{
@@ -542,7 +432,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d2-test2"}`),
 			JobMetadata: types.JobMetadataT{
@@ -551,7 +442,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d1-test3"}`),
 			JobMetadata: types.JobMetadataT{
@@ -560,7 +452,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d3",
+				ID:              "d3",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d3-test4"}`),
 			JobMetadata: types.JobMetadataT{
@@ -569,7 +462,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d1-test5"}`),
 			JobMetadata: types.JobMetadataT{
@@ -578,7 +472,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": "d2-test6"}`),
 			JobMetadata: types.JobMetadataT{
@@ -592,7 +487,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": ["d1-test1", "d1-test3"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -606,7 +502,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": [ "d1-test5"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -622,7 +519,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: true,
 			},
 			Message: json.RawMessage(`{"event": ["d2-test2", "d2-test6"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -677,10 +575,6 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             false,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
 		},
 	}
 	var limiterWg sync.WaitGroup
@@ -693,7 +587,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": "d1-test1"}`),
 			JobMetadata: types.JobMetadataT{
@@ -702,7 +597,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": "d2-test2"}`),
 			JobMetadata: types.JobMetadataT{
@@ -716,7 +612,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:              "d1",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": ["d1-test1"]}`),
 			JobMetadataArray: []types.JobMetadataT{
@@ -727,7 +624,8 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:              "d2",
+				DeliveryByOAuth: false,
 			},
 			Message: json.RawMessage(`{"event": [ "d2-test2"]}`),
 			JobMetadataArray: []types.JobMetadataT{
