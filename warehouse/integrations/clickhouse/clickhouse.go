@@ -153,7 +153,7 @@ type Clickhouse struct {
 		s3EngineEnabledWorkspaceIDs []string
 		slowQueryThreshold          time.Duration
 		randomLoadDelay             func(string) time.Duration
-		disableLoadTableStats       bool
+		disableLoadTableStats       func(string) bool
 	}
 }
 
@@ -229,7 +229,13 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
 	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
-	ch.config.disableLoadTableStats = conf.GetBool("Warehouse.clickhouse.disableLoadTableStats", false)
+	ch.config.disableLoadTableStats = func(workspaceID string) bool {
+		return conf.GetBoolVar(
+			false,
+			fmt.Sprintf("Warehouse.clickhouse.%s.disableLoadTableStats", workspaceID),
+			"Warehouse.clickhouse.disableLoadTableStats",
+		)
+	}
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
@@ -1035,7 +1041,7 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 		preLoadTableCount int64
 		err               error
 	)
-	if !ch.config.disableLoadTableStats {
+	if !ch.config.disableLoadTableStats(ch.Warehouse.WorkspaceID) {
 		preLoadTableCount, err = ch.totalCountIntable(ctx, tableName)
 		if err != nil {
 			return nil, fmt.Errorf("pre load table count: %w", err)
@@ -1048,7 +1054,7 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 	}
 
 	var postLoadTableCount int64
-	if !ch.config.disableLoadTableStats {
+	if !ch.config.disableLoadTableStats(ch.Warehouse.WorkspaceID) {
 		postLoadTableCount, err = ch.totalCountIntable(ctx, tableName)
 		if err != nil {
 			return nil, fmt.Errorf("post load table count: %w", err)
