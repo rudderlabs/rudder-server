@@ -8,6 +8,10 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
+
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
@@ -89,12 +93,6 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 
-	webhook.config.transformer.maxRetry = conf.GetReloadableIntVar(5, 1, "Gateway.webhook.maxRetry")
-	webhook.config.transformer.initialInterval = conf.GetReloadableDurationVar(100, time.Millisecond, "Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS")
-	webhook.config.transformer.maxInterval = conf.GetReloadableDurationVar(1000, time.Millisecond, "Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS")
-	webhook.config.transformer.maxElapsedTime = conf.GetReloadableDurationVar(10, time.Second, "Gateway.webhook.maxElapsedTime")
-	webhook.config.transformer.multiplier = conf.GetReloadableFloat64Var(1.5, "Gateway.webhook.backoffMultiplier")
-
 	transformerClientConfig := &transformerclient.ClientConfig{
 		ClientTimeout: conf.GetDurationVar(30, time.Second, "HttpClient.sourceTransformer.timeout", "HttpClient.webhook.timeout"),
 		ClientTTL:     conf.GetDurationVar(10, time.Second, "Transformer.Client.sourceTransformer.ttl", "Transformer.Client.ttl"),
@@ -108,7 +106,23 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	transformerClientConfig.Recycle = conf.GetBoolVar(false, "Transformer.Client.sourceTransformer.recycle", "Transformer.Client.recycle")
 	transformerClientConfig.RecycleTTL = conf.GetDurationVar(60, time.Second, "Transformer.Client.sourceTransformer.recycleTTL", "Transformer.Client.recycleTTL")
 
-	webhook.httpClient = transformerclient.NewClient(transformerClientConfig)
+	transformerClient := transformerclient.NewClient(transformerClientConfig)
+	retryableClientConfig := &retryablehttp.Config{
+		MaxRetry:        conf.GetInt("Gateway.webhook.maxRetry", 5),
+		InitialInterval: conf.GetDuration("Gateway.webhook.minRetryTime", 100, time.Millisecond),
+		MaxInterval:     conf.GetDuration("Gateway.webhook.maxRetryTime", 1000, time.Millisecond),
+		MaxElapsedTime:  conf.GetDuration("Gateway.webhook.maxElapsedTime", 10, time.Second),
+		Multiplier:      conf.GetFloat64("Gateway.webhook.backoffMultiplier", 1.5),
+	}
+	webhook.httpClient = retryablehttp.NewRetryableHTTPClient(
+		retryableClientConfig,
+		retryablehttp.WithRequestDoer(transformerClient),
+		retryablehttp.WithOnFailure(func(err error, duration time.Duration) {
+			webhook.logger.Warnn("Failed to send events to transformer",
+				logger.NewDurationField("backoffDelay", duration),
+				obskit.Error(err))
+		}),
+	)
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
 

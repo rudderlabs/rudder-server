@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -90,7 +90,7 @@ type HandleT struct {
 		}
 	}
 	statReporterCreator StatReporterCreator
-	httpClient          transformerclient.Client
+	httpClient          retryablehttp.HttpClient
 }
 
 type webhookSourceStatT struct {
