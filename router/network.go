@@ -37,13 +37,13 @@ var (
 
 // netHandle is the wrapper holding private variables
 type netHandle struct {
-	disableEgress   bool
-	httpClient      sysUtils.HTTPClientI
-	logger          logger.Logger
-	dryRunMode      bool
-	blockPrivateIPs bool
-	cidrRanges      netutil.CidrRanges
-	destType        string
+	disableEgress         bool
+	httpClient            sysUtils.HTTPClientI
+	logger                logger.Logger
+	blockPrivateIPsDryRun bool
+	blockPrivateIPs       bool
+	blockPrivateIPsCIDRs  netutil.CIDRs
+	destType              string
 }
 
 // NetHandle interface
@@ -289,7 +289,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 		network.logger.Error("Error loading private IP ranges", logger.NewErrorField(err))
 		return err
 	}
-	network.cidrRanges = privateIPRanges
+	network.blockPrivateIPsCIDRs = privateIPRanges
 
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
@@ -305,25 +305,27 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	}
 
 	dialContext := func(ctx context.Context, networkType, address string) (net.Conn, error) {
-		if networkType == "tcp" || networkType == "tcp4" || networkType == "tcp6" {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return nil, err
-			}
-			ips, err := net.LookupIP(host)
-			if err != nil {
-				return nil, err
-			}
-			for _, ip := range ips {
-				if network.cidrRanges.Contains(ip) {
-					// In dry run mode, just log and allow the connection
-					if network.dryRunMode {
-						network.logger.Warnf("Connection to private IP %s detected in dry run mode", ip)
-						return dialer.DialContext(ctx, networkType, address)
-					}
-					// In block mode, reject the connection
-					if network.blockPrivateIPs {
-						return nil, ErrDenyPrivateIP
+		if network.blockPrivateIPsDryRun || network.blockPrivateIPs {
+			if networkType == "tcp" || networkType == "tcp4" || networkType == "tcp6" {
+				host, _, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, err
+				}
+				ips, err := net.LookupIP(host)
+				if err != nil {
+					return nil, err
+				}
+				for _, ip := range ips {
+					if network.blockPrivateIPsCIDRs.Contains(ip) {
+						// In dry run mode, just log and allow the connection
+						if network.blockPrivateIPsDryRun {
+							network.logger.Warnf("Connection to private IP %s detected in dry run mode", ip)
+							return dialer.DialContext(ctx, networkType, address)
+						}
+						// In block mode, reject the connection
+						if network.blockPrivateIPs {
+							return nil, ErrDenyPrivateIP
+						}
 					}
 				}
 			}
@@ -347,9 +349,9 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 		network.logger.Info(network.destType, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
 
-	network.dryRunMode = getRouterConfigBool("dryRunMode", network.destType, false)
+	network.blockPrivateIPsDryRun = getRouterConfigBool("dryRunMode", network.destType, false)
 	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
-	network.logger.Info("dryRunMode: ", network.dryRunMode)
+	network.logger.Info("blockPrivateIPsDryRun: ", network.blockPrivateIPsDryRun)
 	network.logger.Info("blockPrivateIPs: ", network.blockPrivateIPs)
 
 	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")

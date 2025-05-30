@@ -41,9 +41,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 		defer testServer.Close()
 
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			httpClient: http.DefaultClient,
-			cidrRanges: netutil.PrivateCidrRanges,
+			logger:               logger.NewLogger().Child("network"),
+			httpClient:           http.DefaultClient,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
@@ -64,11 +64,11 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
 		network := &netHandle{
-			logger:          logger.NewLogger().Child("network"),
-			httpClient:      http.DefaultClient,
-			dryRunMode:      false,
-			blockPrivateIPs: false,
-			cidrRanges:      netutil.PrivateCidrRanges,
+			logger:                logger.NewLogger().Child("network"),
+			httpClient:            http.DefaultClient,
+			blockPrivateIPsDryRun: false,
+			blockPrivateIPs:       false,
+			blockPrivateIPsCIDRs:  netutil.DefaultPrivateCidrRanges,
 		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
@@ -88,7 +88,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should send error with invalid body", func(r *testing.T) {
 		network := &netHandle{
-			cidrRanges: netutil.PrivateCidrRanges,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
@@ -107,7 +107,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should error with invalid body format", func(r *testing.T) {
 		network := &netHandle{
-			cidrRanges: netutil.PrivateCidrRanges,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		network.logger = logger.NewLogger().Child("network")
 		network.httpClient = http.DefaultClient
@@ -127,7 +127,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should not error with valid body", func(r *testing.T) {
 		network := &netHandle{
-			cidrRanges: netutil.PrivateCidrRanges,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		network.logger = logger.NewLogger().Child("network")
 		httpClient := mocksSysUtils.NewMockHTTPClientI(gomock.NewController(t))
@@ -153,9 +153,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should fail when gzip compression fails", func(r *testing.T) {
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			httpClient: http.DefaultClient,
-			cidrRanges: netutil.PrivateCidrRanges,
+			logger:               logger.NewLogger().Child("network"),
+			httpClient:           http.DefaultClient,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -192,9 +192,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 		defer testServer.Close()
 
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			httpClient: http.DefaultClient,
-			cidrRanges: netutil.PrivateCidrRanges,
+			logger:               logger.NewLogger().Child("network"),
+			httpClient:           http.DefaultClient,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		var structData integrations.PostParametersT
 		structData.RequestMethod = "POST"
@@ -235,9 +235,9 @@ func TestSendPostWithGzipData(t *testing.T) {
 		defer testServer.Close()
 
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			httpClient: http.DefaultClient,
-			cidrRanges: netutil.PrivateCidrRanges,
+			logger:               logger.NewLogger().Child("network"),
+			httpClient:           http.DefaultClient,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
@@ -262,8 +262,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 func TestSendPost(t *testing.T) {
 	network := &netHandle{
-		logger:     logger.NewLogger().Child("network"),
-		cidrRanges: netutil.PrivateCidrRanges,
+		logger:               logger.NewLogger().Child("network"),
+		blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 	}
 
 	t.Run("should successfully send the request to google analytics", func(t *testing.T) {
@@ -364,9 +364,9 @@ func TestSendPost(t *testing.T) {
 		defer config.Set("Router.blockPrivateIPs", originalValue)
 
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			cidrRanges: netutil.PrivateCidrRanges,
-			destType:   "TEST", // Set a destType for the test
+			logger:               logger.NewLogger().Child("network"),
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
+			destType:             "TEST", // Set a destType for the test
 		}
 
 		// Properly setup the network handler with private IP blocking
@@ -386,9 +386,9 @@ func TestSendPost(t *testing.T) {
 
 	t.Run("should handle egress disabled", func(t *testing.T) {
 		network := &netHandle{
-			logger:        logger.NewLogger().Child("network"),
-			disableEgress: true,
-			cidrRanges:    netutil.PrivateCidrRanges,
+			logger:               logger.NewLogger().Child("network"),
+			disableEgress:        true,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 
 		structData := integrations.PostParametersT{
@@ -407,9 +407,9 @@ func TestSendPost(t *testing.T) {
 		defer mockCtrl.Finish()
 		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			cidrRanges: netutil.PrivateCidrRanges,
-			httpClient: mockHTTPClient,
+			logger:               logger.NewLogger().Child("network"),
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
+			httpClient:           mockHTTPClient,
 		}
 
 		structData := integrations.PostParametersT{
@@ -444,9 +444,9 @@ func TestSendPost(t *testing.T) {
 		defer mockCtrl.Finish()
 		mockHTTPClient := mocksSysUtils.NewMockHTTPClientI(mockCtrl)
 		network := &netHandle{
-			logger:     logger.NewLogger().Child("network"),
-			cidrRanges: netutil.PrivateCidrRanges,
-			httpClient: mockHTTPClient,
+			logger:               logger.NewLogger().Child("network"),
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
+			httpClient:           mockHTTPClient,
 		}
 
 		structData := integrations.PostParametersT{
@@ -479,8 +479,8 @@ func TestSendPost(t *testing.T) {
 
 func TestResponseContentType(t *testing.T) {
 	network := &netHandle{
-		logger:     logger.NewLogger().Child("network"),
-		cidrRanges: netutil.PrivateCidrRanges,
+		logger:               logger.NewLogger().Child("network"),
+		blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 	}
 
 	tests := []struct {
