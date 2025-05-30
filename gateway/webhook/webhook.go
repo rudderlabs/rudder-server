@@ -81,13 +81,6 @@ type HandleT struct {
 		sourceListForParsingParams []string
 		forwardGetRequestForSrcMap map[string]struct{}
 		webhookV2HandlerEnabled    bool
-		transformer                struct {
-			maxRetry        config.ValueLoader[int]
-			initialInterval config.ValueLoader[time.Duration]
-			maxInterval     config.ValueLoader[time.Duration]
-			maxElapsedTime  config.ValueLoader[time.Duration]
-			multiplier      config.ValueLoader[float64]
-		}
 	}
 	statReporterCreator StatReporterCreator
 	httpClient          retryablehttp.HttpClient
