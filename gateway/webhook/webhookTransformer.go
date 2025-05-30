@@ -312,9 +312,12 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 }
 
 func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io.Reader) (*http.Response, error) {
-	resp, err := bt.webhook.httpClient.Do(http.MethodPost, transformerURL, body, map[string]string{
-		"Content-Type": contentTypeJsonUTF8,
-	})
+	req, err := http.NewRequest(http.MethodPost, transformerURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentTypeJsonUTF8)
+	resp, err := bt.webhook.httpClient.Do(req)
 	if err != nil {
 		bt.webhook.logger.Warnn("failed to send events to transformer",
 			logger.NewStringField("transformerURL", transformerURL),

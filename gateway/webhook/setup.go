@@ -116,7 +116,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	}
 	webhook.httpClient = retryablehttp.NewRetryableHTTPClient(
 		retryableClientConfig,
-		retryablehttp.WithRequestDoer(transformerClient),
+		retryablehttp.WithHttpClient(transformerClient),
 		retryablehttp.WithOnFailure(func(err error, duration time.Duration) {
 			webhook.logger.Warnn("Failed to send events to transformer",
 				logger.NewDurationField("backoffDelay", duration),
