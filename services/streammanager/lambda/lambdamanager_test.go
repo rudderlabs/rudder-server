@@ -7,8 +7,9 @@ import (
 
 	"go.uber.org/mock/gomock"
 
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -103,14 +104,14 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	}
 
 	var sampleInput lambda.InvokeInput
-	sampleInput.SetFunctionName(sampleFunction)
-	sampleInput.SetPayload([]byte(sampleMessage))
-	sampleInput.SetInvocationType(invocationType)
-	sampleInput.SetClientContext(sampleClientContext)
+	sampleInput.FunctionName = &sampleFunction
+	sampleInput.Payload = []byte(sampleMessage)
+	sampleInput.InvocationType = types.InvocationType(invocationType)
+	sampleInput.ClientContext = &sampleClientContext
 
 	mockClient.
 		EXPECT().
-		Invoke(&sampleInput).
+		Invoke(gomock.Any(), &sampleInput).
 		Return(&lambda.InvokeOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 	assert.Equal(t, 200, statusCode)
@@ -121,7 +122,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	errorCode := "errorCode"
 	mockClient.
 		EXPECT().
-		Invoke(&sampleInput).
+		Invoke(gomock.Any(), &sampleInput).
 		Return(nil, errors.New(errorCode))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, destConfig)
@@ -129,10 +130,9 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	assert.Equal(t, "Failure", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
-	// return aws error
 	mockClient.
 		EXPECT().
-		Invoke(&sampleInput).
+		Invoke(gomock.Any(), &sampleInput).
 		Return(nil, awserr.NewRequestFailure(
 			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 		))

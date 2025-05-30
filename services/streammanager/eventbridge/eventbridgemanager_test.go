@@ -5,18 +5,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
-
-	"go.uber.org/mock/gomock"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/eventbridge"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -37,7 +36,7 @@ func TestNewProducer(t *testing.T) {
 	assert.NotNil(t, producer.client)
 }
 
-var sampleEvent = eventbridge.PutEventsRequestEntry{
+var sampleEvent = types.PutEventsRequestEntry{
 	Detail:       aws.String("detail"),
 	DetailType:   aws.String("detailType"),
 	EventBusName: aws.String("eventBus"),
@@ -51,10 +50,10 @@ func TestProduceHappyCase(t *testing.T) {
 	producer := &EventBridgeProducer{client: mockClient}
 	mockClient.
 		EXPECT().
-		PutEvents(&eventbridge.PutEventsInput{Entries: []*eventbridge.PutEventsRequestEntry{
-			&sampleEvent,
-		}}).
-		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{{}}}, nil)
+		PutEvents(gomock.Any(), &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
+			sampleEvent,
+		}}, gomock.Any()).
+		Return(&eventbridge.PutEventsOutput{Entries: []types.PutEventsResultEntry{{}}}, nil)
 	sampleEventJson, _ := jsonrs.Marshal(sampleEvent)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 200, statusCode)
@@ -92,10 +91,10 @@ func TestProduceWithBadResponse(t *testing.T) {
 	// Failed response
 	mockClient.
 		EXPECT().
-		PutEvents(&eventbridge.PutEventsInput{Entries: []*eventbridge.PutEventsRequestEntry{
-			&sampleEvent,
-		}}).
-		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{
+		PutEvents(gomock.Any(), &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
+			sampleEvent,
+		}}, gomock.Any()).
+		Return(&eventbridge.PutEventsOutput{Entries: []types.PutEventsResultEntry{
 			{ErrorCode: aws.String(errorCode), ErrorMessage: aws.String(errorCode)},
 		}}, nil)
 	sampleEventJson, _ := jsonrs.Marshal(sampleEvent)
@@ -107,10 +106,10 @@ func TestProduceWithBadResponse(t *testing.T) {
 	// Empty Response
 	mockClient.
 		EXPECT().
-		PutEvents(&eventbridge.PutEventsInput{Entries: []*eventbridge.PutEventsRequestEntry{
-			&sampleEvent,
-		}}).
-		Return(&eventbridge.PutEventsOutput{Entries: []*eventbridge.PutEventsResultEntry{}}, nil)
+		PutEvents(&eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
+			sampleEvent,
+		}}, gomock.Any()).
+		Return(&eventbridge.PutEventsOutput{Entries: []types.PutEventsResultEntry{}}, nil)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 
 	assert.Equal(t, 400, statusCode)
@@ -120,9 +119,9 @@ func TestProduceWithBadResponse(t *testing.T) {
 	// Return error
 	mockClient.
 		EXPECT().
-		PutEvents(&eventbridge.PutEventsInput{Entries: []*eventbridge.PutEventsRequestEntry{
-			&sampleEvent,
-		}}).
+		PutEvents(gomock.Any(), &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
+			sampleEvent,
+		}}, gomock.Any()).
 		Return(nil, awserr.NewRequestFailure(
 			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 		))

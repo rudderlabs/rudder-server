@@ -10,9 +10,10 @@
 package mock_eventbride
 
 import (
+	context "context"
 	reflect "reflect"
 
-	firehose "github.com/aws/aws-sdk-go/service/firehose"
+	firehose "github.com/aws/aws-sdk-go-v2/service/firehose"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,16 +42,21 @@ func (m *MockFireHoseClient) EXPECT() *MockFireHoseClientMockRecorder {
 }
 
 // PutRecord mocks base method.
-func (m *MockFireHoseClient) PutRecord(input *firehose.PutRecordInput) (*firehose.PutRecordOutput, error) {
+func (m *MockFireHoseClient) PutRecord(ctx context.Context, input *firehose.PutRecordInput, opts ...func(*firehose.Options)) (*firehose.PutRecordOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutRecord", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutRecord", varargs...)
 	ret0, _ := ret[0].(*firehose.PutRecordOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutRecord indicates an expected call of PutRecord.
-func (mr *MockFireHoseClientMockRecorder) PutRecord(input any) *gomock.Call {
+func (mr *MockFireHoseClientMockRecorder) PutRecord(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutRecord", reflect.TypeOf((*MockFireHoseClient)(nil).PutRecord), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutRecord", reflect.TypeOf((*MockFireHoseClient)(nil).PutRecord), varargs...)
 }

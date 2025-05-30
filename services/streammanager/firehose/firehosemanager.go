@@ -3,14 +3,16 @@
 package firehose
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -21,7 +23,7 @@ import (
 var pkgLogger logger.Logger
 
 func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(firehose.ServiceName)
+	pkgLogger = logger.NewLogger().Child("streammanager").Child("firehose")
 }
 
 type FireHoseProducer struct {
@@ -29,20 +31,20 @@ type FireHoseProducer struct {
 }
 
 type FireHoseClient interface {
-	PutRecord(input *firehose.PutRecordInput) (*firehose.PutRecordOutput, error)
+	PutRecord(ctx context.Context, input *firehose.PutRecordInput, opts ...func(*firehose.Options)) (*firehose.PutRecordOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*FireHoseProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, firehose.ServiceName)
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "firehose")
 	if err != nil {
 		return nil, err
 	}
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &FireHoseProducer{client: firehose.New(awsSession)}, nil
+	return &FireHoseProducer{client: firehose.NewFromConfig(awsConfig)}, nil
 }
 
 // Produce creates a producer and send data to Firehose.
@@ -77,12 +79,10 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 
 	putInput := firehose.PutRecordInput{
 		DeliveryStreamName: aws.String(deliveryStreamMapToInputString),
-		Record:             &firehose.Record{Data: value},
+		Record:             &types.Record{Data: value},
 	}
-	if err = putInput.Validate(); err != nil {
-		return 400, "InvalidInput", err.Error()
-	}
-	putOutput, errorRec := client.PutRecord(&putInput)
+
+	putOutput, errorRec := client.PutRecord(context.Background(), &putInput)
 
 	if errorRec != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(errorRec)

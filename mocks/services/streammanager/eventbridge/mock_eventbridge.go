@@ -10,9 +10,10 @@
 package mock_eventbridge
 
 import (
+	context "context"
 	reflect "reflect"
 
-	eventbridge "github.com/aws/aws-sdk-go/service/eventbridge"
+	eventbridge "github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,16 +42,21 @@ func (m *MockEventBridgeClient) EXPECT() *MockEventBridgeClientMockRecorder {
 }
 
 // PutEvents mocks base method.
-func (m *MockEventBridgeClient) PutEvents(input *eventbridge.PutEventsInput) (*eventbridge.PutEventsOutput, error) {
+func (m *MockEventBridgeClient) PutEvents(ctx context.Context, input *eventbridge.PutEventsInput, opts ...func(*eventbridge.Options)) (*eventbridge.PutEventsOutput, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PutEvents", input)
+	varargs := []any{ctx, input}
+	for _, a := range opts {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "PutEvents", varargs...)
 	ret0, _ := ret[0].(*eventbridge.PutEventsOutput)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // PutEvents indicates an expected call of PutEvents.
-func (mr *MockEventBridgeClientMockRecorder) PutEvents(input any) *gomock.Call {
+func (mr *MockEventBridgeClientMockRecorder) PutEvents(ctx, input any, opts ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockEventBridgeClient)(nil).PutEvents), input)
+	varargs := append([]any{ctx, input}, opts...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutEvents", reflect.TypeOf((*MockEventBridgeClient)(nil).PutEvents), varargs...)
 }

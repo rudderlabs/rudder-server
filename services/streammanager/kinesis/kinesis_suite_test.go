@@ -121,7 +121,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	}
 
 	// Return success response
-	mockClient.EXPECT().PutRecord(&putRecordInput).Return(&kinesis.PutRecordOutput{
+	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(&kinesis.PutRecordOutput{
 		SequenceNumber: aws.String("sequenceNumber"),
 		ShardId:        aws.String("shardId"),
 	}, nil)
@@ -133,7 +133,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	// Return service error
 	errorCode := "someError"
-	mockClient.EXPECT().PutRecord(&putRecordInput).Return(nil, awserr.NewRequestFailure(
+	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(nil, awserr.NewRequestFailure(
 		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
 	))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)

@@ -1,14 +1,15 @@
 package wunderkind
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -35,7 +36,7 @@ type Producer struct {
 }
 
 type lambdaClient interface {
-	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
+	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
@@ -49,14 +50,13 @@ func NewProducer(conf *config.Config, log logger.Logger) (*Producer, error) {
 		ExternalID:    conf.GetString(WunderkindExternalId, ""),
 		RoleBasedAuth: true,
 	}
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
-
 	return &Producer{
 		conf:   conf,
-		client: lambda.New(awsSession),
+		client: lambda.NewFromConfig(awsConfig),
 		logger: log.Child("wunderkind"),
 	}, nil
 }
@@ -76,16 +76,12 @@ func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string
 
 	var invokeInput lambda.InvokeInput
 	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
-	invokeInput.SetFunctionName(wunderKindLambda)
-	invokeInput.SetPayload([]byte(input.Payload))
-	invokeInput.SetInvocationType(InvocationType)
-	invokeInput.SetLogType("Tail")
+	invokeInput.FunctionName = &wunderKindLambda
+	invokeInput.Payload = []byte(input.Payload)
+	invokeInput.InvocationType = InvocationType
+	invokeInput.LogType = "Tail"
 
-	if err = invokeInput.Validate(); err != nil {
-		return http.StatusBadRequest, "Failure", "[Wunderkind] error :: Invalid invokeInput :: " + err.Error()
-	}
-
-	response, err := client.Invoke(&invokeInput)
+	response, err := client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		p.logger.Warnn("Invocation",
