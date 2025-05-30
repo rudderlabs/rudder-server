@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
@@ -314,41 +312,14 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 }
 
 func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io.Reader) (*http.Response, error) {
-	var (
-		resp *http.Response
-		err  error
-	)
-
-	_ = backoff.RetryNotify(
-		func() error {
-			var req *http.Request
-			req, err = http.NewRequest("POST", transformerURL, body)
-			if err == nil {
-				req.Header.Set("Content-Type", contentTypeJsonUTF8)
-				resp, err = bt.webhook.httpClient.Do(req) // nolint: bodyclose
-				// retry 5xx errors
-				if err == nil && (resp.StatusCode >= http.StatusInternalServerError) {
-					return fmt.Errorf("non-success status code: %d", resp.StatusCode)
-				}
-			}
-			return err
-		},
-		backoff.WithMaxRetries(
-			backoff.NewExponentialBackOff(
-				backoff.WithInitialInterval(bt.webhook.config.transformer.initialInterval.Load()),
-				backoff.WithMaxInterval(bt.webhook.config.transformer.maxInterval.Load()),
-				backoff.WithMaxElapsedTime(bt.webhook.config.transformer.maxElapsedTime.Load()),
-				backoff.WithMultiplier(bt.webhook.config.transformer.multiplier.Load()),
-			),
-			uint64(bt.webhook.config.transformer.maxRetry.Load()),
-		),
-		func(err error, duration time.Duration) {
-			bt.webhook.logger.Warnn("Failed to send events to transformer",
-				logger.NewStringField("url", transformerURL),
-				logger.NewDurationField("backoffDelay", duration),
-				obskit.Error(err),
-			)
-		},
-	)
-	return resp, err
+	resp, err := bt.webhook.httpClient.Do(http.MethodPost, transformerURL, body, map[string]string{
+		"Content-Type": contentTypeJsonUTF8,
+	})
+	if err != nil {
+		bt.webhook.logger.Warnn("failed to send events to transformer",
+			logger.NewStringField("transformerURL", transformerURL),
+			obskit.Error(err))
+		return nil, fmt.Errorf("failed to send events to transformer: %w", err)
+	}
+	return resp, nil
 }
