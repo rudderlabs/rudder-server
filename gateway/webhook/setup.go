@@ -8,10 +8,15 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
+
+	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -87,13 +92,37 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	webhook.requestQ = make(map[string]chan *webhookT)
 	webhook.batchRequestQ = make(chan *batchWebhookT)
-	webhook.netClient = retryablehttp.NewClient()
-	webhook.netClient.HTTPClient.Timeout = conf.GetDuration("HttpClient.webhook.timeout", 30, time.Second)
-	webhook.netClient.Logger = nil // to avoid debug logs
-	webhook.netClient.RetryWaitMin = conf.GetDurationVar(100, time.Millisecond, []string{"Gateway.webhook.minRetryTime", "Gateway.webhook.minRetryTimeInMS"}...)
-	webhook.netClient.RetryWaitMax = conf.GetDurationVar(10, time.Second, []string{"Gateway.webhook.maxRetryTime", "Gateway.webhook.maxRetryTimeInS"}...)
-	webhook.netClient.RetryMax = conf.GetIntVar(5, 1, "Gateway.webhook.maxRetry")
 
+	transformerClientConfig := &transformerclient.ClientConfig{
+		ClientTimeout: conf.GetDurationVar(30, time.Second, "HttpClient.sourceTransformer.timeout", "HttpClient.webhook.timeout"),
+		ClientTTL:     conf.GetDurationVar(10, time.Second, "Transformer.Client.sourceTransformer.ttl", "Transformer.Client.ttl"),
+		ClientType:    conf.GetStringVar("httplb", "Transformer.Client.sourceTransformer.type", "Transformer.Client.type"),
+		PickerType:    conf.GetStringVar("power_of_two", "Transformer.Client.sourceTransformer.httplb.pickerType", "Transformer.Client.httplb.pickerType"),
+	}
+	transformerClientConfig.TransportConfig.DisableKeepAlives = conf.GetBoolVar(true, "Transformer.Client.sourceTransformer.disableKeepAlives", "Transformer.Client.disableKeepAlives")
+	transformerClientConfig.TransportConfig.MaxConnsPerHost = conf.GetIntVar(100, 1, "Transformer.Client.sourceTransformer.maxHTTPConnections", "Transformer.Client.maxHTTPConnections")
+	transformerClientConfig.TransportConfig.MaxIdleConnsPerHost = conf.GetIntVar(1, 1, "Transformer.Client.sourceTransformer.maxHTTPIdleConnections", "Transformer.Client.maxHTTPIdleConnections")
+	transformerClientConfig.TransportConfig.IdleConnTimeout = conf.GetDurationVar(5, time.Second, "Transformer.Client.sourceTransformer.maxIdleConnDuration", "Transformer.Client.maxIdleConnDuration")
+	transformerClientConfig.Recycle = conf.GetBoolVar(false, "Transformer.Client.sourceTransformer.recycle", "Transformer.Client.recycle")
+	transformerClientConfig.RecycleTTL = conf.GetDurationVar(60, time.Second, "Transformer.Client.sourceTransformer.recycleTTL", "Transformer.Client.recycleTTL")
+
+	transformerClient := transformerclient.NewClient(transformerClientConfig)
+	retryableClientConfig := &retryablehttp.Config{
+		MaxRetry:        conf.GetInt("Gateway.webhook.maxRetry", 5),
+		InitialInterval: conf.GetDuration("Gateway.webhook.minRetryTime", 100, time.Millisecond),
+		MaxInterval:     conf.GetDuration("Gateway.webhook.maxRetryTime", 1000, time.Millisecond),
+		MaxElapsedTime:  conf.GetDuration("Gateway.webhook.maxElapsedTime", 10, time.Second),
+		Multiplier:      conf.GetFloat64("Gateway.webhook.backoffMultiplier", 1.5),
+	}
+	webhook.httpClient = retryablehttp.NewRetryableHTTPClient(
+		retryableClientConfig,
+		retryablehttp.WithHttpClient(transformerClient),
+		retryablehttp.WithOnFailure(func(err error, duration time.Duration) {
+			webhook.logger.Warnn("Failed to send events to transformer",
+				logger.NewDurationField("backoffDelay", duration),
+				obskit.Error(err))
+		}),
+	)
 	ctx, cancel := context.WithCancel(context.Background())
 	webhook.backgroundCancel = cancel
 

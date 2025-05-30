@@ -15,13 +15,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -64,7 +65,6 @@ type HandleT struct {
 	requestQMu    sync.RWMutex
 	requestQ      map[string]chan *webhookT
 	batchRequestQ chan *batchWebhookT
-	netClient     *retryablehttp.Client
 	gwHandle      Gateway
 	stats         stats.Stats
 	ackCount      atomic.Uint64
@@ -83,6 +83,7 @@ type HandleT struct {
 		webhookV2HandlerEnabled    bool
 	}
 	statReporterCreator StatReporterCreator
+	httpClient          retryablehttp.HttpClient
 }
 
 type webhookSourceStatT struct {
