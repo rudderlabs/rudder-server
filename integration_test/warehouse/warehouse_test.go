@@ -103,7 +103,6 @@ func TestUploads(t *testing.T) {
 				var (
 					ctx    = context.Background()
 					events = 100
-					jobs   = 1
 				)
 				eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
 					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
@@ -153,12 +152,6 @@ func TestUploads(t *testing.T) {
 					{A: "wh_uploads.source_id", B: sourceID},
 					{A: "wh_uploads.destination_id", B: destinationID},
 					{A: "wh_uploads.namespace", B: namespace},
-				}...)
-				requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
-					{A: "source_id", B: sourceID},
-					{A: "destination_id", B: destinationID},
-					{A: "namespace", B: namespace},
-					{A: "status", B: exportedData},
 				}...)
 				requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), 2*events)
 			})

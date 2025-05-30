@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.2](https://github.com/rudderlabs/rudder-server/compare/v1.50.1...v1.50.2) (2025-05-28)
+
+
+### Bug Fixes
+
+* **processor:** throughput stalling due to mutex deadlock on full connection pool ([#5919](https://github.com/rudderlabs/rudder-server/issues/5919)) ([a29dd15](https://github.com/rudderlabs/rudder-server/commit/a29dd1581a3785b7804b3772047741a851dbf41e))
+
 ## [1.50.1](https://github.com/rudderlabs/rudder-server/compare/v1.50.0...v1.50.1) (2025-05-27)
 
 
