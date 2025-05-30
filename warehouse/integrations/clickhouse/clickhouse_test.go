@@ -559,8 +559,8 @@ func TestIntegration(t *testing.T) {
 			disableLoadTableStats       bool
 		}{
 			{
-				name:     "normal loading using downloading of load files",
-				fileName: "testdata/load.csv.gz",
+				name:                  "normal loading using downloading of load files",
+				fileName:              "testdata/load.csv.gz",
 				disableLoadTableStats: false,
 			},
 			{
@@ -570,9 +570,9 @@ func TestIntegration(t *testing.T) {
 				disableLoadTableStats:       false,
 			},
 			{
-				name:            "normal loading using downloading of load files with disable nullable",
-				fileName:        "testdata/load.csv.gz",
-				disableNullable: true,
+				name:                  "normal loading using downloading of load files with disable nullable",
+				fileName:              "testdata/load.csv.gz",
+				disableNullable:       true,
 				disableLoadTableStats: false,
 			},
 			{
@@ -583,9 +583,9 @@ func TestIntegration(t *testing.T) {
 				disableLoadTableStats:       false,
 			},
 			{
-				name:                        "normal loading using downloading of load files with disable load table stats",
-				fileName:                    "testdata/load.csv.gz",
-				disableLoadTableStats:       true,
+				name:                  "normal loading using downloading of load files with disable load table stats",
+				fileName:              "testdata/load.csv.gz",
+				disableLoadTableStats: true,
 			},
 		}
 
