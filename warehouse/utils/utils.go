@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
@@ -669,7 +670,7 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 }
 
 func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, string, string, error) {
-	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3.ServiceID)
+	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3v2.ServiceID)
 	if err != nil {
 		return "", "", "", err
 	}
