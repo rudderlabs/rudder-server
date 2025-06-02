@@ -75,7 +75,7 @@ func TestIntegration(t *testing.T) {
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		azEndPoint := fmt.Sprintf("localhost:%d", c.Port("azure", 10000))
-		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		s3EndPoint := fmt.Sprintf("http://localhost:%d", c.Port("minio", 9000))
 		gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", c.Port("gcs", 4443))
 		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
