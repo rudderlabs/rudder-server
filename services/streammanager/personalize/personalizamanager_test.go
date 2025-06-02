@@ -1,7 +1,6 @@
 package personalize
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -11,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents/types"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/smithy-go"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -136,9 +135,11 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 
 	// Return service error
 	errorCode := "someError"
-	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -174,9 +175,11 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	assert.NotEmpty(t, respMsg)
 
 	errorCode := "someError"
-	mockClient.EXPECT().PutUsers(gomock.Any(), &putUsersInput, gomock.Any()).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutUsers(gomock.Any(), &putUsersInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -212,9 +215,11 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	assert.NotEmpty(t, respMsg)
 
 	errorCode := "someError"
-	mockClient.EXPECT().PutItems(gomock.Any(), &putItemsInput, gomock.Any()).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutItems(gomock.Any(), &putItemsInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)

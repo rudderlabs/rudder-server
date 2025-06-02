@@ -1,15 +1,14 @@
 package kinesis
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/smithy-go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -133,9 +132,11 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	// Return service error
 	errorCode := "someError"
-	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigNotUseMessageID)

@@ -9,7 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -133,9 +133,11 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockClient.
 		EXPECT().
 		Invoke(gomock.Any(), &sampleInput).
-		Return(nil, awserr.NewRequestFailure(
-			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-		))
+		Return(nil, &smithy.GenericAPIError{
+			Code:    errorCode,
+			Message: errorCode,
+			Fault:   smithy.FaultClient,
+		})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, destConfig)
 	assert.Equal(t, 400, statusCode)

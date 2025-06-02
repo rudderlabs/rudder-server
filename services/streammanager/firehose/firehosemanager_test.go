@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/firehose"
 	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
@@ -144,9 +144,11 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockClient.
 		EXPECT().
 		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
-		Return(nil, awserr.NewRequestFailure(
-			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-		))
+		Return(nil, &smithy.GenericAPIError{
+			Code:    errorCode,
+			Message: errorCode,
+			Fault:   smithy.FaultClient,
+		})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
