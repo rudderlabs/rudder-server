@@ -31,6 +31,16 @@ func mapErrorMessageToStatusCode(errorMessage string, defaultStatusCode int) int
 	return defaultStatusCode
 }
 
+func getStatusCodeFromFault(fault smithy.ErrorFault) int {
+	switch fault {
+	case smithy.FaultClient:
+		return 400
+	case smithy.FaultServer:
+		return 500
+	}
+	return 500
+}
+
 func ParseAWSError(err error) (statusCode int, respStatus, responseMessage string) {
 	statusCode = 500
 	respStatus = "Failure"
@@ -40,40 +50,16 @@ func ParseAWSError(err error) (statusCode int, respStatus, responseMessage strin
 	if errors.As(err, &apiErr) {
 		responseMessage = apiErr.ErrorMessage()
 		respStatus = apiErr.ErrorCode()
-		if httpErr, ok := err.(interface{ HTTPStatusCode() int }); ok {
-			statusCode = httpErr.HTTPStatusCode()
-		}
+		fault := apiErr.ErrorFault()
+		statusCode = getStatusCodeFromFault(fault)
 	} else {
 		var opErr *smithy.OperationError
 		if errors.As(err, &opErr) {
-			responseMessage = opErr.Error()
-			if apiErr := extractAPIErrorCode(opErr.Err); apiErr != "" {
-				respStatus = apiErr
-			}
-			if httpErr, ok := opErr.Err.(interface{ HTTPStatusCode() int }); ok {
-				statusCode = httpErr.HTTPStatusCode()
-			}
+			responseMessage = opErr.Unwrap().Error()
+			statusCode = mapErrorMessageToStatusCode(responseMessage, 400)
+			respStatus = "Failure"
 		}
 	}
 
-	statusCode = mapErrorMessageToStatusCode(responseMessage, statusCode)
 	return statusCode, respStatus, responseMessage
-}
-
-// extractAPIErrorCode attempts to extract the AWS API error code from various error types
-func extractAPIErrorCode(err error) string {
-	type awsErrorCode interface {
-		ErrorCode() string
-	}
-
-	if coder, ok := err.(awsErrorCode); ok {
-		return coder.ErrorCode()
-	}
-
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode()
-	}
-
-	return ""
 }
