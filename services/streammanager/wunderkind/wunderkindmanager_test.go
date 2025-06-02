@@ -3,7 +3,6 @@ package wunderkind
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"testing"
 
 	"go.uber.org/mock/gomock"
@@ -136,8 +135,9 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		errorCode := "errorCode"
 		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(
 			nil, &smithy.GenericAPIError{
-				Code:    strconv.Itoa(http.StatusBadRequest),
+				Code:    errorCode,
 				Message: errorCode,
+				Fault:   smithy.FaultClient,
 			})
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
