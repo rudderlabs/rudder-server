@@ -443,12 +443,12 @@ func TestIntegration(t *testing.T) {
 			c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.minio.yml"}))
 			c.Start(context.Background())
 
-			s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
-
+			s3EndPoint := fmt.Sprintf("http://localhost:%d", c.Port("minio", 9000))
+			minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 			ctx := context.Background()
 			namespace := whth.RandSchema(whutils.S3Datalake)
 
-			createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
+			createMinioBucket(t, ctx, minioEndpoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 			dest := backendconfig.DestinationT{
 				ID: "test_destination_id",
