@@ -284,6 +284,11 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) error {
 	network.logger.Info("Network Handler Startup")
 
+	network.blockPrivateIPsDryRun = getRouterConfigBool("dryRunMode", network.destType, false)
+	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
+	network.logger.Info("blockPrivateIPsDryRun: ", network.blockPrivateIPsDryRun)
+	network.logger.Info("blockPrivateIPs: ", network.blockPrivateIPs)
+
 	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetString("privateIPRanges", netutil.DefaultPrivateIPRanges), ","))
 	if err != nil {
 		network.logger.Error("Error loading private IP ranges", logger.NewErrorField(err))
@@ -299,10 +304,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	var defaultTransportCopy http.Transport
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
 
-	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
-		KeepAlive: 30 * time.Second,
-	}
+	originalDialContext := defaultTransportCopy.DialContext
 
 	dialContext := func(ctx context.Context, networkType, address string) (net.Conn, error) {
 		if network.blockPrivateIPsDryRun || network.blockPrivateIPs {
@@ -319,8 +321,8 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 					if network.blockPrivateIPsCIDRs.Contains(ip) {
 						// In dry run mode, just log and allow the connection
 						if network.blockPrivateIPsDryRun {
-							network.logger.Warnf("Connection to private IP %s detected in dry run mode", ip)
-							return dialer.DialContext(ctx, networkType, address)
+							network.logger.Warnn("Connection to private ip detected in dry run mode", logger.NewStringField("ip", ip.String()))
+							return originalDialContext(ctx, networkType, address)
 						}
 						// In block mode, reject the connection
 						if network.blockPrivateIPs {
@@ -330,7 +332,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 				}
 			}
 		}
-		return dialer.DialContext(ctx, networkType, address)
+		return originalDialContext(ctx, networkType, address)
 	}
 
 	defaultTransportCopy.DialContext = dialContext
@@ -348,11 +350,6 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
 		network.logger.Info(network.destType, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
-
-	network.blockPrivateIPsDryRun = getRouterConfigBool("dryRunMode", network.destType, false)
-	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
-	network.logger.Info("blockPrivateIPsDryRun: ", network.blockPrivateIPsDryRun)
-	network.logger.Info("blockPrivateIPs: ", network.blockPrivateIPs)
 
 	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
 	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
