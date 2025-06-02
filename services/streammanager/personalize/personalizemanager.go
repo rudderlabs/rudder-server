@@ -35,7 +35,7 @@ type PersonalizeClient interface {
 }
 
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*PersonalizeProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "personalize")
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "personalize")
 	if err != nil {
 		return nil, err
 	}

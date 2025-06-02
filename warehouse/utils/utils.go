@@ -627,7 +627,7 @@ func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName
 func CreateAWSSessionConfigV2(destination *backendconfig.DestinationT, serviceName string) (*awsutil_v2.SessionConfig, error) {
 	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
 		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
-		return awsutils.NewSessionConfigForDestinationV2(destination, serviceName)
+		return awsutils.NewSimpleSessionConfigForDestinationV2(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
 	return &awsutil_v2.SessionConfig{

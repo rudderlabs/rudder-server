@@ -45,7 +45,7 @@ func init() {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*LambdaProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "lambda")
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "lambda")
 	if err != nil {
 		return nil, err
 	}

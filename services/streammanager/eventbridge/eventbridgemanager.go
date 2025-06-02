@@ -34,7 +34,7 @@ type EventBridgeClient interface {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*EventBridgeProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "eventbridge")
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "eventbridge")
 	if err != nil {
 		return nil, err
 	}

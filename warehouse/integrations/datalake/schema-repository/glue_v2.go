@@ -30,7 +30,7 @@ type GlueSchemaRepositoryV2 struct {
 }
 
 func NewGlueSchemaRepositoryV2(conf *config.Config, logger logger.Logger, wh model.Warehouse) (*GlueSchemaRepositoryV2, error) {
-	sessionConfig, err := utils.NewSessionConfigForDestinationV2(&wh.Destination, "glue")
+	sessionConfig, err := utils.NewSimpleSessionConfigForDestinationV2(&wh.Destination, "glue")
 	if err != nil {
 		return nil, err
 	}

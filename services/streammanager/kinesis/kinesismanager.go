@@ -42,7 +42,7 @@ type KinesisClient interface {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*KinesisProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, "kinesis")
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "kinesis")
 	if err != nil {
 		return nil, err
 	}
