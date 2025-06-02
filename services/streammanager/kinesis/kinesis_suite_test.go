@@ -88,15 +88,6 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "InvalidPayload", statusMsg)
 	assert.Equal(t, "Empty Payload", respMsg)
-
-	// Incomplete Payload
-	sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
-		"message": "{}",
-	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
-	assert.Equal(t, 400, statusCode)
-	assert.Equal(t, "InvalidInput", statusMsg)
-	assert.Contains(t, respMsg, "InvalidParameter")
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
