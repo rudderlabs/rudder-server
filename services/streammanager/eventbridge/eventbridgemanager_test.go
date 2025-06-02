@@ -1,14 +1,14 @@
 package eventbridge
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/smithy-go"
+
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
@@ -106,9 +106,13 @@ func TestProduceWithBadResponse(t *testing.T) {
 	// Empty Response
 	mockClient.
 		EXPECT().
-		PutEvents(&eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
-			sampleEvent,
-		}}, gomock.Any()).
+		PutEvents(
+			gomock.Any(),
+			&eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
+				sampleEvent,
+			}},
+			gomock.Any(),
+		).
 		Return(&eventbridge.PutEventsOutput{Entries: []types.PutEventsResultEntry{}}, nil)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 
@@ -122,9 +126,11 @@ func TestProduceWithBadResponse(t *testing.T) {
 		PutEvents(gomock.Any(), &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
 			sampleEvent,
 		}}, gomock.Any()).
-		Return(nil, awserr.NewRequestFailure(
-			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-		))
+		Return(nil, &smithy.GenericAPIError{
+			Code:    errorCode,
+			Message: errorCode,
+			Fault:   smithy.FaultClient,
+		})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
