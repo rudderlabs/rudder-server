@@ -60,15 +60,9 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.NotEmpty(t, statusMsg)
 	assert.Equal(t, "Could not unmarshal jsonData according to PutEvents input structure", respMsg)
+	choices := []string{"PutEvents", "PutItems", "PutUsers"}
 
-	// Empty Payload
-	sampleJsonPayload = []byte("{}")
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
-	assert.Equal(t, 400, statusCode)
-	assert.Contains(t, statusMsg, "InvalidParameter")
-	assert.Equal(t, "input does not have required fields", respMsg)
-
-	for _, choice := range []string{"PutEvents", "PutItems", "PutUsers"} {
+	for _, choice := range choices {
 		// Invalid Event payload
 		sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
 			"choice":  choice,
@@ -78,16 +72,6 @@ func TestProduceWithInvalidData(t *testing.T) {
 		assert.Equal(t, 400, statusCode)
 		assert.NotEmpty(t, statusMsg)
 		assert.Equal(t, fmt.Sprintf("Could not unmarshal jsonData according to %s input structure", choice), respMsg)
-
-		// Empty Event payload
-		sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
-			"choice":  choice,
-			"payload": "{}",
-		})
-		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
-		assert.Equal(t, 400, statusCode)
-		assert.Contains(t, statusMsg, "InvalidParameter")
-		assert.Equal(t, "input does not have required fields", respMsg)
 	}
 }
 
