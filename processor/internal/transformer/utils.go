@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -18,6 +19,8 @@ const (
 	TransformerRequestFailure = 909
 	TransformerRequestTimeout = 919
 )
+
+var ErrMemoryFenced = errors.New("memory-fenced")
 
 func IsJobTerminated(status int) bool {
 	if status == http.StatusTooManyRequests || status == http.StatusRequestTimeout {
