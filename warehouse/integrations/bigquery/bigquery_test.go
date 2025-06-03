@@ -839,7 +839,7 @@ func TestIntegration(t *testing.T) {
 			{
 				name: "partitionColumn: received_at, partitionType: day",
 				configOverride: map[string]any{
-					"partitionColumn": "loaded_at",
+					"partitionColumn": "received_at",
 					"partitionType":   "day",
 				},
 			},

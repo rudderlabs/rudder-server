@@ -274,7 +274,7 @@ func (bq *BigQuery) deduplicationQuery(tableName string, columnMap model.TableSc
 	// if partitioningInWarehouse is not nil, then we use the partition column and type from the warehouse
 	if partitioningInWarehouse != nil {
 		if partitionColumn != partitioningInWarehouse.Field {
-			bq.logger.Warnn("partition column mismatch in config and warehouse",
+			bq.logger.Debugn("partition column mismatch in config and warehouse",
 				logger.NewStringField("partitionColumnInConfig", partitionColumn),
 				logger.NewStringField("partitionColumnInWarehouse", partitioningInWarehouse.Field),
 			)
@@ -1256,16 +1256,17 @@ func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName strin
 	gcsRef.MaxBadRecords = 0
 	gcsRef.IgnoreUnknownValues = false
 
-	partitioningInWarehouse, err := bq.fetchTablePartitionFromWarehouse(ctx, tableName)
-	if err != nil {
-		return fmt.Errorf("fetching table partitioning: %w", err)
+	partitionType, _ := bq.bigqueryPartitionType(bq.partitionType())
+	partitioningInWarehouse := &bigquery.TimePartitioning{
+		Field: bq.partitionColumn(),
+		Type:  partitionType,
 	}
 
 	var outputTable string
 	if bq.avoidPartitionDecorator(partitioningInWarehouse) {
 		outputTable = tableName
 	} else {
-		partitionDate, err := bq.partitionDateByPartitioning(partitioningInWarehouse)
+		partitionDate, err := bq.partitionDate()
 		if err != nil {
 			return fmt.Errorf("partition date: %w", err)
 		}
