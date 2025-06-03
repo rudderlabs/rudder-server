@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 
 	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -38,6 +39,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Event
 	if err != nil {
 		return nil, err
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.EVENTBRIDGE.httpMaxIdleConnsPerHost", "Router.EVENTBRIDGE.noOfWorkers", "Router.noOfWorkers")
 	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 
 	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -49,6 +50,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Lambd
 	if err != nil {
 		return nil, err
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.LAMBDA.httpMaxIdleConnsPerHost", "Router.LAMBDA.noOfWorkers", "Router.noOfWorkers")
 	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
