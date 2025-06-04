@@ -13,21 +13,21 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	common "github.com/rudderlabs/rudder-server/services/streammanager/common_v2"
 )
 
-type ProducerV1 struct {
+type ProducerV2 struct {
 	conf   *config.Config
-	client lambdaClientV1
+	client lambdaClientV2
 	logger logger.Logger
 }
 
-type lambdaClientV1 interface {
+type lambdaClientV2 interface {
 	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) {
+func NewProducerV2(conf *config.Config, log logger.Logger) (*ProducerV2, error) {
 	if err := validate(conf); err != nil {
 		return nil, fmt.Errorf("invalid environment config: %w", err)
 	}
@@ -42,7 +42,7 @@ func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) 
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
-	return &ProducerV1{
+	return &ProducerV2{
 		conf:   conf,
 		client: lambda.NewFromConfig(awsConfig),
 		logger: log.Child("wunderkind"),
@@ -50,7 +50,7 @@ func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) 
 }
 
 // Produce creates a producer and send data to Lambda.
-func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (p *ProducerV2) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	client := p.client
 	var input inputData
 	err := jsonrs.Unmarshal(jsonData, &input)
@@ -98,7 +98,7 @@ func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
 }
 
-func (*ProducerV1) Close() error {
+func (*ProducerV2) Close() error {
 	// no-op
 	return nil
 }
