@@ -3,7 +3,6 @@ package destination_transformer
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,25 +12,27 @@ import (
 	"sync/atomic"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
+	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
+
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/kafka"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -238,49 +239,14 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		panic(err)
 	}
 
-	var (
-		respData   []byte
-		statusCode int
-	)
-
 	var extraHeaders map[string]string
 	if compactRequestPayloads {
 		extraHeaders = map[string]string{"X-Content-Format": "json+compactedv1"}
 	}
-	// endless retry if transformer-control plane connection is down or memory-fenced
-	endlessBackoff := backoff.NewExponentialBackOff()
-	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
-	endlessBackoff.MaxInterval = d.config.maxRetryBackoffInterval.Load()
-
-	_ = backoff.RetryNotify(
-		func() error {
-			respData, statusCode, err = d.doPost(ctx, rawJSON, url, labels, extraHeaders)
-			if errors.Is(err, transformerutils.ErrMemoryFenced) {
-				return errors.New("retry: memory-fenced")
-			}
-			if err != nil {
-				panic(err)
-			}
-			return nil
-		},
-		endlessBackoff,
-		func(err error, time time.Duration) {
-			var transformationID, transformationVersionID string
-			if len(data[0].Destination.Transformations) > 0 {
-				transformationID = data[0].Destination.Transformations[0].ID
-				transformationVersionID = data[0].Destination.Transformations[0].VersionID
-			}
-			d.log.Errorn("JS HTTP connection error",
-				obskit.Error(err),
-				obskit.SourceID(data[0].Metadata.SourceID),
-				obskit.WorkspaceID(data[0].Metadata.WorkspaceID),
-				obskit.DestinationID(data[0].Metadata.DestinationID),
-				logger.NewStringField("url", url),
-				logger.NewStringField("transformationID", transformationID),
-				logger.NewStringField("transformationVersionID", transformationVersionID),
-			)
-		},
-	)
+	respData, statusCode, err := d.doPost(ctx, rawJSON, url, labels, extraHeaders)
+	if err != nil {
+		return nil, err
+	}
 
 	switch statusCode {
 	case http.StatusOK,
@@ -351,18 +317,12 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+
 			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 			d.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr
-			}
-
-			if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("X-Rudder-Should-Retry") == "true" {
-				reason := resp.Header.Get("X-Rudder-Error-Reason")
-				failureTags := lo.Assign(tags, map[string]string{"reason": reason})
-				d.stat.NewTaggedStat("transformer_client_request_failure", stats.CountType, failureTags).Increment()
-				return transformerutils.ErrMemoryFenced
 			}
 
 			if !transformerutils.IsJobTerminated(resp.StatusCode) {

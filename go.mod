@@ -79,7 +79,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.53.1
+	github.com/rudderlabs/rudder-go-kit v0.54.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.6.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250507094647-f18f2e217449

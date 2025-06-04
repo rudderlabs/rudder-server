@@ -3,7 +3,6 @@ package trackingplan_validation
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,14 +10,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -171,22 +172,23 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		statusCode int
 	)
 
-	// endless retry if transformer-control plane connection is down or memory-fenced
+	// endless retry if transformer-control plane connection is down
 	endlessBackoff := backoff.NewExponentialBackOff()
 	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
 	endlessBackoff.MaxInterval = t.config.maxRetryBackoffInterval.Load()
 
+	// endless backoff loop, only nil error or panics inside
 	_ = backoff.RetryNotify(
 		func() error {
 			respData, statusCode, err = t.doPost(ctx, rawJSON, url, labels)
-			if errors.Is(err, transformerutils.ErrMemoryFenced) || statusCode == transformerutils.StatusCPDown {
-				t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
-				return errors.New("retry: memory-fenced or control plane down")
-			}
-			t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			if err != nil {
 				panic(err)
 			}
+			if statusCode == transformerutils.StatusCPDown {
+				t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
+				return fmt.Errorf("control plane not reachable")
+			}
+			t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
 		endlessBackoff,
@@ -275,18 +277,11 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			t.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+
 			t.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 			t.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
-
 			if reqErr != nil {
 				return reqErr
-			}
-
-			if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("X-Rudder-Should-Retry") == "true" {
-				reason := resp.Header.Get("X-Rudder-Error-Reason")
-				failureTags := lo.Assign(tags, map[string]string{"reason": reason})
-				t.stat.NewTaggedStat("transformer_client_request_failure", stats.CountType, failureTags).Increment()
-				return transformerutils.ErrMemoryFenced
 			}
 
 			if !transformerutils.IsJobTerminated(resp.StatusCode) && resp.StatusCode != transformerutils.StatusCPDown {

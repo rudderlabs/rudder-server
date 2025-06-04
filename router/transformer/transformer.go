@@ -71,8 +71,6 @@ type handle struct {
 	// expirationTimeDiff holds the configured time difference for token expiration.
 	expirationTimeDiff config.ValueLoader[time.Duration]
 
-	requestBackoff config.ValueLoader[time.Duration]
-
 	compactionEnabled   config.ValueLoader[bool]
 	compactionSupported bool
 }
@@ -133,7 +131,6 @@ func NewTransformer(
 	handle := &handle{
 		oAuthV2EnabledLoader: oauthV2Enabled,
 		expirationTimeDiff:   expirationTimeDiff,
-		requestBackoff:       config.GetReloadableDurationVar(100, time.Millisecond, "Router.transformer.requestBackoff"),
 	}
 	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig, featuresService)
 	return handle
@@ -246,18 +243,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		trans.stats.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, labels.ToStatsTag()).Count(int(duration.Seconds()))
 
 		if err == nil {
-			if resp.StatusCode == http.StatusServiceUnavailable && resp.Header.Get("X-Rudder-Should-Retry") == "true" {
-				reason := resp.Header.Get("X-Rudder-Error-Reason")
-				failureTags := lo.Assign(labels.ToStatsTag(), map[string]string{"reason": reason})
-				trans.stats.NewTaggedStat("transformer_client_request_failure", stats.CountType, failureTags).Increment()
-				// Perpetual retry: do not return error, just sleep and retry
-				time.Sleep(trans.requestBackoff.Load())
-				continue
-			}
 			// If no err returned by client.Post, reading body.
 			// If reading body fails, retrying.
 			respData, err = io.ReadAll(resp.Body)
 			trans.stats.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, labels.ToStatsTag()).Count(len(respData))
+
 		}
 
 		if err != nil {

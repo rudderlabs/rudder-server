@@ -3,14 +3,19 @@
 package transformerclient
 
 import (
+	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bufbuild/httplb"
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
+
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 type ClientConfig struct {
@@ -45,7 +50,7 @@ func NewClient(config *ClientConfig) Client {
 		Timeout:   600 * time.Second,
 	}
 	if config == nil {
-		return client
+		return newRetryableHTTPClient(client)
 	}
 
 	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
@@ -89,11 +94,37 @@ func NewClient(config *ClientConfig) Client {
 		if config.Recycle {
 			options = append(options, httplb.WithRoundTripperMaxLifetime(recycleTTL))
 		}
-
-		return httplb.NewClient(options...)
+		return newRetryableHTTPClient(httplb.NewClient(options...))
 	default:
-		return client
+		return newRetryableHTTPClient(client)
 	}
+}
+
+func newRetryableHTTPClient(baseClient Client) Client {
+	cfg := &retryablehttp.Config{
+		MaxRetry:        0, // 0 for infinite
+		InitialInterval: 1 * time.Second,
+		MaxInterval:     30 * time.Second,
+		MaxElapsedTime:  0, // 0 for infinite
+		Multiplier:      2.0,
+	}
+	return retryablehttp.NewRetryableHTTPClient(
+		cfg,
+		retryablehttp.WithHttpClient(baseClient),
+		retryablehttp.WithCustomRetryStrategy(func(resp *http.Response, err error) (bool, error) {
+			if err != nil {
+				return true, err
+			}
+			if resp.StatusCode == http.StatusServiceUnavailable &&
+				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
+				reason := resp.Header.Get("X-Rudder-Error-Reason")
+				stats.Default.NewTaggedStat("transformer_request_failure", stats.CountType, stats.Tags{"reason": reason}).Count(1)
+				resp.Body.Close()
+				return true, fmt.Errorf("memory-fenced: %s", reason)
+			}
+			return false, nil
+		}),
+	)
 }
 
 func getPicker(pickerType string) func(prev picker.Picker, allConns conn.Conns) picker.Picker {
