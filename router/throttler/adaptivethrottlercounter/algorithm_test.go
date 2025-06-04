@@ -17,6 +17,7 @@ func TestAdaptiveRateLimit(t *testing.T) {
 	cfg := config.New()
 	al := New("dest", cfg, config.SingleValueLoader(500*time.Millisecond))
 	defer al.Shutdown()
+
 	t.Run("when there is a 429s in the last decrease limit counter window", func(t *testing.T) {
 		al.ResponseCodeReceived(429)
 		require.Eventually(t, func() bool {
@@ -30,21 +31,25 @@ func TestAdaptiveRateLimit(t *testing.T) {
 		}, 2*time.Second, 100*time.Millisecond) // increases by 10% since there is no error in the last 2 seconds
 	})
 
-	t.Run("429s less than resolution", func(t *testing.T) {
-		for i := 0; i < 10; i++ {
+	t.Run("429s less than threshold", func(t *testing.T) {
+		for range 10 {
 			al.ResponseCodeReceived(200)
 		}
 		al.ResponseCodeReceived(429)
-		require.True(t, floatCheck(al.LimitFactor(), float64(0.8))) // does not change since 429s less than resolution
+
+		require.Eventually(t, func() bool {
+			require.False(t, floatCheck(al.LimitFactor(), float64(0.7)), "limit factor should not decrease")
+			return floatCheck(al.LimitFactor(), float64(0.9)) // eventually increases by 10% since there is no error in the last 2 seconds
+		}, 3*time.Second, 100*time.Millisecond)
 	})
 
-	t.Run("429s more than resolution", func(t *testing.T) {
-		for i := 0; i < 5; i++ {
+	t.Run("429s more than threshold", func(t *testing.T) {
+		for range 4 {
 			al.ResponseCodeReceived(200)
 		}
-		al.ResponseCodeReceived(429)
+		al.ResponseCodeReceived(429) // throttledRate is 1/5 = 0.2 > 0.1 (throttleTolerancePercentage)
 		require.Eventually(t, func() bool {
-			return floatCheck(al.LimitFactor(), float64(0.5))
+			return floatCheck(al.LimitFactor(), 0.84) // reduces by 6% (30%*0.2)
 		}, time.Second, 100*time.Millisecond) // does not change since 429s less than resolution
 	})
 

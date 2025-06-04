@@ -97,6 +97,10 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3
 }
 
 func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse, embeddedResponse types.Response) string {
+	if len(legacyResponse.Events) == 0 && len(legacyResponse.FailedEvents) == 0 {
+		return "" // Don't diff in case there is no response from transformer
+	}
+
 	sortTransformerResponsesByJobID(legacyResponse.Events)
 	sortTransformerResponsesByJobID(legacyResponse.FailedEvents)
 	sortTransformerResponsesByJobID(embeddedResponse.Events)
@@ -105,7 +109,7 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 	// If the event counts differ, return all events in the transformation
 	if len(legacyResponse.Events) != len(embeddedResponse.Events) || len(legacyResponse.FailedEvents) != len(embeddedResponse.FailedEvents) {
 		t.stats.mismatchedEvents.Observe(float64(len(events)))
-		return "Mismatch in response for events or failed events"
+		return fmt.Sprintf("Mismatch in response for events or failed events with legacy response: %s", stringify.Any(legacyResponse))
 	}
 
 	var (
