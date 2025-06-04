@@ -28,23 +28,23 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (Lambda
 			pkgLogger.Error("Error creating producer v2", err)
 		}
 	}
-	return &switchingLambdaManager{isV2Enabled: v2Enabled.Load(), producerV1: producerV1, producerV2: producerV2}, nil
+	return &SwitchingLambdaManager{isV2Enabled: v2Enabled.Load(), producerV1: producerV1, producerV2: producerV2}, nil
 }
 
-type switchingLambdaManager struct {
+type SwitchingLambdaManager struct {
 	isV2Enabled bool
 	producerV1  *LambdaProducerV1
 	producerV2  *LambdaProducerV2
 }
 
-func (s *switchingLambdaManager) Produce(jsonData json.RawMessage, val interface{}) (int, string, string) {
+func (s *SwitchingLambdaManager) Produce(jsonData json.RawMessage, val interface{}) (int, string, string) {
 	if s.isV2Enabled {
 		return s.producerV2.Produce(jsonData, val)
 	}
 	return s.producerV1.Produce(jsonData, val)
 }
 
-func (s *switchingLambdaManager) Close() error {
+func (s *SwitchingLambdaManager) Close() error {
 	if s.isV2Enabled {
 		return s.producerV2.Close()
 	}

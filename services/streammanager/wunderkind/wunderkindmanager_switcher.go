@@ -27,23 +27,23 @@ func NewProducer(conf *config.Config, log logger.Logger) (WunderkindManager, err
 			log.Error("Error creating producer v2", err)
 		}
 	}
-	return &switchingWunderkindManager{isV2Enabled: v2Enabled.Load(), producerV1: producerV1, producerV2: producerV2}, nil
+	return &SwitchingWunderkindManager{isV2Enabled: v2Enabled.Load(), producerV1: producerV1, producerV2: producerV2}, nil
 }
 
-type switchingWunderkindManager struct {
+type SwitchingWunderkindManager struct {
 	isV2Enabled bool
 	producerV1  *ProducerV1
 	producerV2  *ProducerV2
 }
 
-func (s *switchingWunderkindManager) Produce(jsonData json.RawMessage, val interface{}) (int, string, string) {
+func (s *SwitchingWunderkindManager) Produce(jsonData json.RawMessage, val interface{}) (int, string, string) {
 	if s.isV2Enabled {
 		return s.producerV2.Produce(jsonData, val)
 	}
 	return s.producerV1.Produce(jsonData, val)
 }
 
-func (s *switchingWunderkindManager) Close() error {
+func (s *SwitchingWunderkindManager) Close() error {
 	if s.isV2Enabled {
 		return s.producerV2.Close()
 	}
