@@ -2034,7 +2034,7 @@ func TestEvents(t *testing.T) {
 			},
 			{
 				name:         "track (POSTGRES) jsonPaths (escape characters for &, <, and >)",
-				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"city":"Palo Alto <p>Ampersand: &;</p> Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"radiation_level": 0.000000006, "city":"Palo Alto <p>Ampersand: &;</p> Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 				metadata:     getTrackMetadata("POSTGRES", "webhook"),
 				destination: getDestination("POSTGRES", map[string]any{
 					"jsonPaths": "location",
@@ -2048,7 +2048,7 @@ func TestEvents(t *testing.T) {
 						},
 						{
 							Output: trackEventDefaultOutput().
-								SetDataField("location", "{\"city\":\"Palo Alto <p>Ampersand: &;</p> Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+								SetDataField("location", "{\"city\":\"Palo Alto <p>Ampersand: &;</p> Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"radiation_level\":6e-9,\"state\":\"California\"}").
 								SetColumnField("location", "json"),
 							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
 							StatusCode: http.StatusOK,
