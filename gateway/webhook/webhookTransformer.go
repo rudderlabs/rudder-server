@@ -208,7 +208,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	var resp *http.Response
 	payload := misc.MakeJSONArray(events)
 	bt.stats.transformTimerStat.Since(transformStart)
-	resp, err := bt.postWithRetry(sourceTransformerURL, bytes.NewBuffer(payload))
+	resp, err := bt.doPost(sourceTransformerURL, bytes.NewBuffer(payload))
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection to source transformer (URL: %q): %w", sourceTransformerURL, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
@@ -311,7 +311,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	return batchResponse
 }
 
-func (bt *batchWebhookTransformerT) postWithRetry(transformerURL string, body io.Reader) (*http.Response, error) {
+func (bt *batchWebhookTransformerT) doPost(transformerURL string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(http.MethodPost, transformerURL, body)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
