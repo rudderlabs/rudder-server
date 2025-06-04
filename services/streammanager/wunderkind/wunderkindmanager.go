@@ -1,14 +1,13 @@
 package wunderkind
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go/service/lambda"
 
-	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -23,7 +22,7 @@ type ProducerV1 struct {
 }
 
 type lambdaClientV1 interface {
-	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
+	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
@@ -37,14 +36,14 @@ func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) 
 		ExternalID:    conf.GetString(WunderkindExternalId, ""),
 		RoleBasedAuth: true,
 	}
-	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.WUNDERKIND.httpMaxIdleConnsPerHost", "Router.WUNDERKIND.noOfWorkers", "Router.noOfWorkers")
-	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
+	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
+
 	return &ProducerV1{
 		conf:   conf,
-		client: lambda.NewFromConfig(awsConfig),
+		client: lambda.New(awsSession),
 		logger: log.Child("wunderkind"),
 	}, nil
 }
@@ -64,12 +63,16 @@ func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 
 	var invokeInput lambda.InvokeInput
 	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
-	invokeInput.FunctionName = &wunderKindLambda
-	invokeInput.Payload = []byte(input.Payload)
-	invokeInput.InvocationType = InvocationType
-	invokeInput.LogType = "Tail"
+	invokeInput.SetFunctionName(wunderKindLambda)
+	invokeInput.SetPayload([]byte(input.Payload))
+	invokeInput.SetInvocationType(InvocationType)
+	invokeInput.SetLogType("Tail")
 
-	response, err := client.Invoke(context.Background(), &invokeInput)
+	if err = invokeInput.Validate(); err != nil {
+		return http.StatusBadRequest, "Failure", "[Wunderkind] error :: Invalid invokeInput :: " + err.Error()
+	}
+
+	response, err := client.Invoke(&invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		p.logger.Warnn("Invocation",

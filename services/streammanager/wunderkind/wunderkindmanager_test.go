@@ -17,7 +17,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
-	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda_v2"
+	mock_lambda_v1 "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda_v1"
+	mock_lambda_v2 "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda_v2"
 )
 
 var (
@@ -54,7 +55,7 @@ func TestNewProducer(t *testing.T) {
 
 func TestProduceWithInvalidDataV1(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	mockClient := mock_lambda_v1.NewMockLambdaClientV1(ctrl)
 	producer := &ProducerV1{client: mockClient}
 
 	t.Run("Invalid input", func(t *testing.T) {
@@ -85,7 +86,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 	conf.Set("WUNDERKIND_LAMBDA", sampleFunction)
 
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	mockClient := mock_lambda_v1.NewMockLambdaClientV1(ctrl)
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	producer := &ProducerV1{conf: conf, client: mockClient, logger: mockLogger}
 
@@ -102,7 +103,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 	sampleInput.LogType = types.LogTypeTail
 
 	t.Run("success", func(t *testing.T) {
-		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(&lambda.InvokeOutput{}, nil)
+		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda.InvokeOutput{}, nil)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusOK, statusCode)
 		require.Equal(t, "Success", statusMsg)
@@ -111,7 +112,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 
 	t.Run("general error", func(t *testing.T) {
 		errorCode := "errorCode"
-		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(nil, errors.New(errorCode))
+		mockClient.EXPECT().Invoke(&sampleInput).Return(nil, errors.New(errorCode))
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusInternalServerError, statusCode)
@@ -120,7 +121,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 	})
 
 	t.Run("when lambda invocation is successful, but there is an issue with the payload", func(t *testing.T) {
-		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(&lambda.InvokeOutput{
+		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda.InvokeOutput{
 			StatusCode:      *aws.Int32(http.StatusOK),
 			FunctionError:   aws.String("Unhandled"),
 			ExecutedVersion: aws.String("$LATEST"),
@@ -133,7 +134,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 
 	t.Run("aws error", func(t *testing.T) {
 		errorCode := "errorCode"
-		mockClient.EXPECT().Invoke(gomock.Any(), &sampleInput).Return(
+		mockClient.EXPECT().Invoke(&sampleInput).Return(
 			nil, &smithy.GenericAPIError{
 				Code:    errorCode,
 				Message: errorCode,
@@ -149,7 +150,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 
 func TestProduceWithInvalidDataV2(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	mockClient := mock_lambda_v2.NewMockLambdaClientV2(ctrl)
 	producer := &ProducerV2{client: mockClient}
 
 	t.Run("Invalid input", func(t *testing.T) {
@@ -179,7 +180,7 @@ func TestProduceWithServiceResponseV2(t *testing.T) {
 	conf.Set("WUNDERKIND_LAMBDA", sampleFunction)
 
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	mockClient := mock_lambda_v2.NewMockLambdaClientV2(ctrl)
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	producer := &ProducerV2{conf: conf, client: mockClient, logger: mockLogger}
 
