@@ -15,8 +15,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
-	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda_v2"
+	common "github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
 var (
@@ -37,7 +37,7 @@ func TestNewProducer(t *testing.T) {
 		WorkspaceID: "sampleWorkspaceID",
 	}
 	timeOut := 10 * time.Second
-	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
+	producer, err := NewProducerV2(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
 	assert.NotNil(t, producer.client)
@@ -49,13 +49,13 @@ func TestNewProducer(t *testing.T) {
 	}
 	destination.Config = destinationConfig
 	timeOut = 10 * time.Second
-	producer, err = NewProducer(&destination, common.Opts{Timeout: timeOut})
+	producer, err = NewProducerV2(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, producer)
 	assert.Equal(t, "could not find region configuration", err.Error())
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &LambdaProducer{}
+	producer := &LambdaProducerV2{}
 	sampleEventJson := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -65,8 +65,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
-	producer := &LambdaProducer{client: mockClient}
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	producer := &LambdaProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
@@ -89,8 +89,8 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
-	producer := &LambdaProducer{client: mockClient}
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	producer := &LambdaProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 

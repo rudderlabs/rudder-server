@@ -169,7 +169,7 @@ func TestNewProducerWithLambdaDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &lambda.LambdaProducer{})
+	assert.IsType(t, producer, &lambda.LambdaProducerV2{})
 }
 
 func TestNewProducerWithPersonalizeDestination(t *testing.T) {

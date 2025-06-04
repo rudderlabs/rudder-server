@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
-	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
+	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda_v2"
 )
 
 var (
@@ -54,7 +54,7 @@ func TestNewProducer(t *testing.T) {
 
 func TestProduceWithInvalidDataV1(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
 	producer := &ProducerV1{client: mockClient}
 
 	t.Run("Invalid input", func(t *testing.T) {
@@ -85,7 +85,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 	conf.Set("WUNDERKIND_LAMBDA", sampleFunction)
 
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	producer := &ProducerV1{conf: conf, client: mockClient, logger: mockLogger}
 
@@ -149,7 +149,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 
 func TestProduceWithInvalidDataV2(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
 	producer := &ProducerV2{client: mockClient}
 
 	t.Run("Invalid input", func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestProduceWithServiceResponseV2(t *testing.T) {
 	conf.Set("WUNDERKIND_LAMBDA", sampleFunction)
 
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	producer := &ProducerV2{conf: conf, client: mockClient, logger: mockLogger}
 

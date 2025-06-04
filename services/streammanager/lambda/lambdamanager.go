@@ -1,65 +1,43 @@
-//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/lambda/mock_lambda.go -package mock_lambda github.com/rudderlabs/rudder-server/services/streammanager/lambda LambdaClient
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/lambda_v1/mock_lambda_v1.go -package mock_lambda_v1 github.com/rudderlabs/rudder-server/services/streammanager/lambda LambdaClientV1
 
 package lambda
 
 import (
-	"context"
 	"encoding/json"
 
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/mitchellh/mapstructure"
 
-	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
-	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-// Config is the config that is required to send data to Lambda
-type destinationConfig struct {
-	InvocationType string `json:"invocationType"`
-	ClientContext  string `json:"clientContext"`
-	Lambda         string `json:"lambda"`
+type LambdaProducerV1 struct {
+	client LambdaClientV1
 }
 
-type inputData struct {
-	Payload string `json:"payload"`
-}
-
-type LambdaProducer struct {
-	client LambdaClient
-}
-
-type LambdaClient interface {
-	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
-}
-
-var pkgLogger logger.Logger
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child("lambda")
+type LambdaClientV1 interface {
+	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*LambdaProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "lambda")
+func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (*LambdaProducerV1, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, lambda.ServiceName)
 	if err != nil {
 		return nil, err
 	}
-	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.LAMBDA.httpMaxIdleConnsPerHost", "Router.LAMBDA.noOfWorkers", "Router.noOfWorkers")
-	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
+	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &LambdaProducer{client: lambda.NewFromConfig(awsConfig)}, nil
+	return &LambdaProducerV1{client: lambda.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
-func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *LambdaProducerV1) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Failure", "[Lambda] error :: Could not create client"
@@ -85,14 +63,18 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	}
 
 	var invokeInput lambda.InvokeInput
-	invokeInput.FunctionName = &config.Lambda
-	invokeInput.Payload = []byte(input.Payload)
-	invokeInput.InvocationType = types.InvocationType(config.InvocationType)
+	invokeInput.SetFunctionName(config.Lambda)
+	invokeInput.SetPayload([]byte(input.Payload))
+	invokeInput.SetInvocationType(config.InvocationType)
 	if config.ClientContext != "" {
-		invokeInput.ClientContext = &config.ClientContext
+		invokeInput.SetClientContext(config.ClientContext)
 	}
 
-	_, err = client.Invoke(context.Background(), &invokeInput)
+	if err = invokeInput.Validate(); err != nil {
+		return 400, "Failure", "[Lambda] error :: Invalid invokeInput :: " + err.Error()
+	}
+
+	_, err = client.Invoke(&invokeInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[Lambda] Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
@@ -102,7 +84,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
 }
 
-func (*LambdaProducer) Close() error {
+func (*LambdaProducerV1) Close() error {
 	// no-op
 	return nil
 }

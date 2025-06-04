@@ -148,7 +148,7 @@ func TestSendDataWithStreamDestination(t *testing.T) {
 	err := customManager.onNewDestination(someDestination)
 	assert.Nil(t, err)
 	assert.NotNil(t, customManager.client[someDestination.ID])
-	assert.IsType(t, &lambda.LambdaProducer{}, customManager.client[someDestination.ID].client)
+	assert.IsType(t, &lambda.LambdaProducerV2{}, customManager.client[someDestination.ID].client)
 
 	ctrl := gomock.NewController(t)
 	mockProducer := mock_streammanager.NewMockStreamProducer(ctrl)
