@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.50.3](https://github.com/rudderlabs/rudder-server/compare/v1.50.2...v1.50.3) (2025-06-04)
+
+
+### Miscellaneous
+
+* proc sample store uploader ([#5917](https://github.com/rudderlabs/rudder-server/issues/5917)) ([39c8e46](https://github.com/rudderlabs/rudder-server/commit/39c8e46fc4b94b9e9fa08cd2c3dabf7b5e05e137))
+* warehouse transformations json diff with encoding ([#5937](https://github.com/rudderlabs/rudder-server/issues/5937)) ([bf75a96](https://github.com/rudderlabs/rudder-server/commit/bf75a96202457e5e77662052a933f0fa52468d43))
+
 ## [1.50.2](https://github.com/rudderlabs/rudder-server/compare/v1.50.1...v1.50.2) (2025-05-28)
 
 
