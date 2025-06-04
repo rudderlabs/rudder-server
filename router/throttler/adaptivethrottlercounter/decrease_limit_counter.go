@@ -48,7 +48,7 @@ func (c *decreaseLimitCounter) run(ctx context.Context, wg *sync.WaitGroup) {
 			}
 			c.counterMu.Unlock()
 			if throttledRate > float64(c.throttleTolerancePercentage())/100 {
-				c.limitFactor.Add(-float64(c.decreasePercentage.Load()) / 100)
+				c.limitFactor.Add(-throttledRate * float64(c.decreasePercentage.Load()) / 100)
 				if err := c.wait(ctx); err != nil {
 					return
 				}
