@@ -440,7 +440,6 @@ func (proc *Handle) Setup(
 	proc.storeSamplingFileManager, err = getStoreSamplingUploader(proc.conf, proc.logger)
 	if err != nil {
 		proc.logger.Errorn("failed to create store sampling file manager", obskit.Error(err))
-		proc.storeSamplingFileManager = nil
 	}
 
 	if proc.adaptiveLimit == nil {
