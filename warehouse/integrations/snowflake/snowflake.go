@@ -152,6 +152,7 @@ type Snowflake struct {
 	conf           *config.Config
 	logger         logger.Logger
 	stats          stats.Stats
+	tableManager   tableManager
 
 	config struct {
 		allowMerge         bool
@@ -201,14 +202,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	return sf
 }
 
-func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
-	var arr []string
-	for name, dataType := range columns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[dataType]))
-	}
-	return strings.Join(arr, ",")
-}
-
 // schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
 func (sf *Snowflake) schemaIdentifier() string {
 	return fmt.Sprintf(`%q`,
@@ -218,10 +211,9 @@ func (sf *Snowflake) schemaIdentifier() string {
 
 func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns model.TableSchema) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(
-		`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`,
-		schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""),
-	)
+
+	sqlStatement := sf.tableManager.createTableQuery(schemaIdentifier, tableName, columns)
+
 	sf.logger.Infow("Creating table in snowflake",
 		lf.DestinationID, sf.Warehouse.Destination.ID,
 		lf.Query, sqlStatement,
@@ -355,23 +347,21 @@ func (sf *Snowflake) loadTable(
 		lf.ShouldMerge, sf.ShouldMerge(tableName),
 	)
 	log.Infow("started loading")
-
-	if db, err = sf.connect(ctx, optionalCreds{schemaName: sf.Namespace}); err != nil {
+	schemaIdentifier := sf.schemaIdentifier()
+	if db, err = sf.connect(ctx, optionalCreds{schemaName: schemaIdentifier}); err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
 
 	if !skipClosingDBSession {
 		defer func() { _ = db.Close() }()
 	}
-
-	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := whutils.StagingTableName(
 		provider,
 		tableName,
 		tableNameLimit,
 	)
 
-	strKeys := sf.getSortedColumnsFromTableSchema(tableSchemaInUpload)
+	strKeys := getSortedColumnsFromTableSchema(tableSchemaInUpload)
 	sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
 
 	// Truncating the columns by default to avoid size limitation errors
@@ -525,12 +515,6 @@ func (sf *Snowflake) mergeIntoLoadTable(
 		RowsInserted: rowsInserted,
 		RowsUpdated:  rowsUpdated,
 	}, nil
-}
-
-func (sf *Snowflake) getSortedColumnsFromTableSchema(tableSchemaInUpload model.TableSchema) []string {
-	strKeys := whutils.GetColumnsFromTableSchema(tableSchemaInUpload)
-	sort.Strings(strKeys)
-	return strKeys
 }
 
 func (sf *Snowflake) joinColumnsWithFormatting(columns []string, format string) string {
@@ -909,7 +893,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 			}
 		}
 
-		strKeys := sf.getSortedColumnsFromTableSchema(identifiesSchema)
+		strKeys := getSortedColumnsFromTableSchema(identifiesSchema)
 		sortedColumnNames := sf.joinColumnsWithFormatting(strKeys, "%q")
 
 		_, err = sf.copyInto(ctx, resp.db, schemaIdentifier, identifiesTable, sortedColumnNames, tmpIdentifiesStagingTable)
@@ -1173,25 +1157,11 @@ func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error
 }
 
 func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) (err error) {
-	var (
-		query            string
-		queryBuilder     strings.Builder
-		schemaIdentifier = sf.schemaIdentifier()
-	)
-
-	queryBuilder.WriteString(fmt.Sprintf(`
-		ALTER TABLE
-		  %s.%q
-		ADD COLUMN`,
-		schemaIdentifier,
-		tableName,
-	))
-
-	for _, columnInfo := range columnsInfo {
-		queryBuilder.WriteString(fmt.Sprintf(` IF NOT EXISTS %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
+	schemaIdentifier := sf.schemaIdentifier()
+	query, err := sf.tableManager.addColumnsQuery(schemaIdentifier, tableName, columnsInfo)
+	if err != nil {
+		return fmt.Errorf("adding columns: %w", err)
 	}
-
-	query = strings.TrimSuffix(queryBuilder.String(), ",") + ";"
 
 	log := sf.logger.With(
 		lf.Schema, schemaIdentifier,
@@ -1353,6 +1323,7 @@ func (sf *Snowflake) Setup(ctx context.Context, warehouse model.Warehouse, uploa
 	sf.CloudProvider = whutils.SnowflakeCloudProvider(warehouse.Destination.Config)
 	sf.Uploader = uploader
 	sf.ObjectStorage = whutils.ObjectStorageType(whutils.SNOWFLAKE, warehouse.Destination.Config, sf.Uploader.UseRudderStorage())
+	sf.tableManager = newTableManager(sf.conf, warehouse)
 
 	sf.DB, err = sf.connect(ctx, optionalCreds{})
 	return err
@@ -1648,4 +1619,10 @@ func (sf *Snowflake) SetConnectionTimeout(timeout time.Duration) {
 
 func (*Snowflake) ErrorMappings() []model.JobError {
 	return errorsMappings
+}
+
+func getSortedColumnsFromTableSchema(tableSchemaInUpload model.TableSchema) []string {
+	strKeys := whutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	return strKeys
 }
