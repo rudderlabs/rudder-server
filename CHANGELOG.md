@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.5](https://github.com/rudderlabs/rudder-server/compare/v1.50.4...v1.50.5) (2025-06-05)
+
+
+### Miscellaneous
+
+* add config to disable load table stats for clickhouse ([#5932](https://github.com/rudderlabs/rudder-server/issues/5932)) ([69c9345](https://github.com/rudderlabs/rudder-server/commit/69c93458424cf42d5c0f597154d97ba3d21b7217))
+
 ## [1.50.4](https://github.com/rudderlabs/rudder-server/compare/v1.50.3...v1.50.4) (2025-06-04)
 
 
