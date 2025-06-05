@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/personalize/mock_personalize.go -package mock_personalize github.com/rudderlabs/rudder-server/services/streammanager/personalize PersonalizeClient
+//go:generate mockgen -destination=../../../mocks/services/streammanager/personalize_v2/mock_personalize_v2.go -package mock_personalize_v2 github.com/rudderlabs/rudder-server/services/streammanager/personalize PersonalizeClientV2
 
 package personalize
 

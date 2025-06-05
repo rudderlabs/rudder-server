@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/kinesis/mock_kinesis.go -package mock_kinesis github.com/rudderlabs/rudder-server/services/streammanager/kinesis KinesisClient
+//go:generate mockgen -destination=../../../mocks/services/streammanager/kinesis_v2/mock_kinesis_v2.go -package mock_kinesis_v2 github.com/rudderlabs/rudder-server/services/streammanager/kinesis KinesisClientV2
 
 package kinesis
 
