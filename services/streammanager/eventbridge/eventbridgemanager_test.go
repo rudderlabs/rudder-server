@@ -33,7 +33,6 @@ func TestNewProducer(t *testing.T) {
 	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 }
 
 var sampleEvent = types.PutEventsRequestEntry{
@@ -47,7 +46,7 @@ var sampleEvent = types.PutEventsRequestEntry{
 func TestProduceHappyCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
-	producer := &EventBridgeProducer{client: mockClient}
+	producer := &EventBridgeProducerV2{client: mockClient}
 	mockClient.
 		EXPECT().
 		PutEvents(gomock.Any(), &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
@@ -62,7 +61,7 @@ func TestProduceHappyCase(t *testing.T) {
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &EventBridgeProducer{}
+	producer := &EventBridgeProducerV2{}
 	sampleEventJson := []byte("Invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -73,7 +72,7 @@ func TestProduceWithInvalidClient(t *testing.T) {
 func TestProduceWithInvalidJson(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
-	producer := &EventBridgeProducer{client: mockClient}
+	producer := &EventBridgeProducerV2{client: mockClient}
 	sampleEventJson := []byte("Invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -86,7 +85,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
-	producer := &EventBridgeProducer{client: mockClient}
+	producer := &EventBridgeProducerV2{client: mockClient}
 	errorCode := "SomeError"
 	// Failed response
 	mockClient.

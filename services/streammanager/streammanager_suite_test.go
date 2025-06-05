@@ -124,7 +124,7 @@ func TestNewProducerWithEventBridgeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &eventbridge.EventBridgeProducer{})
+	assert.IsType(t, producer, &eventbridge.SwitchingEventBridgeManager{})
 }
 
 func TestNewProducerWithFirehoseDestination(t *testing.T) {
