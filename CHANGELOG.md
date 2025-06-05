@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.50.5](https://github.com/rudderlabs/rudder-server/compare/v1.50.4...v1.50.5) (2025-06-05)
+
+
+### Miscellaneous
+
+* add config to disable load table stats for clickhouse ([#5932](https://github.com/rudderlabs/rudder-server/issues/5932)) ([69c9345](https://github.com/rudderlabs/rudder-server/commit/69c93458424cf42d5c0f597154d97ba3d21b7217))
+
+## [1.50.4](https://github.com/rudderlabs/rudder-server/compare/v1.50.3...v1.50.4) (2025-06-04)
+
+
+### Bug Fixes
+
+* use jsonrs stdlib for encoding warehouse transformations ([#5945](https://github.com/rudderlabs/rudder-server/issues/5945)) ([055b7de](https://github.com/rudderlabs/rudder-server/commit/055b7debc4c31e7915ed6a0a8fa3391f0dd8422c))
+
+## [1.50.3](https://github.com/rudderlabs/rudder-server/compare/v1.50.2...v1.50.3) (2025-06-04)
+
+
+### Miscellaneous
+
+* proc sample store uploader ([#5917](https://github.com/rudderlabs/rudder-server/issues/5917)) ([39c8e46](https://github.com/rudderlabs/rudder-server/commit/39c8e46fc4b94b9e9fa08cd2c3dabf7b5e05e137))
+* warehouse transformations json diff with encoding ([#5937](https://github.com/rudderlabs/rudder-server/issues/5937)) ([bf75a96](https://github.com/rudderlabs/rudder-server/commit/bf75a96202457e5e77662052a933f0fa52468d43))
+
 ## [1.50.2](https://github.com/rudderlabs/rudder-server/compare/v1.50.1...v1.50.2) (2025-05-28)
 
 
