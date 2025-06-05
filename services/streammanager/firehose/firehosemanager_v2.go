@@ -3,43 +3,47 @@
 package firehose
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-type FireHoseProducerV1 struct {
-	client FireHoseClientV1
+type FireHoseProducerV2 struct {
+	client FireHoseClientV2
 }
 
-type FireHoseClientV1 interface {
-	PutRecord(input *firehose.PutRecordInput) (*firehose.PutRecordOutput, error)
+type FireHoseClientV2 interface {
+	PutRecord(ctx context.Context, input *firehose.PutRecordInput, opts ...func(*firehose.Options)) (*firehose.PutRecordOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (*FireHoseProducerV1, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, firehose.ServiceName)
+func NewProducerV2(destination *backendconfig.DestinationT, o common.Opts) (*FireHoseProducerV2, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "firehose")
 	if err != nil {
 		return nil, err
 	}
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.FIREHOSE.httpMaxIdleConnsPerHost", "Router.FIREHOSE.noOfWorkers", "Router.noOfWorkers")
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &FireHoseProducerV1{client: firehose.New(awsSession)}, nil
+	return &FireHoseProducerV2{client: firehose.NewFromConfig(awsConfig)}, nil
 }
 
 // Produce creates a producer and send data to Firehose.
-func (producer *FireHoseProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *FireHoseProducerV2) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	client := producer.client
 	if client == nil {
@@ -70,12 +74,10 @@ func (producer *FireHoseProducerV1) Produce(jsonData json.RawMessage, _ interfac
 
 	putInput := firehose.PutRecordInput{
 		DeliveryStreamName: aws.String(deliveryStreamMapToInputString),
-		Record:             &firehose.Record{Data: value},
+		Record:             &types.Record{Data: value},
 	}
-	if err = putInput.Validate(); err != nil {
-		return 400, "InvalidInput", err.Error()
-	}
-	putOutput, errorRec := client.PutRecord(&putInput)
+
+	putOutput, errorRec := client.PutRecord(context.Background(), &putInput)
 
 	if errorRec != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSError(errorRec)
@@ -86,7 +88,7 @@ func (producer *FireHoseProducerV1) Produce(jsonData json.RawMessage, _ interfac
 	return 200, "Success", fmt.Sprintf("Message delivered with Record information %v", putOutput)
 }
 
-func (*FireHoseProducerV1) Close() error {
+func (*FireHoseProducerV2) Close() error {
 	// no-op
 	return nil
 }

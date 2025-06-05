@@ -139,7 +139,7 @@ func TestNewProducerWithFirehoseDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &firehose.FireHoseProducer{})
+	assert.IsType(t, producer, &firehose.SwitchingFireHoseManager{})
 }
 
 func TestNewProducerWithKinesisDestination(t *testing.T) {
