@@ -14,6 +14,7 @@ import (
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
@@ -38,7 +39,7 @@ type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-func NewClient(config *ClientConfig) Client {
+func NewClient(conf *config.Config, config *ClientConfig) Client {
 	transport := &http.Transport{
 		DisableKeepAlives:   true,
 		MaxConnsPerHost:     100,
@@ -50,7 +51,7 @@ func NewClient(config *ClientConfig) Client {
 		Timeout:   600 * time.Second,
 	}
 	if config == nil {
-		return newRetryableHTTPClient(client)
+		return newRetryableHTTPClient(conf, client)
 	}
 
 	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
@@ -94,19 +95,19 @@ func NewClient(config *ClientConfig) Client {
 		if config.Recycle {
 			options = append(options, httplb.WithRoundTripperMaxLifetime(recycleTTL))
 		}
-		return newRetryableHTTPClient(httplb.NewClient(options...))
+		return newRetryableHTTPClient(conf, httplb.NewClient(options...))
 	default:
-		return newRetryableHTTPClient(client)
+		return newRetryableHTTPClient(conf, client)
 	}
 }
 
-func newRetryableHTTPClient(baseClient Client) Client {
+func newRetryableHTTPClient(conf *config.Config, baseClient Client) Client {
 	cfg := &retryablehttp.Config{
-		MaxRetry:        0, // 0 for infinite
-		InitialInterval: 1 * time.Second,
-		MaxInterval:     30 * time.Second,
-		MaxElapsedTime:  0, // 0 for infinite
-		Multiplier:      2.0,
+		MaxRetry:        conf.GetInt("Transformer.Client.maxRetry", 0),
+		InitialInterval: conf.GetDuration("Transformer.Client.initialInterval", 1, time.Second),
+		MaxInterval:     conf.GetDuration("Transformer.Client.maxInterval", 30, time.Second),
+		MaxElapsedTime:  conf.GetDuration("Transformer.Client.maxElapsedTime", 0, time.Second),
+		Multiplier:      conf.GetFloat64("Transformer.Client.multiplier", 2.0),
 	}
 	return retryablehttp.NewRetryableHTTPClient(
 		cfg,
