@@ -10,6 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	lambda_v1 "github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/require"
 
@@ -77,7 +79,6 @@ func TestProduceWithInvalidDataV1(t *testing.T) {
 	})
 }
 
-// TODO : Have different mocks for lambda client for v1 and v2 and re write the tests
 func TestProduceWithServiceResponseV1(t *testing.T) {
 	conf := config.New()
 	conf.Set("WUNDERKIND_REGION", "us-east-1")
@@ -96,14 +97,14 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 
 	destConfig := map[string]string{}
 
-	var sampleInput lambda.InvokeInput
+	var sampleInput lambda_v1.InvokeInput
 	sampleInput.FunctionName = &sampleFunction
 	sampleInput.Payload = []byte(sampleMessage)
-	sampleInput.InvocationType = types.InvocationType(invocationType)
-	sampleInput.LogType = types.LogTypeTail
+	sampleInput.InvocationType = aws.String(invocationType)
+	sampleInput.LogType = aws.String("Tail")
 
 	t.Run("success", func(t *testing.T) {
-		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda.InvokeOutput{}, nil)
+		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda_v1.InvokeOutput{}, nil)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusOK, statusCode)
 		require.Equal(t, "Success", statusMsg)
@@ -121,8 +122,8 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 	})
 
 	t.Run("when lambda invocation is successful, but there is an issue with the payload", func(t *testing.T) {
-		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda.InvokeOutput{
-			StatusCode:      *aws.Int32(http.StatusOK),
+		mockClient.EXPECT().Invoke(&sampleInput).Return(&lambda_v1.InvokeOutput{
+			StatusCode:      aws.Int64(http.StatusOK),
 			FunctionError:   aws.String("Unhandled"),
 			ExecutedVersion: aws.String("$LATEST"),
 		}, nil)
@@ -135,11 +136,7 @@ func TestProduceWithServiceResponseV1(t *testing.T) {
 	t.Run("aws error", func(t *testing.T) {
 		errorCode := "errorCode"
 		mockClient.EXPECT().Invoke(&sampleInput).Return(
-			nil, &smithy.GenericAPIError{
-				Code:    errorCode,
-				Message: errorCode,
-				Fault:   smithy.FaultClient,
-			})
+			nil, awserr.NewRequestFailure(awserr.New(errorCode, errorCode, errors.New(errorCode)), http.StatusBadRequest, "request-id"))
 		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 		require.Equal(t, http.StatusBadRequest, statusCode)
