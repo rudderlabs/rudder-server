@@ -12,6 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	"github.com/tidwall/sjson"
@@ -24,6 +27,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+)
+
+const (
+	contentTypeJsonUTF8 = "application/json; charset=utf-8"
 )
 
 type sourceTransformAdapter interface {
@@ -198,10 +205,10 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	bt.stats.sentStat.Count(len(events))
 	transformStart := time.Now()
 
+	var resp *http.Response
 	payload := misc.MakeJSONArray(events)
-	resp, err := bt.webhook.netClient.Post(sourceTransformerURL, "application/json; charset=utf-8", bytes.NewBuffer(payload))
-
 	bt.stats.transformTimerStat.Since(transformStart)
+	resp, err := bt.doPost(sourceTransformerURL, bytes.NewBuffer(payload))
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection to source transformer (URL: %q): %w", sourceTransformerURL, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
@@ -302,4 +309,20 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 		batchResponse.responses[idx] = resp
 	}
 	return batchResponse
+}
+
+func (bt *batchWebhookTransformerT) doPost(transformerURL string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, transformerURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", contentTypeJsonUTF8)
+	resp, err := bt.webhook.httpClient.Do(req)
+	if err != nil {
+		bt.webhook.logger.Warnn("failed to send events to transformer",
+			logger.NewStringField("transformerURL", transformerURL),
+			obskit.Error(err))
+		return nil, fmt.Errorf("failed to send events to transformer: %w", err)
+	}
+	return resp, nil
 }
