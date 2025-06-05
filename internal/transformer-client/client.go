@@ -113,12 +113,12 @@ func newRetryableHTTPClient(baseClient Client) Client {
 		retryablehttp.WithHttpClient(baseClient),
 		retryablehttp.WithCustomRetryStrategy(func(resp *http.Response, err error) (bool, error) {
 			if err != nil {
-				return true, err
+				return false, backoff.Permanent(err)
 			}
 			if resp.StatusCode == http.StatusServiceUnavailable &&
 				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
 				reason := resp.Header.Get("X-Rudder-Error-Reason")
-				stats.Default.NewTaggedStat("transformer_request_failure", stats.CountType, stats.Tags{"reason": reason}).Count(1)
+				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, stats.Tags{"reason": reason}).Count(1)
 				resp.Body.Close()
 				return true, fmt.Errorf("memory-fenced: %s", reason)
 			}
