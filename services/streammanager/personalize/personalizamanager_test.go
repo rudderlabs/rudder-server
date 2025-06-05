@@ -37,11 +37,10 @@ func TestNewProducer(t *testing.T) {
 	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &PersonalizeProducer{}
+	producer := &PersonalizeProducerV2{}
 	sampleJsonPayload := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -52,7 +51,7 @@ func TestProduceWithInvalidClient(t *testing.T) {
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	producer := &PersonalizeProducerV2{client: mockClient}
 
 	// Invalid Json
 	sampleJsonPayload := []byte("invalid json")
@@ -78,7 +77,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
@@ -134,7 +133,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
@@ -174,7 +173,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{

@@ -184,7 +184,7 @@ func TestNewProducerWithPersonalizeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &personalize.PersonalizeProducer{})
+	assert.IsType(t, producer, &personalize.SwitchingPersonalizeManager{})
 }
 
 func TestNewProducerWithBQStreamDestination(t *testing.T) {
