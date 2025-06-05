@@ -1,0 +1,384 @@
+package transformerclient
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+)
+
+func setupTestConfig() {
+	config.Set("Transformer.Client.maxRetry", 3)
+	config.Set("Transformer.Client.initialInterval", 50*time.Millisecond)
+	config.Set("Transformer.Client.maxInterval", 200*time.Millisecond)
+	config.Set("Transformer.Client.maxElapsedTime", 5*time.Second)
+	config.Set("Transformer.Client.multiplier", 2.0)
+}
+
+func TestClient_RetryBehavior(t *testing.T) {
+	t.Run("retries on 503 with X-Rudder-Should-Retry header", func(t *testing.T) {
+		setupTestConfig()
+
+		var requestCount int
+		retryableResponses := 3
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+
+			if requestCount <= retryableResponses {
+				// Return retriable error
+				w.Header().Set("X-Rudder-Should-Retry", "true")
+				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte("Service temporarily unavailable"))
+			} else {
+				// Return success
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("OK"))
+			}
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, retryableResponses+1, requestCount, "Should make exactly %d requests", retryableResponses+1)
+
+		require.True(t, elapsed > 100*time.Millisecond, "Should take some time due to retries")
+		require.True(t, elapsed < 5*time.Second, "Should complete before max elapsed time")
+
+		resp.Body.Close()
+	})
+
+	t.Run("stops retrying after max elapsed time", func(t *testing.T) {
+		config.Set("Transformer.Client.maxRetry", 10) // High retry count
+		config.Set("Transformer.Client.initialInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.maxInterval", 200*time.Millisecond)
+		config.Set("Transformer.Client.maxElapsedTime", 1*time.Second) // Short elapsed time
+		config.Set("Transformer.Client.multiplier", 2.0)
+
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			w.Header().Set("X-Rudder-Should-Retry", "true")
+			w.Header().Set("X-Rudder-Error-Reason", "persistent-overload")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Service permanently unavailable"))
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err, "Retryable client returns last response, not error")
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+		require.True(t, elapsed >= 500*time.Millisecond, "Should have retried for substantial time")
+		require.True(t, elapsed <= 1500*time.Millisecond, "Should not retry much beyond max elapsed time")
+		require.True(t, requestCount > 1, "Should have made multiple requests")
+
+		resp.Body.Close()
+	})
+
+	t.Run("switches from retriable to non-retriable response", func(t *testing.T) {
+		setupTestConfig()
+
+		var requestCount int
+		switchAfter := 2
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+
+			if requestCount <= switchAfter {
+				// Return retriable error
+				w.Header().Set("X-Rudder-Should-Retry", "true")
+				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte("Service temporarily unavailable"))
+			} else {
+				// Return non-retriable error (503 without retry header)
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte("Service unavailable - do not retry"))
+			}
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, switchAfter+1, requestCount, "Should make exactly %d requests", switchAfter+1)
+
+		require.True(t, elapsed < 1*time.Second, "Should complete quickly after non-retriable response")
+
+		resp.Body.Close()
+	})
+
+	t.Run("does not retry non-503 status codes", func(t *testing.T) {
+		setupTestConfig()
+
+		testCases := []struct {
+			name       string
+			statusCode int
+		}{
+			{"400 Bad Request", http.StatusBadRequest},
+			{"401 Unauthorized", http.StatusUnauthorized},
+			{"404 Not Found", http.StatusNotFound},
+			{"500 Internal Server Error", http.StatusInternalServerError},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				var requestCount int
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requestCount++
+					w.WriteHeader(tc.statusCode)
+					w.Write([]byte("Error"))
+				}))
+				defer server.Close()
+
+				clientConfig := &ClientConfig{
+					ClientTimeout: 10 * time.Second,
+				}
+				client := NewClient(config.Default, clientConfig)
+
+				req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+				require.NoError(t, err)
+
+				start := time.Now()
+				resp, err := client.Do(req)
+				elapsed := time.Since(start)
+
+				require.NoError(t, err)
+				require.Equal(t, tc.statusCode, resp.StatusCode)
+				require.Equal(t, 1, requestCount, "Should make exactly 1 request")
+				require.True(t, elapsed < 100*time.Millisecond, "Should complete quickly without retries")
+
+				resp.Body.Close()
+			})
+		}
+	})
+
+	t.Run("does not retry 503 without X-Rudder-Should-Retry header", func(t *testing.T) {
+		setupTestConfig()
+
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Service unavailable"))
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, 1, requestCount, "Should make exactly 1 request")
+		require.True(t, elapsed < 100*time.Millisecond, "Should complete quickly without retries")
+
+		resp.Body.Close()
+	})
+}
+
+func TestClient_ErrorsNotRetried(t *testing.T) {
+	t.Run("connection errors are not retried", func(t *testing.T) {
+		setupTestConfig()
+
+		unusedPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		url := fmt.Sprintf("http://localhost:%d", unusedPort)
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 1 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.Error(t, err)
+		require.Nil(t, resp)
+
+		require.True(t, elapsed < 2*time.Second, "Should fail quickly without retries")
+
+		require.Contains(t, strings.ToLower(err.Error()), "connection")
+	})
+
+	t.Run("DNS resolution errors are not retried", func(t *testing.T) {
+		setupTestConfig()
+
+		url := "http://thisdoesnotexist.invalid.domain.com"
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 1 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.Error(t, err)
+		require.Nil(t, resp)
+
+		require.True(t, elapsed < 2*time.Second, "Should fail quickly without retries")
+	})
+
+	t.Run("context timeout errors are not retried", func(t *testing.T) {
+		setupTestConfig()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(2 * time.Second)
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 500 * time.Millisecond,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.Error(t, err)
+		require.Nil(t, resp)
+
+		require.True(t, elapsed >= 500*time.Millisecond, "Should respect client timeout")
+		require.True(t, elapsed < 3*time.Second, "Should timeout without extensive retries")
+	})
+}
+
+func TestClient_ConfigurableRetrySettings(t *testing.T) {
+	t.Run("respects custom retry configuration", func(t *testing.T) {
+		config.Set("Transformer.Client.maxRetry", 1) // Only 1 retry
+		config.Set("Transformer.Client.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.maxElapsedTime", 500*time.Millisecond)
+		config.Set("Transformer.Client.multiplier", 2.0)
+
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			// Always return retriable error
+			w.Header().Set("X-Rudder-Should-Retry", "true")
+			w.Header().Set("X-Rudder-Error-Reason", "test-overload")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err, "Retryable client returns last response after max retries")
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+		require.Equal(t, 2, requestCount, "Should make exactly 2 requests (initial + 1 retry)")
+		require.True(t, elapsed < 1*time.Second, "Should complete quickly after max retries")
+
+		resp.Body.Close()
+	})
+
+	t.Run("demonstrates when client returns error with memory-fenced", func(t *testing.T) {
+		// Set configuration that will cause the retry strategy to return an error
+		config.Set("Transformer.Client.maxRetry", 0) // No retries
+		config.Set("Transformer.Client.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.maxElapsedTime", 0) // No time limit
+		config.Set("Transformer.Client.multiplier", 2.0)
+
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			w.Header().Set("X-Rudder-Should-Retry", "true")
+			w.Header().Set("X-Rudder-Error-Reason", "test-overload")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+		}
+		client := NewClient(config.Default, clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		resp, err := client.Do(req)
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, 1, requestCount, "Should make exactly 1 request")
+
+		resp.Body.Close()
+	})
+}
