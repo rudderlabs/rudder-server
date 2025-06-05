@@ -29,12 +29,12 @@ type AuthResponse struct {
 	ErrorMessage string
 }
 type RefreshTokenParams struct {
-	AccountID   string
-	WorkspaceID string
-	DestDefName string
-	WorkerID    int
-	Secret      json.RawMessage
-	Destination *DestinationInfo
+	AccountID     string
+	WorkspaceID   string
+	DestDefName   string
+	WorkerID      int
+	Secret        json.RawMessage
+	DestinationID string
 }
 
 type RefreshTokenBodyParams struct {

@@ -6,12 +6,15 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/router"
 
+	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -103,6 +106,9 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 		errorResp = []byte(`{"success":"OK"}`)
 	}
 
+	// Emit event_delivery_time metric for successful async destination deliveries
+	brt.emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID, statusList)
+
 	// Payload and AttemptNum don't make sense in recording batch router delivery status,
 	// So they are set to default values.
 	payload, err := sjson.SetBytes([]byte(`{}`), "success", fmt.Sprint(successCount)+" events")
@@ -126,6 +132,60 @@ func (brt *Handle) recordAsyncDestinationDeliveryStatus(sourceID, destinationID 
 		ErrorResponse: errorResp,
 	}
 	brt.debugger.RecordEventDeliveryStatus(destinationID, &deliveryStatus)
+}
+
+// emitAsyncEventDeliveryTimeMetrics emits event_delivery_time metrics for successful async destination deliveries
+func (brt *Handle) emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID string, statusList []*jobsdb.JobStatusT) {
+	// Get the async destination struct to access original job parameters
+	asyncDestStruct := brt.asyncDestinationStruct[destinationID]
+	if asyncDestStruct == nil {
+		brt.logger.Errorn("Async destination struct not found for destinationID: %s", obskit.DestinationID(destinationID))
+		return
+	}
+
+	// Process each successful job status to emit event_delivery_time metric
+	for _, status := range statusList {
+		if status.JobState != jobsdb.Succeeded.State {
+			continue // Only emit metrics for successful deliveries
+		}
+
+		// Get original job parameters for this job
+		originalParams, exists := asyncDestStruct.OriginalJobParameters[status.JobID]
+		if !exists {
+			brt.logger.Debugn("Original job parameters not found for jobID: %d", logger.NewIntField("jobID", status.JobID))
+			continue
+		}
+
+		// Extract receivedAt from original job parameters
+		receivedAtStr := gjson.GetBytes(originalParams, "received_at").String()
+		if receivedAtStr == "" {
+			brt.logger.Debugn("ReceivedAt not found in job parameters for jobID: %d", logger.NewIntField("jobID", status.JobID))
+			continue
+		}
+
+		// Parse receivedAt time
+		receivedTime, err := time.Parse(misc.RFC3339Milli, receivedAtStr)
+		if err != nil {
+			brt.logger.Debugn("Failed to parse receivedAt time for jobID: %d, receivedAt: %s, error: %v", logger.NewIntField("jobID", status.JobID), logger.NewStringField("receivedAt", receivedAtStr), obskit.Error(err))
+			continue
+		}
+
+		// Extract source category from original job parameters
+		sourceCategory := gjson.GetBytes(originalParams, "source_category").String()
+
+		// Create and emit the event_delivery_time metric
+		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
+			"module":         "batch_router",
+			"destType":       brt.destType,
+			"workspaceId":    status.WorkspaceId,
+			"sourceId":       sourceID,
+			"destID":         destinationID,
+			"sourceCategory": sourceCategory,
+		})
+
+		// Send the timing metric (time from received to delivered)
+		eventDeliveryTimeStat.SendTiming(time.Since(receivedTime))
+	}
 }
 
 func (brt *Handle) recordDeliveryStatus(batchDestination Connection, output UploadResult, isWarehouse bool) {
