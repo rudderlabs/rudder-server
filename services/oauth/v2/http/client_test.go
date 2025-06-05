@@ -64,8 +64,10 @@ var _ = Describe("Http/Client", func() {
 						"type": "API_KEY",
 					},
 				},
-				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]interface{}{},
+				ID:              "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config:          map[string]interface{}{},
+				DeliveryByOAuth: false,
+				DeleteByOAuth:   false,
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -115,7 +117,9 @@ var _ = Describe("Http/Client", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
-				WorkspaceID: "1234",
+				WorkspaceID:     "1234",
+				DeliveryByOAuth: true,
+				DeleteByOAuth:   false,
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -176,6 +180,8 @@ var _ = Describe("Http/Client", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
+				DeliveryByOAuth: true,
+				DeleteByOAuth:   false,
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -224,6 +230,8 @@ var _ = Describe("Http/Client", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
+				DeliveryByOAuth: true,
+				DeleteByOAuth:   false,
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -278,7 +286,9 @@ var _ = Describe("Http/Client", func() {
 				Config: map[string]interface{}{
 					"rudderAccountId": "7693729833",
 				},
-				WorkspaceID: "1234",
+				WorkspaceID:     "1234",
+				DeliveryByOAuth: true,
+				DeleteByOAuth:   false,
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)

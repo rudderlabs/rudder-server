@@ -43,10 +43,12 @@ type User struct {
 }
 
 type Destination struct {
-	Config        map[string]interface{}
-	DestDefConfig map[string]interface{}
-	DestinationID string
-	Name          string
+	Config          map[string]interface{}
+	DestDefConfig   map[string]interface{}
+	DestinationID   string
+	Name            string
+	DeliveryByOAuth bool
+	DeleteByOAuth   bool
 }
 
 type APIReqErr struct {

@@ -48,10 +48,12 @@ func (d *DestinationConfig) Start(ctx context.Context) {
 				for _, source := range config.Sources {
 					for _, dest := range source.Destinations {
 						destinations[dest.ID] = model.Destination{
-							DestinationID: dest.ID,
-							Config:        dest.Config,
-							Name:          dest.DestinationDefinition.Name,
-							DestDefConfig: dest.DestinationDefinition.Config,
+							DestinationID:   dest.ID,
+							Config:          dest.Config,
+							Name:            dest.DestinationDefinition.Name,
+							DestDefConfig:   dest.DestinationDefinition.Config,
+							DeliveryByOAuth: dest.DeliveryByOAuth,
+							DeleteByOAuth:   dest.DeleteByOAuth,
 						}
 					}
 				}

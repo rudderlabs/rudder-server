@@ -42,8 +42,9 @@ var (
 			"rudderAccountId": "1234",
 			"goalId":          "1234",
 		},
-		Enabled:     true,
-		WorkspaceID: "1",
+		Enabled:         true,
+		WorkspaceID:     "1",
+		DeliveryByOAuth: true,
 	}
 )
 

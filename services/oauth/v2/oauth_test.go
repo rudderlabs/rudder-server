@@ -35,6 +35,8 @@ var Destination = &v2.DestinationInfo{
 	WorkspaceID:      "456",
 	DefinitionConfig: map[string]interface{}{},
 	Config:           map[string]interface{}{},
+	DeliveryByOAuth:  false,
+	DeleteByOAuth:    false,
 }
 
 var _ = Describe("Oauth", func() {

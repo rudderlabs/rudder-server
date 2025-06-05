@@ -21,4 +21,5 @@ const (
 	AuthStatusInActive = "inactive"
 
 	ErrorType = "errorType"
+	OAuth     = "OAuth"
 )

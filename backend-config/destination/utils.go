@@ -1,4 +1,4 @@
-package dynamicconfig
+package destination
 
 import (
 	"regexp"
@@ -8,20 +8,20 @@ import (
 // The pattern allows for any fallback value (string, boolean, number, etc.)
 var dynamicConfigRegex = regexp.MustCompile(`\{\{(.*?)\|\|(.*?)\}\}`)
 
-// ContainsPattern checks if a map or any of its nested maps contains
+// ContainsDynamicConfigPattern checks if a map or any of its nested maps contains
 // at least one template pattern in the format {{ some_json_path || "someFallbackValue" }}.
 // It returns true if at least one pattern is found, false otherwise.
 // This function returns immediately upon finding the first pattern for better performance.
-func ContainsPattern(data map[string]any) bool {
+func ContainsDynamicConfigPattern(data map[string]any) bool {
 	if data == nil {
 		return false
 	}
-	return containsPatternRecursive(data)
+	return containsDynamicConfigPatternRecursive(data)
 }
 
-// containsPatternRecursive is a helper function that recursively traverses the map
+// containsDynamicConfigPatternRecursive is a helper function that recursively traverses the map
 // and returns true as soon as it finds a template pattern.
-func containsPatternRecursive(data map[string]any) bool {
+func containsDynamicConfigPatternRecursive(data map[string]any) bool {
 	for _, value := range data {
 		switch v := value.(type) {
 		case string:
@@ -31,7 +31,7 @@ func containsPatternRecursive(data map[string]any) bool {
 			}
 		case map[string]any:
 			// Recursively check nested maps
-			if containsPatternRecursive(v) {
+			if containsDynamicConfigPatternRecursive(v) {
 				return true
 			}
 		case []any:
@@ -39,7 +39,7 @@ func containsPatternRecursive(data map[string]any) bool {
 			for _, item := range v {
 				if nestedMap, ok := item.(map[string]any); ok {
 					// If the array element is a map, recursively check it
-					if containsPatternRecursive(nestedMap) {
+					if containsDynamicConfigPatternRecursive(nestedMap) {
 						return true
 					}
 				} else if strValue, ok := item.(string); ok {
