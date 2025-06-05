@@ -36,11 +36,11 @@ func TestClient_RetryBehavior(t *testing.T) {
 				w.Header().Set("X-Rudder-Should-Retry", "true")
 				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("Service temporarily unavailable"))
+				_, _ = w.Write([]byte("Service temporarily unavailable"))
 			} else {
 				// Return success
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("OK"))
+				_, _ = w.Write([]byte("OK"))
 			}
 		}))
 		defer server.Close()
@@ -80,7 +80,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 			w.Header().Set("X-Rudder-Should-Retry", "true")
 			w.Header().Set("X-Rudder-Error-Reason", "persistent-overload")
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("Service permanently unavailable"))
+			_, _ = w.Write([]byte("Service permanently unavailable"))
 		}))
 		defer server.Close()
 
@@ -120,11 +120,11 @@ func TestClient_RetryBehavior(t *testing.T) {
 				w.Header().Set("X-Rudder-Should-Retry", "true")
 				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("Service temporarily unavailable"))
+				_, _ = w.Write([]byte("Service temporarily unavailable"))
 			} else {
 				// Return non-retriable error (503 without retry header)
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte("Service unavailable - do not retry"))
+				_, _ = w.Write([]byte("Service unavailable - do not retry"))
 			}
 		}))
 		defer server.Close()
@@ -169,7 +169,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					requestCount++
 					w.WriteHeader(tc.statusCode)
-					w.Write([]byte("Error"))
+					_, _ = w.Write([]byte("Error"))
 				}))
 				defer server.Close()
 
@@ -202,7 +202,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
 			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("Service unavailable"))
+			_, _ = w.Write([]byte("Service unavailable"))
 		}))
 		defer server.Close()
 
@@ -245,6 +245,9 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 
 		start := time.Now()
 		resp, err := client.Do(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		elapsed := time.Since(start)
 
 		require.Error(t, err)
@@ -270,6 +273,9 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 
 		start := time.Now()
 		resp, err := client.Do(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		elapsed := time.Since(start)
 
 		require.Error(t, err)
@@ -297,6 +303,9 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 
 		start := time.Now()
 		resp, err := client.Do(req)
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		elapsed := time.Since(start)
 
 		require.Error(t, err)
