@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
+	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize_v2"
 
 	"github.com/stretchr/testify/assert"
 
@@ -50,7 +50,7 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
 	producer := &PersonalizeProducerV2{client: mockClient}
 
 	// Invalid Json
@@ -76,7 +76,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
 	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
@@ -132,7 +132,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 
 func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
 	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
@@ -172,7 +172,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 
 func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
 	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger

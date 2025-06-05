@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
+	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge_v2"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -45,7 +45,7 @@ var sampleEvent = types.PutEventsRequestEntry{
 
 func TestProduceHappyCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
+	mockClient := mock_eventbridge.NewMockEventBridgeClientV2(ctrl)
 	producer := &EventBridgeProducerV2{client: mockClient}
 	mockClient.
 		EXPECT().
@@ -71,7 +71,7 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidJson(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
+	mockClient := mock_eventbridge.NewMockEventBridgeClientV2(ctrl)
 	producer := &EventBridgeProducerV2{client: mockClient}
 	sampleEventJson := []byte("Invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
@@ -84,7 +84,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
+	mockClient := mock_eventbridge.NewMockEventBridgeClientV2(ctrl)
 	producer := &EventBridgeProducerV2{client: mockClient}
 	errorCode := "SomeError"
 	// Failed response
