@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.4](https://github.com/rudderlabs/rudder-server/compare/v1.50.3...v1.50.4) (2025-06-04)
+
+
+### Bug Fixes
+
+* use jsonrs stdlib for encoding warehouse transformations ([#5945](https://github.com/rudderlabs/rudder-server/issues/5945)) ([055b7de](https://github.com/rudderlabs/rudder-server/commit/055b7debc4c31e7915ed6a0a8fa3391f0dd8422c))
+
 ## [1.50.3](https://github.com/rudderlabs/rudder-server/compare/v1.50.2...v1.50.3) (2025-06-04)
 
 
