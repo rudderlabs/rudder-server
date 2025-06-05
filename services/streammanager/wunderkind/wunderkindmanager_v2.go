@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	common "github.com/rudderlabs/rudder-server/services/streammanager/common_v2"
+	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
 type ProducerV2 struct {
@@ -71,7 +71,7 @@ func (p *ProducerV2) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 
 	response, err := client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
 		p.logger.Warnn("Invocation",
 			logger.NewStringField("statusCode", fmt.Sprint(statusCode)),
 			logger.NewStringField("respStatus", respStatus),

@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	common_v2 "github.com/rudderlabs/rudder-server/services/streammanager/common_v2"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
@@ -77,7 +76,7 @@ func (producer *LambdaProducerV2) Produce(jsonData json.RawMessage, destConfig i
 
 	_, err = client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common_v2.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
 		pkgLogger.Errorf("[Lambda] Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
