@@ -154,7 +154,7 @@ func TestNewProducerWithKinesisDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &kinesis.KinesisProducer{})
+	assert.IsType(t, producer, &kinesis.SwitchingKinesisManager{})
 }
 
 func TestNewProducerWithLambdaDestination(t *testing.T) {
