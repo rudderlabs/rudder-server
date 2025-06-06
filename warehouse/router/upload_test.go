@@ -892,7 +892,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			conf:               config.Default,
 			fileManagerFactory: mockFactory,
 			loadFilesRepo:      mockLoadFilesRepo,
-			stagingFiles:       stagingFiles[:2], // Use only first 2 files
+			stagingFiles:       stagingFiles[:2],
 			stagingFileIDs:     []int64{1, 2},
 		}
 
@@ -1016,22 +1016,18 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 	})
 
 	t.Run("GCS cleanup enabled, chunked deletion", func(t *testing.T) {
-		// Mock GetDownloadKeyFromFileLocation for staging files
 		for _, file := range stagingFiles {
 			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
 		}
-		// Mock GetDownloadKeyFromFileLocation for load files
+
 		for _, file := range loadFiles {
 			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
 		}
 
-		// For GCS, we expect multiple Delete calls with chunks
-		// Since chunks are deleted concurrently, we can't predict order
-		// Just verify that we get the right number of chunks with correct sizes
-		chunks := make([][]string, 0)
+		filesDeleted := make([][]string, 0)
 		mockFileManager.EXPECT().Delete(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, keys []string) error {
 			require.Len(t, keys, 4)
-			chunks = append(chunks, keys)
+			filesDeleted = append(filesDeleted, keys)
 			return nil
 		}).Times(2)
 
@@ -1085,7 +1081,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		require.NoError(t, err)
 
 		allKeys := make([]string, 0)
-		for _, chunk := range chunks {
+		for _, chunk := range filesDeleted {
 			allKeys = append(allKeys, chunk...)
 		}
 		expectedKeys := append(
