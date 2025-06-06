@@ -63,27 +63,24 @@ type UploadJobFactory struct {
 	encodingFactory      *encoding.Factory
 }
 
-// FileManagerFactory defines the interface for creating file manager instances
-type FileManagerFactory interface {
-	New(storageProvider string, config interface{}, useRudderStorage bool) (filemanager.FileManager, error)
+// filemanagerFactory defines the interface for creating file manager instances
+type filemanagerFactory interface {
+	New(storageProvider string, config interface{}, useRudderStorage bool, workspaceId string, conf *config.Config) (filemanager.FileManager, error)
 }
 
-// defaultFileManagerFactory implements FileManagerFactory using the real filemanager.New
-type defaultFileManagerFactory struct {
-	conf        *config.Config
-	workspaceID string
-}
+// defaultFileManagerFactory implements filemanagerFactory using the rudder-go-kit/filemanager
+type defaultFileManagerFactory struct{}
 
-func (f *defaultFileManagerFactory) New(storageProvider string, config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+func (f *defaultFileManagerFactory) New(storageProvider string, storageConfig interface{}, useRudderStorage bool, workspaceId string, conf *config.Config) (filemanager.FileManager, error) {
 	return filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:         storageProvider,
-			Config:           config,
+			Config:           storageConfig,
 			UseRudderStorage: useRudderStorage,
-			WorkspaceID:      f.workspaceID,
+			WorkspaceID:      workspaceId,
 		}),
-		Conf: f.conf,
+		Conf: conf,
 	})
 }
 
@@ -151,7 +148,7 @@ type UploadJob struct {
 
 	errorHandler       ErrorHandler
 	encodingFactory    *encoding.Factory
-	fileManagerFactory FileManagerFactory
+	fileManagerFactory filemanagerFactory
 
 	stats struct {
 		uploadTime                         stats.Measurement
@@ -225,8 +222,9 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		),
 		now: timeutil.Now,
 
-		errorHandler:    ErrorHandler{Mapper: whManager},
-		encodingFactory: f.encodingFactory,
+		errorHandler:       ErrorHandler{Mapper: whManager},
+		encodingFactory:    f.encodingFactory,
+		fileManagerFactory: &defaultFileManagerFactory{},
 	}
 
 	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
@@ -500,7 +498,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	destination := job.warehouse.Destination
 	storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
 
-	fm, err := job.fileManagerFactory.New(storageProvider, destination.Config, job.upload.UseRudderStorage)
+	fm, err := job.fileManagerFactory.New(storageProvider, destination.Config, job.upload.UseRudderStorage, job.upload.WorkspaceID, job.conf)
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)
 	}
