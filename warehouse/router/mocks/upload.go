@@ -14,48 +14,49 @@ import (
 	reflect "reflect"
 	time "time"
 
+	config "github.com/rudderlabs/rudder-go-kit/config"
 	filemanager "github.com/rudderlabs/rudder-go-kit/filemanager"
 	model "github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockFileManagerFactory is a mock of FileManagerFactory interface.
-type MockFileManagerFactory struct {
+// MockfilemanagerFactory is a mock of filemanagerFactory interface.
+type MockfilemanagerFactory struct {
 	ctrl     *gomock.Controller
-	recorder *MockFileManagerFactoryMockRecorder
+	recorder *MockfilemanagerFactoryMockRecorder
 	isgomock struct{}
 }
 
-// MockFileManagerFactoryMockRecorder is the mock recorder for MockFileManagerFactory.
-type MockFileManagerFactoryMockRecorder struct {
-	mock *MockFileManagerFactory
+// MockfilemanagerFactoryMockRecorder is the mock recorder for MockfilemanagerFactory.
+type MockfilemanagerFactoryMockRecorder struct {
+	mock *MockfilemanagerFactory
 }
 
-// NewMockFileManagerFactory creates a new mock instance.
-func NewMockFileManagerFactory(ctrl *gomock.Controller) *MockFileManagerFactory {
-	mock := &MockFileManagerFactory{ctrl: ctrl}
-	mock.recorder = &MockFileManagerFactoryMockRecorder{mock}
+// NewMockfilemanagerFactory creates a new mock instance.
+func NewMockfilemanagerFactory(ctrl *gomock.Controller) *MockfilemanagerFactory {
+	mock := &MockfilemanagerFactory{ctrl: ctrl}
+	mock.recorder = &MockfilemanagerFactoryMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockFileManagerFactory) EXPECT() *MockFileManagerFactoryMockRecorder {
+func (m *MockfilemanagerFactory) EXPECT() *MockfilemanagerFactoryMockRecorder {
 	return m.recorder
 }
 
 // New mocks base method.
-func (m *MockFileManagerFactory) New(storageProvider string, config any, useRudderStorage bool) (filemanager.FileManager, error) {
+func (m *MockfilemanagerFactory) New(storageProvider string, config any, useRudderStorage bool, workspaceId string, conf *config.Config) (filemanager.FileManager, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "New", storageProvider, config, useRudderStorage)
+	ret := m.ctrl.Call(m, "New", storageProvider, config, useRudderStorage, workspaceId, conf)
 	ret0, _ := ret[0].(filemanager.FileManager)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // New indicates an expected call of New.
-func (mr *MockFileManagerFactoryMockRecorder) New(storageProvider, config, useRudderStorage any) *gomock.Call {
+func (mr *MockfilemanagerFactoryMockRecorder) New(storageProvider, config, useRudderStorage, workspaceId, conf any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "New", reflect.TypeOf((*MockFileManagerFactory)(nil).New), storageProvider, config, useRudderStorage)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "New", reflect.TypeOf((*MockfilemanagerFactory)(nil).New), storageProvider, config, useRudderStorage, workspaceId, conf)
 }
 
 // MockloadFilesRepo is a mock of loadFilesRepo interface.

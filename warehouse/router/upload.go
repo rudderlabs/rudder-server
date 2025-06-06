@@ -532,7 +532,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	return nil
 }
 
-func (job *UploadJob) deleteFilesInChunks(keysToDel []string, fm filemanager.FileManager, concurrency int, chunkSize int) error {
+func (job *UploadJob) deleteFilesInChunks(keysToDel []string, fm filemanager.FileManager, concurrency, chunkSize int) error {
 	g, ctx := errgroup.WithContext(job.ctx)
 	g.SetLimit(concurrency)
 	chunks := lo.Chunk(keysToDel, chunkSize)
