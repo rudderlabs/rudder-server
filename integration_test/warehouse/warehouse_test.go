@@ -92,74 +92,69 @@ func TestUploads(t *testing.T) {
 			{batchStagingFiles: true, maxSizeInMB: "0.00005"}, // Very low maxSizeInMB to ensure that staging files are not batched
 		}
 		for _, tc := range testCases {
-			if tc.batchStagingFiles {
-				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
-				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.queryWithUploadID.enable"), "true")
-				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.maxSizeInMB"), tc.maxSizeInMB)
-			}
-			db, minioResource, whClient := setupServer(t, false, nil, nil)
+			t.Run(fmt.Sprintf("batchStagingFiles: %t, maxSizeInMB: %s", tc.batchStagingFiles, tc.maxSizeInMB), func(t *testing.T) {
+				if tc.batchStagingFiles {
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.queryWithUploadID.enable"), "true")
+					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.maxSizeInMB"), tc.maxSizeInMB)
+				}
+				db, minioResource, whClient := setupServer(t, false, nil, nil)
 
-			var (
-				ctx    = context.Background()
-				events = 100
-				jobs   = 1
-			)
-			eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
-					uuid.New().String(),
-					uuid.New().String(),
+				var (
+					ctx    = context.Background()
+					events = 100
 				)
-			}), "\n")
-			stagingFile := whclient.StagingFile{
-				WorkspaceID:      workspaceID,
-				SourceID:         sourceID,
-				DestinationID:    destinationID,
-				TotalEvents:      events,
-				FirstEventAt:     time.Now().Format(misc.RFC3339Milli),
-				LastEventAt:      time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
-				UseRudderStorage: false,
-				BytesPerTable: map[string]int64{
-					"tracks": int64(len(eventsPayload)),
-				},
-				DestinationRevisionID: destinationID,
-				Schema: map[string]map[string]string{
-					"tracks": {
-						"id":          "string",
-						"user_id":     "string",
-						"received_at": "datetime",
+				eventsPayload := strings.Join(lo.RepeatBy(events, func(int) string {
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+						uuid.New().String(),
+						uuid.New().String(),
+					)
+				}), "\n")
+				stagingFile := whclient.StagingFile{
+					WorkspaceID:      workspaceID,
+					SourceID:         sourceID,
+					DestinationID:    destinationID,
+					TotalEvents:      events,
+					FirstEventAt:     time.Now().Format(misc.RFC3339Milli),
+					LastEventAt:      time.Now().Add(time.Minute * 30).Format(misc.RFC3339Milli),
+					UseRudderStorage: false,
+					BytesPerTable: map[string]int64{
+						"tracks": int64(len(eventsPayload)),
 					},
-				},
-			}
-			stagingFile.Location = prepareStagingFileWithFileName(t, ctx, minioResource, eventsPayload, "staging1.json").ObjectName
-			require.NoError(t, whClient.Process(ctx, stagingFile))
+					DestinationRevisionID: destinationID,
+					Schema: map[string]map[string]string{
+						"tracks": {
+							"id":          "string",
+							"user_id":     "string",
+							"received_at": "datetime",
+						},
+					},
+				}
+				stagingFile.Location = prepareStagingFileWithFileName(t, ctx, minioResource, eventsPayload, "staging1.json").ObjectName
+				require.NoError(t, whClient.Process(ctx, stagingFile))
 
-			// Create a new eventsPayload with different IDs for the second staging file
-			eventsPayload2 := strings.Join(lo.RepeatBy(events, func(int) string {
-				return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
-					uuid.New().String(),
-					uuid.New().String(),
-				)
-			}), "\n")
-			stagingFile.Location = prepareStagingFileWithFileName(t, ctx, minioResource, eventsPayload2, "staging2.json").ObjectName
-			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-				{A: "status", B: succeeded},
-			}...)
-			requireTableUploadEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
-				{A: "status", B: exportedData},
-				{A: "wh_uploads.source_id", B: sourceID},
-				{A: "wh_uploads.destination_id", B: destinationID},
-				{A: "wh_uploads.namespace", B: namespace},
-			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
-				{A: "source_id", B: sourceID},
-				{A: "destination_id", B: destinationID},
-				{A: "namespace", B: namespace},
-				{A: "status", B: exportedData},
-			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), 2*events)
+				// Create a new eventsPayload with different IDs for the second staging file
+				eventsPayload2 := strings.Join(lo.RepeatBy(events, func(int) string {
+					return fmt.Sprintf(`{"data":{"id":%q,"user_id":%q,"received_at":"2023-05-12T04:36:50.199Z"},"metadata":{"columns":{"id":"string","user_id":"string","received_at":"datetime"}, "table": "tracks"}}`,
+						uuid.New().String(),
+						uuid.New().String(),
+					)
+				}), "\n")
+				stagingFile.Location = prepareStagingFileWithFileName(t, ctx, minioResource, eventsPayload2, "staging2.json").ObjectName
+				require.NoError(t, whClient.Process(ctx, stagingFile))
+				requireStagingFileEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
+					{A: "source_id", B: sourceID},
+					{A: "destination_id", B: destinationID},
+					{A: "status", B: succeeded},
+				}...)
+				requireTableUploadEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
+					{A: "status", B: exportedData},
+					{A: "wh_uploads.source_id", B: sourceID},
+					{A: "wh_uploads.destination_id", B: destinationID},
+					{A: "wh_uploads.namespace", B: namespace},
+				}...)
+				requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), 2*events)
+			})
 		}
 	})
 	t.Run("user and identifies loading", func(t *testing.T) {

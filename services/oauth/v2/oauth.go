@@ -185,7 +185,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	log := h.Logger.Withn(
 		logger.NewStringField("Call Type", logTypeName),
 		logger.NewStringField("AccountId", refTokenParams.AccountID),
-		obskit.DestinationID(refTokenParams.Destination.ID),
+		obskit.DestinationID(refTokenParams.DestinationID),
 		obskit.WorkspaceID(refTokenParams.WorkspaceID),
 		obskit.DestinationType(refTokenParams.DestDefName),
 	)

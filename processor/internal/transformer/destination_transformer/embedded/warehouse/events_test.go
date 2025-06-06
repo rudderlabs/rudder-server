@@ -21,6 +21,7 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
@@ -2033,7 +2034,7 @@ func TestEvents(t *testing.T) {
 			},
 			{
 				name:         "track (POSTGRES) jsonPaths (escape characters for &, <, and >)",
-				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"city":"Palo Alto <p>Ampersand: &;</p> Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"location": {"radiation_level": 0.000000006, "city":"Palo Alto \b <p>Ampersand: &;</p> Palo Alto","state":"California","country":"USA","coordinates":{"latitude":37.4419,"longitude":-122.143,"geo":{"altitude":30.5,"accuracy":5,"details":{"altitudeUnits":"meters","accuracyUnits":"meters"}}}},"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 				metadata:     getTrackMetadata("POSTGRES", "webhook"),
 				destination: getDestination("POSTGRES", map[string]any{
 					"jsonPaths": "location",
@@ -2047,7 +2048,7 @@ func TestEvents(t *testing.T) {
 						},
 						{
 							Output: trackEventDefaultOutput().
-								SetDataField("location", "{\"city\":\"Palo Alto <p>Ampersand: &;</p> Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"state\":\"California\"}").
+								SetDataField("location", "{\"city\":\"Palo Alto \\b <p>Ampersand: &;</p> Palo Alto\",\"coordinates\":{\"geo\":{\"accuracy\":5,\"altitude\":30.5,\"details\":{\"accuracyUnits\":\"meters\",\"altitudeUnits\":\"meters\"}},\"latitude\":37.4419,\"longitude\":-122.143},\"country\":\"USA\",\"radiation_level\":6e-9,\"state\":\"California\"}").
 								SetColumnField("location", "json"),
 							Metadata:   getTrackMetadata("POSTGRES", "webhook"),
 							StatusCode: http.StatusOK,
@@ -2931,7 +2932,7 @@ func TestEvents(t *testing.T) {
 	})
 
 	t.Run("Enrichment", func(t *testing.T) {
-		t.Run("geo", func(t *testing.T) {
+		t.Run("geo (from processor)", func(t *testing.T) {
 			message := map[string]any{
 				"context": map[string]any{
 					"geo": enricher.Geolocation{
@@ -2943,6 +2944,80 @@ func TestEvents(t *testing.T) {
 						Location: "37.7749,-122.4194",
 						Timezone: "America/Los_Angeles",
 					},
+				},
+				"messageId":         "messageId",
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			}
+			for destination := range whutils.WarehouseDestinationMap {
+				t.Run(destination, func(t *testing.T) {
+					c := setupConfig(transformerResource, map[string]any{})
+
+					processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+					warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
+
+					ctx := context.Background()
+					events := []types.TransformerEvent{{
+						Message:     message,
+						Metadata:    getMetadata("track", destination),
+						Destination: getDestination(destination, map[string]any{}),
+					}}
+					legacyResponse := processorTransformer.Transform(ctx, events)
+					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+
+					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+					require.Nil(t, legacyResponse.FailedEvents)
+					require.Nil(t, embeddedResponse.FailedEvents)
+					for i := range legacyResponse.Events {
+						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
+					}
+				})
+			}
+		})
+		t.Run("geo (from UT)", func(t *testing.T) {
+			message := map[string]any{
+				"context": map[string]any{
+					"geo": "{\"city\":\"Madison\",\"country\":\"US\",\"ip\":\"104.176.44.185\",\"loc\":\"43.0371,-89.3932\",\"postal\":\"53713\",\"region\":\"Wisconsin\",\"timezone\":\"America/Chicago\"}",
+				},
+				"messageId":         "messageId",
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			}
+			for destination := range whutils.WarehouseDestinationMap {
+				t.Run(destination, func(t *testing.T) {
+					c := setupConfig(transformerResource, map[string]any{})
+
+					processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+					warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
+
+					ctx := context.Background()
+					events := []types.TransformerEvent{{
+						Message:     message,
+						Metadata:    getMetadata("track", destination),
+						Destination: getDestination(destination, map[string]any{}),
+					}}
+					legacyResponse := processorTransformer.Transform(ctx, events)
+					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+
+					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
+					require.Nil(t, legacyResponse.FailedEvents)
+					require.Nil(t, embeddedResponse.FailedEvents)
+					for i := range legacyResponse.Events {
+						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
+					}
+				})
+			}
+		})
+		t.Run("geo (from UT) for safe key", func(t *testing.T) {
+			message := map[string]any{
+				"context": map[string]any{
+					"geo	": "{\"city\":\"Madison\",\"country\":\"US\",\"ip\":\"104.176.44.185\",\"loc\":\"43.0371,-89.3932\",\"postal\":\"53713\",\"region\":\"Wisconsin\",\"timezone\":\"America/Chicago\"}",
 				},
 				"messageId":         "messageId",
 				"originalTimestamp": "2021-09-01T00:00:00.000Z",

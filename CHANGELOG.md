@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.50.5](https://github.com/rudderlabs/rudder-server/compare/v1.50.4...v1.50.5) (2025-06-05)
+
+
+### Miscellaneous
+
+* add config to disable load table stats for clickhouse ([#5932](https://github.com/rudderlabs/rudder-server/issues/5932)) ([69c9345](https://github.com/rudderlabs/rudder-server/commit/69c93458424cf42d5c0f597154d97ba3d21b7217))
+
+## [1.50.4](https://github.com/rudderlabs/rudder-server/compare/v1.50.3...v1.50.4) (2025-06-04)
+
+
+### Bug Fixes
+
+* use jsonrs stdlib for encoding warehouse transformations ([#5945](https://github.com/rudderlabs/rudder-server/issues/5945)) ([055b7de](https://github.com/rudderlabs/rudder-server/commit/055b7debc4c31e7915ed6a0a8fa3391f0dd8422c))
+
+## [1.50.3](https://github.com/rudderlabs/rudder-server/compare/v1.50.2...v1.50.3) (2025-06-04)
+
+
+### Miscellaneous
+
+* proc sample store uploader ([#5917](https://github.com/rudderlabs/rudder-server/issues/5917)) ([39c8e46](https://github.com/rudderlabs/rudder-server/commit/39c8e46fc4b94b9e9fa08cd2c3dabf7b5e05e137))
+* warehouse transformations json diff with encoding ([#5937](https://github.com/rudderlabs/rudder-server/issues/5937)) ([bf75a96](https://github.com/rudderlabs/rudder-server/commit/bf75a96202457e5e77662052a933f0fa52468d43))
+
+## [1.50.2](https://github.com/rudderlabs/rudder-server/compare/v1.50.1...v1.50.2) (2025-05-28)
+
+
+### Bug Fixes
+
+* **processor:** throughput stalling due to mutex deadlock on full connection pool ([#5919](https://github.com/rudderlabs/rudder-server/issues/5919)) ([a29dd15](https://github.com/rudderlabs/rudder-server/commit/a29dd1581a3785b7804b3772047741a851dbf41e))
+
+## [1.50.1](https://github.com/rudderlabs/rudder-server/compare/v1.50.0...v1.50.1) (2025-05-27)
+
+
+### Bug Fixes
+
+* under reporting of load files when using upload id ([#5889](https://github.com/rudderlabs/rudder-server/issues/5889)) ([#5906](https://github.com/rudderlabs/rudder-server/issues/5906)) ([84029f7](https://github.com/rudderlabs/rudder-server/commit/84029f723e50d4f11de91c39e48d366975fb4411))
+* warehouse transformations geo enrichment as string ([#5907](https://github.com/rudderlabs/rudder-server/issues/5907)) ([4caf359](https://github.com/rudderlabs/rudder-server/commit/4caf359c9006d4b702df5e5356b0d416333a5170))
+
 ## [1.50.0](https://github.com/rudderlabs/rudder-server/compare/v1.49.0...v1.50.0) (2025-05-26)
 
 

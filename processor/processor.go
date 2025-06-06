@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"path"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/collector"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
@@ -126,6 +128,7 @@ type Handle struct {
 	transientSources           transientsource.Service
 	fileuploader               fileuploader.Provider
 	utSamplingFileManager      filemanager.FileManager
+	storeSamplingFileManager   filemanager.FileManager
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
@@ -178,6 +181,7 @@ type Handle struct {
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
+		storeSamplerEnabled                       config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -433,6 +437,10 @@ func (proc *Handle) Setup(
 	if err != nil {
 		proc.logger.Errorn("failed to create ut sampling file manager", obskit.Error(err))
 		proc.utSamplingFileManager = nil
+	}
+	proc.storeSamplingFileManager, err = getStoreSamplingUploader(proc.conf, proc.logger)
+	if err != nil {
+		proc.logger.Errorn("failed to create store sampling file manager", obskit.Error(err))
 	}
 
 	if proc.adaptiveLimit == nil {
@@ -777,6 +785,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	// UserTransformation mirroring settings
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
+	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 }
 
 type connection struct {
@@ -2584,6 +2593,39 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 }
 
 func (proc *Handle) storeStage(partition string, in *storeMessage) {
+	lockRouterDestIDs := func() func() {
+		var deferred []func()
+		if len(in.destJobs) == 0 {
+			return func() {}
+		}
+		if len(in.routerDestIDs) > 0 {
+			destIDs := lo.Uniq(in.routerDestIDs)
+			slices.Sort(destIDs)
+			for _, destID := range destIDs {
+				proc.storePlocker.Lock(destID)
+				deferred = append(deferred, func() { proc.storePlocker.Unlock(destID) })
+			}
+		} else {
+			proc.logger.Warnn("empty storeMessage.routerDestIDs",
+				logger.NewStringField("partition", partition),
+				logger.NewStringField("expected",
+					strings.Join(
+						lo.Uniq(
+							lo.Map(in.destJobs, func(j *jobsdb.JobT, _ int) string { return gjson.GetBytes(j.Parameters, "destination_id").String() }),
+						),
+						", ",
+					),
+				),
+			)
+		}
+		return func() {
+			slices.Reverse(deferred)
+			for _, fn := range deferred {
+				fn()
+			}
+		}
+	}
+
 	spanTags := stats.Tags{"partition": partition}
 	_, mainSpan := proc.tracer.Trace(in.ctx, "storeStage", tracing.WithTraceTags(spanTags))
 	defer mainSpan.End()
@@ -2611,6 +2653,9 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 	enableConcurrentStore := proc.config.enableConcurrentStore.Load()
 	if !enableConcurrentStore {
 		g.SetLimit(1)
+	} else {
+		// lock early to avoid deadlocks due to connection pool exhaustion
+		defer lockRouterDestIDs()()
 	}
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
@@ -2625,7 +2670,29 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 						func(tx jobsdb.StoreSafeTx) error {
 							err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 							if err != nil {
-								return fmt.Errorf("storing batch router jobs: %w", err)
+								storeErr := fmt.Errorf("storing batch router jobs: %w", err)
+								if !proc.config.storeSamplerEnabled.Load() {
+									return storeErr
+								}
+								if proc.storeSamplingFileManager == nil {
+									proc.logger.Errorn("Cannot upload as store sampling file manager is nil")
+								} else {
+									batchDestJobsJSON, err := jsonrs.Marshal(batchDestJobs)
+									if err != nil {
+										return fmt.Errorf("marshalling batch router jobs: %w: %w ", storeErr, err)
+									}
+
+									objName := path.Join("proc-samples", proc.instanceID, uuid.NewString())
+									uploadFile, err := proc.storeSamplingFileManager.UploadReader(ctx, objName, strings.NewReader(string(batchDestJobsJSON)))
+									if err != nil {
+										return fmt.Errorf("uploading sample batch router jobs: %w: %w", storeErr, err)
+									}
+									proc.logger.Infon("Successfully upload proc sample",
+										logger.NewStringField("location", uploadFile.Location),
+										logger.NewStringField("objectName", uploadFile.ObjectName),
+									)
+								}
+								return storeErr
 							}
 
 							// rsources stats
@@ -2654,21 +2721,8 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
 			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
 			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
-			if len(in.routerDestIDs) > 0 {
-				destIDs := lo.Uniq(in.routerDestIDs)
-				slices.Sort(destIDs)
-				for _, destID := range destIDs {
-					proc.storePlocker.Lock(destID)
-					defer proc.storePlocker.Unlock(destID)
-				}
-			} else {
-				proc.logger.Warnw("empty storeMessage.routerDestIDs",
-					"expected",
-					lo.Uniq(
-						lo.Map(destJobs, func(j *jobsdb.JobT, _ int) string {
-							return gjson.GetBytes(j.Parameters, "destination_id").String()
-						}),
-					))
+			if !enableConcurrentStore {
+				defer lockRouterDestIDs()()
 			}
 			err := misc.RetryWithNotify(
 				ctx,
@@ -2776,6 +2830,32 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
+}
+
+func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+	var (
+		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Processor.Store.Sampling.Bucket")
+		regionHint       = conf.GetStringVar("us-east-1", "Processor.Store.Sampling.RegionHint", "AWS_S3_REGION_HINT")
+		endpoint         = conf.GetStringVar("", "Processor.Store.Sampling.Endpoint")
+		accessKeyID      = conf.GetStringVar("", "Processor.Store.Sampling.AccessKey", "AWS_ACCESS_KEY_ID")
+		secretAccessKey  = conf.GetStringVar("", "Processor.Store.Sampling.SecretAccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBoolVar(false, "Processor.Store.Sampling.S3ForcePathStyle")
+		disableSSL       = conf.GetBoolVar(false, "Processor.Store.Sampling.DisableSSL")
+		enableSSE        = conf.GetBoolVar(false, "Processor.Store.Sampling.EnableSSE", "AWS_ENABLE_SSE")
+	)
+	s3Config := map[string]any{
+		"bucketName":       bucket,
+		"regionHint":       regionHint,
+		"endpoint":         endpoint,
+		"accessKeyID":      accessKeyID,
+		"secretAccessKey":  secretAccessKey,
+		"s3ForcePathStyle": s3ForcePathStyle,
+		"disableSSL":       disableSSL,
+		"enableSSE":        enableSSE,
+	}
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "proc-uploader")), func() time.Duration {
+		return conf.GetDuration("Processor.Store.Sampling.Timeout", 120, time.Second)
+	})
 }
 
 // getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type

@@ -384,6 +384,7 @@ func (w *worker) processDestinationJobs() {
 	// process limiter with dynamic priority
 	start := time.Now()
 	var attemptedRequests int
+	var attemptedJobs int
 	var successCount, errorCount int
 	limiter := w.rt.limiter.process
 	limiterStats := w.rt.limiter.stats.process
@@ -506,6 +507,7 @@ func (w *worker) processDestinationJobs() {
 						}
 					}
 					attemptedRequests++
+					attemptedJobs += len(destinationJob.JobMetadataArray)
 					respStatusCode, respBody := w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
 					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					errorAt = routerutils.ERROR_AT_CUST
@@ -533,6 +535,7 @@ func (w *worker) processDestinationJobs() {
 							errorAt = routerutils.ERROR_AT_DEL
 							if transformerProxy {
 								attemptedRequests++
+								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.proxyRequest(ctx, destinationJob, val)
 								for k, v := range resp.DontBatchDirectives {
 									dontBatchDirectives[k] = v
@@ -553,6 +556,7 @@ func (w *worker) processDestinationJobs() {
 								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
 								rdlTime := time.Now()
 								attemptedRequests++
+								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
@@ -740,8 +744,10 @@ func (w *worker) processDestinationJobs() {
 
 	// the following stat (in combination with the limiter's timer stats) are used to capture the process stage
 	// average latency and max processing capacity
-	w.rt.processJobsRequestsCountStat.Count(attemptedRequests)
-	w.rt.processJobsRequestsHistogramStat.Observe(float64(attemptedRequests))
+	w.rt.processJobsCountStat.Count(attemptedJobs)
+	w.rt.processJobsHistogramStat.Observe(float64(attemptedJobs))
+	w.rt.processRequestsCountStat.Count(attemptedRequests)
+	w.rt.processRequestsHistogramStat.Observe(float64(attemptedRequests))
 
 	// routerJobs/destinationJobs are processed. Clearing the queues.
 	w.routerJobs = nil
