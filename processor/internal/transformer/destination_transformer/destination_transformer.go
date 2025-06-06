@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
@@ -404,7 +404,9 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	if c.canRunWarehouseTransformations(destType) {
 		if c.config.warehouseTransformations.verify.Load() {
 			legacyResponse := c.transform(ctx, clientEvents)
-			c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
+			legacyResponseDeepCopy := deepCopyResponse(legacyResponse)
+			clientEventsDeepCopy := deepCopyClientEvents(clientEvents)
+			c.warehouseClient.CompareResponsesAndUpload(ctx, clientEventsDeepCopy, legacyResponseDeepCopy)
 			return legacyResponse
 		}
 		return c.warehouseClient.Transform(ctx, clientEvents)
@@ -424,6 +426,32 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return legacyTransformerResponse
 	}
 	return impl(ctx, clientEvents)
+}
+
+func deepCopyResponse(response types.Response) types.Response {
+	responseBytes, err := jsonrs.Marshal(response)
+	if err != nil {
+		return types.Response{}
+	}
+	var output types.Response
+	err = jsonrs.Unmarshal(responseBytes, &output)
+	if err != nil {
+		return types.Response{}
+	}
+	return output
+}
+
+func deepCopyClientEvents(clientEvents []types.TransformerEvent) []types.TransformerEvent {
+	clientEventsBytes, err := jsonrs.Marshal(clientEvents)
+	if err != nil {
+		return nil
+	}
+	var output []types.TransformerEvent
+	err = jsonrs.Unmarshal(clientEventsBytes, &output)
+	if err != nil {
+		return nil
+	}
+	return output
 }
 
 func (c *Client) canRunWarehouseTransformations(destType string) bool {
