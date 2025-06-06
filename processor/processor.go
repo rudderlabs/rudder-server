@@ -30,6 +30,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/collector"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -1659,6 +1660,7 @@ type preTransformationMessage struct {
 	start                        time.Time
 	sourceDupStats               map[dupStatKey]int
 	dedupKeys                    map[string]struct{}
+	metricsCollector             collector.MetricsCollector
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
@@ -2018,6 +2020,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		start:                        start,
 		sourceDupStats:               sourceDupStats,
 		dedupKeys:                    dedupKeys,
+		metricsCollector:             subJobs.metricsCollector,
 	}, nil
 }
 
@@ -2139,9 +2142,53 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		}
 	}
 
-	// TRACKING PLAN - START
+	// EVENT BLOCKING - START
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
+	filteredEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
+	var blockedJobs []*jobsdb.JobT
+
+	for sourceId, events := range preTrans.groupedEventsBySourceId {
+		succeededEvents, blockedEvents := proc.filterBlockedEvents(events)
+		filteredEventsBySourceId[sourceId] = succeededEvents
+
+		for _, event := range blockedEvents {
+			if proc.isReportingEnabled() {
+				preTrans.metricsCollector.Collect(types.TransformerResponse{
+					StatusCode: 400,
+					Metadata:   event.Metadata,
+				}, reportingtypes.EVENT_BLOCKING)
+			}
+
+			blockedJob := &jobsdb.JobT{
+				UUID:         uuid.New(),
+				UserID:       event.Metadata.RudderID,
+				Parameters:   []byte(`{}`),
+				CustomVal:    reportingtypes.EVENT_BLOCKING,
+				EventPayload: []byte(`{}`),
+				CreatedAt:    time.Now(),
+				ExpireAt:     time.Now(),
+				WorkspaceId:  event.Metadata.WorkspaceID,
+			}
+			blockedJobs = append(blockedJobs, blockedJob)
+		}
+
+		if proc.isReportingEnabled() {
+			for _, event := range succeededEvents {
+				preTrans.metricsCollector.Collect(types.TransformerResponse{
+					StatusCode: 200,
+					Metadata:   event.Metadata,
+				}, reportingtypes.EVENT_BLOCKING)
+			}
+		}
+	}
+
+	// Update preTrans with filtered events
+	preTrans.groupedEventsBySourceId = filteredEventsBySourceId
+	preTrans.procErrorJobs = append(preTrans.procErrorJobs, blockedJobs...)
+	// EVENT BLOCKING - END
+
+	// TRACKING PLAN - START
 	validateEventsStart := time.Now()
 	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
@@ -2246,6 +2293,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.subJobs.hasMore,
 		preTrans.subJobs.rsourcesStats,
 		trackedUsersReports,
+		preTrans.metricsCollector,
 	}, nil
 }
 
@@ -2268,6 +2316,7 @@ type transformationMessage struct {
 	hasMore             bool
 	rsourcesStats       rsources.StatsCollector
 	trackedUsersReports []*trackedusers.UsersReport
+	metricsCollector    collector.MetricsCollector
 }
 
 type userTransformData struct {
@@ -2286,6 +2335,8 @@ type userTransformData struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
+
+	metricsCollector collector.MetricsCollector
 }
 
 func (proc *Handle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
@@ -2377,6 +2428,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		rsourcesStats:                 in.rsourcesStats,
 		trackedUsersReports:           in.trackedUsersReports,
 		traces:                        traces,
+		metricsCollector:              in.metricsCollector,
 	}
 }
 
@@ -2462,6 +2514,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 		in.hasMore,
 		in.rsourcesStats,
 		in.traces,
+		in.metricsCollector,
 	}
 }
 
@@ -2487,6 +2540,8 @@ type storeMessage struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
+
+	metricsCollector collector.MetricsCollector
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
@@ -3627,6 +3682,8 @@ type subJob struct {
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
+
+	metricsCollector collector.MetricsCollector
 }
 
 func (proc *Handle) jobSplitter(
@@ -3813,3 +3870,39 @@ func getUTSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.
 		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
 	})
 }
+
+// EVENT BLOCKING - START
+var blockedEventNames = []string{
+	"blocked_event_1",
+	"blocked_event_2",
+	"blocked_event_3",
+}
+
+func isEventBlocked(eventName string) bool {
+	for _, blockedName := range blockedEventNames {
+		if eventName == blockedName {
+			return true
+		}
+	}
+	return false
+}
+
+func (proc *Handle) filterBlockedEvents(events []types.TransformerEvent) ([]types.TransformerEvent, []types.TransformerEvent) {
+	var filteredEvents []types.TransformerEvent
+	var blockedEvents []types.TransformerEvent
+
+	for _, event := range events {
+		eventName, _ := event.Message["event"].(string)
+		if isEventBlocked(eventName) {
+			blockedEvents = append(blockedEvents, event)
+		} else {
+			filteredEvents = append(filteredEvents, event)
+		}
+	}
+
+	return filteredEvents, blockedEvents
+}
+
+// EVENT BLOCKING - END
+
+// TRACKING PLAN - START
