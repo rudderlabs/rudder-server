@@ -23,7 +23,7 @@ func (c *DefaultMetricsCollector) CollectMultiple(responses []proctypes.Transfor
 	defer c.store.Unlock()
 
 	for _, response := range responses {
-		if err := c.collectMetricsForResponse(response, stage); err != nil {
+		if err := c.collect(response, stage); err != nil {
 			return err
 		}
 	}
@@ -33,7 +33,7 @@ func (c *DefaultMetricsCollector) CollectMultiple(responses []proctypes.Transfor
 func (c *DefaultMetricsCollector) Collect(response proctypes.TransformerResponse, stage string) error {
 	c.store.Lock()
 	defer c.store.Unlock()
-	return c.collectMetricsForResponse(response, stage)
+	return c.collect(response, stage)
 }
 
 func (c *DefaultMetricsCollector) GetMetrics() []*reportingtypes.PUReportedMetric {
@@ -60,7 +60,7 @@ func (c *DefaultMetricsCollector) Reset() {
 	c.store = NewMetricsStore()
 }
 
-func (c *DefaultMetricsCollector) collectMetricsForResponse(response proctypes.TransformerResponse, stage string) error {
+func (c *DefaultMetricsCollector) collect(response proctypes.TransformerResponse, stage string) error {
 	// Generate key for this combination
 	key := generateMetricKey(response, stage)
 
