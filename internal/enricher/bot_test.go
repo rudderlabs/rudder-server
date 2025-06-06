@@ -17,7 +17,7 @@ func TestBotEnricher(t *testing.T) {
 		expectError    bool
 	}{
 		{
-			name: "non-bot event should not be enriched",
+			name: "non-bot event should not be enriched when requiresBotEnrichment is false",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -26,7 +26,8 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot: false,
+				IsBot:                 false,
+				RequiresBotEnrichment: false,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -36,7 +37,7 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "non-bot event with name, url and isInvalidBrowser should not be enriched",
+			name: "non-bot event should not be enriched even if requiresBotEnrichment is true",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -45,10 +46,51 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot:               false,
-				BotName:             "test-bot",
-				BotURL:              "https://test-bot.com",
-				BotIsInvalidBrowser: true,
+				IsBot:                 false,
+				RequiresBotEnrichment: true,
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "non-bot event with name, url and isInvalidBrowser should not be enriched even when requiresBotEnrichment is true",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:                 false,
+				BotName:               "test-bot",
+				BotURL:                "https://test-bot.com",
+				BotIsInvalidBrowser:   true,
+				RequiresBotEnrichment: true,
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "bot event should not be enriched when requiresBotEnrichment is false",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:                 true,
+				RequiresBotEnrichment: false,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -67,10 +109,11 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot:               true,
-				BotName:             "test-bot",
-				BotURL:              "https://test-bot.com",
-				BotIsInvalidBrowser: false,
+				IsBot:                 true,
+				BotName:               "test-bot",
+				BotURL:                "https://test-bot.com",
+				BotIsInvalidBrowser:   false,
+				RequiresBotEnrichment: true,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -97,8 +140,9 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot:               true,
-				BotIsInvalidBrowser: true,
+				IsBot:                 true,
+				BotIsInvalidBrowser:   true,
+				RequiresBotEnrichment: true,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -126,9 +170,10 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot:   true,
-				BotName: "test-bot",
-				BotURL:  "https://test-bot.com",
+				IsBot:                 true,
+				BotName:               "test-bot",
+				BotURL:                "https://test-bot.com",
+				RequiresBotEnrichment: true,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -164,10 +209,11 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot:               true,
-				BotName:             "new-bot",
-				BotURL:              "https://new-bot.com",
-				BotIsInvalidBrowser: false,
+				IsBot:                 true,
+				BotName:               "new-bot",
+				BotURL:                "https://new-bot.com",
+				BotIsInvalidBrowser:   false,
+				RequiresBotEnrichment: true,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -195,7 +241,8 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot: true,
+				IsBot:                 true,
+				RequiresBotEnrichment: true,
 			},
 			expectedEvents: []types.SingularEventT{
 				{
