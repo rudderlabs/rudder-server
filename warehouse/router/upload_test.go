@@ -871,7 +871,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
-	mockFactory := mockupload.NewMockFileManagerFactory(ctrl)
+	mockFactory := mockupload.NewMockfilemanagerFactory(ctrl)
 	mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
 
 	t.Run("cleanup disabled", func(t *testing.T) {
@@ -924,6 +924,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 				"bucketProvider": "s3",
 			},
 			false,
+			"test-workspace",
+			config.Default,
 		).Return(mockFileManager, nil).Times(1)
 
 		mockLoadFilesRepo.EXPECT().Get(
@@ -978,6 +980,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 				"bucketProvider": "s3",
 			},
 			false,
+			"test-workspace",
+			config.Default,
 		).Return(mockFileManager, nil).Times(1)
 
 		mockLoadFilesRepo.EXPECT().Get(
@@ -1038,6 +1042,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 				"bucketProvider": "GCS",
 			},
 			false,
+			"test-workspace",
+			config.Default,
 		).Return(mockFileManager, nil).Times(1)
 
 		mockLoadFilesRepo.EXPECT().Get(

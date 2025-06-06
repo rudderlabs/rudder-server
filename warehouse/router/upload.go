@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=mocks/upload.go -package=mocks -source=upload.go FileManagerFactory,loadFilesRepo,stagingFilesRepo
+//go:generate mockgen -destination=mocks/upload.go -package=mocks -source=upload.go fileManagerFactory,loadFilesRepo,stagingFilesRepo
 package router
 
 import (
