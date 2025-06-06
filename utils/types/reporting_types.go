@@ -27,6 +27,7 @@ const (
 	// Module names
 	GATEWAY                = "gateway"
 	DESTINATION_FILTER     = "destination_filter"
+	EVENT_BLOCKING         = "event_blocking"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
 	USER_TRANSFORMER       = "user_transformer"
 	EVENT_FILTER           = "event_filter"
