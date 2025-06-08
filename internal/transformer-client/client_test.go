@@ -15,7 +15,6 @@ import (
 )
 
 func setupTestConfig() {
-	config.Set("Transformer.Client.maxRetry", 3)
 	config.Set("Transformer.Client.initialInterval", 50*time.Millisecond)
 	config.Set("Transformer.Client.maxInterval", 200*time.Millisecond)
 	config.Set("Transformer.Client.maxElapsedTime", 5*time.Second)
@@ -68,7 +67,6 @@ func TestClient_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("stops retrying after max elapsed time", func(t *testing.T) {
-		config.Set("Transformer.Client.maxRetry", 10) // High retry count
 		config.Set("Transformer.Client.initialInterval", 50*time.Millisecond)
 		config.Set("Transformer.Client.maxInterval", 200*time.Millisecond)
 		config.Set("Transformer.Client.maxElapsedTime", 1*time.Second) // Short elapsed time

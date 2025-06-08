@@ -105,7 +105,7 @@ func NewClient(conf *config.Config, config *ClientConfig) Client {
 func newRetryableHTTPClient(conf *config.Config, baseClient Client) Client {
 	cfg := &retryablehttp.Config{
 		MaxRetry:        conf.GetInt("Transformer.Client.maxRetry", 0),
-		InitialInterval: conf.GetDuration("Transformer.Client.initialInterval", 1, time.Second),
+		InitialInterval: conf.GetDuration("Transformer.Client.Retryable.initialInterval", 1, time.Second),
 		MaxInterval:     conf.GetDuration("Transformer.Client.maxInterval", 30, time.Second),
 		MaxElapsedTime:  conf.GetDuration("Transformer.Client.maxElapsedTime", 0, time.Second),
 		Multiplier:      conf.GetFloat64("Transformer.Client.multiplier", 2.0),
@@ -122,7 +122,7 @@ func newRetryableHTTPClient(conf *config.Config, baseClient Client) Client {
 				reason := resp.Header.Get("X-Rudder-Error-Reason")
 				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, stats.Tags{"reason": reason}).Count(1)
 				resp.Body.Close()
-				return true, fmt.Errorf("memory-fenced: %s", reason)
+				return true, fmt.Errorf("Got retryable error response from transformer: %s", reason)
 			}
 			return false, nil
 		}),
