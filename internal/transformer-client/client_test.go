@@ -15,10 +15,10 @@ import (
 )
 
 func setupTestConfig() {
-	config.Set("Transformer.Client.initialInterval", 50*time.Millisecond)
-	config.Set("Transformer.Client.maxInterval", 200*time.Millisecond)
-	config.Set("Transformer.Client.maxElapsedTime", 5*time.Second)
-	config.Set("Transformer.Client.multiplier", 2.0)
+	config.Set("Transformer.Client.Retryable.initialInterval", 50*time.Millisecond)
+	config.Set("Transformer.Client.Retryable.maxInterval", 200*time.Millisecond)
+	config.Set("Transformer.Client.Retryable.maxElapsedTime", 5*time.Second)
+	config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 }
 
 func TestClient_RetryBehavior(t *testing.T) {
@@ -67,10 +67,10 @@ func TestClient_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("stops retrying after max elapsed time", func(t *testing.T) {
-		config.Set("Transformer.Client.initialInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.maxInterval", 200*time.Millisecond)
-		config.Set("Transformer.Client.maxElapsedTime", 1*time.Second) // Short elapsed time
-		config.Set("Transformer.Client.multiplier", 2.0)
+		config.Set("Transformer.Client.Retryable.initialInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxInterval", 200*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxElapsedTime", 1*time.Second) // Short elapsed time
+		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -227,7 +227,11 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 func TestClient_ErrorsNotRetried(t *testing.T) {
 	t.Run("connection errors are not retried", func(t *testing.T) {
-		setupTestConfig()
+		config.Set("Transformer.Client.Retryable.maxRetry", 0)
+		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 
 		unusedPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
@@ -251,13 +255,18 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, resp)
 
-		require.True(t, elapsed < 2*time.Second, "Should fail quickly without retries")
+		require.True(t, elapsed < 1*time.Second, "Should fail quickly without retries")
 
 		require.Contains(t, strings.ToLower(err.Error()), "connection")
 	})
 
 	t.Run("DNS resolution errors are not retried", func(t *testing.T) {
-		setupTestConfig()
+		// Set minimal retry configuration for error tests to ensure quick failures
+		config.Set("Transformer.Client.Retryable.maxRetry", 0)
+		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 
 		url := "http://thisdoesnotexist.invalid.domain.com"
 
@@ -279,11 +288,16 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, resp)
 
-		require.True(t, elapsed < 2*time.Second, "Should fail quickly without retries")
+		require.True(t, elapsed < 1*time.Second, "Should fail quickly without retries")
 	})
 
 	t.Run("context timeout errors are not retried", func(t *testing.T) {
-		setupTestConfig()
+		// Set minimal retry configuration for error tests to ensure quick failures
+		config.Set("Transformer.Client.Retryable.maxRetry", 0)
+		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(2 * time.Second)
@@ -310,17 +324,17 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 		require.Nil(t, resp)
 
 		require.True(t, elapsed >= 500*time.Millisecond, "Should respect client timeout")
-		require.True(t, elapsed < 3*time.Second, "Should timeout without extensive retries")
+		require.True(t, elapsed < 1*time.Second, "Should timeout quickly without retries")
 	})
 }
 
 func TestClient_ConfigurableRetrySettings(t *testing.T) {
 	t.Run("respects custom retry configuration", func(t *testing.T) {
-		config.Set("Transformer.Client.maxRetry", 1) // Only 1 retry
-		config.Set("Transformer.Client.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.maxElapsedTime", 500*time.Millisecond)
-		config.Set("Transformer.Client.multiplier", 2.0)
+		config.Set("Transformer.Client.Retryable.maxRetry", 1) // Only 1 retry
+		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -356,11 +370,11 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 
 	t.Run("demonstrates when client returns error with memory-fenced", func(t *testing.T) {
 		// Set configuration that will cause the retry strategy to return an error
-		config.Set("Transformer.Client.maxRetry", 0) // No retries
-		config.Set("Transformer.Client.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.maxElapsedTime", 0) // No time limit
-		config.Set("Transformer.Client.multiplier", 2.0)
+		config.Set("Transformer.Client.Retryable.maxRetry", 0) // No retries
+		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
+		config.Set("Transformer.Client.Retryable.maxElapsedTime", 0) // No time limit
+		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
 
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
