@@ -180,6 +180,7 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 		if reqErr != nil {
 			return nil, 0, fmt.Errorf("sending insert request: %w", reqErr)
 		}
+		defer func() { httputil.CloseResponse(resp) }()
 		statusCode := resp.StatusCode
 		if statusCode != http.StatusOK {
 			return nil, statusCode, fmt.Errorf("invalid status code for insert: %d, body: %s", statusCode, string(mustRead(resp.Body)))
@@ -200,7 +201,7 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 				return nil, fmt.Errorf("insert 404 and failed to recreate channel: %w", createErr)
 			}
 			a.logger.Infon("Channel recreated after 404 on insert. Retrying insert.", logger.NewStringField("newChannelID", channelResp.ChannelID))
-			insertRes, statusCode, err = tryInsert(channelResp.ChannelID)
+			insertRes, _, err := tryInsert(channelResp.ChannelID)
 			if err != nil {
 				return nil, fmt.Errorf("insert retry after channel recreation failed: %w", err)
 			}
