@@ -54,3 +54,15 @@ jobs:
                 "version": "${{ steps.extract_version.outputs.version }}",
                 "deployment": "multitenant"
             }
+      - name: Trigger dispatch event - hosted
+        uses: peter-evans/repository-dispatch@v3
+        # release please run 2 times, first for creating the PR and second for creating the release
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        with:
+          token: "${{ secrets.PAT }}"
+          repository: rudderlabs/rudder-devops
+          event-type: release-server-hosted
+          client-payload: |
+            {
+                "version": "${{ steps.extract_version.outputs.version }}"
+            }
