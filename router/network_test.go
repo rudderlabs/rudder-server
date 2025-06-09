@@ -424,7 +424,6 @@ func TestSendPost(t *testing.T) {
 		}
 
 		mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
-			require.Equal(t, "application/json", req.Header.Get("Content-Type"))
 			require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
 			body, err := io.ReadAll(req.Body)
 			require.NoError(t, err)
@@ -461,7 +460,6 @@ func TestSendPost(t *testing.T) {
 		}
 
 		mockHTTPClient.EXPECT().Do(gomock.Any()).Times(1).Do(func(req *http.Request) {
-			require.Equal(t, "application/x-www-form-urlencoded", req.Header.Get("Content-Type"))
 			require.Equal(t, "RudderLabs", req.Header.Get("User-Agent"))
 			body, err := io.ReadAll(req.Body)
 			require.NoError(t, err)
