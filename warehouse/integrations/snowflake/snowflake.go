@@ -1158,6 +1158,9 @@ func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error
 
 func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
+	if sf.tableManager == nil {
+		return fmt.Errorf("table manager not initialized")
+	}
 	query, err := sf.tableManager.addColumnsQuery(schemaIdentifier, tableName, columnsInfo)
 	if err != nil {
 		return fmt.Errorf("adding columns: %w", err)
