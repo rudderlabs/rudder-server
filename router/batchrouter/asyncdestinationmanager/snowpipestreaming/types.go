@@ -134,7 +134,7 @@ type (
 	api interface {
 		CreateChannel(ctx context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error)
 		DeleteChannel(ctx context.Context, channelID string, sync bool) error
-		Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error)
+		Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest, createChannelReq *model.CreateChannelRequest) (*model.InsertResponse, error)
 		GetStatus(ctx context.Context, channelID string) (*model.StatusResponse, error)
 	}
 

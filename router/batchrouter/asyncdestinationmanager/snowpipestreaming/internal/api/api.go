@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -21,6 +22,7 @@ type (
 	API struct {
 		clientURL   string
 		requestDoer requestDoer
+		logger      logger.Logger
 		config      struct {
 			enableCompression config.ValueLoader[bool]
 		}
@@ -34,10 +36,11 @@ type (
 	}
 )
 
-func New(conf *config.Config, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
+func New(conf *config.Config, log logger.Logger, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
 	a := &API{
 		clientURL:   clientURL,
 		requestDoer: requestDoer,
+		logger:      log,
 	}
 	a.config.enableCompression = conf.GetReloadableBoolVar(true, "SnowpipeStreaming.enableCompression")
 	a.stats.insertRequestBodySize = statsFactory.NewTaggedStat("snowpipe_streaming_request_body_size", stats.HistogramType, stats.Tags{
@@ -141,8 +144,7 @@ func (a *API) GetChannel(ctx context.Context, channelID string) (*model.ChannelR
 	return &res, nil
 }
 
-// Insert inserts the given rows into the channel with the given ID.
-func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error) {
+func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest, createChannelReq *model.CreateChannelRequest) (*model.InsertResponse, error) {
 	reqJSON, err := jsonrs.Marshal(insertRequest)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling insert request: %w", err)
@@ -150,48 +152,64 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 
 	enableCompression := a.config.enableCompression.Load()
 
-	var (
-		r           io.Reader
-		payloadSize int
-	)
-
-	if enableCompression {
-		r, payloadSize, err = gzippedReader(reqJSON)
-		if err != nil {
-			return nil, fmt.Errorf("creating gzip reader: %w", err)
+	tryInsert := func(channelID string) (*model.InsertResponse, int, error) {
+		var (
+			r           io.Reader
+			payloadSize int
+		)
+		if enableCompression {
+			r, payloadSize, err = gzippedReader(reqJSON)
+			if err != nil {
+				return nil, 0, fmt.Errorf("creating gzip reader: %w", err)
+			}
+		} else {
+			r = bytes.NewBuffer(reqJSON)
+			payloadSize = len(reqJSON)
 		}
-	} else {
-		r = bytes.NewBuffer(reqJSON)
-		payloadSize = len(reqJSON)
+		a.stats.insertRequestBodySize.Observe(float64(payloadSize))
+		url := a.clientURL + "/channels/" + channelID + "/insert"
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, r)
+		if err != nil {
+			return nil, 0, fmt.Errorf("creating insert request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if enableCompression {
+			req.Header.Set("Content-Encoding", "gzip")
+		}
+		resp, reqErr := a.requestDoer.Do(req)
+		if reqErr != nil {
+			return nil, 0, fmt.Errorf("sending insert request: %w", reqErr)
+		}
+		statusCode := resp.StatusCode
+		if statusCode != http.StatusOK {
+			return nil, statusCode, fmt.Errorf("invalid status code for insert: %d, body: %s", statusCode, string(mustRead(resp.Body)))
+		}
+		var res model.InsertResponse
+		if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return nil, statusCode, fmt.Errorf("decoding insert response: %w", err)
+		}
+		return &res, statusCode, nil
 	}
 
-	a.stats.insertRequestBodySize.Observe(float64(payloadSize))
-
-	insertURL := a.clientURL + "/channels/" + channelID + "/insert"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, insertURL, r)
+	insertRes, statusCode, err := tryInsert(channelID)
 	if err != nil {
-		return nil, fmt.Errorf("creating insert request: %w", err)
+		if statusCode == http.StatusNotFound {
+			a.logger.Infon("Insert returned 404. Attempting channel recreation and retry.", logger.NewStringField("channelID", channelID))
+			channelResp, createErr := a.CreateChannel(ctx, createChannelReq)
+			if createErr != nil {
+				return nil, fmt.Errorf("insert 404 and failed to recreate channel: %w", createErr)
+			}
+			a.logger.Infon("Channel recreated after 404 on insert. Retrying insert.", logger.NewStringField("newChannelID", channelResp.ChannelID))
+			insertRes, statusCode, err = tryInsert(channelResp.ChannelID)
+			if err != nil {
+				return nil, fmt.Errorf("insert retry after channel recreation failed: %w", err)
+			}
+			a.logger.Infon("Insert retry after channel recreation succeeded", logger.NewStringField("channelID", channelResp.ChannelID))
+			return insertRes, nil
+		}
+		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if enableCompression {
-		req.Header.Set("Content-Encoding", "gzip")
-	}
-
-	resp, reqErr := a.requestDoer.Do(req)
-	if reqErr != nil {
-		return nil, fmt.Errorf("sending insert request: %w", reqErr)
-	}
-	defer func() { httputil.CloseResponse(resp) }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code for insert: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
-	}
-
-	var res model.InsertResponse
-	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, fmt.Errorf("decoding insert response: %w", err)
-	}
-	return &res, nil
+	return insertRes, nil
 }
 
 // GetStatus retrieves the status of the channel with the given ID.
