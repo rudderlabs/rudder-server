@@ -83,40 +83,42 @@ type Handle struct {
 
 	// state
 
-	logger                           logger.Logger
-	tracer                           stats.Tracer
-	destinationResponseHandler       ResponseHandler
-	telemetry                        *Diagnostic
-	netHandle                        NetHandle
-	customDestinationManager         customDestinationManager.DestinationManager
-	transformer                      transformer.Transformer
-	isOAuthDestination               bool
-	oauth                            oauth.Authorizer
-	destinationsMapMu                sync.RWMutex
-	destinationsMap                  map[string]*routerutils.DestinationWithSources // destinationID -> destination
-	connectionsMap                   map[types.SourceDest]types.ConnectionWithID
-	isBackendConfigInitialized       bool
-	backendConfigInitialized         chan bool
-	responseQ                        chan workerJobStatus
-	throttlingCosts                  atomic.Pointer[types.EventTypeThrottlingCost]
-	batchSizeHistogramStat           stats.Measurement
-	batchInputCountStat              stats.Measurement
-	batchOutputCountStat             stats.Measurement
-	routerTransformInputCountStat    stats.Measurement
-	routerTransformOutputCountStat   stats.Measurement
-	batchInputOutputDiffCountStat    stats.Measurement
-	routerResponseTransformStat      stats.Measurement
-	processJobsRequestsHistogramStat stats.Measurement
-	processJobsRequestsCountStat     stats.Measurement
-	throttlingErrorStat              stats.Measurement
-	throttledStat                    stats.Measurement
-	isolationStrategy                isolation.Strategy
-	backgroundGroup                  *errgroup.Group
-	backgroundCtx                    context.Context
-	backgroundCancel                 context.CancelFunc
-	backgroundWait                   func() error
-	startEnded                       chan struct{}
-	barrier                          *eventorder.Barrier
+	logger                         logger.Logger
+	tracer                         stats.Tracer
+	destinationResponseHandler     ResponseHandler
+	telemetry                      *Diagnostic
+	netHandle                      NetHandle
+	customDestinationManager       customDestinationManager.DestinationManager
+	transformer                    transformer.Transformer
+	isOAuthDestination             bool
+	oauth                          oauth.Authorizer
+	destinationsMapMu              sync.RWMutex
+	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
+	connectionsMap                 map[types.SourceDest]types.ConnectionWithID
+	isBackendConfigInitialized     bool
+	backendConfigInitialized       chan bool
+	responseQ                      chan workerJobStatus
+	throttlingCosts                atomic.Pointer[types.EventTypeThrottlingCost]
+	batchSizeHistogramStat         stats.Measurement
+	batchInputCountStat            stats.Measurement
+	batchOutputCountStat           stats.Measurement
+	routerTransformInputCountStat  stats.Measurement
+	routerTransformOutputCountStat stats.Measurement
+	batchInputOutputDiffCountStat  stats.Measurement
+	routerResponseTransformStat    stats.Measurement
+	processRequestsHistogramStat   stats.Measurement
+	processRequestsCountStat       stats.Measurement
+	processJobsHistogramStat       stats.Measurement
+	processJobsCountStat           stats.Measurement
+	throttlingErrorStat            stats.Measurement
+	throttledStat                  stats.Measurement
+	isolationStrategy              isolation.Strategy
+	backgroundGroup                *errgroup.Group
+	backgroundCtx                  context.Context
+	backgroundCancel               context.CancelFunc
+	backgroundWait                 func() error
+	startEnded                     chan struct{}
+	barrier                        *eventorder.Barrier
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool
