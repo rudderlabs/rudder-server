@@ -22,8 +22,14 @@ func NewBotEnricher() (PipelineEnricher, error) {
 func (e *botEnricher) Enrich(_ *backendconfig.SourceT, request *types.GatewayBatchRequest, eventParams *types.EventParams) error {
 	var enrichErrs []error
 	for _, event := range request.Batch {
-		// if the event is not a bot or the bot enrichment is not required, we don't need to enrich it
-		if !eventParams.IsBot || !eventParams.RequiresBotEnrichment {
+		// if the event is not a bot we don't need to enrich it
+		if !eventParams.IsBot {
+			continue
+		}
+
+		// BotAction empty check is for backward compatibility, BotAction field might be absent indicating ingestion service is not released with BotAction field
+		// TODO: remove the empty check after ingestion service is released with BotAction field
+		if eventParams.BotAction != "flag" && eventParams.BotAction != "" {
 			continue
 		}
 

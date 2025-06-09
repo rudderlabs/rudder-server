@@ -238,16 +238,16 @@ func (r *Response) Equal(v *Response) (string, bool) {
 }
 
 type EventParams struct {
-	SourceJobRunId        string `json:"source_job_run_id"`
-	SourceId              string `json:"source_id"`
-	SourceTaskRunId       string `json:"source_task_run_id"`
-	TraceParent           string `json:"traceparent"`
-	DestinationID         string `json:"destination_id"`
-	IsBot                 bool   `json:"is_bot,omitempty"`
-	BotName               string `json:"bot_name,omitempty"`
-	BotURL                string `json:"bot_url,omitempty"`
-	BotIsInvalidBrowser   bool   `json:"bot_is_invalid_browser,omitempty"`
-	RequiresBotEnrichment bool   `json:"requires_bot_enrichment,omitempty"`
+	SourceJobRunId      string `json:"source_job_run_id"`
+	SourceId            string `json:"source_id"`
+	SourceTaskRunId     string `json:"source_task_run_id"`
+	TraceParent         string `json:"traceparent"`
+	DestinationID       string `json:"destination_id"`
+	IsBot               bool   `json:"is_bot,omitempty"`
+	BotName             string `json:"bot_name,omitempty"`
+	BotURL              string `json:"bot_url,omitempty"`
+	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
+	BotAction           string `json:"bot_action,omitempty"`
 }
 
 type TransformerMetricLabels struct {

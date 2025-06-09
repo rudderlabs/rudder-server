@@ -1964,7 +1964,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 			if event.eventParams.IsBot {
 				botStatus := reportingtypes.BotDetectedStatus
-				if event.eventParams.RequiresBotEnrichment {
+				if event.eventParams.BotAction == "flag" {
 					botStatus = reportingtypes.BotFlaggedStatus
 				}
 
