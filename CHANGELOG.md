@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.50.6](https://github.com/rudderlabs/rudder-server/compare/v1.50.5...v1.50.6) (2025-06-09)
+
+
+### Bug Fixes
+
+* warehouse transformations responses ordering ([#5954](https://github.com/rudderlabs/rudder-server/issues/5954)) ([0fed576](https://github.com/rudderlabs/rudder-server/commit/0fed576e1a8c823f99024e08c53edfb656984904))
+
+## [1.50.5](https://github.com/rudderlabs/rudder-server/compare/v1.50.4...v1.50.5) (2025-06-05)
+
+
+### Miscellaneous
+
+* add config to disable load table stats for clickhouse ([#5932](https://github.com/rudderlabs/rudder-server/issues/5932)) ([69c9345](https://github.com/rudderlabs/rudder-server/commit/69c93458424cf42d5c0f597154d97ba3d21b7217))
+
 ## [1.50.4](https://github.com/rudderlabs/rudder-server/compare/v1.50.3...v1.50.4) (2025-06-04)
 
 
