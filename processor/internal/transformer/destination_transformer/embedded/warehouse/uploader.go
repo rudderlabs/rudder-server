@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
@@ -101,11 +100,6 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 		return "" // Don't diff in case there is no response from transformer
 	}
 
-	sortTransformerResponsesByJobID(legacyResponse.Events)
-	sortTransformerResponsesByJobID(legacyResponse.FailedEvents)
-	sortTransformerResponsesByJobID(embeddedResponse.Events)
-	sortTransformerResponsesByJobID(embeddedResponse.FailedEvents)
-
 	// If the event counts differ, return all events in the transformation
 	if len(legacyResponse.Events) != len(embeddedResponse.Events) || len(legacyResponse.FailedEvents) != len(embeddedResponse.FailedEvents) {
 		t.stats.mismatchedEvents.Observe(float64(len(events)))
@@ -140,12 +134,6 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 	t.stats.matchedEvents.Observe(float64(len(legacyResponse.Events) - differedEventsCount))
 	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
 	return sampleDiff
-}
-
-func sortTransformerResponsesByJobID(responses []types.TransformerResponse) {
-	slices.SortStableFunc(responses, func(a, b types.TransformerResponse) int {
-		return int(a.Metadata.JobID - b.Metadata.JobID)
-	})
 }
 
 func write(w io.WriteCloser, data []string) error {
