@@ -22,7 +22,7 @@ func NewBotEnricher() (PipelineEnricher, error) {
 func (e *botEnricher) Enrich(_ *backendconfig.SourceT, request *types.GatewayBatchRequest, eventParams *types.EventParams) error {
 	var enrichErrs []error
 	for _, event := range request.Batch {
-		// if the event is not a bot we don't need to enrich it
+		// if the event is not a bot, we don't need to enrich it
 		if !eventParams.IsBot {
 			continue
 		}
