@@ -81,7 +81,7 @@ require (
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/rudder-go-kit v0.54.1
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
-	github.com/rudderlabs/rudder-schemas v0.6.0
+	github.com/rudderlabs/rudder-schemas v0.7.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250507094647-f18f2e217449
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.20.3

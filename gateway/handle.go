@@ -950,7 +950,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotName:             msg.Properties.BotName,
 			BotURL:              msg.Properties.BotURL,
 			BotIsInvalidBrowser: msg.Properties.BotIsInvalidBrowser,
-			BotAction:           "flag", // TODO: update after rudder-schemas is updated
+			BotAction:           msg.Properties.BotAction,
 		}
 
 		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
