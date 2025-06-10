@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	proctypes "github.com/rudderlabs/rudder-server/processor/types"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -18,22 +17,22 @@ func NewDefaultMetricsCollector() *DefaultMetricsCollector {
 	}
 }
 
-func (c *DefaultMetricsCollector) CollectMultiple(responses []proctypes.TransformerResponse, stage string) error {
+func (c *DefaultMetricsCollector) CollectMultiple(events []*reportingtypes.MetricEvent) error {
 	c.store.Lock()
 	defer c.store.Unlock()
 
-	for _, response := range responses {
-		if err := c.collect(response, stage); err != nil {
+	for _, event := range events {
+		if err := c.collect(event); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *DefaultMetricsCollector) Collect(response proctypes.TransformerResponse, stage string) error {
+func (c *DefaultMetricsCollector) Collect(event *reportingtypes.MetricEvent) error {
 	c.store.Lock()
 	defer c.store.Unlock()
-	return c.collect(response, stage)
+	return c.collect(event)
 }
 
 func (c *DefaultMetricsCollector) GetMetrics() []*reportingtypes.PUReportedMetric {
@@ -54,31 +53,30 @@ func (c *DefaultMetricsCollector) GetMetrics() []*reportingtypes.PUReportedMetri
 	return metrics
 }
 
-func (c *DefaultMetricsCollector) Reset() {
-	c.store.Lock()
-	defer c.store.Unlock()
-	c.store = NewMetricsStore()
+func (c *DefaultMetricsCollector) Report() error {
+	// We can write to outbox table from here
+	return nil
 }
 
-func (c *DefaultMetricsCollector) collect(response proctypes.TransformerResponse, stage string) error {
+func (c *DefaultMetricsCollector) collect(event *reportingtypes.MetricEvent) error {
 	// Generate key for this combination
-	key := generateMetricKey(response, stage)
+	key := generateMetricKey(event)
 
 	// Update connection details
 	if _, exists := c.store.connectionDetailsMap[key]; !exists {
 		c.store.connectionDetailsMap[key] = &reportingtypes.ConnectionDetails{
-			SourceID:                response.Metadata.SourceID,
-			SourceTaskRunID:         response.Metadata.SourceTaskRunID,
-			SourceJobID:             response.Metadata.SourceJobID,
-			SourceJobRunID:          response.Metadata.SourceJobRunID,
-			SourceDefinitionID:      response.Metadata.SourceDefinitionID,
-			SourceCategory:          response.Metadata.SourceCategory,
-			DestinationID:           response.Metadata.DestinationID,
-			DestinationDefinitionID: response.Metadata.DestinationDefinitionID,
-			TransformationID:        response.Metadata.TransformationID,
-			TransformationVersionID: response.Metadata.TransformationVersionID,
-			TrackingPlanID:          response.Metadata.TrackingPlanID,
-			TrackingPlanVersion:     response.Metadata.TrackingPlanVersion,
+			SourceID:                event.ConnectionLabels.SourceLabels.SourceID,
+			SourceTaskRunID:         event.ConnectionLabels.SourceLabels.SourceTaskRunID,
+			SourceJobID:             event.ConnectionLabels.SourceLabels.SourceJobID,
+			SourceJobRunID:          event.ConnectionLabels.SourceLabels.SourceJobRunID,
+			SourceDefinitionID:      event.ConnectionLabels.SourceLabels.SourceDefinitionID,
+			SourceCategory:          event.ConnectionLabels.SourceLabels.SourceCategory,
+			DestinationID:           event.ConnectionLabels.DestinationLabels.DestinationID,
+			DestinationDefinitionID: event.ConnectionLabels.DestinationLabels.DestinationDefinitionID,
+			TransformationID:        event.ConnectionLabels.TransformationLabels.TransformationID,
+			TransformationVersionID: event.ConnectionLabels.TransformationLabels.TransformationVersionID,
+			TrackingPlanID:          event.ConnectionLabels.TrackingPlanLabels.TrackingPlanID,
+			TrackingPlanVersion:     event.ConnectionLabels.TrackingPlanLabels.TrackingPlanVersion,
 		}
 	}
 
@@ -87,62 +85,50 @@ func (c *DefaultMetricsCollector) collect(response proctypes.TransformerResponse
 		c.store.statusDetailsMap[key] = make(map[string]*reportingtypes.StatusDetail)
 	}
 
-	// Determine status based on statusCode
-	status := "succeeded"
-	if response.StatusCode >= 400 && response.StatusCode < 500 {
-		status = "aborted"
-	} else if response.StatusCode >= 500 {
-		status = "failed"
-	}
-
 	// Create status details for the whole event
 	statusKey := fmt.Sprintf("%s:%d:%s:%s:",
-		status,
-		response.StatusCode,
-		response.Metadata.EventName,
-		response.Metadata.EventType)
+		event.StatusLabels.Status,
+		event.StatusLabels.StatusCode,
+		event.EventLabels.EventName,
+		event.EventLabels.EventType)
 
 	if _, exists := c.store.statusDetailsMap[key][statusKey]; !exists {
 		// Only capture sample event and response for the first occurrence
-
-		payloadBytes, err := jsonrs.Marshal(response.Output)
+		payloadBytes, err := jsonrs.Marshal(event.Event)
 		if err != nil {
 			return err
 		}
 
 		c.store.statusDetailsMap[key][statusKey] = &reportingtypes.StatusDetail{
-			Status:         status,
-			StatusCode:     response.StatusCode,
-			SampleResponse: response.Error,
+			Status:         event.StatusLabels.Status,
+			StatusCode:     event.StatusLabels.StatusCode,
+			SampleResponse: event.StatusLabels.ErrorType,
 			SampleEvent:    payloadBytes,
-			EventName:      response.Metadata.EventName,
-			EventType:      response.Metadata.EventType,
-			StatTags:       response.StatTags,
+			EventName:      event.EventLabels.EventName,
+			EventType:      event.EventLabels.EventType,
 			Count:          0,
-			ViolationCount: int64(len(response.ValidationErrors)),
 		}
 	}
 	c.store.statusDetailsMap[key][statusKey].Count++
 
-	// TODO: We need not store PU details for each key, We can have nested map
 	c.store.puDetailsMap[key] = &reportingtypes.PUDetails{
-		PU: stage,
+		PU: event.Stage,
 	}
 
 	return nil
 }
 
-func generateMetricKey(response proctypes.TransformerResponse, stage string) string {
+func generateMetricKey(event *reportingtypes.MetricEvent) string {
 	return fmt.Sprintf("%s:%s:%s:%s:%s:%s:%d:%s:%d:%s:%s",
-		response.Metadata.SourceID,
-		response.Metadata.DestinationID,
-		response.Metadata.SourceJobRunID,
-		response.Metadata.TransformationID,
-		response.Metadata.TransformationVersionID,
-		response.Metadata.TrackingPlanID,
-		response.Metadata.TrackingPlanVersion,
-		stage,
-		response.StatusCode,
-		response.Metadata.EventName,
-		response.Metadata.EventType)
+		event.ConnectionLabels.SourceLabels.SourceID,
+		event.ConnectionLabels.DestinationLabels.DestinationID,
+		event.ConnectionLabels.SourceLabels.SourceJobRunID,
+		event.ConnectionLabels.TransformationLabels.TransformationID,
+		event.ConnectionLabels.TransformationLabels.TransformationVersionID,
+		event.ConnectionLabels.TrackingPlanLabels.TrackingPlanID,
+		event.ConnectionLabels.TrackingPlanLabels.TrackingPlanVersion,
+		event.Stage,
+		event.StatusLabels.StatusCode,
+		event.EventLabels.EventName,
+		event.EventLabels.EventType)
 }

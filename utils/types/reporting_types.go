@@ -206,3 +206,53 @@ func AssertSameKeys[V1, V2 any](m1 map[string]V1, m2 map[string]V2) {
 		}
 	}
 }
+
+type SourceLabels struct {
+	SourceCategory     string `json:"sourceCategory"`
+	SourceDefinitionID string `json:"sourceDefinitionId"`
+	SourceID           string `json:"sourceId"`
+	SourceJobID        string `json:"sourceJobId"`
+	SourceJobRunID     string `json:"sourceJobRunId"`
+	SourceTaskRunID    string `json:"sourceTaskRunId"`
+}
+
+type DestinationLabels struct {
+	DestinationID           string `json:"destinationId"`
+	DestinationDefinitionID string `json:"destinationDefinitionId"`
+}
+
+type TransformationLabels struct {
+	TransformationID        string `json:"transformationId"`
+	TransformationVersionID string `json:"transformationVersionId"`
+}
+
+type TrackingPlanLabels struct {
+	TrackingPlanID      string `json:"trackingPlanId"`
+	TrackingPlanVersion int    `json:"trackingPlanVersion"`
+}
+
+type ConnectionLabels struct {
+	SourceLabels         SourceLabels         `json:"sourceLabels"`
+	DestinationLabels    DestinationLabels    `json:"destinationLabels"`
+	TransformationLabels TransformationLabels `json:"transformationLabels"`
+	TrackingPlanLabels   TrackingPlanLabels   `json:"trackingPlanLabels"`
+}
+
+type EventLabels struct {
+	EventType string `json:"eventType"`
+	EventName string `json:"eventName"`
+}
+
+type StatusLabels struct {
+	StatusCode int    `json:"statusCode"`
+	Status     string `json:"status"`
+	ErrorType  string `json:"errorCode"`
+}
+
+type MetricEvent struct {
+	ConnectionLabels ConnectionLabels       `json:"connectionLabels"`
+	EventLabels      EventLabels            `json:"eventLabels"`
+	StatusLabels     StatusLabels           `json:"statusLabels"`
+	Stage            string                 `json:"stage"`
+	Event            map[string]interface{} `json:"event"`
+}

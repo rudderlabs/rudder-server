@@ -3,15 +3,14 @@ package collector
 import (
 	"sync"
 
-	proctypes "github.com/rudderlabs/rudder-server/processor/types"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type MetricsCollector interface {
-	Collect(response proctypes.TransformerResponse, stage string) error
-	CollectMultiple(responses []proctypes.TransformerResponse, stage string) error
+	Collect(event *reportingtypes.MetricEvent) error
+	CollectMultiple(events []*reportingtypes.MetricEvent) error
 	GetMetrics() []*reportingtypes.PUReportedMetric
-	Reset()
+	Report() error
 }
 
 type MetricsStore struct {

@@ -2151,53 +2151,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		}
 	}
 
-	// EVENT BLOCKING - START
+	// TRACKING PLAN - START
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
-	filteredEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
-	var blockedJobs []*jobsdb.JobT
-
-	for sourceId, events := range preTrans.groupedEventsBySourceId {
-		succeededEvents, blockedEvents := proc.filterBlockedEvents(events)
-		filteredEventsBySourceId[sourceId] = succeededEvents
-
-		for _, event := range blockedEvents {
-			if proc.isReportingEnabled() {
-				preTrans.metricsCollector.Collect(types.TransformerResponse{
-					StatusCode: 400,
-					Metadata:   event.Metadata,
-				}, reportingtypes.EVENT_BLOCKING)
-			}
-
-			blockedJob := &jobsdb.JobT{
-				UUID:         uuid.New(),
-				UserID:       event.Metadata.RudderID,
-				Parameters:   []byte(`{}`),
-				CustomVal:    reportingtypes.EVENT_BLOCKING,
-				EventPayload: []byte(`{}`),
-				CreatedAt:    time.Now(),
-				ExpireAt:     time.Now(),
-				WorkspaceId:  event.Metadata.WorkspaceID,
-			}
-			blockedJobs = append(blockedJobs, blockedJob)
-		}
-
-		if proc.isReportingEnabled() {
-			for _, event := range succeededEvents {
-				preTrans.metricsCollector.Collect(types.TransformerResponse{
-					StatusCode: 200,
-					Metadata:   event.Metadata,
-				}, reportingtypes.EVENT_BLOCKING)
-			}
-		}
-	}
-
-	// Update preTrans with filtered events
-	preTrans.groupedEventsBySourceId = filteredEventsBySourceId
-	preTrans.procErrorJobs = append(preTrans.procErrorJobs, blockedJobs...)
-	// EVENT BLOCKING - END
-
-	// TRACKING PLAN - START
 	validateEventsStart := time.Now()
 	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
@@ -3950,39 +3906,3 @@ func getUTSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.
 		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
 	})
 }
-
-// EVENT BLOCKING - START
-var blockedEventNames = []string{
-	"blocked_event_1",
-	"blocked_event_2",
-	"blocked_event_3",
-}
-
-func isEventBlocked(eventName string) bool {
-	for _, blockedName := range blockedEventNames {
-		if eventName == blockedName {
-			return true
-		}
-	}
-	return false
-}
-
-func (proc *Handle) filterBlockedEvents(events []types.TransformerEvent) ([]types.TransformerEvent, []types.TransformerEvent) {
-	var filteredEvents []types.TransformerEvent
-	var blockedEvents []types.TransformerEvent
-
-	for _, event := range events {
-		eventName, _ := event.Message["event"].(string)
-		if isEventBlocked(eventName) {
-			blockedEvents = append(blockedEvents, event)
-		} else {
-			filteredEvents = append(filteredEvents, event)
-		}
-	}
-
-	return filteredEvents, blockedEvents
-}
-
-// EVENT BLOCKING - END
-
-// TRACKING PLAN - START
