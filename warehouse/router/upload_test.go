@@ -869,6 +869,27 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		{Location: "test-load-location-4"},
 	}
 
+	mockUploadJobStats := struct {
+		uploadTime                         stats.Measurement
+		userTablesLoadTime                 stats.Measurement
+		identityTablesLoadTime             stats.Measurement
+		otherTablesLoadTime                stats.Measurement
+		loadFileGenerationTime             stats.Measurement
+		tablesAdded                        stats.Measurement
+		columnsAdded                       stats.Measurement
+		uploadFailed                       stats.Measurement
+		totalRowsSynced                    stats.Measurement
+		numStagedEvents                    stats.Measurement
+		uploadSuccess                      stats.Measurement
+		stagingLoadFileEventsCountMismatch stats.Measurement
+		eventDeliveryTime                  stats.Timer
+		objectsDeleted                     stats.Gauge
+		objectsDeletionTime                stats.Timer
+	}{
+		objectsDeleted:      stats.NOP.NewStat("objects_deleted_count", "gauge"),
+		objectsDeletionTime: stats.NOP.NewStat("objects_deletion_time", "timer"),
+	}
+
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
@@ -896,8 +917,9 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles[:2],
 			stagingFileIDs: []int64{1, 2},
+			statsFactory:   stats.NOP,
+			stats:          mockUploadJobStats,
 		}
-
 		err := job.cleanupObjectStorageFiles()
 		require.NoError(t, err)
 	})
@@ -946,6 +968,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles[:2],
 			stagingFileIDs: []int64{1, 2},
+			stats:          mockUploadJobStats,
+			statsFactory:   stats.NOP,
 		}
 
 		err := job.cleanupObjectStorageFiles()
@@ -993,6 +1017,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles[:2],
 			stagingFileIDs: []int64{1, 2},
+			stats:          mockUploadJobStats,
+			statsFactory:   stats.NOP,
 		}
 
 		err := job.cleanupObjectStorageFiles()
@@ -1042,6 +1068,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles,
 			stagingFileIDs: []int64{1, 2, 3, 4},
+			stats:          mockUploadJobStats,
+			statsFactory:   stats.NOP,
 		}
 
 		// Set up config for chunked deletion
