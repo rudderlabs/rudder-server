@@ -223,14 +223,14 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.queryLoadFilesWithUploadID = f.conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
 	uj.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {
 		return f.conf.GetIntVar(10, 1,
-			fmt.Sprintf("Warehouse.filemanager.%s.GCS.maxParallelObjDeletes", workspaceID),
-			fmt.Sprintf("Warehouse.filemanager.GCS.maxParallelObjDeletes"),
+			fmt.Sprintf("Warehouse.filemanager.%s.GCS.maxConcurrentObjDeleteRequests", workspaceID),
+			"Warehouse.filemanager.maxConcurrentObjDeleteRequests",
 		)
 	}
 	uj.config.objDeleteBatchSize = func(workspaceID string) int {
 		return f.conf.GetIntVar(1000, 1,
 			fmt.Sprintf("Warehouse.filemanager.%s.GCS.fileDeleteBatchSize", workspaceID),
-			fmt.Sprintf("Warehouse.filemanager.GCS.fileDeleteBatchSize"),
+			"Warehouse.filemanager.GCS.fileDeleteBatchSize",
 		)
 	}
 
