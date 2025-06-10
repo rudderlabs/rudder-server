@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.1](https://github.com/rudderlabs/rudder-server/compare/v1.51.0...v1.51.1) (2025-06-10)
+
+
+### Bug Fixes
+
+* gcs file deletion timing out ([#5951](https://github.com/rudderlabs/rudder-server/issues/5951)) ([b0d3f88](https://github.com/rudderlabs/rudder-server/commit/b0d3f881569332df8aca20eb72958e4c18c09b4d))
+
 ## [1.51.0](https://github.com/rudderlabs/rudder-server/compare/v1.50.0...v1.51.0) (2025-06-09)
 
 
