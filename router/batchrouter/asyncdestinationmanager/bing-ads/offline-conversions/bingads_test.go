@@ -609,7 +609,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			uploader := &BingAdsBulkUploader{}
 			// Execute
 			_, err := uploader.Transform(job)
-			expectedResult := fmt.Errorf("conversionTime field is not a string")
+			expectedResult := fmt.Errorf("conversionTime field is either not string or an empty string")
 			Expect(err.Error()).To(Equal(expectedResult.Error()))
 		})
 	})
