@@ -33,9 +33,6 @@ const (
 	defaultMaxInterval         = 30 * time.Second
 	defaultMaxElapsedTime      = 0
 	defaultMultiplier          = 2.0
-
-	// Special values
-	noRetries = 0 // Explicit value for no retries allowed
 )
 
 type ClientConfig struct {
@@ -227,15 +224,6 @@ func getRecycleTTL(config *ClientConfig) time.Duration {
 		return config.RecycleTTL
 	}
 	return defaultRecycleTTL
-}
-
-// Generic helper function for getting values with defaults
-func getValueOrDefault[T comparable](value, defaultValue T) T {
-	var zero T
-	if value != zero {
-		return value
-	}
-	return defaultValue
 }
 
 func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Config) Client {
