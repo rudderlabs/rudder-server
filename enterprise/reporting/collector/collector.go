@@ -113,6 +113,7 @@ func (c *DefaultMetricsCollector) collect(event *reportingtypes.MetricEvent) err
 
 	c.store.puDetailsMap[key] = &reportingtypes.PUDetails{
 		PU: event.Stage,
+		InPU: "NEW COLLECTOR" ,
 	}
 
 	return nil

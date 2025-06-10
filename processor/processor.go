@@ -1937,6 +1937,15 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		// dummy event for metrics purposes only
 		transformerEvent := &types.TransformerResponse{}
 		if proc.isReportingEnabled() {
+
+			metricEvent := ConvertMetadataToMetricEvent(
+				commonMetadataFromSingularEvent,
+				reportingtypes.GATEWAY,
+				&reportingtypes.StatusLabels{},
+				event.singularEvent,
+			)
+			subJobs.metricsCollector.Collect(metricEvent)
+
 			transformerEvent.Metadata = *commonMetadataFromSingularEvent
 			proc.updateMetricMaps(
 				inCountMetadataMap,
@@ -1996,6 +2005,15 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
+
+			metricEvent := ConvertMetadataToMetricEvent(
+				commonMetadataFromSingularEvent,
+				reportingtypes.DESTINATION_FILTER,
+				&reportingtypes.StatusLabels{},
+				event.singularEvent,
+			)
+			subJobs.metricsCollector.Collect(metricEvent)
+
 			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return nil }, nil)
 		}
 	}
