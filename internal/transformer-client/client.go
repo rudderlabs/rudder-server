@@ -20,6 +20,24 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
+const (
+	defaultDisableKeepAlives   = true
+	defaultMaxConnsPerHost     = 100
+	defaultMaxIdleConnsPerHost = 10
+	defaultIdleConnTimeout     = 30 * time.Second
+	defaultClientTimeout       = 600 * time.Second
+	defaultClientTTL           = 10 * time.Second
+	defaultRecycleTTL          = 60 * time.Second
+	defaultMaxRetry            = -1
+	defaultInitialInterval     = 1 * time.Second
+	defaultMaxInterval         = 30 * time.Second
+	defaultMaxElapsedTime      = 0
+	defaultMultiplier          = 2.0
+
+	// Special values
+	noRetries = 0 // Explicit value for no retries allowed
+)
+
 type ClientConfig struct {
 	TransportConfig struct {
 		DisableKeepAlives   bool          //	true
@@ -34,84 +52,205 @@ type ClientConfig struct {
 	PickerType    string        // power_of_two(default), round_robin, least_loaded_random, least_loaded_round_robin, random
 	Recycle       bool          // false
 	RecycleTTL    time.Duration // 60s
+
+	// Configuration for retryable HTTP client in case of [X-Rudder-Should-Retry: true] HTTP 503 responses
+	RetryRudderErrors struct {
+		Enabled         bool          // true
+		MaxRetry        int           // -1 - no limit
+		InitialInterval time.Duration // 1s
+		MaxInterval     time.Duration // 30s
+		MaxElapsedTime  time.Duration // 0s - no limit
+		Multiplier      float64       // 2.0
+	}
 }
 
 type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-func NewClient(conf *config.Config, config *ClientConfig) Client {
-	transport := &http.Transport{
-		DisableKeepAlives:   true,
-		MaxConnsPerHost:     100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     30 * time.Second,
-	}
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   600 * time.Second,
-	}
+func NewClient(config *ClientConfig) Client {
 	if config == nil {
-		return newRetryableHTTPClient(conf, client)
-	}
-
-	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
-	if config.TransportConfig.MaxConnsPerHost != 0 {
-		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
-	}
-	if config.TransportConfig.MaxIdleConnsPerHost != 0 {
-		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
-	}
-	if config.TransportConfig.IdleConnTimeout != 0 {
-		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
-	}
-
-	if config.ClientTimeout != 0 {
-		client.Timeout = config.ClientTimeout
-	}
-
-	clientTTL := 10 * time.Second
-	if config.ClientTTL != 0 {
-		clientTTL = config.ClientTTL
-	}
-	recycleTTL := 60 * time.Second
-	if config.RecycleTTL != 0 {
-		recycleTTL = config.RecycleTTL
+		return newRetryableHTTPClient(buildDefaultClient(), nil)
 	}
 
 	switch config.ClientType {
 	case "httplb":
-		tr := &httplbtransport{
-			MaxConnsPerHost:     transport.MaxConnsPerHost,
-			MaxIdleConnsPerHost: transport.MaxIdleConnsPerHost,
-		}
-		options := []httplb.ClientOption{
-			httplb.WithPicker(getPicker(config.PickerType)),
-			httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
-			httplb.WithRequestTimeout(client.Timeout),
-			httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, clientTTL)),
-			httplb.WithTransport("http", tr),
-			httplb.WithTransport("https", tr),
-		}
-		if config.Recycle {
-			options = append(options, httplb.WithRoundTripperMaxLifetime(recycleTTL))
-		}
-		return newRetryableHTTPClient(conf, httplb.NewClient(options...))
+		return buildHTTPLBClient(config)
 	default:
-		return newRetryableHTTPClient(conf, client)
+		return buildStandardClient(config)
 	}
 }
 
-func newRetryableHTTPClient(conf *config.Config, baseClient Client) Client {
-	cfg := &retryablehttp.Config{
-		MaxRetry:        conf.GetInt("Transformer.Client.Retryable.maxRetry", -1),
-		InitialInterval: conf.GetDuration("Transformer.Client.Retryable.initialInterval", 1, time.Second),
-		MaxInterval:     conf.GetDuration("Transformer.Client.Retryable.maxInterval", 30, time.Second),
-		MaxElapsedTime:  conf.GetDuration("Transformer.Client.Retryable.maxElapsedTime", 0, time.Second),
-		Multiplier:      conf.GetFloat64("Transformer.Client.Retryable.multiplier", 2.0),
+// buildDefaultClient creates a client with default settings
+func buildDefaultClient() *http.Client {
+	transport := buildDefaultTransport()
+	return &http.Client{
+		Transport: transport,
+		Timeout:   defaultClientTimeout,
 	}
+}
+
+// buildDefaultTransport creates a transport with default settings
+func buildDefaultTransport() *http.Transport {
+	return &http.Transport{
+		DisableKeepAlives:   defaultDisableKeepAlives,
+		MaxConnsPerHost:     defaultMaxConnsPerHost,
+		MaxIdleConnsPerHost: defaultMaxIdleConnsPerHost,
+		IdleConnTimeout:     defaultIdleConnTimeout,
+	}
+}
+
+// buildStandardClient creates a standard HTTP client with configuration applied
+func buildStandardClient(config *ClientConfig) Client {
+	transport := buildConfiguredTransport(config)
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   getClientTimeout(config),
+	}
+
+	retryableConfig := buildRetryableConfig(config)
+	if retryableConfig != nil {
+		return newRetryableHTTPClient(client, retryableConfig)
+	}
+	return client
+}
+
+// buildHTTPLBClient creates an HTTP load balancer client
+func buildHTTPLBClient(config *ClientConfig) Client {
+	transport := buildConfiguredTransport(config)
+
+	tr := &httplbtransport{
+		MaxConnsPerHost:     transport.MaxConnsPerHost,
+		MaxIdleConnsPerHost: transport.MaxIdleConnsPerHost,
+	}
+
+	options := []httplb.ClientOption{
+		httplb.WithPicker(getPicker(config.PickerType)),
+		httplb.WithIdleConnectionTimeout(transport.IdleConnTimeout),
+		httplb.WithRequestTimeout(getClientTimeout(config)),
+		httplb.WithResolver(resolver.NewDNSResolver(net.DefaultResolver, resolver.PreferIPv4, getClientTTL(config))),
+		httplb.WithTransport("http", tr),
+		httplb.WithTransport("https", tr),
+	}
+
+	if config.Recycle {
+		options = append(options, httplb.WithRoundTripperMaxLifetime(getRecycleTTL(config)))
+	}
+
+	client := httplb.NewClient(options...)
+	retryableConfig := buildRetryableConfig(config)
+
+	if retryableConfig != nil {
+		return newRetryableHTTPClient(client, retryableConfig)
+	}
+	return client
+}
+
+// buildConfiguredTransport creates a transport with configuration applied
+func buildConfiguredTransport(config *ClientConfig) *http.Transport {
+	transport := buildDefaultTransport()
+
+	if config != nil {
+		transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
+
+		if config.TransportConfig.MaxConnsPerHost != 0 {
+			transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
+		}
+		if config.TransportConfig.MaxIdleConnsPerHost != 0 {
+			transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
+		}
+		if config.TransportConfig.IdleConnTimeout != 0 {
+			transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
+		}
+	}
+
+	return transport
+}
+
+// buildRetryableConfig creates retryable configuration if enabled
+func buildRetryableConfig(clientConfig *ClientConfig) *retryablehttp.Config {
+	if clientConfig == nil || !clientConfig.RetryRudderErrors.Enabled {
+		return nil
+	}
+
+	// Use ClientConfig values directly
+	retryConfig := &retryablehttp.Config{
+		MaxRetry:        clientConfig.RetryRudderErrors.MaxRetry,
+		InitialInterval: clientConfig.RetryRudderErrors.InitialInterval,
+		MaxInterval:     clientConfig.RetryRudderErrors.MaxInterval,
+		MaxElapsedTime:  clientConfig.RetryRudderErrors.MaxElapsedTime,
+		Multiplier:      clientConfig.RetryRudderErrors.Multiplier,
+	}
+
+	// Check if this looks like an explicit configuration (has other values set)
+	hasExplicitConfig := clientConfig.RetryRudderErrors.InitialInterval != 0 ||
+		clientConfig.RetryRudderErrors.MaxInterval != 0 ||
+		clientConfig.RetryRudderErrors.Multiplier != 0
+
+	// Apply defaults only for truly unset values, but respect explicit MaxRetry=0
+	if retryConfig.MaxRetry == 0 && !hasExplicitConfig {
+		retryConfig.MaxRetry = defaultMaxRetry
+	}
+	if retryConfig.InitialInterval == 0 {
+		retryConfig.InitialInterval = defaultInitialInterval
+	}
+	if retryConfig.MaxInterval == 0 {
+		retryConfig.MaxInterval = defaultMaxInterval
+	}
+	if retryConfig.MaxElapsedTime == 0 {
+		retryConfig.MaxElapsedTime = defaultMaxElapsedTime
+	}
+	if retryConfig.Multiplier == 0 {
+		retryConfig.Multiplier = defaultMultiplier
+	}
+
+	return retryConfig
+}
+
+// Helper functions to get configuration values with defaults
+func getClientTimeout(config *ClientConfig) time.Duration {
+	if config != nil && config.ClientTimeout != 0 {
+		return config.ClientTimeout
+	}
+	return defaultClientTimeout
+}
+
+func getClientTTL(config *ClientConfig) time.Duration {
+	if config != nil && config.ClientTTL != 0 {
+		return config.ClientTTL
+	}
+	return defaultClientTTL
+}
+
+func getRecycleTTL(config *ClientConfig) time.Duration {
+	if config != nil && config.RecycleTTL != 0 {
+		return config.RecycleTTL
+	}
+	return defaultRecycleTTL
+}
+
+// Generic helper function for getting values with defaults
+func getValueOrDefault[T comparable](value, defaultValue T) T {
+	var zero T
+	if value != zero {
+		return value
+	}
+	return defaultValue
+}
+
+func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Config) Client {
+	if retryableConfig == nil {
+		retryableConfig = &retryablehttp.Config{
+			MaxRetry:        config.GetIntVar(defaultMaxRetry, defaultMaxRetry, "Transformer.Client.Retryable.maxRetry"),
+			InitialInterval: config.GetDurationVar(1, time.Second, "Transformer.Client.Retryable.initialInterval"),
+			MaxInterval:     config.GetDurationVar(30, time.Second, "Transformer.Client.Retryable.maxInterval"),
+			MaxElapsedTime:  config.GetDurationVar(0, time.Second, "Transformer.Client.Retryable.maxElapsedTime"),
+			Multiplier:      config.GetFloat64Var(defaultMultiplier, "Transformer.Client.Retryable.multiplier"),
+		}
+	}
+
 	return retryablehttp.NewRetryableHTTPClient(
-		cfg,
+		retryableConfig,
 		retryablehttp.WithHttpClient(baseClient),
 		retryablehttp.WithCustomRetryStrategy(func(resp *http.Response, err error) (bool, error) {
 			if err != nil {

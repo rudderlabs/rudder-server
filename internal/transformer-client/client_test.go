@@ -10,21 +10,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 )
 
-func setupTestConfig() {
-	config.Set("Transformer.Client.Retryable.initialInterval", 50*time.Millisecond)
-	config.Set("Transformer.Client.Retryable.maxInterval", 200*time.Millisecond)
-	config.Set("Transformer.Client.Retryable.maxElapsedTime", 5*time.Second)
-	config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-}
-
 func TestClient_RetryBehavior(t *testing.T) {
 	t.Run("retries on 503 with X-Rudder-Should-Retry header", func(t *testing.T) {
-		setupTestConfig()
-
 		var requestCount int
 		retryableResponses := 3
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,8 +36,23 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1, // Unlimited retries
+				InitialInterval: 50 * time.Millisecond,
+				MaxInterval:     200 * time.Millisecond,
+				MaxElapsedTime:  5 * time.Second,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -67,11 +72,6 @@ func TestClient_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("stops retrying after max elapsed time", func(t *testing.T) {
-		config.Set("Transformer.Client.Retryable.initialInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxInterval", 200*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxElapsedTime", 1*time.Second) // Short elapsed time
-		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
@@ -84,8 +84,23 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1, // Unlimited retries
+				InitialInterval: 50 * time.Millisecond,
+				MaxInterval:     200 * time.Millisecond,
+				MaxElapsedTime:  1 * time.Second, // Short elapsed time to test timeout
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -106,8 +121,6 @@ func TestClient_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("switches from retriable to non-retriable response", func(t *testing.T) {
-		setupTestConfig()
-
 		var requestCount int
 		switchAfter := 2
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -129,8 +142,23 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1, // Unlimited retries
+				InitialInterval: 50 * time.Millisecond,
+				MaxInterval:     200 * time.Millisecond,
+				MaxElapsedTime:  5 * time.Second,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -149,8 +177,6 @@ func TestClient_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("does not retry non-503 status codes", func(t *testing.T) {
-		setupTestConfig()
-
 		testCases := []struct {
 			name       string
 			statusCode int
@@ -173,8 +199,23 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 				clientConfig := &ClientConfig{
 					ClientTimeout: 10 * time.Second,
+					RetryRudderErrors: struct {
+						Enabled         bool
+						MaxRetry        int
+						InitialInterval time.Duration
+						MaxInterval     time.Duration
+						MaxElapsedTime  time.Duration
+						Multiplier      float64
+					}{
+						Enabled:         true,
+						MaxRetry:        -1, // Unlimited retries
+						InitialInterval: 50 * time.Millisecond,
+						MaxInterval:     200 * time.Millisecond,
+						MaxElapsedTime:  5 * time.Second,
+						Multiplier:      2.0,
+					},
 				}
-				client := NewClient(config.Default, clientConfig)
+				client := NewClient(clientConfig)
 
 				req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 				require.NoError(t, err)
@@ -194,8 +235,6 @@ func TestClient_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("does not retry 503 without X-Rudder-Should-Retry header", func(t *testing.T) {
-		setupTestConfig()
-
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
@@ -206,8 +245,23 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1, // Unlimited retries
+				InitialInterval: 50 * time.Millisecond,
+				MaxInterval:     200 * time.Millisecond,
+				MaxElapsedTime:  5 * time.Second,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -227,20 +281,29 @@ func TestClient_RetryBehavior(t *testing.T) {
 
 func TestClient_ErrorsNotRetried(t *testing.T) {
 	t.Run("connection errors are not retried", func(t *testing.T) {
-		config.Set("Transformer.Client.Retryable.maxRetry", 0)
-		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-
 		unusedPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 		url := fmt.Sprintf("http://localhost:%d", unusedPort)
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 1 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        0, // No retries
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     50 * time.Millisecond,
+				MaxElapsedTime:  500 * time.Millisecond,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -261,19 +324,27 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 	})
 
 	t.Run("DNS resolution errors are not retried", func(t *testing.T) {
-		// Set minimal retry configuration for error tests to ensure quick failures
-		config.Set("Transformer.Client.Retryable.maxRetry", 0)
-		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-
 		url := "http://thisdoesnotexist.invalid.domain.com"
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 1 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        0, // No retries
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     50 * time.Millisecond,
+				MaxElapsedTime:  500 * time.Millisecond,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -292,13 +363,6 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 	})
 
 	t.Run("context timeout errors are not retried", func(t *testing.T) {
-		// Set minimal retry configuration for error tests to ensure quick failures
-		config.Set("Transformer.Client.Retryable.maxRetry", 0)
-		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(2 * time.Second)
 			w.WriteHeader(http.StatusOK)
@@ -307,8 +371,23 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 500 * time.Millisecond,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        0, // No retries
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     50 * time.Millisecond,
+				MaxElapsedTime:  1 * time.Second,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -330,12 +409,6 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 
 func TestClient_ConfigurableRetrySettings(t *testing.T) {
 	t.Run("respects custom retry configuration", func(t *testing.T) {
-		config.Set("Transformer.Client.Retryable.maxRetry", 1) // Only 1 retry
-		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxElapsedTime", 500*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
@@ -348,8 +421,23 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        1, // Only 1 retry
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     50 * time.Millisecond,
+				MaxElapsedTime:  500 * time.Millisecond,
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -369,13 +457,6 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 	})
 
 	t.Run("demonstrates when client returns error with memory-fenced", func(t *testing.T) {
-		// Set configuration that will cause the retry strategy to return an error
-		config.Set("Transformer.Client.Retryable.maxRetry", 0) // No retries
-		config.Set("Transformer.Client.Retryable.initialInterval", 10*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxInterval", 50*time.Millisecond)
-		config.Set("Transformer.Client.Retryable.maxElapsedTime", 0) // No time limit
-		config.Set("Transformer.Client.Retryable.multiplier", 2.0)
-
 		var requestCount int
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestCount++
@@ -387,8 +468,23 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 
 		clientConfig := &ClientConfig{
 			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1, // Allow unlimited retries but limit by time
+				InitialInterval: 100 * time.Millisecond,
+				MaxInterval:     200 * time.Millisecond,
+				MaxElapsedTime:  1 * time.Millisecond, // Very short time to prevent retries
+				Multiplier:      2.0,
+			},
 		}
-		client := NewClient(config.Default, clientConfig)
+		client := NewClient(clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -398,7 +494,81 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-		require.Equal(t, 1, requestCount, "Should make exactly 1 request")
+		require.Equal(t, 1, requestCount, "Should make exactly 1 request due to very short MaxElapsedTime")
+
+		resp.Body.Close()
+	})
+}
+
+func TestClient_RetryDisabled(t *testing.T) {
+	t.Run("does not retry when RetryRudderErrors.Enabled is false", func(t *testing.T) {
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			// Return retriable error that would normally be retried
+			w.Header().Set("X-Rudder-Should-Retry", "true")
+			w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("Service temporarily unavailable"))
+		}))
+		defer server.Close()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled: false, // Explicitly disable retries
+			},
+		}
+		client := NewClient(clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		require.Equal(t, 1, requestCount, "Should make exactly 1 request - no retries")
+		require.True(t, elapsed < 100*time.Millisecond, "Should complete quickly without retries")
+
+		resp.Body.Close()
+	})
+
+	t.Run("does not retry when config is nil", func(t *testing.T) {
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			// Return retriable error that would normally be retried
+			w.Header().Set("X-Rudder-Should-Retry", "true")
+			w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("Service temporarily unavailable"))
+		}))
+		defer server.Close()
+
+		// Use nil config - should get retryable client with default settings
+		client := NewClient(nil)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		start := time.Now()
+		resp, err := client.Do(req)
+		elapsed := time.Since(start)
+
+		// With nil config, we actually get a retryable client with defaults, so it should retry
+		require.NoError(t, err)
+		require.True(t, requestCount > 1, "Should have retried with nil config (uses default retryable client)")
+		require.True(t, elapsed > 50*time.Millisecond, "Should take time due to retries")
 
 		resp.Body.Close()
 	})
