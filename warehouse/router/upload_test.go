@@ -970,6 +970,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			stagingFileIDs: []int64{1, 2},
 			stats:          mockUploadJobStats,
 			statsFactory:   stats.NOP,
+			now:            time.Now,
 		}
 
 		err := job.cleanupObjectStorageFiles()
@@ -1019,6 +1020,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			stagingFileIDs: []int64{1, 2},
 			stats:          mockUploadJobStats,
 			statsFactory:   stats.NOP,
+			now:            time.Now,
 		}
 
 		err := job.cleanupObjectStorageFiles()
@@ -1070,6 +1072,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			stagingFileIDs: []int64{1, 2, 3, 4},
 			stats:          mockUploadJobStats,
 			statsFactory:   stats.NOP,
+			now:            time.Now,
 		}
 
 		// Set up config for chunked deletion
