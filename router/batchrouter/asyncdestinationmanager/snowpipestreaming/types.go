@@ -101,6 +101,7 @@ type (
 		PrivateKey           string `mapstructure:"privateKey"`
 		PrivateKeyPassphrase string `mapstructure:"privateKeyPassphrase"`
 		Namespace            string `mapstructure:"namespace"`
+		EnableIceberg        bool   `mapstructure:"enableIceberg"`
 	}
 
 	importInfo struct {

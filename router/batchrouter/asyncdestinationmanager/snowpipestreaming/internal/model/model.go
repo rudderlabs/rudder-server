@@ -23,9 +23,10 @@ type (
 		PrivateKeyPassphrase string `json:"privateKeyPassphrase"`
 	}
 	TableConfig struct {
-		Database string `json:"database"`
-		Schema   string `json:"schema"`
-		Table    string `json:"table"`
+		Database      string `json:"database"`
+		Schema        string `json:"schema"`
+		Table         string `json:"table"`
+		EnableIceberg bool   `json:"enableIceberg"`
 	}
 
 	ChannelResponse struct {
