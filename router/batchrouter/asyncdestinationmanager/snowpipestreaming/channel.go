@@ -91,22 +91,7 @@ func (m *Manager) createChannel(
 		return response.(*model.ChannelResponse), nil
 	}
 
-	req := &model.CreateChannelRequest{
-		RudderIdentifier: rudderIdentifier,
-		Partition:        m.config.instanceID,
-		AccountConfig: model.AccountConfig{
-			Account:              destConf.Account,
-			User:                 destConf.User,
-			Role:                 destConf.Role,
-			PrivateKey:           whutils.FormatPemContent(destConf.PrivateKey),
-			PrivateKeyPassphrase: destConf.PrivateKeyPassphrase,
-		},
-		TableConfig: model.TableConfig{
-			Database: destConf.Database,
-			Schema:   destConf.Namespace,
-			Table:    tableName,
-		},
-	}
+	req := buildCreateChannelRequest(rudderIdentifier, m.config.instanceID, destConf, tableName)
 
 	resp, err := m.api.CreateChannel(ctx, req)
 	if err != nil {
