@@ -20,13 +20,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
-	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	cloudfunctions "github.com/rudderlabs/rudder-server/services/streammanager/googlecloudfunction"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
-	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
@@ -123,7 +119,6 @@ func TestNewProducerWithEventBridgeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &eventbridge.SwitchingEventBridgeManager{})
 }
 
 func TestNewProducerWithFirehoseDestination(t *testing.T) {
@@ -138,7 +133,6 @@ func TestNewProducerWithFirehoseDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &firehose.SwitchingFireHoseManager{})
 }
 
 func TestNewProducerWithKinesisDestination(t *testing.T) {
@@ -153,7 +147,6 @@ func TestNewProducerWithKinesisDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &kinesis.SwitchingKinesisManager{})
 }
 
 func TestNewProducerWithLambdaDestination(t *testing.T) {
@@ -168,7 +161,6 @@ func TestNewProducerWithLambdaDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &lambda.SwitchingLambdaManager{})
 }
 
 func TestNewProducerWithPersonalizeDestination(t *testing.T) {

@@ -29,7 +29,7 @@ type FireHoseClientV2 interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV2(destination *backendconfig.DestinationT, o common.Opts) (*FireHoseProducerV2, error) {
+func NewProducerV2(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
 	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "firehose")
 	if err != nil {
 		return nil, err

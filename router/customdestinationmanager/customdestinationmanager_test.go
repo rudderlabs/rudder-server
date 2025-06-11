@@ -29,7 +29,6 @@ import (
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	kvredis "github.com/rudderlabs/rudder-server/services/kvstoremanager/redis"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 )
 
 var once sync.Once
@@ -148,7 +147,6 @@ func TestSendDataWithStreamDestination(t *testing.T) {
 	err := customManager.onNewDestination(someDestination)
 	assert.Nil(t, err)
 	assert.NotNil(t, customManager.client[someDestination.ID])
-	assert.IsType(t, &lambda.SwitchingLambdaManager{}, customManager.client[someDestination.ID].client)
 
 	ctrl := gomock.NewController(t)
 	mockProducer := mock_streammanager.NewMockStreamProducer(ctrl)

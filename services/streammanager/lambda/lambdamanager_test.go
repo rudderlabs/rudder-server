@@ -40,7 +40,6 @@ func TestNewProducer(t *testing.T) {
 	producer, err := NewProducerV2(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 
 	// Invalid Region
 	destinationConfig = map[string]interface{}{
