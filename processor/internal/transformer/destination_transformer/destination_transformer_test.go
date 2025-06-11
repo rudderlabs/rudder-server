@@ -795,10 +795,7 @@ func TestEmbeddedWarehouseTransformer(t *testing.T) {
 				"receivedAt":        "2021-09-01T00:00:00.000Z",
 				"sentAt":            "2021-09-01T00:00:00.000Z",
 				"timestamp":         "2021-09-01T00:00:00.000Z",
-				"traits": map[string]any{
-					"email": float64(12),
-				},
-				"type": "track",
+				"type":              "track",
 			},
 			Metadata: types.Metadata{
 				MessageID:       "messageId" + strconv.Itoa(index+1),
