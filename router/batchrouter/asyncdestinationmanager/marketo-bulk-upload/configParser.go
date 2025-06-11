@@ -1,7 +1,7 @@
 package marketobulkupload
 
 import (
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 func (m *MarketoConfig) UnmarshalJSON(data []byte) error {

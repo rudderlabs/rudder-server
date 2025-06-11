@@ -29,9 +29,9 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -371,6 +371,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 			UseRudderStorage: useRudderStorage,
 			WorkspaceID:      batchJobs.Connection.Destination.WorkspaceID,
 		}),
+		Conf: brt.conf,
 	})
 	if err != nil {
 		return UploadResult{

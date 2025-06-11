@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 type MarketoAccessToken struct {

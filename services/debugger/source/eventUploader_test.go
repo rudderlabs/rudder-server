@@ -2,6 +2,7 @@ package sourcedebugger
 
 import (
 	"context"
+	"encoding/json"
 	"path"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -197,8 +198,6 @@ var _ = Describe("eventUploader", func() {
 	})
 })
 
-type sourceConfigMap map[string]interface{}
-
 var workspaceID = "workspace"
 
 var sampleBackendConfig = backendconfig.ConfigT{
@@ -213,7 +212,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
-			Config:   sourceConfigMap{"eventUpload": true},
+			Config:   json.RawMessage(`{"eventUpload": true}`),
 			Destinations: []backendconfig.DestinationT{
 				{
 					ID:                 DestinationIDEnabledA,

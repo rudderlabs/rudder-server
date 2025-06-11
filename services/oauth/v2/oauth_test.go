@@ -53,10 +53,10 @@ var _ = Describe("Oauth", func() {
 	Describe("Test FetchToken function", func() {
 		It("fetch token function call when cache is empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -90,10 +90,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is not empty and token is not expired", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			expectedResponse := &v2.AuthResponse{
@@ -131,10 +131,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is not empty and token is expired", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -176,10 +176,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call is successful and token is returned with 'expirationDate', should contain ExpirationDate information in AccountSecret{}", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -217,10 +217,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty and cpApiCall returns empty response", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -245,10 +245,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -279,10 +279,10 @@ var _ = Describe("Oauth", func() {
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend service is not available", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -320,10 +320,10 @@ var _ = Describe("Oauth", func() {
 		})
 		It("fetch token function call when cache is empty and cpApiCall returns a failed response due to config backend call failed due to timeout error", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -362,10 +362,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty and cpApiCall returns empty secret", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -389,10 +389,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty and cpApiCall returns empty string", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -416,10 +416,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty and cpApiCall returns nil secret", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -445,11 +445,11 @@ var _ = Describe("Oauth", func() {
 	Describe("Test RefreshToken function", func() {
 		It("refreshToken function call when stored cache is same as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -490,11 +490,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is different as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"providedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			// Invoke code under test
@@ -527,11 +527,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret but the cpApiCall failed with ref_token_invalid_grant error", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -576,11 +576,11 @@ var _ = Describe("Oauth", func() {
 		})
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is not available", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -619,11 +619,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response due to config backend service is failed due to timeout", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -662,11 +662,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of faulty implementation in some downstream service", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -713,11 +713,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -763,11 +763,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}`),
 			}
 
 			ctrl := gomock.NewController(GinkgoT())
@@ -903,10 +903,10 @@ var _ = Describe("Oauth", func() {
 	Describe("Test FetchToken with multiple go routines", func() {
 		It("fetch token function call when cache is not empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 			// Invoke code under test
 			expectedResponse := &v2.AuthResponse{
@@ -955,10 +955,10 @@ var _ = Describe("Oauth", func() {
 
 		It("fetch token function call when cache is empty", func() {
 			fetchTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
 			}
 			// Invoke code under test
 			expectedResponse := &v2.AuthResponse{
@@ -1001,11 +1001,11 @@ var _ = Describe("Oauth", func() {
 	Describe("Test RefreshToken with multiple go routines", func() {
 		It("refresh token function call when stored cache is same as provided secret", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
 			}
 			// Invoke code under test
 			expectedResponse := &v2.AuthResponse{
@@ -1053,11 +1053,11 @@ var _ = Describe("Oauth", func() {
 
 		It("refresh token function call when stored cache is same as provided secret with sequential and concurrent access", func() {
 			refreshTokenParams := &v2.RefreshTokenParams{
-				AccountID:   "123",
-				WorkspaceID: "456",
-				DestDefName: "testDest",
-				Destination: Destination,
-				Secret:      []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
+				AccountID:     "123",
+				WorkspaceID:   "456",
+				DestDefName:   "testDest",
+				DestinationID: Destination.ID,
+				Secret:        []byte(`{"access_token":"storedAccessToken","refresh_token":"dummyAccessToken","developer_token":"dummyDeveloperToken"}`),
 			}
 			// Invoke code under test
 			expectedResponse := &v2.AuthResponse{

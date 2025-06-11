@@ -75,7 +75,8 @@ func TestIntegration(t *testing.T) {
 		workspaceID := whutils.RandHex()
 		jobsDBPort := c.Port("jobsDb", 5432)
 		azEndPoint := fmt.Sprintf("localhost:%d", c.Port("azure", 10000))
-		s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
+		s3EndPoint := fmt.Sprintf("http://localhost:%d", c.Port("minio", 9000))
+		minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 		gcsEndPoint := fmt.Sprintf("http://localhost:%d/storage/v1/", c.Port("gcs", 4443))
 		transformerURL := fmt.Sprintf("http://localhost:%d", c.Port("transformer", 9090))
 
@@ -113,7 +114,7 @@ func TestIntegration(t *testing.T) {
 				batchStagingFiles:  true,
 				prerequisite: func(t testing.TB, ctx context.Context) {
 					t.Helper()
-					createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
+					createMinioBucket(t, ctx, minioEndpoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 				},
 				configOverride: map[string]any{
 					"region":           s3Region,
@@ -424,6 +425,7 @@ func TestIntegration(t *testing.T) {
 						UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(tc.conf),
 						WorkspaceID:      workspaceID,
 					}),
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 
@@ -441,12 +443,12 @@ func TestIntegration(t *testing.T) {
 			c := testcompose.New(t, compose.FilePaths([]string{"../testdata/docker-compose.minio.yml"}))
 			c.Start(context.Background())
 
-			s3EndPoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
-
+			s3EndPoint := fmt.Sprintf("http://localhost:%d", c.Port("minio", 9000))
+			minioEndpoint := fmt.Sprintf("localhost:%d", c.Port("minio", 9000))
 			ctx := context.Background()
 			namespace := whth.RandSchema(whutils.S3Datalake)
 
-			createMinioBucket(t, ctx, s3EndPoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
+			createMinioBucket(t, ctx, minioEndpoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
 
 			dest := backendconfig.DestinationT{
 				ID: "test_destination_id",

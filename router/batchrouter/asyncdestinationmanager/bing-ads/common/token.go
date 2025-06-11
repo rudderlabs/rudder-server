@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -30,16 +30,11 @@ type TokenSource struct {
 // authentication related utils
 
 func (ts *TokenSource) GenerateTokenV2() (*SecretStruct, error) {
-	destination := oauthv2.DestinationInfo{
-		WorkspaceID:    ts.WorkspaceID,
-		DefinitionName: ts.DestinationDefName,
-		ID:             ts.DestinationID,
-	}
 	refreshTokenParams := oauthv2.RefreshTokenParams{
-		WorkspaceID: ts.WorkspaceID,
-		DestDefName: ts.DestinationDefName,
-		AccountID:   ts.AccountID,
-		Destination: &destination,
+		WorkspaceID:   ts.WorkspaceID,
+		DestDefName:   ts.DestinationDefName,
+		AccountID:     ts.AccountID,
+		DestinationID: ts.DestinationID,
 	}
 	statusCode, authResponse, err := ts.OauthClientV2.FetchToken(&refreshTokenParams)
 	if err != nil && authResponse != nil {

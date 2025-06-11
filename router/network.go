@@ -7,17 +7,22 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/netutil"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -25,13 +30,20 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
 
-var contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
+var (
+	contentTypeRegex = regexp.MustCompile(`^(text/[a-z0-9.-]+)|(application/([a-z0-9.-]+\+)?(json|xml))$`)
+	ErrDenyPrivateIP = errors.New("access to private IPs is blocked")
+)
 
 // netHandle is the wrapper holding private variables
 type netHandle struct {
-	disableEgress bool
-	httpClient    sysUtils.HTTPClientI
-	logger        logger.Logger
+	disableEgress         bool
+	httpClient            sysUtils.HTTPClientI
+	logger                logger.Logger
+	blockPrivateIPsDryRun bool
+	blockPrivateIPs       bool
+	blockPrivateIPsCIDRs  netutil.CIDRs
+	destType              string
 }
 
 // NetHandle interface
@@ -66,6 +78,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			ResponseBody: []byte("200: outgoing disabled"),
 		}
 	}
+
 	client := network.httpClient
 	postInfo := structData
 	isRest := postInfo.Type == "REST"
@@ -83,10 +96,22 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		requestQueryParams := postInfo.QueryParams
 		var bodyFormat string
 		var bodyValue map[string]interface{}
-		for k, v := range requestBody {
-			if len(v.(map[string]interface{})) > 0 {
-				bodyFormat = k
-				bodyValue = v.(map[string]interface{})
+
+		for format, value := range requestBody {
+			bodyData, ok := value.(map[string]interface{})
+			if !ok {
+				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
+					"destType": network.destType,
+				})
+				return &utils.SendPostResponse{
+					StatusCode:   500,
+					ResponseBody: []byte("500 Invalid Router Payload: body value must be a map"),
+				}
+			}
+
+			if len(bodyData) > 0 {
+				bodyFormat = format
+				bodyValue = bodyData
 				break
 			}
 		}
@@ -156,7 +181,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				headers["Content-Encoding"] = "gzip"
 				payload = &buf
 			default:
-				panic(fmt.Errorf("bodyFormat: %s is not supported", bodyFormat))
+				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
+					"destType": network.destType,
+				})
+				return &utils.SendPostResponse{
+					StatusCode:   500,
+					ResponseBody: []byte(fmt.Sprintf("500 Invalid Router Payload: body format must be a map found format %s", bodyFormat)),
+				}
 			}
 		}
 
@@ -189,6 +220,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		resp, err := client.Do(req)
+		if errors.Is(err, ErrDenyPrivateIP) {
+			return &utils.SendPostResponse{
+				StatusCode:   403,
+				ResponseBody: []byte("403: access to private IPs is blocked"),
+			}
+		}
+
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   http.StatusGatewayTimeout,
@@ -241,23 +279,66 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 }
 
 // Setup initializes the module
-func (network *netHandle) Setup(destType string, netClientTimeout time.Duration) {
+func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) error {
 	network.logger.Info("Network Handler Startup")
-	// Reference http://tleyden.github.io/blog/2016/11/21/tuning-the-go-http-client-library-for-load-testing
+
+	network.blockPrivateIPsDryRun = getRouterConfigBool("dryRunMode", network.destType, false)
+	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
+	network.logger.Info("blockPrivateIPsDryRun: ", network.blockPrivateIPsDryRun)
+	network.logger.Info("blockPrivateIPs: ", network.blockPrivateIPs)
+
+	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetString("privateIPRanges", netutil.DefaultPrivateIPRanges), ","))
+	if err != nil {
+		network.logger.Error("Error loading private IP ranges", logger.NewErrorField(err))
+		return err
+	}
+	network.blockPrivateIPsCIDRs = privateIPRanges
+
 	defaultRoundTripper := http.DefaultTransport
 	defaultTransportPointer, ok := defaultRoundTripper.(*http.Transport)
 	if !ok {
-		panic(fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")) // TODO: Handle error
+		return fmt.Errorf("typecast of defaultRoundTripper to *http.Transport failed")
 	}
 	var defaultTransportCopy http.Transport
-	// Not safe to copy DefaultTransport
-	// https://groups.google.com/forum/#!topic/golang-nuts/JmpHoAd76aU
-	// Solved in go1.8 https://github.com/golang/go/issues/26013
 	misc.Copy(&defaultTransportCopy, defaultTransportPointer)
-	forceHTTP1 := getRouterConfigBool("forceHTTP1", destType, false)
+
+	originalDialContext := defaultTransportCopy.DialContext
+
+	dialContext := func(ctx context.Context, networkType, address string) (net.Conn, error) {
+		if network.blockPrivateIPsDryRun || network.blockPrivateIPs {
+			if networkType == "tcp" || networkType == "tcp4" || networkType == "tcp6" {
+				host, _, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, err
+				}
+				ips, err := net.LookupIP(host)
+				if err != nil {
+					return nil, err
+				}
+				for _, ip := range ips {
+					if network.blockPrivateIPsCIDRs.Contains(ip) {
+						// In dry run mode, just log and allow the connection
+						if network.blockPrivateIPsDryRun {
+							network.logger.Warnn("Connection to private ip detected in dry run mode", logger.NewStringField("ip", ip.String()))
+							return originalDialContext(ctx, networkType, address)
+						}
+						// In block mode, reject the connection
+						if network.blockPrivateIPs {
+							return nil, ErrDenyPrivateIP
+						}
+					}
+				}
+			}
+		}
+		return originalDialContext(ctx, networkType, address)
+	}
+
+	defaultTransportCopy.DialContext = dialContext
+
+	forceHTTP1 := getRouterConfigBool("forceHTTP1", network.destType, false)
 	network.logger.Info("forceHTTP1: ", forceHTTP1)
 	if forceHTTP1 {
-		network.logger.Info("Forcing HTTP1 connection for ", destType)
+		network.logger.Info("Forcing HTTP1 connection for ", network.destType)
 		defaultTransportCopy.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config
 		if defaultTransportCopy.TLSClientConfig != nil {
@@ -265,13 +346,14 @@ func (network *netHandle) Setup(destType string, netClientTimeout time.Duration)
 		}
 		tlsClientConfig.NextProtos = []string{"http/1.1"}
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
-		network.logger.Info(destType, defaultTransportCopy.TLSClientConfig.NextProtos)
+		network.logger.Info(network.destType, defaultTransportCopy.TLSClientConfig.NextProtos)
 	}
-	// by default we should have as many idle connections as the number of workers
-	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConns", "noOfWorkers")
-	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
-	network.logger.Info(destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
+
+	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
+	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
+	network.logger.Info(network.destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
 	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
 	network.logger.Info("netClientTimeout: ", netClientTimeout)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+	return nil
 }

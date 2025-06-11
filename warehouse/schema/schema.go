@@ -17,7 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -33,7 +33,7 @@ var deprecatedColumnsRegex = regexp.MustCompile(
 )
 
 type schemaRepo interface {
-	GetForNamespace(ctx context.Context, sourceID, destID, namespace string) (model.WHSchema, error)
+	GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error)
 	Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error)
 }
 
@@ -114,7 +114,6 @@ func New(
 	// since we need the schema to be the same for the entireduration of the job
 	whSchema, err := sh.schemaRepo.GetForNamespace(
 		ctx,
-		sh.warehouse.Source.ID,
 		sh.warehouse.Destination.ID,
 		sh.warehouse.Namespace,
 	)

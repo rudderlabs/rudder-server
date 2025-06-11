@@ -6,7 +6,7 @@ import (
 
 	"github.com/segmentio/go-hll"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 type TrackedUsersReport struct {

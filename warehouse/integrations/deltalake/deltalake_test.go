@@ -29,8 +29,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -550,6 +550,7 @@ func TestIntegration(t *testing.T) {
 				"accountKey":     credentials.AccountKey,
 				"bucketProvider": whutils.AzureBlob,
 			},
+			Conf: config.Default,
 		})
 		require.NoError(t, err)
 

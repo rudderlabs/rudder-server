@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -28,8 +28,8 @@ func (c *Client) CompareAndLog(
 	if c.loggedEvents.Load() >= int64(c.config.maxLoggedEvents.Load()) {
 		return
 	}
-	defer c.stats.comparisonTime.RecordDuration()()
 	go func() {
+		defer c.stats.comparisonTime.RecordDuration()()
 		c.compareAndLog(ctx, embeddedResponse, legacyResponse)
 	}()
 }

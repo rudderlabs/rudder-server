@@ -11,12 +11,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
@@ -191,7 +191,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			return rts.res
 		}
 		rts.refreshTokenParams.Secret = oldSecret
-		rts.refreshTokenParams.Destination = rts.destination
+		rts.refreshTokenParams.DestinationID = rts.destination.ID
 		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
 		if refErr != nil {
 			interceptorResp.Response = refErr.Error()
@@ -289,10 +289,10 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return httpResponseCreator(http.StatusInternalServerError, []byte(err.Error())), nil
 	}
 	rts.refreshTokenParams = &oauth.RefreshTokenParams{
-		AccountID:   rts.accountID,
-		WorkspaceID: rts.destination.WorkspaceID,
-		DestDefName: rts.destination.DefinitionName,
-		Destination: rts.destination,
+		AccountID:     rts.accountID,
+		WorkspaceID:   rts.destination.WorkspaceID,
+		DestDefName:   rts.destination.DefinitionName,
+		DestinationID: rts.destination.ID,
 	}
 	rts.req = req
 	preRoundTripStartTime := time.Now()

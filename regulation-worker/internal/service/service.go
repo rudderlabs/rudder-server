@@ -67,6 +67,8 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		jobStatus.Status = model.JobStatusAborted
 	}
 
+	stats.Default.NewTaggedStat("regulation_worker_attempted_user_deletions_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Count(len(job.Users))
+
 	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Since(deletionStart)
 	if jobStatus.Status == model.JobStatusComplete {
 		stats.Default.NewTaggedStat("regulation_worker_deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name}).Count(len(job.Users))

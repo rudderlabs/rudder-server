@@ -11,11 +11,11 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
@@ -441,19 +441,27 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 		)
 
 		if migrate {
-			if waiting != nil { // add current and waiting DS, no matter if the current ds needs a pair or not, it doesn't matter
-				migrateFrom = append(migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
-				insertBeforeDS = dsList[idx+1]
-				pendingJobsCount += waiting.numJobsPending + recordsLeft
-				liveDSCount += 2
-				waiting = nil
-			} else if !needsPair || len(migrateFrom) > 0 { // add only if the current DS doesn't need a pair or if we already have some DS in the list
+			if !needsPair {
 				migrateFrom = append(migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				insertBeforeDS = dsList[idx+1]
 				pendingJobsCount += recordsLeft
 				liveDSCount++
-			} else { // add the current DS as waiting for the next iteration to pickup
-				waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
+			} else {
+				if waiting != nil { // have another dataset waiting for a pair
+					migrateFrom = append(migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+					insertBeforeDS = dsList[idx+1]
+					pendingJobsCount += waiting.numJobsPending + recordsLeft
+					liveDSCount += 2
+					waiting = nil
+				} else if pendingJobsCount > 0 { // we already know that we'll be migrating another dataset with pending jobs, so can add this one too
+					migrateFrom = append(migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+					insertBeforeDS = dsList[idx+1]
+					pendingJobsCount += recordsLeft
+					liveDSCount++
+					waiting = nil
+				} else { // add the current DS as waiting for the next iteration to pickup
+					waiting = &dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft}
+				}
 			}
 		} else {
 			waiting = nil // if there was a DS waiting, we should remove it since its next dataset is not eligible for migration
@@ -663,7 +671,7 @@ func (jd *Handle) checkIfMigrateDS(ds dataSetT) (
 
 	needsPair = recordsLeft > 0 && float64(recordsLeft) < jd.conf.migration.jobMinRowsLeftMigrateThreshold.Load()*float64(jd.conf.MaxDSSize.Load())
 
-	if needsPair || recordsLeft == 0 || float64(delCount)/float64(totalCount) >= jd.conf.migration.jobDoneMigrateThres.Load() {
+	if needsPair || recordsLeft == 0 {
 		return true, needsPair, recordsLeft, nil
 	}
 

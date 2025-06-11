@@ -2,28 +2,19 @@ package processor
 
 import (
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type ConsentManagementInfo struct {
-	AllowedConsentIDs  []string
-	DeniedConsentIDs   []string
-	Provider           string
-	ResolutionStrategy string
-}
-
-type EventConsentManagementInfo struct {
-	AllowedConsentIDs  interface{} `json:"allowedConsentIds"`
 	DeniedConsentIDs   []string    `json:"deniedConsentIds"`
+	AllowedConsentIDs  interface{} `json:"allowedConsentIds"` // Not used currently but added for future use
 	Provider           string      `json:"provider"`
 	ResolutionStrategy string      `json:"resolutionStrategy"`
 }
@@ -57,48 +48,28 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 		proc.logger.Errorw("failed to get consent management info", "error", err.Error())
 	}
 
-	// If the event does not have any consents, do not filter any destinations
-	if len(consentManagementInfo.AllowedConsentIDs) == 0 && len(consentManagementInfo.DeniedConsentIDs) == 0 {
+	if len(consentManagementInfo.DeniedConsentIDs) == 0 {
 		return destinations
-	}
-
-	finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
-
-	// Emit a stat when the source sent resolution strategy is "or" or "and" in the event payload
-	// For custom provider, the resolution strategy is to be picked from the destination config
-	// Config backend still serves the value in the older format for backward compatibility
-	// Once we realize no SDKs are sending the data in this format, we have to update the config backend
-	// and also remove this stat.
-	if finalResolutionStrategy == "or" || finalResolutionStrategy == "and" {
-		proc.statsFactory.NewTaggedStat("processor_legacy_consent_resolution_strategy_events_count", stats.CountType, stats.Tags{"source_id": sourceID, "resolution_strategy": finalResolutionStrategy}).Count(1)
 	}
 
 	return lo.Filter(destinations, func(dest backendconfig.DestinationT, _ int) bool {
 		// Generic consent management
 		if cmpData := proc.getGCMData(sourceID, dest.ID, consentManagementInfo.Provider); len(cmpData.Consents) > 0 {
 
+			finalResolutionStrategy := consentManagementInfo.ResolutionStrategy
+
 			// For custom provider, the resolution strategy is to be picked from the destination config
 			if consentManagementInfo.Provider == "custom" {
 				finalResolutionStrategy = cmpData.ResolutionStrategy
 			}
 
-			// TODO: Remove "or" and "and" support once all the SDK clients stop sending it.
-			// Currently, it is added for backward compatibility.
 			switch finalResolutionStrategy {
-			case "any", "or":
-				if len(consentManagementInfo.AllowedConsentIDs) > 0 {
-					// The user must consent to at least one of the configured consents in the destination
-					return lo.Some(consentManagementInfo.AllowedConsentIDs, cmpData.Consents) || len(cmpData.Consents) == 0
-				}
-				// All of the configured consents should not be in denied
+			// The user must consent to at least one of the configured consents in the destination
+			case "or":
 				return !lo.Every(consentManagementInfo.DeniedConsentIDs, cmpData.Consents)
 
-			default: // "all" / "and"
-				if len(consentManagementInfo.AllowedConsentIDs) > 0 {
-					// The user must consent to all of the configured consents in the destination
-					return lo.Every(consentManagementInfo.AllowedConsentIDs, cmpData.Consents)
-				}
-				// None of the configured consents should be in denied
+			// The user must consent to all of the configured consents in the destination
+			default: // "and"
 				return len(lo.Intersect(cmpData.Consents, consentManagementInfo.DeniedConsentIDs)) == 0
 			}
 		}
@@ -215,14 +186,10 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (ConsentP
 		consentsConfig := providerConfig.Consents
 
 		if len(consentsConfig) > 0 && providerConfig.Provider != "" {
-			consentIDs := lo.Map(consentsConfig, func(consentsObj GenericConsentsConfig, _ int) string {
-				return strings.TrimSpace(consentsObj.Consent)
-			})
-
-			consentIDs = lo.FilterMap(
-				consentIDs,
-				func(consentID string, _ int) (string, bool) {
-					return consentID, consentID != ""
+			consentIDs := lo.FilterMap(
+				consentsConfig,
+				func(consentsObj GenericConsentsConfig, _ int) (string, bool) {
+					return consentsObj.Consent, consentsObj.Consent != ""
 				},
 			)
 
@@ -239,7 +206,6 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (ConsentP
 }
 
 func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
-	consentManagementInfoFromEvent := EventConsentManagementInfo{}
 	consentManagementInfo := ConsentManagementInfo{}
 	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
 		consentManagementObjBytes, mErr := jsonrs.Marshal(consentManagement)
@@ -247,55 +213,15 @@ func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo
 			return consentManagementInfo, fmt.Errorf("error marshalling consentManagement: %v", mErr)
 		}
 
-		unmErr := jsonrs.Unmarshal(consentManagementObjBytes, &consentManagementInfoFromEvent)
+		unmErr := jsonrs.Unmarshal(consentManagementObjBytes, &consentManagementInfo)
 		if unmErr != nil {
 			return consentManagementInfo, fmt.Errorf("error unmarshalling consentManagementInfo: %v", unmErr)
 		}
 
-		consentManagementInfo.DeniedConsentIDs = consentManagementInfoFromEvent.DeniedConsentIDs
-		consentManagementInfo.Provider = consentManagementInfoFromEvent.Provider
-		consentManagementInfo.ResolutionStrategy = consentManagementInfoFromEvent.ResolutionStrategy
-
-		// This is to support really old version of the JS SDK v3 that sent this data as an object
-		// for OneTrust provider.
-		// Handle AllowedConsentIDs based on its type (array or map)
-		switch val := consentManagementInfoFromEvent.AllowedConsentIDs.(type) {
-		case []interface{}:
-			// Convert []interface{} to []string
-			consentManagementInfo.AllowedConsentIDs = make([]string, 0, len(val))
-			for _, v := range val {
-				if strVal, ok := v.(string); ok {
-					consentManagementInfo.AllowedConsentIDs = append(consentManagementInfo.AllowedConsentIDs, strVal)
-				}
-			}
-		case []string:
-			// Already a string array
-			consentManagementInfo.AllowedConsentIDs = val
-		case map[string]interface{}:
-			// Use keys from the map (legacy OneTrust format)
-			// Also, sort the keys as the unmarshalling of map is not deterministic of the order of keys
-			// and it can cause flaky tests.
-			consentManagementInfo.AllowedConsentIDs = lo.Keys(val)
-			sort.Strings(consentManagementInfo.AllowedConsentIDs)
-		default:
-			consentManagementInfo.AllowedConsentIDs = []string{}
-		}
-
-		// Ideally, the clean up and filter is not needed for standard providers
-		// but useful for custom providers where users send this data directly
-		// to the SDKs.
-		sanitizePredicate := func(consent string, _ int) string {
-			return strings.TrimSpace(consent)
-		}
-
-		consentManagementInfo.AllowedConsentIDs = lo.Map(consentManagementInfo.AllowedConsentIDs, sanitizePredicate)
-		consentManagementInfo.DeniedConsentIDs = lo.Map(consentManagementInfo.DeniedConsentIDs, sanitizePredicate)
-
-		// Filter out empty values
 		filterPredicate := func(consent string, _ int) (string, bool) {
 			return consent, consent != ""
 		}
-		consentManagementInfo.AllowedConsentIDs = lo.FilterMap(consentManagementInfo.AllowedConsentIDs, filterPredicate)
+
 		consentManagementInfo.DeniedConsentIDs = lo.FilterMap(consentManagementInfo.DeniedConsentIDs, filterPredicate)
 	}
 

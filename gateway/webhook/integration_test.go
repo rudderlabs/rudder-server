@@ -16,15 +16,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -35,7 +36,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
@@ -145,10 +145,7 @@ func TestIntegrationWebhook(t *testing.T) {
 
 		// If source config exists in test case, unmarshal and set it
 		if len(tc.Input.Source.Config) > 0 {
-			var configOptions map[string]interface{}
-			err = jsonrs.Unmarshal([]byte(tc.Input.Source.Config), &configOptions)
-			require.NoError(t, err)
-			sConfig.Config = configOptions
+			sConfig.Config = []byte(tc.Input.Source.Config)
 		}
 
 		bc := backendconfigtest.NewConfigBuilder().WithSource(
@@ -242,11 +239,11 @@ func TestIntegrationWebhook(t *testing.T) {
 			b, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.Output.Response.StatusCode, resp.StatusCode)
+			require.Equal(t, tc.Output.Response.StatusCode, resp.StatusCode)
 			if resp.Header.Get("Content-Type") == "application/json" {
-				assert.JSONEq(t, strings.ToLower(string(tc.Output.Response.Body)), strings.ToLower(string(b)))
+				require.JSONEq(t, strings.ToLower(string(tc.Output.Response.Body)), strings.ToLower(string(b)))
 			} else {
-				assert.Equal(t, strings.ToLower(string(tc.Output.Response.Body)), strings.ToLower(fmt.Sprintf("%q", b)))
+				require.Equal(t, strings.ToLower(string(tc.Output.Response.Body)), strings.ToLower(fmt.Sprintf("%q", b)))
 			}
 			r, err := gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 				WorkspaceID: workspaceID,
@@ -258,19 +255,19 @@ func TestIntegrationWebhook(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			assert.Len(t, r.Jobs, len(tc.Output.Queue), "enqueued items mismatch")
+			require.Len(t, r.Jobs, len(tc.Output.Queue), "enqueued items mismatch")
 			for i, p := range tc.Output.Queue {
 				var batch struct {
 					Batch []json.RawMessage `json:"batch"`
 				}
 				err := jsonrs.Unmarshal(r.Jobs[i].EventPayload, &batch)
 				require.NoError(t, err)
-				assert.Len(t, batch.Batch, 1)
+				require.Len(t, batch.Batch, 1)
 
 				if gjson.GetBytes(p, "messageId").String() == uuid.Nil.String() {
 					rawMsgID := gjson.GetBytes(batch.Batch[0], "messageId").String()
 					msgID, err := uuid.Parse(rawMsgID)
-					assert.NoErrorf(t, err, "messageId (%q) is not a valid UUID", rawMsgID)
+					require.NoErrorf(t, err, "messageId (%q) is not a valid UUID", rawMsgID)
 
 					p, err = sjson.SetBytes(p, "messageId", msgID.String())
 					require.NoError(t, err)
@@ -280,19 +277,19 @@ func TestIntegrationWebhook(t *testing.T) {
 				anonID := gjson.GetBytes(batch.Batch[0], "anonymousId").String()
 
 				rudderID, err := kituuid.GetMD5UUID(userID + ":" + anonID)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				if anonID != "" {
 					p, err = sjson.SetBytes(p, "anonymousId", anonID)
-					assert.NoError(t, err)
+					require.NoError(t, err)
 				}
 
 				p, err = sjson.SetBytes(p, "rudderId", rudderID)
-				assert.NoError(t, err)
+				require.NoError(t, err)
 
 				if gjson.GetBytes(batch.Batch[0], "properties.writeKey").String() != "" {
 					p, err = sjson.SetBytes(p, "properties.writeKey", writeKey)
-					assert.NoError(t, err)
+					require.NoError(t, err)
 				}
 
 				if gjson.GetBytes(p, "receivedAt").String() != "" {
@@ -314,7 +311,7 @@ func TestIntegrationWebhook(t *testing.T) {
 				p, err = sjson.DeleteBytes(p, "context.query_parameters.writeKey")
 				require.NoError(t, err)
 
-				assert.JSONEq(t, string(p), string(batch.Batch[0]))
+				require.JSONEq(t, string(p), string(batch.Batch[0]))
 			}
 
 			require.Eventually(t, func() bool {
@@ -330,7 +327,7 @@ func TestIntegrationWebhook(t *testing.T) {
 			}, time.Second, time.Millisecond*10)
 
 			require.NoError(t, err)
-			assert.Len(t, r.Jobs, len(tc.Output.ErrQueue))
+			require.Len(t, r.Jobs, len(tc.Output.ErrQueue))
 			for i, p := range tc.Output.ErrQueue {
 				var errPayload []byte
 
@@ -372,7 +369,7 @@ func TestIntegrationWebhook(t *testing.T) {
 				errPayload, err = sjson.DeleteBytes(errPayload, "request.headers.Content-Length")
 				require.NoError(t, err)
 
-				assert.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
+				require.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}
 		})
 

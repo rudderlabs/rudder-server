@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -862,7 +862,6 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	t.Parallel()
 
 	const (
-		uploadID    = 1
 		namespace   = "namespace"
 		destID      = "destination_id"
 		sourceID    = "source_id"
@@ -871,14 +870,22 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	)
 
 	var (
-		ctx             = context.Background()
-		db              = setupDB(t)
-		repoUpload      = repo.NewUploads(db)
-		repoTableUpload = repo.NewTableUploads(db, config.New())
-		repoStaging     = repo.NewStagingFiles(db)
+		ctx = context.Background()
+		db  = setupDB(t)
+		now = time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+
+		repoUpload = repo.NewUploads(db, repo.WithNow(func() time.Time {
+			return now
+		}))
+		repoTableUpload = repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+			return now
+		}))
+		repoStaging = repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			return now
+		}))
 	)
 
-	for _, status := range []string{"exporting_data", "aborted"} {
+	for i, status := range []string{model.ExportedData, model.Aborted, model.ExportingDataFailed, model.ExportingData, model.Waiting} {
 		file := model.StagingFile{
 			WorkspaceID:   workspaceID,
 			Location:      "s3://bucket/path/to/file",
@@ -886,14 +893,12 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 			DestinationID: destID,
 			Status:        warehouseutils.StagingFileWaitingState,
 			Error:         nil,
-			FirstEventAt:  time.Now(),
-			LastEventAt:   time.Now(),
 		}.WithSchema([]byte(`{"type": "object"}`))
 
 		stagingID, err := repoStaging.Insert(ctx, &file)
 		require.NoError(t, err)
 
-		_, err = repoUpload.CreateWithStagingFiles(
+		uploadID, err := repoUpload.CreateWithStagingFiles(
 			ctx,
 			model.Upload{
 				SourceID:        sourceID,
@@ -901,77 +906,164 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 				Status:          status,
 				Namespace:       namespace,
 				DestinationType: destType,
+				Priority:        100 - (i + 1),
 			},
 			[]*model.StagingFile{
 				{
 					ID:            stagingID,
 					SourceID:      sourceID,
 					DestinationID: destID,
+					FirstEventAt:  now.Add(-time.Duration(i) * time.Minute),
+					LastEventAt:   now,
 				},
 			},
 		)
 		require.NoError(t, err)
+
+		for ti, tu := range []struct {
+			status string
+			err    string
+		}{
+			{
+				status: "exporting_data",
+				err:    "{}",
+			},
+			{
+				status: "exporting_data_failed",
+				err:    "error loading data",
+			},
+		} {
+			tableName := fmt.Sprintf("test_table_%d", ti+1)
+
+			err := repoTableUpload.Insert(ctx, uploadID, []string{tableName})
+			require.NoError(t, err)
+
+			err = repoTableUpload.Set(ctx, uploadID, tableName, repo.TableUploadSetOptions{
+				Status: &tu.status,
+				Error:  &tu.err,
+			})
+			require.NoError(t, err)
+		}
 	}
 
-	for i, tu := range []struct {
-		status string
-		err    string
-	}{
-		{
-			status: "exporting_data",
-			err:    "{}",
-		},
-		{
-			status: "exporting_data_failed",
-			err:    "error loading data",
-		},
-	} {
-		tableName := fmt.Sprintf("test_table_%d", i+1)
-
-		err := repoTableUpload.Insert(ctx, uploadID, []string{tableName})
-		require.NoError(t, err)
-
-		err = repoTableUpload.Set(ctx, uploadID, tableName, repo.TableUploadSetOptions{
-			Status: &tu.status,
-			Error:  &tu.err,
-		})
-		require.NoError(t, err)
-	}
-
-	t.Run("should return pending table uploads", func(t *testing.T) {
+	t.Run("ordering", func(t *testing.T) {
 		t.Parallel()
 
-		repoUpload := repo.NewUploads(db)
-		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, uploadID, destID)
-		require.NoError(t, err)
-		require.NotEmpty(t, pendingTableUploads)
+		t.Run("by first event at", func(t *testing.T) {
+			pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), destID, namespace, 100, now.Add(-time.Duration(4)*time.Minute), 5)
+			require.NoError(t, err)
+			require.NotEmpty(t, pendingTableUploads)
 
-		expectedPendingTableUploads := []model.PendingTableUpload{
-			{
-				UploadID:      uploadID,
-				DestinationID: destID,
-				Namespace:     namespace,
-				TableName:     "test_table_1",
-				Status:        "exporting_data",
-				Error:         "{}",
-			},
-			{
-				UploadID:      uploadID,
-				DestinationID: destID,
-				Namespace:     namespace,
-				TableName:     "test_table_2",
-				Status:        "exporting_data_failed",
-				Error:         "error loading data",
-			},
-		}
-		require.Equal(t, expectedPendingTableUploads, pendingTableUploads)
+			expectedPendingTableUploads := []model.PendingTableUpload{
+				{
+					UploadID:      5,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_1",
+					Status:        "exporting_data",
+					Error:         "{}",
+				},
+				{
+					UploadID:      5,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_2",
+					Status:        "exporting_data_failed",
+					Error:         "error loading data",
+				},
+			}
+			require.ElementsMatch(t, expectedPendingTableUploads, pendingTableUploads)
+		})
+
+		t.Run("by priority", func(t *testing.T) {
+			pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), destID, namespace, 95, now, 5)
+			require.NoError(t, err)
+			require.NotEmpty(t, pendingTableUploads)
+
+			expectedPendingTableUploads := []model.PendingTableUpload{
+				{
+					UploadID:      5,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_1",
+					Status:        "exporting_data",
+					Error:         "{}",
+				},
+				{
+					UploadID:      5,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_2",
+					Status:        "exporting_data_failed",
+					Error:         "error loading data",
+				},
+			}
+			require.ElementsMatch(t, expectedPendingTableUploads, pendingTableUploads)
+		})
+
+		t.Run("by id", func(t *testing.T) {
+			pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), destID, namespace, 100, now, 5)
+			require.NoError(t, err)
+			require.NotEmpty(t, pendingTableUploads)
+
+			expectedPendingTableUploads := []model.PendingTableUpload{
+				{
+					UploadID:      5,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_1",
+					Status:        "exporting_data",
+					Error:         "{}",
+				},
+				{
+					UploadID:      5,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_2",
+					Status:        "exporting_data_failed",
+					Error:         "error loading data",
+				},
+				{
+					UploadID:      4,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_1",
+					Status:        "exporting_data",
+					Error:         "{}",
+				},
+				{
+					UploadID:      4,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_2",
+					Status:        "exporting_data_failed",
+					Error:         "error loading data",
+				},
+				{
+					UploadID:      3,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_1",
+					Status:        "exporting_data",
+					Error:         "{}",
+				},
+				{
+					UploadID:      3,
+					DestinationID: destID,
+					Namespace:     namespace,
+					TableName:     "test_table_2",
+					Status:        "exporting_data_failed",
+					Error:         "error loading data",
+				},
+			}
+			require.ElementsMatch(t, expectedPendingTableUploads, pendingTableUploads)
+		})
 	})
 
 	t.Run("should return empty pending table uploads", func(t *testing.T) {
 		t.Parallel()
 
-		repoUpload := repo.NewUploads(db)
-		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), namespace, int64(-1), destID)
+		pendingTableUploads, err := repoUpload.PendingTableUploads(context.Background(), destID, namespace, 100, now, 2)
 		require.NoError(t, err)
 		require.Empty(t, pendingTableUploads)
 	})
@@ -979,10 +1071,9 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 	t.Run("cancelled context", func(t *testing.T) {
 		t.Parallel()
 
-		repoUpload := repo.NewUploads(db)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := repoUpload.PendingTableUploads(ctx, namespace, uploadID, destID)
+		_, err := repoUpload.PendingTableUploads(ctx, destID, namespace, 100, now, 1)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 }

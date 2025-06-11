@@ -86,16 +86,16 @@ func TestWHSchemasRepo(t *testing.T) {
 
 	t.Run("GetForNamespace", func(t *testing.T) {
 		t.Log("existing")
-		expectedSchema, err := r.GetForNamespace(ctx, sourceID, destinationID, namespace)
+		expectedSchema, err := r.GetForNamespace(ctx, destinationID, namespace)
 		require.NoError(t, err)
 		require.Equal(t, expectedSchema, schema)
 
 		t.Log("cancelled context")
-		_, err = r.GetForNamespace(cancelledCtx, sourceID, destinationID, namespace)
+		_, err = r.GetForNamespace(cancelledCtx, destinationID, namespace)
 		require.ErrorIs(t, err, context.Canceled)
 
 		t.Log("not found")
-		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound, notFound)
+		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
 		require.Empty(t, expectedSchema)
 	})
@@ -174,7 +174,7 @@ func TestWHSchemasRepo(t *testing.T) {
 		err = r.SetExpiryForDestination(ctx, destinationID, expiryTime)
 		require.NoError(t, err)
 
-		updatedSchema, err := r.GetForNamespace(ctx, sourceID, destinationID, namespace)
+		updatedSchema, err := r.GetForNamespace(ctx, destinationID, namespace)
 		require.NoError(t, err)
 		require.Equal(t, expiryTime, updatedSchema.ExpiresAt)
 	})
@@ -195,11 +195,11 @@ func TestWHSchemasRepo(t *testing.T) {
 		secondConnectionSchema.ID = secondID
 
 		// Verify both connections have the same initial schema
-		firstRetrieved, err := r.GetForNamespace(ctx, firstConnectionSchema.SourceID, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
+		firstRetrieved, err := r.GetForNamespace(ctx, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, firstConnectionSchema.Schema, firstRetrieved.Schema)
 
-		secondRetrieved, err := r.GetForNamespace(ctx, secondConnectionSchema.SourceID, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
+		secondRetrieved, err := r.GetForNamespace(ctx, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, firstConnectionSchema.Schema, secondRetrieved.Schema)
 
@@ -215,11 +215,11 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify both connections are updated with the new schema
-		firstRetrieved, err = r.GetForNamespace(ctx, firstConnectionSchema.SourceID, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
+		firstRetrieved, err = r.GetForNamespace(ctx, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, updatedSchema.Schema, firstRetrieved.Schema)
 
-		secondRetrieved, err = r.GetForNamespace(ctx, secondConnectionSchema.SourceID, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
+		secondRetrieved, err = r.GetForNamespace(ctx, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, updatedSchema.Schema, secondRetrieved.Schema)
 	})

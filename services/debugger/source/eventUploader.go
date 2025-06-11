@@ -3,17 +3,22 @@ package sourcedebugger
 //go:generate mockgen -destination=./mocks/mock.go -package=mocks github.com/rudderlabs/rudder-server/services/debugger/source SourceDebugger
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/grafana/jsonparser"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
@@ -132,7 +137,11 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
 			if source.Config != nil {
-				if source.Enabled && source.Config["eventUpload"] == true {
+				eventUploadEnabled, err := jsonparser.GetBoolean(source.Config, "eventUpload")
+				if err != nil && !errors.Is(err, jsonparser.KeyPathNotFoundError) && !errors.Is(err, jsonparser.NullValueError) {
+					h.log.Errorn("error while parsing eventUpload config", obskit.SourceID(source.ID), obskit.Error(err))
+				}
+				if source.Enabled && eventUploadEnabled {
 					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
 				}
 			}

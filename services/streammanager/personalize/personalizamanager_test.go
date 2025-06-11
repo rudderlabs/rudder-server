@@ -13,9 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/personalizeevents"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
 
 	"github.com/stretchr/testify/assert"

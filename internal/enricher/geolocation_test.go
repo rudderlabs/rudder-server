@@ -458,7 +458,7 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 				"secretAccessKey": minio.AccessKeySecret,
 			},
 			Logger: nil,
-			Conf:   nil,
+			Conf:   config.Default,
 		})
 	require.NoError(t, err)
 

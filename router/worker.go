@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -51,7 +50,6 @@ type worker struct {
 	deliveryTimeStat          stats.Measurement
 	routerDeliveryLatencyStat stats.Measurement
 	routerProxyStat           stats.Measurement
-	batchTimeStat             stats.Measurement
 	latestAssignedTime        time.Time
 	processingStartTime       time.Time
 }
@@ -198,11 +196,6 @@ func (w *worker) workLoop() {
 			destination := batchDestination.Destination
 			connection := conn.Connection
 			oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
-			// TODO: Remove later
-			w.logger.Debugn("[router worker]",
-				logger.NewBoolField("oauthV2Enabled", oauthV2Enabled),
-				obskit.DestinationType(destination.DestinationDefinition.Name),
-			)
 			if w.rt.isOAuthDestination && !oauthV2Enabled {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
@@ -273,14 +266,7 @@ func (w *worker) workLoop() {
 }
 
 func (w *worker) transformJobs(routerJobs []types.RouterJobT) []types.DestinationJobT {
-	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
-	destinationJobs := w.rt.transformer.Transform(
-		transformer.ROUTER_TRANSFORM,
-		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)},
-	)
-	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
-	w.recordStatsForFailedTransforms("routerTransform", destinationJobs)
-	return destinationJobs
+	return w.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)})
 }
 
 func (w *worker) transformJobsPerDestination(routerJobs []types.RouterJobT) []types.DestinationJobT {
@@ -329,11 +315,19 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-
+	var destinationJobs []types.DestinationJobT
 	if w.rt.isOAuthDestination && w.rt.reloadableConfig.oauthV2Enabled.Load() {
-		return w.transformJobsPerDestination(routerJobs)
+		destinationJobs = w.transformJobsPerDestination(routerJobs)
+	} else {
+		destinationJobs = w.transformJobs(routerJobs)
 	}
-	return w.transformJobs(routerJobs)
+	// the following stats (in combination with the limiter's timer stats) are used to capture the transform stage
+	// average latency, batching efficiency and max processing capacity
+	w.rt.batchSizeHistogramStat.Observe(float64(len(routerJobs)))
+	w.rt.routerTransformInputCountStat.Count(len(routerJobs))
+	w.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
+	w.countTransformedJobStatuses("routerTransform", destinationJobs)
+	return destinationJobs
 }
 
 func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
@@ -370,9 +364,6 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 			w.rt.logger.Debugn("traceParent is empty during router batch transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-
-	inputJobsLength := len(routerJobs)
-	w.rt.batchInputCountStat.Count(inputJobsLength)
 	destinationJobs := w.rt.transformer.Transform(
 		transformer.BATCH,
 		&types.TransformMessageT{
@@ -380,14 +371,20 @@ func (w *worker) batchTransform(routerJobs []types.RouterJobT) []types.Destinati
 			DestType: strings.ToLower(w.rt.destType),
 		},
 	)
+	// the following stats (in combination with the limiter's timer stats) are used to capture the batch stage
+	// average latency, batching efficiency and max processing capacity
+	w.rt.batchSizeHistogramStat.Observe(float64(len(routerJobs)))
+	w.rt.batchInputCountStat.Count(len(routerJobs))
 	w.rt.batchOutputCountStat.Count(len(destinationJobs))
-	w.recordStatsForFailedTransforms("batch", destinationJobs)
+	w.countTransformedJobStatuses("batch", destinationJobs)
 	return destinationJobs
 }
 
 func (w *worker) processDestinationJobs() {
 	// process limiter with dynamic priority
 	start := time.Now()
+	var attemptedRequests int
+	var attemptedJobs int
 	var successCount, errorCount int
 	limiter := w.rt.limiter.process
 	limiterStats := w.rt.limiter.stats.process
@@ -397,7 +394,6 @@ func (w *worker) processDestinationJobs() {
 	}()
 
 	ctx := context.TODO()
-	defer w.batchTimeStat.RecordDuration()()
 
 	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
 
@@ -510,6 +506,8 @@ func (w *worker) processDestinationJobs() {
 							panic(fmt.Errorf("different destinations are grouped together"))
 						}
 					}
+					attemptedRequests++
+					attemptedJobs += len(destinationJob.JobMetadataArray)
 					respStatusCode, respBody := w.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
 					respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					errorAt = routerutils.ERROR_AT_CUST
@@ -536,6 +534,8 @@ func (w *worker) processDestinationJobs() {
 							w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
 							errorAt = routerutils.ERROR_AT_DEL
 							if transformerProxy {
+								attemptedRequests++
+								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.proxyRequest(ctx, destinationJob, val)
 								for k, v := range resp.DontBatchDirectives {
 									dontBatchDirectives[k] = v
@@ -555,6 +555,8 @@ func (w *worker) processDestinationJobs() {
 							} else {
 								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
 								rdlTime := time.Now()
+								attemptedRequests++
+								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
@@ -740,6 +742,13 @@ func (w *worker) processDestinationJobs() {
 		}
 	}
 
+	// the following stat (in combination with the limiter's timer stats) are used to capture the process stage
+	// average latency and max processing capacity
+	w.rt.processJobsCountStat.Count(attemptedJobs)
+	w.rt.processJobsHistogramStat.Observe(float64(attemptedJobs))
+	w.rt.processRequestsCountStat.Count(attemptedRequests)
+	w.rt.processRequestsHistogramStat.Observe(float64(attemptedRequests))
+
 	// routerJobs/destinationJobs are processed. Clearing the queues.
 	w.routerJobs = nil
 	w.destinationJobs = nil
@@ -803,7 +812,6 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			WorkspaceID:      destinationJob.Destination.WorkspaceID,
 			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
 			ID:               destinationJob.Destination.ID,
-			Account:          destinationJob.Destination.DeliveryAccount,
 		},
 		Connection: destinationJob.Connection,
 		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
@@ -1214,24 +1222,27 @@ func (w *worker) trackStuckDelivery() chan struct{} {
 	return ch
 }
 
-func (w *worker) recordStatsForFailedTransforms(transformType string, transformedJobs []types.DestinationJobT) {
-	for _, destJob := range transformedJobs {
+func (w *worker) countTransformedJobStatuses(transformType string, transformedJobs []types.DestinationJobT) {
+	type countKey struct {
+		statusCode    string
+		workspaceID   string
+		destinationID string
+	}
+	counters := lo.CountValuesBy(transformedJobs, func(job types.DestinationJobT) countKey {
+		return countKey{
+			statusCode:    strconv.Itoa(job.StatusCode),
+			workspaceID:   job.Destination.WorkspaceID,
+			destinationID: job.Destination.ID,
+		}
+	})
+	for counterKey, count := range counters {
 		// Input Stats for batch/router transformation
 		stats.Default.NewTaggedStat("router_transform_num_jobs", stats.CountType, stats.Tags{
 			"destType":      w.rt.destType,
 			"transformType": transformType,
-			"statusCode":    strconv.Itoa(destJob.StatusCode),
-			"workspaceId":   destJob.Destination.WorkspaceID,
-			"destinationId": destJob.Destination.ID,
-		}).Count(1)
-		if destJob.StatusCode != http.StatusOK {
-			transformFailedCountStat := stats.Default.NewTaggedStat("router_transform_num_failed_jobs", stats.CountType, stats.Tags{
-				"destType":      w.rt.destType,
-				"transformType": transformType,
-				"statusCode":    strconv.Itoa(destJob.StatusCode),
-				"destination":   destJob.Destination.ID,
-			})
-			transformFailedCountStat.Count(1)
-		}
+			"statusCode":    counterKey.statusCode,
+			"workspaceId":   counterKey.workspaceID,
+			"destinationId": counterKey.destinationID,
+		}).Count(count)
 	}
 }

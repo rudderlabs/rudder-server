@@ -35,8 +35,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -1199,6 +1199,7 @@ func TestGRPC(t *testing.T) {
 						fm := &filemanager.Settings{
 							Provider: "AZURE_BLOB",
 							Config:   map[string]interface{}{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
+							Conf:     config.Default,
 						}
 						overrideWithEnv(ctx, fm)
 						require.Nil(t, fm.Config["accountName"])

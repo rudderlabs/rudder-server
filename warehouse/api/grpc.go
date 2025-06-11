@@ -17,7 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -755,6 +755,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 	settings := &filemanager.Settings{
 		Provider: request.Type,
 		Config:   request.Config,
+		Conf:     g.conf,
 	}
 
 	overrideWithEnv(ctx, settings)

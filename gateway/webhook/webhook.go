@@ -15,7 +15,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -23,10 +30,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/internal/types"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 
@@ -44,10 +50,13 @@ type batchWebhookT struct {
 	sourceType   string
 }
 
-//go:generate mockgen -destination=../../mocks/gateway/webhook.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/webhook Webhook
-type Webhook interface {
+//go:generate mockgen -destination=../../mocks/gateway/webhook.go -package=mocks_gateway github.com/rudderlabs/rudder-server/gateway/webhook WebhookRequestHandler
+type WebhookRequestHandler interface {
+	// RequestHandler handles the incoming webhook request
 	RequestHandler(w http.ResponseWriter, r *http.Request)
+	// Register registers a new webhook source type and starts a goroutine to process requests for that source type
 	Register(name string)
+	// Shutdown shuts down the webhook handler, closing all channels and waiting for goroutines to finish
 	Shutdown() error
 }
 
@@ -56,11 +65,10 @@ type HandleT struct {
 	requestQMu    sync.RWMutex
 	requestQ      map[string]chan *webhookT
 	batchRequestQ chan *batchWebhookT
-	netClient     *retryablehttp.Client
 	gwHandle      Gateway
 	stats         stats.Stats
-	ackCount      uint64
-	recvCount     uint64
+	ackCount      atomic.Uint64
+	recvCount     atomic.Uint64
 
 	batchRequestsWg  sync.WaitGroup
 	backgroundWait   func() error
@@ -72,7 +80,10 @@ type HandleT struct {
 		maxWebhookBatchSize        config.ValueLoader[int]
 		sourceListForParsingParams []string
 		forwardGetRequestForSrcMap map[string]struct{}
+		webhookV2HandlerEnabled    bool
 	}
+	statReporterCreator StatReporterCreator
+	httpClient          retryablehttp.HttpClient
 }
 
 type webhookSourceStatT struct {
@@ -116,7 +127,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	reqType := r.Context().Value(gwtypes.CtxParamCallType).(string)
 	arctx := r.Context().Value(gwtypes.CtxParamAuthRequestContext).(*gwtypes.AuthRequestContext)
 	webhook.logger.LogRequest(r)
-	atomic.AddUint64(&webhook.recvCount, 1)
+	webhook.recvCount.Add(1)
 	sourceDefName := arctx.SourceDefName
 
 	var postFrom url.Values
@@ -128,7 +139,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotParseForm")
 			stat.Report(webhook.stats)
 
@@ -138,13 +149,13 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInParseForm),
 				response.GetErrorStatusCode(response.ErrorInParseForm),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotParseMultiform")
 			stat.Report(webhook.stats)
 
@@ -154,7 +165,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInParseMultiform),
 				response.GetErrorStatusCode(response.ErrorInParseMultiform),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 		multipartForm = r.MultipartForm
@@ -166,7 +177,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = jsonrs.Marshal(multipartForm)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -175,13 +186,13 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInMarshal),
 				response.GetErrorStatusCode(response.ErrorInMarshal),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 	} else if len(postFrom) != 0 {
 		jsonByte, err = jsonrs.Marshal(postFrom)
 		if err != nil {
-			stat := webhook.gwHandle.NewSourceStat(arctx, reqType)
+			stat := webhook.statReporterCreator(arctx, reqType)
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -190,7 +201,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 				response.GetStatus(response.ErrorInMarshal),
 				response.GetErrorStatusCode(response.ErrorInMarshal),
 			)
-			atomic.AddUint64(&webhook.ackCount, 1)
+			webhook.ackCount.Add(1)
 			return
 		}
 	}
@@ -209,6 +220,9 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		sourceID:    arctx.SourceID,
 		authContext: arctx,
 	}
+	if webhook.config.webhookV2HandlerEnabled {
+		webhook.Register(sourceDefName)
+	}
 	webhook.requestQMu.RLock()
 	requestQ := webhook.requestQ[sourceDefName]
 	requestQ <- &req
@@ -216,10 +230,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Wait for batcher process to be done
 	resp := <-done
-	atomic.AddUint64(&webhook.ackCount, 1)
+	webhook.ackCount.Add(1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
-	ss := webhook.gwHandle.NewSourceStat(arctx, reqType)
+	ss := webhook.statReporterCreator(arctx, reqType)
 
 	if resp.Err != "" {
 		code := http.StatusBadRequest
@@ -228,7 +242,12 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kithttputil.GetRequestIP(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
-		ss.RequestFailed("error")
+		if resp.StatusCode == http.StatusTooManyRequests {
+			ss.RequestDropped()
+		} else {
+			failureReason := getWebhookFailureReason(resp.Err, resp.StatusCode)
+			ss.RequestFailed(failureReason)
+		}
 		ss.Report(webhook.stats)
 		return
 	}
@@ -242,6 +261,19 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(payload)
 	ss.RequestSucceeded()
 	ss.Report(webhook.stats)
+}
+
+func getWebhookFailureReason(errMsg string, statusCode int) string {
+	switch {
+	case errMsg == response.RequestBodyTooLarge:
+		return response.RequestBodyTooLarge
+	case statusCode != 0:
+		return response.SourceTransformerNonSuccessResponse
+	case errMsg != "":
+		return response.SourceTransformerResponseError
+	default:
+		return response.SourceTransformerResponseError
+	}
 }
 
 func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT) {
@@ -318,11 +350,19 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				eventRequest, err = prepareTransformerEventRequestV2(req.request)
 			}
 
+			if err == nil {
+				eventRequest, err = misc.SanitizeJSON(eventRequest)
+				if err != nil {
+					bt.webhook.logger.Errorn("invalid payload", obskit.Error(err), obskit.SourceType(breq.sourceType), obskit.SourceID(req.sourceID))
+					err = errors.New(response.InvalidJSON)
+				}
+			}
+
 			if err == nil && !json.Valid(eventRequest) {
-				err = errors.New((response.InvalidJSON))
+				err = errors.New(response.InvalidJSON)
 			}
 			if err == nil && len(eventRequest) > bt.webhook.config.maxReqSize.Load() {
-				err = errors.New((response.RequestBodyTooLarge))
+				err = errors.New(response.RequestBodyTooLarge)
 			}
 			if err == nil {
 				payload, err = sourceTransformAdapter.getTransformerEvent(req.authContext, eventRequest)
@@ -412,15 +452,19 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				if errMessage != "" {
 					bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
-					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, reason, response.GetErrorStatusCode(errMessage), 1)
+					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, bt.getWebhookFailureReason(errMessage, reason), response.GetErrorStatusCode(errMessage), 1)
 					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
-				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: resp.Err})
-				bt.webhook.logger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
-				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, "non 200 response", resp.StatusCode, 1)
+				failureReason := resp.Err
+				if failureReason == "" {
+					failureReason = response.SourceTransformerNonSuccessResponse
+				}
+				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
+				bt.webhook.logger.Errorn("webhook source transformation failed", obskit.SourceType(breq.sourceType), logger.NewStringField("errorMsg", resp.Err), logger.NewIntField("statusCode", int64(resp.StatusCode)))
+				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode), resp.StatusCode, 1)
 			}
 
 			webRequest.done <- resp
@@ -429,10 +473,24 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		// Saving failures to errors jobsdb
 		if len(failedWebhookPayloads) > 0 {
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
-				bt.webhook.logger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
+				bt.webhook.logger.Errorn("Saving webhook failures of sourceType", obskit.SourceType(breq.sourceType), obskit.Error(err))
 			}
 		}
 	}
+}
+
+func (bt *batchWebhookTransformerT) getWebhookFailureReason(errMessage, reason string) string {
+	if reason == "enqueueInGateway failed" {
+		switch errMessage {
+		case response.TooManyRequests:
+			return response.TooManyRequests
+		case response.RequestBodyTooLarge:
+			return response.RequestBodyTooLarge
+		default:
+			return reason
+		}
+	}
+	return reason
 }
 
 func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
@@ -443,10 +501,18 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 	if err != nil {
 		return err.Error()
 	}
-	return webhook.gwHandle.ProcessWebRequest(&req.writer, req.request, "batch", payload, req.authContext)
+	return webhook.gwHandle.ProcessTransformedWebhookRequest(&req.writer, req.request, "batch", payload, req.authContext)
 }
 
 func (webhook *HandleT) Register(name string) {
+	webhook.requestQMu.RLock()
+	_, ok := webhook.requestQ[name]
+	if ok {
+		webhook.requestQMu.RUnlock()
+		return
+	}
+	webhook.requestQMu.RUnlock()
+
 	webhook.requestQMu.Lock()
 	defer webhook.requestQMu.Unlock()
 	if _, ok := webhook.requestQ[name]; !ok {
@@ -476,11 +542,10 @@ func (webhook *HandleT) Shutdown() error {
 }
 
 func (webhook *HandleT) countWebhookErrors(sourceType string, arctx *gwtypes.AuthRequestContext, reason string, statusCode, count int) {
-	stat := webhook.gwHandle.NewSourceStat(arctx, "webhook")
 	webhook.stats.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
 		"writeKey":    arctx.WriteKey,
-		"workspaceId": stat.WorkspaceID,
-		"sourceID":    stat.SourceID,
+		"workspaceId": arctx.WorkspaceID,
+		"sourceID":    arctx.SourceID,
 		"statusCode":  strconv.Itoa(statusCode),
 		"sourceType":  sourceType,
 		"reason":      reason,
@@ -518,10 +583,12 @@ func newWebhookStat(sourceType string) *webhookSourceStatT {
 func (webhook *HandleT) printStats(ctx context.Context) {
 	var lastRecvCount, lastAckCount uint64
 	for {
-		if lastRecvCount != webhook.recvCount || lastAckCount != webhook.ackCount {
-			lastRecvCount = webhook.recvCount
-			lastAckCount = webhook.ackCount
-			webhook.logger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
+		if lastRecvCount != webhook.recvCount.Load() || lastAckCount != webhook.ackCount.Load() {
+			lastRecvCount = webhook.recvCount.Load()
+			lastAckCount = webhook.ackCount.Load()
+			webhook.logger.Debugn("WebhookRequestHandler Recv/Ack ",
+				logger.NewIntField("received", int64(webhook.recvCount.Load())),
+				logger.NewIntField("ack", int64(webhook.ackCount.Load())))
 		}
 
 		select {

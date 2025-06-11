@@ -16,11 +16,11 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -120,7 +120,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	batches := lo.Chunk(clientEvents, batchSize)
 
 	u.stat.NewTaggedStat(
-		"processor.transformer_request_batch_count",
+		"processor_transformer_request_batch_count",
 		stats.HistogramType,
 		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
@@ -160,8 +160,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		}
 	}
 
-	u.stat.NewStat("processor.transformer_sent", stats.CountType).Count(len(clientEvents))
-	u.stat.NewStat("processor.transformer_received", stats.CountType).Count(len(outClientEvents))
+	u.stat.NewStat("processor_transformer_sent", stats.CountType).Count(len(clientEvents))
+	u.stat.NewStat("processor_transformer_received", stats.CountType).Count(len(outClientEvents))
 
 	return types.Response{
 		Events:       outClientEvents,
@@ -170,10 +170,10 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, clientEvents []types.TransformerEvent) []types.TransformerResponse {
-	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
 	if len(clientEvents) == 0 {
 		return nil
 	}
+	start := time.Now()
 	// Call remote transformation
 	var (
 		rawJSON []byte
@@ -213,10 +213,10 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				panic(err)
 			}
 			if statusCode == transformerutils.StatusCPDown {
-				u.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(1)
+				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
 				return fmt.Errorf("control plane not reachable")
 			}
-			u.stat.NewStat("processor.control_plane_down", stats.GaugeType).Gauge(0)
+			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
 		endlessBackoff,
@@ -260,16 +260,16 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			u.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
 			panic(err)
 		}
-		// Count successful response events
-		u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
-		u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	}
+	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
+	u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
+	u.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
 	return transformerResponses
 }
 
@@ -307,7 +307,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			u.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
+			u.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr

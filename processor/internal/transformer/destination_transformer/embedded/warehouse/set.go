@@ -87,10 +87,14 @@ func addDataAndMetadata(tec *transformEventContext, key string, val any, isJSONK
 		return nil
 	}
 
-	dataType := dataTypeFor(tec.event.Metadata.DestinationType, key, val, isJSONKey)
+	dataType := dataTypeFor(tec.event.Metadata.DestinationType, safeKey, val, isJSONKey)
 	metadata[safeKey] = dataType
 
 	switch safeKey {
+	case "context_geo", "CONTEXT_GEO":
+		if err := addDataAndMetadataForContextGeoEnrichment(tec, data, metadata, safeKey, val); err != nil {
+			return fmt.Errorf("adding context geo enrichment: %w", err)
+		}
 	case "context_tracking_plan_version", "CONTEXT_TRACKING_PLAN_VERSION":
 		data[safeKey] = convertToFloat64IfInteger(val)
 	case "context_violation_errors", "CONTEXT_VIOLATION_ERRORS":

@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
@@ -30,7 +31,6 @@ import (
 	trand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -235,6 +235,7 @@ func ArchivalScenario(
 					"secretAccessKey": minioResource.AccessKeySecret,
 				},
 			}),
+			Conf: config.Default,
 		})
 		require.NoError(t, err, "it should be able to create a file manager")
 		fileObjects, err := fm.ListFilesWithPrefix(

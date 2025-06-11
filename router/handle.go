@@ -19,12 +19,12 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
@@ -99,12 +99,17 @@ type Handle struct {
 	backendConfigInitialized       chan bool
 	responseQ                      chan workerJobStatus
 	throttlingCosts                atomic.Pointer[types.EventTypeThrottlingCost]
+	batchSizeHistogramStat         stats.Measurement
 	batchInputCountStat            stats.Measurement
 	batchOutputCountStat           stats.Measurement
 	routerTransformInputCountStat  stats.Measurement
 	routerTransformOutputCountStat stats.Measurement
 	batchInputOutputDiffCountStat  stats.Measurement
 	routerResponseTransformStat    stats.Measurement
+	processRequestsHistogramStat   stats.Measurement
+	processRequestsCountStat       stats.Measurement
+	processJobsHistogramStat       stats.Measurement
+	processJobsCountStat           stats.Measurement
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
 	isolationStrategy              isolation.Strategy
@@ -289,24 +294,32 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				flush()
 			}
 		} else {
-			stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error(), "workspaceId": job.WorkspaceId}).Increment()
+			discardedJobCountStat := stats.Default.NewTaggedStat("router_iterator_stats_discarded_job_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition, "reason": err.Error(), "workspaceId": job.WorkspaceId})
+			discardedJobCountStat.Increment()
 			iterator.Discard(job)
 			discardedCount++
 			if rt.stopIteration(err) {
-				iterator.Stop()
+				discarded := iterator.Stop() // stop the iterator and count all additional jobs discarded by operator by using the same reason as the last job that was discarded
+				discardedJobCountStat.Count(discarded)
 				iterationInterrupted = true
 				break
 			}
 		}
 	}
+
+	flush()
 	iteratorStats := iterator.Stats()
 	stats.Default.NewTaggedStat("router_iterator_stats_query_count", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.QueryCount)
 	stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.TotalJobs)
 	stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition}).Gauge(iteratorStats.DiscardedJobs)
 
-	flush()
+	// the following stat (in combination with the limiter's timer stats) is used to track the pickup loop's average latency  and max processing capacity
+	stats.Default.NewTaggedStat("router_pickup_total_jobs_count", stats.CountType, stats.Tags{"destType": rt.destType, "partition": partition}).Count(iteratorStats.TotalJobs)
+
 	rt.pipelineDelayStats(partition, firstJob, lastJob)
 	limitsReached = iteratorStats.LimitsReached && !iterationInterrupted
+
+	// sleep for a while if we are discarding too many jobs, so that we don't have a loop running continuously without producing events
 	eligibleForFailingJobsPenalty := iteratorStats.LimitsReached || iterationInterrupted
 	discardedRatio := float64(iteratorStats.DiscardedJobs) / float64(iteratorStats.TotalJobs)
 	// If the discarded ratio is greater than the penalty threshold,

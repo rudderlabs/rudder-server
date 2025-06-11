@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	wtypes "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/types"
@@ -41,6 +42,17 @@ var _ = struct {
 	Meta     map[string]string
 	Property string
 }(types.ValidationError{})
+
+// Compile-time check to ensure Geolocation struct remains unchanged
+var _ = struct {
+	IP       string
+	City     string
+	Country  string
+	Region   string
+	Postal   string
+	Location string
+	Timezone string
+}(enricher.Geolocation{})
 
 type Opts func(t *Transformer)
 
@@ -86,7 +98,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, op
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
 	t.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Warehouse.Transformer.Sampling.maxLoggedEvents")
-	t.config.concurrentTransformations = conf.GetReloadableIntVar(10, 1, "Warehouse.concurrentTransformations")
+	t.config.concurrentTransformations = conf.GetReloadableIntVar(1, 1, "Warehouse.concurrentTransformations")
 	t.config.instanceID = conf.GetString("INSTANCE_ID", "1")
 
 	var err error

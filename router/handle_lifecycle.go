@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,8 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/oauth"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -55,7 +54,6 @@ func (rt *Handle) Setup(
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
 	pendingEventsRegistry rmetrics.PendingEventsRegistry,
-	account *backendconfig.AccountWithDefinition,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
@@ -88,9 +86,12 @@ func (rt *Handle) Setup(
 	rt.crashRecover()
 	rt.responseQ = make(chan workerJobStatus, rt.reloadableConfig.jobQueryBatchSize.Load())
 	if rt.netHandle == nil {
-		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false)}
+		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false), destType: destType}
 		netHandle.logger = rt.logger.Child("network")
-		netHandle.Setup(destType, rt.netClientTimeout)
+		err := netHandle.Setup(config, rt.netClientTimeout)
+		if err != nil {
+			panic(fmt.Errorf("error setting up network handler: %w", err))
+		}
 		rt.netHandle = netHandle
 	}
 
@@ -108,9 +109,12 @@ func (rt *Handle) Setup(
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destType, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destType, 64)
 	rt.workerInputBufferSize = getRouterConfigInt("noOfJobsPerChannel", destType, 1000)
-
-	rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
-
+	// Explicitly control destination types for which we want to support batching
+	// Avoiding stale configurations still having KAFKA batching enabled to cause issues with later versions of rudder-server
+	batchingSupportedDestinations := config.GetStringSliceVar([]string{"AM"}, "Router.batchingSupportedDestinations")
+	if lo.Contains(batchingSupportedDestinations, strings.ToUpper(rt.destType)) {
+		rt.enableBatching = config.GetBoolVar(false, "Router."+rt.destType+".enableBatching")
+	}
 	rt.drainConcurrencyLimit = config.GetReloadableIntVar(1, 1, getRouterConfigKeys("eventOrderDrainedConcurrencyLimit", destType)...)
 	rt.eventOrderKeyThreshold = config.GetReloadableIntVar(200, 1, getRouterConfigKeys("eventOrderKeyThreshold", destType)...)
 	rt.eventOrderDisabledStateDuration = config.GetReloadableDurationVar(20, time.Minute, getRouterConfigKeys("eventOrderDisabledStateDuration", destType)...)
@@ -120,11 +124,16 @@ func (rt *Handle) Setup(
 
 	statTags := stats.Tags{"destType": rt.destType}
 	rt.tracer = stats.Default.NewTracer("router")
+	rt.batchSizeHistogramStat = stats.Default.NewTaggedStat("router_batch_size", stats.HistogramType, statTags)
 	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)
 	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, statTags)
 	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
 	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
 	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
+	rt.processJobsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_hist", stats.HistogramType, statTags)
+	rt.processJobsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
+	rt.processRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_requests_hist", stats.HistogramType, statTags)
+	rt.processRequestsCountStat = stats.Default.NewTaggedStat("router_process_requests_count", stats.CountType, statTags)
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
@@ -133,12 +142,7 @@ func (rt *Handle) Setup(
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 		rt.transformerFeaturesService,
 	)
-	destination := oauthv2.DestinationInfo{
-		Config:  destinationDefinition.Config,
-		Account: account,
-	}
-
-	rt.isOAuthDestination, _ = destination.IsOAuthDestination(common.RudderFlowDelivery)
+	rt.isOAuthDestination = oauth.IsOAuthDestination(destinationDefinition.Config)
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 
 	rt.isBackendConfigInitialized = false

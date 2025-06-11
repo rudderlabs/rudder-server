@@ -226,7 +226,6 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.transformer = mockTransformer
 
@@ -331,7 +330,6 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.transformer = mockTransformer
 
@@ -443,7 +441,6 @@ var _ = Describe("Proxy Request", func() {
 				destinationdebugger.NewNoOpService(),
 				throttler.NewNoOpThrottlerFactory(),
 				rmetrics.NewPendingEventsRegistry(),
-				nil,
 			)
 			router.transformer = mockTransformer
 
@@ -517,6 +514,7 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			transformer:                    mockTransformer,
 			destType:                       "some_dest_type",
 			logger:                         logger.NOP,
+			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			isOAuthDestination:             true,
@@ -676,6 +674,7 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 			transformer:                    mockTransformer,
 			destType:                       "some_dest_type",
 			logger:                         logger.NOP,
+			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			isOAuthDestination:             false,

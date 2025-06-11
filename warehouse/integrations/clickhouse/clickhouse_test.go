@@ -556,26 +556,36 @@ func TestIntegration(t *testing.T) {
 			fileName                    string
 			S3EngineEnabledWorkspaceIDs []string
 			disableNullable             bool
+			disableLoadTableStats       bool
 		}{
 			{
-				name:     "normal loading using downloading of load files",
-				fileName: "testdata/load.csv.gz",
+				name:                  "normal loading using downloading of load files",
+				fileName:              "testdata/load.csv.gz",
+				disableLoadTableStats: false,
 			},
 			{
 				name:                        "using s3 engine for loading",
 				S3EngineEnabledWorkspaceIDs: []string{workspaceID},
 				fileName:                    "testdata/load-copy.csv.gz",
+				disableLoadTableStats:       false,
 			},
 			{
-				name:            "normal loading using downloading of load files with disable nullable",
-				fileName:        "testdata/load.csv.gz",
-				disableNullable: true,
+				name:                  "normal loading using downloading of load files with disable nullable",
+				fileName:              "testdata/load.csv.gz",
+				disableNullable:       true,
+				disableLoadTableStats: false,
 			},
 			{
 				name:                        "using s3 engine for loading with disable nullable",
 				S3EngineEnabledWorkspaceIDs: []string{workspaceID},
 				fileName:                    "testdata/load-copy.csv.gz",
 				disableNullable:             true,
+				disableLoadTableStats:       false,
+			},
+			{
+				name:                  "normal loading using downloading of load files with disable load table stats",
+				fileName:              "testdata/load.csv.gz",
+				disableLoadTableStats: true,
 			},
 		}
 
@@ -584,6 +594,7 @@ func TestIntegration(t *testing.T) {
 				conf := config.New()
 				conf.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", tc.S3EngineEnabledWorkspaceIDs)
 				conf.Set("Warehouse.clickhouse.disableNullable", tc.disableNullable)
+				conf.Set("Warehouse.clickhouse.disableLoadTableStats", tc.disableLoadTableStats)
 
 				ch := clickhouse.New(conf, logger.NOP, stats.NOP)
 
@@ -623,6 +634,7 @@ func TestIntegration(t *testing.T) {
 						"region":          region,
 						"enableSSE":       false,
 					},
+					Conf: config.Default,
 				})
 				require.NoError(t, err)
 
@@ -732,8 +744,11 @@ func TestIntegration(t *testing.T) {
 				}
 
 				t.Log("Loading data into table")
-				_, err = ch.LoadTable(ctx, table)
+				loadTableStats, err := ch.LoadTable(ctx, table)
 				require.NoError(t, err)
+				if !tc.disableLoadTableStats {
+					require.NotEmpty(t, loadTableStats.RowsInserted)
+				}
 
 				t.Log("Drop table")
 				err = ch.DropTable(ctx, table)

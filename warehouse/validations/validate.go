@@ -14,8 +14,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -491,6 +491,7 @@ func createFileManager(dest *backendconfig.DestinationT) (filemanager.FileManage
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(conf),
 			WorkspaceID:      dest.WorkspaceID,
 		}),
+		Conf: config.Default,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating file manager: %w", err)

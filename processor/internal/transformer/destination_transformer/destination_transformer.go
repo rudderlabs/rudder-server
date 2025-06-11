@@ -14,8 +14,8 @@ import (
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 
@@ -137,7 +137,7 @@ type Client struct {
 	}
 
 	loggedEvents        atomic.Int64
-	samplingFileManager *filemanager.S3Manager
+	samplingFileManager filemanager.S3Manager
 }
 
 func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -174,7 +174,7 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 	batches := lo.Chunk(clientEvents, batchSize)
 
 	d.stat.NewTaggedStat(
-		"processor.transformer_request_batch_count",
+		"processor_transformer_request_batch_count",
 		stats.HistogramType,
 		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
@@ -218,8 +218,8 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 		}
 	}
 
-	d.stat.NewStat("processor.transformer_sent", stats.CountType).Count(len(clientEvents))
-	d.stat.NewStat("processor.transformer_received", stats.CountType).Count(len(outClientEvents))
+	d.stat.NewStat("processor_transformer_sent", stats.CountType).Count(len(clientEvents))
+	d.stat.NewStat("processor_transformer_received", stats.CountType).Count(len(outClientEvents))
 
 	return types.Response{
 		Events:       outClientEvents,
@@ -228,10 +228,10 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 }
 
 func (d *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, data []types.TransformerEvent) ([]types.TransformerResponse, error) {
-	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	if len(data) == 0 {
 		return nil, nil
 	}
+	start := time.Now()
 	compactRequestPayloads := d.compactRequestPayloads() // consistent state for the entire request
 	// Call remote transformation
 	rawJSON, err := d.getRequestPayload(data, compactRequestPayloads)
@@ -268,15 +268,17 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		if err != nil {
 			return nil, err
 		}
-		d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	default:
 		for i := range data {
 			transformEvent := &data[i]
 			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
 			transformerResponses = append(transformerResponses, resp)
 		}
-		d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 	}
+	d.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
+	d.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
+	d.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
+
 	return transformerResponses, nil
 }
 
@@ -317,7 +319,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 
 			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			d.stat.NewTaggedStat("processor.transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
+			d.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr
@@ -466,7 +468,7 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 	return jsonrs.Marshal(data)
 }
 
-func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("DTSampling.Bucket", "processor-dt-sampling")
 		endpoint         = conf.GetString("DTSampling.Endpoint", "")
@@ -490,7 +492,7 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S
 		"region":           region,
 	}
 
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
 		return conf.GetDuration("DTSampling.Timeout", 120, time.Second)
 	})
 }

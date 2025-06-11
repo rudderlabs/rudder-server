@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
@@ -33,9 +32,8 @@ func (t *Transformer) CompareResponsesAndUpload(ctx context.Context, events []ty
 	if t.loggedSamples.Load() >= int64(t.config.maxLoggedEvents.Load()) {
 		return
 	}
-	defer t.stats.comparisonTime.RecordDuration()()
-
 	go func() {
+		defer t.stats.comparisonTime.RecordDuration()()
 		t.compareResponsesAndUpload(ctx, events, legacyResponse)
 	}()
 }
@@ -71,7 +69,7 @@ func (t *Transformer) compareResponsesAndUpload(ctx context.Context, events []ty
 	)
 }
 
-func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
+func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Warehouse.Transformer.Sampling.Bucket")
 		regionHint       = conf.GetStringVar("us-east-1", "Warehouse.Transformer.Sampling.RegionHint", "AWS_S3_REGION_HINT")
@@ -92,21 +90,20 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S
 		"disableSSL":       disableSSL,
 		"enableSSE":        enableSSE,
 	}
-	return filemanager.NewS3Manager(s3Config, log.Withn(logger.NewStringField("component", "wt-uploader")), func() time.Duration {
+	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "wt-uploader")), func() time.Duration {
 		return conf.GetDuration("Warehouse.Transformer.Sampling.Timeout", 120, time.Second)
 	})
 }
 
 func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse, embeddedResponse types.Response) string {
-	sortTransformerResponsesByJobID(legacyResponse.Events)
-	sortTransformerResponsesByJobID(legacyResponse.FailedEvents)
-	sortTransformerResponsesByJobID(embeddedResponse.Events)
-	sortTransformerResponsesByJobID(embeddedResponse.FailedEvents)
+	if len(legacyResponse.Events) == 0 && len(legacyResponse.FailedEvents) == 0 {
+		return "" // Don't diff in case there is no response from transformer
+	}
 
 	// If the event counts differ, return all events in the transformation
 	if len(legacyResponse.Events) != len(embeddedResponse.Events) || len(legacyResponse.FailedEvents) != len(embeddedResponse.FailedEvents) {
 		t.stats.mismatchedEvents.Observe(float64(len(events)))
-		return "Mismatch in response for events or failed events"
+		return fmt.Sprintf("Mismatch in response for events or failed events with legacy response: %s", stringify.Any(legacyResponse))
 	}
 
 	var (
@@ -124,7 +121,9 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 		if strings.Contains(diff, "\"0001-01-01T00:00:00.000Z\"") {
 			continue
 		}
-		if strings.Contains(diff, "\"auto-\"") {
+		// If messageID's are not present, we add it in rudder-transformer
+		// https://github.com/rudderlabs/rudder-transformer/blob/develop/src/warehouse/index.js#L675-L677
+		if strings.Contains(diff, "\"auto-") {
 			continue
 		}
 		if differedEventsCount == 0 {
@@ -135,12 +134,6 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 	t.stats.matchedEvents.Observe(float64(len(legacyResponse.Events) - differedEventsCount))
 	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
 	return sampleDiff
-}
-
-func sortTransformerResponsesByJobID(responses []types.TransformerResponse) {
-	slices.SortStableFunc(responses, func(a, b types.TransformerResponse) int {
-		return int(a.Metadata.JobID - b.Metadata.JobID)
-	})
 }
 
 func write(w io.WriteCloser, data []string) error {

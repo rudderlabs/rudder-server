@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -139,6 +139,7 @@ type Deltalake struct {
 		retryMinWait           time.Duration
 		retryMaxWait           time.Duration
 		maxErrorLength         int
+		useAWSV2               bool
 	}
 }
 
@@ -156,7 +157,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.config.retryMinWait = conf.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
 	dl.config.retryMaxWait = conf.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
 	dl.config.maxErrorLength = conf.GetInt("Warehouse.deltalake.maxErrorLength", 64*1024) // 64 KB
-
+	dl.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
 	return dl
 }
 
@@ -951,8 +952,13 @@ func (d *Deltalake) authQuery() (string, error) {
 	if d.ObjectStorage != warehouseutils.S3 || !d.canUseAuth() {
 		return "", nil
 	}
-
-	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&d.Warehouse.Destination)
+	var tempAccessKeyId, tempSecretAccessKey, token string
+	var err error
+	if d.config.useAWSV2 {
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3CredV2(&d.Warehouse.Destination)
+	} else {
+		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&d.Warehouse.Destination)
+	}
 	if err != nil {
 		return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
 	}

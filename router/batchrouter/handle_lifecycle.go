@@ -25,9 +25,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/isolation"
@@ -307,6 +307,7 @@ func (brt *Handle) crashRecover() {
 			downloader, err := brt.fileManagerFactory(&filemanager.Settings{
 				Provider: object.Provider,
 				Config:   object.Config,
+				Conf:     brt.conf,
 			})
 			if err != nil {
 				panic(err)

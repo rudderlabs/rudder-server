@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 )
 

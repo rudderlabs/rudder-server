@@ -140,9 +140,11 @@ func (job *UploadJob) TablesToSkip() (map[string]model.PendingTableUpload, map[s
 	job.pendingTableUploadsOnce.Do(func() {
 		job.pendingTableUploads, job.pendingTableUploadsError = job.pendingTableUploadsRepo.PendingTableUploads(
 			job.ctx,
-			job.upload.Namespace,
-			job.upload.ID,
 			job.upload.DestinationID,
+			job.upload.Namespace,
+			job.upload.Priority,
+			job.upload.FirstEventAt,
+			job.upload.ID,
 		)
 	})
 
@@ -806,7 +808,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 		err        error
 	)
 
-	if repository, err = schemarepository.NewSchemaRepository(job.conf, job.logger, job.warehouse, job); err != nil {
+	if repository, err = schemarepository.NewSchemaRepository(job.conf, job.logger, job.warehouse, job, job.conf.GetBool("FileManager.useAWSV2", false)); err != nil {
 		return fmt.Errorf("create schema repository: %w", err)
 	}
 

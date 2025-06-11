@@ -36,8 +36,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -226,6 +226,7 @@ func TestWorkerWriter(t *testing.T) {
 					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
+				Conf: c,
 			})
 			require.NoError(t, err)
 
@@ -371,6 +372,7 @@ func TestWorkerWriter(t *testing.T) {
 					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
+				Conf: c,
 			})
 			require.NoError(t, err)
 
@@ -491,6 +493,7 @@ func TestWorkerWriter(t *testing.T) {
 					"secretAccessKey": minioResource.AccessKeySecret,
 					"endPoint":        minioResource.Endpoint,
 				},
+				Conf: c,
 			})
 			require.NoError(t, err)
 

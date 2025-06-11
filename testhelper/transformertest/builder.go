@@ -10,7 +10,7 @@ import (
 
 	"github.com/tidwall/sjson"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -31,6 +31,12 @@ type Builder struct {
 	trackingPlanHandler         http.HandlerFunc
 	routerTransformHandler      http.HandlerFunc
 	routerBatchTransformHandler http.HandlerFunc
+	featuresHandler             http.HandlerFunc
+}
+
+func (b *Builder) WithFeaturesHandler(h http.HandlerFunc) *Builder {
+	b.featuresHandler = h
+	return b
 }
 
 // WithRouterTransformHandlerFunc sets the router transformation http handler function for the server
@@ -138,8 +144,12 @@ func (b *Builder) Build() *httptest.Server {
 	for destType := range b.routerTransforms {
 		features, _ = sjson.SetBytes(features, "routerTransform."+destType, true)
 	}
-	mux.HandleFunc("/features", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(features)
+	mux.HandleFunc("/features", func(w http.ResponseWriter, r *http.Request) {
+		if b.featuresHandler != nil {
+			b.featuresHandler(w, r)
+		} else {
+			_, _ = w.Write(features)
+		}
 	})
 	return httptest.NewServer(mux)
 }

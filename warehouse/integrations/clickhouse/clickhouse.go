@@ -29,7 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -153,6 +153,7 @@ type Clickhouse struct {
 		s3EngineEnabledWorkspaceIDs []string
 		slowQueryThreshold          time.Duration
 		randomLoadDelay             func(string) time.Duration
+		disableLoadTableStats       func(string) bool
 	}
 }
 
@@ -228,6 +229,13 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
 	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
+	ch.config.disableLoadTableStats = func(workspaceID string) bool {
+		return conf.GetBoolVar(
+			false,
+			fmt.Sprintf("Warehouse.clickhouse.%s.disableLoadTableStats", workspaceID),
+			"Warehouse.clickhouse.disableLoadTableStats",
+		)
+	}
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
@@ -1029,9 +1037,15 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 }
 
 func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	preLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("pre load table count: %w", err)
+	var (
+		preLoadTableCount int64
+		err               error
+	)
+	if !ch.config.disableLoadTableStats(ch.Warehouse.WorkspaceID) {
+		preLoadTableCount, err = ch.totalCountIntable(ctx, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("pre load table count: %w", err)
+		}
 	}
 
 	err = ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
@@ -1039,9 +1053,12 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 		return nil, fmt.Errorf("loading table: %w", err)
 	}
 
-	postLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("post load table count: %w", err)
+	var postLoadTableCount int64
+	if !ch.config.disableLoadTableStats(ch.Warehouse.WorkspaceID) {
+		postLoadTableCount, err = ch.totalCountIntable(ctx, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("post load table count: %w", err)
+		}
 	}
 
 	return &types.LoadTableStats{

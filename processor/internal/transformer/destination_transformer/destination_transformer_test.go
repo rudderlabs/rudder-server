@@ -16,6 +16,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -23,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -274,7 +274,7 @@ func TestDestinationTransformer(t *testing.T) {
 					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, expectedResponse, rsp)
 
-					metrics := statsStore.GetByName("processor.transformer_request_time")
+					metrics := statsStore.GetByName("processor_transformer_request_time")
 					if tt.eventsCount > 0 {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {

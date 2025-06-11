@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -265,7 +265,7 @@ func TestUserTransformer(t *testing.T) {
 					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, expectedResponse, rsp)
 
-					metrics := statsStore.GetByName("processor.transformer_request_time")
+					metrics := statsStore.GetByName("processor_transformer_request_time")
 					if tt.eventsCount > 0 {
 						require.NotEmpty(t, metrics)
 						for _, m := range metrics {

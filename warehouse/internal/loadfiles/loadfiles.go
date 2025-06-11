@@ -17,8 +17,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -492,7 +492,7 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 		return fmt.Errorf("populating destination revision ID: %w", err)
 	}
 	g, gCtx := errgroup.WithContext(ctx)
-	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 128))
+	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 512))
 	for i, fileGroups := range lo.Chunk(stagingFileGroups, publishBatchSize) {
 		for j, group := range fileGroups {
 			lf.Logger.Infon("Processing chunk and group",

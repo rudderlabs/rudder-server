@@ -6,11 +6,13 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/araddon/dateparse"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/rudder-server/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -48,6 +50,8 @@ var (
 
 	minTimeInMs = time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC)
 	maxTimeInMs = time.Date(9999, 12, 31, 23, 59, 59, 999000000, time.UTC)
+
+	jsonrsStd = jsonrs.NewWithLibrary(jsonrs.StdLib)
 )
 
 func init() {
@@ -245,11 +249,20 @@ func ExtractReceivedAt(event *types.TransformerEvent, now func() time.Time) stri
 func MarshalJSON(input any) ([]byte, error) {
 	var buf bytes.Buffer
 
-	enc := jsonrs.NewEncoder(&buf)
+	enc := jsonrsStd.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 
 	if err := enc.Encode(input); err != nil {
 		return nil, fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 	return bytes.TrimSpace(buf.Bytes()), nil
+}
+
+// UTF16RuneCountInString returns the UTF-16 code unit count of the string.
+func UTF16RuneCountInString(s string) int {
+	count := 0
+	for _, r := range s {
+		count += utf16.RuneLen(r)
+	}
+	return count
 }

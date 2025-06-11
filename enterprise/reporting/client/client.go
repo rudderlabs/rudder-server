@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/jsonrs"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
@@ -95,7 +95,8 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 
 	return &Client{
 		httpClient: &http.Client{
-			Timeout: conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
+			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
+			Transport: &http.Transport{},
 		},
 		reportingServiceURL: reportingServiceURL,
 		backoff:             backOffFromConfig(conf),
