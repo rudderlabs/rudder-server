@@ -15,7 +15,7 @@ type Producer interface {
 	Produce(jsonData json.RawMessage, _ interface{}) (int, string, string)
 }
 
-func NewSwitchingProducer(name string, log logger.Logger, destination *backendconfig.DestinationT, o Opts, v1 func(*backendconfig.DestinationT, Opts) (Producer, error), v2 func(*backendconfig.DestinationT, Opts) (Producer, error)) (Producer, error) {
+func NewSwitchingProducer(name string, log logger.Logger, destination *backendconfig.DestinationT, o Opts, v1, v2 func(*backendconfig.DestinationT, Opts) (Producer, error)) (Producer, error) {
 	v2Enabled := config.GetReloadableBoolVar(false, "Router."+name+".useAWSV2", "Router.useAWSV2")
 	producerV1, err := v1(destination, o)
 	if err != nil {
