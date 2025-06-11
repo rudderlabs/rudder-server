@@ -1964,7 +1964,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 			if event.eventParams.IsBot {
 				botStatus := reportingtypes.BotDetectedStatus
-				if event.eventParams.BotAction == "flag" {
+				// TODO: remove the empty check after ingestion service is released with BotAction field
+				if event.eventParams.BotAction == "flag" || event.eventParams.BotAction == "" {
 					botStatus = reportingtypes.BotFlaggedStatus
 				}
 
