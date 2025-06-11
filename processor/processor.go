@@ -1184,10 +1184,21 @@ func (proc *Handle) getTransformerEvents(
 }
 
 func (proc *Handle) updateMetricMaps(
+	// countMetadataMap provides metadata context for getDiffMetrics to create detailed PUReportedMetric objects
+	// storing rich context during event processing for diff metric reporting
 	countMetadataMap map[string]MetricMetadata,
+
+	// countMap accumulates event counts by unique key combinations, feeding into getDiffMetrics to capture diff metrics
 	countMap map[string]int64,
+
+	// connectionDetailsMap stores source-destination relationship data that becomes PUReportedMetric.ConnectionDetails
+	// for constructing complete reporting metrics with workspace, source, and destination context
 	connectionDetailsMap map[string]*reportingtypes.ConnectionDetails,
+
+	// statusDetailsMap captures processing outcomes including error details, validation violations, and sample payloads
+	// that become PUReportedMetric.StatusDetail
 	statusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+
 	event *types.TransformerResponse,
 	status, stage string,
 	payload func() json.RawMessage,
