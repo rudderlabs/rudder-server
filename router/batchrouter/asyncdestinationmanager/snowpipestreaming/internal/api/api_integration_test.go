@@ -79,25 +79,10 @@ func TestAPIIntegration(t *testing.T) {
 				statsStore, err := memstats.New()
 				require.NoError(t, err)
 
-				snowpipeAPI := api.New(c, statsStore, testConfig.clientURL, http.DefaultClient)
+				snowpipeAPI := api.New(c, logger.NOP, statsStore, testConfig.clientURL, http.DefaultClient)
 
 				t.Log("Creating channel")
-				createChannelRes, err := snowpipeAPI.CreateChannel(ctx, &model.CreateChannelRequest{
-					RudderIdentifier: "1",
-					Partition:        "1",
-					AccountConfig: model.AccountConfig{
-						Account:              testConfig.credentials.Account,
-						User:                 testConfig.credentials.User,
-						Role:                 testConfig.credentials.Role,
-						PrivateKey:           strings.ReplaceAll(testConfig.credentials.PrivateKey, "\n", "\\\\\n"),
-						PrivateKeyPassphrase: testConfig.credentials.PrivateKeyPassphrase,
-					},
-					TableConfig: model.TableConfig{
-						Database: testConfig.credentials.Database,
-						Schema:   testConfig.namespace,
-						Table:    testConfig.tableName,
-					},
-				})
+				createChannelRes, err := snowpipeAPI.CreateChannel(ctx, newCreateChannelRequest(testConfig, "3"))
 				require.NoError(t, err)
 				require.NotEmpty(t, createChannelRes.ChannelID)
 				require.True(t, createChannelRes.Valid)
@@ -125,7 +110,7 @@ func TestAPIIntegration(t *testing.T) {
 				insertRes, err := snowpipeAPI.Insert(ctx, createChannelRes.ChannelID, &model.InsertRequest{
 					Rows:   rows,
 					Offset: "8",
-				})
+				}, nil)
 				require.NoError(t, err)
 				require.Equal(t, &model.InsertResponse{Success: true, Errors: nil}, insertRes)
 				require.EqualValues(t, tc.payloadSize, statsStore.Get("snowpipe_streaming_request_body_size", stats.Tags{
@@ -152,28 +137,13 @@ func TestAPIIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("Create + Delete channel", func(t *testing.T) {
+	t.Run("Create", func(t *testing.T) {
 		ctx := context.Background()
 		testConfig := setupIntegrationTestConfig(t, ctx)
-		snowpipeAPI := api.New(config.New(), stats.NOP, testConfig.clientURL, http.DefaultClient)
+		snowpipeAPI := api.New(config.New(), logger.NOP, stats.NOP, testConfig.clientURL, http.DefaultClient)
 
 		t.Log("Creating channel")
-		createChannelReq := &model.CreateChannelRequest{
-			RudderIdentifier: "1",
-			Partition:        "1",
-			AccountConfig: model.AccountConfig{
-				Account:              testConfig.credentials.Account,
-				User:                 testConfig.credentials.User,
-				Role:                 testConfig.credentials.Role,
-				PrivateKey:           strings.ReplaceAll(testConfig.credentials.PrivateKey, "\n", "\\\\\n"),
-				PrivateKeyPassphrase: testConfig.credentials.PrivateKeyPassphrase,
-			},
-			TableConfig: model.TableConfig{
-				Database: testConfig.credentials.Database,
-				Schema:   testConfig.namespace,
-				Table:    testConfig.tableName,
-			},
-		}
+		createChannelReq := newCreateChannelRequest(testConfig, "2")
 		createChannelRes1, err := snowpipeAPI.CreateChannel(ctx, createChannelReq)
 		require.NoError(t, err)
 		require.True(t, createChannelRes1.Valid)
@@ -192,6 +162,25 @@ func TestAPIIntegration(t *testing.T) {
 		createChannelRes3, err := snowpipeAPI.CreateChannel(ctx, createChannelReq)
 		require.NoError(t, err)
 		require.NotEqual(t, createChannelRes1.ChannelID, createChannelRes3.ChannelID)
+	})
+
+	t.Run("Channel recreation on insert 404", func(t *testing.T) {
+		ctx := context.Background()
+		testConfig := setupIntegrationTestConfig(t, ctx)
+		snowpipeAPI := api.New(config.New(), logger.NOP, stats.NOP, testConfig.clientURL, http.DefaultClient)
+
+		// Use a random, non-existent channel ID
+		invalidChannelID := "invalid_channel_id_for_404_test"
+		rows := []model.Row{
+			{"ID": "ID123", "NAME": "Alice Johnson", "EMAIL": "alice.johnson@example.com", "AGE": 28, "ACTIVE": true, "DOB": "1995-06-15T12:30:00Z"},
+		}
+		insertReq := &model.InsertRequest{Rows: rows}
+		createChannelReq := newCreateChannelRequest(testConfig, "1")
+
+		res, err := snowpipeAPI.Insert(ctx, invalidChannelID, insertReq, createChannelReq)
+		require.NoError(t, err)
+		require.NotNil(t, res)
+		require.True(t, res.Success)
 	})
 }
 
@@ -253,4 +242,23 @@ func convertRowsToRecord(rows []model.Row, columns []string) [][]string {
 			return ""
 		})
 	})
+}
+
+func newCreateChannelRequest(testConfig *integrationTestConfig, partition string) *model.CreateChannelRequest {
+	return &model.CreateChannelRequest{
+		RudderIdentifier: "1",
+		Partition:        partition,
+		AccountConfig: model.AccountConfig{
+			Account:              testConfig.credentials.Account,
+			User:                 testConfig.credentials.User,
+			Role:                 testConfig.credentials.Role,
+			PrivateKey:           strings.ReplaceAll(testConfig.credentials.PrivateKey, "\n", "\\\n"),
+			PrivateKeyPassphrase: testConfig.credentials.PrivateKeyPassphrase,
+		},
+		TableConfig: model.TableConfig{
+			Database: testConfig.credentials.Database,
+			Schema:   testConfig.namespace,
+			Table:    testConfig.tableName,
+		},
+	}
 }
