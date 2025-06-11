@@ -65,7 +65,6 @@ type Client struct {
 	reportingServiceURL string
 
 	httpClient *http.Client
-	backoff    backoff.BackOff
 	stats      stats.Stats
 	log        logger.Logger
 
@@ -101,7 +100,6 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Transport: &http.Transport{},
 		},
 		reportingServiceURL: reportingServiceURL,
-		backoff:             backOffFromConfig(conf),
 		route:               path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		moduleName:          conf.GetString("clientName", ""),
