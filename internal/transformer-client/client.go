@@ -28,11 +28,12 @@ const (
 	defaultClientTimeout       = 600 * time.Second
 	defaultClientTTL           = 10 * time.Second
 	defaultRecycleTTL          = 60 * time.Second
-	defaultMaxRetry            = -1
-	defaultInitialInterval     = 1 * time.Second
-	defaultMaxInterval         = 30 * time.Second
-	defaultMaxElapsedTime      = 0
-	defaultMultiplier          = 2.0
+
+	defaultRetryRudderErrorsMaxRetry        = -1
+	defaultRetryRudderErrorsInitialInterval = 1 * time.Second
+	defaultRetryRudderErrorsMaxInterval     = 30 * time.Second
+	defaultRetryRudderErrorsMaxElapsedTime  = 0
+	defaultRetryRudderErrorsMultiplier      = 2.0
 )
 
 type ClientConfig struct {
@@ -52,7 +53,7 @@ type ClientConfig struct {
 
 	// Configuration for retryable HTTP client in case of [X-Rudder-Should-Retry: true] HTTP 503 responses
 	RetryRudderErrors struct {
-		Enabled         bool          // true
+		Enabled         bool          // false
 		MaxRetry        int           // -1 - no limit
 		InitialInterval time.Duration // 1s
 		MaxInterval     time.Duration // 30s
@@ -66,24 +67,11 @@ type Client interface {
 }
 
 func NewClient(config *ClientConfig) Client {
-	if config == nil {
-		return newRetryableHTTPClient(buildDefaultClient(), nil)
-	}
-
 	switch config.ClientType {
 	case "httplb":
 		return buildHTTPLBClient(config)
 	default:
 		return buildStandardClient(config)
-	}
-}
-
-// buildDefaultClient creates a client with default settings
-func buildDefaultClient() *http.Client {
-	transport := buildDefaultTransport()
-	return &http.Client{
-		Transport: transport,
-		Timeout:   defaultClientTimeout,
 	}
 }
 
@@ -179,26 +167,20 @@ func buildRetryableConfig(clientConfig *ClientConfig) *retryablehttp.Config {
 		Multiplier:      clientConfig.RetryRudderErrors.Multiplier,
 	}
 
-	// Check if this looks like an explicit configuration (has other values set)
-	hasExplicitConfig := clientConfig.RetryRudderErrors.InitialInterval != 0 ||
-		clientConfig.RetryRudderErrors.MaxInterval != 0 ||
-		clientConfig.RetryRudderErrors.Multiplier != 0
-
-	// Apply defaults only for truly unset values, but respect explicit MaxRetry=0
-	if retryConfig.MaxRetry == 0 && !hasExplicitConfig {
-		retryConfig.MaxRetry = defaultMaxRetry
+	if retryConfig.MaxRetry == 0 {
+		retryConfig.MaxRetry = defaultRetryRudderErrorsMaxRetry
 	}
 	if retryConfig.InitialInterval == 0 {
-		retryConfig.InitialInterval = defaultInitialInterval
+		retryConfig.InitialInterval = defaultRetryRudderErrorsInitialInterval
 	}
 	if retryConfig.MaxInterval == 0 {
-		retryConfig.MaxInterval = defaultMaxInterval
+		retryConfig.MaxInterval = defaultRetryRudderErrorsMaxInterval
 	}
 	if retryConfig.MaxElapsedTime == 0 {
-		retryConfig.MaxElapsedTime = defaultMaxElapsedTime
+		retryConfig.MaxElapsedTime = defaultRetryRudderErrorsMaxElapsedTime
 	}
 	if retryConfig.Multiplier == 0 {
-		retryConfig.Multiplier = defaultMultiplier
+		retryConfig.Multiplier = defaultRetryRudderErrorsMultiplier
 	}
 
 	return retryConfig
@@ -229,11 +211,11 @@ func getRecycleTTL(config *ClientConfig) time.Duration {
 func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Config) Client {
 	if retryableConfig == nil {
 		retryableConfig = &retryablehttp.Config{
-			MaxRetry:        config.GetIntVar(defaultMaxRetry, defaultMaxRetry, "Transformer.Client.Retryable.maxRetry"),
+			MaxRetry:        config.GetIntVar(defaultRetryRudderErrorsMaxRetry, defaultRetryRudderErrorsMaxRetry, "Transformer.Client.Retryable.maxRetry"),
 			InitialInterval: config.GetDurationVar(1, time.Second, "Transformer.Client.Retryable.initialInterval"),
 			MaxInterval:     config.GetDurationVar(30, time.Second, "Transformer.Client.Retryable.maxInterval"),
 			MaxElapsedTime:  config.GetDurationVar(0, time.Second, "Transformer.Client.Retryable.maxElapsedTime"),
-			Multiplier:      config.GetFloat64Var(defaultMultiplier, "Transformer.Client.Retryable.multiplier"),
+			Multiplier:      config.GetFloat64Var(defaultRetryRudderErrorsMultiplier, "Transformer.Client.Retryable.multiplier"),
 		}
 	}
 

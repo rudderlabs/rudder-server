@@ -361,50 +361,6 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 
 		require.True(t, elapsed < 1*time.Second, "Should fail quickly without retries")
 	})
-
-	t.Run("context timeout errors are not retried", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			time.Sleep(2 * time.Second)
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer server.Close()
-
-		clientConfig := &ClientConfig{
-			ClientTimeout: 500 * time.Millisecond,
-			RetryRudderErrors: struct {
-				Enabled         bool
-				MaxRetry        int
-				InitialInterval time.Duration
-				MaxInterval     time.Duration
-				MaxElapsedTime  time.Duration
-				Multiplier      float64
-			}{
-				Enabled:         true,
-				MaxRetry:        0, // No retries
-				InitialInterval: 10 * time.Millisecond,
-				MaxInterval:     50 * time.Millisecond,
-				MaxElapsedTime:  1 * time.Second,
-				Multiplier:      2.0,
-			},
-		}
-		client := NewClient(clientConfig)
-
-		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
-		require.NoError(t, err)
-
-		start := time.Now()
-		resp, err := client.Do(req)
-		if resp != nil {
-			defer resp.Body.Close()
-		}
-		elapsed := time.Since(start)
-
-		require.Error(t, err)
-		require.Nil(t, resp)
-
-		require.True(t, elapsed >= 500*time.Millisecond, "Should respect client timeout")
-		require.True(t, elapsed < 1*time.Second, "Should timeout quickly without retries")
-	})
 }
 
 func TestClient_ConfigurableRetrySettings(t *testing.T) {
@@ -539,36 +495,6 @@ func TestClient_RetryDisabled(t *testing.T) {
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 		require.Equal(t, 1, requestCount, "Should make exactly 1 request - no retries")
 		require.True(t, elapsed < 100*time.Millisecond, "Should complete quickly without retries")
-
-		resp.Body.Close()
-	})
-
-	t.Run("does not retry when config is nil", func(t *testing.T) {
-		var requestCount int
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requestCount++
-			// Return retriable error that would normally be retried
-			w.Header().Set("X-Rudder-Should-Retry", "true")
-			w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("Service temporarily unavailable"))
-		}))
-		defer server.Close()
-
-		// Use nil config - should get retryable client with default settings
-		client := NewClient(nil)
-
-		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
-		require.NoError(t, err)
-
-		start := time.Now()
-		resp, err := client.Do(req)
-		elapsed := time.Since(start)
-
-		// With nil config, we actually get a retryable client with defaults, so it should retry
-		require.NoError(t, err)
-		require.True(t, requestCount > 1, "Should have retried with nil config (uses default retryable client)")
-		require.True(t, elapsed > 50*time.Millisecond, "Should take time due to retries")
 
 		resp.Body.Close()
 	})
