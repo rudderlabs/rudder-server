@@ -37,7 +37,15 @@ func (m *Manager) sendDiscardEventsToSnowpipe(
 		Rows:   convertDiscardedInfosToRows(discardInfos),
 		Offset: offset,
 	}
-	insertRes, err := m.api.Insert(ctx, discardsChannelID, insertReq)
+
+	var destConf destConfig
+	err := destConf.Decode(m.destination.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode destination config: %w", err)
+	}
+	createChannelReq := buildCreateChannelRequest(m.destination.ID, m.config.instanceID, &destConf, tableName)
+
+	insertRes, err := m.api.Insert(ctx, discardsChannelID, insertReq, createChannelReq)
 	defer func() {
 		if err != nil || !insertRes.Success {
 			if deleteErr := m.deleteChannel(ctx, tableName, discardsChannelID); deleteErr != nil {
