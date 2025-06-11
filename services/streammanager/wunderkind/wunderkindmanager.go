@@ -36,6 +36,7 @@ func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) 
 		ExternalID:    conf.GetString(WunderkindExternalId, ""),
 		RoleBasedAuth: true,
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.WUNDERKIND.httpMaxIdleConnsPerHost", "Router.WUNDERKIND.noOfWorkers", "Router.noOfWorkers")
 	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)

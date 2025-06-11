@@ -2,6 +2,7 @@ package lambda
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -15,7 +16,7 @@ type LambdaManager interface {
 }
 
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (LambdaManager, error) {
-	v2Enabled := config.GetReloadableBoolVar(false, "Router.LAMBDA.v2Enabled", "Router.v2Enabled")
+	v2Enabled := config.GetReloadableBoolVar(false, "Router.LAMBDA.useAWSV2", "Router.useAWSV2")
 	producerV1, err := NewProducerV1(destination, o)
 	if err != nil {
 		return nil, err
@@ -28,25 +29,27 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (Lambda
 			pkgLogger.Error("Error creating producer v2", err)
 		}
 	}
-	return &SwitchingLambdaManager{isV2Enabled: v2Enabled.Load(), producerV1: producerV1, producerV2: producerV2}, nil
+	return &SwitchingLambdaManager{isV2Enabled: v2Enabled, producerV1: producerV1, producerV2: producerV2}, nil
 }
 
 type SwitchingLambdaManager struct {
-	isV2Enabled bool
+	isV2Enabled config.ValueLoader[bool]
 	producerV1  *LambdaProducerV1
 	producerV2  *LambdaProducerV2
 }
 
 func (s *SwitchingLambdaManager) Produce(jsonData json.RawMessage, val interface{}) (int, string, string) {
-	if s.isV2Enabled {
+	if s.isV2Enabled.Load() && s.producerV2 != nil {
 		return s.producerV2.Produce(jsonData, val)
 	}
 	return s.producerV1.Produce(jsonData, val)
 }
 
 func (s *SwitchingLambdaManager) Close() error {
-	if s.isV2Enabled {
-		return s.producerV2.Close()
+	var closeErrors []error
+	if s.producerV2 != nil {
+		closeErrors = append(closeErrors, s.producerV2.Close())
 	}
-	return s.producerV1.Close()
+	closeErrors = append(closeErrors, s.producerV1.Close())
+	return errors.Join(closeErrors...)
 }

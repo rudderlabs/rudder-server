@@ -11,6 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -31,6 +32,7 @@ func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (*Fir
 	if err != nil {
 		return nil, err
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.FIREHOSE.httpMaxIdleConnsPerHost", "Router.FIREHOSE.noOfWorkers", "Router.noOfWorkers")
 	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
