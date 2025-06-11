@@ -103,7 +103,7 @@ func New(
 	m.api = newApiAdapter(
 		m.logger,
 		statsFactory,
-		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
+		snowpipeapi.New(m.appConfig, m.logger, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
 	m.managerCreator = func(ctx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, logger logger.Logger, statsFactory stats.Stats) (manager.Manager, error) {
@@ -360,6 +360,22 @@ func (m *Manager) sendEventsToSnowpipe(
 		discardInfos = append(discardInfos, getDiscardedRecordsFromEvent(tableEvent, channelResponse.SnowpipeSchema, info.tableName, formattedTS)...)
 	}
 
+	/*
+		Discards table events are inserted before main table events.
+		This is because if discards insert succeeds but main table insert fails,
+		then on retry, duplicate records will occur in the discards table.
+		But if events are inserted in the reverse order, then on retry,
+		duplicate records will occur in the main table.
+	*/
+	var discardImInfo *importInfo
+	if len(discardInfos) > 0 {
+		log.Infon("Inserting events into discards table", logger.NewIntField("count", int64(len(discardInfos))))
+		discardImInfo, err = m.sendDiscardEventsToSnowpipe(ctx, offset, info.discardChannelResponse.ChannelID, discardInfos)
+		if err != nil {
+			return nil, nil, fmt.Errorf("sending discard events to Snowpipe: %w", err)
+		}
+	}
+
 	insertReq := &model.InsertRequest{
 		Rows: lo.Map(info.events, func(event *event, _ int) model.Row {
 			return event.Message.Data
@@ -367,7 +383,9 @@ func (m *Manager) sendEventsToSnowpipe(
 		Offset: offset,
 	}
 
-	insertRes, err := m.api.Insert(ctx, channelResponse.ChannelID, insertReq)
+	createChannelReq := buildCreateChannelRequest(destinationID, m.config.instanceID, destConf, info.tableName)
+
+	insertRes, err := m.api.Insert(ctx, channelResponse.ChannelID, insertReq, createChannelReq)
 	defer func() {
 		if err != nil || !insertRes.Success {
 			if deleteErr := m.deleteChannel(ctx, info.tableName, channelResponse.ChannelID); deleteErr != nil {
@@ -385,13 +403,6 @@ func (m *Manager) sendEventsToSnowpipe(
 		return nil, nil, fmt.Errorf("inserting data %s failed: %s %v", info.tableName, insertRes.Code, errorMessages)
 	}
 
-	var discardImInfo *importInfo
-	if len(discardInfos) > 0 {
-		discardImInfo, err = m.sendDiscardEventsToSnowpipe(ctx, offset, info.discardChannelResponse.ChannelID, discardInfos)
-		if err != nil {
-			return nil, nil, fmt.Errorf("sending discard events to Snowpipe: %w", err)
-		}
-	}
 	log.Infon("Sent events to Snowpipe")
 
 	imInfo := &importInfo{
@@ -656,4 +667,23 @@ func (m *Manager) setBackOff(err error) {
 		d = b.NextBackOff()
 	}
 	m.backoff.next = m.Now().Add(d)
+}
+
+func buildCreateChannelRequest(destinationID, partition string, destConf *destConfig, tableName string) *model.CreateChannelRequest {
+	return &model.CreateChannelRequest{
+		RudderIdentifier: destinationID,
+		Partition:        partition,
+		AccountConfig: model.AccountConfig{
+			Account:              destConf.Account,
+			User:                 destConf.User,
+			Role:                 destConf.Role,
+			PrivateKey:           whutils.FormatPemContent(destConf.PrivateKey),
+			PrivateKeyPassphrase: destConf.PrivateKeyPassphrase,
+		},
+		TableConfig: model.TableConfig{
+			Database: destConf.Database,
+			Schema:   destConf.Namespace,
+			Table:    tableName,
+		},
+	}
 }
