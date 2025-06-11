@@ -93,7 +93,7 @@ func (a *apiAdapter) DeleteChannel(ctx context.Context, channelID string, sync b
 	return nil
 }
 
-func (a *apiAdapter) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest) (*model.InsertResponse, error) {
+func (a *apiAdapter) Insert(ctx context.Context, channelID string, insertRequest *model.InsertRequest, createChannelReq *model.CreateChannelRequest) (*model.InsertResponse, error) {
 	a.logger.Debugn("Inserting data",
 		logger.NewStringField("channelId", channelID),
 		logger.NewIntField("rows", int64(len(insertRequest.Rows))),
@@ -103,7 +103,7 @@ func (a *apiAdapter) Insert(ctx context.Context, channelID string, insertRequest
 	tags := a.defaultTags(insertAPI)
 	defer a.recordDuration(tags)()
 
-	resp, err := a.api.Insert(ctx, channelID, insertRequest)
+	resp, err := a.api.Insert(ctx, channelID, insertRequest, createChannelReq)
 	if err != nil {
 		tags["success"] = "false"
 		return nil, err
