@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
 	"os"
-	"os/signal"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	_ "go.uber.org/automaxprocs"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/mem"
 
 	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/utils/signal"
 )
 
 var (
@@ -22,12 +22,28 @@ var (
 )
 
 func main() {
+	c := config.Default
+	log := logger.NewLogger().Child("main")
+	ctx, cancel := signal.NotifyContextWithCallback(func() {
+		log.Infon("Server received termination signal...")
+	}, syscall.SIGINT, syscall.SIGTERM)
+
+	log.Infon("Server is starting up...")
+	start := time.Now()
+
 	if memStat, err := mem.Get(); err == nil {
 		memoryLimit := int64(80 * memStat.Total / 100)
-		logger.NewLogger().Infow("Setting memory limit to", "limit", memoryLimit)
+		log.Infon("Setting memory limit", logger.NewIntField("limit", memoryLimit))
 		debug.SetMemoryLimit(memoryLimit)
 	}
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+
+	if c.GetBool("SHUTDOWN_ON_NON_RELOADABLE_CONFIG_CHANGE", false) {
+		c.OnNonReloadableConfigChange(func(key string) {
+			log.Infon("Config change detected, shutting down server...", logger.NewStringField("key", key))
+			cancel()
+		})
+	}
+
 	r := runner.New(runner.ReleaseInfo{
 		Version:         version,
 		Commit:          commit,
@@ -36,6 +52,11 @@ func main() {
 		EnterpriseToken: config.GetString("ENTERPRISE_TOKEN", enterpriseToken),
 	})
 	exitCode := r.Run(ctx, os.Args)
+
+	log.Infon("Server was shut down",
+		logger.NewIntField("exitCode", int64(exitCode)),
+		logger.NewDurationField("uptime", time.Since(start)),
+	)
 	cancel()
 	os.Exit(exitCode)
 }
