@@ -64,7 +64,7 @@ type mirror struct {
 func (m *mirror) Allowed(keys ...BatchKey) (map[BatchKey]bool, error) {
 	go func() { // fire & forget
 		if _, err := m.mirror.Allowed(keys...); err != nil {
-			m.logger.Errorn("mirroring call to Allowed failed", obskit.Error(err))
+			m.logger.Errorn("Dedup mirroring call to Allowed failed", obskit.Error(err))
 		}
 	}()
 	return m.Dedup.Allowed(keys...)
@@ -73,7 +73,7 @@ func (m *mirror) Allowed(keys ...BatchKey) (map[BatchKey]bool, error) {
 func (m *mirror) Commit(keys []string) error {
 	go func() { // fire & forget
 		if err := m.mirror.Commit(keys); err != nil {
-			m.logger.Errorn("mirroring call to Commit failed", obskit.Error(err))
+			m.logger.Errorn("Dedup mirroring call to Commit failed", obskit.Error(err))
 		}
 	}()
 	return m.Dedup.Commit(keys)
