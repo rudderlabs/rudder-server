@@ -215,12 +215,9 @@ func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Co
 		retryableConfig,
 		retryablehttp.WithHttpClient(baseClient),
 		retryablehttp.WithCustomRetryStrategy(func(resp *http.Response, err error) (bool, error) {
-			fmt.Println("err", err, time.Now().Format("2006-01-02 15:04:05"))
 			if err != nil {
 				return false, backoff.Permanent(err)
 			}
-			fmt.Println("respStatus", resp.StatusCode)
-			fmt.Println("respHeader", resp.Header.Get("X-Rudder-Should-Retry"))
 			if resp.StatusCode == http.StatusServiceUnavailable &&
 				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
 				reason := resp.Header.Get("X-Rudder-Error-Reason")
