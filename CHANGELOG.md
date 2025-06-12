@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.51.3](https://github.com/rudderlabs/rudder-server/compare/v1.51.2...v1.51.3) (2025-06-11)
+
+
+### Bug Fixes
+
+* warehouse transformations deep copying arguments ([#5979](https://github.com/rudderlabs/rudder-server/issues/5979)) ([64c3c42](https://github.com/rudderlabs/rudder-server/commit/64c3c422950a2306b2f38d9ebcc335a78392fb27))
+
+## [1.51.2](https://github.com/rudderlabs/rudder-server/compare/v1.51.1...v1.51.2) (2025-06-11)
+
+
+### Bug Fixes
+
+* duplicates in snowpipe streaming due to stale channel cache ([#5957](https://github.com/rudderlabs/rudder-server/issues/5957)) ([af37cde](https://github.com/rudderlabs/rudder-server/commit/af37cdefe6454f05c5a3380ccea6677af26f611e))
+
 ## [1.51.1](https://github.com/rudderlabs/rudder-server/compare/v1.51.0...v1.51.1) (2025-06-10)
 
 

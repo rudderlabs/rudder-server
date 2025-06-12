@@ -42,7 +42,7 @@ func (m *mockAPI) DeleteChannel(_ context.Context, channelID string, _ bool) err
 	return m.deleteChannelOutputMap[channelID]()
 }
 
-func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertRequest) (*model.InsertResponse, error) {
+func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertRequest, _ *model.CreateChannelRequest) (*model.InsertResponse, error) {
 	return m.insertOutputMap[channelID]()
 }
 
