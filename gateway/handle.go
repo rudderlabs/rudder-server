@@ -764,6 +764,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		BotName             string `json:"bot_name,omitempty"`
 		BotURL              string `json:"bot_url,omitempty"`
 		BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
+		BotAction           string `json:"bot_action,omitempty"`
 	}
 
 	type singularEventBatch struct {
@@ -949,6 +950,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotName:             msg.Properties.BotName,
 			BotURL:              msg.Properties.BotURL,
 			BotIsInvalidBrowser: msg.Properties.BotIsInvalidBrowser,
+			BotAction:           msg.Properties.BotAction,
 		}
 
 		marshalledParams, err := jsonrs.Marshal(jobsDBParams)

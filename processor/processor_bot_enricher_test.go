@@ -31,7 +31,7 @@ func TestProcessorBotEnrichment(t *testing.T) {
 	t.Run("feature disabled", func(t *testing.T) {
 		new(botScenario).
 			WithBotEnrichmentEnabled(false).
-			WithBotInfo(true, "test-bot", "https://test-bot.com", false).
+			WithBotInfo(true, "", "test-bot", "https://test-bot.com", false).
 			Run(t, func(t *testing.T, event string) {
 				// missing fields checks
 				require.False(t, gjson.Get(event, "context.isBot").Exists(), "no bot information should be present when feature is disabled")
@@ -42,7 +42,7 @@ func TestProcessorBotEnrichment(t *testing.T) {
 	t.Run("feature enabled with non-bot event", func(t *testing.T) {
 		new(botScenario).
 			WithBotEnrichmentEnabled(true).
-			WithBotInfo(false, "", "", false).
+			WithBotInfo(false, "", "", "", false).
 			Run(t, func(t *testing.T, event string) {
 				// missing fields checks
 				require.False(t, gjson.Get(event, "context.isBot").Exists(), "no bot information should be present for non-bot event")
@@ -53,7 +53,7 @@ func TestProcessorBotEnrichment(t *testing.T) {
 	t.Run("feature enabled with bot event", func(t *testing.T) {
 		new(botScenario).
 			WithBotEnrichmentEnabled(true).
-			WithBotInfo(true, "test-bot", "https://test-bot.com", false).
+			WithBotInfo(true, "", "test-bot", "https://test-bot.com", false).
 			Run(t, func(t *testing.T, event string) {
 				require.True(t, gjson.Get(event, "context.isBot").Bool(), "isBot should be true")
 				require.Equal(t, "test-bot", gjson.Get(event, "context.bot.name").String(), "bot name should be set")
@@ -66,7 +66,7 @@ func TestProcessorBotEnrichment(t *testing.T) {
 	t.Run("feature enabled with bot details and empty bot URL", func(t *testing.T) {
 		new(botScenario).
 			WithBotEnrichmentEnabled(true).
-			WithBotInfo(true, "test-bot", "", false).
+			WithBotInfo(true, "", "test-bot", "", false).
 			Run(t, func(t *testing.T, event string) {
 				require.True(t, gjson.Get(event, "context.isBot").Bool(), "isBot should be true")
 				require.Equal(t, "test-bot", gjson.Get(event, "context.bot.name").String(), "bot name should be set")
@@ -79,7 +79,7 @@ func TestProcessorBotEnrichment(t *testing.T) {
 	t.Run("feature enabled with invalid browser", func(t *testing.T) {
 		new(botScenario).
 			WithBotEnrichmentEnabled(true).
-			WithBotInfo(true, "", "", true).
+			WithBotInfo(true, "", "", "", true).
 			Run(t, func(t *testing.T, event string) {
 				require.True(t, gjson.Get(event, "context.isBot").Bool(), "isBot should be true")
 				require.True(t, gjson.Get(event, "context.bot.isInvalidBrowser").Bool(), "isInvalidBrowser should be true")
@@ -88,11 +88,36 @@ func TestProcessorBotEnrichment(t *testing.T) {
 				require.False(t, gjson.Get(event, "context.bot.url").Exists(), "bot URL should not be present when invalid browser")
 			})
 	})
+
+	t.Run("feature enabled with bot event and flag BotAction", func(t *testing.T) {
+		new(botScenario).
+			WithBotEnrichmentEnabled(true).
+			WithBotInfo(true, "flag", "test-bot", "https://test-bot.com", false).
+			Run(t, func(t *testing.T, event string) {
+				require.True(t, gjson.Get(event, "context.isBot").Bool(), "isBot should be true")
+				require.Equal(t, "test-bot", gjson.Get(event, "context.bot.name").String(), "bot name should be set")
+				require.Equal(t, "https://test-bot.com", gjson.Get(event, "context.bot.url").String(), "bot URL should be set")
+				// missing fields checks
+				require.False(t, gjson.Get(event, "context.bot.isInvalidBrowser").Exists(), "isInvalidBrowser should not be present when false")
+			})
+	})
+
+	t.Run("feature enabled with bot event and disable BotAction", func(t *testing.T) {
+		new(botScenario).
+			WithBotEnrichmentEnabled(true).
+			WithBotInfo(true, "disable", "test-bot", "https://test-bot.com", false).
+			Run(t, func(t *testing.T, event string) {
+				// missing fields checks
+				require.False(t, gjson.Get(event, "context.isBot").Exists(), "no bot information should be present when BotAction is disable")
+				require.False(t, gjson.Get(event, "context.bot").Exists(), "bot key should not be present when BotAction is disable")
+			})
+	})
 }
 
 type botScenario struct {
 	botEnrichmentEnabled bool
 	isBot                bool
+	botAction            string
 	botName              string
 	botURL               string
 	isInvalidBrowser     bool
@@ -103,8 +128,9 @@ func (s *botScenario) WithBotEnrichmentEnabled(enabled bool) *botScenario {
 	return s
 }
 
-func (s *botScenario) WithBotInfo(isBot bool, name, url string, isInvalidBrowser bool) *botScenario {
+func (s *botScenario) WithBotInfo(isBot bool, botAction, name, url string, isInvalidBrowser bool) *botScenario {
 	s.isBot = isBot
+	s.botAction = botAction
 	s.botName = name
 	s.botURL = url
 	s.isInvalidBrowser = isInvalidBrowser
@@ -230,6 +256,7 @@ func (s *botScenario) sendEvent(url, writeKey, workspaceID, sourceID string) err
 		{
 			"properties": {
 				"isBot": %v,
+				"botAction": %q,
 				"botName": %q,
 				"botURL": %q,
 				"botIsInvalidBrowser": %v,
@@ -247,7 +274,7 @@ func (s *botScenario) sendEvent(url, writeKey, workspaceID, sourceID string) err
 				"type": "identify"
 			}
 		}
-	]`, s.isBot, s.botName, s.botURL, s.isInvalidBrowser, workspaceID, sourceID))
+	]`, s.isBot, s.botAction, s.botName, s.botURL, s.isInvalidBrowser, workspaceID, sourceID))
 	req, err := http.NewRequest("POST", url+"/internal/v1/batch", bytes.NewReader(payload))
 	if err != nil {
 		return err
