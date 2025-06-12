@@ -3,7 +3,7 @@
 
 # GO_VERSION is updated automatically to match go.mod, see Makefile
 ARG GO_VERSION=1.24.4
-ARG ALPINE_VERSION=3.20
+ARG ALPINE_VERSION=3.22
 FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
 ARG VERSION
 ARG REVISION
