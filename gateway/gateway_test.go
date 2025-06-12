@@ -2527,7 +2527,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err.Error()).To(Equal(response.NotRudderEvent))
 		})
 
-		It("adds isBot, botName, botURL, botIsInvalidBrowser in the request parameters", func() {
+		It("adds isBot, botName, botURL, botIsInvalidBrowser, botAction in the request parameters", func() {
 			properties := stream.MessageProperties{
 				RequestType:         "dummyRequestType",
 				RoutingKey:          "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
@@ -2540,6 +2540,7 @@ var _ = Describe("Gateway", func() {
 				BotName:             "dummyBotName",
 				BotURL:              "dummyBotURL",
 				BotIsInvalidBrowser: true,
+				BotAction:           "flag",
 			}
 			msg := stream.Message{
 				Properties: properties,
@@ -2564,6 +2565,7 @@ var _ = Describe("Gateway", func() {
 				BotName             string `json:"bot_name"`
 				BotURL              string `json:"bot_url"`
 				BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser"`
+				BotAction           string `json:"bot_action"`
 			}
 			var reqParams params
 			err = jsonrs.Unmarshal(jobsWithStats[0].job.Parameters, &reqParams)
@@ -2572,6 +2574,7 @@ var _ = Describe("Gateway", func() {
 			Expect(reqParams.BotName).To(Equal("dummyBotName"))
 			Expect(reqParams.BotURL).To(Equal("dummyBotURL"))
 			Expect(reqParams.BotIsInvalidBrowser).To(BeTrue())
+			Expect(reqParams.BotAction).To(Equal("flag"))
 		})
 	})
 })

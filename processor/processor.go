@@ -1184,10 +1184,21 @@ func (proc *Handle) getTransformerEvents(
 }
 
 func (proc *Handle) updateMetricMaps(
+	// countMetadataMap provides metadata context for getDiffMetrics to create detailed PUReportedMetric objects
+	// storing rich context during event processing for diff metric reporting
 	countMetadataMap map[string]MetricMetadata,
+
+	// countMap accumulates event counts by unique key combinations, feeding into getDiffMetrics to capture diff metrics
 	countMap map[string]int64,
+
+	// connectionDetailsMap stores source-destination relationship data that becomes PUReportedMetric.ConnectionDetails
+	// for constructing complete reporting metrics with workspace, source, and destination context
 	connectionDetailsMap map[string]*reportingtypes.ConnectionDetails,
+
+	// statusDetailsMap captures processing outcomes including error details, validation violations, and sample payloads
+	// that become PUReportedMetric.StatusDetail
 	statusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
+
 	event *types.TransformerResponse,
 	status, stage string,
 	payload func() json.RawMessage,
@@ -1207,7 +1218,9 @@ func (proc *Handle) updateMetricMaps(
 		eventType,
 	}, MetricKeyDelimiter)
 
-	countMap[countKey] = countMap[countKey] + 1
+	if countMap != nil {
+		countMap[countKey] = countMap[countKey] + 1
+	}
 
 	if countMetadataMap != nil {
 		if _, ok := countMetadataMap[countKey]; !ok {
@@ -1650,6 +1663,8 @@ type preTransformationMessage struct {
 	archivalJobs                 []*jobsdb.JobT
 	connectionDetailsMap         map[string]*reportingtypes.ConnectionDetails
 	statusDetailsMap             map[string]map[string]*reportingtypes.StatusDetail
+	enricherConnectionDetailsMap map[string]*reportingtypes.ConnectionDetails
+	enricherStatusDetailsMap     map[string]map[string]*reportingtypes.StatusDetail
 	reportMetrics                []*reportingtypes.PUReportedMetric
 	destFilterStatusDetailMap    map[string]map[string]*reportingtypes.StatusDetail
 	inCountMetadataMap           map[string]MetricMetadata
@@ -1717,6 +1732,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	enricherConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	enricherStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -1955,6 +1972,29 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				},
 				nil,
 			)
+
+			if event.eventParams.IsBot {
+				botStatus := reportingtypes.BotDetectedStatus
+				// TODO: remove the empty check after ingestion service is released with BotAction field
+				if event.eventParams.BotAction == "flag" || event.eventParams.BotAction == "" {
+					botStatus = reportingtypes.BotFlaggedStatus
+				}
+
+				// Pass nil for countMetadataMap and countMap as we don't want to capture diff metrics for bot enricher
+				proc.updateMetricMaps(
+					nil,
+					nil,
+					enricherConnectionDetailsMap,
+					enricherStatusDetailsMap,
+					transformerEvent,
+					botStatus,
+					reportingtypes.GATEWAY,
+					func() json.RawMessage {
+						return nil
+					},
+					nil,
+				)
+			}
 		}
 		// REPORTING - GATEWAY metrics - END
 		// Getting all the destinations which are enabled for this event.
@@ -2009,6 +2049,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		archivalJobs:                 archivalJobs,
 		connectionDetailsMap:         connectionDetailsMap,
 		statusDetailsMap:             statusDetailsMap,
+		enricherConnectionDetailsMap: enricherConnectionDetailsMap,
+		enricherStatusDetailsMap:     enricherStatusDetailsMap,
 		reportMetrics:                reportMetrics,
 		destFilterStatusDetailMap:    destFilterStatusDetailMap,
 		inCountMetadataMap:           inCountMetadataMap,
@@ -2114,6 +2156,18 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				preTrans.reportMetrics = append(preTrans.reportMetrics, destFilterMetric)
 			}
 		}
+
+		reportingtypes.AssertSameKeys(preTrans.enricherConnectionDetailsMap, preTrans.enricherStatusDetailsMap)
+		for k, cd := range preTrans.enricherConnectionDetailsMap {
+			for _, sd := range preTrans.enricherStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
+					StatusDetail:      sd,
+				})
+			}
+		}
+
 		// empty failedCountMap because no failures,
 		// events are just dropped at this point if no destination is found to route the events
 		diffMetrics := getDiffMetrics(
