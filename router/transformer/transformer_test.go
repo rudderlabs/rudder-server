@@ -61,14 +61,6 @@ func (a *mockAdapter) getResponse(response []byte, respCode int, metadata []Prox
 func TestProxyRequest(t *testing.T) {
 	initMocks(t)
 
-	config.Set("Transformer.Client.Router.retryRudderErrors.enabled", false)
-	config.Set("HttpClient.backendProxy.timeout", "1s")
-	config.Set("HttpClient.routerTransformer.timeout", "1s")
-
-	defer func() {
-		config.Reset()
-	}()
-
 	httpClientTimeout := time.Second
 
 	// enum for expected Body Types

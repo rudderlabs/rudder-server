@@ -665,6 +665,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 		req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 		resp, err = trans.proxyClientOAuthV2.Do(req)
 	} else {
+		fmt.Println("here")
 		resp, err = trans.proxyClient.Do(req)
 	}
 	reqRoundTripTime := time.Since(httpReqStTime)

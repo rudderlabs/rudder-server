@@ -13,7 +13,7 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
@@ -75,16 +75,6 @@ func NewClient(config *ClientConfig) Client {
 	}
 }
 
-// buildDefaultTransport creates a transport with default settings
-func buildDefaultTransport() *http.Transport {
-	return &http.Transport{
-		DisableKeepAlives:   defaultDisableKeepAlives,
-		MaxConnsPerHost:     defaultMaxConnsPerHost,
-		MaxIdleConnsPerHost: defaultMaxIdleConnsPerHost,
-		IdleConnTimeout:     defaultIdleConnTimeout,
-	}
-}
-
 // buildStandardClient creates a standard HTTP client with configuration applied
 func buildStandardClient(config *ClientConfig) Client {
 	transport := buildConfiguredTransport(config)
@@ -133,20 +123,22 @@ func buildHTTPLBClient(config *ClientConfig) Client {
 
 // buildConfiguredTransport creates a transport with configuration applied
 func buildConfiguredTransport(config *ClientConfig) *http.Transport {
-	transport := buildDefaultTransport()
+	transport := &http.Transport{
+		DisableKeepAlives:   defaultDisableKeepAlives,
+		MaxConnsPerHost:     defaultMaxConnsPerHost,
+		MaxIdleConnsPerHost: defaultMaxIdleConnsPerHost,
+		IdleConnTimeout:     defaultIdleConnTimeout,
+	}
 
-	if config != nil {
-		transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
-
-		if config.TransportConfig.MaxConnsPerHost != 0 {
-			transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
-		}
-		if config.TransportConfig.MaxIdleConnsPerHost != 0 {
-			transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
-		}
-		if config.TransportConfig.IdleConnTimeout != 0 {
-			transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
-		}
+	transport.DisableKeepAlives = config.TransportConfig.DisableKeepAlives
+	if config.TransportConfig.MaxConnsPerHost != 0 {
+		transport.MaxConnsPerHost = config.TransportConfig.MaxConnsPerHost
+	}
+	if config.TransportConfig.MaxIdleConnsPerHost != 0 {
+		transport.MaxIdleConnsPerHost = config.TransportConfig.MaxIdleConnsPerHost
+	}
+	if config.TransportConfig.IdleConnTimeout != 0 {
+		transport.IdleConnTimeout = config.TransportConfig.IdleConnTimeout
 	}
 
 	return transport
@@ -223,9 +215,12 @@ func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Co
 		retryableConfig,
 		retryablehttp.WithHttpClient(baseClient),
 		retryablehttp.WithCustomRetryStrategy(func(resp *http.Response, err error) (bool, error) {
+			fmt.Println("err", err, time.Now().Format("2006-01-02 15:04:05"))
 			if err != nil {
 				return false, backoff.Permanent(err)
 			}
+			fmt.Println("respStatus", resp.StatusCode)
+			fmt.Println("respHeader", resp.Header.Get("X-Rudder-Should-Retry"))
 			if resp.StatusCode == http.StatusServiceUnavailable &&
 				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
 				reason := resp.Header.Get("X-Rudder-Error-Reason")
