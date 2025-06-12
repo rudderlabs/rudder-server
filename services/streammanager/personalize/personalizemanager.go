@@ -27,7 +27,7 @@ type PersonalizeClientV1 interface {
 	PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error)
 }
 
-func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (*PersonalizeProducerV1, error) {
+func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
 	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, personalizeevents.ServiceName)
 	if err != nil {
 		return nil, err

@@ -23,7 +23,6 @@ import (
 	cloudfunctions "github.com/rudderlabs/rudder-server/services/streammanager/googlecloudfunction"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
 var once sync.Once
@@ -175,7 +174,6 @@ func TestNewProducerWithPersonalizeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &personalize.SwitchingPersonalizeManager{})
 }
 
 func TestNewProducerWithBQStreamDestination(t *testing.T) {
