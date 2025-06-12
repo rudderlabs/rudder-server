@@ -4,8 +4,10 @@ package dedup
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/services/dedup/badger"
+	"github.com/rudderlabs/rudder-server/services/dedup/keydb"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
@@ -17,7 +19,10 @@ func SingleKey(key string) BatchKey {
 }
 
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(conf *config.Config, stats stats.Stats) (Dedup, error) {
+func New(conf *config.Config, stats stats.Stats, log logger.Logger) (Dedup, error) {
+	if conf.GetBool("Dedup.KeyDB.Enabled", false) {
+		return keydb.NewKeyDB(conf, stats, log)
+	}
 	return badger.NewBadgerDB(conf, stats, badger.DefaultPath()), nil
 }
 

@@ -33,7 +33,7 @@ func Test_Dedup(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.Default, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -120,7 +120,7 @@ func Test_Dedup_Window(t *testing.T) {
 	_ = os.RemoveAll(dbPath)
 	conf.Set("Dedup.dedupWindow", "1s")
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.Default, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -152,7 +152,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.Default, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -180,7 +180,7 @@ func Test_Dedup_Race(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.Default, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -221,7 +221,7 @@ func Benchmark_Dedup(b *testing.B) {
 	_ = os.MkdirAll(dbPath, 0o750)
 	conf := config.New()
 	b.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.Default, logger.NOP)
 	require.NoError(b, err)
 	b.ResetTimer()
 	b.Run("no duplicates", func(b *testing.B) {
