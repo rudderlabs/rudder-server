@@ -12,8 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -22,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
@@ -762,4 +767,123 @@ func TestLongRunningTransformation(t *testing.T) {
 		}
 		cancel()
 	})
+}
+
+func TestEmbeddedWarehouseTransformer(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	transformerResource, err := transformertest.Setup(pool, t)
+	require.NoError(t, err)
+
+	conf := config.New()
+	conf.Set("DEST_TRANSFORM_URL", transformerResource.TransformerURL)
+	conf.Set("USER_TRANSFORM_URL", transformerResource.TransformerURL)
+	conf.Set("Processor.enableWarehouseTransformations", true)
+	conf.Set("Processor.verifyWarehouseTransformations", true)
+
+	ctx := context.Background()
+	eventsCount := 10000
+	trans := destination_transformer.New(conf, logger.NOP, stats.NOP)
+
+	clientEvents := lo.RepeatBy(eventsCount, func(index int) types.TransformerEvent {
+		return types.TransformerEvent{
+			Message: map[string]interface{}{
+				"src-key-1":         "test-value-1",
+				"messageId":         "messageId" + strconv.Itoa(index+1),
+				"event":             "event" + strconv.Itoa(index+1),
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			},
+			Metadata: types.Metadata{
+				MessageID:       "messageId" + strconv.Itoa(index+1),
+				ReceivedAt:      "2021-09-01T00:00:00.000Z",
+				SourceID:        "test-source",
+				SourceType:      "JavaScript",
+				DestinationID:   "test-destination",
+				DestinationType: "RS",
+				SourceCategory:  "webhook",
+				EventType:       "track",
+				RecordID:        "test-record",
+				JobID:           int64(index + 1),
+			},
+			Destination: backendconfig.DestinationT{
+				ID: "test-destination",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "RS",
+				},
+				Config: map[string]any{
+					"skipTracksTable": true,
+				},
+			},
+		}
+	})
+	expectedResponse := lo.Flatten(lo.RepeatBy(eventsCount, func(index int) []types.TransformerResponse {
+		return []types.TransformerResponse{
+			{
+				Output: map[string]any{
+					"data": map[string]any{
+						"context_destination_id":   "test-destination",
+						"context_destination_type": "RS",
+						"context_source_id":        "test-source",
+						"context_source_type":      "JavaScript",
+						"event":                    "event" + strconv.Itoa(index+1),
+						"event_text":               "event" + strconv.Itoa(index+1),
+						"id":                       "messageId" + strconv.Itoa(index+1),
+						"original_timestamp":       "2021-09-01T00:00:00.000Z",
+						"received_at":              "2021-09-01T00:00:00.000Z",
+						"sent_at":                  "2021-09-01T00:00:00.000Z",
+						"timestamp":                "2021-09-01T00:00:00.000Z",
+					},
+					"metadata": map[string]any{
+						"columns": map[string]any{
+							"context_destination_id":   "string",
+							"context_destination_type": "string",
+							"context_source_id":        "string",
+							"context_source_type":      "string",
+							"event":                    "string",
+							"event_text":               "string",
+							"id":                       "string",
+							"original_timestamp":       "datetime",
+							"received_at":              "datetime",
+							"sent_at":                  "datetime",
+							"timestamp":                "datetime",
+							"uuid_ts":                  "datetime",
+						},
+						"receivedAt": "2021-09-01T00:00:00.000Z",
+						"table":      "event" + strconv.Itoa(index+1),
+					},
+					"userId": "",
+				},
+				Metadata: types.Metadata{
+					SourceID:        "test-source",
+					SourceType:      "JavaScript",
+					SourceCategory:  "webhook",
+					DestinationID:   "test-destination",
+					RecordID:        "test-record",
+					DestinationType: "RS",
+					MessageID:       "messageId" + strconv.Itoa(index+1),
+					ReceivedAt:      "2021-09-01T00:00:00.000Z",
+					EventType:       "track",
+					JobID:           int64(index + 1),
+				},
+				StatusCode: 200,
+			},
+		}
+	}))
+
+	r := trans.Transform(ctx, clientEvents)
+	require.Empty(t, r.FailedEvents)
+	require.Len(t, r.Events, eventsCount)
+
+	expectedMessageIDs := lo.Flatten(lo.RepeatBy(eventsCount, func(index int) []string {
+		return []string{"messageId" + strconv.Itoa(index+1)}
+	}))
+	actualMessageIDS := lo.Map(r.Events, func(item types.TransformerResponse, index int) string {
+		return item.Metadata.MessageID
+	})
+	require.ElementsMatch(t, expectedMessageIDs, actualMessageIDS)
+	require.ElementsMatch(t, expectedResponse, r.Events)
 }

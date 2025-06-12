@@ -404,7 +404,7 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	if c.canRunWarehouseTransformations(destType) {
 		if c.config.warehouseTransformations.verify.Load() {
 			legacyResponse := c.transform(ctx, clientEvents)
-			c.warehouseClient.CompareResponsesAndUpload(ctx, clientEvents, legacyResponse)
+			c.warehouseClient.CompareResponsesAndUpload(ctx, deepCopy(clientEvents), deepCopy(legacyResponse))
 			return legacyResponse
 		}
 		return c.warehouseClient.Transform(ctx, clientEvents)
@@ -424,6 +424,14 @@ func (c *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return legacyTransformerResponse
 	}
 	return impl(ctx, clientEvents)
+}
+
+func deepCopy[T any](src T) T {
+	var dst T
+	if data, err := jsonrs.Marshal(src); err == nil {
+		_ = jsonrs.Unmarshal(data, &dst)
+	}
+	return dst
 }
 
 func (c *Client) canRunWarehouseTransformations(destType string) bool {
