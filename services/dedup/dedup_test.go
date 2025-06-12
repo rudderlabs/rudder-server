@@ -2,6 +2,8 @@ package dedup_test
 
 import (
 	"context"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -13,12 +15,17 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
+	keydbclient "github.com/rudderlabs/keydb/client"
+	keydb "github.com/rudderlabs/keydb/node"
+	keydbproto "github.com/rudderlabs/keydb/proto"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -30,83 +37,91 @@ func Test_Dedup(t *testing.T) {
 	misc.Init()
 
 	dbPath := t.TempDir()
-	conf := config.New()
-	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.Default, logger.NOP)
-	require.Nil(t, err)
-	defer d.Close()
-
-	t.Run("key a not present in cache and badger db", func(t *testing.T) {
-		key := dedup.SingleKey("a")
-		found, err := d.Allowed(key)
-		require.NoError(t, err)
-		require.Equal(t, true, found[key])
-
-		// Checking it again should give us the previous value from the cache
-		found, err = d.Allowed(key)
-		require.Nil(t, err)
-		require.Equal(t, false, found[key])
-	})
-
-	t.Run("key a gets committed", func(t *testing.T) {
-		key := dedup.SingleKey("b")
-		found, err := d.Allowed(key)
-		require.Nil(t, err)
-		require.Equal(t, true, found[key])
-
-		err = d.Commit([]string{"a"})
-		require.NoError(t, err)
-
-		found, err = d.Allowed(key)
-		require.Nil(t, err)
-		require.Equal(t, false, found[key])
-	})
-
-	t.Run("committing a key not present in committed list", func(t *testing.T) {
-		key := dedup.SingleKey("c")
-		found, err := d.Allowed(key)
-		require.Nil(t, err)
-		require.Equal(t, true, found[key])
-
-		err = d.Commit([]string{"d"})
-		require.NotNil(t, err)
-	})
-
-	t.Run("unique keys", func(t *testing.T) {
-		kvs := []types.BatchKey{
-			{Index: 0, Key: "e"},
-			{Index: 1, Key: "f"},
-			{Index: 2, Key: "g"},
+	for _, dedupDB := range []string{"badger", "keydb"} {
+		conf := config.New()
+		if dedupDB == "badger" {
+			t.Setenv("RUDDER_TMPDIR", dbPath)
+		} else {
+			conf.Set("Dedup.KeyDB.Enabled", true)
+			startKeydb(t, conf)
 		}
-		found, err := d.Allowed(kvs...)
-		require.Nil(t, err)
-		for _, kv := range kvs {
-			require.Equal(t, true, found[kv])
-		}
-		err = d.Commit([]string{"e", "f", "g"})
-		require.NoError(t, err)
-	})
 
-	t.Run("non-unique keys", func(t *testing.T) {
-		kvs := []types.BatchKey{
-			{Index: 0, Key: "g"},
-			{Index: 1, Key: "h"},
-			{Index: 2, Key: "h"},
-		}
-		expected := map[types.BatchKey]bool{
-			kvs[0]: false,
-			kvs[1]: true,
-			kvs[2]: false,
-		}
-		found, err := d.Allowed(kvs...)
+		d, err := dedup.New(conf, stats.Default, logger.NOP)
 		require.Nil(t, err)
-		for _, kv := range kvs {
-			require.Equal(t, expected[kv], found[kv])
-		}
-		err = d.Commit([]string{"h"})
-		require.NoError(t, err)
-	})
+		t.Cleanup(d.Close)
+
+		t.Run(dedupDB+"/key a not present in cache and db", func(t *testing.T) {
+			key := dedup.SingleKey("a")
+			found, err := d.Allowed(key)
+			require.NoError(t, err)
+			require.Equal(t, true, found[key])
+
+			// Checking it again should give us the previous value from the cache
+			found, err = d.Allowed(key)
+			require.Nil(t, err)
+			require.Equal(t, false, found[key])
+		})
+
+		t.Run(dedupDB+"/key a gets committed", func(t *testing.T) {
+			key := dedup.SingleKey("b")
+			found, err := d.Allowed(key)
+			require.Nil(t, err)
+			require.Equal(t, true, found[key])
+
+			err = d.Commit([]string{"a"})
+			require.NoError(t, err)
+
+			found, err = d.Allowed(key)
+			require.Nil(t, err)
+			require.Equal(t, false, found[key])
+		})
+
+		t.Run(dedupDB+"/committing a key not present in committed list", func(t *testing.T) {
+			key := dedup.SingleKey("c")
+			found, err := d.Allowed(key)
+			require.Nil(t, err)
+			require.Equal(t, true, found[key])
+
+			err = d.Commit([]string{"d"})
+			require.NotNil(t, err)
+		})
+
+		t.Run(dedupDB+"/unique keys", func(t *testing.T) {
+			kvs := []types.BatchKey{
+				{Index: 0, Key: "e"},
+				{Index: 1, Key: "f"},
+				{Index: 2, Key: "g"},
+			}
+			found, err := d.Allowed(kvs...)
+			require.Nil(t, err)
+			for _, kv := range kvs {
+				require.Equal(t, true, found[kv])
+			}
+			err = d.Commit([]string{"e", "f", "g"})
+			require.NoError(t, err)
+		})
+
+		t.Run(dedupDB+"/non-unique keys", func(t *testing.T) {
+			kvs := []types.BatchKey{
+				{Index: 0, Key: "g"},
+				{Index: 1, Key: "h"},
+				{Index: 2, Key: "h"},
+			}
+			expected := map[types.BatchKey]bool{
+				kvs[0]: false,
+				kvs[1]: true,
+				kvs[2]: false,
+			}
+			found, err := d.Allowed(kvs...)
+			require.Nil(t, err)
+			for _, kv := range kvs {
+				require.Equal(t, expected[kv], found[kv])
+			}
+			err = d.Commit([]string{"h"})
+			require.NoError(t, err)
+		})
+	}
 }
 
 func Test_Dedup_Window(t *testing.T) {
@@ -287,4 +302,68 @@ func Benchmark_Dedup(b *testing.B) {
 	}
 
 	b.Log("db size:", string(out))
+}
+
+func startKeydb(t testing.TB, conf *config.Config) {
+	t.Helper()
+
+	freePort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+
+	var service *keydb.Service
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	address := "localhost:" + strconv.Itoa(freePort)
+	conf.Set("KeyDB.Dedup.Addresses", address)
+	conf.Set("KeyDB.Dedup.RetryCount", 3)
+
+	nodeConfig := keydb.Config{
+		NodeID:           0,
+		ClusterSize:      1,
+		TotalHashRanges:  128,
+		SnapshotInterval: time.Minute,
+		Addresses:        []string{address},
+	}
+	service, err = keydb.NewService(ctx, nodeConfig, &mockedCloudStorage{}, logger.NOP)
+	require.NoError(t, err)
+
+	// Create a gRPC server
+	server := grpc.NewServer()
+	keydbproto.RegisterNodeServiceServer(server, service)
+
+	lis, err := net.Listen("tcp", address)
+	require.NoError(t, err)
+
+	// Start the server
+	go func() {
+		require.NoError(t, server.Serve(lis))
+	}()
+	t.Cleanup(func() {
+		cancel()
+		server.GracefulStop()
+		_ = lis.Close()
+		service.Close()
+	})
+
+	c, err := keydbclient.NewClient(keydbclient.Config{
+		Addresses:       []string{address},
+		TotalHashRanges: 128,
+		RetryCount:      3,
+		RetryDelay:      time.Second,
+	})
+	require.NoError(t, err)
+	resp, err := c.GetNodeInfo(context.Background(), 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, resp.ClusterSize)
+	require.NoError(t, c.Close())
+
+	t.Logf("keydb address: %s", address)
+}
+
+type mockedCloudStorage struct{}
+
+func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string) error { return nil }
+func (m *mockedCloudStorage) UploadReader(_ context.Context, _ string, _ io.Reader) (filemanager.UploadedFile, error) {
+	return filemanager.UploadedFile{}, nil
 }

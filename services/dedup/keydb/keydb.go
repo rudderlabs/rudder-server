@@ -48,7 +48,10 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (*Dedup,
 	db.stats.getTimer = stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "keydb"})
 	db.stats.setTimer = stat.NewTaggedStat("dedup_set_duration_seconds", stats.TimerType, stats.Tags{"mode": "keydb"})
 
-	return &Dedup{keyDB: db}, nil
+	return &Dedup{
+		keyDB:       db,
+		uncommitted: make(map[string]struct{}),
+	}, nil
 }
 
 func (d *KeyDB) Get(keys []string) (map[string]bool, error) {

@@ -79,6 +79,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
+	github.com/rudderlabs/keydb v0.0.2-alpha
 	github.com/rudderlabs/rudder-go-kit v0.55.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.7.0
@@ -115,8 +116,6 @@ require (
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
 )
-
-require github.com/rudderlabs/keydb v0.0.1-alpha
 
 require (
 	cel.dev/expr v0.23.0 // indirect
