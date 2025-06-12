@@ -1,4 +1,4 @@
-FROM golang:1.24.2-alpine3.20 AS builder
+FROM golang:1.24.4-alpine3.20 AS builder
 WORKDIR /app
 COPY . .
 RUN go mod download &&  \

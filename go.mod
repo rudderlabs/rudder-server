@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.24.2
+go 1.24.4
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -39,7 +39,7 @@ require (
 	github.com/bufbuild/httplb v0.4.1
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/confluentinc/confluent-kafka-go/v2 v2.10.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.10.1
 	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/dlclark/regexp2 v1.11.5
@@ -79,7 +79,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.55.2-0.20250612105912-d2e44aac794e
+	github.com/rudderlabs/rudder-go-kit v0.55.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.6.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250507094647-f18f2e217449
