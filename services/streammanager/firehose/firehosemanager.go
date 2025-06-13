@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/firehose/mock_eventbride.go -package mock_eventbride github.com/rudderlabs/rudder-server/services/streammanager/firehose FireHoseClient
+//go:generate mockgen -destination=../../../mocks/services/streammanager/firehose_v1/mock_firehose_v1.go -package mock_firehose_v1 github.com/rudderlabs/rudder-server/services/streammanager/firehose FireHoseClientV1
 
 package firehose
 
@@ -11,42 +11,37 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-var pkgLogger logger.Logger
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(firehose.ServiceName)
+type FireHoseProducerV1 struct {
+	client FireHoseClientV1
 }
 
-type FireHoseProducer struct {
-	client FireHoseClient
-}
-
-type FireHoseClient interface {
+type FireHoseClientV1 interface {
 	PutRecord(input *firehose.PutRecordInput) (*firehose.PutRecordOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*FireHoseProducer, error) {
+func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
 	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, firehose.ServiceName)
 	if err != nil {
 		return nil, err
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.FIREHOSE.httpMaxIdleConnsPerHost", "Router.FIREHOSE.noOfWorkers", "Router.noOfWorkers")
 	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &FireHoseProducer{client: firehose.New(awsSession)}, nil
+	return &FireHoseProducerV1{client: firehose.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to Firehose.
-func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *FireHoseProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	client := producer.client
 	if client == nil {
@@ -93,7 +88,7 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 	return 200, "Success", fmt.Sprintf("Message delivered with Record information %v", putOutput)
 }
 
-func (*FireHoseProducer) Close() error {
+func (*FireHoseProducerV1) Close() error {
 	// no-op
 	return nil
 }

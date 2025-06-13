@@ -1,4 +1,4 @@
-//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/lambda/mock_lambda.go -package mock_lambda github.com/rudderlabs/rudder-server/services/streammanager/lambda LambdaClient
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/lambda_v1/mock_lambda_v1.go -package mock_lambda_v1 github.com/rudderlabs/rudder-server/services/streammanager/lambda LambdaClientV1
 
 package lambda
 
@@ -9,53 +9,37 @@ import (
 	"github.com/mitchellh/mapstructure"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-// Config is the config that is required to send data to Lambda
-type destinationConfig struct {
-	InvocationType string `json:"invocationType"`
-	ClientContext  string `json:"clientContext"`
-	Lambda         string `json:"lambda"`
+type LambdaProducerV1 struct {
+	client LambdaClientV1
 }
 
-type inputData struct {
-	Payload string `json:"payload"`
-}
-
-type LambdaProducer struct {
-	client LambdaClient
-}
-
-type LambdaClient interface {
+type LambdaClientV1 interface {
 	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
-var pkgLogger logger.Logger
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(lambda.ServiceName)
-}
-
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*LambdaProducer, error) {
+func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
 	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, lambda.ServiceName)
 	if err != nil {
 		return nil, err
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.LAMBDA.httpMaxIdleConnsPerHost", "Router.LAMBDA.noOfWorkers", "Router.noOfWorkers")
 	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &LambdaProducer{client: lambda.New(awsSession)}, nil
+	return &LambdaProducerV1{client: lambda.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
-func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *LambdaProducerV1) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Failure", "[Lambda] error :: Could not create client"
@@ -102,7 +86,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
 }
 
-func (*LambdaProducer) Close() error {
+func (*LambdaProducerV1) Close() error {
 	// no-op
 	return nil
 }

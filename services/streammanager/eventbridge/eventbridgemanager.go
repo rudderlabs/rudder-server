@@ -1,51 +1,45 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbridge.go -package mock_eventbridge github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
+//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge_v1/mock_eventbridge_v1.go -package mock_eventbridge_v1 github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClientV1
 
 package eventbridge
 
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-var pkgLogger logger.Logger
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(strings.ToLower(eventbridge.ServiceName))
+type EventBridgeProducerV1 struct {
+	client EventBridgeClientV1
 }
 
-type EventBridgeProducer struct {
-	client EventBridgeClient
-}
-
-type EventBridgeClient interface {
+type EventBridgeClientV1 interface {
 	PutEvents(input *eventbridge.PutEventsInput) (*eventbridge.PutEventsOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*EventBridgeProducer, error) {
+func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
 	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, eventbridge.ServiceName)
 	if err != nil {
 		return nil, err
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.EVENTBRIDGE.httpMaxIdleConnsPerHost", "Router.EVENTBRIDGE.noOfWorkers", "Router.noOfWorkers")
 	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &EventBridgeProducer{client: eventbridge.New(awsSession)}, nil
+	return &EventBridgeProducerV1{client: eventbridge.New(awsSession)}, nil
 }
 
 // Produce creates a producer and send data to EventBridge.
-func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *EventBridgeProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	// get producer
 	client := producer.client
 	if client == nil {
@@ -98,7 +92,7 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interfa
 	return 200, "Success", message
 }
 
-func (*EventBridgeProducer) Close() error {
+func (*EventBridgeProducerV1) Close() error {
 	// no-op
 	return nil
 }

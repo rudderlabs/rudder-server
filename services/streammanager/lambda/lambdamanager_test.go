@@ -7,15 +7,16 @@ import (
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
-	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda_v2"
+	common "github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
 var (
@@ -36,10 +37,9 @@ func TestNewProducer(t *testing.T) {
 		WorkspaceID: "sampleWorkspaceID",
 	}
 	timeOut := 10 * time.Second
-	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
+	producer, err := NewProducerV2(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 
 	// Invalid Region
 	destinationConfig = map[string]interface{}{
@@ -48,13 +48,13 @@ func TestNewProducer(t *testing.T) {
 	}
 	destination.Config = destinationConfig
 	timeOut = 10 * time.Second
-	producer, err = NewProducer(&destination, common.Opts{Timeout: timeOut})
+	producer, err = NewProducerV2(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, producer)
 	assert.Equal(t, "could not find region configuration", err.Error())
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &LambdaProducer{}
+	producer := &LambdaProducerV2{}
 	sampleEventJson := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -64,8 +64,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
-	producer := &LambdaProducer{client: mockClient}
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	producer := &LambdaProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
@@ -88,8 +88,8 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
-	producer := &LambdaProducer{client: mockClient}
+	mockClient := mock_lambda.NewMockLambdaClientV2(ctrl)
+	producer := &LambdaProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
@@ -103,14 +103,14 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	}
 
 	var sampleInput lambda.InvokeInput
-	sampleInput.SetFunctionName(sampleFunction)
-	sampleInput.SetPayload([]byte(sampleMessage))
-	sampleInput.SetInvocationType(invocationType)
-	sampleInput.SetClientContext(sampleClientContext)
+	sampleInput.FunctionName = &sampleFunction
+	sampleInput.Payload = []byte(sampleMessage)
+	sampleInput.InvocationType = types.InvocationType(invocationType)
+	sampleInput.ClientContext = &sampleClientContext
 
 	mockClient.
 		EXPECT().
-		Invoke(&sampleInput).
+		Invoke(gomock.Any(), &sampleInput).
 		Return(&lambda.InvokeOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, destConfig)
 	assert.Equal(t, 200, statusCode)
@@ -121,7 +121,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	errorCode := "errorCode"
 	mockClient.
 		EXPECT().
-		Invoke(&sampleInput).
+		Invoke(gomock.Any(), &sampleInput).
 		Return(nil, errors.New(errorCode))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, destConfig)
@@ -129,13 +129,14 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	assert.Equal(t, "Failure", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
-	// return aws error
 	mockClient.
 		EXPECT().
-		Invoke(&sampleInput).
-		Return(nil, awserr.NewRequestFailure(
-			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-		))
+		Invoke(gomock.Any(), &sampleInput).
+		Return(nil, &smithy.GenericAPIError{
+			Code:    errorCode,
+			Message: errorCode,
+			Fault:   smithy.FaultClient,
+		})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, destConfig)
 	assert.Equal(t, 400, statusCode)
