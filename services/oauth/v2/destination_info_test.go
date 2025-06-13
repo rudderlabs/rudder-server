@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
@@ -20,6 +21,7 @@ type destInfoTestCase struct {
 	flow           common.RudderFlow
 	inputDefConfig map[string]interface{}
 	expected       isOAuthResult
+	account        *backendconfig.AccountWithDefinition
 }
 
 var isOAuthDestTestCases = []destInfoTestCase{
@@ -109,6 +111,178 @@ var isOAuthDestTestCases = []destInfoTestCase{
 			isOAuth: false,
 		},
 	},
+	// scenarios considering only account is present mostly possible for any new oauth destinations
+	{
+		description:    "should return 'true' without error for a OAuth destination when account is present with accountDefinition and refreshOAuthToken is true",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Name:               "DESTINATION_HUBSPOT_OAUTH",
+				AuthenticationType: "OAuth",
+				Config: map[string]interface{}{
+					"refreshOAuthToken": true,
+				},
+			},
+		},
+	},
+	{
+		description:    "should return 'false' without error for a non-OAuth destination when account is present with accountDefinition and refreshOAuthToken is false",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Name:               "DESTINATION_HUBSPOT_OAUTH",
+				AuthenticationType: "OAuth",
+				Config: map[string]interface{}{
+					"refreshOAuthToken": false,
+				},
+			},
+		},
+	},
+	{
+		description: "should return 'false' without error for a OAuth destination when account is present with accountDefinition and refreshOAuthToken is an object",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Name:               "DESTINATION_HUBSPOT_OAUTH",
+				AuthenticationType: "OAuth",
+				Config: map[string]interface{}{
+					"refreshOAuthToken": map[string]interface{}{
+						"value": true,
+					},
+				},
+			},
+		},
+	},
+	{
+		description:    "should return 'false' without error for a OAuth destination when account is present with accountDefinition and refreshOAuthToken is not present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				AuthenticationType: "OAuth",
+				Config: map[string]interface{}{
+					"refreshOauthTokenValue": true,
+				},
+			},
+		},
+	},
+	{
+		description:    "should return 'false' without error for a non-OAuth destination when account is not present",
+		flow:           common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+		account: nil,
+	},
+	// scenarios considering both account and definition config are present mostly applicable for oauth/non-oauth destinations which are already present in production
+	{
+		description: "should return true without error for a OAuth destination when account is present with accountDefinition",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			AccountDefinition: backendconfig.AccountDefinition{
+				Name:               "DESTINATION_HUBSPOT_OAUTH",
+				AuthenticationType: "OAuth",
+				Config: map[string]interface{}{
+					"refreshOAuthToken": true,
+				},
+			},
+		},
+	},
+	{
+		description: "should return true without error for a OAuth destination when account is present but not account definition",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			Id:      "accountId",
+			Options: map[string]interface{}{"key1": "value1"},
+			Secret:  map[string]interface{}{"secret1": "secretValue1"},
+		},
+	},
+	{
+		description: "should return false without error for non-OAuth destination when account is present with accountDefinition",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type": "Basic",
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			Id:      "accountId",
+			Options: map[string]interface{}{"key1": "value1"},
+			Secret:  map[string]interface{}{"secret1": "secretValue1"},
+			AccountDefinition: backendconfig.AccountDefinition{
+				AuthenticationType: "BearerToken",
+				Config:             map[string]interface{}{},
+			},
+		},
+	},
+	{
+		description: "should return false without error for a OAuth destination when account is present with accountDefinition but refreshOAuthToken is in wrong format",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+		account: &backendconfig.AccountWithDefinition{
+			Id:      "accountId",
+			Options: map[string]interface{}{"key1": "value1"},
+			Secret:  map[string]interface{}{"secret1": "secretValue1"},
+			AccountDefinition: backendconfig.AccountDefinition{
+				AuthenticationType: "OAuth",
+				Config: map[string]interface{}{
+					"refreshOAuthToken": map[string]interface{}{
+						"value": true,
+					},
+				},
+			},
+		},
+	},
 }
 
 var _ = Describe("DestinationInfo tests", func() {
@@ -119,8 +293,8 @@ var _ = Describe("DestinationInfo tests", func() {
 					DefinitionName: "dest_def_name",
 				}
 				d.DefinitionConfig = tc.inputDefConfig
+				d.Account = tc.account
 				isOAuth, err := d.IsOAuthDestination(tc.flow)
-
 				Expect(isOAuth).To(Equal(tc.expected.isOAuth))
 				if tc.expected.err != nil {
 					Expect(err).To(Equal(tc.expected.err))
