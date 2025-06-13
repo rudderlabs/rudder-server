@@ -323,8 +323,8 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				}
 				statusList, err := brt.updatePollStatusToDB(ctx, destinationID, sourceID, importingJob, pollResp)
 				if err == nil {
-					brt.asyncDestinationStruct[destinationID].UploadInProgress = false
 					brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
+					brt.asyncStructCleanUp(destinationID)
 				}
 			}
 		}
@@ -360,9 +360,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					brt.asyncDestinationStruct[destinationID].PartFileNumber++
 					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
-					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
-						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
-					}
+
 					brt.setMultipleJobStatus(setMultipleJobStatusParams{
 						AsyncOutput:           uploadResponse,
 						Attempted:             true,
@@ -370,7 +368,11 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 						FirstAttemptedAts:     brt.asyncDestinationStruct[destinationID].FirstAttemptedAts,
 						OriginalJobParameters: brt.asyncDestinationStruct[destinationID].OriginalJobParameters,
 					})
-					brt.asyncStructCleanUp(destinationID)
+					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
+						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
+					} else {
+						brt.asyncStructCleanUp(destinationID)
+					}
 				}
 				brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 			}
@@ -412,6 +414,7 @@ func (brt *Handle) asyncStructCleanUp(destinationID string) {
 	misc.RemoveFilePaths(brt.asyncDestinationStruct[destinationID].FileName)
 	brt.asyncDestinationStruct[destinationID].ImportingJobIDs = []int64{}
 	brt.asyncDestinationStruct[destinationID].FailedJobIDs = []int64{}
+	brt.asyncDestinationStruct[destinationID].UploadInProgress = false
 	brt.asyncDestinationStruct[destinationID].Size = 0
 	brt.asyncDestinationStruct[destinationID].Exists = false
 	brt.asyncDestinationStruct[destinationID].Count = 0
