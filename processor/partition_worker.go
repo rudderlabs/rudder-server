@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/collector"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -136,7 +137,10 @@ func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline m
 
 		g.Go(func() error {
 			subJobs := w.handle.jobSplitter(ctx, jobs, rsourcesStats)
+			metricsCollector := collector.NewDefaultMetricsCollector()
+
 			for _, subJob := range subJobs {
+				subJob.metricsCollector = metricsCollector
 				waitStart := time.Now()
 				select {
 				case <-gCtx.Done():

@@ -32,6 +32,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting/collector"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -1683,6 +1684,7 @@ type preTransformationMessage struct {
 	start                        time.Time
 	sourceDupStats               map[dupStatKey]int
 	dedupKeys                    map[string]struct{}
+	metricsCollector             collector.MetricsCollector
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
@@ -2069,6 +2071,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		start:                        start,
 		sourceDupStats:               sourceDupStats,
 		dedupKeys:                    dedupKeys,
+		metricsCollector:             subJobs.metricsCollector,
 	}, nil
 }
 
@@ -2309,6 +2312,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.subJobs.hasMore,
 		preTrans.subJobs.rsourcesStats,
 		trackedUsersReports,
+		preTrans.metricsCollector,
 	}, nil
 }
 
@@ -2331,6 +2335,7 @@ type transformationMessage struct {
 	hasMore             bool
 	rsourcesStats       rsources.StatsCollector
 	trackedUsersReports []*trackedusers.UsersReport
+	metricsCollector    collector.MetricsCollector
 }
 
 type userTransformData struct {
@@ -2349,6 +2354,8 @@ type userTransformData struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
+
+	metricsCollector collector.MetricsCollector
 }
 
 func (proc *Handle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
@@ -2440,6 +2447,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		rsourcesStats:                 in.rsourcesStats,
 		trackedUsersReports:           in.trackedUsersReports,
 		traces:                        traces,
+		metricsCollector:              in.metricsCollector,
 	}
 }
 
@@ -2525,6 +2533,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 		in.hasMore,
 		in.rsourcesStats,
 		in.traces,
+		in.metricsCollector,
 	}
 }
 
@@ -2550,6 +2559,8 @@ type storeMessage struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
+
+	metricsCollector collector.MetricsCollector
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
@@ -3761,6 +3772,8 @@ type subJob struct {
 	subJobs       []*jobsdb.JobT
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
+
+	metricsCollector collector.MetricsCollector
 }
 
 func (proc *Handle) jobSplitter(

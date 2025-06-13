@@ -5827,6 +5827,7 @@ func TestStoreMessageMerge(t *testing.T) {
 		false,
 		nil,
 		map[string]stats.Tags{},
+		nil,
 	}
 
 	merged := storeMessage{

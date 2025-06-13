@@ -160,6 +160,11 @@ func (w *pipelineWorker) start() {
 			// If this is the first subjob, and it doesn't have more parts,
 			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
+				metrics := subJob.metricsCollector.GetMetrics()
+				if metrics != nil {
+					subJob.reportMetrics = append(subJob.reportMetrics, metrics...)
+				}
+
 				w.handle.storeStage(w.partition, subJob)
 				continue
 			}
@@ -182,6 +187,11 @@ func (w *pipelineWorker) start() {
 
 			// If this is the last subjob in the batch, store the merged result
 			if !subJob.hasMore {
+				// Get metrics for the entire batch
+				metrics := subJob.metricsCollector.GetMetrics()
+				if metrics != nil {
+					mergedJob.reportMetrics = append(mergedJob.reportMetrics, metrics...)
+				}
 				w.handle.storeStage(w.partition, mergedJob)
 				firstSubJob = true
 			}
