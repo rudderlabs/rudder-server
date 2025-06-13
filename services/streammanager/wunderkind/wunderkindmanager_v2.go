@@ -1,13 +1,14 @@
 package wunderkind
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -15,18 +16,18 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
-type ProducerV1 struct {
+type ProducerV2 struct {
 	conf   *config.Config
-	client lambdaClientV1
+	client lambdaClientV2
 	logger logger.Logger
 }
 
-type lambdaClientV1 interface {
-	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
+type lambdaClientV2 interface {
+	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) {
+func NewProducerV2(conf *config.Config, log logger.Logger) (*ProducerV2, error) {
 	if err := validate(conf); err != nil {
 		return nil, fmt.Errorf("invalid environment config: %w", err)
 	}
@@ -37,20 +38,19 @@ func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) 
 		RoleBasedAuth: true,
 	}
 	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.WUNDERKIND.httpMaxIdleConnsPerHost", "Router.WUNDERKIND.noOfWorkers", "Router.noOfWorkers")
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
-
-	return &ProducerV1{
+	return &ProducerV2{
 		conf:   conf,
-		client: lambda.New(awsSession),
+		client: lambda.NewFromConfig(awsConfig),
 		logger: log.Child("wunderkind"),
 	}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
-func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (p *ProducerV2) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	client := p.client
 	var input inputData
 	err := jsonrs.Unmarshal(jsonData, &input)
@@ -64,18 +64,14 @@ func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 
 	var invokeInput lambda.InvokeInput
 	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
-	invokeInput.SetFunctionName(wunderKindLambda)
-	invokeInput.SetPayload([]byte(input.Payload))
-	invokeInput.SetInvocationType(InvocationType)
-	invokeInput.SetLogType("Tail")
+	invokeInput.FunctionName = &wunderKindLambda
+	invokeInput.Payload = []byte(input.Payload)
+	invokeInput.InvocationType = InvocationType
+	invokeInput.LogType = "Tail"
 
-	if err = invokeInput.Validate(); err != nil {
-		return http.StatusBadRequest, "Failure", "[Wunderkind] error :: Invalid invokeInput :: " + err.Error()
-	}
-
-	response, err := client.Invoke(&invokeInput)
+	response, err := client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
 		p.logger.Warnn("Invocation",
 			logger.NewStringField("statusCode", fmt.Sprint(statusCode)),
 			logger.NewStringField("respStatus", respStatus),
@@ -102,7 +98,7 @@ func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
 }
 
-func (*ProducerV1) Close() error {
+func (*ProducerV2) Close() error {
 	// no-op
 	return nil
 }

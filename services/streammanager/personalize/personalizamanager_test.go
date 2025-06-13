@@ -1,22 +1,22 @@
 package personalize
 
 import (
-	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/personalizeevents"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
+	"github.com/aws/aws-sdk-go-v2/service/personalizeevents/types"
+	"github.com/aws/smithy-go"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
+	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize_v2"
 
 	"github.com/stretchr/testify/assert"
 
@@ -37,11 +37,10 @@ func TestNewProducer(t *testing.T) {
 	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &PersonalizeProducer{}
+	producer := &PersonalizeProducerV2{}
 	sampleJsonPayload := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -51,8 +50,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
+	producer := &PersonalizeProducerV2{client: mockClient}
 
 	// Invalid Json
 	sampleJsonPayload := []byte("invalid json")
@@ -60,15 +59,9 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.NotEmpty(t, statusMsg)
 	assert.Equal(t, "Could not unmarshal jsonData according to PutEvents input structure", respMsg)
+	choices := []string{"PutEvents", "PutItems", "PutUsers"}
 
-	// Empty Payload
-	sampleJsonPayload = []byte("{}")
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
-	assert.Equal(t, 400, statusCode)
-	assert.Contains(t, statusMsg, "InvalidParameter")
-	assert.Equal(t, "input does not have required fields", respMsg)
-
-	for _, choice := range []string{"PutEvents", "PutItems", "PutUsers"} {
+	for _, choice := range choices {
 		// Invalid Event payload
 		sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
 			"choice":  choice,
@@ -78,29 +71,19 @@ func TestProduceWithInvalidData(t *testing.T) {
 		assert.Equal(t, 400, statusCode)
 		assert.NotEmpty(t, statusMsg)
 		assert.Equal(t, fmt.Sprintf("Could not unmarshal jsonData according to %s input structure", choice), respMsg)
-
-		// Empty Event payload
-		sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
-			"choice":  choice,
-			"payload": "{}",
-		})
-		statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
-		assert.Equal(t, 400, statusCode)
-		assert.Contains(t, statusMsg, "InvalidParameter")
-		assert.Equal(t, "input does not have required fields", respMsg)
 	}
 }
 
 func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
+	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutEvents",
 		"payload": personalizeevents.PutEventsInput{
-			EventList: []*personalizeevents.Event{{
+			EventList: []types.Event{{
 				EventId:   aws.String("eventId"),
 				EventType: aws.String("eventType"),
 				ItemId:    aws.String("itemId"),
@@ -120,14 +103,14 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	// PutEvents with event choice
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutEventsInput variable and use in expect
-	mockClient.EXPECT().PutEvents(&putEventsInput).Return(&personalizeevents.PutEventsOutput{}, nil)
+	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(&personalizeevents.PutEventsOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	// Put event without event choice in the payload so pull payload will be sent to PutEvents
-	mockClient.EXPECT().PutEvents(&putEventsInput).Return(&personalizeevents.PutEventsOutput{}, nil)
+	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(&personalizeevents.PutEventsOutput{}, nil)
 	statusCode, statusMsg, respMsg = producer.Produce(eventPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
@@ -135,9 +118,11 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 
 	// Return service error
 	errorCode := "someError"
-	mockClient.EXPECT().PutEvents(&putEventsInput).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -147,15 +132,15 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 
 func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
+	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutUsers",
 		"payload": personalizeevents.PutUsersInput{
 			DatasetArn: aws.String("datasetArn"),
-			Users:      []*personalizeevents.User{{UserId: aws.String("userId")}},
+			Users:      []types.User{{UserId: aws.String("userId")}},
 		},
 	})
 
@@ -166,16 +151,18 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutUsersInput variable and use in expect
-	mockClient.EXPECT().PutUsers(&putUsersInput).Return(&personalizeevents.PutUsersOutput{}, nil)
+	mockClient.EXPECT().PutUsers(gomock.Any(), &putUsersInput, gomock.Any()).Return(&personalizeevents.PutUsersOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	errorCode := "someError"
-	mockClient.EXPECT().PutUsers(&putUsersInput).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutUsers(gomock.Any(), &putUsersInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -185,15 +172,15 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 
 func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
-	producer := &PersonalizeProducer{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
+	producer := &PersonalizeProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutItems",
 		"payload": personalizeevents.PutItemsInput{
 			DatasetArn: aws.String("datasetArn"),
-			Items:      []*personalizeevents.Item{{ItemId: aws.String("itemId")}},
+			Items:      []types.Item{{ItemId: aws.String("itemId")}},
 		},
 	})
 
@@ -204,16 +191,18 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 
 	// Time struct is changing during marshalling and unmarshalling so we can't directly
 	// define personalizeevents.PutItemsInput variable and use in expect
-	mockClient.EXPECT().PutItems(&putItemsInput).Return(&personalizeevents.PutItemsOutput{}, nil)
+	mockClient.EXPECT().PutItems(gomock.Any(), &putItemsInput, gomock.Any()).Return(&personalizeevents.PutItemsOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	errorCode := "someError"
-	mockClient.EXPECT().PutItems(&putItemsInput).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutItems(gomock.Any(), &putItemsInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
