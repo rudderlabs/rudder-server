@@ -404,4 +404,39 @@ func TestAccountAssociations(t *testing.T) {
 
 		require.Nil(t, c.Sources[0].Destinations[0].DeleteAccount)
 	})
+	t.Run("disabled destination should be skipped", func(t *testing.T) {
+		c := &ConfigT{
+			Sources: []SourceT{
+				{
+					ID: "source-1",
+					Destinations: []DestinationT{
+						{
+							ID:      "dest-1",
+							Enabled: false,
+							Config: map[string]interface{}{
+								"rudderAccountId": "acc-1",
+							},
+						},
+					},
+				},
+			},
+			Accounts: map[string]Account{
+				"acc-1": {
+					AccountDefinitionName: "oauth-def",
+					Options:               map[string]interface{}{"key1": "value1"},
+				},
+			},
+			AccountDefinitions: map[string]AccountDefinition{
+				"oauth-def": {
+					Name:   "oauth-def",
+					Config: map[string]interface{}{"oauth": true},
+				},
+			},
+		}
+
+		c.processAccountAssociations()
+
+		require.Nil(t, c.Sources[0].Destinations[0].DeliveryAccount)
+		require.Nil(t, c.Sources[0].Destinations[0].DeleteAccount)
+	})
 }
