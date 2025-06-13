@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.24.2
+go 1.24.4
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -87,7 +87,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/rudder-go-kit v0.55.1
+	github.com/rudderlabs/rudder-go-kit v0.55.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.7.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250507094647-f18f2e217449
@@ -124,10 +124,7 @@ require (
 	google.golang.org/protobuf v1.36.6
 )
 
-require (
-	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
-	github.com/containerd/errdefs/pkg v0.3.0 // indirect
-)
+require github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 
 require (
 	cel.dev/expr v0.23.0 // indirect
@@ -189,6 +186,7 @@ require (
 	github.com/cncf/xds/go v0.0.0-20250326154945-ae57f3c0d45f // indirect
 	github.com/containerd/containerd v1.7.27 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
+	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.11.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
