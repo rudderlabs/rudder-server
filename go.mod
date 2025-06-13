@@ -119,8 +119,6 @@ require (
 require github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 
 require (
-	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
-	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	cel.dev/expr v0.23.0 // indirect
 	cloud.google.com/go v0.121.1 // indirect
 	cloud.google.com/go/auth v0.16.1 // indirect
@@ -183,6 +181,7 @@ require (
 	github.com/cncf/xds/go v0.0.0-20250326154945-ae57f3c0d45f // indirect
 	github.com/containerd/containerd v1.7.27 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
+	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/coreos/go-oidc/v3 v3.11.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
