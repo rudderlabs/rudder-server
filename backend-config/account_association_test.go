@@ -16,7 +16,8 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderAccountId": "acc-1",
 							},
@@ -66,13 +67,15 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderAccountId": "acc-1",
 							},
 						},
 						{
-							ID: "dest-2",
+							Enabled: true,
+							ID:      "dest-2",
 							Config: map[string]interface{}{
 								"rudderAccountId": "acc-1",
 							},
@@ -114,7 +117,8 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderDeleteAccountId": "acc-1",
 							},
@@ -152,8 +156,9 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID:     "dest-1",
-							Config: map[string]interface{}{},
+							Enabled: true,
+							ID:      "dest-1",
+							Config:  map[string]interface{}{},
 						},
 					},
 				},
@@ -184,7 +189,8 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderAccountId": "non-existent",
 							},
@@ -217,7 +223,8 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderAccountId": "acc-1",
 							},
@@ -252,7 +259,8 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderAccountId": "acc-1",
 							},
@@ -290,7 +298,8 @@ func TestAccountAssociations(t *testing.T) {
 
 	t.Run("This test ensures JSON serialization/deserialization works correctly with the Account so that destination will contain deliveryAccount/deleteAccount", func(t *testing.T) {
 		dest := DestinationT{
-			ID: "dest-1",
+			ID:      "dest-1",
+			Enabled: true,
 			DeliveryAccount: &Account{
 				ID:                    "acc-1",
 				AccountDefinitionName: "oauth-def",
@@ -346,7 +355,8 @@ func TestAccountAssociations(t *testing.T) {
 					ID: "source-1",
 					Destinations: []DestinationT{
 						{
-							ID: "dest-1",
+							Enabled: true,
+							ID:      "dest-1",
 							Config: map[string]interface{}{
 								"rudderAccountId": "",
 							},
