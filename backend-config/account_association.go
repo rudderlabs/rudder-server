@@ -83,9 +83,14 @@ func (c *ConfigT) enrichAccountWithDefinition(accountID string, accountAssociati
 //   - dest: Pointer to the destination being configured
 func (c *ConfigT) enrichDestinationWithAccounts(dest *DestinationT) {
 	accountAssociationLogger := pkgLogger.Withn(
+		obskit.WorkspaceID(dest.WorkspaceID),
 		obskit.DestinationID(dest.ID),
 		obskit.DestinationType(dest.DestinationDefinition.Name),
 	)
+	if !dest.Enabled {
+		accountAssociationLogger.Infon("Skipping disabled destination from associating account")
+		return
+	}
 	// Check and set the delivery account if specified in the destination config
 	if accountID, ok := dest.Config["rudderAccountId"].(string); ok && accountID != "" {
 		accountAssociationLogger = accountAssociationLogger.Withn(
