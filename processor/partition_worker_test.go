@@ -234,7 +234,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 		if err != nil {
 			return false
 		}
-		m.storeStage(partition, m.destinationTransformStage(partition,
+		m.storeStage(partition, 0, m.destinationTransformStage(partition,
 			m.userTransformStage(partition, dest),
 		))
 	}
@@ -381,7 +381,7 @@ func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userT
 	}
 }
 
-func (m *mockWorkerHandle) storeStage(partition string, in *storeMessage) {
+func (m *mockWorkerHandle) storeStage(partition string, _ int, in *storeMessage) {
 	if m.limiters.store != nil {
 		defer m.limiters.store.Begin("")()
 	}
