@@ -25,7 +25,7 @@ type workerHandle interface {
 	pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error)
 	userTransformStage(partition string, in *transformationMessage) *userTransformData
 	destinationTransformStage(partition string, in *userTransformData) *storeMessage
-	storeStage(partition string, in *storeMessage)
+	storeStage(partition string, pipelineIndex int, in *storeMessage)
 }
 
 // workerHandleConfig is a struct containing the processor.Handle configuration relevant for workers
