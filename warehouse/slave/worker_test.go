@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -1111,8 +1112,6 @@ func TestSlaveWorker(t *testing.T) {
 			}
 
 			for _, tc := range testCases {
-				tc := tc
-
 				t.Run(tc.name, func(t *testing.T) {
 					p := source.NotifierRequest{
 						ID:            1,

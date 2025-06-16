@@ -335,6 +335,9 @@ func (ms *MSSQL) loadTable(
 	if err != nil {
 		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	varcharLengthMap, err := ms.getVarcharLengthMap(ctx, tableName)
 	if err != nil {

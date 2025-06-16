@@ -9,11 +9,13 @@ import (
 	"math/rand"
 	"reflect"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
@@ -60,7 +62,7 @@ type worker struct {
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	workerIdx          int
-	activeJobId        int64
+	activeJobId        atomic.Int64
 	refreshClaimJitter time.Duration
 
 	config struct {
@@ -147,7 +149,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			)
 
 			// Set active job ID
-			w.activeJobId = claimedJob.Job.ID
+			w.activeJobId.Store(claimedJob.Job.ID)
 
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
@@ -162,7 +164,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 				logger.NewField("slaveId", slaveID),
 			)
 			// Clear active job ID after processing
-			w.activeJobId = 0
+			w.activeJobId.Store(0)
 
 			workerIdleTimeStart = time.Now()
 		}
@@ -182,9 +184,9 @@ func (w *worker) runClaimRefresh(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if w.activeJobId != 0 {
-				if err := w.notifier.RefreshClaim(ctx, w.activeJobId); err != nil {
-					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId, err)
+			if w.activeJobId.Load() != 0 {
+				if err := w.notifier.RefreshClaim(ctx, w.activeJobId.Load()); err != nil {
+					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId.Load(), err)
 				}
 			}
 		}

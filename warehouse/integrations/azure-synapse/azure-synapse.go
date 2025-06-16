@@ -299,6 +299,9 @@ func (as *AzureSynapse) loadTable(
 	if err != nil {
 		return nil, "", fmt.Errorf("preparing copyIn statement: %w", err)
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	varcharLengthMap, err := as.getVarcharLengthMap(ctx, tableName)
 	if err != nil {

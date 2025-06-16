@@ -470,29 +470,16 @@ func TestUploads(t *testing.T) {
 		privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
 		require.NoError(t, err)
 
-		var (
-			group             errgroup.Group
-			postgresResource  *postgres.Resource
-			sshServerResource *sshserver.Resource
-			minioResource     *minio.Resource
+		postgresResource, err := postgres.Setup(pool, t, postgres.WithNetwork(network))
+		require.NoError(t, err)
+		sshServerResource, err := sshserver.Setup(pool, t,
+			sshserver.WithPublicKeyPath(publicKeyPath),
+			sshserver.WithCredentials("linuxserver.io", ""),
+			sshserver.WithDockerNetwork(network),
 		)
-		group.Go(func() (err error) {
-			postgresResource, err = postgres.Setup(pool, t, postgres.WithNetwork(network))
-			return err
-		})
-		group.Go(func() (err error) {
-			sshServerResource, err = sshserver.Setup(pool, t,
-				sshserver.WithPublicKeyPath(publicKeyPath),
-				sshserver.WithCredentials("linuxserver.io", ""),
-				sshserver.WithDockerNetwork(network),
-			)
-			return err
-		})
-		group.Go(func() (err error) {
-			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
-			return
-		})
-		require.NoError(t, group.Wait())
+		require.NoError(t, err)
+		minioResource, err := minio.Setup(pool, t, minio.WithNetwork(network))
+		require.NoError(t, err)
 
 		postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
 		require.NoError(t, err)
