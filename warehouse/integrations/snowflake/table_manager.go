@@ -44,7 +44,7 @@ func newStandardTableManager() tableManager {
 func (m *standardTableManager) createTableQuery(schemaIdentifier, tableName string, columns model.TableSchema) string {
 	return fmt.Sprintf(
 		`CREATE TABLE IF NOT EXISTS %s.%q ( %v )`,
-		schemaIdentifier, tableName, columnsWithDataTypes(columns, "", m.dataTypesMap),
+		schemaIdentifier, tableName, columnsWithDataTypes(columns, m.dataTypesMap),
 	)
 }
 
@@ -92,7 +92,7 @@ func (m *icebergTableManager) createTableQuery(schemaIdentifier, tableName strin
 		CATALOG = 'SNOWFLAKE'
 		EXTERNAL_VOLUME = '%s'
 		BASE_LOCATION = '%s'`,
-		schemaIdentifier, tableName, columnsWithDataTypes(columns, "", m.dataTypesMap),
+		schemaIdentifier, tableName, columnsWithDataTypes(columns, m.dataTypesMap),
 		m.externalVolume,
 		baseLocation,
 	)
@@ -117,11 +117,11 @@ func (m *icebergTableManager) addColumnsQuery(schemaIdentifier, tableName string
 	return strings.TrimSuffix(queryBuilder.String(), ",") + ";", nil
 }
 
-func columnsWithDataTypes(columns model.TableSchema, prefix string, dataTypesMap map[string]string) string {
+func columnsWithDataTypes(columns model.TableSchema, dataTypesMap map[string]string) string {
 	var arr []string
 	sortedColumns := getSortedColumnsFromTableSchema(columns)
 	for _, name := range sortedColumns {
-		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, dataTypesMap[columns[name]]))
+		arr = append(arr, fmt.Sprintf(`"%s" %s`, name, dataTypesMap[columns[name]]))
 	}
 	return strings.Join(arr, ",")
 }
