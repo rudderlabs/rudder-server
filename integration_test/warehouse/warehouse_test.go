@@ -1,9 +1,11 @@
 package warehouse_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -16,9 +18,12 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
+	gokitrand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
-	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/runner"
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -32,15 +37,16 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
+	dockertransformer "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -69,10 +75,13 @@ const (
 	exportedData = "exported_data"
 
 	workspaceID           = "test_workspace_id"
+	writeKey              = "test_write_key"
 	sourceID              = "test_source_id"
 	destinationID         = "test_destination_id"
 	destinationRevisionID = "test_destination_revision_id"
 	namespace             = "test_namespace"
+
+	defaultTimeout = 10 * time.Second
 )
 
 func TestMain(m *testing.M) {
@@ -142,18 +151,18 @@ func TestUploads(t *testing.T) {
 				}), "\n")
 				stagingFile.Location = prepareStagingFileWithFileName(t, ctx, minioResource, eventsPayload2, "staging2.json").ObjectName
 				require.NoError(t, whClient.Process(ctx, stagingFile))
-				requireStagingFileEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
+				requireStagingFileEventsCount(t, ctx, db, 2*events, defaultTimeout, []lo.Tuple2[string, any]{
 					{A: "source_id", B: sourceID},
 					{A: "destination_id", B: destinationID},
 					{A: "status", B: succeeded},
 				}...)
-				requireTableUploadEventsCount(t, ctx, db, 2*events, []lo.Tuple2[string, any]{
+				requireTableUploadEventsCount(t, ctx, db, 2*events, defaultTimeout, []lo.Tuple2[string, any]{
 					{A: "status", B: exportedData},
 					{A: "wh_uploads.source_id", B: sourceID},
 					{A: "wh_uploads.destination_id", B: destinationID},
 					{A: "wh_uploads.namespace", B: namespace},
 				}...)
-				requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), 2*events)
+				requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), 2*events, defaultTimeout)
 			})
 		}
 	})
@@ -199,25 +208,25 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+		requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
-		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "users"), events)
-		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "identifies"), events)
+		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "users"), events, defaultTimeout)
+		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "identifies"), events, defaultTimeout)
 	})
 	t.Run("schema change", func(t *testing.T) {
 		t.Run("add columns", func(t *testing.T) {
@@ -252,24 +261,24 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Log("second sync with new properties")
 			eventsPayload = strings.Join(lo.RepeatBy(events, func(int) string {
@@ -300,24 +309,24 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 	})
 	t.Run("destination revision", func(t *testing.T) {
@@ -425,24 +434,24 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
-		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 		require.True(t, hasRevisionEndpointBeenCalled.Load())
 	})
 	t.Run("tunneling", func(t *testing.T) {
@@ -590,18 +599,18 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -627,7 +636,7 @@ func TestUploads(t *testing.T) {
 		tunnelDB, err := tunnelling.Connect(tunnelDSN, tunnelInfo.Config)
 		require.NoError(t, err)
 		require.NoError(t, tunnelDB.Ping())
-		requireDownstreamEventsCount(t, ctx, sqlmw.New(tunnelDB), fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+		requireDownstreamEventsCount(t, ctx, sqlmw.New(tunnelDB), fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 	})
 	t.Run("reports", func(t *testing.T) {
 		t.Run("succeeded", func(t *testing.T) {
@@ -662,25 +671,25 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
-			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
+			requireReportsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Succeeded.State},
@@ -735,13 +744,13 @@ func TestUploads(t *testing.T) {
 					},
 				},
 			}))
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: aborted},
 			}...)
-			requireReportsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireReportsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Failed.State},
@@ -751,7 +760,7 @@ func TestUploads(t *testing.T) {
 				{A: "initial_state", B: false},
 				{A: "terminal_state", B: false},
 			}...)
-			requireReportsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireReportsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: jobsdb.Aborted.State},
@@ -807,13 +816,13 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: aborted},
 		}...)
-		requireRetriedUploadJobsCount(t, ctx, db, 3, []lo.Tuple2[string, any]{
+		requireRetriedUploadJobsCount(t, ctx, db, 3, 120*time.Second, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -859,25 +868,25 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events+(events/2), []lo.Tuple2[string, any]{
+		requireTableUploadEventsCount(t, ctx, db, events+(events/2), defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
-		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
-		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "rudder_discards"), events/2)
+		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
+		requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "rudder_discards"), events/2, defaultTimeout)
 	})
 	t.Run("archiver", func(t *testing.T) {
 		db, minioResource, whClient := setupServer(t, false, nil,
@@ -925,19 +934,19 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+		requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "status", B: exportedData},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
@@ -981,45 +990,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 		})
 		t.Run("allowMerge=false,preferAppend=false", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, false, nil,
@@ -1062,45 +1071,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 		t.Run("allowMerge=true,preferAppend=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true, nil,
@@ -1143,45 +1152,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 		t.Run("allowMerge=false,preferAppend=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true, nil,
@@ -1224,45 +1233,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 		t.Run("allowMerge=false,preferAppend=true,isSourceETL=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true, nil,
@@ -1308,45 +1317,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 		t.Run("allowMerge=false,preferAppend=true,IsReplaySource=true", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true,
@@ -1392,45 +1401,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 		t.Run("allowMerge=false,preferAppend=true,sourceCategory=cloud", func(t *testing.T) {
 			db, minioResource, whClient := setupServer(t, true,
@@ -1476,45 +1485,45 @@ func TestUploads(t *testing.T) {
 
 			t.Logf("first sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 
 			t.Logf("second sync")
 			require.NoError(t, whClient.Process(ctx, stagingFile))
-			requireStagingFileEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events*2, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, jobs*2, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, jobs*2, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events*2, defaultTimeout)
 		})
 	})
 	t.Run("id resolution", func(t *testing.T) {
@@ -1570,24 +1579,126 @@ func TestUploads(t *testing.T) {
 				},
 			},
 		}))
-		requireStagingFileEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
+		requireStagingFileEventsCount(t, ctx, db, events*3, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "status", B: succeeded},
 		}...)
-		requireTableUploadEventsCount(t, ctx, db, events*3, []lo.Tuple2[string, any]{
+		requireTableUploadEventsCount(t, ctx, db, events*3, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "status", B: waiting},
 			{A: "wh_uploads.source_id", B: sourceID},
 			{A: "wh_uploads.destination_id", B: destinationID},
 			{A: "wh_uploads.namespace", B: namespace},
 		}...) // not supported for postgres yet
-		requireUploadJobsCount(t, ctx, db, jobs, []lo.Tuple2[string, any]{
+		requireUploadJobsCount(t, ctx, db, jobs, defaultTimeout, []lo.Tuple2[string, any]{
 			{A: "source_id", B: sourceID},
 			{A: "destination_id", B: destinationID},
 			{A: "namespace", B: namespace},
 			{A: "status", B: exportedData},
 		}...)
 	})
+}
+
+func TestUploadsFromGatewayEvents(t *testing.T) {
+	config.Reset()
+	defer config.Reset()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	postgresContainer, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+	transformerResource, err := dockertransformer.Setup(pool, t)
+	require.NoError(t, err)
+	minioResource, err := minio.Setup(pool, t)
+	require.NoError(t, err)
+
+	bcServer := backendconfigtest.NewBuilder().
+		WithWorkspaceConfig(
+			backendconfigtest.NewConfigBuilder().
+				WithWorkspaceID(workspaceID).
+				WithSource(
+					backendconfigtest.NewSourceBuilder().
+						WithID(sourceID).
+						WithWriteKey(writeKey).
+						WithWorkspaceID(workspaceID).
+						WithConnection(
+							backendconfigtest.NewDestinationBuilder(whutils.POSTGRES).
+								WithConfigOption("host", postgresContainer.Host).
+								WithConfigOption("database", postgresContainer.Database).
+								WithConfigOption("user", postgresContainer.User).
+								WithConfigOption("password", postgresContainer.Password).
+								WithConfigOption("port", postgresContainer.Port).
+								WithConfigOption("sslMode", "disable").
+								WithConfigOption("namespace", namespace).
+								WithConfigOption("bucketProvider", whutils.MINIO).
+								WithConfigOption("bucketName", minioResource.BucketName).
+								WithConfigOption("accessKeyID", minioResource.AccessKeyID).
+								WithConfigOption("secretAccessKey", minioResource.AccessKeySecret).
+								WithConfigOption("useSSL", false).
+								WithConfigOption("endPoint", minioResource.Endpoint).
+								WithConfigOption("syncFrequency", "0").
+								WithConfigOption("useRudderStorage", false).
+								WithConfigOption("preferAppend", false).
+								WithID(destinationID).
+								WithRevisionID(destinationID).
+								Build()).
+						Build()).
+				Build()).
+		Build()
+	defer bcServer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	gwPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+
+	wg, ctx := errgroup.WithContext(ctx)
+	wg.Go(func() error {
+		err := runRudderServer(ctx, gwPort, postgresContainer, bcServer.URL, transformerResource.TransformerURL, t.TempDir(), []lo.Tuple2[string, any]{
+			{A: "Processor.enableWarehouseTransformations", B: true},
+			{A: "Processor.verifyWarehouseTransformations", B: true},
+		}...)
+		if err != nil {
+			t.Logf("rudder-server exited with error: %v", err)
+		}
+		return err
+	})
+
+	url := fmt.Sprintf("http://localhost:%d", gwPort)
+	health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+	eventsCount := 10000
+	batchCount := 100
+	eventsCountInBatch := eventsCount / batchCount
+	db := sqlmw.New(postgresContainer.DB)
+
+	err = sendEvents(batchCount, eventsCountInBatch, "track", writeKey, url)
+	require.NoError(t, err)
+
+	requireJobsCount(t, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount, 120*time.Second)
+	requireJobsCount(t, postgresContainer.DB, "batch_rt", jobsdb.Succeeded.State, eventsCount, 120*time.Second)
+	requireStagingFileEventsCount(t, ctx, db, eventsCount, 120*time.Second, []lo.Tuple2[string, any]{
+		{A: "source_id", B: sourceID},
+		{A: "destination_id", B: destinationID},
+	}...)
+	requireStagingFileEventsCount(t, ctx, db, eventsCount, 120*time.Second, []lo.Tuple2[string, any]{
+		{A: "source_id", B: sourceID},
+		{A: "destination_id", B: destinationID},
+		{A: "status", B: succeeded},
+	}...)
+	requireTableUploadEventsCount(t, ctx, db, eventsCount, 120*time.Second, []lo.Tuple2[string, any]{
+		{A: "status", B: exportedData},
+		{A: "wh_uploads.source_id", B: sourceID},
+		{A: "wh_uploads.destination_id", B: destinationID},
+		{A: "wh_uploads.namespace", B: namespace},
+	}...)
+	requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), eventsCount, 120*time.Second)
+	requireDistinctDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), "ID", eventsCount, 120*time.Second)
+
+	cancel()
+	require.NoError(t, wg.Wait())
 }
 
 func TestCleanupObjectStorageFiles(t *testing.T) {
@@ -1638,24 +1749,24 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 					},
 				},
 			}))
-			requireStagingFileEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireStagingFileEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "status", B: succeeded},
 			}...)
-			requireTableUploadEventsCount(t, ctx, db, events, []lo.Tuple2[string, any]{
+			requireTableUploadEventsCount(t, ctx, db, events, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "status", B: exportedData},
 				{A: "wh_uploads.source_id", B: sourceID},
 				{A: "wh_uploads.destination_id", B: destinationID},
 				{A: "wh_uploads.namespace", B: namespace},
 			}...)
-			requireUploadJobsCount(t, ctx, db, 1, []lo.Tuple2[string, any]{
+			requireUploadJobsCount(t, ctx, db, 1, defaultTimeout, []lo.Tuple2[string, any]{
 				{A: "source_id", B: sourceID},
 				{A: "destination_id", B: destinationID},
 				{A: "namespace", B: namespace},
 				{A: "status", B: exportedData},
 			}...)
-			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events)
+			requireDownstreamEventsCount(t, ctx, db, fmt.Sprintf("%s.%s", namespace, "tracks"), events, defaultTimeout)
 			files, err := minioResource.Contents(ctx, "")
 			require.NoError(t, err)
 			require.Len(t, files, tc.expectedFileCount)
@@ -1667,7 +1778,7 @@ func TestDestinationTransformation(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	transformerResource, err := transformertest.Setup(pool, t)
+	transformerResource, err := dockertransformer.Setup(pool, t)
 	require.NoError(t, err)
 
 	conf := config.New()
@@ -2083,6 +2194,55 @@ func TestDestinationTransformation(t *testing.T) {
 	})
 }
 
+func runRudderServer(
+	ctx context.Context,
+	port int,
+	postgresContainer *postgres.Resource,
+	cbURL, transformerURL, tmpDir string,
+	configOverrides ...lo.Tuple2[string, any],
+) (err error) {
+	config.Set("CONFIG_BACKEND_URL", cbURL)
+	config.Set("WORKSPACE_TOKEN", "token")
+	config.Set("DB.host", postgresContainer.Host)
+	config.Set("DB.port", postgresContainer.Port)
+	config.Set("DB.user", postgresContainer.User)
+	config.Set("DB.name", postgresContainer.Database)
+	config.Set("DB.password", postgresContainer.Password)
+	config.Set("DEST_TRANSFORM_URL", transformerURL)
+
+	config.Set("Warehouse.mode", "embedded")
+	config.Set("DestinationDebugger.disableEventDeliveryStatusUploads", true)
+	config.Set("SourceDebugger.disableEventUploads", true)
+	config.Set("TransformationDebugger.disableTransformationStatusUploads", true)
+	config.Set("JobsDB.backup.enabled", false)
+	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
+	config.Set("archival.Enabled", false)
+	config.Set("Reporting.syncer.enabled", false)
+	config.Set("BatchRouter.pingFrequency", "1s")
+	config.Set("BatchRouter.uploadFreq", "1s")
+	config.Set("Gateway.webPort", strconv.Itoa(port))
+	config.Set("RUDDER_TMPDIR", os.TempDir())
+	config.Set("recovery.storagePath", path.Join(tmpDir, "/recovery_data.json"))
+	config.Set("recovery.enabled", false)
+	config.Set("Profiler.Enabled", false)
+	config.Set("Gateway.enableSuppressUserFeature", false)
+	for _, override := range configOverrides {
+		config.Set(override.A, override.B)
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panicked: %v", r)
+		}
+	}()
+	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
+	c := r.Run(ctx, []string{"warehouse"})
+	if c != 0 {
+		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
+	}
+	return
+}
+
 func runWarehouseServer(
 	t testing.TB,
 	ctx context.Context,
@@ -2258,11 +2418,12 @@ func requireStagingFileEventsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
+	waitForTime time.Duration,
 	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
-	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_staging_files WHERE 1 = 1"
+	query := "SELECT COALESCE(SUM(total_events), 0) FROM wh_staging_files WHERE 1 = 1"
 	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
@@ -2281,7 +2442,7 @@ func requireStagingFileEventsCount(
 			t.Logf("Staging file events count: %d", eventsCount)
 			return eventsCount == expectedCount
 		},
-		10*time.Second,
+		waitForTime,
 		250*time.Millisecond,
 		"expected staging file events count to be %d", expectedCount,
 	)
@@ -2293,6 +2454,7 @@ func requireTableUploadEventsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
+	waitForTime time.Duration,
 	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
@@ -2304,7 +2466,7 @@ func requireTableUploadEventsCount(
 		return strings.HasPrefix(t.A, "wh_uploads")
 	})
 
-	query := "SELECT COALESCE(sum(total_events), 0) FROM wh_table_uploads WHERE 1 = 1"
+	query := "SELECT COALESCE(SUM(total_events), 0) FROM wh_table_uploads WHERE 1 = 1"
 	query += strings.Join(lo.Map(tableUploadsFilters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
@@ -2333,7 +2495,7 @@ func requireTableUploadEventsCount(
 			t.Logf("Table upload events count: %d", eventsCount)
 			return eventsCount == expectedCount
 		},
-		10*time.Second,
+		waitForTime,
 		250*time.Millisecond,
 		"expected table upload events count to be %d", expectedCount,
 	)
@@ -2345,11 +2507,12 @@ func requireUploadJobsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
+	waitForTime time.Duration,
 	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
-	query := "SELECT count(*) FROM wh_uploads WHERE 1 = 1"
+	query := "SELECT COUNT(*) FROM wh_uploads WHERE 1 = 1"
 	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
@@ -2368,7 +2531,7 @@ func requireUploadJobsCount(
 			t.Logf("Upload jobs count: %d", jobsCount)
 			return jobsCount == expectedCount
 		},
-		10*time.Second,
+		waitForTime,
 		250*time.Millisecond,
 		"expected upload jobs count to be %d", expectedCount,
 	)
@@ -2379,11 +2542,12 @@ func requireRetriedUploadJobsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
+	waitForTime time.Duration,
 	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
-	query := "SELECT SUM(CAST(value ->> 'attempt' AS INT)) AS total_attempts FROM wh_uploads, jsonb_each(error) WHERE 1 = 1"
+	query := "SELECT SUM(CAST(value ->> 'attempt' AS INT)) AS total_attempts FROM wh_uploads, JSONB_EACH(error) WHERE 1 = 1"
 	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
@@ -2402,7 +2566,7 @@ func requireRetriedUploadJobsCount(
 			t.Logf("Retried upload jobs count: %d", jobsCount.Int64)
 			return jobsCount.Int64 == int64(expectedCount)
 		},
-		120*time.Second,
+		waitForTime,
 		250*time.Millisecond,
 		"expected retried upload jobs count to be %d", expectedCount,
 	)
@@ -2414,13 +2578,14 @@ func requireDownstreamEventsCount(
 	db *sqlmw.DB,
 	tableName string,
 	expectedCount int,
+	waitForTime time.Duration,
 ) {
 	t.Helper()
 
 	require.Eventuallyf(t,
 		func() bool {
 			var count int
-			err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*) FROM %s;`, tableName)).Scan(&count)
+			err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %s;`, tableName)).Scan(&count)
 			if err != nil {
 				t.Logf("error getting downstream events count: %v", err)
 				return false
@@ -2428,9 +2593,37 @@ func requireDownstreamEventsCount(
 			t.Logf("Downstream events count for %q: %d", tableName, count)
 			return count == expectedCount
 		},
-		10*time.Second,
+		waitForTime,
 		250*time.Millisecond,
 		"expected downstream events count for table %s to be %d", tableName, expectedCount,
+	)
+}
+
+func requireDistinctDownstreamEventsCount(
+	t testing.TB,
+	ctx context.Context,
+	db *sqlmw.DB,
+	tableName string,
+	distinctColumn string,
+	expectedCount int,
+	waitForTime time.Duration,
+) {
+	t.Helper()
+
+	require.Eventuallyf(t,
+		func() bool {
+			var count int
+			err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(DISTINCT %s) FROM %s;`, distinctColumn, tableName)).Scan(&count)
+			if err != nil {
+				t.Logf("error getting distinct downstream events count: %v", err)
+				return false
+			}
+			t.Logf("Distinct downstream events count for %q: %d", tableName, count)
+			return count == expectedCount
+		},
+		waitForTime,
+		250*time.Millisecond,
+		"expected distinct downstream events count for table %s to be %d", tableName, expectedCount,
 	)
 }
 
@@ -2439,11 +2632,12 @@ func requireReportsCount(
 	ctx context.Context,
 	db *sqlmw.DB,
 	expectedCount int,
+	waitForTime time.Duration,
 	filters ...lo.Tuple2[string, any],
 ) {
 	t.Helper()
 
-	query := "SELECT sum(count) FROM reports WHERE 1 = 1"
+	query := "SELECT SUM(count) FROM reports WHERE 1 = 1"
 	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, any], index int) string {
 		return fmt.Sprintf(" AND %s = $%d", t.A, index+1)
 	}), "")
@@ -2462,9 +2656,78 @@ func requireReportsCount(
 			t.Logf("Reports count: %d", reportsCount.Int64)
 			return reportsCount.Int64 == int64(expectedCount)
 		},
-		10*time.Second,
+		waitForTime,
 		250*time.Millisecond,
 		"expected reports count to be %d", expectedCount,
+	)
+}
+
+func sendEvents(
+	batchCount int,
+	eventsCountInBatch int,
+	eventType, writeKey, url string,
+) error {
+	for i := 0; i < batchCount; i++ {
+		trackPayloads := lo.RepeatBy(eventsCountInBatch, func(index int) string {
+			return fmt.Sprintf(`{
+				  "userId": %[1]q,
+				  "type": %[2]q,
+				  "context": {
+					"traits": {
+					  "trait1": "new-val"
+					},
+					"ip": "14.5.67.21",
+					"library": {
+					  "name": "http"
+					}
+				  },
+				  "timestamp": "2020-02-02T00:23:09.544Z"
+				}`,
+				gokitrand.String(10),
+				eventType,
+			)
+		})
+		batchPayload := []byte(fmt.Sprintf(`{"batch": [%s]}`,
+			strings.Join(trackPayloads, ",\n"),
+		))
+		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(batchPayload))
+		if err != nil {
+			return err
+		}
+		req.SetBasicAuth(writeKey, "password")
+
+		resp, err := (&http.Client{}).Do(req)
+		if err != nil {
+			return err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to send event to rudder server, status code: %d: %s", resp.StatusCode, string(b))
+		}
+		func() { kithttputil.CloseResponse(resp) }()
+	}
+	return nil
+}
+
+func requireJobsCount(
+	t *testing.T,
+	db *sql.DB,
+	queue, state string,
+	expectedCount int,
+	waitForTime time.Duration,
+) {
+	t.Helper()
+
+	require.Eventually(t, func() bool {
+		var jobsCount int
+		require.NoError(t, db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM unionjobsdbmetadata('%s',1) WHERE job_state = '%s';`, queue, state)).Scan(&jobsCount))
+		t.Logf("%s %sJobCount: %d", queue, state, jobsCount)
+		return jobsCount == expectedCount
+	},
+		waitForTime,
+		1*time.Second,
+		fmt.Sprintf("%d %s events should be in %s state", expectedCount, queue, state),
 	)
 }
 
