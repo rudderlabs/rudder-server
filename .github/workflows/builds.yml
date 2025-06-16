@@ -146,7 +146,6 @@ jobs:
         with:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
-          flavor: ${{ matrix.race && 'suffix=-race,onlatest=true' || '' }}
       - name: Docker arm64 meta
         id: arm64_meta
         uses: docker/metadata-action@v5
@@ -154,7 +153,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            suffix=-${{env.arch_arm64}},onlatest=true
+            suffix=-${{env.arch_arm64}}${{ matrix.race && '-race' || '' }},onlatest=true
       - name: Docker amd64 meta
         id: amd64_meta
         uses: docker/metadata-action@v5
@@ -162,7 +161,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            suffix=-${{env.arch_amd64}},onlatest=true
+            suffix=-${{env.arch_amd64}}${{ matrix.race && '-race' || '' }},onlatest=true
   docker-ent:
     needs:
       - docker-ent-meta
@@ -194,7 +193,7 @@ jobs:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: true
-          tags: ${{ needs.docker-ent-meta.outputs.tags }}
+          tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
             BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
