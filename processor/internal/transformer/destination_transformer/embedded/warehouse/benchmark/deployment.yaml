@@ -152,7 +152,7 @@ spec:
             - name: MODE
               value: "<MODE>"
       nodeSelector:
-        karpenter.sh/provisioner-name: arm
+        karpenter.sh/nodepool: arm
       tolerations:
         - effect: NoExecute
           key: node.kubernetes.io/unreachable
