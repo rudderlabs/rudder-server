@@ -125,6 +125,9 @@ jobs:
             REVISION=${{ needs.docker-oss-meta.outputs.revision }}
   docker-ent-meta:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        race: [false, true]
     outputs:
       labels: ${{ steps.meta.outputs.labels }}
       build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
@@ -135,6 +138,7 @@ jobs:
       arm64_labels: ${{ steps.arm64_meta.outputs.labels }}
       amd64_tags: ${{ steps.amd64_meta.outputs.tags }}
       amd64_labels: ${{ steps.amd64_meta.outputs.labels }}
+      race: ${{ matrix.race }}
     steps:
       - name: Docker meta
         id: meta
@@ -142,6 +146,7 @@ jobs:
         with:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
+          flavor: ${{ matrix.race && 'suffix=-race,onlatest=true' || '' }}
       - name: Docker arm64 meta
         id: arm64_meta
         uses: docker/metadata-action@v5
@@ -172,7 +177,6 @@ jobs:
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
             platform: linux/amd64
-        race: [false, true]
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Checkout
@@ -184,21 +188,13 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Set tags
-        id: image_tags
-        run: |
-          if [ "${{ matrix.race }}" = "true" ]; then
-            echo "tags=$(echo '${{ matrix.build-config.tags }}' | sed 's/$/-race/')" >> $GITHUB_OUTPUT
-          else
-            echo "tags=${{ matrix.build-config.tags }}" >> $GITHUB_OUTPUT
-          fi
       - name: Build, scan and push
         uses: rudderlabs/build-scan-push-action@v1.3.2
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: true
-          tags: ${{ steps.image_tags.outputs.tags }}
+          tags: ${{ needs.docker-ent-meta.outputs.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
             BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
@@ -206,7 +202,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
-            ${{ matrix.race && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
+            ${{ needs.docker-ent-meta.outputs.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
