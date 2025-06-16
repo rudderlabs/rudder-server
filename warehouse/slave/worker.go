@@ -297,6 +297,10 @@ func (w *worker) processSingleStagingFile(
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
+	// Duplicate detection map for messageId
+	messageIdSet := make(map[string]struct{})
+	duplicateCount := 0
+
 	for {
 		ok := bufScanner.Scan()
 		if !ok {
@@ -340,6 +344,19 @@ func (w *worker) processSingleStagingFile(
 		}
 
 		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
+
+		// Duplicate detection by messageId
+		messageIdVal, ok := columnData["messageId"]
+		if ok {
+			messageIdStr, ok := messageIdVal.(string)
+			if ok {
+				if _, exists := messageIdSet[messageIdStr]; exists {
+					duplicateCount++
+				} else {
+					messageIdSet[messageIdStr] = struct{}{}
+				}
+			}
+		}
 
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
@@ -461,6 +478,15 @@ func (w *worker) processSingleStagingFile(
 		releaseWriter()
 
 		jr.incrementEventCount(tableName)
+	}
+
+	// After processing all lines, increment the metric for duplicates
+	if duplicateCount > 0 {
+		jr.StagingFileDuplicateEvents.Count(duplicateCount)
+		jr.logger.Infon("Found duplicate events in staging file",
+			logger.NewField("stagingFileID", stagingFile.ID),
+			logger.NewIntField("duplicateEvents", int64(duplicateCount)),
+		)
 	}
 
 	jr.logger.Debugn("Process bytes from downloaded staging file",

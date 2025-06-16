@@ -145,6 +145,7 @@ type jobRun struct {
 	bytesProcessedStagingFileStat  stats.Measurement
 	bytesDownloadedStagingFileStat stats.Measurement
 	downloadStagingFileFailedStat  stats.Measurement
+	StagingFileDuplicateEvents     stats.Measurement
 
 	config struct {
 		numLoadFileUploadWorkers int
@@ -160,6 +161,9 @@ type jobRun struct {
 	// same table must wait until the lock is released.
 	tableWriterMutexes   map[string]*sync.Mutex
 	tableWriterMutexesMu sync.Mutex // To prevent concurrent access to the tableWriterMutexes
+
+	// Function to download staging file, can be overridden in tests
+	downloadStagingFile func(ctx context.Context, stagingFileInfo stagingFileInfo) error
 }
 
 func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logger.Logger, stat stats.Stats, encodingFactory *encoding.Factory) *jobRun {
@@ -180,6 +184,68 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 		tableWriterMutexes:   make(map[string]*sync.Mutex),
 	}
 
+	jr.downloadStagingFile = func(ctx context.Context, stagingFileInfo stagingFileInfo) error {
+		doTask := func(config interface{}, useRudderStorage bool) error {
+			var file *os.File
+			var err error
+
+			stagingFilePath, err := jr.path(stagingFileInfo)
+			if err != nil {
+				return fmt.Errorf("getting staging file path: %w", err)
+			}
+
+			if file, err = os.Create(stagingFilePath); err != nil {
+				return fmt.Errorf("creating file at path:%s downloaded from %s: %w",
+					stagingFilePath,
+					stagingFileInfo.Location,
+					err,
+				)
+			}
+
+			downloader, err := jr.job.fileManager(config, useRudderStorage)
+			if err != nil {
+				return fmt.Errorf("creating file manager: %w", err)
+			}
+
+			downloadStart := jr.now()
+			if err = downloader.Download(ctx, file, stagingFileInfo.Location); err != nil {
+				return fmt.Errorf("downloading staging file from %s: %w", stagingFileInfo.Location, err)
+			}
+			if err = file.Close(); err != nil {
+				return fmt.Errorf("closing file after download: %w", err)
+			}
+
+			jr.downloadStagingFileStat.Since(downloadStart)
+
+			fileInfo, err := os.Stat(stagingFilePath)
+			if err != nil {
+				return fmt.Errorf("file size of downloaded staging file: %w", err)
+			}
+
+			jr.bytesDownloadedStagingFileStat.Count(int(fileInfo.Size()))
+
+			return nil
+		}
+		if err := doTask(jr.job.DestinationConfig, jr.job.UseRudderStorage); err != nil {
+			if !jr.job.pickupStagingConfiguration() {
+				return fmt.Errorf("downloading staging file: %w", err)
+			}
+
+			jr.logger.Infon("[WH]: Starting processing staging file with revision config",
+				logger.NewField("stagingFileID", stagingFileInfo.ID),
+				logger.NewField("destinationRevisionID", jr.job.DestinationRevisionID),
+				logger.NewField("stagingDestinationRevisionID", jr.job.StagingDestinationRevisionID),
+				logger.NewField("identifier", jr.identifier),
+			)
+
+			if err := doTask(jr.job.StagingDestinationConfig, jr.job.StagingUseRudderStorage); err != nil {
+				jr.downloadStagingFileFailedStat.Increment()
+				return err
+			}
+		}
+		return nil
+	}
+
 	jr.config.slaveUploadTimeout = conf.GetDurationVar(10, time.Minute, "Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin")
 	jr.config.numLoadFileUploadWorkers = conf.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
 	jr.config.loadObjectFolder = conf.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects")
@@ -195,6 +261,7 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 		"destID":   jr.job.DestinationID,
 		"destType": jr.job.DestinationType,
 	})
+	jr.StagingFileDuplicateEvents = jr.counterStat("duplicate_events_in_staging_file")
 
 	return jr
 }
@@ -246,69 +313,6 @@ func (jr *jobRun) path(stagingFileInfo stagingFileInfo) (string, error) {
 	jr.stagingFilePaths[stagingFileInfo.ID] = filePath
 	jr.stagingFilePathsMu.Unlock()
 	return filePath, nil
-}
-
-// downloadStagingFile Download Staging file for the job
-func (jr *jobRun) downloadStagingFile(ctx context.Context, stagingFileInfo stagingFileInfo) error {
-	doTask := func(config interface{}, useRudderStorage bool) error {
-		var file *os.File
-		var err error
-
-		stagingFilePath, err := jr.path(stagingFileInfo)
-		if err != nil {
-			return fmt.Errorf("getting staging file path: %w", err)
-		}
-
-		if file, err = os.Create(stagingFilePath); err != nil {
-			return fmt.Errorf("creating file at path:%s downloaded from %s: %w",
-				stagingFilePath,
-				stagingFileInfo.Location,
-				err,
-			)
-		}
-
-		downloader, err := jr.job.fileManager(config, useRudderStorage)
-		if err != nil {
-			return fmt.Errorf("creating file manager: %w", err)
-		}
-
-		downloadStart := jr.now()
-		if err = downloader.Download(ctx, file, stagingFileInfo.Location); err != nil {
-			return fmt.Errorf("downloading staging file from %s: %w", stagingFileInfo.Location, err)
-		}
-		if err = file.Close(); err != nil {
-			return fmt.Errorf("closing file after download: %w", err)
-		}
-
-		jr.downloadStagingFileStat.Since(downloadStart)
-
-		fileInfo, err := os.Stat(stagingFilePath)
-		if err != nil {
-			return fmt.Errorf("file size of downloaded staging file: %w", err)
-		}
-
-		jr.bytesDownloadedStagingFileStat.Count(int(fileInfo.Size()))
-
-		return nil
-	}
-	if err := doTask(jr.job.DestinationConfig, jr.job.UseRudderStorage); err != nil {
-		if !jr.job.pickupStagingConfiguration() {
-			return fmt.Errorf("downloading staging file: %w", err)
-		}
-
-		jr.logger.Infon("[WH]: Starting processing staging file with revision config",
-			logger.NewField("stagingFileID", stagingFileInfo.ID),
-			logger.NewField("destinationRevisionID", jr.job.DestinationRevisionID),
-			logger.NewField("stagingDestinationRevisionID", jr.job.StagingDestinationRevisionID),
-			logger.NewField("identifier", jr.identifier),
-		)
-
-		if err := doTask(jr.job.StagingDestinationConfig, jr.job.StagingUseRudderStorage); err != nil {
-			jr.downloadStagingFileFailedStat.Increment()
-			return err
-		}
-	}
-	return nil
 }
 
 // loadFilePath generates a unique path for a load file based on the staging file path.
