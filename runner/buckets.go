@@ -23,9 +23,21 @@ var (
 		},
 		"warehouse_schema_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
-			float64(1 * bytesize.KB), float64(10 * bytesize.KB), float64(100 * bytesize.KB),
+			float64(1 * bytesize.KB), float64(5 * bytesize.KB), float64(10 * bytesize.KB), float64(50 * bytesize.KB), float64(100 * bytesize.KB), float64(500 * bytesize.KB),
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
-			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB), float64(1 * bytesize.GB),
+			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB),
+		},
+		"warehouse_staged_schema_size": {
+			float64(10 * bytesize.B), float64(100 * bytesize.B),
+			float64(1 * bytesize.KB), float64(5 * bytesize.KB), float64(10 * bytesize.KB), float64(50 * bytesize.KB), float64(100 * bytesize.KB), float64(500 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB),
+		},
+		"warehouse_consolidated_schema_size": {
+			float64(10 * bytesize.B), float64(100 * bytesize.B),
+			float64(1 * bytesize.KB), float64(5 * bytesize.KB), float64(10 * bytesize.KB), float64(50 * bytesize.KB), float64(100 * bytesize.KB), float64(500 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB),
 		},
 	}
 
