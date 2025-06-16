@@ -65,12 +65,13 @@ type Client struct {
 	reportingServiceURL string
 
 	httpClient *http.Client
-	backoff    backoff.BackOff
 	stats      stats.Stats
 	log        logger.Logger
 
 	moduleName string
 	instanceID string
+
+	conf *config.Config
 }
 
 func backOffFromConfig(conf *config.Config) backoff.BackOff {
@@ -99,12 +100,12 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Transport: &http.Transport{},
 		},
 		reportingServiceURL: reportingServiceURL,
-		backoff:             backOffFromConfig(conf),
 		route:               path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		moduleName:          conf.GetString("clientName", ""),
 		stats:               stats,
 		log:                 log,
+		conf:                conf,
 	}
 }
 
@@ -157,7 +158,7 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		return err
 	}
 
-	b := backoff.WithContext(c.backoff, ctx)
+	b := backoff.WithContext(backOffFromConfig(c.conf), ctx)
 	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
 		c.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
 	})
