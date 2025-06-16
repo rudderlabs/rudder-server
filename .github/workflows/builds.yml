@@ -206,7 +206,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
-            ${{ matrix.race && 'RACE_ENABLED=TRUE' || '' }}
+            ${{ matrix.race && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
