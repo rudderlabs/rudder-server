@@ -145,7 +145,7 @@ type jobRun struct {
 	bytesProcessedStagingFileStat  stats.Measurement
 	bytesDownloadedStagingFileStat stats.Measurement
 	downloadStagingFileFailedStat  stats.Measurement
-	StagingFileDuplicateEvents     stats.Measurement
+	stagingFileDuplicateEvents     stats.Measurement
 
 	config struct {
 		numLoadFileUploadWorkers int
@@ -261,7 +261,7 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 		"destID":   jr.job.DestinationID,
 		"destType": jr.job.DestinationType,
 	})
-	jr.StagingFileDuplicateEvents = jr.counterStat("duplicate_events_in_staging_file")
+	jr.stagingFileDuplicateEvents = jr.counterStat("duplicate_events_in_staging_file")
 
 	return jr
 }
