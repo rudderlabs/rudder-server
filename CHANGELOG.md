@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.52.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.51.0...v1.52.0-rc.1) (2025-06-16)
+
+
+### Features
+
+* capture bot metrics post deduplication ([#5956](https://github.com/rudderlabs/rudder-server/issues/5956)) ([94f40c8](https://github.com/rudderlabs/rudder-server/commit/94f40c8e2f59f1eefa128ee6b39738dcee095a90))
+* detect and handle memory-fenced responses in rudder-server ([#5935](https://github.com/rudderlabs/rudder-server/issues/5935)) ([af45808](https://github.com/rudderlabs/rudder-server/commit/af45808bd66ffc813230249b4b1c3dda7cde2834))
+* migrate cloud destinations to v2 sdk ([#5916](https://github.com/rudderlabs/rudder-server/issues/5916)) ([93d64f5](https://github.com/rudderlabs/rudder-server/commit/93d64f532c4582266f95dcba8a7562109d5bb92b))
+* shutdown server on non-reloadable config change ([#5941](https://github.com/rudderlabs/rudder-server/issues/5941)) ([985d3f9](https://github.com/rudderlabs/rudder-server/commit/985d3f911b2ddbbf837ff03286248019a1f222d2))
+
+
+### Bug Fixes
+
+* duplicates in snowpipe streaming due to stale channel cache ([#5957](https://github.com/rudderlabs/rudder-server/issues/5957)) ([4badd49](https://github.com/rudderlabs/rudder-server/commit/4badd49d0429e58d31555221ce62657a6d789d30))
+* gcs file deletion timing out ([#5951](https://github.com/rudderlabs/rudder-server/issues/5951)) ([e4abe53](https://github.com/rudderlabs/rudder-server/commit/e4abe53a4fe6b4dadb5adb9769f0c6d16b0f97ba))
+* update and extend async event delivery time metrics tests for JobParameters logic ([#5975](https://github.com/rudderlabs/rudder-server/issues/5975)) ([01483d5](https://github.com/rudderlabs/rudder-server/commit/01483d5eac9221509db1e78efeaa9cae9d61eee0))
+* warehouse transformations deep copying arguments ([#5979](https://github.com/rudderlabs/rudder-server/issues/5979)) ([28d15ac](https://github.com/rudderlabs/rudder-server/commit/28d15ac2549dac724fa81c8c329e60ce85a7a22a))
+
+
+### Miscellaneous
+
+* add conversionTime iso 8601 validation for bingads oc ([#5858](https://github.com/rudderlabs/rudder-server/issues/5858)) ([3e0dc6f](https://github.com/rudderlabs/rudder-server/commit/3e0dc6faf94d3fda2778e162ebebb71aa8e90ae6))
+* create new backoff on every reporting request ([#5993](https://github.com/rudderlabs/rudder-server/issues/5993)) ([7e3715a](https://github.com/rudderlabs/rudder-server/commit/7e3715af9f6c872ab0e9bb2175addda94ef82413))
+* **deps:** bump the go-deps group across 1 directory with 21 updates ([#5983](https://github.com/rudderlabs/rudder-server/issues/5983)) ([aa3ee66](https://github.com/rudderlabs/rudder-server/commit/aa3ee669f50c82031742c96e0aa392e825e4abe1))
+* remove golang.org/x/crypto v0.32.0 ([#5986](https://github.com/rudderlabs/rudder-server/issues/5986)) ([6fbb5a3](https://github.com/rudderlabs/rudder-server/commit/6fbb5a339e51d7c461b0647afb974ff121c25b37))
+* sync release v1.51.0 to main branch ([#5971](https://github.com/rudderlabs/rudder-server/issues/5971)) ([b9b1a21](https://github.com/rudderlabs/rudder-server/commit/b9b1a2120f4279bec4de2594a2183d82b59f0a6c))
+
 ## [1.51.3](https://github.com/rudderlabs/rudder-server/compare/v1.51.2...v1.51.3) (2025-06-11)
 
 
