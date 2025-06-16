@@ -172,6 +172,7 @@ jobs:
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
             platform: linux/amd64
+        race: [false, true]
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Checkout
@@ -183,13 +184,21 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Set tags
+        id: image_tags
+        run: |
+          if [ "${{ matrix.race }}" = "true" ]; then
+            echo "tags=$(echo '${{ matrix.build-config.tags }}' | sed 's/\([^, ]*\)/\1-race/g')" >> $GITHUB_OUTPUT
+          else
+            echo "tags=${{ matrix.build-config.tags }}" >> $GITHUB_OUTPUT
+          fi
       - name: Build, scan and push
         uses: rudderlabs/build-scan-push-action@v1.3.2
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: true
-          tags: ${{ matrix.build-config.tags }}
+          tags: ${{ steps.image_tags.outputs.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
             BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
@@ -197,6 +206,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
+            ${{ matrix.race && 'RACE_ENABLED=TRUE' || '' }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
