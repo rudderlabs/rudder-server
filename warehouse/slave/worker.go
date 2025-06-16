@@ -297,8 +297,8 @@ func (w *worker) processSingleStagingFile(
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
-	// Duplicate event detection map
-	iDColumnSet := make(map[string]struct{})
+	// Outer key is table name, inner key is id column value
+	tableIDColumnSet := make(map[string]map[string]struct{})
 	duplicateCount := 0
 
 	for {
@@ -350,10 +350,14 @@ func (w *worker) processSingleStagingFile(
 		if ok {
 			iDStr, ok := iDVal.(string)
 			if ok {
-				if _, exists := iDColumnSet[iDStr]; exists {
+				// Ensure the set for this table exists
+				if _, exists := tableIDColumnSet[tableName]; !exists {
+					tableIDColumnSet[tableName] = make(map[string]struct{})
+				}
+				if _, exists := tableIDColumnSet[tableName][iDStr]; exists {
 					duplicateCount++
 				} else {
-					iDColumnSet[iDStr] = struct{}{}
+					tableIDColumnSet[tableName][iDStr] = struct{}{}
 				}
 			}
 		}
