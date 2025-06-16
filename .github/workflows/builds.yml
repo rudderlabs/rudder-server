@@ -188,7 +188,7 @@ jobs:
         id: image_tags
         run: |
           if [ "${{ matrix.race }}" = "true" ]; then
-            echo "tags=$(echo '${{ matrix.build-config.tags }}' | sed 's/\([^, ]*\)/\1-race/g')" >> $GITHUB_OUTPUT
+            echo "tags=$(echo '${{ matrix.build-config.tags }}' | sed 's/$/-race/')" >> $GITHUB_OUTPUT
           else
             echo "tags=${{ matrix.build-config.tags }}" >> $GITHUB_OUTPUT
           fi
