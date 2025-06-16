@@ -297,8 +297,8 @@ func (w *worker) processSingleStagingFile(
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
-	// Duplicate detection map for messageId
-	messageIDSet := make(map[string]struct{})
+	// Duplicate event detection map
+	iDColumnSet := make(map[string]struct{})
 	duplicateCount := 0
 
 	for {
@@ -345,15 +345,15 @@ func (w *worker) processSingleStagingFile(
 
 		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
 
-		// Duplicate detection by messageId
-		messageIDVal, ok := columnData["messageId"]
+		// Duplicate detection by id column
+		iDVal, ok := columnData[job.columnName("id")]
 		if ok {
-			messageIDStr, ok := messageIDVal.(string)
+			iDStr, ok := iDVal.(string)
 			if ok {
-				if _, exists := messageIDSet[messageIDStr]; exists {
+				if _, exists := iDColumnSet[iDStr]; exists {
 					duplicateCount++
 				} else {
-					messageIDSet[messageIDStr] = struct{}{}
+					iDColumnSet[iDStr] = struct{}{}
 				}
 			}
 		}

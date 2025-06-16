@@ -613,7 +613,7 @@ func TestStagingFileDuplicateEventsMetric(t *testing.T) {
 		return f.Name()
 	}
 
-	eventTemplate := `{"metadata":{"table":"test_table"},"data":{"messageId":"%s"}}`
+	eventTemplate := `{"metadata":{"table":"test_table"},"data":{"id":"%s"}}`
 
 	t.Run("increments metric for duplicates", func(t *testing.T) {
 		events := []string{
