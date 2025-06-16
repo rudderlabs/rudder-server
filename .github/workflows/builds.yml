@@ -172,7 +172,7 @@ jobs:
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
             platform: linux/amd64
-        race: [true]
+        race: [false, true]
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Checkout
