@@ -135,7 +135,6 @@ jobs:
       arm64_labels: ${{ steps.arm64_meta.outputs.labels }}
       amd64_tags: ${{ steps.amd64_meta.outputs.tags }}
       amd64_labels: ${{ steps.amd64_meta.outputs.labels }}
-      race: ${{ matrix.race }}
     steps:
       - name: Docker meta
         id: meta
@@ -199,7 +198,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
-            ${{ needs.docker-ent-meta.outputs.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
+            ${{ matrix.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
