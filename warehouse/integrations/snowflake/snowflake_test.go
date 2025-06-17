@@ -1255,8 +1255,25 @@ func TestIntegration(t *testing.T) {
 		})
 
 		sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
+		warehouse := model.Warehouse{
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"account":              credentials.Account,
+					"database":             credentials.Database,
+					"warehouse":            credentials.Warehouse,
+					"user":                 credentials.User,
+					"useKeyPairAuth":       credentials.UseKeyPairAuth,
+					"privateKey":           credentials.PrivateKey,
+					"privateKeyPassphrase": credentials.PrivateKeyPassphrase,
+					"namespace":            namespace,
+				},
+			},
+			Namespace: namespace,
+		}
+		err = sf.Setup(ctx, warehouse, whutils.NewNoOpUploader())
+		require.NoError(t, err)
+
 		sf.DB = sqlquerywrapper.New(db)
-		sf.Namespace = namespace
 
 		_, err = sf.DB.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, namespace))
 		require.NoError(t, err, "should create schema")
