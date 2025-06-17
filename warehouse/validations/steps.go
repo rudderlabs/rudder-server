@@ -21,14 +21,19 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 	destType := dest.DestinationDefinition.Name
 
 	if destType == warehouseutils.SnowpipeStreaming {
-		return &model.StepsResponse{
-			Steps: []*model.Step{
-				{ID: 1, Name: model.VerifyingConnections},
-				{ID: 2, Name: model.VerifyingCreateSchema},
-				{ID: 3, Name: model.VerifyingCreateAndAlterTable},
-				{ID: 4, Name: model.VerifyingFetchSchema},
-			},
+		steps := []*model.Step{
+			{ID: 1, Name: model.VerifyingConnections},
+			{ID: 2, Name: model.VerifyingCreateSchema},
+			{ID: 3, Name: model.VerifyingCreateAndAlterTable},
+			{ID: 4, Name: model.VerifyingFetchSchema},
 		}
+		warehouse := model.Warehouse{
+			Destination: *dest,
+		}
+		if warehouse.GetBoolDestinationConfig(model.EnableIcebergSetting) {
+			steps = append(steps, &model.Step{ID: 5, Name: model.VerifyingExternalVolume})
+		}
+		return &model.StepsResponse{Steps: steps}
 	}
 
 	steps := []*model.Step{

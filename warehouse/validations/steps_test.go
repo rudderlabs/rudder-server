@@ -97,6 +97,24 @@ func TestValidationSteps(t *testing.T) {
 				model.VerifyingFetchSchema,
 			},
 		},
+		{
+			name: "Snowpipe with Iceberg",
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: warehouseutils.SnowpipeStreaming,
+				},
+				Config: map[string]interface{}{
+					"enableIceberg": true,
+				},
+			},
+			steps: []string{
+				model.VerifyingConnections,
+				model.VerifyingCreateSchema,
+				model.VerifyingCreateAndAlterTable,
+				model.VerifyingFetchSchema,
+				model.VerifyingExternalVolume,
+			},
+		},
 	}
 
 	for _, tc := range testCases {

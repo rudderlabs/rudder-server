@@ -9,6 +9,7 @@ const (
 	VerifyingCreateAndAlterTable = "Verifying Create and Alter Table"
 	VerifyingFetchSchema         = "Verifying Fetch Schema"
 	VerifyingLoadTable           = "Verifying Load Table"
+	VerifyingExternalVolume      = "Verifying Snowflake External Volume"
 )
 
 type ValidationRequest struct {

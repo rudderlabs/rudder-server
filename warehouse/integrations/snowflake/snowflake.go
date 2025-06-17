@@ -254,6 +254,16 @@ func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) 
 	return
 }
 
+func (sf *Snowflake) HasExternalVolumeAccess(ctx context.Context, externalVolume string) error {
+	query := fmt.Sprintf("DESC EXTERNAL VOLUME %s;", externalVolume)
+	// If no error is returned, then the external volume exists and user has access to it
+	_, err := sf.DB.ExecContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("describe external volume query: %w", err)
+	}
+	return nil
+}
+
 func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)

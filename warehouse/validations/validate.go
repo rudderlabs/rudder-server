@@ -63,6 +63,15 @@ type loadTable struct {
 	table       string
 }
 
+type snowflakeExternalVolume struct {
+	manager     manager.WarehouseOperations
+	destination *backendconfig.DestinationT
+}
+
+type snowflakeIcebergManager interface {
+	HasExternalVolumeAccess(ctx context.Context, externalVolume string) error
+}
+
 type DestinationValidator interface {
 	Validate(ctx context.Context, dest *backendconfig.DestinationT) *DestinationValidationResponse
 }
@@ -227,6 +236,14 @@ func NewValidator(ctx context.Context, step string, dest *backendconfig.Destinat
 			manager:     operations,
 			table:       getTable(dest),
 		}, nil
+	case model.VerifyingExternalVolume:
+		if operations, err = createManager(ctx, dest); err != nil {
+			return nil, fmt.Errorf("create manager: %w", err)
+		}
+		return &snowflakeExternalVolume{
+			destination: dest,
+			manager:     operations,
+		}, nil
 	}
 
 	return nil, fmt.Errorf("invalid step: %s", step)
@@ -333,6 +350,22 @@ func (lt *loadTable) Validate(ctx context.Context) error {
 		return fmt.Errorf("load test table: %w", err)
 	}
 
+	return nil
+}
+
+func (ev *snowflakeExternalVolume) Validate(ctx context.Context) error {
+	warehouse := model.Warehouse{
+		Destination: *ev.destination,
+	}
+	// FIXME: Pass config instead of config.Default
+	externalVolume := warehouse.GetStringDestinationConfig(config.Default, model.ExternalVolumeSetting)
+	snowflakeManager, ok := ev.manager.(snowflakeIcebergManager)
+	if !ok {
+		return fmt.Errorf("manager does not implement snowflakeIcebergManager")
+	}
+	if err := snowflakeManager.HasExternalVolumeAccess(ctx, externalVolume); err != nil {
+		return fmt.Errorf("has external volume access: %w", err)
+	}
 	return nil
 }
 
