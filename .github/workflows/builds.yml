@@ -176,7 +176,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            pattern={{tag}}-race-${{env.arch_arm64}}
+            suffix=race-${{env.arch_arm64}}
       - name: Docker race amd64 meta
         id: amd64_meta_race
         uses: docker/metadata-action@v5
@@ -184,7 +184,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            pattern={{tag}}-race-${{env.arch_amd64}}
+            suffix=race-${{env.arch_amd64}}
   docker-ent:
     needs:
       - docker-ent-meta
