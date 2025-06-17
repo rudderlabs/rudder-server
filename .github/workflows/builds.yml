@@ -190,7 +190,7 @@ jobs:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: true
-          tags: ${{ matrix.build-config.tags }}{{ matrix.race == 'true' && '-race' || '' }}
+          tags: ${{ matrix.build-config.tags }}${{ matrix.race == 'true' && '-race' || '' }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
             BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
