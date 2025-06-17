@@ -145,7 +145,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{env.docker_ent_images}}
-          tags: ${{ env.docker_ent_tags }}${{ matrix.race == 'true' && '-race' || '' }}
+          tags: ${{ env.docker_ent_tags }}
       - name: Docker arm64 meta
         id: arm64_meta
         uses: docker/metadata-action@v5
