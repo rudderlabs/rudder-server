@@ -153,7 +153,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            suffix=-${{env.arch_arm64}}${{ matrix.race && '-race' || '' }},onlatest=true
+            suffix=-${{env.arch_arm64}}${{ matrix.race == 'true' && '-race' || '' }},onlatest=true
       - name: Docker amd64 meta
         id: amd64_meta
         uses: docker/metadata-action@v5
@@ -161,7 +161,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            suffix=-${{env.arch_amd64}}${{ matrix.race && '-race' || '' }},onlatest=true
+            suffix=-${{env.arch_amd64}}${{ matrix.race == 'true' && '-race' || '' }},onlatest=true
   docker-ent:
     needs:
       - docker-ent-meta
