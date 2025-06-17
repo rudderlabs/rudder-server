@@ -77,6 +77,11 @@ type worker struct {
 	}
 }
 
+type dedupKey struct {
+	tableName string
+	idValue   string
+}
+
 func newWorker(
 	conf *config.Config,
 	logger logger.Logger,
@@ -297,8 +302,7 @@ func (w *worker) processSingleStagingFile(
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
-	// Outer key is table name, inner key is id column value
-	tableIDColumnSet := make(map[string]map[string]struct{})
+	tableIDColumnSet := make(map[dedupKey]struct{})
 	duplicateCount := 0
 
 	for {
@@ -350,14 +354,11 @@ func (w *worker) processSingleStagingFile(
 		if ok {
 			iDStr, ok := iDVal.(string)
 			if ok {
-				// Ensure the set for this table exists
-				if _, exists := tableIDColumnSet[tableName]; !exists {
-					tableIDColumnSet[tableName] = make(map[string]struct{})
-				}
-				if _, exists := tableIDColumnSet[tableName][iDStr]; exists {
+				dedupKey := dedupKey{tableName: tableName, idValue: iDStr}
+				if _, exists := tableIDColumnSet[dedupKey]; exists {
 					duplicateCount++
 				} else {
-					tableIDColumnSet[tableName][iDStr] = struct{}{}
+					tableIDColumnSet[dedupKey] = struct{}{}
 				}
 			}
 		}
