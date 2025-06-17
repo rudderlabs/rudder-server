@@ -37,6 +37,9 @@ func (c *ConfigT) getAccountDefinition(accountDefinitionName string, accountAsso
 	if accountDefinition, exists := c.AccountDefinitions[accountDefinitionName]; exists {
 		return &accountDefinition
 	}
+	accountAssociationLogger = accountAssociationLogger.Withn(
+		logger.NewStringField("accountDefinitionName", accountDefinitionName),
+	)
 	// Log error if account definition not found
 	accountAssociationLogger.Errorn("Account definition not found in configured accountDefinitions")
 	return nil
