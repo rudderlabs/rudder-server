@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
@@ -1480,4 +1482,79 @@ loop:
 	// Verify we got at least 2 refresh calls
 	require.GreaterOrEqual(t, callCount, 2, "Expected at least 2 refresh calls")
 	cancel()
+}
+
+func TestStagingFileDuplicateEventsMetric(t *testing.T) {
+	workerId := 1
+	metricName := "duplicate_events_in_staging_file"
+
+	// Helper to create a gzip staging file with given events
+	createStagingFile := func(events []string, filename string) string {
+		f, err := os.CreateTemp(t.TempDir(), filename)
+		require.NoError(t, err)
+		gzWriter := gzip.NewWriter(f)
+		for _, event := range events {
+			_, err := gzWriter.Write([]byte(event + "\n"))
+			require.NoError(t, err)
+		}
+		require.NoError(t, gzWriter.Close())
+		require.NoError(t, f.Close())
+		return f.Name()
+	}
+
+	eventTemplate := `{"metadata":{"table":"%s"},"data":{"id":"%s"}}`
+
+	t.Run("increments metric for duplicates", func(t *testing.T) {
+		events := []string{
+			fmt.Sprintf(eventTemplate, "test_table1", "id1"),
+			fmt.Sprintf(eventTemplate, "test_table", "id2"),
+			fmt.Sprintf(eventTemplate, "test_table", "id1"), // duplicate
+			fmt.Sprintf(eventTemplate, "test_table", "id3"),
+			fmt.Sprintf(eventTemplate, "test_table", "id2"), // duplicate
+		}
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		w := newWorker(config.New(), logger.NOP, statsStore, nil, nil, nil, nil, workerId)
+		jr := newJobRun(basePayload{}, workerId, config.New(), logger.NOP, statsStore, w.encodingFactory)
+		jr.downloadStagingFile = func(ctx context.Context, stagingFileInfo stagingFileInfo) error {
+			stagingFilePath1 := createStagingFile(events, "staging1.json.gz")
+			stagingFilePath2 := createStagingFile(append(events, fmt.Sprintf(eventTemplate, "test_table", "id1")), "staging2.json.gz")
+			jr.stagingFilePaths = map[int64]string{1: stagingFilePath1, 2: stagingFilePath2}
+			return nil
+		}
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 1})
+		require.NoError(t, err)
+		m := statsStore.Get(metricName, jr.buildTags())
+		require.EqualValues(t, 1, m.LastValue())
+		value1 := m.LastValue()
+
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2})
+		require.NoError(t, err)
+		m = statsStore.Get(metricName, jr.buildTags())
+		require.EqualValues(t, value1+(value1+1), m.LastValue())
+	})
+
+	t.Run("does not increment metric when no duplicates", func(t *testing.T) {
+		events := []string{
+			fmt.Sprintf(eventTemplate, "test_table", "id1"),
+			fmt.Sprintf(eventTemplate, "test_table", "id2"),
+			fmt.Sprintf(eventTemplate, "test_table", "id3"),
+			fmt.Sprintf(eventTemplate, "test_table2", "id1"),
+			fmt.Sprintf(eventTemplate, "test_table2", "id2"),
+			fmt.Sprintf(eventTemplate, "test_table2", "id3"),
+		}
+		stagingFilePath := createStagingFile(events, "staging3.json.gz")
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		w := newWorker(config.New(), logger.NOP, statsStore, nil, nil, nil, nil, workerId)
+		jr := newJobRun(basePayload{}, workerId, config.New(), logger.NOP, statsStore, w.encodingFactory)
+		jr.downloadStagingFile = func(ctx context.Context, stagingFileInfo stagingFileInfo) error {
+			jr.stagingFilePaths = map[int64]string{2: stagingFilePath}
+			return nil
+		}
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2, Location: stagingFilePath})
+		require.NoError(t, err)
+		m := statsStore.Get(metricName, jr.buildTags())
+		require.EqualValues(t, 0, m.LastValue()) // no duplicates
+	})
 }

@@ -79,6 +79,11 @@ type worker struct {
 	}
 }
 
+type dedupKey struct {
+	tableName string
+	idValue   string
+}
+
 func newWorker(
 	conf *config.Config,
 	logger logger.Logger,
@@ -299,6 +304,9 @@ func (w *worker) processSingleStagingFile(
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
+	tableIDColumnSet := make(map[dedupKey]struct{})
+	duplicateCount := 0
+
 	for {
 		ok := bufScanner.Scan()
 		if !ok {
@@ -342,6 +350,20 @@ func (w *worker) processSingleStagingFile(
 		}
 
 		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
+
+		// Duplicate detection by id column
+		iDVal, ok := columnData[job.columnName("id")]
+		if ok {
+			iDStr, ok := iDVal.(string)
+			if ok {
+				dedupKey := dedupKey{tableName: tableName, idValue: iDStr}
+				if _, exists := tableIDColumnSet[dedupKey]; exists {
+					duplicateCount++
+				} else {
+					tableIDColumnSet[dedupKey] = struct{}{}
+				}
+			}
+		}
 
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
@@ -463,6 +485,15 @@ func (w *worker) processSingleStagingFile(
 		releaseWriter()
 
 		jr.incrementEventCount(tableName)
+	}
+
+	// After processing all lines, increment the metric for duplicates
+	if duplicateCount > 0 {
+		jr.stagingFileDuplicateEvents.Count(duplicateCount)
+		jr.logger.Infon("Found duplicate events in staging file",
+			logger.NewField("stagingFileID", stagingFile.ID),
+			logger.NewIntField("duplicateEvents", int64(duplicateCount)),
+		)
 	}
 
 	jr.logger.Debugn("Process bytes from downloaded staging file",
