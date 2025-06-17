@@ -125,9 +125,6 @@ jobs:
             REVISION=${{ needs.docker-oss-meta.outputs.revision }}
   docker-ent-meta:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        race: [false, true]
     outputs:
       labels: ${{ steps.meta.outputs.labels }}
       build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
@@ -153,7 +150,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            suffix=-${{env.arch_arm64}}${{ matrix.race == 'true' && '-race' || '' }},onlatest=true
+            suffix=-${{env.arch_arm64}},onlatest=true
       - name: Docker amd64 meta
         id: amd64_meta
         uses: docker/metadata-action@v5
@@ -161,7 +158,7 @@ jobs:
           images: ${{env.docker_ent_images}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
-            suffix=-${{env.arch_amd64}}${{ matrix.race == 'true' && '-race' || '' }},onlatest=true
+            suffix=-${{env.arch_amd64}},onlatest=true
   docker-ent:
     needs:
       - docker-ent-meta
@@ -176,6 +173,7 @@ jobs:
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
             platform: linux/amd64
+        race: [false, true]
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Checkout
@@ -193,7 +191,7 @@ jobs:
           context: .
           platforms: ${{ matrix.build-config.platform }}
           push: true
-          tags: ${{ matrix.build-config.tags }}
+          tags: ${{ matrix.build-config.tags }}{{ matrix.race == 'true' && '-race' || '' }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
             BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
