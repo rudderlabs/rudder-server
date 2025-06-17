@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.4](https://github.com/rudderlabs/rudder-server/compare/v1.51.3...v1.51.4) (2025-06-17)
+
+
+### Miscellaneous
+
+* downgrade sync dependency ([#6005](https://github.com/rudderlabs/rudder-server/issues/6005)) ([b81fb45](https://github.com/rudderlabs/rudder-server/commit/b81fb455289b8c9c6b96fea865d14c37d0305f2b))
+
 ## [1.51.3](https://github.com/rudderlabs/rudder-server/compare/v1.51.2...v1.51.3) (2025-06-11)
 
 
