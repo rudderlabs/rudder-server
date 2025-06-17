@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/samber/lo"
@@ -19,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -80,7 +79,7 @@ func (jf *JobsForwarder) Start() error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	jf.cancel = cancel
-	jf.g, ctx = errgroup.WithContext(ctx)
+	jf.g, ctx = kitsync.ErrGroupWithContext(ctx)
 
 	jf.g.Go(crash.Wrapper(func() error {
 		var sleepTime time.Duration

@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
@@ -65,7 +66,7 @@ var ErrorDetailReportsColumns = []string{
 type ErrorDetailReporter struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
-	g                   *errgroup.Group
+	g                   *kitsync.ErrGroup
 	configSubscriber    *configSubscriber
 	reportingServiceURL string
 	syncersMu           sync.RWMutex
@@ -125,7 +126,7 @@ func NewErrorDetailReporter(
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log)
 	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := kitsync.ErrGroupWithContext(ctx)
 
 	var eventSampler event_sampler.EventSampler
 

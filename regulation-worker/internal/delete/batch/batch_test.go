@@ -213,7 +213,7 @@ func (fm *mockFileManager) UploadReader(_ context.Context, _ string, rdr io.Read
 }
 
 // Given a file name download and simply save it in the given file pointer.
-func (fm *mockFileManager) Download(_ context.Context, outputFilePtr io.WriterAt, location string) error {
+func (fm *mockFileManager) Download(_ context.Context, outputFilePtr io.WriterAt, location string, _ ...filemanager.DownloadOption) error {
 	finalFileName := fmt.Sprintf("%s%s%s", fm.mockBucketLocation, "/", location)
 	uploadFilePtr, err := os.OpenFile(finalFileName, os.O_RDWR, 0o644)
 	if err != nil {

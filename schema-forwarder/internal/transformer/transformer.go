@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/jeremywohl/flatten"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"
@@ -41,7 +41,7 @@ func New(backendConfig backendconfig.BackendConfig, config *config.Config) Trans
 func (st *transformer) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	st.cancel = cancel
-	st.g, ctx = errgroup.WithContext(ctx)
+	st.g, ctx = kitsync.ErrGroupWithContext(ctx)
 
 	var initialisedOnce sync.Once
 	initialised := make(chan struct{})

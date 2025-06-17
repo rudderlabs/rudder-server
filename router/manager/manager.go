@@ -7,6 +7,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -19,7 +20,7 @@ type LifecycleManager struct {
 	brt           *batchrouter.Factory
 	backendConfig backendconfig.BackendConfig
 	currentCancel context.CancelFunc
-	waitGroup     *errgroup.Group
+	waitGroup     *kitsync.ErrGroup
 }
 
 // Start starts a Router, this is not a blocking call.
@@ -28,7 +29,7 @@ type LifecycleManager struct {
 func (r *LifecycleManager) Start() error {
 	currentCtx, cancel := context.WithCancel(context.Background())
 	r.currentCancel = cancel
-	g, _ := errgroup.WithContext(context.Background())
+	g, _ := kitsync.ErrGroupWithContext(context.Background())
 	r.waitGroup = g
 	g.Go(func() error {
 		r.monitorDestRouters(currentCtx, r.rt, r.brt)
