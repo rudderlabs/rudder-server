@@ -29,7 +29,6 @@ func NotifyContextWithCallback(fn func(), signals ...os.Signal) (ctx context.Con
 
 	return ctx, func() {
 		cancel()
-		signalCancel()
 		wg.Wait() // Wait for the goroutine to finish before returning
 	}
 }
