@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.2](https://github.com/rudderlabs/rudder-server/compare/v1.52.1...v1.52.2) (2025-06-18)
+
+
+### Bug Fixes
+
+* incorrect snowpipe channel id being returned if insert recreates the channel ([#6012](https://github.com/rudderlabs/rudder-server/issues/6012)) ([71cbabe](https://github.com/rudderlabs/rudder-server/commit/71cbabefd6e03173d0f4485d97ab4c2927fee2e8))
+
 ## [1.52.1](https://github.com/rudderlabs/rudder-server/compare/v1.52.0...v1.52.1) (2025-06-17)
 
 
