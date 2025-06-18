@@ -44,7 +44,7 @@ func Test_Dedup(t *testing.T) {
 		if dedupDB == "badger" {
 			t.Setenv("RUDDER_TMPDIR", dbPath)
 		} else {
-			conf.Set("Dedup.KeyDB.Enabled", true)
+			conf.Set("KeyDB.Dedup.Enabled", true)
 			startKeydb(t, conf)
 		}
 

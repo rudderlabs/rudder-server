@@ -24,13 +24,13 @@ func SingleKey(key string) BatchKey {
 
 // New creates a new deduplication service. The service needs to be closed after use.
 func New(conf *config.Config, stats stats.Stats, log logger.Logger) (Dedup, error) {
-	if conf.GetBool("Dedup.KeyDB.Enabled", false) {
+	if conf.GetBool("KeyDB.Dedup.Enabled", false) {
 		return keydb.NewKeyDB(conf, stats, log)
 	}
 
 	badgerDedup := badger.NewBadgerDB(conf, stats, badger.DefaultPath())
 
-	if conf.GetBool("Dedup.KeyDB.Mirror", false) {
+	if conf.GetBool("KeyDB.Dedup.Mirror", false) {
 		keydbDedup, err := keydb.NewKeyDB(conf, stats, log)
 		if err == nil {
 			m := &mirror{
@@ -99,7 +99,7 @@ func (m *mirror) Close() {
 }
 
 func (m *mirror) printErrs(conf *config.Config) {
-	ticker := time.NewTicker(conf.GetDuration("Dedup.KeyDB.PrintErrorsInterval", 10, time.Second))
+	ticker := time.NewTicker(conf.GetDuration("KeyDB.Dedup.PrintErrorsInterval", 10, time.Second))
 	for range ticker.C {
 		select {
 		case err, ok := <-m.errs:
