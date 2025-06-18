@@ -103,7 +103,7 @@ func New(
 	m.api = newApiAdapter(
 		m.logger,
 		statsFactory,
-		snowpipeapi.New(m.appConfig, m.logger, m.statsFactory, m.config.client.url, m.requestDoer),
+		snowpipeapi.New(m.appConfig, m.statsFactory, m.config.client.url, m.requestDoer),
 		destination,
 	)
 	m.managerCreator = func(ctx context.Context, modelWarehouse whutils.ModelWarehouse, conf *config.Config, logger logger.Logger, statsFactory stats.Stats) (manager.Manager, error) {
@@ -382,36 +382,67 @@ func (m *Manager) sendEventsToSnowpipe(
 		}),
 		Offset: offset,
 	}
-
-	createChannelReq := buildCreateChannelRequest(destinationID, m.config.instanceID, destConf, info.tableName)
-
-	insertRes, err := m.api.Insert(ctx, channelResponse.ChannelID, insertReq, createChannelReq)
-	defer func() {
-		if err != nil || !insertRes.Success {
-			if deleteErr := m.deleteChannel(ctx, info.tableName, channelResponse.ChannelID); deleteErr != nil {
-				log.Warnn("Failed to delete channel", obskit.Error(deleteErr))
-			}
-		}
-	}()
+	channelID, err := m.insert(ctx, destinationID, destConf, info, insertReq, channelResponse.ChannelID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("inserting data %s: %w", info.tableName, err)
-	}
-	if !insertRes.Success {
-		errorMessages := lo.Map(insertRes.Errors, func(ie model.InsertError, _ int) string {
-			return ie.Message
-		})
-		return nil, nil, fmt.Errorf("inserting data %s failed: %s %v", info.tableName, insertRes.Code, errorMessages)
+		return nil, nil, fmt.Errorf("inserting events: %w", err)
 	}
 
 	log.Infon("Sent events to Snowpipe")
 
 	imInfo := &importInfo{
-		ChannelID: channelResponse.ChannelID,
+		ChannelID: channelID,
 		Offset:    offset,
 		Table:     info.tableName,
 		Count:     len(info.events),
 	}
 	return imInfo, discardImInfo, nil
+}
+
+func (m *Manager) insert(ctx context.Context, destinationID string, destConf *destConfig, info *uploadInfo, insertReq *model.InsertRequest, channelID string) (string, error) {
+	handleInsertFailure := func(res *model.InsertResponse) error {
+		if deleteErr := m.deleteChannel(ctx, info.tableName, channelID); deleteErr != nil {
+			m.logger.Warnn("Failed to delete channel", obskit.Error(deleteErr))
+		}
+		errorMessages := lo.Map(res.Errors, func(ie model.InsertError, _ int) string {
+			return ie.Message
+		})
+		return fmt.Errorf("inserting data %s failed: %s %v", info.tableName, res.Code, errorMessages)
+	}
+	insertRes, err := m.api.Insert(ctx, channelID, insertReq)
+	if err != nil {
+		// 404 can happen in the case where the channel is cached in the rudder-server
+		// but then the snowpipe service restarts making the channel id invalid
+		if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
+			// Not calling m.DeleteChannel since the API will fail with 404 given the channel is not found
+			m.channelCache.Delete(info.tableName)
+			m.logger.Infon("Channel not found, recreating channel", logger.NewStringField("channelID", channelID))
+			recreatedChannel, err := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
+			if err != nil {
+				return "", fmt.Errorf("creating channel %s: %w", info.tableName, err)
+			}
+			m.logger.Infon("Recreated channel", logger.NewStringField("channelID", recreatedChannel.ChannelID))
+			insertRes, err = m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
+			if err != nil {
+				if deleteErr := m.deleteChannel(ctx, info.tableName, recreatedChannel.ChannelID); deleteErr != nil {
+					m.logger.Warnn("Failed to delete channel", obskit.Error(deleteErr))
+				}
+				return "", fmt.Errorf("inserting data %s: %w", info.tableName, err)
+			}
+			if !insertRes.Success {
+				return "", handleInsertFailure(insertRes)
+			}
+			m.logger.Infon("Inserted data into recreated channel")
+			return recreatedChannel.ChannelID, nil
+		}
+		if deleteErr := m.deleteChannel(ctx, info.tableName, channelID); deleteErr != nil {
+			m.logger.Warnn("Failed to delete channel", obskit.Error(deleteErr))
+		}
+		return "", fmt.Errorf("inserting data %s: %w", info.tableName, err)
+	}
+	if !insertRes.Success {
+		return "", handleInsertFailure(insertRes)
+	}
+	return channelID, nil
 }
 
 // schemaFromEvents builds a schema by iterating over events and merging their columns
