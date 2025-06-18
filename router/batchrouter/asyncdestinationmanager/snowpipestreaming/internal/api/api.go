@@ -35,7 +35,7 @@ type (
 	}
 )
 
-var ErrChannelNotFound = errors.New("Channel not found")
+var ErrChannelNotFound = errors.New("channel not found")
 
 func New(conf *config.Config, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
 	a := &API{
