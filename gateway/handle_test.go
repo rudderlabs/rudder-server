@@ -6,14 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // createTestGateway creates a minimal Handle instance for testing event blocking
@@ -249,14 +250,14 @@ func TestIsEventBlocked(t *testing.T) {
 	}
 }
 
-type expectedJob struct {
-	eventName              string
-	isEventBlocked         bool
-	skipLiveEventRecording bool
-	shouldBeDropped        bool
-}
-
 func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
+	type expectedJob struct {
+		eventName              string
+		isEventBlocked         bool
+		skipLiveEventRecording bool
+		shouldBeDropped        bool
+	}
+
 	workspaceSettings := map[string]backendconfig.Settings{
 		"workspace1": {
 			EventBlocking: backendconfig.EventBlocking{
