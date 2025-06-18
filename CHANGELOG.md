@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.52.1](https://github.com/rudderlabs/rudder-server/compare/v1.52.0...v1.52.1) (2025-06-17)
+
+
+### Miscellaneous
+
+* downgrade golang.org/x/sync to v0.13.0 ([#6006](https://github.com/rudderlabs/rudder-server/issues/6006)) ([2af9641](https://github.com/rudderlabs/rudder-server/commit/2af9641c466bc6947944f729e75c66cbc6787389))
+* **processor:** use pipeline-specific destination locks during store ([#5992](https://github.com/rudderlabs/rudder-server/issues/5992)) ([f5b8cf7](https://github.com/rudderlabs/rudder-server/commit/f5b8cf7d43098d2690aef2851409203e2ea9dba3))
+
 ## [1.52.0](https://github.com/rudderlabs/rudder-server/compare/v1.51.0...v1.52.0) (2025-06-16)
 
 

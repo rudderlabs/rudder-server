@@ -17,6 +17,7 @@ replace (
 	golang.org/x/image => golang.org/x/image v0.24.0
 	golang.org/x/net => golang.org/x/net v0.34.0
 	golang.org/x/net/html => golang.org/x/net/html v0.41.0
+	golang.org/x/sync => golang.org/x/sync v0.13.0
 	golang.org/x/text => golang.org/x/text v0.22.0
 	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
