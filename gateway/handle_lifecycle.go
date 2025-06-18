@@ -7,6 +7,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -118,7 +119,8 @@ func (gw *Handle) Setup(
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
-
+	// enable event blocking. false by default
+	gw.conf.enableEventBlocking = config.GetBoolVar(false, "enableEventBlocking")
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)
@@ -249,11 +251,16 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	ch := gw.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
 		var (
-			writeKeysSourceMap = map[string]backendconfig.SourceT{}
-			sourceIDSourceMap  = map[string]backendconfig.SourceT{}
+			writeKeysSourceMap     = map[string]backendconfig.SourceT{}
+			sourceIDSourceMap      = map[string]backendconfig.SourceT{}
+			workspaceIDSettingsMap = map[string]backendconfig.Settings{}
+			nonEventStreamSources  = map[string]bool{}
 		)
+
 		configData := data.Data.(map[string]backendconfig.ConfigT)
-		for _, wsConfig := range configData {
+		for workspaceID, wsConfig := range configData {
+			workspaceIDSettingsMap[workspaceID] = wsConfig.Settings
+
 			for _, source := range wsConfig.Sources {
 				writeKeysSourceMap[source.WriteKey] = source
 				sourceIDSourceMap[source.ID] = source
@@ -262,11 +269,16 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 						gw.webhook.Register(source.SourceDefinition.Name)
 					}
 				}
+				if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, webhookSourceCategory) {
+					nonEventStreamSources[source.ID] = true
+				}
 			}
 		}
 		gw.configSubscriberLock.Lock()
 		gw.writeKeysSourceMap = writeKeysSourceMap
 		gw.sourceIDSourceMap = sourceIDSourceMap
+		gw.workspaceIDSettingsMap = workspaceIDSettingsMap
+		gw.nonEventStreamSources = nonEventStreamSources
 		gw.configSubscriberLock.Unlock()
 		closeConfigChan(len(gw.writeKeysSourceMap))
 	}

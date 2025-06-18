@@ -107,9 +107,11 @@ type Handle struct {
 	trackFailureCount int
 
 	// backendconfig state
-	configSubscriberLock sync.RWMutex
-	writeKeysSourceMap   map[string]backendconfig.SourceT
-	sourceIDSourceMap    map[string]backendconfig.SourceT
+	configSubscriberLock   sync.RWMutex
+	writeKeysSourceMap     map[string]backendconfig.SourceT
+	sourceIDSourceMap      map[string]backendconfig.SourceT
+	workspaceIDSettingsMap map[string]backendconfig.Settings
+	nonEventStreamSources  map[string]bool
 
 	conf struct { // configuration parameters
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
@@ -128,6 +130,7 @@ type Handle struct {
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
+		enableEventBlocking                  bool
 		webhookV2HandlerEnabled              bool
 	}
 
@@ -582,6 +585,48 @@ func (gw *Handle) isUserSuppressed(workspaceID, userID, sourceID string) bool {
 	return false
 }
 
+func (gw *Handle) memoizedIsEventBlocked() func(workspaceID, eventType, eventName string) bool {
+	cache := map[string]bool{}
+	return func(workspaceID, eventType, eventName string) bool {
+		key := workspaceID + ":" + eventType + ":" + eventName
+		if val, ok := cache[key]; ok {
+			return val
+		}
+		val := gw.isEventBlocked(workspaceID, eventType, eventName)
+		cache[key] = val
+		return val
+	}
+}
+
+// isEventBlocked checks if an event should be blocked based on workspace settings
+func (gw *Handle) isEventBlocked(workspaceID, eventType, eventName string) bool {
+	if !gw.conf.enableEventBlocking {
+		return false
+	}
+
+	// Event blocking is only supported for track events
+	if eventName == "" || eventType != "track" {
+		return false
+	}
+
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+
+	workspaceSettings, ok := gw.workspaceIDSettingsMap[workspaceID]
+	if !ok {
+		return false
+	}
+
+	if blockedEvents, exists := workspaceSettings.EventBlocking.Events[eventType]; exists {
+		for _, blockedEvent := range blockedEvents {
+			if blockedEvent == eventName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // getPayload reads the request body and returns the payload's bytes or an error if the payload cannot be read
 func (gw *Handle) getPayload(arctx *gwtypes.AuthRequestContext, r *http.Request, reqType string) ([]byte, error) {
 	payload, err := gw.getPayloadFromRequest(r)
@@ -703,7 +748,9 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 					gw.logger.Errorn("writeKey not found in event payload")
 					continue
 				}
-				gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
+				if !jws.skipLiveEventRecording {
+					gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
+				}
 			}
 			stat.RequestSucceeded()
 			stat.Report(gw.stats)
@@ -744,8 +791,9 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 }
 
 type jobWithStat struct {
-	job  *jobsdb.JobT
-	stat gwstats.SourceStat
+	job                    *jobsdb.JobT
+	stat                   gwstats.SourceStat
+	skipLiveEventRecording bool
 }
 
 func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
@@ -765,6 +813,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		BotURL              string `json:"bot_url,omitempty"`
 		BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 		BotAction           string `json:"bot_action,omitempty"`
+		IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
 	}
 
 	type singularEventBatch struct {
@@ -777,6 +826,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	var (
 		messages         []stream.Message
 		isUserSuppressed = gw.memoizedIsUserSuppressed()
+		isEventBlocked   = gw.memoizedIsEventBlocked()
 		res              []jobWithStat
 		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
@@ -953,6 +1003,13 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotAction:           msg.Properties.BotAction,
 		}
 
+		if !gw.nonEventStreamSources[msg.Properties.SourceID] {
+			eventName := stringify.Any(gjson.GetBytes(msg.Payload, "event").String())
+			if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.RequestType, eventName) {
+				jobsDBParams.IsEventBlocked = true
+			}
+		}
+
 		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
@@ -984,7 +1041,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 		jobUUID := uuid.New()
 		res = append(res, jobWithStat{
-			stat: stat,
+			stat:                   stat,
+			skipLiveEventRecording: jobsDBParams.IsEventBlocked,
 			job: &jobsdb.JobT{
 				UUID:         jobUUID,
 				UserID:       msg.Properties.RoutingKey,

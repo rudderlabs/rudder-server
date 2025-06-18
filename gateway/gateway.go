@@ -16,6 +16,7 @@ import (
 const (
 	delimiter                 = "<<>>"
 	eventStreamSourceCategory = "eventStream"
+	webhookSourceCategory     = "webhook"
 	extractEvent              = "extract"
 	rETLEvent                 = "record"
 	customVal                 = "GW"
