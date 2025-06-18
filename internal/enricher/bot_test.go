@@ -36,7 +36,27 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "non-bot event with name, url and isInvalidBrowser should not be enriched",
+			name: "non-bot event should not be enriched even if BotAction is flag",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:     false,
+				BotAction: "flag",
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "non-bot event with name, url and isInvalidBrowser should not be enriched even when BotAction is flag",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -49,6 +69,7 @@ func TestBotEnricher(t *testing.T) {
 				BotName:             "test-bot",
 				BotURL:              "https://test-bot.com",
 				BotIsInvalidBrowser: true,
+				BotAction:           "flag",
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -58,7 +79,27 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "bot event without context should be enriched with new context",
+			name: "bot event should not be enriched when BotAction is disable",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:     true,
+				BotAction: "disable",
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "bot event with BotAction 'flag' should be enriched",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -71,6 +112,7 @@ func TestBotEnricher(t *testing.T) {
 				BotName:             "test-bot",
 				BotURL:              "https://test-bot.com",
 				BotIsInvalidBrowser: false,
+				BotAction:           "flag",
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -88,7 +130,68 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "bot event with invalid browser should be enriched with isInvalidBrowser as true",
+			name: "bot event with empty BotAction should be enriched",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:     true,
+				BotName:   "test-bot",
+				BotURL:    "https://test-bot.com",
+				BotAction: "",
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+					"context": map[string]interface{}{
+						"isBot": true,
+						"bot": botDetails{
+							Name:             "test-bot",
+							URL:              "https://test-bot.com",
+							IsInvalidBrowser: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "bot event with BotAction 'flag' and without context should be enriched with new context",
+			request: &types.GatewayBatchRequest{
+				Batch: []types.SingularEventT{
+					{
+						"event": "test-event",
+					},
+				},
+			},
+			eventParams: &types.EventParams{
+				IsBot:               true,
+				BotName:             "test-bot",
+				BotURL:              "https://test-bot.com",
+				BotIsInvalidBrowser: false,
+				BotAction:           "flag",
+			},
+			expectedEvents: []types.SingularEventT{
+				{
+					"event": "test-event",
+					"context": map[string]interface{}{
+						"isBot": true,
+						"bot": botDetails{
+							Name:             "test-bot",
+							URL:              "https://test-bot.com",
+							IsInvalidBrowser: false,
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "bot event with BotAction 'flag' and invalid browser should be enriched with isInvalidBrowser as true",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -99,6 +202,7 @@ func TestBotEnricher(t *testing.T) {
 			eventParams: &types.EventParams{
 				IsBot:               true,
 				BotIsInvalidBrowser: true,
+				BotAction:           "flag",
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -114,7 +218,7 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "bot event with existing context should be enriched",
+			name: "bot event with BotAction 'flag' and existing context should be enriched",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -126,9 +230,10 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot:   true,
-				BotName: "test-bot",
-				BotURL:  "https://test-bot.com",
+				IsBot:     true,
+				BotName:   "test-bot",
+				BotURL:    "https://test-bot.com",
+				BotAction: "flag",
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -147,7 +252,7 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "bot event with existing isBot should be enriched with new bot details",
+			name: "bot event with BotAction 'flag' and existing isBot should be enriched with new bot details",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -168,6 +273,7 @@ func TestBotEnricher(t *testing.T) {
 				BotName:             "new-bot",
 				BotURL:              "https://new-bot.com",
 				BotIsInvalidBrowser: false,
+				BotAction:           "flag",
 			},
 			expectedEvents: []types.SingularEventT{
 				{
@@ -185,7 +291,7 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "bot event with invalid context should return error",
+			name: "bot event with BotAction 'flag' and invalid context should return error",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{
 					{
@@ -195,7 +301,8 @@ func TestBotEnricher(t *testing.T) {
 				},
 			},
 			eventParams: &types.EventParams{
-				IsBot: true,
+				IsBot:     true,
+				BotAction: "flag",
 			},
 			expectedEvents: []types.SingularEventT{
 				{

@@ -10,25 +10,19 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
-	"github.com/rudderlabs/rudder-server/services/streammanager/firehose"
 	cloudfunctions "github.com/rudderlabs/rudder-server/services/streammanager/googlecloudfunction"
 	"github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
-	"github.com/rudderlabs/rudder-server/services/streammanager/kinesis"
-	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
-	"github.com/rudderlabs/rudder-server/services/streammanager/personalize"
 )
 
 var once sync.Once
@@ -124,7 +118,6 @@ func TestNewProducerWithEventBridgeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &eventbridge.EventBridgeProducer{})
 }
 
 func TestNewProducerWithFirehoseDestination(t *testing.T) {
@@ -139,7 +132,6 @@ func TestNewProducerWithFirehoseDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &firehose.FireHoseProducer{})
 }
 
 func TestNewProducerWithKinesisDestination(t *testing.T) {
@@ -154,7 +146,6 @@ func TestNewProducerWithKinesisDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &kinesis.KinesisProducer{})
 }
 
 func TestNewProducerWithLambdaDestination(t *testing.T) {
@@ -169,7 +160,6 @@ func TestNewProducerWithLambdaDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &lambda.LambdaProducer{})
 }
 
 func TestNewProducerWithPersonalizeDestination(t *testing.T) {
@@ -184,7 +174,6 @@ func TestNewProducerWithPersonalizeDestination(t *testing.T) {
 		common.Opts{})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.IsType(t, producer, &personalize.PersonalizeProducer{})
 }
 
 func TestNewProducerWithBQStreamDestination(t *testing.T) {

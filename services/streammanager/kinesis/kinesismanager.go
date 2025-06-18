@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/kinesis/mock_kinesis.go -package mock_kinesis github.com/rudderlabs/rudder-server/services/streammanager/kinesis KinesisClient
+//go:generate mockgen -destination=../../../mocks/services/streammanager/kinesis_v1/mock_kinesis_v1.go -package mock_kinesis_v1 github.com/rudderlabs/rudder-server/services/streammanager/kinesis KinesisClientV1
 
 package kinesis
 
@@ -13,34 +13,21 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-var pkgLogger logger.Logger
-
-// Config is the config that is required to send data to Kinesis
-type Config struct {
-	Stream       string
-	UseMessageID bool
+type KinesisProducerV1 struct {
+	client KinesisClientV1
 }
 
-func init() {
-	pkgLogger = logger.NewLogger().Child("streammanager").Child(kinesis.ServiceName)
-}
-
-type KinesisProducer struct {
-	client KinesisClient
-}
-
-type KinesisClient interface {
+type KinesisClientV1 interface {
 	PutRecord(input *kinesis.PutRecordInput) (*kinesis.PutRecordOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*KinesisProducer, error) {
+func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
 	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, kinesis.ServiceName)
 	if err != nil {
 		return nil, err
@@ -52,11 +39,11 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Kines
 	if err != nil {
 		return nil, err
 	}
-	return &KinesisProducer{client: kinesis.New(awsSession)}, err
+	return &KinesisProducerV1{client: kinesis.New(awsSession)}, err
 }
 
 // Produce creates a producer and send data to Kinesis.
-func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *KinesisProducerV1) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Could not create producer for Kinesis", "Could not create producer for Kinesis"
@@ -113,7 +100,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	return 200, "Success", message
 }
 
-func (*KinesisProducer) Close() error {
+func (*KinesisProducerV1) Close() error {
 	// no-op
 	return nil
 }

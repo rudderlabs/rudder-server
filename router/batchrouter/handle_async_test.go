@@ -284,6 +284,67 @@ func TestAsyncDestinationManager(t *testing.T) {
 			}()
 			<-done
 		})
+		t.Run("UploadInProgress skips upload", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			batchRouter := defaultHandle(destType)
+			destinationID := "destinationID"
+			batchRouter.destinationsMap[destinationID] = &routerutils.DestinationWithSources{
+				Destination: backendconfig.DestinationT{ID: destinationID},
+				Sources:     []backendconfig.SourceT{{ID: "sourceID"}},
+			}
+			batchRouter.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
+				UploadInProgress: true,
+				Manager: mockAsyncDestinationManager{
+					uploadOutput: common.AsyncUploadOutput{ImportingJobIDs: []int64{1}},
+				},
+			}
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				batchRouter.asyncUploadWorker(ctx)
+			}()
+			<-done
+			// If no panic, the continue was hit and test passes
+		})
+
+		// Test for line 374: else branch (asyncStructCleanUp)
+		t.Run("asyncStructCleanUp is called when no ImportingParameters or ImportingJobIDs", func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			batchRouter := defaultHandle(destType)
+			destinationID := "destinationID"
+			batchRouter.destinationsMap[destinationID] = &routerutils.DestinationWithSources{
+				Destination: backendconfig.DestinationT{ID: destinationID},
+				Sources:     []backendconfig.SourceT{{ID: "sourceID", WorkspaceID: "workspaceID"}},
+			}
+			batchRouter.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
+				Exists: true,
+				Manager: mockAsyncDestinationManager{
+					uploadOutput: common.AsyncUploadOutput{
+						DestinationID:       destinationID,
+						ImportingParameters: nil,
+						ImportingJobIDs:     []int64{},
+					},
+				},
+			}
+			batchRouter.uploadIntervalMap[destinationID] = 0
+			batchRouter.asyncDestinationStruct[destinationID].CanUpload = true
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				// Expected to clean up the asyncDestinationStruct
+				batchRouter.asyncUploadWorker(ctx)
+				cancel()
+			}()
+			<-done
+
+			require.False(t, batchRouter.asyncDestinationStruct[destinationID].Exists)
+		})
 	})
 	t.Run("Poll (StatusCode=StatusBadRequest)", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Second)

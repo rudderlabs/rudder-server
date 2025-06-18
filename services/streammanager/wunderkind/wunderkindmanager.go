@@ -2,7 +2,6 @@ package wunderkind
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -16,30 +15,18 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
-const (
-	InvocationType       = "RequestResponse"
-	WunderkindRegion     = "WUNDERKIND_REGION"
-	WunderkindIamRoleArn = "WUNDERKIND_IAM_ROLE_ARN"
-	WunderkindExternalId = "WUNDERKIND_EXTERNAL_ID"
-	WunderkindLambda     = "WUNDERKIND_LAMBDA"
-)
-
-type inputData struct {
-	Payload string `json:"payload"`
-}
-
-type Producer struct {
+type ProducerV1 struct {
 	conf   *config.Config
-	client lambdaClient
+	client lambdaClientV1
 	logger logger.Logger
 }
 
-type lambdaClient interface {
+type lambdaClientV1 interface {
 	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(conf *config.Config, log logger.Logger) (*Producer, error) {
+func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) {
 	if err := validate(conf); err != nil {
 		return nil, fmt.Errorf("invalid environment config: %w", err)
 	}
@@ -49,12 +36,13 @@ func NewProducer(conf *config.Config, log logger.Logger) (*Producer, error) {
 		ExternalID:    conf.GetString(WunderkindExternalId, ""),
 		RoleBasedAuth: true,
 	}
+	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.WUNDERKIND.httpMaxIdleConnsPerHost", "Router.WUNDERKIND.noOfWorkers", "Router.noOfWorkers")
 	awsSession, err := awsutil.CreateSession(sessionConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating session: %w", err)
 	}
 
-	return &Producer{
+	return &ProducerV1{
 		conf:   conf,
 		client: lambda.New(awsSession),
 		logger: log.Child("wunderkind"),
@@ -62,7 +50,7 @@ func NewProducer(conf *config.Config, log logger.Logger) (*Producer, error) {
 }
 
 // Produce creates a producer and send data to Lambda.
-func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	client := p.client
 	var input inputData
 	err := jsonrs.Unmarshal(jsonData, &input)
@@ -114,27 +102,7 @@ func (p *Producer) Produce(jsonData json.RawMessage, _ interface{}) (int, string
 	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
 }
 
-func validate(conf *config.Config) error {
-	if conf.GetString(WunderkindRegion, "") == "" {
-		return errors.New("region cannot be empty")
-	}
-
-	if conf.GetString(WunderkindIamRoleArn, "") == "" {
-		return errors.New("iam role arn cannot be empty")
-	}
-
-	if conf.GetString(WunderkindExternalId, "") == "" {
-		return errors.New("external id cannot be empty")
-	}
-
-	if conf.GetString(WunderkindLambda, "") == "" {
-		return errors.New("lambda function cannot be empty")
-	}
-
-	return nil
-}
-
-func (*Producer) Close() error {
+func (*ProducerV1) Close() error {
 	// no-op
 	return nil
 }

@@ -22,7 +22,9 @@ const (
 )
 
 const (
-	DiffStatus = "diff"
+	DiffStatus        = "diff"
+	BotFlaggedStatus  = "bot_flagged"
+	BotDetectedStatus = "bot_detected"
 
 	// Module names
 	GATEWAY                = "gateway"

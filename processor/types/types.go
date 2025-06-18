@@ -247,6 +247,7 @@ type EventParams struct {
 	BotName             string `json:"bot_name,omitempty"`
 	BotURL              string `json:"bot_url,omitempty"`
 	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
+	BotAction           string `json:"bot_action,omitempty"`
 }
 
 type TransformerMetricLabels struct {
