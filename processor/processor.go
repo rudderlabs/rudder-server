@@ -2596,7 +2596,7 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
-func (proc *Handle) storeStage(partition string, in *storeMessage) {
+func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMessage) {
 	lockRouterDestIDs := func() func() {
 		var deferred []func()
 		if len(in.destJobs) == 0 {
@@ -2606,8 +2606,10 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			destIDs := lo.Uniq(in.routerDestIDs)
 			slices.Sort(destIDs)
 			for _, destID := range destIDs {
-				proc.storePlocker.Lock(destID)
-				deferred = append(deferred, func() { proc.storePlocker.Unlock(destID) })
+				// Use pipelineIndex in the lock pKey to avoid contention when multiple pipelines are running (each pipeline processes its own exclusive partition of userIDs)
+				pKey := destID + "-" + strconv.Itoa(pipelineIndex)
+				proc.storePlocker.Lock(pKey)
+				deferred = append(deferred, func() { proc.storePlocker.Unlock(pKey) })
 			}
 		} else {
 			proc.logger.Warnn("empty storeMessage.routerDestIDs",
@@ -3750,7 +3752,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	if err != nil {
 		panic(err)
 	}
-	proc.storeStage(partition,
+	proc.storeStage(partition, 0,
 		proc.destinationTransformStage(partition,
 			proc.userTransformStage(partition, transMessage)),
 	)
