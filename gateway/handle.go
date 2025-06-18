@@ -585,21 +585,21 @@ func (gw *Handle) isUserSuppressed(workspaceID, userID, sourceID string) bool {
 	return false
 }
 
-func (gw *Handle) memoizedIsEventBlocked() func(workspaceID, eventType, eventName string) bool {
+func (gw *Handle) memoizedIsEventBlocked() func(workspaceID, sourceID, eventType, eventName string) bool {
 	cache := map[string]bool{}
-	return func(workspaceID, eventType, eventName string) bool {
-		key := workspaceID + ":" + eventType + ":" + eventName
+	return func(workspaceID, sourceID, eventType, eventName string) bool {
+		key := workspaceID + ":" + sourceID + ":" + eventType + ":" + eventName
 		if val, ok := cache[key]; ok {
 			return val
 		}
-		val := gw.isEventBlocked(workspaceID, eventType, eventName)
+		val := gw.isEventBlocked(workspaceID, sourceID, eventType, eventName)
 		cache[key] = val
 		return val
 	}
 }
 
 // isEventBlocked checks if an event should be blocked based on workspace settings
-func (gw *Handle) isEventBlocked(workspaceID, eventType, eventName string) bool {
+func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName string) bool {
 	if !gw.conf.enableEventBlocking {
 		return false
 	}
@@ -611,6 +611,10 @@ func (gw *Handle) isEventBlocked(workspaceID, eventType, eventName string) bool 
 
 	gw.configSubscriberLock.RLock()
 	defer gw.configSubscriberLock.RUnlock()
+
+	if gw.nonEventStreamSources[sourceID] {
+		return false
+	}
 
 	workspaceSettings, ok := gw.workspaceIDSettingsMap[workspaceID]
 	if !ok {
@@ -1003,11 +1007,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotAction:           msg.Properties.BotAction,
 		}
 
-		if !gw.nonEventStreamSources[msg.Properties.SourceID] {
-			eventName := stringify.Any(gjson.GetBytes(msg.Payload, "event").String())
-			if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.RequestType, eventName) {
-				jobsDBParams.IsEventBlocked = true
-			}
+		eventName := stringify.Any(gjson.GetBytes(msg.Payload, "event").String())
+		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, msg.Properties.RequestType, eventName) {
+			jobsDBParams.IsEventBlocked = true
 		}
 
 		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
