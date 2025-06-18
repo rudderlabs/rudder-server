@@ -1050,6 +1050,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					}, nil
 				},
 			},
+			deleteChannelOutputMap: map[string]func() error{
+				"invalid-test-products-channel": func() error {
+					return nil
+				},
+			},
 			insertOutputMap: map[string]func() (*model.InsertResponse, error){
 				"test-users-channel": func() (*model.InsertResponse, error) {
 					return &model.InsertResponse{Success: true}, nil
