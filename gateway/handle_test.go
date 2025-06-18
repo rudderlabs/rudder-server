@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
@@ -409,7 +410,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Create JSON payload directly as array of stream.Message
-			payloadBytes, err := json.Marshal(tt.messages)
+			payloadBytes, err := jsonrs.Marshal(tt.messages)
 			require.NoError(t, err)
 
 			// Extract jobs
@@ -425,7 +426,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 
 				// Parse the job parameters to check event blocking properties
 				var eventParams map[string]interface{}
-				err := json.Unmarshal(job.job.Parameters, &eventParams)
+				err := jsonrs.Unmarshal(job.job.Parameters, &eventParams)
 				require.NoError(t, err, "Should be able to parse job parameters")
 
 				// Check IsEventBlocked parameter
