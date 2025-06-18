@@ -183,6 +183,7 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 
 func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, statsHandler OAuthStatsHandler) (int, *AuthResponse, error) {
 	log := h.Logger.Withn(
+		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 		logger.NewStringField("Call Type", logTypeName),
 		logger.NewStringField("AccountId", refTokenParams.AccountID),
 		obskit.DestinationID(refTokenParams.DestinationID),
@@ -191,7 +192,17 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	)
 	log.Debugn("[request] :: Get Token Info request received")
 	startTime := time.Now()
+	log.Debugn("[request] :: Acquiring lock for account")
+	lockStartTime := time.Now()
 	h.CacheMutex.Lock(refTokenParams.AccountID)
+	lockAcquisitionTime := time.Since(lockStartTime)
+
+	// Log if lock acquisition took longer than expected
+	if lockAcquisitionTime > 100*time.Millisecond {
+		log.Warnn("Lock acquisition took longer than expected",
+			logger.NewDurationField("duration", lockAcquisitionTime))
+	}
+
 	defer h.CacheMutex.Unlock(refTokenParams.AccountID)
 	defer func() {
 		statsHandler.SendTiming(startTime, "total_latency", stats.Tags{
