@@ -325,7 +325,7 @@ func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo, loadFileNamePref
 		return "", fmt.Errorf("getting staging file path: %w", err)
 	}
 
-	if jr.conf.GetBool("Warehouse.useDeterministicLoadFileName", false) {
+	if jr.conf.GetBool("Warehouse.useDeterministicLoadFileName", false) && slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) {
 		stagingFileDir := path.Dir(stagingFilePath)
 		loadFilePath := path.Join(stagingFileDir, fmt.Sprintf("%s.%s.%s", loadFileNamePrefix, jr.job.SourceID, warehouseutils.GetLoadFileFormat(jr.job.LoadFileType)))
 		return loadFilePath, nil
