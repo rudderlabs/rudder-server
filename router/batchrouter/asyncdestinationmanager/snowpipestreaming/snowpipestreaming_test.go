@@ -42,7 +42,7 @@ func (m *mockAPI) DeleteChannel(_ context.Context, channelID string, _ bool) err
 	return m.deleteChannelOutputMap[channelID]()
 }
 
-func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertRequest, _ *model.CreateChannelRequest) (*model.InsertResponse, error) {
+func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertRequest) (*model.InsertResponse, error) {
 	return m.insertOutputMap[channelID]()
 }
 
@@ -1011,6 +1011,74 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destinationId": "test-destination",
 			"status":        "failed",
 		}).LastValue())
+	})
+
+	t.Run("Upload success but with a 404 error in the first call to insert", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		productsCount := 0
+		productSchema := map[string]string{
+			"ID":          "int",
+			"PRODUCT_ID":  "string",
+			"PRICE":       "float",
+			"IN_STOCK":    "boolean",
+			"RECEIVED_AT": "datetime",
+		}
+
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				// For the first call to createChannel, we return a channel for which the insert will return a 404 error
+				// For the second call to createChannel, we return a channel for which the insert will be successful
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					if productsCount == 0 {
+						productsCount++
+						return &model.ChannelResponse{
+							Success:        true,
+							ChannelID:      "invalid-test-products-channel",
+							SnowpipeSchema: productSchema,
+						}, nil
+					}
+					return &model.ChannelResponse{
+						Success:        true,
+						ChannelID:      "test-products-channel",
+						SnowpipeSchema: productSchema,
+					}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"invalid-test-products-channel": func() error {
+					return nil
+				},
+			},
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"invalid-test-products-channel": func() (*model.InsertResponse, error) {
+					return nil, internalapi.ErrChannelNotFound
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+		}
+		output := sm.Upload(&common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_sort_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 4, output.ImportingCount)
+		require.Equal(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
+		require.Nil(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
 	})
 
 	t.Run("Poll with invalid importID", func(t *testing.T) {
