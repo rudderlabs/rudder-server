@@ -205,7 +205,7 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 	h.CacheMutex.Lock(refTokenParams.AccountID)
 	lockAcquisitionTime := time.Since(lockStartTime)
 
-	log.Debugn("Lock acquisition took longer than expected",
+	log.Debugn("Lock acquisition took ",
 		logger.NewDurationField("duration", lockAcquisitionTime))
 
 	defer h.CacheMutex.Unlock(refTokenParams.AccountID)
