@@ -35,8 +35,11 @@ env:
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
     type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=${{ github.head_ref }}-race,enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
+    type=semver,pattern={{version}}-race
     type=semver,pattern={{major}}.{{minor}}
+    type=semver,pattern={{major}}.{{minor}}-race
     type=semver,pattern={{major}}
   docker_sbsvc_images: |
     name=rudderstack/develop-suppression-backup-service
@@ -172,6 +175,7 @@ jobs:
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
             platform: linux/amd64
+        race: [false, true]
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Checkout
@@ -197,6 +201,7 @@ jobs:
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-ent-meta.outputs.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
+            ${{ matrix.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
     outputs:
@@ -317,6 +322,7 @@ jobs:
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
           done <<< "${{ needs.docker-ent-meta.outputs.tags }}"
+
   create-manifest-docker-sbsvc:
     runs-on: ubuntu-latest
     needs: [ docker-suppression-backup-service, docker-sbsvc-meta ]
