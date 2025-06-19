@@ -9,11 +9,13 @@ import (
 	"math/rand"
 	"reflect"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
@@ -60,7 +62,7 @@ type worker struct {
 	constraintsManager *constraints.Manager
 	encodingFactory    *encoding.Factory
 	workerIdx          int
-	activeJobId        int64
+	activeJobId        atomic.Int64
 	refreshClaimJitter time.Duration
 
 	config struct {
@@ -75,6 +77,11 @@ type worker struct {
 		workerClaimProcessingFailed    stats.Measurement
 		workerClaimProcessingTime      stats.Measurement
 	}
+}
+
+type dedupKey struct {
+	tableName string
+	idValue   string
 }
 
 func newWorker(
@@ -147,7 +154,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			)
 
 			// Set active job ID
-			w.activeJobId = claimedJob.Job.ID
+			w.activeJobId.Store(claimedJob.Job.ID)
 
 			switch claimedJob.Job.Type {
 			case notifier.JobTypeAsync:
@@ -162,7 +169,7 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 				logger.NewField("slaveId", slaveID),
 			)
 			// Clear active job ID after processing
-			w.activeJobId = 0
+			w.activeJobId.Store(0)
 
 			workerIdleTimeStart = time.Now()
 		}
@@ -182,9 +189,9 @@ func (w *worker) runClaimRefresh(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if w.activeJobId != 0 {
-				if err := w.notifier.RefreshClaim(ctx, w.activeJobId); err != nil {
-					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId, err)
+			if w.activeJobId.Load() != 0 {
+				if err := w.notifier.RefreshClaim(ctx, w.activeJobId.Load()); err != nil {
+					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId.Load(), err)
 				}
 			}
 		}
@@ -297,6 +304,9 @@ func (w *worker) processSingleStagingFile(
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
 
+	tableIDColumnSet := make(map[dedupKey]struct{})
+	duplicateCount := 0
+
 	for {
 		ok := bufScanner.Scan()
 		if !ok {
@@ -340,6 +350,20 @@ func (w *worker) processSingleStagingFile(
 		}
 
 		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
+
+		// Duplicate detection by id column
+		iDVal, ok := columnData[job.columnName("id")]
+		if ok {
+			iDStr, ok := iDVal.(string)
+			if ok {
+				dedupKey := dedupKey{tableName: tableName, idValue: iDStr}
+				if _, exists := tableIDColumnSet[dedupKey]; exists {
+					duplicateCount++
+				} else {
+					tableIDColumnSet[dedupKey] = struct{}{}
+				}
+			}
+		}
 
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
@@ -461,6 +485,15 @@ func (w *worker) processSingleStagingFile(
 		releaseWriter()
 
 		jr.incrementEventCount(tableName)
+	}
+
+	// After processing all lines, increment the metric for duplicates
+	if duplicateCount > 0 {
+		jr.stagingFileDuplicateEvents.Count(duplicateCount)
+		jr.logger.Infon("Found duplicate events in staging file",
+			logger.NewField("stagingFileID", stagingFile.ID),
+			logger.NewIntField("duplicateEvents", int64(duplicateCount)),
+		)
 	}
 
 	jr.logger.Debugn("Process bytes from downloaded staging file",

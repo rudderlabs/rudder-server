@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -218,6 +219,9 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		pkgLogger.Errorf(`IDR: Error starting bulk copy using CopyIn: %v`, err)
 		return
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	var rowID int
 
