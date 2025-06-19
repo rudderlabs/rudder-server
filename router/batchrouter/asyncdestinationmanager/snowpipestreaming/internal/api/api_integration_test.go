@@ -79,7 +79,7 @@ func TestAPIIntegration(t *testing.T) {
 				statsStore, err := memstats.New()
 				require.NoError(t, err)
 
-				snowpipeAPI := api.New(c, logger.NOP, statsStore, testConfig.clientURL, http.DefaultClient)
+				snowpipeAPI := api.New(c, statsStore, testConfig.clientURL, http.DefaultClient)
 
 				t.Log("Creating channel")
 				createChannelRes, err := snowpipeAPI.CreateChannel(ctx, newCreateChannelRequest(testConfig, "3"))
@@ -110,7 +110,7 @@ func TestAPIIntegration(t *testing.T) {
 				insertRes, err := snowpipeAPI.Insert(ctx, createChannelRes.ChannelID, &model.InsertRequest{
 					Rows:   rows,
 					Offset: "8",
-				}, nil)
+				})
 				require.NoError(t, err)
 				require.Equal(t, &model.InsertResponse{Success: true, Errors: nil}, insertRes)
 				require.EqualValues(t, tc.payloadSize, statsStore.Get("snowpipe_streaming_request_body_size", stats.Tags{
@@ -140,7 +140,7 @@ func TestAPIIntegration(t *testing.T) {
 	t.Run("Create", func(t *testing.T) {
 		ctx := context.Background()
 		testConfig := setupIntegrationTestConfig(t, ctx)
-		snowpipeAPI := api.New(config.New(), logger.NOP, stats.NOP, testConfig.clientURL, http.DefaultClient)
+		snowpipeAPI := api.New(config.New(), stats.NOP, testConfig.clientURL, http.DefaultClient)
 
 		t.Log("Creating channel")
 		createChannelReq := newCreateChannelRequest(testConfig, "2")
@@ -162,25 +162,6 @@ func TestAPIIntegration(t *testing.T) {
 		createChannelRes3, err := snowpipeAPI.CreateChannel(ctx, createChannelReq)
 		require.NoError(t, err)
 		require.NotEqual(t, createChannelRes1.ChannelID, createChannelRes3.ChannelID)
-	})
-
-	t.Run("Channel recreation on insert 404", func(t *testing.T) {
-		ctx := context.Background()
-		testConfig := setupIntegrationTestConfig(t, ctx)
-		snowpipeAPI := api.New(config.New(), logger.NOP, stats.NOP, testConfig.clientURL, http.DefaultClient)
-
-		// Use a random, non-existent channel ID
-		invalidChannelID := "invalid_channel_id_for_404_test"
-		rows := []model.Row{
-			{"ID": "ID123", "NAME": "Alice Johnson", "EMAIL": "alice.johnson@example.com", "AGE": 28, "ACTIVE": true, "DOB": "1995-06-15T12:30:00Z"},
-		}
-		insertReq := &model.InsertRequest{Rows: rows}
-		createChannelReq := newCreateChannelRequest(testConfig, "1")
-
-		res, err := snowpipeAPI.Insert(ctx, invalidChannelID, insertReq, createChannelReq)
-		require.NoError(t, err)
-		require.NotNil(t, res)
-		require.True(t, res.Success)
 	})
 }
 
