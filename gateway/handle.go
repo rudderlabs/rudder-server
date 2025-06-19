@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -130,7 +131,7 @@ type Handle struct {
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
-		enableEventBlocking                  bool
+		enableEventBlocking                  config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
 	}
 
@@ -600,7 +601,7 @@ func (gw *Handle) memoizedIsEventBlocked() func(workspaceID, sourceID, eventType
 
 // isEventBlocked checks if an event should be blocked based on workspace settings
 func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName string) bool {
-	if !gw.conf.enableEventBlocking {
+	if !gw.conf.enableEventBlocking.Load() {
 		return false
 	}
 
@@ -622,11 +623,7 @@ func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName str
 	}
 
 	if blockedEvents, exists := workspaceSettings.EventBlocking.Events[eventType]; exists {
-		for _, blockedEvent := range blockedEvents {
-			if blockedEvent == eventName {
-				return true
-			}
-		}
+		return slices.Contains(blockedEvents, eventName)
 	}
 	return false
 }
@@ -1007,7 +1004,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotAction:           msg.Properties.BotAction,
 		}
 
-		eventName := stringify.Any(gjson.GetBytes(msg.Payload, "event").String())
+		eventName := gjson.GetBytes(msg.Payload, "event").String()
 		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, msg.Properties.RequestType, eventName) {
 			jobsDBParams.IsEventBlocked = true
 		}

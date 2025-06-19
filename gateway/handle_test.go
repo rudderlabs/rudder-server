@@ -49,10 +49,10 @@ func createTestGateway(t *testing.T, enableEventBlocking bool, workspaceSettings
 			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
 			enableInternalBatchValidator                                                      config.ValueLoader[bool]
 			enableInternalBatchEnrichment                                                     config.ValueLoader[bool]
-			enableEventBlocking                                                               bool
+			enableEventBlocking                                                               config.ValueLoader[bool]
 			webhookV2HandlerEnabled                                                           bool
 		}{
-			enableEventBlocking:           enableEventBlocking,
+			enableEventBlocking:           config.SingleValueLoader(enableEventBlocking),
 			enableInternalBatchValidator:  config.SingleValueLoader(false),
 			enableInternalBatchEnrichment: config.SingleValueLoader(false),
 		},

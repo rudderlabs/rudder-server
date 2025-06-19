@@ -120,7 +120,7 @@ func (gw *Handle) Setup(
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
 	// enable event blocking. false by default
-	gw.conf.enableEventBlocking = config.GetBoolVar(false, "enableEventBlocking")
+	gw.conf.enableEventBlocking = config.GetReloadableBoolVar(false, "enableEventBlocking")
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)
