@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -300,7 +299,7 @@ func TestIsEventBlocked(t *testing.T) {
 			gw := createTestGateway(t, tt.enableEventBlocking, tt.workspaceSettings, tt.nonEventStreamSources)
 
 			result := gw.isEventBlocked(tt.workspaceID, tt.sourceID, tt.eventType, tt.eventName)
-			assert.Equal(t, tt.expected, result, tt.description)
+			require.Equal(t, tt.expected, result, tt.description)
 		})
 	}
 }
@@ -486,24 +485,24 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 				// Check IsEventBlocked parameter
 				isEventBlocked, exists := eventParams["is_event_blocked"]
 				if expectedJob.isEventBlocked {
-					assert.True(t, exists, "Job %d: is_event_blocked parameter should exist for blocked events", i)
-					assert.True(t, isEventBlocked.(bool), "Job %d: is_event_blocked should be true", i)
+					require.True(t, exists, "Job %d: is_event_blocked parameter should exist for blocked events", i)
+					require.True(t, isEventBlocked.(bool), "Job %d: is_event_blocked should be true", i)
 				} else {
 					// For non-blocked events, is_event_blocked should either not exist or be false
 					if exists {
-						assert.False(t, isEventBlocked.(bool), "Job %d: is_event_blocked should be false", i)
+						require.False(t, isEventBlocked.(bool), "Job %d: is_event_blocked should be false", i)
 					}
 				}
 
 				// Check skipLiveEventRecording field
-				assert.Equal(t, expectedJob.skipLiveEventRecording, job.skipLiveEventRecording,
+				require.Equal(t, expectedJob.skipLiveEventRecording, job.skipLiveEventRecording,
 					"Job %d: skipLiveEventRecording should match expected", i)
 
 				// Verify processor behavior (events marked as blocked should be dropped)
 				if expectedJob.shouldBeDropped {
 					// Verify the job has the is_event_blocked parameter set to true
 					// This simulates what the processor would check before dropping
-					assert.True(t, eventParams["is_event_blocked"].(bool),
+					require.True(t, eventParams["is_event_blocked"].(bool),
 						"Job %d: Events that should be dropped must have is_event_blocked=true", i)
 				}
 			}
