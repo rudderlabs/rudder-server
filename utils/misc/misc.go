@@ -422,6 +422,19 @@ func CreateBufferedWriter(s string) (w BufferedWriter, err error) {
 	return
 }
 
+func CreateBufferedWriterWithTruncate(s string) (w BufferedWriter, err error) {
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o660)
+	if err != nil {
+		return
+	}
+	bufWriter := bufio.NewWriter(file)
+	w = BufferedWriter{
+		File:   file,
+		Writer: bufWriter,
+	}
+	return
+}
+
 func (b BufferedWriter) Write(p []byte) (int, error) {
 	return b.Writer.Write(p)
 }
@@ -445,7 +458,7 @@ type GZipWriter struct {
 }
 
 func CreateGZ(s string) (w GZipWriter, err error) {
-	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o660)
+	file, err := os.OpenFile(s, os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0o660)
 	if err != nil {
 		return
 	}

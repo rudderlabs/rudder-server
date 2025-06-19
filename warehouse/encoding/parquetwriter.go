@@ -74,7 +74,7 @@ type parquetWriter struct {
 }
 
 func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64) (LoadFileWriter, error) {
-	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
+	bufWriter, err := misc.CreateBufferedWriterWithTruncate(outputFilePath)
 	if err != nil {
 		return nil, err
 	}

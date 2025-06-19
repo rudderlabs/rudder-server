@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,7 +171,7 @@ func TestSlaveWorker(t *testing.T) {
 			require.Equal(t, uploadPayload.StagingDestinationRevisionID, p.StagingDestinationRevisionID)
 			require.Equal(t, uploadPayload.DestinationConfig, p.DestinationConfig)
 			require.Equal(t, uploadPayload.StagingDestinationConfig, p.StagingDestinationConfig)
-			require.Equal(t, uploadPayload.UseRudderStorage, p.UseRudderStorage)
+			require.Equal(t, uploadPayload.UseRudderStorage, p.StagingUseRudderStorage)
 			require.Equal(t, uploadPayload.StagingUseRudderStorage, p.StagingUseRudderStorage)
 			require.Equal(t, uploadPayload.UniqueLoadGenID, p.UniqueLoadGenID)
 			require.Equal(t, uploadPayload.RudderStoragePrefix, p.RudderStoragePrefix)
@@ -1522,13 +1524,13 @@ func TestStagingFileDuplicateEventsMetric(t *testing.T) {
 			jr.stagingFilePaths = map[int64]string{1: stagingFilePath1, 2: stagingFilePath2}
 			return nil
 		}
-		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 1})
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 1}, "")
 		require.NoError(t, err)
 		m := statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, 1, m.LastValue())
 		value1 := m.LastValue()
 
-		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2})
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2}, "")
 		require.NoError(t, err)
 		m = statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, value1+(value1+1), m.LastValue())
@@ -1552,9 +1554,246 @@ func TestStagingFileDuplicateEventsMetric(t *testing.T) {
 			jr.stagingFilePaths = map[int64]string{2: stagingFilePath}
 			return nil
 		}
-		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2, Location: stagingFilePath})
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2, Location: stagingFilePath}, stagingFilePath)
 		require.NoError(t, err)
 		m := statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, 0, m.LastValue()) // no duplicates
+	})
+}
+
+func TestLoadFileDeterministic(t *testing.T) {
+	misc.Init()
+	const (
+		workspaceID     = "test_workspace_id"
+		sourceID        = "test_source_id"
+		sourceName      = "test_source_name"
+		destinationID   = "test_destination_id"
+		destinationType = "test_destination_type"
+		destinationName = "test_destination_name"
+		namespace       = "test_namespace"
+		workerIdx       = 1
+	)
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	minioResource, err := minio.Setup(pool, t)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	destConf := map[string]interface{}{
+		"bucketName":       minioResource.BucketName,
+		"accessKeyID":      minioResource.AccessKeyID,
+		"accessKey":        minioResource.AccessKeyID,
+		"secretAccessKey":  minioResource.AccessKeySecret,
+		"endPoint":         minioResource.Endpoint,
+		"forcePathStyle":   true,
+		"s3ForcePathStyle": true,
+		"disableSSL":       true,
+		"region":           minioResource.Region,
+		"enableSSE":        false,
+		"bucketProvider":   "MINIO",
+	}
+
+	t.Run("deterministic load file naming enabled", func(t *testing.T) {
+		jobLocation1 := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
+		jobLocation2 := uploadFile(t, ctx, destConf, "testdata/staging2.json.gz")
+		jobLocation3 := uploadFile(t, ctx, destConf, "testdata/staging3.json.gz")
+
+		schemaMap := stagingSchema(t)
+		ef := encoding.NewFactory(config.New())
+
+		subscribeCh := make(chan *notifier.ClaimJobResponse)
+		defer close(subscribeCh)
+
+		slaveNotifier := &mockSlaveNotifier{
+			subscribeCh: subscribeCh,
+		}
+
+		c := config.New()
+		c.Set("Warehouse.useDeterministicLoadFileName", true)
+
+		tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+		slaveWorker := newWorker(
+			c,
+			logger.NOP,
+			stats.NOP,
+			slaveNotifier,
+			bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+			constraints.New(config.New()),
+			ef,
+			workerIdx,
+		)
+
+		stagingFiles := []stagingFileInfo{
+			{ID: 1, Location: jobLocation1},
+			{ID: 2, Location: jobLocation2},
+			{ID: 3, Location: jobLocation3},
+		}
+
+		p := payloadV2{
+			basePayload: basePayload{
+				UploadID:                     1,
+				UploadSchema:                 schemaMap,
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destinationType,
+				DestinationNamespace:         namespace,
+				DestinationRevisionID:        uuid.New().String(),
+				StagingDestinationRevisionID: uuid.New().String(),
+				DestinationConfig:            destConf,
+				StagingDestinationConfig:     map[string]interface{}{},
+				UniqueLoadGenID:              uuid.New().String(),
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				LoadFileType:                 "csv",
+			},
+			StagingFiles: stagingFiles,
+		}
+
+		payloadJson, err := jsonrs.Marshal(p)
+		require.NoError(t, err)
+
+		claim := &notifier.ClaimJob{
+			Job: &notifier.Job{
+				ID:                  1,
+				BatchID:             uuid.New().String(),
+				Payload:             payloadJson,
+				Status:              model.Waiting,
+				WorkspaceIdentifier: "test_workspace",
+				Type:                notifier.JobTypeUploadV2,
+			},
+		}
+
+		claimedJobDone := make(chan struct{})
+		go func() {
+			defer close(claimedJobDone)
+
+			slaveWorker.processClaimedUploadJob(ctx, claim)
+		}()
+
+		response := <-subscribeCh
+		require.NoError(t, response.Err)
+
+		var uploadPayload payloadV2
+		err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
+		require.NoError(t, err)
+
+		// Verify that all load files have the same deterministic path structure
+		// The path should be: {loadFileNamePrefix}.{sourceID}.{fileFormat}
+		// where loadFileNamePrefix is MD5 hash of all staging file locations
+		expectedLoadFileNamePrefix := md5HashHexString(jobLocation1 + jobLocation2 + jobLocation3)
+		expectedFileFormat := warehouseutils.GetLoadFileFormat("csv") // csv.gz
+
+		for _, output := range uploadPayload.Output {
+			// Extract the file name from the location
+			location := output.Location
+			fileName := path.Base(location)
+
+			// Verify the file name follows the deterministic pattern
+			expectedFileName := fmt.Sprintf("%s.%s.%s", expectedLoadFileNamePrefix, sourceID, expectedFileFormat)
+			require.Equal(t, expectedFileName, fileName, "Load file name should be deterministic")
+		}
+
+		<-claimedJobDone
+	})
+
+	t.Run("deterministic load file naming disabled", func(t *testing.T) {
+		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
+
+		schemaMap := stagingSchema(t)
+		ef := encoding.NewFactory(config.New())
+
+		subscribeCh := make(chan *notifier.ClaimJobResponse)
+		defer close(subscribeCh)
+
+		slaveNotifier := &mockSlaveNotifier{
+			subscribeCh: subscribeCh,
+		}
+
+		c := config.New()
+		c.Set("Warehouse.useDeterministicLoadFileName", false)
+
+		tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+		slaveWorker := newWorker(
+			c,
+			logger.NOP,
+			stats.NOP,
+			slaveNotifier,
+			bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+			constraints.New(config.New()),
+			ef,
+			workerIdx,
+		)
+
+		p := payload{
+			basePayload: basePayload{
+				UploadID:                     1,
+				UploadSchema:                 schemaMap,
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destinationType,
+				DestinationNamespace:         namespace,
+				DestinationRevisionID:        uuid.New().String(),
+				StagingDestinationRevisionID: uuid.New().String(),
+				DestinationConfig:            destConf,
+				StagingDestinationConfig:     map[string]interface{}{},
+				UniqueLoadGenID:              uuid.New().String(),
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				LoadFileType:                 "csv",
+			},
+			StagingFileID:       1,
+			StagingFileLocation: jobLocation,
+		}
+
+		payloadJson, err := jsonrs.Marshal(p)
+		require.NoError(t, err)
+
+		claim := &notifier.ClaimJob{
+			Job: &notifier.Job{
+				ID:                  1,
+				BatchID:             uuid.New().String(),
+				Payload:             payloadJson,
+				Status:              model.Waiting,
+				WorkspaceIdentifier: "test_workspace",
+				Type:                notifier.JobTypeUpload,
+			},
+		}
+
+		claimedJobDone := make(chan struct{})
+		go func() {
+			defer close(claimedJobDone)
+
+			slaveWorker.processClaimedUploadJob(ctx, claim)
+		}()
+
+		response := <-subscribeCh
+		require.NoError(t, response.Err)
+
+		var uploadPayload payload
+		err = jsonrs.Unmarshal(response.Payload, &uploadPayload)
+		require.NoError(t, err)
+
+		// Verify that load files have non-deterministic paths (contain UUID)
+		for _, output := range uploadPayload.Output {
+			location := output.Location
+			fileName := path.Base(location)
+
+			// file name should be {stagingFilePath}.{sourceID}.{UUID}.{fileFormat}
+			parts := strings.Split(fileName, ".")
+			// In this case csv.gz file format is used
+			uuidPart := parts[len(parts)-3]
+			require.True(t, misc.IsValidUUID(uuidPart), "Non-deterministic file name should contain UUID")
+		}
+
+		<-claimedJobDone
 	})
 }

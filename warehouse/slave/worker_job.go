@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -317,10 +318,17 @@ func (jr *jobRun) path(stagingFileInfo stagingFileInfo) (string, error) {
 
 // loadFilePath generates a unique path for a load file based on the staging file path.
 // Every call to this function will generate a new path even if the same staging file is used.
-func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo) (string, error) {
+// If Warehouse.useDeterministicLoadFileName is true, the load file path will be deterministic and will be based on the staging file path and the load file prefix.
+func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo, loadFileNamePrefix string) (string, error) {
 	stagingFilePath, err := jr.path(stagingFileInfo)
 	if err != nil {
 		return "", fmt.Errorf("getting staging file path: %w", err)
+	}
+
+	if jr.conf.GetBool("Warehouse.useDeterministicLoadFileName", false) {
+		stagingFileDir := path.Dir(stagingFilePath)
+		loadFilePath := path.Join(stagingFileDir, fmt.Sprintf("%s.%s.%s", loadFileNamePrefix, jr.job.SourceID, warehouseutils.GetLoadFileFormat(jr.job.LoadFileType)))
+		return loadFilePath, nil
 	}
 
 	return fmt.Sprintf("%s.%s.%s.%s",
@@ -479,7 +487,7 @@ func (jr *jobRun) reader(stagingFileInfo stagingFileInfo) (*gzip.Reader, error) 
 
 // writer returns a writer for the table and an unlock function that MUST be called when done using the writer
 // If two goroutines request a writer for the same table, they will block on the mutex until the first goroutine is done writing
-func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo) (encoding.LoadFileWriter, func(), error) {
+func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo, loadFileNamePrefix string) (encoding.LoadFileWriter, func(), error) {
 	// Get or create mutex for this table
 	jr.tableWriterMutexesMu.Lock()
 	tableMutex, exists := jr.tableWriterMutexes[tableName]
@@ -499,7 +507,7 @@ func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo) (enc
 		return writer, tableMutex.Unlock, nil
 	}
 
-	outputFilePath, err := jr.loadFilePath(stagingFileInfo)
+	outputFilePath, err := jr.loadFilePath(stagingFileInfo, loadFileNamePrefix)
 	if err != nil {
 		tableMutex.Unlock()
 		return nil, nil, fmt.Errorf("failed to get output file path for table %s: %w", tableName, err)
