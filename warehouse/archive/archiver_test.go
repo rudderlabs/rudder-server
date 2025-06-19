@@ -13,7 +13,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -23,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
@@ -63,49 +63,28 @@ func TestArchiver(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			var (
-				prefix        = "test-prefix"
-				minioResource *minio.Resource
-				pgResource    *postgres.Resource
-			)
-
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
+			pgResource, err := postgres.Setup(pool, t)
+			require.NoError(t, err)
+			minioResource, err := minio.Setup(pool, t)
+			require.NoError(t, err)
 
-			g := errgroup.Group{}
-			g.Go(func() error {
-				pgResource, err = postgres.Setup(pool, t)
-				require.NoError(t, err)
+			err = (&migrator.Migrator{
+				Handle:          pgResource.DB,
+				MigrationsTable: "wh_schema_migrations",
+			}).Migrate("warehouse")
+			require.NoError(t, err)
 
-				t.Log("db:", pgResource.DBDsn)
+			sqlStatement, err := os.ReadFile("testdata/dump.sql")
+			require.NoError(t, err)
 
-				err = (&migrator.Migrator{
-					Handle:          pgResource.DB,
-					MigrationsTable: "wh_schema_migrations",
-				}).Migrate("warehouse")
-				require.NoError(t, err)
-
-				sqlStatement, err := os.ReadFile("testdata/dump.sql")
-				require.NoError(t, err)
-
-				_, err = pgResource.DB.Exec(string(sqlStatement))
-				require.NoError(t, err)
-
-				return nil
-			})
-			g.Go(func() error {
-				minioResource, err = minio.Setup(pool, t)
-				require.NoError(t, err)
-
-				t.Log("minio:", minioResource.Endpoint)
-
-				return nil
-			})
-			require.NoError(t, g.Wait())
+			_, err = pgResource.DB.Exec(string(sqlStatement))
+			require.NoError(t, err)
 
 			t.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
 			t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
-			t.Setenv("JOBS_BACKUP_PREFIX", prefix)
+			t.Setenv("JOBS_BACKUP_PREFIX", "test-prefix")
 			t.Setenv("MINIO_ENDPOINT", minioResource.Endpoint)
 			t.Setenv("MINIO_ACCESS_KEY_ID", minioResource.AccessKeyID)
 			t.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.AccessKeySecret)
@@ -184,7 +163,7 @@ func TestArchiver(t *testing.T) {
 				}
 			}
 
-			minioContents, err := minioResource.Contents(ctx, prefix)
+			minioContents, err := minioResource.Contents(ctx, "test-prefix")
 			require.NoError(t, err)
 
 			contents := lo.SliceToMap(minioContents, func(item minio.File) (string, string) {

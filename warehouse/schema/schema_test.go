@@ -1206,8 +1206,6 @@ func TestSchema(t *testing.T) {
 			},
 		}
 		for _, tc := range testsCases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				warehouse := model.Warehouse{
