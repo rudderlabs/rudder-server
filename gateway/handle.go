@@ -704,15 +704,15 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
-			ctx           = r.Context()
-			reqType       = ctx.Value(gwtypes.CtxParamCallType).(string)
-			jobsWithStats []jobWithStat
-			body          []byte
-			err           error
-			status        int
-			errorMessage  string
-			responseBody  string
-			stat          = gwstats.SourceStat{ReqType: reqType}
+			ctx              = r.Context()
+			reqType          = ctx.Value(gwtypes.CtxParamCallType).(string)
+			jobsWithMetadata []jobWithMetadata
+			body             []byte
+			err              error
+			status           int
+			errorMessage     string
+			responseBody     string
+			stat             = gwstats.SourceStat{ReqType: reqType}
 		)
 
 		// TODO: add tracing
@@ -723,34 +723,34 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			stat.Report(gw.stats)
 			goto requestError
 		}
-		jobsWithStats, err = gw.extractJobsFromInternalBatchPayload(reqType, body)
+		jobsWithMetadata, err = gw.extractJobsFromInternalBatchPayload(reqType, body)
 		if err != nil {
 			goto requestError
 		}
 
-		if len(jobsWithStats) > 0 {
-			jobs := lo.Map(jobsWithStats, func(jws jobWithStat, _ int) *jobsdb.JobT {
-				return jws.job
+		if len(jobsWithMetadata) > 0 {
+			jobs := lo.Map(jobsWithMetadata, func(jwm jobWithMetadata, _ int) *jobsdb.JobT {
+				return jwm.job
 			})
 			if err = gw.storeJobs(ctx, jobs); err != nil {
-				for _, jws := range jobsWithStats {
-					jws.stat.EventsFailed(1, "storeFailed")
-					jws.stat.Report(gw.stats)
+				for _, jwm := range jobsWithMetadata {
+					jwm.stat.EventsFailed(1, "storeFailed")
+					jwm.stat.Report(gw.stats)
 				}
 				stat.RequestFailed("storeFailed")
 				stat.Report(gw.stats)
 				goto requestError
 			}
-			for _, jws := range jobsWithStats {
-				jws.stat.EventsSuccess(1)
-				jws.stat.Report(gw.stats)
+			for _, jwm := range jobsWithMetadata {
+				jwm.stat.EventsSuccess(1)
+				jwm.stat.Report(gw.stats)
 				// Sending events to config backend
-				if jws.stat.WriteKey == "" {
+				if jwm.stat.WriteKey == "" {
 					gw.logger.Errorn("writeKey not found in event payload")
 					continue
 				}
-				if !jws.skipLiveEventRecording {
-					gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
+				if !jwm.skipLiveEventRecording {
+					gw.sourcehandle.RecordEvent(jwm.stat.WriteKey, jwm.job.EventPayload)
 				}
 			}
 			stat.RequestSucceeded()
@@ -791,14 +791,14 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	}
 }
 
-type jobWithStat struct {
+type jobWithMetadata struct {
 	job                    *jobsdb.JobT
 	stat                   gwstats.SourceStat
 	skipLiveEventRecording bool
 }
 
 func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
-	[]jobWithStat, error,
+	[]jobWithMetadata, error,
 ) {
 	type params struct {
 		MessageID           string `json:"message_id"`
@@ -828,7 +828,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		messages         []stream.Message
 		isUserSuppressed = gw.memoizedIsUserSuppressed()
 		isEventBlocked   = gw.memoizedIsEventBlocked()
-		res              []jobWithStat
+		res              []jobWithMetadata
 		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
 
@@ -852,7 +852,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	internalBatchValidatorEnabled := gw.conf.enableInternalBatchValidator.Load()
 	internalBatchEnrichmentEnabled := gw.conf.enableInternalBatchEnrichment.Load()
 
-	res = make([]jobWithStat, 0, len(messages))
+	res = make([]jobWithMetadata, 0, len(messages))
 
 	for _, msg := range messages {
 		var messageID string
@@ -1039,7 +1039,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
 		jobUUID := uuid.New()
-		res = append(res, jobWithStat{
+		res = append(res, jobWithMetadata{
 			stat:                   stat,
 			skipLiveEventRecording: jobsDBParams.IsEventBlocked,
 			job: &jobsdb.JobT{
