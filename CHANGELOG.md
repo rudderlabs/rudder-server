@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.3](https://github.com/rudderlabs/rudder-server/compare/v1.52.2...v1.52.3) (2025-06-19)
+
+
+### Miscellaneous
+
+* add logs oauthv2 and cdm ([#6022](https://github.com/rudderlabs/rudder-server/issues/6022)) ([c999627](https://github.com/rudderlabs/rudder-server/commit/c999627c0c56462671e68af7af4ee1f2326c560c))
+
 ## [1.52.2](https://github.com/rudderlabs/rudder-server/compare/v1.52.1...v1.52.2) (2025-06-18)
 
 
