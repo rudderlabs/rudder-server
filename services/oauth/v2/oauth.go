@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -182,6 +183,7 @@ func (h *OAuthHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *A
 }
 
 func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeName string, statsHandler OAuthStatsHandler) (int, *AuthResponse, error) {
+	// Create a logger with all context fields
 	log := h.Logger.Withn(
 		logger.NewIntField("WorkerId", int64(refTokenParams.WorkerID)),
 		logger.NewStringField("Call Type", logTypeName),
@@ -190,25 +192,30 @@ func (h *OAuthHandler) GetTokenInfo(refTokenParams *RefreshTokenParams, logTypeN
 		obskit.WorkspaceID(refTokenParams.WorkspaceID),
 		obskit.DestinationType(refTokenParams.DestDefName),
 	)
+
+	// Add a unique request ID to trace this specific request through logs
+	requestID := uuid.New().String()
+	log = log.Withn(logger.NewStringField("RequestID", requestID))
+
 	log.Debugn("[request] :: Get Token Info request received")
 	startTime := time.Now()
+
 	log.Debugn("[request] :: Acquiring lock for account")
 	lockStartTime := time.Now()
 	h.CacheMutex.Lock(refTokenParams.AccountID)
 	lockAcquisitionTime := time.Since(lockStartTime)
 
-	// Log if lock acquisition took longer than expected
-	if lockAcquisitionTime > 100*time.Millisecond {
-		log.Warnn("Lock acquisition took longer than expected",
-			logger.NewDurationField("duration", lockAcquisitionTime))
-	}
+	log.Debugn("Lock acquisition took longer than expected",
+		logger.NewDurationField("duration", lockAcquisitionTime))
 
 	defer h.CacheMutex.Unlock(refTokenParams.AccountID)
 	defer func() {
+		log.Debugn("[request] :: Released lock for account")
 		statsHandler.SendTiming(startTime, "total_latency", stats.Tags{
 			"isCallToCpApi": "false",
 		})
 	}()
+
 	refTokenBody := RefreshTokenBodyParams{}
 	storedCache, ok := h.Cache.Load(refTokenParams.AccountID)
 	if ok {
