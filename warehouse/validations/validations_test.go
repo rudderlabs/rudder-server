@@ -205,8 +205,6 @@ func TestValidate(t *testing.T) {
 			}
 
 			for _, tc := range testCases {
-				tc := tc
-
 				res, err := validations.Validate(ctx, &model.ValidationRequest{
 					Path: "validate",
 					Step: tc.step,

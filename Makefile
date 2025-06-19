@@ -32,6 +32,9 @@ else
 	$(eval TEST_CMD = SLOW=0 go test)
 	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
 endif
+ifeq ($(RACE_ENABLED), true)
+	$(eval TEST_OPTIONS := $(TEST_OPTIONS) -race)
+endif
 ifdef package
 ifdef exclude
 	$(eval FILES = `go list ./$(package)/... | egrep -iv '$(exclude)'`)
@@ -50,6 +53,9 @@ test-warehouse-integration:
 	$(eval TEST_PATTERN = 'TestIntegration')
 	$(eval TEST_CMD = SLOW=1 go test)
 	$(eval TEST_OPTIONS = -v -p 8 -timeout 30m -count 1 -run $(TEST_PATTERN) -coverprofile=profile.out -covermode=atomic -coverpkg=./...)
+ifeq ($(RACE_ENABLED), true)
+	$(eval TEST_OPTIONS := $(TEST_OPTIONS) -race)
+endif
 	$(TEST_CMD) $(TEST_OPTIONS) ./$(package)/... && touch $(TESTFILE) || true
 
 test-warehouse: test-warehouse-integration test-teardown

@@ -117,6 +117,9 @@ func (pg *Postgres) loadTable(
 	if err != nil {
 		return nil, "", fmt.Errorf("preparing statement for copy in: %w", err)
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	log.Infow("loading data into staging table")
 	for _, fileName := range loadFiles {
