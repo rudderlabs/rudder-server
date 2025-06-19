@@ -7,10 +7,6 @@ import (
 
 	"github.com/samber/lo"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
@@ -27,12 +23,6 @@ func (m *Manager) sendDiscardEventsToSnowpipe(
 ) (*importInfo, error) {
 	tableName := discardsTable()
 
-	log := m.logger.Withn(
-		logger.NewStringField("table", tableName),
-		logger.NewIntField("discards", int64(len(discardInfos))),
-		logger.NewStringField("offset", offset),
-	)
-
 	insertReq := &model.InsertRequest{
 		Rows:   convertDiscardedInfosToRows(discardInfos),
 		Offset: offset,
@@ -43,30 +33,21 @@ func (m *Manager) sendDiscardEventsToSnowpipe(
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode destination config: %w", err)
 	}
-	createChannelReq := buildCreateChannelRequest(m.destination.ID, m.config.instanceID, &destConf, tableName)
 
-	insertRes, err := m.api.Insert(ctx, discardsChannelID, insertReq, createChannelReq)
-	defer func() {
-		if err != nil || !insertRes.Success {
-			if deleteErr := m.deleteChannel(ctx, tableName, discardsChannelID); deleteErr != nil {
-				log.Warnn("Failed to delete channel", obskit.Error(deleteErr))
-			}
-		}
-	}()
+	info := &uploadInfo{
+		tableName:    discardsTable(),
+		eventsSchema: discardsSchema(),
+	}
+
+	channelID, err := m.insert(ctx, m.destination.ID, &destConf, info, insertReq, discardsChannelID)
 	if err != nil {
 		return nil, fmt.Errorf("inserting data to discards: %v", err)
-	}
-	if !insertRes.Success {
-		errorMessages := lo.Map(insertRes.Errors, func(ie model.InsertError, _ int) string {
-			return ie.Message
-		})
-		return nil, fmt.Errorf("inserting data %s failed: %v", tableName, errorMessages)
 	}
 
 	m.stats.discards.Count(len(discardInfos))
 
 	imInfo := &importInfo{
-		ChannelID: discardsChannelID,
+		ChannelID: channelID,
 		Offset:    offset,
 		Table:     tableName,
 		Count:     len(discardInfos),

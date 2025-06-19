@@ -328,8 +328,6 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
 				ctrl := gomock.NewController(t)
 				mockStats := mock_stats.NewMockStats(ctrl)
