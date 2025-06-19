@@ -62,8 +62,11 @@ func NewDatabaseConnectionPool(
 	); err != nil {
 		return nil, fmt.Errorf("Error registering database stats collector: %w", err)
 	}
-
-	maxConnsVar := conf.GetReloadableIntVar(40, 1, "db."+componentName+".pool.maxOpenConnections", "db.pool.maxOpenConnections")
+	defaultMaxOpenConnections := 80
+	if componentName == "gateway-app" {
+		defaultMaxOpenConnections = 20
+	}
+	maxConnsVar := conf.GetReloadableIntVar(defaultMaxOpenConnections, 1, "db."+componentName+".pool.maxOpenConnections", "db.pool.maxOpenConnections")
 	maxConns := maxConnsVar.Load()
 	db.SetMaxOpenConns(maxConns)
 

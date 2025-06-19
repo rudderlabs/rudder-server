@@ -14,8 +14,9 @@ import (
 )
 
 // newPipelineWorker new worker which manages a single pipeline of a partition
-func newPipelineWorker(partition string, h workerHandle, t *tracing.Tracer) *pipelineWorker {
+func newPipelineWorker(index int, partition string, h workerHandle, t *tracing.Tracer) *pipelineWorker {
 	w := &pipelineWorker{
+		index:     index,
 		handle:    h,
 		logger:    h.logger().Withn(logger.NewStringField("partition", partition)),
 		tracer:    t,
@@ -47,6 +48,7 @@ func newPipelineWorker(partition string, h workerHandle, t *tracing.Tracer) *pip
 //  3. transform
 //  4. store
 type pipelineWorker struct {
+	index     int
 	partition string
 	handle    workerHandle
 	logger    logger.Logger
@@ -160,7 +162,7 @@ func (w *pipelineWorker) start() {
 			// If this is the first subjob, and it doesn't have more parts,
 			// we can store it directly without merging
 			if firstSubJob && !subJob.hasMore {
-				w.handle.storeStage(w.partition, subJob)
+				w.handle.storeStage(w.partition, w.index, subJob)
 				continue
 			}
 
@@ -182,7 +184,7 @@ func (w *pipelineWorker) start() {
 
 			// If this is the last subjob in the batch, store the merged result
 			if !subJob.hasMore {
-				w.handle.storeStage(w.partition, mergedJob)
+				w.handle.storeStage(w.partition, w.index, mergedJob)
 				firstSubJob = true
 			}
 		}

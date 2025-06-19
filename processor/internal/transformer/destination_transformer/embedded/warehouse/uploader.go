@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"slices"
 	"strings"
 	"time"
 
@@ -97,15 +96,14 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3
 }
 
 func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse, embeddedResponse types.Response) string {
-	sortTransformerResponsesByJobID(legacyResponse.Events)
-	sortTransformerResponsesByJobID(legacyResponse.FailedEvents)
-	sortTransformerResponsesByJobID(embeddedResponse.Events)
-	sortTransformerResponsesByJobID(embeddedResponse.FailedEvents)
+	if len(legacyResponse.Events) == 0 && len(legacyResponse.FailedEvents) == 0 {
+		return "" // Don't diff in case there is no response from transformer
+	}
 
 	// If the event counts differ, return all events in the transformation
 	if len(legacyResponse.Events) != len(embeddedResponse.Events) || len(legacyResponse.FailedEvents) != len(embeddedResponse.FailedEvents) {
 		t.stats.mismatchedEvents.Observe(float64(len(events)))
-		return "Mismatch in response for events or failed events"
+		return fmt.Sprintf("Mismatch in response for events or failed events with legacy response: %s", stringify.Any(legacyResponse))
 	}
 
 	var (
@@ -136,12 +134,6 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 	t.stats.matchedEvents.Observe(float64(len(legacyResponse.Events) - differedEventsCount))
 	t.stats.mismatchedEvents.Observe(float64(differedEventsCount))
 	return sampleDiff
-}
-
-func sortTransformerResponsesByJobID(responses []types.TransformerResponse) {
-	slices.SortStableFunc(responses, func(a, b types.TransformerResponse) int {
-		return int(a.Metadata.JobID - b.Metadata.JobID)
-	})
 }
 
 func write(w io.WriteCloser, data []string) error {

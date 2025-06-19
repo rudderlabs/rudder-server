@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,8 @@ type (
 		Do(*http.Request) (*http.Response, error)
 	}
 )
+
+var ErrChannelNotFound = errors.New("channel not found")
 
 func New(conf *config.Config, statsFactory stats.Stats, clientURL string, requestDoer requestDoer) *API {
 	a := &API{
@@ -183,15 +186,18 @@ func (a *API) Insert(ctx context.Context, channelID string, insertRequest *model
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var res model.InsertResponse
+		if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
+			return nil, fmt.Errorf("decoding insert response: %w", err)
+		}
+		return &res, nil
+	case http.StatusNotFound:
+		return nil, ErrChannelNotFound
+	default:
 		return nil, fmt.Errorf("invalid status code for insert: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
-
-	var res model.InsertResponse
-	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, fmt.Errorf("decoding insert response: %w", err)
-	}
-	return &res, nil
 }
 
 // GetStatus retrieves the status of the channel with the given ID.

@@ -1,22 +1,21 @@
 package kinesis
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"go.uber.org/mock/gomock"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/smithy-go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_kinesis "github.com/rudderlabs/rudder-server/mocks/services/streammanager/kinesis"
+	mock_kinesis "github.com/rudderlabs/rudder-server/mocks/services/streammanager/kinesis_v2"
 
 	"github.com/stretchr/testify/assert"
 
@@ -42,11 +41,10 @@ func TestNewProducer(t *testing.T) {
 	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &KinesisProducer{}
+	producer := &KinesisProducerV2{}
 	sampleJsonPayload := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -66,8 +64,8 @@ var validDestinationConfigNotUseMessageID = Config{
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
-	producer := &KinesisProducer{client: mockClient}
+	mockClient := mock_kinesis.NewMockKinesisClientV2(ctrl)
+	producer := &KinesisProducerV2{client: mockClient}
 
 	// Invalid destination config
 	sampleJsonPayload := []byte("{}")
@@ -89,21 +87,12 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "InvalidPayload", statusMsg)
 	assert.Equal(t, "Empty Payload", respMsg)
-
-	// Incomplete Payload
-	sampleJsonPayload, _ = jsonrs.Marshal(map[string]string{
-		"message": "{}",
-	})
-	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigUseMessageID)
-	assert.Equal(t, 400, statusCode)
-	assert.Equal(t, "InvalidInput", statusMsg)
-	assert.Contains(t, respMsg, "InvalidParameter")
 }
 
 func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
-	producer := &KinesisProducer{client: mockClient}
+	mockClient := mock_kinesis.NewMockKinesisClientV2(ctrl)
+	producer := &KinesisProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
@@ -121,7 +110,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	}
 
 	// Return success response
-	mockClient.EXPECT().PutRecord(&putRecordInput).Return(&kinesis.PutRecordOutput{
+	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(&kinesis.PutRecordOutput{
 		SequenceNumber: aws.String("sequenceNumber"),
 		ShardId:        aws.String("shardId"),
 	}, nil)
@@ -133,9 +122,11 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	// Return service error
 	errorCode := "someError"
-	mockClient.EXPECT().PutRecord(&putRecordInput).Return(nil, awserr.NewRequestFailure(
-		awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-	))
+	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    errorCode,
+		Message: errorCode,
+		Fault:   smithy.FaultClient,
+	})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, validDestinationConfigNotUseMessageID)

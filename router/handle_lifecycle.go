@@ -88,7 +88,10 @@ func (rt *Handle) Setup(
 	if rt.netHandle == nil {
 		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false), destType: destType}
 		netHandle.logger = rt.logger.Child("network")
-		netHandle.Setup(rt.netClientTimeout)
+		err := netHandle.Setup(config, rt.netClientTimeout)
+		if err != nil {
+			panic(fmt.Errorf("error setting up network handler: %w", err))
+		}
 		rt.netHandle = netHandle
 	}
 
@@ -127,8 +130,10 @@ func (rt *Handle) Setup(
 	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
 	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
 	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
-	rt.processJobsRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_requests", stats.HistogramType, statTags)
-	rt.processJobsRequestsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
+	rt.processJobsHistogramStat = stats.Default.NewTaggedStat("router_process_jobs_hist", stats.HistogramType, statTags)
+	rt.processJobsCountStat = stats.Default.NewTaggedStat("router_process_jobs_count", stats.CountType, statTags)
+	rt.processRequestsHistogramStat = stats.Default.NewTaggedStat("router_process_requests_hist", stats.HistogramType, statTags)
+	rt.processRequestsCountStat = stats.Default.NewTaggedStat("router_process_requests_count", stats.CountType, statTags)
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)

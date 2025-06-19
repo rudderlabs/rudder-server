@@ -5,17 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/firehose"
-
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/service/firehose/types"
+	"github.com/aws/smithy-go"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
-
-	"github.com/stretchr/testify/assert"
+	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose_v2"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -40,11 +39,10 @@ func TestNewProducer(t *testing.T) {
 	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
-	assert.NotNil(t, producer.client)
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &FireHoseProducer{}
+	producer := &FireHoseProducerV2{}
 	sampleEventJson := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -54,8 +52,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_firehose.NewMockFireHoseClient(ctrl)
-	producer := &FireHoseProducer{client: mockClient}
+	mockClient := mock_firehose.NewMockFireHoseClientV2(ctrl)
+	producer := &FireHoseProducerV2{client: mockClient}
 
 	// Invalid Payload
 	sampleEventJson := []byte("invalid json")
@@ -103,8 +101,8 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_firehose.NewMockFireHoseClient(ctrl)
-	producer := &FireHoseProducer{client: mockClient}
+	mockClient := mock_firehose.NewMockFireHoseClientV2(ctrl)
+	producer := &FireHoseProducerV2{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
@@ -117,12 +115,12 @@ func TestProduceWithServiceResponse(t *testing.T) {
 
 	sampleRecord := firehose.PutRecordInput{
 		DeliveryStreamName: aws.String(sampleDeliveryStreamName),
-		Record:             &firehose.Record{Data: sampleMessageJson},
+		Record:             &types.Record{Data: sampleMessageJson},
 	}
 
 	mockClient.
 		EXPECT().
-		PutRecord(&sampleRecord).
+		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
 		Return(&firehose.PutRecordOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 200, statusCode)
@@ -133,7 +131,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	errorCode := "errorCode"
 	mockClient.
 		EXPECT().
-		PutRecord(&sampleRecord).
+		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
 		Return(nil, errors.New(errorCode))
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
@@ -144,10 +142,12 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	// return aws error
 	mockClient.
 		EXPECT().
-		PutRecord(&sampleRecord).
-		Return(nil, awserr.NewRequestFailure(
-			awserr.New(errorCode, errorCode, errors.New(errorCode)), 400, "request-id",
-		))
+		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
+		Return(nil, &smithy.GenericAPIError{
+			Code:    errorCode,
+			Message: errorCode,
+			Fault:   smithy.FaultClient,
+		})
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)

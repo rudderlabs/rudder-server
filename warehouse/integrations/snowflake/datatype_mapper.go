@@ -1,15 +1,5 @@
 package snowflake
 
-var dataTypesMap = map[string]string{
-	"boolean":  "boolean",
-	"int":      "number",
-	"bigint":   "number",
-	"float":    "double precision",
-	"string":   "varchar",
-	"datetime": "timestamp_tz",
-	"json":     "variant",
-}
-
 var dataTypesMapToRudder = map[string]string{
 	"NUMBER":           "int",
 	"DECIMAL":          "int",

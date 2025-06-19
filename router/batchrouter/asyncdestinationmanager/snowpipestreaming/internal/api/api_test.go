@@ -321,6 +321,14 @@ func TestAPI(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, &model.InsertResponse{Success: true, Errors: nil}, res)
 		})
+
+		t.Run("Insert channel not found", func(t *testing.T) {
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
+			res, err := manager.Insert(ctx, "invalid-channel-id", ir)
+			require.ErrorIs(t, err, api.ErrChannelNotFound)
+			require.Nil(t, res)
+		})
+
 		t.Run("Insert failure", func(t *testing.T) {
 			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
 			res, err := manager.Insert(ctx, failureChannelID, ir)
@@ -381,7 +389,8 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 	})
-	t.Run("Get Statu", func(t *testing.T) {
+
+	t.Run("Get Status", func(t *testing.T) {
 		snowpipeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, http.MethodGet, r.Method)
 			require.Equal(t, "application/json", r.Header.Get("Content-Type"))

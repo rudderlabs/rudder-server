@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -43,8 +44,6 @@ func NewDownloader(
 func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]string, error) {
 	var (
 		fileNames     []string
-		objectName    string
-		err           error
 		fileNamesLock sync.RWMutex
 	)
 
@@ -76,10 +75,9 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 	g.SetLimit(l.numWorkers)
 
 	for _, object := range objects {
-		object := object
-
 		g.Go(func() error {
-			if objectName, err = l.downloadSingleObject(ctx, fileManager, object); err != nil {
+			objectName, err := l.downloadSingleObject(ctx, fileManager, object)
+			if err != nil {
 				return fmt.Errorf("downloading object: %w", err)
 			}
 
@@ -89,7 +87,6 @@ func (l *downloaderImpl) Download(ctx context.Context, tableName string) ([]stri
 			return nil
 		})
 	}
-
 	if err = g.Wait(); err != nil {
 		return nil, fmt.Errorf("downloading batch: %w", err)
 	}

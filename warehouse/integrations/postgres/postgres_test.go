@@ -15,7 +15,6 @@ import (
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
@@ -29,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -443,34 +443,18 @@ func TestIntegration(t *testing.T) {
 		privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
 		require.NoError(t, err)
 
-		var (
-			group               errgroup.Group
-			postgresResource    *dockerpg.Resource
-			sshServerResource   *sshserver.Resource
-			minioResource       *minio.Resource
-			transformerResource *transformer.Resource
+		postgresResource, err := dockerpg.Setup(pool, t, dockerpg.WithNetwork(network))
+		require.NoError(t, err)
+		sshServerResource, err := sshserver.Setup(pool, t,
+			sshserver.WithPublicKeyPath(publicKeyPath),
+			sshserver.WithCredentials("linuxserver.io", ""),
+			sshserver.WithDockerNetwork(network),
 		)
-		group.Go(func() (err error) {
-			postgresResource, err = dockerpg.Setup(pool, t, dockerpg.WithNetwork(network))
-			return err
-		})
-		group.Go(func() (err error) {
-			sshServerResource, err = sshserver.Setup(pool, t,
-				sshserver.WithPublicKeyPath(publicKeyPath),
-				sshserver.WithCredentials("linuxserver.io", ""),
-				sshserver.WithDockerNetwork(network),
-			)
-			return err
-		})
-		group.Go(func() (err error) {
-			minioResource, err = minio.Setup(pool, t, minio.WithNetwork(network))
-			return err
-		})
-		group.Go(func() (err error) {
-			transformerResource, err = transformer.Setup(pool, t, transformer.WithDockerNetwork(network))
-			return err
-		})
-		require.NoError(t, group.Wait())
+		require.NoError(t, err)
+		minioResource, err := minio.Setup(pool, t, minio.WithNetwork(network))
+		require.NoError(t, err)
+		transformerResource, err := transformer.Setup(pool, t, transformer.WithDockerNetwork(network))
+		require.NoError(t, err)
 
 		httpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)

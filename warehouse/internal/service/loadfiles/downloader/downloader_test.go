@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
@@ -24,13 +25,13 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+func TestMain(m *testing.M) {
+	misc.Init()
+	os.Exit(m.Run())
+}
+
 func TestDownloader(t *testing.T) {
 	t.Parallel()
-
-	misc.Init()
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
 
 	var (
 		destType      = "POSTGRES"
@@ -83,11 +84,9 @@ func TestDownloader(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		i := i
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
 
 			minioResource, err := minio.Setup(pool, t)
 			require.NoError(t, err)

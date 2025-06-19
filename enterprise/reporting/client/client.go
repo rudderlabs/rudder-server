@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -66,12 +65,13 @@ type Client struct {
 	reportingServiceURL string
 
 	httpClient *http.Client
-	backoff    backoff.BackOff
 	stats      stats.Stats
 	log        logger.Logger
 
 	moduleName string
 	instanceID string
+
+	conf *config.Config
 }
 
 func backOffFromConfig(conf *config.Config) backoff.BackOff {
@@ -94,51 +94,18 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-
-	if conf.IsSet("Reporting.httpClient.transport.maxIdleConns") {
-		transport.MaxIdleConns = conf.GetInt("Reporting.httpClient.transport.maxIdleConns", 100)
-	}
-
-	if conf.IsSet("Reporting.httpClient.transport.idleConnTimeout") {
-		transport.IdleConnTimeout = conf.GetDurationVar(90, time.Second, "Reporting.httpClient.transport.idleConnTimeout")
-	}
-
-	if conf.IsSet("Reporting.httpClient.transport.tlsHandshakeTimeout") {
-		transport.TLSHandshakeTimeout = conf.GetDurationVar(10, time.Second, "Reporting.httpClient.transport.tlsHandshakeTimeout")
-	}
-
-	if conf.IsSet("Reporting.httpClient.transport.disableKeepAlives") {
-		transport.DisableKeepAlives = conf.GetBool("Reporting.httpClient.transport.disableKeepAlives", false)
-	}
-
-	if conf.IsSet("Reporting.httpClient.transport.dialer.timeout") {
-		transport.DialContext = (&net.Dialer{
-			Timeout:   conf.GetDurationVar(30, time.Second, "Reporting.httpClient.transport.dialer.timeout"),
-			KeepAlive: conf.GetDurationVar(30, time.Second, "Reporting.httpClient.transport.dialer.keepAlive"),
-		}).DialContext
-	}
-
-	if conf.IsSet("Reporting.httpClient.transport.forceAttemptHTTP2") {
-		transport.ForceAttemptHTTP2 = conf.GetBool("Reporting.httpClient.transport.forceAttemptHTTP2", true)
-	}
-
-	if conf.IsSet("Reporting.httpClient.transport.expectContinueTimeout") {
-		transport.ExpectContinueTimeout = conf.GetDurationVar(1, time.Second, "Reporting.httpClient.transport.expectContinueTimeout")
-	}
-
 	return &Client{
 		httpClient: &http.Client{
 			Timeout:   conf.GetDurationVar(60, time.Second, "Reporting.httpClient.timeout", "HttpClient.reporting.timeout"),
-			Transport: transport,
+			Transport: &http.Transport{},
 		},
 		reportingServiceURL: reportingServiceURL,
-		backoff:             backOffFromConfig(conf),
 		route:               path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		moduleName:          conf.GetString("clientName", ""),
 		stats:               stats,
 		log:                 log,
+		conf:                conf,
 	}
 }
 
@@ -191,7 +158,7 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		return err
 	}
 
-	b := backoff.WithContext(c.backoff, ctx)
+	b := backoff.WithContext(backOffFromConfig(c.conf), ctx)
 	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
 		c.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
 	})

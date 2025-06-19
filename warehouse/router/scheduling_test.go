@@ -424,9 +424,6 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			}
 
 			for i, tc := range testCases {
-				tc := tc
-				i := i
-
 				t.Run(tc.name, func(t *testing.T) {
 					w := model.Warehouse{
 						Identifier: "test_identifier_last_created_at_" + strconv.Itoa(i),

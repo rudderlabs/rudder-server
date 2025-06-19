@@ -27,6 +27,12 @@ func (e *botEnricher) Enrich(_ *backendconfig.SourceT, request *types.GatewayBat
 			continue
 		}
 
+		// BotAction empty check is for backward compatibility, BotAction field might be absent indicating ingestion service is not released with BotAction field
+		// TODO: remove the empty check after ingestion service is released with BotAction field
+		if eventParams.BotAction != "flag" && eventParams.BotAction != "" {
+			continue
+		}
+
 		// if the context section is missing on the event
 		// set it with default as map[string]any
 		if _, ok := event["context"]; !ok {

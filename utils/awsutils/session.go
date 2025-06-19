@@ -28,7 +28,7 @@ func NewSimpleSessionConfigForDestination(destination *backendconfig.Destination
 	return sessionConfig, nil
 }
 
-func NewSessionConfigForDestinationV2(destination *backendconfig.DestinationT, serviceName string) (*awsutil_v2.SessionConfig, error) {
+func NewSimpleSessionConfigForDestinationV2(destination *backendconfig.DestinationT, serviceName string) (*awsutil_v2.SessionConfig, error) {
 	if destination == nil {
 		return nil, errors.New("destination should not be nil")
 	}
@@ -44,6 +44,18 @@ func NewSessionConfigForDestinationV2(destination *backendconfig.DestinationT, s
 		*/
 		sessionConfig.ExternalID = destination.WorkspaceID
 	}
+	return sessionConfig, nil
+}
+
+func NewSessionConfigForDestinationV2(destination *backendconfig.DestinationT, timeout time.Duration, serviceName string) (*awsutil_v2.SessionConfig, error) {
+	sessionConfig, err := NewSimpleSessionConfigForDestinationV2(destination, serviceName)
+	if err != nil {
+		return nil, err
+	}
+	if sessionConfig.Region == "" {
+		return nil, errors.New("could not find region configuration")
+	}
+	sessionConfig.Timeout = &timeout
 	return sessionConfig, nil
 }
 

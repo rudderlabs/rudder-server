@@ -30,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -153,6 +154,7 @@ type Clickhouse struct {
 		s3EngineEnabledWorkspaceIDs []string
 		slowQueryThreshold          time.Duration
 		randomLoadDelay             func(string) time.Duration
+		disableLoadTableStats       func(string) bool
 	}
 }
 
@@ -228,7 +230,13 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
 	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
 	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	ch.config.disableLoadTableStats = func(workspaceID string) bool {
+		return conf.GetBoolVar(
+			false,
+			fmt.Sprintf("Warehouse.clickhouse.%s.disableLoadTableStats", workspaceID),
+			"Warehouse.clickhouse.disableLoadTableStats",
+		)
+	}
 	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
 			0,
@@ -236,7 +244,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", workspaceID),
 			"Warehouse.clickhouse.maxLoadDelay",
 		)
-		return time.Duration(float64(maxDelay) * (1 - r.Float64()))
+		return time.Duration(float64(maxDelay) * (1 - rand.Float64()))
 	}
 
 	return ch
@@ -662,6 +670,9 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		onError(err)
 		return
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 	ch.logger.Debugf("%s Prepared statement exec in db for loading in table", ch.GetLogIdentifier(tableName))
 
 	for _, objectFileName := range fileNames {
@@ -1029,9 +1040,15 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 }
 
 func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
-	preLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("pre load table count: %w", err)
+	var (
+		preLoadTableCount int64
+		err               error
+	)
+	if !ch.config.disableLoadTableStats(ch.Warehouse.WorkspaceID) {
+		preLoadTableCount, err = ch.totalCountIntable(ctx, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("pre load table count: %w", err)
+		}
 	}
 
 	err = ch.loadTable(ctx, tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
@@ -1039,9 +1056,12 @@ func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.L
 		return nil, fmt.Errorf("loading table: %w", err)
 	}
 
-	postLoadTableCount, err := ch.totalCountIntable(ctx, tableName)
-	if err != nil {
-		return nil, fmt.Errorf("post load table count: %w", err)
+	var postLoadTableCount int64
+	if !ch.config.disableLoadTableStats(ch.Warehouse.WorkspaceID) {
+		postLoadTableCount, err = ch.totalCountIntable(ctx, tableName)
+		if err != nil {
+			return nil, fmt.Errorf("post load table count: %w", err)
+		}
 	}
 
 	return &types.LoadTableStats{
@@ -1111,7 +1131,7 @@ func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) error {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1128,25 +1148,29 @@ func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, pa
 	)
 	txn, err := ch.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return
+		return fmt.Errorf("begin transaction: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+		}
+	}()
 
 	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
-		return
+		return fmt.Errorf("prepare statement: %w", err)
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	if _, err = stmt.ExecContext(ctx, recordInterface...); err != nil {
-		return
-	}
-
-	if err = stmt.Close(); err != nil {
-		return
+		return fmt.Errorf("exec statement: %w", err)
 	}
 	if err = txn.Commit(); err != nil {
-		return
+		return fmt.Errorf("commit transaction: %w", err)
 	}
-	return
+	return nil
 }
 
 func (ch *Clickhouse) TestFetchSchema(ctx context.Context) error {
