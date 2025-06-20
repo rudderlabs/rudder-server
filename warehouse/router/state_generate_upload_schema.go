@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 )
 
@@ -13,16 +14,17 @@ func (job *UploadJob) generateUploadSchema() error {
 		return fmt.Errorf("consolidate staging files schema using warehouse schema: %w", err)
 	}
 
-	marshalledSchema, err := jsonrs.Marshal(uploadSchema)
+	uploadSchemaBytes, err := jsonrs.Marshal(uploadSchema)
 	if err != nil {
 		return fmt.Errorf("marshal upload schema: %w", err)
 	}
+	job.stats.consolidatedSchemaSize.Observe(float64(len(uploadSchemaBytes)))
 
 	err = job.uploadsRepo.Update(
 		job.ctx,
 		job.upload.ID,
 		[]repo.UpdateKeyValue{
-			repo.UploadFieldSchema(marshalledSchema),
+			repo.UploadFieldSchema(uploadSchemaBytes),
 		},
 	)
 	if err != nil {

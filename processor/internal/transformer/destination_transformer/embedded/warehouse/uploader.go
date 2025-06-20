@@ -126,6 +126,10 @@ func (t *Transformer) sampleDiff(events []types.TransformerEvent, legacyResponse
 		if strings.Contains(diff, "\"auto-") {
 			continue
 		}
+		// Ignore Unicode diffs caused by Go vs JavaScript serialization differences
+		if unicodePattern.MatchString(diff) {
+			continue
+		}
 		if differedEventsCount == 0 {
 			sampleDiff = diff
 		}

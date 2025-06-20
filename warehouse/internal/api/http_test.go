@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -96,8 +98,10 @@ func TestAPI_Process(t *testing.T) {
 
 		storage []model.StagingFileWithSchema
 
-		respBody string
-		respCode int
+		expectedRespBody    string
+		expectedRespCode    int
+		expectedSchemaSize  int
+		expectedTotalEvents int
 	}{
 		{
 			name:    "normal process request",
@@ -105,64 +109,66 @@ func TestAPI_Process(t *testing.T) {
 
 			storage: []model.StagingFileWithSchema{expectedStagingFile},
 
-			respCode: http.StatusOK,
+			expectedRespCode:    http.StatusOK,
+			expectedSchemaSize:  1003,
+			expectedTotalEvents: 2,
 		},
 		{
 			name:     "process request storage error",
 			reqBody:  body,
 			storeErr: fmt.Errorf("internal warehouse error"),
 
-			respCode: http.StatusInternalServerError,
-			respBody: "can't insert staging file\n",
+			expectedRespCode: http.StatusInternalServerError,
+			expectedRespBody: "can't insert staging file\n",
 		},
 		{
 			name:                 "process degraded workspace",
 			reqBody:              body,
 			degradedWorkspaceIDs: []string{"279L3V7FSpx43LaNJ0nIs9KRaNC"},
 
-			respCode: http.StatusServiceUnavailable,
-			respBody: "workspace is degraded\n",
+			expectedRespCode: http.StatusServiceUnavailable,
+			expectedRespBody: "workspace is degraded\n",
 		},
 		{
 			name: "invalid request body missing",
 
-			respCode: http.StatusBadRequest,
-			respBody: "invalid JSON in request body\n",
+			expectedRespCode: http.StatusBadRequest,
+			expectedRespBody: "invalid JSON in request body\n",
 		},
 		{
 			name:    "invalid request workspace id missing",
 			reqBody: filterPayload(body, "279L3V7FSpx43LaNJ0nIs9KRaNC"),
 
-			respCode: http.StatusBadRequest,
-			respBody: "invalid payload: workspaceId is required\n",
+			expectedRespCode: http.StatusBadRequest,
+			expectedRespBody: "invalid payload: workspaceId is required\n",
 		},
 		{
 			name:    "invalid request location missing",
 			reqBody: filterPayload(body, "rudder-warehouse-staging-logs"),
 
-			respCode: http.StatusBadRequest,
-			respBody: "invalid payload: location is required\n",
+			expectedRespCode: http.StatusBadRequest,
+			expectedRespBody: "invalid payload: location is required\n",
 		},
 		{
 			name:    "invalid request source id missing",
 			reqBody: filterPayload(body, "\"279L3gEKqwruBoKGsXZtSVX7vIy\""),
 
-			respCode: http.StatusBadRequest,
-			respBody: "invalid payload: batchDestination.source.id is required\n",
+			expectedRespCode: http.StatusBadRequest,
+			expectedRespBody: "invalid payload: batchDestination.source.id is required\n",
 		},
 		{
 			name:    "invalid request destination id missing",
 			reqBody: filterPayload(body, "\"27CHciD6leAhurSyFAeN4dp14qZ\""),
 
-			respCode: http.StatusBadRequest,
-			respBody: "invalid payload: batchDestination.destination.id is required\n",
+			expectedRespCode: http.StatusBadRequest,
+			expectedRespBody: "invalid payload: batchDestination.destination.id is required\n",
 		},
 		{
 			name:    "invalid request schema missing",
 			reqBody: loadFile(t, "./testdata/process_request_missing_schema.json"),
 
-			respCode: http.StatusBadRequest,
-			respBody: "invalid payload: schema is required\n",
+			expectedRespCode: http.StatusBadRequest,
+			expectedRespBody: "invalid payload: schema is required\n",
 		},
 	}
 
@@ -177,10 +183,13 @@ func TestAPI_Process(t *testing.T) {
 
 			m := multitenant.New(c, backendconfig.DefaultBackendConfig)
 
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
 			wAPI := api.WarehouseAPI{
 				Repo:        r,
 				Logger:      logger.NOP,
-				Stats:       stats.NOP,
+				Stats:       statsStore,
 				Multitenant: m,
 			}
 
@@ -193,13 +202,27 @@ func TestAPI_Process(t *testing.T) {
 			h.ServeHTTP(resp, req)
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err)
-
 			t.Log(string(body))
 
-			require.Equal(t, tc.respCode, resp.Code)
-			require.Equal(t, tc.respBody, string(body))
-
+			require.Equal(t, tc.expectedRespCode, resp.Code)
+			require.Equal(t, tc.expectedRespBody, string(body))
 			require.Equal(t, tc.storage, r.files)
+			if tc.expectedRespCode == http.StatusOK {
+				require.EqualValues(t, tc.expectedSchemaSize, statsStore.Get("warehouse_staged_schema_size", stats.Tags{
+					"module":        "warehouse",
+					"workspaceId":   "279L3V7FSpx43LaNJ0nIs9KRaNC",
+					"sourceId":      "279L3gEKqwruBoKGsXZtSVX7vIy",
+					"destinationId": "27CHciD6leAhurSyFAeN4dp14qZ",
+					"warehouseID":   "__VX7vIy_dp14qZ",
+				}).LastValue())
+				require.EqualValues(t, tc.expectedTotalEvents, statsStore.Get("rows_staged", stats.Tags{
+					"module":        "warehouse",
+					"workspaceId":   "279L3V7FSpx43LaNJ0nIs9KRaNC",
+					"sourceId":      "279L3gEKqwruBoKGsXZtSVX7vIy",
+					"destinationId": "27CHciD6leAhurSyFAeN4dp14qZ",
+					"warehouseID":   "__VX7vIy_dp14qZ",
+				}).LastValue())
+			}
 		})
 	}
 }

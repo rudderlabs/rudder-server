@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.52.4](https://github.com/rudderlabs/rudder-server/compare/v1.52.3...v1.52.4) (2025-06-20)
+
+
+### Miscellaneous
+
+* additional stats for schema sizes ([#6020](https://github.com/rudderlabs/rudder-server/issues/6020)) ([09091c7](https://github.com/rudderlabs/rudder-server/commit/09091c7507d82321b4ef489305cd33176645c533))
+* warehouse transformations parsing timestamp and serialisation ([#6025](https://github.com/rudderlabs/rudder-server/issues/6025)) ([e379398](https://github.com/rudderlabs/rudder-server/commit/e379398d68d52d5490801279cfd8eabc15c7b8cd))
+
 ## [1.52.3](https://github.com/rudderlabs/rudder-server/compare/v1.52.2...v1.52.3) (2025-06-19)
 
 

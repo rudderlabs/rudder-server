@@ -171,13 +171,13 @@ type credentials struct {
 }
 
 type clickHouseStat struct {
-	numRowsLoadFile       stats.Measurement
-	downloadLoadFilesTime stats.Measurement
-	syncLoadFileTime      stats.Measurement
-	commitTime            stats.Measurement
-	failRetries           stats.Measurement
-	execTimeouts          stats.Measurement
-	commitTimeouts        stats.Measurement
+	numRowsLoadFile       stats.Counter
+	downloadLoadFilesTime stats.Timer
+	syncLoadFileTime      stats.Timer
+	commitTime            stats.Timer
+	failRetries           stats.Counter
+	execTimeouts          stats.Counter
+	commitTimeouts        stats.Counter
 }
 
 // newClickHouseStat Creates a new clickHouseStat instance

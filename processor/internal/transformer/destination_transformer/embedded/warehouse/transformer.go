@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -54,6 +55,8 @@ var _ = struct {
 	Timezone string
 }(enricher.Geolocation{})
 
+var unicodePattern = regexp.MustCompile(`\\u[0-9a-fA-F]{4}`)
+
 type Opts func(t *Transformer)
 
 func WithNow(now func() time.Time) Opts {
@@ -96,7 +99,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, op
 
 	t.config.enableIDResolution = conf.GetReloadableBoolVar(false, "Warehouse.enableIDResolution")
 	t.config.populateSrcDestInfoInContext = conf.GetReloadableBoolVar(true, "WH_POPULATE_SRC_DEST_INFO_IN_CONTEXT")
-	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(200, 1, "WH_MAX_COLUMNS_IN_EVENT")
+	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(1600, 1, "WH_MAX_COLUMNS_IN_EVENT")
 	t.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Warehouse.Transformer.Sampling.maxLoggedEvents")
 	t.config.concurrentTransformations = conf.GetReloadableIntVar(1, 1, "Warehouse.concurrentTransformations")
 	t.config.instanceID = conf.GetString("INSTANCE_ID", "1")

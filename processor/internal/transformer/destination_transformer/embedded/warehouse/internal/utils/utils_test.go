@@ -83,11 +83,38 @@ func TestValidTimestamp(t *testing.T) {
 		{name: "Date time Micros Colon timezone", timestamp: "2025-04-02 01:09:03.714247+00:00", expected: true},
 		{name: "Date time ISO millis timezone", timestamp: "2025-04-02T01:09:03.000+1000", expected: true},
 		{name: "Date time Colon timezone", timestamp: "2025-04-02 01:09:03+00:00", expected: true},
+		{name: "Day out of range", timestamp: "1988-04-31", expected: true},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, ValidTimestamp(tc.timestamp))
+		})
+	}
+}
+
+func TestToTimestamp(t *testing.T) {
+	testCases := []struct {
+		name, timestamp string
+		expected        string
+	}{
+		{name: "Timestamp without timezone", timestamp: "2021-06-01T00:00:00.000Z", expected: "2021-06-01T00:00:00.000Z"},
+		{name: "Timestamp with timezone", timestamp: "2021-06-01T00:00:00.000+00:00", expected: "2021-06-01T00:00:00.000Z"},
+		{name: "Timestamps at bounds (minTimeInMs)", timestamp: "0001-01-01T00:00:00.000Z", expected: "0001-01-01T00:00:00.000Z"},
+		{name: "Timestamps at bounds (maxTimeInMs)", timestamp: "9999-12-31T23:59:59.999Z", expected: "9999-12-31T23:59:59.999Z"},
+		{name: "Date Time only", timestamp: "2021-06-01 00:00:00", expected: "2021-06-01T00:00:00.000Z"},
+		{name: "Date-only", timestamp: "2023-06-14", expected: "2023-06-14T00:00:00.000Z"},
+		{name: "Date time ISO 8601", timestamp: "2025-04-02T01:09:03", expected: "2025-04-02T01:09:03.000Z"},
+		{name: "Date time Millis timezone", timestamp: "2025-04-02 01:09:03.000+0530", expected: "2025-04-01T19:39:03.000Z"},
+		{name: "Date time Micros Colon timezone", timestamp: "2025-04-02 01:09:03.714247+00:00", expected: "2025-04-02T01:09:03.714Z"},
+		{name: "Date time ISO millis timezone", timestamp: "2025-04-02T01:09:03.000+1000", expected: "2025-04-01T15:09:03.000Z"},
+		{name: "Date time Colon timezone", timestamp: "2025-04-02 01:09:03+00:00", expected: "2025-04-02T01:09:03.000Z"},
+		{name: "Date-only: Day out of range", timestamp: "1988-04-31", expected: "1988-05-01T00:00:00.000Z"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, ToTimestamp(tc.timestamp))
 		})
 	}
 }
