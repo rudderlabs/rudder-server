@@ -104,8 +104,6 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			var (
 				testNamespace = fmt.Sprintf("test_namespace_%s", warehouseutils.RandHex())
@@ -274,8 +272,6 @@ func TestGlueSchemaRepositoryRoundTrip_V2(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			var (
 				testNamespace = fmt.Sprintf("test_namespace_%s", warehouseutils.RandHex())
