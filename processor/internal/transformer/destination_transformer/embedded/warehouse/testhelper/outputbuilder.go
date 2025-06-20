@@ -18,6 +18,15 @@ func (ob OutputBuilder) SetDataField(key string, value any) OutputBuilder {
 	return ob
 }
 
+func (ob OutputBuilder) SetMetadata(key string, value any) OutputBuilder {
+	if _, ok := ob["metadata"]; !ok {
+		ob["metadata"] = make(map[string]any)
+	}
+	metadataMap := ob["metadata"].(map[string]any)
+	metadataMap[key] = value
+	return ob
+}
+
 func (ob OutputBuilder) SetColumnField(key string, value any) OutputBuilder {
 	if _, ok := ob["metadata"]; !ok {
 		ob["metadata"] = make(map[string]any)
@@ -47,6 +56,15 @@ func (ob OutputBuilder) RemoveDataFields(fields ...string) OutputBuilder {
 	if dataMap, ok := ob["data"].(map[string]any); ok {
 		for _, key := range fields {
 			delete(dataMap, key)
+		}
+	}
+	return ob
+}
+
+func (ob OutputBuilder) RemoveMetadata(fields ...string) OutputBuilder {
+	if metadataMap, ok := ob["metadata"].(map[string]any); ok {
+		for _, key := range fields {
+			delete(metadataMap, key)
 		}
 	}
 	return ob

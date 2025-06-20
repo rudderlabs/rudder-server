@@ -229,6 +229,8 @@ func TestToString(t *testing.T) {
 		{struct{}{}, "{}"},                       // empty struct
 		{struct{ Field string }{"value"}, "{value}"},                     // struct with field
 		{Person{Name: "Alice", Age: 30}, "Person(Name: Alice, Age: 30)"}, // struct with String method
+		{int64(1746422198716531200), "1746422198716531200"},              // big int
+		{float64(1746422198716531200), "1746422198716531200"},            // big float
 	}
 
 	for _, tc := range testCases {
