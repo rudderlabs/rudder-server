@@ -261,17 +261,15 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 			}
 		}
 
-		if len(wsConfig.Settings.EventBlocking.Events) > 0 && blockedEventsWorkspaceTypeNameMap[workspaceID] == nil {
+		if len(wsConfig.Settings.EventBlocking.Events) > 0 {
 			blockedEventsWorkspaceTypeNameMap[workspaceID] = make(map[string]map[string]bool, len(wsConfig.Settings.EventBlocking.Events))
-		}
 
-		for eventType, events := range wsConfig.Settings.EventBlocking.Events {
-			if blockedEventsWorkspaceTypeNameMap[workspaceID][eventType] == nil {
+			for eventType, events := range wsConfig.Settings.EventBlocking.Events {
 				blockedEventsWorkspaceTypeNameMap[workspaceID][eventType] = make(map[string]bool, len(events))
-			}
 
-			for _, event := range events {
-				blockedEventsWorkspaceTypeNameMap[workspaceID][eventType][event] = true
+				for _, event := range events {
+					blockedEventsWorkspaceTypeNameMap[workspaceID][eventType][event] = true
+				}
 			}
 		}
 	}
