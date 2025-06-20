@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -17,7 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 )
@@ -136,6 +137,12 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	schemaBytes, err := jsonrs.Marshal(stagingFile.Schema)
+	if err != nil {
+		api.Logger.Warnw("Unable to marshal staging file schema", lf.Error, err.Error())
+		http.Error(w, fmt.Sprintf("Unable to marshal staging file schema: %s", err.Error()), http.StatusBadRequest)
+		return
+	}
 	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -146,18 +153,20 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	api.Stats.NewTaggedStat("rows_staged", stats.CountType, stats.Tags{
-		"workspaceId":   stagingFile.WorkspaceID,
+	tags := stats.Tags{
 		"module":        "warehouse",
-		"destType":      payload.BatchDestination.Destination.DestinationDefinition.Name,
+		"workspaceId":   stagingFile.WorkspaceID,
 		"sourceId":      payload.BatchDestination.Source.ID,
 		"destinationId": payload.BatchDestination.Destination.ID,
 		"warehouseID": misc.GetTagName(
 			payload.BatchDestination.Destination.ID,
 			payload.BatchDestination.Source.Name,
 			payload.BatchDestination.Destination.Name,
-			misc.TailTruncateStr(payload.BatchDestination.Source.ID, 6)),
-	}).Count(stagingFile.TotalEvents)
+			misc.TailTruncateStr(payload.BatchDestination.Source.ID, 6),
+		),
+	}
+	api.Stats.NewTaggedStat("warehouse_staged_schema_size", stats.HistogramType, tags).Observe(float64(len(schemaBytes)))
+	api.Stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(stagingFile.TotalEvents)
 
 	w.WriteHeader(http.StatusOK)
 }

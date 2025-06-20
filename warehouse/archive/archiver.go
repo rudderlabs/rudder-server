@@ -67,7 +67,7 @@ type Archiver struct {
 		maxLimit                    config.ValueLoader[int]
 	}
 
-	archiveFailedStat stats.Measurement
+	archiveFailedStat stats.Counter
 }
 
 func New(

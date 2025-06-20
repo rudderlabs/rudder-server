@@ -20,11 +20,12 @@ func warehouseTagName(destID, sourceName, destName, sourceID string) string {
 func (job *UploadJob) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
 	tags := stats.Tags{
 		"module":      moduleName,
-		"destType":    job.warehouse.Type,
+		"workspaceId": job.warehouse.WorkspaceID,
 		"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
-		"workspaceId": job.upload.WorkspaceID,
-		"destID":      job.upload.DestinationID,
-		"sourceID":    job.upload.SourceID,
+		"destID":      job.warehouse.Destination.ID,
+		"destType":    job.warehouse.Destination.DestinationDefinition.Name,
+		"sourceID":    job.warehouse.Source.ID,
+		"sourceType":  job.warehouse.Source.SourceDefinition.Name,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -32,16 +33,20 @@ func (job *UploadJob) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
 	return tags
 }
 
-func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (job *UploadJob) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Timer {
 	return job.statsFactory.NewTaggedStat(name, stats.TimerType, job.buildTags(extraTags...))
 }
 
-func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (job *UploadJob) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Counter {
 	return job.statsFactory.NewTaggedStat(name, stats.CountType, job.buildTags(extraTags...))
 }
 
-func (job *UploadJob) gaugeStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (job *UploadJob) gaugeStat(name string, extraTags ...warehouseutils.Tag) stats.Gauge {
 	return job.statsFactory.NewTaggedStat(name, stats.GaugeType, job.buildTags(extraTags...))
+}
+
+func (job *UploadJob) histogramStat(name string, extraTags ...warehouseutils.Tag) stats.Histogram {
+	return job.statsFactory.NewTaggedStat(name, stats.HistogramType, job.buildTags(extraTags...))
 }
 
 func (job *UploadJob) generateUploadSuccessMetrics() {

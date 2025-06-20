@@ -135,16 +135,16 @@ type jobRun struct {
 
 	stats               stats.Stats
 	conf                *appConfig.Config
-	uploadTimeStat      stats.Measurement
-	totalUploadTimeStat stats.Measurement
+	uploadTimeStat      stats.Timer
+	totalUploadTimeStat stats.Timer
 
 	// Staging file related stats are thread safe
 	// so no need to move them to stagingFileProcessor struct
-	downloadStagingFileStat        stats.Measurement
-	processingStagingFileStat      stats.Measurement
-	bytesProcessedStagingFileStat  stats.Measurement
-	bytesDownloadedStagingFileStat stats.Measurement
-	downloadStagingFileFailedStat  stats.Measurement
+	downloadStagingFileStat        stats.Timer
+	processingStagingFileStat      stats.Timer
+	bytesProcessedStagingFileStat  stats.Counter
+	bytesDownloadedStagingFileStat stats.Counter
+	downloadStagingFileFailedStat  stats.Counter
 
 	config struct {
 		numLoadFileUploadWorkers int
@@ -214,11 +214,11 @@ func (jr *jobRun) buildTags(extraTags ...warehouseutils.Tag) stats.Tags {
 	return tags
 }
 
-func (jr *jobRun) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (jr *jobRun) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Timer {
 	return jr.stats.NewTaggedStat(name, stats.TimerType, jr.buildTags(extraTags...))
 }
 
-func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
+func (jr *jobRun) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Counter {
 	return jr.stats.NewTaggedStat(name, stats.CountType, jr.buildTags(extraTags...))
 }
 

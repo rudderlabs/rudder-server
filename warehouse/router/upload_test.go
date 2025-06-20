@@ -36,11 +36,11 @@ import (
 
 type mockSchemaRepo struct{}
 
-func (m *mockSchemaRepo) GetForNamespace(ctx context.Context, destinationID, namespace string) (model.WHSchema, error) {
+func (m *mockSchemaRepo) GetForNamespace(context.Context, string, string) (model.WHSchema, error) {
 	return model.WHSchema{}, nil
 }
 
-func (m *mockSchemaRepo) Insert(ctx context.Context, schema *model.WHSchema) (int64, error) {
+func (m *mockSchemaRepo) Insert(context.Context, *model.WHSchema) (int64, error) {
 	return 0, nil
 }
 
@@ -138,14 +138,13 @@ func TestColumnCountStat(t *testing.T) {
 		},
 	}
 
-	statsStore, err := memstats.New()
-	require.NoError(t, err)
-
 	for _, tc := range inputs {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
 			conf := config.New()
 			conf.Set(fmt.Sprintf("Warehouse.%s.columnCountLimit", strings.ToLower(warehouseutils.WHDestNameMap[tc.destinationType])), tc.columnCountLimit)
 
@@ -869,27 +868,6 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		{Location: "test-load-location-4"},
 	}
 
-	mockUploadJobStats := struct {
-		uploadTime                         stats.Measurement
-		userTablesLoadTime                 stats.Measurement
-		identityTablesLoadTime             stats.Measurement
-		otherTablesLoadTime                stats.Measurement
-		loadFileGenerationTime             stats.Measurement
-		tablesAdded                        stats.Measurement
-		columnsAdded                       stats.Measurement
-		uploadFailed                       stats.Measurement
-		totalRowsSynced                    stats.Measurement
-		numStagedEvents                    stats.Measurement
-		uploadSuccess                      stats.Measurement
-		stagingLoadFileEventsCountMismatch stats.Measurement
-		eventDeliveryTime                  stats.Timer
-		objectsDeleted                     stats.Gauge
-		objectsDeletionTime                stats.Timer
-	}{
-		objectsDeleted:      stats.NOP.NewStat("objects_deleted_count", "gauge"),
-		objectsDeletionTime: stats.NOP.NewStat("objects_deletion_time", "timer"),
-	}
-
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 	mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
@@ -918,8 +896,9 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			stagingFiles:   stagingFiles[:2],
 			stagingFileIDs: []int64{1, 2},
 			statsFactory:   stats.NOP,
-			stats:          mockUploadJobStats,
 		}
+		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
+		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
 		err := job.cleanupObjectStorageFiles()
 		require.NoError(t, err)
 	})
@@ -968,10 +947,11 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles[:2],
 			stagingFileIDs: []int64{1, 2},
-			stats:          mockUploadJobStats,
 			statsFactory:   stats.NOP,
 			now:            time.Now,
 		}
+		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
+		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
 
 		err := job.cleanupObjectStorageFiles()
 		require.NoError(t, err)
@@ -1018,10 +998,11 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles[:2],
 			stagingFileIDs: []int64{1, 2},
-			stats:          mockUploadJobStats,
 			statsFactory:   stats.NOP,
 			now:            time.Now,
 		}
+		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
+		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
 
 		err := job.cleanupObjectStorageFiles()
 		require.EqualError(t, err, "deleting files from object storage: delete error")
@@ -1070,10 +1051,11 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			loadFilesRepo:  mockLoadFilesRepo,
 			stagingFiles:   stagingFiles,
 			stagingFileIDs: []int64{1, 2, 3, 4},
-			stats:          mockUploadJobStats,
 			statsFactory:   stats.NOP,
 			now:            time.Now,
 		}
+		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
+		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
 
 		// Set up config for chunked deletion
 		job.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {

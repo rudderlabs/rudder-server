@@ -14,6 +14,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
@@ -70,10 +71,10 @@ type worker struct {
 		enableNotifierHeartbeat             config.ValueLoader[bool]
 	}
 	stats struct {
-		workerIdleTime                 stats.Measurement
-		workerClaimProcessingSucceeded stats.Measurement
-		workerClaimProcessingFailed    stats.Measurement
-		workerClaimProcessingTime      stats.Measurement
+		workerIdleTime                 stats.Timer
+		workerClaimProcessingSucceeded stats.Counter
+		workerClaimProcessingFailed    stats.Counter
+		workerClaimProcessingTime      stats.Timer
 	}
 }
 
