@@ -9,7 +9,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
@@ -32,24 +31,14 @@ func TestConnect(t *testing.T) {
 	privateKeyPath, publicKeyPath, err := keygen.NewRSAKeyPair(2048, keygen.SaveTo(t.TempDir()))
 	require.NoError(t, err)
 
-	var (
-		group             errgroup.Group
-		postgresResource  *postgres.Resource
-		sshServerResource *sshserver.Resource
+	postgresResource, err := postgres.Setup(pool, t, postgres.WithNetwork(network))
+	require.NoError(t, err)
+	sshServerResource, err := sshserver.Setup(pool, t,
+		sshserver.WithPublicKeyPath(publicKeyPath),
+		sshserver.WithCredentials("linuxserver.io", ""),
+		sshserver.WithDockerNetwork(network),
 	)
-	group.Go(func() (err error) {
-		postgresResource, err = postgres.Setup(pool, t, postgres.WithNetwork(network))
-		return err
-	})
-	group.Go(func() (err error) {
-		sshServerResource, err = sshserver.Setup(pool, t,
-			sshserver.WithPublicKeyPath(publicKeyPath),
-			sshserver.WithCredentials("linuxserver.io", ""),
-			sshserver.WithDockerNetwork(network),
-		)
-		return err
-	})
-	require.NoError(t, group.Wait())
+	require.NoError(t, err)
 
 	postgresContainer, err := pool.Client.InspectContainer(postgresResource.ContainerID)
 	require.NoError(t, err)

@@ -237,7 +237,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 			"Warehouse.clickhouse.disableLoadTableStats",
 		)
 	}
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	ch.config.randomLoadDelay = func(workspaceID string) time.Duration {
 		maxDelay := conf.GetDurationVar(
 			0,
@@ -245,7 +244,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 			fmt.Sprintf("Warehouse.clickhouse.%s.maxLoadDelay", workspaceID),
 			"Warehouse.clickhouse.maxLoadDelay",
 		)
-		return time.Duration(float64(maxDelay) * (1 - r.Float64()))
+		return time.Duration(float64(maxDelay) * (1 - rand.Float64()))
 	}
 
 	return ch
@@ -671,6 +670,9 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		onError(err)
 		return
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 	ch.logger.Debugf("%s Prepared statement exec in db for loading in table", ch.GetLogIdentifier(tableName))
 
 	for _, objectFileName := range fileNames {
@@ -1129,7 +1131,7 @@ func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) error {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1146,25 +1148,29 @@ func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, pa
 	)
 	txn, err := ch.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
-		return
+		return fmt.Errorf("begin transaction: %w", err)
 	}
+	defer func() {
+		if err != nil {
+			_ = txn.Rollback()
+		}
+	}()
 
 	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
-		return
+		return fmt.Errorf("prepare statement: %w", err)
 	}
+	defer func() {
+		_ = stmt.Close()
+	}()
 
 	if _, err = stmt.ExecContext(ctx, recordInterface...); err != nil {
-		return
-	}
-
-	if err = stmt.Close(); err != nil {
-		return
+		return fmt.Errorf("exec statement: %w", err)
 	}
 	if err = txn.Commit(); err != nil {
-		return
+		return fmt.Errorf("commit transaction: %w", err)
 	}
-	return
+	return nil
 }
 
 func (ch *Clickhouse) TestFetchSchema(ctx context.Context) error {

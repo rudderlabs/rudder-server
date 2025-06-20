@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -272,8 +273,6 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 			}
 
 			for _, tc := range testCases {
-				tc := tc
-
 				t.Run(tc.name, func(t *testing.T) {
 					t.Parallel()
 
@@ -488,8 +487,6 @@ func TestUploadJobT_Aborted(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -661,8 +658,6 @@ func TestUploadJob_DurationBeforeNextAttempt(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -788,7 +783,6 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			db := setupDB(t)
@@ -1018,9 +1012,12 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		}
 
 		filesDeleted := make([][]string, 0)
+		filesDeletedMu := sync.Mutex{}
 		mockFileManager.EXPECT().Delete(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, keys []string) error {
 			require.Len(t, keys, 4)
+			filesDeletedMu.Lock()
 			filesDeleted = append(filesDeleted, keys)
+			filesDeletedMu.Unlock()
 			return nil
 		}).Times(2)
 

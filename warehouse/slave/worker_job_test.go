@@ -77,8 +77,6 @@ func TestSlaveJobPayload(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 
@@ -482,8 +480,6 @@ func TestSlaveJob(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			tc := tc
-
 			t.Run(tc.name, func(t *testing.T) {
 				minioResource, err := minio.Setup(pool, t)
 				require.NoError(t, err)
