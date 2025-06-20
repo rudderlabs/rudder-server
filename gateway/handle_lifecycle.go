@@ -261,7 +261,7 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 			}
 		}
 
-		if blockedEventsWorkspaceTypeNameMap[workspaceID] == nil {
+		if len(wsConfig.Settings.EventBlocking.Events) > 0 && blockedEventsWorkspaceTypeNameMap[workspaceID] == nil {
 			blockedEventsWorkspaceTypeNameMap[workspaceID] = make(map[string]map[string]bool, len(wsConfig.Settings.EventBlocking.Events))
 		}
 
