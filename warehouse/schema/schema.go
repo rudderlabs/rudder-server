@@ -18,6 +18,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -104,10 +105,11 @@ func New(
 	}
 	sh.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
 		"module":        "warehouse",
-		"workspaceId":   warehouse.WorkspaceID,
-		"destType":      warehouse.Destination.DestinationDefinition.Name,
-		"sourceId":      warehouse.Source.ID,
-		"destinationId": warehouse.Destination.ID,
+		"workspaceId":   sh.warehouse.WorkspaceID,
+		"sourceId":      sh.warehouse.Source.ID,
+		"sourceType":    sh.warehouse.Source.SourceDefinition.Name,
+		"destinationId": sh.warehouse.Destination.ID,
+		"destType":      sh.warehouse.Destination.DestinationDefinition.Name,
 	})
 	// cachedSchema can be computed in the constructor
 	// we need not worry about it getting expired in the middle of the job
@@ -162,14 +164,9 @@ func (sh *schema) GetTableSchema(ctx context.Context, tableName string) model.Ta
 }
 
 func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
-	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
-	if err != nil {
-		return fmt.Errorf("marshaling schema: %w", err)
-	}
-	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
-	err = sh.saveSchema(ctx, updatedSchema)
+	err := sh.saveSchema(ctx, updatedSchema)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -225,14 +222,20 @@ func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSc
 	return tableSchemaDiff(tableName, sh.cachedSchema, tableSchema), nil
 }
 
-func (sh *schema) saveSchema(ctx context.Context, newSchema model.Schema) error {
+func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema) error {
+	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
+	if err != nil {
+		return fmt.Errorf("marshaling schema: %w", err)
+	}
+	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
+
 	expiresAt := sh.now().Add(sh.ttlInMinutes)
-	_, err := sh.schemaRepo.Insert(ctx, &model.WHSchema{
+	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
 		SourceID:        sh.warehouse.Source.ID,
 		Namespace:       sh.warehouse.Namespace,
 		DestinationID:   sh.warehouse.Destination.ID,
 		DestinationType: sh.warehouse.Type,
-		Schema:          newSchema,
+		Schema:          updatedSchema,
 		ExpiresAt:       expiresAt,
 	})
 	if err != nil {
