@@ -722,9 +722,10 @@ func buildCreateChannelRequest(destinationID, partition string, destConf *destCo
 			PrivateKeyPassphrase: destConf.PrivateKeyPassphrase,
 		},
 		TableConfig: model.TableConfig{
-			Database: destConf.Database,
-			Schema:   destConf.Namespace,
-			Table:    tableName,
+			Database:      destConf.Database,
+			Schema:        destConf.Namespace,
+			Table:         tableName,
+			EnableIceberg: destConf.EnableIceberg,
 		},
 	}
 }

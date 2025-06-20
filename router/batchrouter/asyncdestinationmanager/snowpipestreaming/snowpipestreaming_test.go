@@ -28,6 +28,7 @@ import (
 )
 
 type mockAPI struct {
+	channelReq             *model.CreateChannelRequest
 	createChannelOutputMap map[string]func() (*model.ChannelResponse, error)
 	deleteChannelOutputMap map[string]func() error
 	insertOutputMap        map[string]func() (*model.InsertResponse, error)
@@ -35,6 +36,7 @@ type mockAPI struct {
 }
 
 func (m *mockAPI) CreateChannel(_ context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error) {
+	m.channelReq = channelReq
 	return m.createChannelOutputMap[channelReq.TableConfig.Table]()
 }
 
@@ -173,16 +175,23 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.NoError(t, err)
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
-		sm.api = &mockAPI{
+		mockApi := &mockAPI{
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
 				"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
 					return nil, assert.AnError
 				},
 			},
 		}
+		sm.api = mockApi
+		dest := &backendconfig.DestinationT{
+			ID: destination.ID,
+			Config: map[string]interface{}{
+				"enableIceberg": true,
+			},
+		}
 		output := sm.Upload(&common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
-			Destination:     destination,
+			Destination:     dest,
 			FileName:        "testdata/successful_records.txt",
 		})
 		require.Equal(t, []int64{1}, output.AbortJobIDs)
@@ -196,6 +205,15 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destinationId": "test-destination",
 			"status":        "aborted",
 		}).LastValue())
+		require.Equal(t, &model.CreateChannelRequest{
+			RudderIdentifier: dest.ID,
+			Partition:        "1",
+			TableConfig: model.TableConfig{
+				Schema:        "STRINGEMPTY",
+				Table:         "RUDDER_DISCARDS",
+				EnableIceberg: true,
+			},
+		}, mockApi.channelReq)
 	})
 	t.Run("Upload not able to create event channel", func(t *testing.T) {
 		statsStore, err := memstats.New()
@@ -1525,6 +1543,7 @@ func TestDestConfig_Decode(t *testing.T) {
 				"privateKey":           "test-key",
 				"privateKeyPassphrase": "test-passphrase",
 				"namespace":            "test-namespace",
+				"enableIceberg":        true,
 			},
 			expected: destConfig{
 				Account:              "test-account",
@@ -1535,6 +1554,7 @@ func TestDestConfig_Decode(t *testing.T) {
 				PrivateKey:           "test-key",
 				PrivateKeyPassphrase: "test-passphrase",
 				Namespace:            "TEST_NAMESPACE",
+				EnableIceberg:        true,
 			},
 			wantError: false,
 		},
