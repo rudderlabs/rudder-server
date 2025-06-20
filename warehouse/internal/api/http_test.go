@@ -213,12 +213,14 @@ func TestAPI_Process(t *testing.T) {
 					"workspaceId":   "279L3V7FSpx43LaNJ0nIs9KRaNC",
 					"sourceId":      "279L3gEKqwruBoKGsXZtSVX7vIy",
 					"destinationId": "27CHciD6leAhurSyFAeN4dp14qZ",
+					"warehouseID":   "__VX7vIy_dp14qZ",
 				}).LastValue())
 				require.EqualValues(t, tc.expectedTotalEvents, statsStore.Get("rows_staged", stats.Tags{
 					"module":        "warehouse",
 					"workspaceId":   "279L3V7FSpx43LaNJ0nIs9KRaNC",
 					"sourceId":      "279L3gEKqwruBoKGsXZtSVX7vIy",
 					"destinationId": "27CHciD6leAhurSyFAeN4dp14qZ",
+					"warehouseID":   "__VX7vIy_dp14qZ",
 				}).LastValue())
 			}
 		})

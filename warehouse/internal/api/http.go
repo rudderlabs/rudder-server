@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -157,6 +158,12 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		"workspaceId":   stagingFile.WorkspaceID,
 		"sourceId":      payload.BatchDestination.Source.ID,
 		"destinationId": payload.BatchDestination.Destination.ID,
+		"warehouseID": misc.GetTagName(
+			payload.BatchDestination.Destination.ID,
+			payload.BatchDestination.Source.Name,
+			payload.BatchDestination.Destination.Name,
+			misc.TailTruncateStr(payload.BatchDestination.Source.ID, 6),
+		),
 	}
 	api.Stats.NewTaggedStat("warehouse_staged_schema_size", stats.HistogramType, tags).Observe(float64(len(schemaBytes)))
 	api.Stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(stagingFile.TotalEvents)

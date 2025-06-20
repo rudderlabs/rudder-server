@@ -136,8 +136,6 @@ type UploadJob struct {
 		identityTablesLoadTime             stats.Timer
 		otherTablesLoadTime                stats.Timer
 		loadFileGenerationTime             stats.Timer
-		tablesAdded                        stats.Counter
-		columnsAdded                       stats.Counter
 		uploadFailed                       stats.Counter
 		totalRowsSynced                    stats.Counter
 		numStagedEvents                    stats.Counter
@@ -241,8 +239,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.stats.identityTablesLoadTime = uj.timerStat("identity_tables_load_time")
 	uj.stats.otherTablesLoadTime = uj.timerStat("other_tables_load_time")
 	uj.stats.loadFileGenerationTime = uj.timerStat("load_file_generation_time")
-	uj.stats.tablesAdded = uj.counterStat("tables_added")
-	uj.stats.columnsAdded = uj.counterStat("columns_added")
 	uj.stats.uploadFailed = uj.counterStat("warehouse_failed_uploads")
 	uj.stats.totalRowsSynced = uj.counterStat("total_rows_synced")
 	uj.stats.numStagedEvents = uj.counterStat("num_staged_events")
