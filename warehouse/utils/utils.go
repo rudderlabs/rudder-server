@@ -19,6 +19,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -690,7 +691,7 @@ type Tag struct {
 	Value string
 }
 
-func WHCounterStat(s stats.Stats, name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(s stats.Stats, name string, warehouse *model.Warehouse, extraTags ...Tag) stats.Counter {
 	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,

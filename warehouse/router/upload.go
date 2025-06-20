@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -130,21 +131,20 @@ type UploadJob struct {
 	fileManagerFactory filemanager.Factory
 
 	stats struct {
-		uploadTime                         stats.Measurement
-		userTablesLoadTime                 stats.Measurement
-		identityTablesLoadTime             stats.Measurement
-		otherTablesLoadTime                stats.Measurement
-		loadFileGenerationTime             stats.Measurement
-		tablesAdded                        stats.Measurement
-		columnsAdded                       stats.Measurement
-		uploadFailed                       stats.Measurement
-		totalRowsSynced                    stats.Measurement
-		numStagedEvents                    stats.Measurement
-		uploadSuccess                      stats.Measurement
-		stagingLoadFileEventsCountMismatch stats.Measurement
+		uploadTime                         stats.Timer
+		userTablesLoadTime                 stats.Timer
+		identityTablesLoadTime             stats.Timer
+		otherTablesLoadTime                stats.Timer
+		loadFileGenerationTime             stats.Timer
+		uploadFailed                       stats.Counter
+		totalRowsSynced                    stats.Counter
+		numStagedEvents                    stats.Counter
+		uploadSuccess                      stats.Counter
+		stagingLoadFileEventsCountMismatch stats.Gauge
 		eventDeliveryTime                  stats.Timer
 		objectsDeleted                     stats.Gauge
 		objectsDeletionTime                stats.Timer
+		consolidatedSchemaSize             stats.Histogram
 	}
 }
 
@@ -239,8 +239,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.stats.identityTablesLoadTime = uj.timerStat("identity_tables_load_time")
 	uj.stats.otherTablesLoadTime = uj.timerStat("other_tables_load_time")
 	uj.stats.loadFileGenerationTime = uj.timerStat("load_file_generation_time")
-	uj.stats.tablesAdded = uj.counterStat("tables_added")
-	uj.stats.columnsAdded = uj.counterStat("columns_added")
 	uj.stats.uploadFailed = uj.counterStat("warehouse_failed_uploads")
 	uj.stats.totalRowsSynced = uj.counterStat("total_rows_synced")
 	uj.stats.numStagedEvents = uj.counterStat("num_staged_events")
@@ -249,6 +247,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		"warehouse_staging_load_file_events_count_mismatched",
 		whutils.Tag{Name: "sourceCategory", Value: uj.warehouse.Source.SourceDefinition.Category},
 	)
+	uj.stats.consolidatedSchemaSize = uj.histogramStat("warehouse_consolidated_schema_size")
 
 	syncFrequency := "1440" // 24h
 	if frequency := uj.warehouse.GetStringDestinationConfig(uj.conf, model.SyncFrequencySetting); frequency != "" {
