@@ -193,6 +193,7 @@ func TestTransformer(t *testing.T) {
 			"userId": "",
 		}
 	}
+	maxColumnsCount := 1800
 
 	testCases := []struct {
 		name             string
@@ -278,7 +279,7 @@ func TestTransformer(t *testing.T) {
 		},
 		{
 			name:         "Too many columns",
-			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","context":{%s},"ip":"1.2.3.4"}`, 500),
+			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","context":{%s},"ip":"1.2.3.4"}`, maxColumnsCount),
 			metadata:     getMetadata("track", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
 			expectedResponse: types.Response{
@@ -293,20 +294,20 @@ func TestTransformer(t *testing.T) {
 		},
 		{
 			name:         "Too many columns (DataLake)",
-			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, 500),
+			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, maxColumnsCount),
 			metadata:     getMetadata("track", "GCS_DATALAKE"),
 			destination:  getDestination("GCS_DATALAKE", map[string]any{}),
 			expectedResponse: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: trackDefaultOutput().SetDataField("context_destination_type", "GCS_DATALAKE").AddRandomEntries(500, func(index int) (string, string, string, string) {
+						Output: trackDefaultOutput().SetDataField("context_destination_type", "GCS_DATALAKE").AddRandomEntries(maxColumnsCount, func(index int) (string, string, string, string) {
 							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
 						}),
 						Metadata:   getMetadata("track", "GCS_DATALAKE"),
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: trackEventDefaultOutput().SetDataField("context_destination_type", "GCS_DATALAKE").AddRandomEntries(500, func(index int) (string, string, string, string) {
+						Output: trackEventDefaultOutput().SetDataField("context_destination_type", "GCS_DATALAKE").AddRandomEntries(maxColumnsCount, func(index int) (string, string, string, string) {
 							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
 						}),
 						Metadata:   getMetadata("track", "GCS_DATALAKE"),
@@ -317,20 +318,20 @@ func TestTransformer(t *testing.T) {
 		},
 		{
 			name:         "Too many columns channel as sources",
-			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"sources","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, 500),
+			eventPayload: testhelper.AddRandomColumns(`{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"sources","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},%s,"ip":"1.2.3.4"}}`, maxColumnsCount),
 			metadata:     getMetadata("track", "POSTGRES"),
 			destination:  getDestination("POSTGRES", map[string]any{}),
 			expectedResponse: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: trackDefaultOutput().SetDataField("channel", "sources").AddRandomEntries(500, func(index int) (string, string, string, string) {
+						Output: trackDefaultOutput().SetDataField("channel", "sources").AddRandomEntries(maxColumnsCount, func(index int) (string, string, string, string) {
 							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
 						}),
 						Metadata:   getMetadata("track", "POSTGRES"),
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: trackEventDefaultOutput().SetDataField("channel", "sources").AddRandomEntries(500, func(index int) (string, string, string, string) {
+						Output: trackEventDefaultOutput().SetDataField("channel", "sources").AddRandomEntries(maxColumnsCount, func(index int) (string, string, string, string) {
 							return fmt.Sprintf("context_random_column_%d", index), fmt.Sprintf("random_value_%d", index), fmt.Sprintf("context_random_column_%d", index), "string"
 						}),
 						Metadata:   getMetadata("track", "POSTGRES"),
