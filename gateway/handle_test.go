@@ -268,6 +268,214 @@ func TestIsEventBlocked(t *testing.T) {
 			expected:    true,
 			description: "Events from event stream sources should be blocked when they match the blocked events list",
 		},
+		{
+			name:                "empty track event list",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "Purchase",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {},
+				},
+			},
+			expected:    false,
+			description: "track event list is empty",
+		},
+		{
+			name:                "empty events map",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "Purchase",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{},
+			},
+			expected:    false,
+			description: "events map is empty",
+		},
+		{
+			name:                "track event with large blocked events list",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "AddToCart",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase", "AddToCart", "RemoveFromCart", "Checkout", "PaymentInfo", "OrderComplete"},
+				},
+			},
+			expected:    true,
+			description: "Event should be blocked when present in a large list of blocked track events",
+		},
+		{
+			name:                "track event not in large blocked events list",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "ProductView",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase", "AddToCart", "RemoveFromCart", "Checkout", "PaymentInfo", "OrderComplete"},
+				},
+			},
+			expected:    false,
+			description: "Event should not be blocked when not present in a large list of blocked track events",
+		},
+		{
+			name:                "track event with special characters - blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "Product Purchased - $100",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Product Purchased - $100", "Cart Abandoned!", "Sign-Up Complete"},
+				},
+			},
+			expected:    true,
+			description: "Track event names with special characters should be blocked when they match exactly",
+		},
+		{
+			name:                "track event with special characters - not blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "Product Purchased - $200",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Product Purchased - $100", "Cart Abandoned!", "Sign-Up Complete"},
+				},
+			},
+			expected:    false,
+			description: "Track event names with special characters should not be blocked when they don't match exactly",
+		},
+		{
+			name:                "track event with unicode characters - blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "购买商品",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"购买商品", "添加到购物车", "查看产品"},
+				},
+			},
+			expected:    true,
+			description: "Track event names with unicode characters should be blocked when they match exactly",
+		},
+		{
+			name:                "track event with whitespace - blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "  Purchase  ",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"  Purchase  ", "AddToCart", " Checkout "},
+				},
+			},
+			expected:    true,
+			description: "Track event names with whitespace should be blocked when they match exactly including whitespace",
+		},
+		{
+			name:                "track event with whitespace - not blocked due to trim difference",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "Purchase",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"  Purchase  ", "AddToCart", " Checkout "},
+				},
+			},
+			expected:    false,
+			description: "Track event names should not be blocked when whitespace doesn't match exactly",
+		},
+		{
+			name:                "track event - empty string in blocked events list",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"", "Purchase", "AddToCart"},
+				},
+			},
+			expected:    false,
+			description: "Empty track event names should not be blocked even if empty string is in the blocked list",
+		},
+		{
+			name:                "track event with very long name - blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "User_Completed_Very_Detailed_Product_Configuration_With_Multiple_Options_And_Customizations_Before_Adding_To_Cart",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"User_Completed_Very_Detailed_Product_Configuration_With_Multiple_Options_And_Customizations_Before_Adding_To_Cart", "Purchase"},
+				},
+			},
+			expected:    true,
+			description: "Very long track event names should be blocked when they match exactly",
+		},
+		{
+			name:                "track event with numeric name - blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "12345",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"12345", "67890", "Purchase"},
+				},
+			},
+			expected:    true,
+			description: "Track event names that are purely numeric should be blocked when they match exactly",
+		},
+		{
+			name:                "track event with mixed case in blocked list - exact match",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "PuRcHaSe",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"PuRcHaSe", "AddToCart", "checkout"},
+				},
+			},
+			expected:    true,
+			description: "Track event names with mixed case should be blocked when they match exactly",
+		},
+		{
+			name:                "track event with single character name - blocked",
+			enableEventBlocking: true,
+			workspaceID:         "workspace1",
+			sourceID:            "source-id-1",
+			eventType:           "track",
+			eventName:           "A",
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"A", "B", "Purchase"},
+				},
+			},
+			expected:    true,
+			description: "Single character track event names should be blocked when they match exactly",
+		},
 	}
 
 	for _, tt := range tests {

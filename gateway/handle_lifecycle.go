@@ -284,6 +284,7 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 	gw.configSubscriberLock.Unlock()
 }
 
+// backendConfigSubscriber gets the config from config backend and extracts source information from it.
 func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	closeConfigChan := func(sources int) {
 		if !gw.backendConfigInitialised {
