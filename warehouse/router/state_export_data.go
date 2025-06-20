@@ -313,7 +313,6 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 			job.logger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
 			return err
 		}
-		job.stats.tablesAdded.Increment()
 		return nil
 	}
 
@@ -412,8 +411,6 @@ func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, c
 			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with error: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
 			break
 		}
-
-		job.stats.columnsAdded.Count(len(chunk))
 	}
 	return err
 }
