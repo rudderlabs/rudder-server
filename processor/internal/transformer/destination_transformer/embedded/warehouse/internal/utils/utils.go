@@ -2,6 +2,7 @@ package utils
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -147,8 +148,29 @@ func ToTimestamp(val any) any {
 	return val
 }
 
+// parseTimestamp parses a timestamp string into time.Time.
+// If it fails due to a "day out of range" error, it falls back to normalizing the date.
+// JS automatically handles this https://www.programiz.com/online-compiler/4gfcMEByAur4q
+// console.log(new Date('1988-04-31').toISOString()); // 1988-05-01T00:00:00.000Z
 func parseTimestamp(input string) (time.Time, error) {
-	return dateparse.ParseAny(input)
+	t, err := dateparse.ParseAny(input)
+	if err == nil {
+		return t, nil
+	}
+	var pe *time.ParseError
+	ok := errors.As(err, &pe)
+	if !ok {
+		return time.Time{}, err
+	}
+	if pe.Message == ": day out of range" {
+		var year, month, day int
+
+		if n, _ := fmt.Sscanf(input, "%d-%d-%d", &year, &month, &day); n == 3 {
+			t = time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+			return t, nil
+		}
+	}
+	return time.Time{}, err
 }
 
 // ToString converts any value to a string representation.
