@@ -110,7 +110,6 @@ type Handle struct {
 	configSubscriberLock              sync.RWMutex
 	writeKeysSourceMap                map[string]backendconfig.SourceT
 	sourceIDSourceMap                 map[string]backendconfig.SourceT
-	workspaceIDSettingsMap            map[string]backendconfig.Settings
 	nonEventStreamSources             map[string]bool
 	blockedEventsWorkspaceTypeNameMap map[string]map[string]map[string]bool
 

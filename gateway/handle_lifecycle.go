@@ -243,14 +243,11 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 	var (
 		writeKeysSourceMap                = map[string]backendconfig.SourceT{}
 		sourceIDSourceMap                 = map[string]backendconfig.SourceT{}
-		workspaceIDSettingsMap            = map[string]backendconfig.Settings{}
 		nonEventStreamSources             = map[string]bool{}
 		blockedEventsWorkspaceTypeNameMap = map[string]map[string]map[string]bool{}
 	)
 
 	for workspaceID, wsConfig := range configData {
-		workspaceIDSettingsMap[workspaceID] = wsConfig.Settings
-
 		for _, source := range wsConfig.Sources {
 			writeKeysSourceMap[source.WriteKey] = source
 			sourceIDSourceMap[source.ID] = source
@@ -282,7 +279,6 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 	gw.configSubscriberLock.Lock()
 	gw.writeKeysSourceMap = writeKeysSourceMap
 	gw.sourceIDSourceMap = sourceIDSourceMap
-	gw.workspaceIDSettingsMap = workspaceIDSettingsMap
 	gw.nonEventStreamSources = nonEventStreamSources
 	gw.blockedEventsWorkspaceTypeNameMap = blockedEventsWorkspaceTypeNameMap
 	gw.configSubscriberLock.Unlock()
