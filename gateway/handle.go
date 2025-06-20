@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -108,11 +107,12 @@ type Handle struct {
 	trackFailureCount int
 
 	// backendconfig state
-	configSubscriberLock   sync.RWMutex
-	writeKeysSourceMap     map[string]backendconfig.SourceT
-	sourceIDSourceMap      map[string]backendconfig.SourceT
-	workspaceIDSettingsMap map[string]backendconfig.Settings
-	nonEventStreamSources  map[string]bool
+	configSubscriberLock              sync.RWMutex
+	writeKeysSourceMap                map[string]backendconfig.SourceT
+	sourceIDSourceMap                 map[string]backendconfig.SourceT
+	workspaceIDSettingsMap            map[string]backendconfig.Settings
+	nonEventStreamSources             map[string]bool
+	blockedEventsWorkspaceTypeNameMap map[string]map[string]map[string]bool
 
 	conf struct { // configuration parameters
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
@@ -617,15 +617,7 @@ func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName str
 		return false
 	}
 
-	workspaceSettings, ok := gw.workspaceIDSettingsMap[workspaceID]
-	if !ok {
-		return false
-	}
-
-	if blockedEvents, exists := workspaceSettings.EventBlocking.Events[eventType]; exists {
-		return slices.Contains(blockedEvents, eventName)
-	}
-	return false
+	return gw.blockedEventsWorkspaceTypeNameMap[workspaceID][eventType][eventName]
 }
 
 // getPayload reads the request body and returns the payload's bytes or an error if the payload cannot be read

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -15,23 +16,64 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mocks_gateway "github.com/rudderlabs/rudder-server/mocks/gateway"
 )
 
 // createTestGateway creates a minimal Handle instance for testing event blocking
-func createTestGateway(t *testing.T, enableEventBlocking bool, workspaceSettings map[string]backendconfig.Settings, nonEventStreamSources map[string]bool) *Handle {
+func createTestGateway(t *testing.T, enableEventBlocking bool, eventBlockingSettings backendconfig.EventBlocking) *Handle {
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 
-	if workspaceSettings == nil {
-		workspaceSettings = make(map[string]backendconfig.Settings)
-	}
-	if nonEventStreamSources == nil {
-		nonEventStreamSources = make(map[string]bool)
+	configData := make(map[string]backendconfig.ConfigT)
+
+	configData["workspace1"] = backendconfig.ConfigT{
+		Settings: backendconfig.Settings{
+			EventBlocking: eventBlockingSettings,
+		},
+		Sources: []backendconfig.SourceT{
+			{
+				ID:       "source-id-1",
+				WriteKey: "write-key-1",
+				SourceDefinition: backendconfig.SourceDefinitionT{
+					Name:     "JavaScript",
+					Category: "", // event stream source
+				},
+				Name:    "JS Source",
+				Enabled: true,
+			},
+			{
+				ID:       "source-id-2",
+				WriteKey: "write-key-2",
+				SourceDefinition: backendconfig.SourceDefinitionT{
+					Name:     "Webhook",
+					Category: "webhook", // event stream source
+				},
+				Name:    "Webhook Source",
+				Enabled: true,
+			},
+			{
+				ID:       "warehouse-source-id-1",
+				WriteKey: "warehouse-write-key",
+				SourceDefinition: backendconfig.SourceDefinitionT{
+					Name:     "Warehouse",
+					Category: "warehouse", // non-event stream source
+				},
+				Name:    "Warehouse Source",
+				Enabled: true,
+			},
+		},
 	}
 
-	return &Handle{
-		stats:  statsStore,
-		logger: logger.NOP,
+	// Create a mock controller and webhook handler
+	mockCtrl := gomock.NewController(t)
+	t.Cleanup(mockCtrl.Finish)
+	mockWebhook := mocks_gateway.NewMockWebhookRequestHandler(mockCtrl)
+	mockWebhook.EXPECT().Register(gomock.Any()).AnyTimes() // Allow any number of Register calls
+
+	gw := &Handle{
+		stats:   statsStore,
+		logger:  logger.NOP,
+		webhook: mockWebhook,
 		conf: struct {
 			webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
 			maxUserWebRequestBatchSize, maxDBBatchSize, maxHeaderBytes, maxConcurrentRequests int
@@ -54,35 +96,16 @@ func createTestGateway(t *testing.T, enableEventBlocking bool, workspaceSettings
 			enableEventBlocking:           config.SingleValueLoader(enableEventBlocking),
 			enableInternalBatchValidator:  config.SingleValueLoader(false),
 			enableInternalBatchEnrichment: config.SingleValueLoader(false),
+			webhookV2HandlerEnabled:       false,
 		},
-		workspaceIDSettingsMap: workspaceSettings,
-		nonEventStreamSources:  nonEventStreamSources,
-		configSubscriberLock:   sync.RWMutex{},
-		sourceIDSourceMap: map[string]backendconfig.SourceT{
-			"source-id-1": {
-				WriteKey: "write-key-1",
-				SourceDefinition: backendconfig.SourceDefinitionT{
-					Name: "JavaScript",
-				},
-				Name: "JS Source",
-			},
-			"source-id-2": {
-				WriteKey: "write-key-2",
-				SourceDefinition: backendconfig.SourceDefinitionT{
-					Name: "Android",
-				},
-				Name: "Android Source",
-			},
-			"warehouse-source-id-1": {
-				WriteKey: "warehouse-write-key",
-				SourceDefinition: backendconfig.SourceDefinitionT{
-					Name: "Warehouse",
-				},
-				Name: "Warehouse Source",
-			},
-		},
-		requestSizeStat: statsStore.NewStat("gateway.request_size", stats.HistogramType),
+		configSubscriberLock: sync.RWMutex{},
+		requestSizeStat:      statsStore.NewStat("gateway.request_size", stats.HistogramType),
 	}
+
+	// Use the same logic as backendConfigSubscriber to process the config data
+	gw.processBackendConfig(configData)
+
+	return gw
 }
 
 func TestIsEventBlocked(t *testing.T) {
@@ -93,8 +116,7 @@ func TestIsEventBlocked(t *testing.T) {
 		sourceID              string
 		eventType             string
 		eventName             string
-		workspaceSettings     map[string]backendconfig.Settings
-		nonEventStreamSources map[string]bool
+		eventBlockingSettings backendconfig.EventBlocking
 		expected              bool
 		description           string
 	}{
@@ -105,13 +127,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
 			},
 			expected:    false,
@@ -124,13 +142,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
 			},
 			expected:    false,
@@ -143,13 +157,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "identify",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
 			},
 			expected:    false,
@@ -162,13 +172,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
 			},
 			expected:    true,
@@ -181,13 +187,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "PageView",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
 			},
 			expected:    false,
@@ -200,13 +202,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "purchase", // lowercase
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"}, // uppercase
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"}, // uppercase
 				},
 			},
 			expected:    false,
@@ -219,12 +217,8 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: nil,
-					},
-				},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: nil,
 			},
 			expected:    false,
 			description: "When Events map is nil, no events should be blocked",
@@ -236,13 +230,9 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
 			},
 			expected:    false,
@@ -255,17 +245,10 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "warehouse-source-id-1",
 			eventType:           "track",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
-			},
-			nonEventStreamSources: map[string]bool{
-				"warehouse-source-id-1": true,
 			},
 			expected:    false,
 			description: "Events from non-event stream sources should not be blocked",
@@ -277,17 +260,10 @@ func TestIsEventBlocked(t *testing.T) {
 			sourceID:            "source-id-1",
 			eventType:           "track",
 			eventName:           "Purchase",
-			workspaceSettings: map[string]backendconfig.Settings{
-				"workspace1": {
-					EventBlocking: backendconfig.EventBlocking{
-						Events: map[string][]string{
-							"track": {"Purchase"},
-						},
-					},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
 				},
-			},
-			nonEventStreamSources: map[string]bool{
-				"warehouse-source-id-1": true,
 			},
 			expected:    true,
 			description: "Events from event stream sources should be blocked when they match the blocked events list",
@@ -296,7 +272,7 @@ func TestIsEventBlocked(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gw := createTestGateway(t, tt.enableEventBlocking, tt.workspaceSettings, tt.nonEventStreamSources)
+			gw := createTestGateway(t, tt.enableEventBlocking, tt.eventBlockingSettings)
 
 			result := gw.isEventBlocked(tt.workspaceID, tt.sourceID, tt.eventType, tt.eventName)
 			require.Equal(t, tt.expected, result, tt.description)
@@ -312,19 +288,11 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 		shouldBeDropped        bool
 	}
 
-	workspaceSettings := map[string]backendconfig.Settings{
-		"workspace1": {
-			EventBlocking: backendconfig.EventBlocking{
-				Events: map[string][]string{
-					"track": {"Purchase"},
-				},
-			},
+	gw := createTestGateway(t, true, backendconfig.EventBlocking{
+		Events: map[string][]string{
+			"track": {"Purchase"},
 		},
-	}
-	nonEventStreamSources := map[string]bool{
-		"warehouse-source-id-1": true,
-	}
-	gw := createTestGateway(t, true, workspaceSettings, nonEventStreamSources)
+	})
 
 	tests := []struct {
 		name         string

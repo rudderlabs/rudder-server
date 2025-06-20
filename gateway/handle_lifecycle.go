@@ -238,7 +238,56 @@ func (gw *Handle) initUserWebRequestWorkers() {
 	}
 }
 
-// backendConfigSubscriber gets the config from config backend and extracts source information from it.
+// processBackendConfig processes backend config data and updates internal maps
+func (gw *Handle) processBackendConfig(configData map[string]backendconfig.ConfigT) {
+	var (
+		writeKeysSourceMap                = map[string]backendconfig.SourceT{}
+		sourceIDSourceMap                 = map[string]backendconfig.SourceT{}
+		workspaceIDSettingsMap            = map[string]backendconfig.Settings{}
+		nonEventStreamSources             = map[string]bool{}
+		blockedEventsWorkspaceTypeNameMap = map[string]map[string]map[string]bool{}
+	)
+
+	for workspaceID, wsConfig := range configData {
+		workspaceIDSettingsMap[workspaceID] = wsConfig.Settings
+
+		for _, source := range wsConfig.Sources {
+			writeKeysSourceMap[source.WriteKey] = source
+			sourceIDSourceMap[source.ID] = source
+			if !gw.conf.webhookV2HandlerEnabled {
+				if source.Enabled && source.SourceDefinition.Category == "webhook" {
+					gw.webhook.Register(source.SourceDefinition.Name)
+				}
+			}
+			if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, webhookSourceCategory) {
+				nonEventStreamSources[source.ID] = true
+			}
+		}
+
+		for eventType, events := range wsConfig.Settings.EventBlocking.Events {
+			if blockedEventsWorkspaceTypeNameMap[workspaceID] == nil {
+				blockedEventsWorkspaceTypeNameMap[workspaceID] = make(map[string]map[string]bool, len(wsConfig.Settings.EventBlocking.Events))
+			}
+
+			if blockedEventsWorkspaceTypeNameMap[workspaceID][eventType] == nil {
+				blockedEventsWorkspaceTypeNameMap[workspaceID][eventType] = make(map[string]bool, len(events))
+			}
+
+			for _, event := range events {
+				blockedEventsWorkspaceTypeNameMap[workspaceID][eventType][event] = true
+			}
+		}
+	}
+
+	gw.configSubscriberLock.Lock()
+	gw.writeKeysSourceMap = writeKeysSourceMap
+	gw.sourceIDSourceMap = sourceIDSourceMap
+	gw.workspaceIDSettingsMap = workspaceIDSettingsMap
+	gw.nonEventStreamSources = nonEventStreamSources
+	gw.blockedEventsWorkspaceTypeNameMap = blockedEventsWorkspaceTypeNameMap
+	gw.configSubscriberLock.Unlock()
+}
+
 func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	closeConfigChan := func(sources int) {
 		if !gw.backendConfigInitialised {
@@ -250,36 +299,8 @@ func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	defer closeConfigChan(0)
 	ch := gw.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
-		var (
-			writeKeysSourceMap     = map[string]backendconfig.SourceT{}
-			sourceIDSourceMap      = map[string]backendconfig.SourceT{}
-			workspaceIDSettingsMap = map[string]backendconfig.Settings{}
-			nonEventStreamSources  = map[string]bool{}
-		)
-
 		configData := data.Data.(map[string]backendconfig.ConfigT)
-		for workspaceID, wsConfig := range configData {
-			workspaceIDSettingsMap[workspaceID] = wsConfig.Settings
-
-			for _, source := range wsConfig.Sources {
-				writeKeysSourceMap[source.WriteKey] = source
-				sourceIDSourceMap[source.ID] = source
-				if !gw.conf.webhookV2HandlerEnabled {
-					if source.Enabled && source.SourceDefinition.Category == "webhook" {
-						gw.webhook.Register(source.SourceDefinition.Name)
-					}
-				}
-				if source.SourceDefinition.Category != "" && !strings.EqualFold(source.SourceDefinition.Category, webhookSourceCategory) {
-					nonEventStreamSources[source.ID] = true
-				}
-			}
-		}
-		gw.configSubscriberLock.Lock()
-		gw.writeKeysSourceMap = writeKeysSourceMap
-		gw.sourceIDSourceMap = sourceIDSourceMap
-		gw.workspaceIDSettingsMap = workspaceIDSettingsMap
-		gw.nonEventStreamSources = nonEventStreamSources
-		gw.configSubscriberLock.Unlock()
+		gw.processBackendConfig(configData)
 		closeConfigChan(len(gw.writeKeysSourceMap))
 	}
 }
