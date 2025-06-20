@@ -176,6 +176,7 @@ func (c *ConfigT) DestinationsMap() map[string]*DestinationT {
 type Settings struct {
 	DataRetention     DataRetention `json:"dataRetention"`
 	EventAuditEnabled bool          `json:"eventAuditEnabled"`
+	EventBlocking     EventBlocking `json:"eventBlocking"`
 }
 
 type DataRetention struct {
@@ -262,4 +263,8 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType
 type TrackingPlanT struct {
 	Id      string `json:"id"`
 	Version int    `json:"version"`
+}
+
+type EventBlocking struct {
+	Events map[string][]string `json:"events"`
 }
