@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.5](https://github.com/rudderlabs/rudder-server/compare/v1.52.4...v1.52.5) (2025-06-20)
+
+
+### Bug Fixes
+
+* warehouse transformations id resolution ([#6029](https://github.com/rudderlabs/rudder-server/issues/6029)) ([72ef429](https://github.com/rudderlabs/rudder-server/commit/72ef4290a57b20a7a53431091a7adea603b1e187))
+
 ## [1.52.4](https://github.com/rudderlabs/rudder-server/compare/v1.52.3...v1.52.4) (2025-06-20)
 
 
