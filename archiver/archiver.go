@@ -5,8 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -28,7 +26,7 @@ type archiver struct {
 	adaptivePayloadLimitFunc payload.AdaptiveLimiterFunc
 
 	stopArchivalTrigger context.CancelFunc
-	waitGroup           *errgroup.Group
+	waitGroup           *kitsync.ErrGroup
 
 	archiveFrom string
 	config      struct {
@@ -96,7 +94,7 @@ func (a *archiver) Start() error {
 	a.log.Info("Starting archiver")
 	ctx, cancel := context.WithCancel(context.Background())
 	a.stopArchivalTrigger = cancel
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := kitsync.ErrGroupWithContext(ctx)
 	a.waitGroup = g
 
 	var limiterGroup sync.WaitGroup

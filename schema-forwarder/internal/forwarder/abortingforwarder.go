@@ -4,11 +4,10 @@ import (
 	"context"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -29,7 +28,7 @@ func NewAbortingForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, con
 // Start starts the forwarder which reads jobs from the database and aborts them
 func (nf *AbortingForwarder) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
-	nf.g, ctx = errgroup.WithContext(ctx)
+	nf.g, ctx = kitsync.ErrGroupWithContext(ctx)
 	nf.cancel = cancel
 
 	nf.g.Go(crash.Wrapper(func() error {

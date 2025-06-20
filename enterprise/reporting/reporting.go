@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -53,7 +54,7 @@ const (
 type DefaultReporter struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
-	g                   *errgroup.Group
+	g                   *kitsync.ErrGroup
 	configSubscriber    *configSubscriber
 	syncersMu           sync.RWMutex
 	syncers             map[string]*types.SyncSource
@@ -120,7 +121,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := kitsync.ErrGroupWithContext(ctx)
 	return &DefaultReporter{
 		ctx:                                  ctx,
 		cancel:                               cancel,

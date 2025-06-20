@@ -11,13 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
@@ -82,7 +81,7 @@ type Router struct {
 	now               func() time.Time
 	nowSQL            string
 
-	backgroundGroup *errgroup.Group
+	backgroundGroup *kitsync.ErrGroup
 
 	tenantManager    *multitenant.Manager
 	bcManager        *bcm.BackendConfigManager
@@ -185,7 +184,7 @@ func (r *Router) Start(ctx context.Context) error {
 		return err
 	}
 
-	g, gCtx := errgroup.WithContext(ctx)
+	g, gCtx := kitsync.ErrGroupWithContext(ctx)
 	r.backgroundGroup = g
 	g.Go(crash.NotifyWarehouse(func() error {
 		r.backendConfigSubscriber(gCtx)
