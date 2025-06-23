@@ -2346,6 +2346,86 @@ func TestEvents(t *testing.T) {
 				},
 			},
 			{
+				name: "track (Snowflake) with empty mergePropTwo",
+				configOverride: map[string]any{
+					"Warehouse.enableIDResolution": true,
+				},
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("SNOWFLAKE", "webhook"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake().
+								RemoveDataFields("USER_ID").
+								RemoveColumnFields("USER_ID"),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake().
+								RemoveColumnFields("USER_ID").
+								RemoveDataFields("USER_ID"),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackMergeDefaultOutput().
+								SetMetadata("mergePropTwo", "").
+								BuildForSnowflake().
+								RemoveDataFields("MERGE_PROPERTY_2_TYPE").RemoveColumnFields("MERGE_PROPERTY_2_TYPE").
+								RemoveDataFields("MERGE_PROPERTY_2_VALUE").RemoveColumnFields("MERGE_PROPERTY_2_VALUE"),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
+				name: "track (Snowflake) with no mergePropTwo",
+				configOverride: map[string]any{
+					"Warehouse.enableIDResolution": true,
+				},
+				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
+				metadata:     getTrackMetadata("SNOWFLAKE", "webhook"),
+				destination:  getDestination("SNOWFLAKE", map[string]any{}),
+				expectedResponse: types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: trackDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake().
+								RemoveDataFields("USER_ID").
+								RemoveColumnFields("USER_ID"),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackEventDefaultOutput().
+								SetDataField("context_destination_type", "SNOWFLAKE").
+								BuildForSnowflake().
+								RemoveColumnFields("USER_ID").
+								RemoveDataFields("USER_ID"),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+						{
+							Output: trackMergeDefaultOutput().
+								RemoveMetadata("mergePropTwo").
+								BuildForSnowflake().
+								RemoveDataFields("MERGE_PROPERTY_2_TYPE").RemoveColumnFields("MERGE_PROPERTY_2_TYPE").
+								RemoveDataFields("MERGE_PROPERTY_2_VALUE").RemoveColumnFields("MERGE_PROPERTY_2_VALUE"),
+							Metadata:   getTrackMetadata("SNOWFLAKE", "webhook"),
+							StatusCode: http.StatusOK,
+						},
+					},
+				},
+			},
+			{
 				name:         "track (Snowflake)",
 				eventPayload: `{"type":"track","messageId":"messageId","anonymousId":"anonymousId","userId":"userId","sentAt":"2021-09-01T00:00:00.000Z","timestamp":"2021-09-01T00:00:00.000Z","receivedAt":"2021-09-01T00:00:00.000Z","originalTimestamp":"2021-09-01T00:00:00.000Z","channel":"web","event":"event","request_ip":"5.6.7.8","properties":{"review_id":"86ac1cd43","product_id":"9578257311"},"userProperties":{"rating":3.0,"review_body":"OK for the price. It works but the material feels flimsy."},"context":{"traits":{"name":"Richard Hendricks","email":"rhedricks@example.com","logins":2},"ip":"1.2.3.4"}}`,
 				metadata:     getTrackMetadata("SNOWFLAKE", "webhook"),

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -184,6 +186,11 @@ func ToString(value interface{}) string {
 	switch v := value.(type) {
 	case string:
 		return v
+	case float64:
+		if big.NewFloat(v).IsInt() {
+			return strconv.FormatFloat(v, 'f', -1, 64)
+		}
+		return fmt.Sprintf("%v", value)
 	case fmt.Stringer:
 		return v.String()
 	default:

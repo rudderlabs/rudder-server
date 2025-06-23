@@ -19,12 +19,12 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -171,7 +171,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 			jd := startTestJobsDB(t)
 			defer jd.TearDown()
 			var wg sync.WaitGroup
-			bgGroups := make([]*errgroup.Group, 10)
+			bgGroups := make([]*kitsync.ErrGroup, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				idx := i

@@ -949,17 +949,21 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			}
 		}
 
-		writeKey, sourceDefName, sourceName, ok := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
+		writeKey, sourceDefName, sourceName, sourceType := "", "", "", ""
+		src, ok := gw.getSourceConfigFromSourceID(msg.Properties.SourceID)
 		if !ok {
 			// only live-events will not work if writeKey is not found
 			gw.logger.Errorn("unable to get source details from sourceID",
 				logger.NewStringField("messageId", messageID),
 				obskit.SourceID(msg.Properties.SourceID))
+		} else {
+			writeKey, sourceDefName, sourceName, sourceType = src.WriteKey, src.SourceDefinition.Name, src.Name, src.SourceDefinition.Category
 		}
 		stat.SourceID = msg.Properties.SourceID
 		stat.WorkspaceID = msg.Properties.WorkspaceID
 		stat.WriteKey = writeKey
 		stat.SourceDefName = sourceDefName
+		stat.SourceType = sourceType
 
 		if isUserSuppressed(msg.Properties.WorkspaceID, msg.Properties.UserID, msg.Properties.SourceID) {
 			gw.logger.Infon("suppressed event",
@@ -1090,13 +1094,13 @@ func fillRequestIP(event []byte, ip string) ([]byte, error) {
 	return event, nil
 }
 
-func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (writeKey, sourceDefName, sourceName string, ok bool) {
+func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (src backendconfig.SourceT, ok bool) {
 	gw.configSubscriberLock.RLock()
 	defer gw.configSubscriberLock.RUnlock()
 	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
-		return s.WriteKey, s.SourceDefinition.Name, s.Name, true
+		return s, true
 	}
-	return "", "", "", false
+	return backendconfig.SourceT{}, false
 }
 
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
