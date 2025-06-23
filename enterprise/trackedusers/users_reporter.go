@@ -38,6 +38,8 @@ const (
 	trackUsersTable = "tracked_users_reports"
 
 	eventTypeAlias = "alias"
+
+	problematicHLLValue = "5c78313139303766"
 )
 
 type UsersReport struct {
@@ -221,6 +223,14 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 		if err != nil {
 			return fmt.Errorf("converting identified anon id hll to string: %w", err)
 		}
+
+		if userIDHllString == problematicHLLValue || anonIDHllString == problematicHLLValue || identifiedAnnIDHllString == problematicHLLValue {
+			u.log.Errorn("FOUND PROBLEMATIC HLL VALUE before storing to database",
+				logger.NewStringField("workspace_id", report.WorkspaceID),
+				logger.NewStringField("source_id", report.SourceID),
+			)
+		}
+
 		_, err = stmt.Exec(report.WorkspaceID,
 			u.instanceID,
 			report.SourceID,
