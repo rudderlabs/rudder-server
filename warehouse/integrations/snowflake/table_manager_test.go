@@ -55,7 +55,7 @@ func TestTableManager(t *testing.T) {
 				name:      "iceberg table",
 				warehouse: icebergWarehouse,
 				columns:   columns,
-				expectedCreateTableQuery: `CREATE OR REPLACE ICEBERG TABLE myschema."mytable" ( "col1" boolean,"col2" number(10,0),"col3" number(19,0),"col4" double precision,"col5" varchar,"col6" timestamp_ltz(6),"col7" varchar )
+				expectedCreateTableQuery: `CREATE OR REPLACE ICEBERG TABLE myschema."mytable" ( "col1" boolean,"col2" number(10,0),"col3" number(19,0),"col4" double precision,"col5" varchar,"col6" timestamp_ntz(6),"col7" varchar )
 		CATALOG = 'SNOWFLAKE'
 		EXTERNAL_VOLUME = 'myvolume'
 		BASE_LOCATION = 'myschema/mytable'`,
