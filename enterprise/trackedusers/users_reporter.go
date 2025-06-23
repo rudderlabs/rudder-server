@@ -225,7 +225,7 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 		}
 
 		if userIDHllString == problematicHLLValue || anonIDHllString == problematicHLLValue || identifiedAnnIDHllString == problematicHLLValue {
-			u.log.Errorn("FOUND PROBLEMATIC HLL VALUE before storing to database",
+			u.log.Errorn("found problematic hll value before storing to database",
 				logger.NewStringField("workspace_id", report.WorkspaceID),
 				logger.NewStringField("source_id", report.SourceID),
 			)

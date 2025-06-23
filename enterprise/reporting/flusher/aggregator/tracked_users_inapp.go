@@ -61,7 +61,7 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		}
 
 		if r.UserIDHLLHex == problematicHLLValue || r.AnonymousIDHLLHex == problematicHLLValue || r.IdentifiedAnonymousIDHLLHex == problematicHLLValue {
-			a.logger.Errorn("FOUND PROBLEMATIC HLL VALUE from database",
+			a.logger.Errorn("found problematic hll value from database",
 				logger.NewStringField("workspace_id", r.WorkspaceID),
 				logger.NewStringField("source_id", r.SourceID),
 			)
@@ -129,7 +129,7 @@ func marshalReports(aggReportsMap map[string]*TrackedUsersReport, log logger.Log
 		}
 
 		if v.UserIDHLLHex == problematicHLLValue || v.AnonymousIDHLLHex == problematicHLLValue || v.IdentifiedAnonymousIDHLLHex == problematicHLLValue {
-			log.Errorn("FOUND PROBLEMATIC HLL VALUE after marshalling",
+			log.Errorn("found problematic hll value in marshalled data",
 				logger.NewStringField("workspace_id", v.WorkspaceID),
 				logger.NewStringField("source_id", v.SourceID),
 			)
