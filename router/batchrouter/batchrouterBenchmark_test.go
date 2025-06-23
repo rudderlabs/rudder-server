@@ -114,7 +114,7 @@ func (mockFileManager) UploadReader(context.Context, string, io.Reader) (fileman
 	return filemanager.UploadedFile{}, nil
 }
 
-func (mockFileManager) Download(context.Context, io.WriterAt, string) error {
+func (mockFileManager) Download(context.Context, io.WriterAt, string, ...filemanager.DownloadOption) error {
 	return nil
 }
 
