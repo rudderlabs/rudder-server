@@ -30,6 +30,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -70,6 +71,8 @@ func deltaLakeTestCredentials() (*testCredentials, error) {
 }
 
 func TestIntegration(t *testing.T) {
+	t.Skip("Skipping because of some issues with Azure Databricks accessibility [https://rudderlabs.slack.com/archives/C01HTT66UMB/p1750672547635489].")
+
 	if os.Getenv("SLOW") != "1" {
 		t.Skip("Skipping tests. Add 'SLOW=1' env var to run test.")
 	}
