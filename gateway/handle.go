@@ -1046,13 +1046,13 @@ func fillRequestIP(event []byte, ip string) ([]byte, error) {
 	return event, nil
 }
 
-func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (src *backendconfig.SourceT, ok bool) {
+func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (src backendconfig.SourceT, ok bool) {
 	gw.configSubscriberLock.RLock()
 	defer gw.configSubscriberLock.RUnlock()
 	if s, ok := gw.sourceIDSourceMap[sourceID]; ok {
-		return &s, true
+		return s, true
 	}
-	return nil, false
+	return backendconfig.SourceT{}, false
 }
 
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
