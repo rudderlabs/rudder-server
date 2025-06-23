@@ -37,12 +37,15 @@ func main() {
 		debug.SetMemoryLimit(memoryLimit)
 	}
 
-	if c.GetBool("SHUTDOWN_ON_NON_RELOADABLE_CONFIG_CHANGE", false) {
-		c.OnNonReloadableConfigChange(func(key string) {
+	shutdownOnNonReloadableConfigChange := c.GetReloadableBoolVar(false, "shutdownOnNonReloadableConfigChange")
+	c.OnNonReloadableConfigChange(func(key string) {
+		if shutdownOnNonReloadableConfigChange.Load() {
 			log.Infon("Config change detected, shutting down server...", logger.NewStringField("key", key))
 			cancel()
-		})
-	}
+		} else {
+			log.Infon("Config change detected, but server will not shut down", logger.NewStringField("key", key))
+		}
+	})
 
 	r := runner.New(runner.ReleaseInfo{
 		Version:         version,
