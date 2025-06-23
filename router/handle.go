@@ -13,8 +13,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -113,7 +111,7 @@ type Handle struct {
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
 	isolationStrategy              isolation.Strategy
-	backgroundGroup                *errgroup.Group
+	backgroundGroup                *kitsync.ErrGroup
 	backgroundCtx                  context.Context
 	backgroundCancel               context.CancelFunc
 	backgroundWait                 func() error

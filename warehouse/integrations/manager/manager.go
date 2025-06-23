@@ -61,6 +61,14 @@ type WarehouseOperations interface {
 
 // New is a Factory function that returns a Manager of a given destination-type
 func New(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
+	m, err := newManager(destType, conf, logger, stats)
+	if err != nil {
+		return nil, fmt.Errorf("creating warehouse manager: %w", err)
+	}
+	return newStatsManager(m, stats), nil
+}
+
+func newManager(destType string, conf *config.Config, logger logger.Logger, stats stats.Stats) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
 		return redshift.New(conf, logger, stats), nil

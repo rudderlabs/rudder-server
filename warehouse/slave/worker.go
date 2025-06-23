@@ -72,10 +72,10 @@ type worker struct {
 		enableNotifierHeartbeat             config.ValueLoader[bool]
 	}
 	stats struct {
-		workerIdleTime                 stats.Measurement
-		workerClaimProcessingSucceeded stats.Measurement
-		workerClaimProcessingFailed    stats.Measurement
-		workerClaimProcessingTime      stats.Measurement
+		workerIdleTime                 stats.Timer
+		workerClaimProcessingSucceeded stats.Counter
+		workerClaimProcessingFailed    stats.Counter
+		workerClaimProcessingTime      stats.Timer
 	}
 }
 

@@ -57,8 +57,9 @@ func (t *Transformer) mergeEvents(tec *transformEventContext) ([]map[string]any,
 		data[columns.Prop2Value] = utils.ToString(mergeProp2.Value)
 		columnTypes[columns.Prop2Type] = model.StringDataType
 		columnTypes[columns.Prop2Value] = model.StringDataType
-
-		metadata["mergePropTwo"] = data[columns.Prop2Value]
+	}
+	if mergeProp2 != nil && mergeProp2.Value != nil {
+		metadata["mergePropTwo"] = utils.ToString(mergeProp2.Value)
 	}
 
 	mergeOutput := map[string]any{

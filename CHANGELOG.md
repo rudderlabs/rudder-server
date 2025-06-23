@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.52.5](https://github.com/rudderlabs/rudder-server/compare/v1.52.4...v1.52.5) (2025-06-20)
+
+
+### Bug Fixes
+
+* warehouse transformations id resolution ([#6029](https://github.com/rudderlabs/rudder-server/issues/6029)) ([72ef429](https://github.com/rudderlabs/rudder-server/commit/72ef4290a57b20a7a53431091a7adea603b1e187))
+
+## [1.52.4](https://github.com/rudderlabs/rudder-server/compare/v1.52.3...v1.52.4) (2025-06-20)
+
+
+### Miscellaneous
+
+* additional stats for schema sizes ([#6020](https://github.com/rudderlabs/rudder-server/issues/6020)) ([09091c7](https://github.com/rudderlabs/rudder-server/commit/09091c7507d82321b4ef489305cd33176645c533))
+* warehouse transformations parsing timestamp and serialisation ([#6025](https://github.com/rudderlabs/rudder-server/issues/6025)) ([e379398](https://github.com/rudderlabs/rudder-server/commit/e379398d68d52d5490801279cfd8eabc15c7b8cd))
+
+## [1.52.3](https://github.com/rudderlabs/rudder-server/compare/v1.52.2...v1.52.3) (2025-06-19)
+
+
+### Miscellaneous
+
+* add logs oauthv2 and cdm ([#6022](https://github.com/rudderlabs/rudder-server/issues/6022)) ([c999627](https://github.com/rudderlabs/rudder-server/commit/c999627c0c56462671e68af7af4ee1f2326c560c))
+
 ## [1.52.2](https://github.com/rudderlabs/rudder-server/compare/v1.52.1...v1.52.2) (2025-06-18)
 
 
