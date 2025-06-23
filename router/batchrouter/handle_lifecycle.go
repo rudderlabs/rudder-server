@@ -13,8 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
@@ -112,7 +110,7 @@ func (brt *Handle) Setup(
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
+	brt.backgroundGroup, brt.backgroundCtx = kitsync.ErrGroupWithContext(ctx)
 	brt.backgroundCancel = cancel
 	brt.backgroundWait = brt.backgroundGroup.Wait
 

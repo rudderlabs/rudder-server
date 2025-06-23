@@ -4,14 +4,13 @@ import (
 	"context"
 	"sync"
 
-	"golang.org/x/sync/errgroup"
-
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 type transformer struct {
 	cancel context.CancelFunc // cancel function for the Start context (used to stop all goroutines during Stop)
-	g      *errgroup.Group    // errgroup for the Start context (used to wait for all goroutines to exit)
+	g      *kitsync.ErrGroup  // errgroup for the Start context (used to wait for all goroutines to exit)
 
 	backendConfig backendconfig.BackendConfig
 

@@ -7,10 +7,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher"
@@ -25,7 +24,7 @@ const (
 type Mediator struct {
 	log logger.Logger
 
-	g         *errgroup.Group
+	g         *kitsync.ErrGroup
 	ctx       context.Context
 	cancel    context.CancelFunc
 	reporters []types.Reporting
@@ -36,7 +35,7 @@ type Mediator struct {
 
 func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
 	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := errgroup.WithContext(ctx)
+	g, ctx := kitsync.ErrGroupWithContext(ctx)
 
 	rm := &Mediator{
 		log:    log,
