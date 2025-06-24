@@ -5,9 +5,8 @@ import (
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// Converts processor types.Metadata to reportingtypes.MetricEvent
-func ConvertMetadataToMetricEvent(metadata *types.Metadata, stage string, statusLabels *reportingtypes.StatusLabels, event map[string]interface{}) *reportingtypes.MetricEvent {
-	return &reportingtypes.MetricEvent{
+func ConvertMetadataToInMetricEvent(metadata *types.Metadata, statusLabels *reportingtypes.StatusLabels, event map[string]interface{}) *reportingtypes.InMetricEvent {
+	return &reportingtypes.InMetricEvent{
 		ConnectionLabels: reportingtypes.ConnectionLabels{
 			SourceLabels: reportingtypes.SourceLabels{
 				SourceID:           metadata.SourceID,
@@ -34,8 +33,19 @@ func ConvertMetadataToMetricEvent(metadata *types.Metadata, stage string, status
 			EventType: metadata.EventType,
 			EventName: metadata.EventName,
 		},
-		StatusLabels: *statusLabels,
-		Stage:        stage,
-		Event:        event,
+		Event: reportingtypes.Event{
+			ID: metadata.MessageID,
+		},
+	}
+}
+
+// Converts processor types.Metadata to reportingtypes.OutMetricEvent
+func ConvertMetadataToOutMetricEvent(metadata *types.Metadata, statusLabels *reportingtypes.StatusLabels, event map[string]interface{}) *reportingtypes.OutMetricEvent {
+	inMetricEvent := ConvertMetadataToInMetricEvent(metadata, statusLabels, event)
+	return &reportingtypes.OutMetricEvent{
+		ConnectionLabels: inMetricEvent.ConnectionLabels,
+		EventLabels:      inMetricEvent.EventLabels,
+		StatusLabels:     *statusLabels,
+		Event:            inMetricEvent.Event,
 	}
 }

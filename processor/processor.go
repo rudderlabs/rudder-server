@@ -1669,7 +1669,7 @@ type preTransformationMessage struct {
 	start                        time.Time
 	sourceDupStats               map[dupStatKey]int
 	dedupKeys                    map[string]struct{}
-	metricsCollector             collector.MetricsCollector
+	metricsCollector             *collector.MetricsCollectorMediator
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
@@ -1853,6 +1853,33 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		}
 	}
 
+	inMetricEvents := make([]*reportingtypes.InMetricEvent, 0)
+	for _, event := range jobsWithMetaData {
+		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
+			event.singularEvent,
+			event.userId,
+			event.jobID,
+			event.recievedAt,
+			event.source,
+			event.eventParams,
+		)
+
+		inMetricEvent := ConvertMetadataToInMetricEvent(
+			commonMetadataFromSingularEvent,
+			&reportingtypes.StatusLabels{},
+			event.singularEvent,
+		)
+
+		inMetricEvents = append(inMetricEvents, inMetricEvent)
+	}
+
+	subJobs.metricsCollector = collector.NewMetricsCollectorMediator(
+		reportingtypes.StageDetails{Stage: reportingtypes.DEDUPLICATION, Initial: false},
+		inMetricEvents,
+		proc.conf,
+	)
+
+	var dedupedJobsWithMetaData []jobWithMetaData
 	var allowedBatchKeys map[dedup.BatchKey]bool
 	var err error
 	if proc.config.enableDedup {
@@ -1862,20 +1889,59 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		if err != nil {
 			return nil, err
 		}
-	}
-	for _, event := range jobsWithMetaData {
-		sourceId := event.eventParams.SourceId
-		if event.eventParams.DestinationID != "" {
-			jobIDToSpecificDestMapOnly[event.jobID] = event.eventParams.DestinationID
-		}
 
-		if proc.config.enableDedup {
+		for _, event := range jobsWithMetaData {
+			commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
+				event.singularEvent,
+				event.userId,
+				event.jobID,
+				event.recievedAt,
+				event.source,
+				event.eventParams,
+			)
+			subJobs.metricsCollector.Collect(ConvertMetadataToOutMetricEvent(
+				commonMetadataFromSingularEvent,
+				&reportingtypes.StatusLabels{},
+				event.singularEvent,
+			))
+
 			if !allowedBatchKeys[event.dedupKey] {
 				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
 				continue
 			}
 			dedupKeys[event.dedupKey.Key] = struct{}{}
+			dedupedJobsWithMetaData = append(dedupedJobsWithMetaData, event)
+		}
+	}
+
+	subJobs.metricsCollector.NextStage(reportingtypes.StageDetails{Stage: reportingtypes.GATEWAY, Initial: true})
+
+	for _, event := range dedupedJobsWithMetaData {
+		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
+			event.singularEvent,
+			event.userId,
+			event.jobID,
+			event.recievedAt,
+			event.source,
+			event.eventParams,
+		)
+		subJobs.metricsCollector.Collect(ConvertMetadataToOutMetricEvent(
+			commonMetadataFromSingularEvent,
+			&reportingtypes.StatusLabels{},
+			event.singularEvent,
+		))
+
+		dedupKeys[event.dedupKey.Key] = struct{}{}
+		dedupedJobsWithMetaData = append(dedupedJobsWithMetaData, event)
+	}
+
+	subJobs.metricsCollector.NextStage(reportingtypes.StageDetails{Stage: reportingtypes.DESTINATION_FILTER, Initial: false})
+
+	for _, event := range dedupedJobsWithMetaData {
+		sourceId := event.eventParams.SourceId
+		if event.eventParams.DestinationID != "" {
+			jobIDToSpecificDestMapOnly[event.jobID] = event.eventParams.DestinationID
 		}
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
@@ -1933,46 +1999,20 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				)
 			}
 		}
-		// REPORTING - GATEWAY metrics - START
-		// dummy event for metrics purposes only
-		transformerEvent := &types.TransformerResponse{}
-		if proc.isReportingEnabled() {
 
-			metricEvent := ConvertMetadataToMetricEvent(
-				commonMetadataFromSingularEvent,
-				reportingtypes.GATEWAY,
-				&reportingtypes.StatusLabels{},
-				event.singularEvent,
-			)
-			subJobs.metricsCollector.Collect(metricEvent)
+		outMetricEvent := ConvertMetadataToOutMetricEvent(
+			commonMetadataFromSingularEvent,
+			&reportingtypes.StatusLabels{},
+			event.singularEvent,
+		)
 
-			transformerEvent.Metadata = *commonMetadataFromSingularEvent
-			proc.updateMetricMaps(
-				inCountMetadataMap,
-				inCountMap,
-				connectionDetailsMap,
-				statusDetailsMap,
-				transformerEvent,
-				jobsdb.Succeeded.State,
-				reportingtypes.GATEWAY,
-				func() json.RawMessage {
-					if sourceIsTransient {
-						return nil
-					}
-					if payload := event.payloadFunc(); payload != nil {
-						return payload
-					}
-					return nil
-				},
-				nil,
-			)
-		}
-		// REPORTING - GATEWAY metrics - END
 		// Getting all the destinations which are enabled for this event.
 		// Event will be dropped if no valid destination is present
 		// if empty destinationID is passed in this fn all the destinations for the source are validated
 		// else only passed destinationID will be validated
 		if !proc.isDestinationAvailable(event.singularEvent, sourceId, event.eventParams.DestinationID) {
+			outMetricEvent.StatusLabels.StatusCode = reportingtypes.FilterEventCode
+			subJobs.metricsCollector.Collect(outMetricEvent)
 			continue
 		}
 
@@ -2005,17 +2045,12 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
 
 		if proc.isReportingEnabled() {
-
-			metricEvent := ConvertMetadataToMetricEvent(
-				commonMetadataFromSingularEvent,
-				reportingtypes.DESTINATION_FILTER,
-				&reportingtypes.StatusLabels{},
-				event.singularEvent,
-			)
-			subJobs.metricsCollector.Collect(metricEvent)
-
-			proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, transformerEvent, jobsdb.Succeeded.State, reportingtypes.DESTINATION_FILTER, func() json.RawMessage { return nil }, nil)
+			subJobs.metricsCollector.Collect(outMetricEvent)
 		}
+	}
+
+	if proc.isReportingEnabled() {
+		subJobs.metricsCollector.End()
 	}
 
 	if len(statusList) != len(jobList) {
@@ -2299,7 +2334,7 @@ type transformationMessage struct {
 	hasMore             bool
 	rsourcesStats       rsources.StatsCollector
 	trackedUsersReports []*trackedusers.UsersReport
-	metricsCollector    collector.MetricsCollector
+	metricsCollector    *collector.MetricsCollectorMediator
 }
 
 type userTransformData struct {
@@ -2319,7 +2354,7 @@ type userTransformData struct {
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
 
-	metricsCollector collector.MetricsCollector
+	metricsCollector *collector.MetricsCollectorMediator
 }
 
 func (proc *Handle) userTransformStage(partition string, in *transformationMessage) *userTransformData {
@@ -2524,7 +2559,7 @@ type storeMessage struct {
 	rsourcesStats rsources.StatsCollector
 	traces        map[string]stats.Tags
 
-	metricsCollector collector.MetricsCollector
+	metricsCollector *collector.MetricsCollectorMediator
 }
 
 func (sm *storeMessage) merge(subJob *storeMessage) {
@@ -2770,6 +2805,7 @@ func (proc *Handle) storeStage(partition string, in *storeMessage) {
 			}
 
 			if proc.isReportingEnabled() {
+				in.metricsCollector.Flush(ctx, tx.Tx())
 				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
@@ -3737,7 +3773,7 @@ type subJob struct {
 	hasMore       bool
 	rsourcesStats rsources.StatsCollector
 
-	metricsCollector collector.MetricsCollector
+	metricsCollector *collector.MetricsCollectorMediator
 }
 
 func (proc *Handle) jobSplitter(
