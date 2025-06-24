@@ -1893,6 +1893,11 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			dedupKeys[event.dedupKey.Key] = struct{}{}
 		}
 
+		if event.eventParams.IsEventBlocked {
+			proc.logger.Debugn("Dropping event because it is blocked by event blocking")
+			continue
+		}
+
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
 		totalEvents++
 		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
