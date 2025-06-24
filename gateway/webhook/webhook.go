@@ -104,6 +104,7 @@ type webhookStatsT struct {
 type batchWebhookTransformerT struct {
 	webhook                *HandleT
 	stats                  *webhookStatsT
+	statsFactory           stats.Stats
 	sourceTransformAdapter func(ctx context.Context) (sourceTransformAdapter, error)
 }
 
@@ -385,7 +386,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		}
 
 		if _, ok := bt.stats.sourceStats[breq.sourceType]; !ok {
-			bt.stats.sourceStats[breq.sourceType] = newWebhookStat(breq.sourceType)
+			bt.stats.sourceStats[breq.sourceType] = bt.newWebhookStat(breq.sourceType)
 		}
 
 		// stats
@@ -565,13 +566,13 @@ func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*w
 }
 
 // TODO: Check if correct
-func newWebhookStat(sourceType string) *webhookSourceStatT {
+func (bt *batchWebhookTransformerT) newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
 		"sourceType": sourceType,
 	}
-	numEvents := stats.Default.NewTaggedStat("webhook_num_events", stats.CountType, tags)
-	numOutputEvents := stats.Default.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
-	sourceTransform := stats.Default.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
+	numEvents := bt.statsFactory.NewTaggedStat("webhook_num_events", stats.CountType, tags)
+	numOutputEvents := bt.statsFactory.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
+	sourceTransform := bt.statsFactory.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
 	return &webhookSourceStatT{
 		id:              sourceType,
 		numEvents:       numEvents,
