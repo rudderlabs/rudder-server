@@ -132,8 +132,9 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(crash.Wrapper(func() error {
 			bt := batchWebhookTransformerT{
-				webhook: webhook,
-				stats:   newWebhookStats(stat),
+				webhook:      webhook,
+				stats:        newWebhookStats(stat),
+				statsFactory: stat,
 				sourceTransformAdapter: func(ctx context.Context) (sourceTransformAdapter, error) {
 					return newSourceTransformAdapter(transformerFeaturesService.SourceTransformerVersion(), conf), nil
 				},
