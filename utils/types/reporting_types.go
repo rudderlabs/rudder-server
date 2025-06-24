@@ -25,6 +25,7 @@ const (
 	DiffStatus = "diff"
 
 	// Module names
+	DEDUPLICATION          = "deduplication"
 	GATEWAY                = "gateway"
 	DESTINATION_FILTER     = "destination_filter"
 	EVENT_BLOCKING         = "event_blocking"
@@ -179,6 +180,7 @@ type PUDetails struct {
 	PU         string `json:"reportedBy"`
 	TerminalPU bool   `json:"terminalState"`
 	InitialPU  bool   `json:"initialState"`
+	NextPU     string `json:nextStage`
 }
 
 type PUReportedMetric struct {
@@ -249,10 +251,25 @@ type StatusLabels struct {
 	ErrorType  string `json:"errorCode"`
 }
 
-type MetricEvent struct {
-	ConnectionLabels ConnectionLabels       `json:"connectionLabels"`
-	EventLabels      EventLabels            `json:"eventLabels"`
-	StatusLabels     StatusLabels           `json:"statusLabels"`
-	Stage            string                 `json:"stage"`
-	Event            map[string]interface{} `json:"event"`
+type Event struct {
+	ID      string
+	Payload map[string]interface{}
+}
+
+type InMetricEvent struct {
+	ConnectionLabels ConnectionLabels `json:"connectionLabels"`
+	EventLabels      EventLabels      `json:"eventLabels"`
+	Event            Event            `json:"event"`
+}
+type OutMetricEvent struct {
+	ConnectionLabels ConnectionLabels `json:"connectionLabels"`
+	EventLabels      EventLabels      `json:"eventLabels"`
+	StatusLabels     StatusLabels     `json:"statusLabels"`
+	Event            Event            `json:"event"`
+}
+
+type StageDetails struct {
+	Stage    string `json:"stage"`
+	Initial  bool   `json:"initial"`
+	Terminal bool   `json:"terminal"`
 }
