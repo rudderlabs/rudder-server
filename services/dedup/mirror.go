@@ -31,7 +31,7 @@ type mirror struct {
 
 func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger) *mirror {
 	waitGroup := &sync.WaitGroup{}
-	waitGroupSemaphore := make(chan struct{}, conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", 100000))
+	waitGroupSemaphore := make(chan struct{}, conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", 1000))
 
 	dedupMirror := &mirror{
 		Dedup:              d,
