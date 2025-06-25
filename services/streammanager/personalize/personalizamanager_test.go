@@ -1,6 +1,7 @@
 package personalize
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize_v2"
 
+	pv1 "github.com/aws/aws-sdk-go/service/personalizeevents"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -208,4 +210,20 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.NotEmpty(t, respMsg)
+}
+
+func TestJsonUnmarshal(t *testing.T) {
+	sampleJsonPayload := []byte(`{"eventList":[{"eventType":"live_track_started","itemId":"KLo","properties":{"channel":"mobile","device":"SM-A256B","deviceType":"Android"},"recommendationId":"N/A","sentAt":"2025-06-24T13:52:19.194Z"}],"sessionId":"6f4fad96968f89d3","trackingId":"3c1439c0-5c0d-4afc-a724-f100257465d8","userId":"b9143741c25c4c7a83dee687ae49b97b"}`)
+
+	var pv1 pv1.PutEventsInput
+	err := jsonrs.Unmarshal(sampleJsonPayload, &pv1)
+	assert.Nil(t, err)
+
+	var putEventsInput PersonalizeEvent
+	err = jsonrs.Unmarshal(sampleJsonPayload, &putEventsInput)
+	assert.Nil(t, err)
+
+	var p2 personalizeevents.PutEventsInput
+	err = json.Unmarshal(sampleJsonPayload, &p2)
+	assert.Nil(t, err)
 }
