@@ -139,4 +139,5 @@ func (m *mirror) Close() {
 	m.Dedup.Close()
 	m.waitGroup.Wait()
 	close(m.errs)
+	close(m.waitGroupSemaphore)
 }
