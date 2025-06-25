@@ -1899,19 +1899,23 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				event.source,
 				event.eventParams,
 			)
-			subJobs.metricsCollector.Collect(ConvertMetadataToOutMetricEvent(
+
+			outMetricEvent := ConvertMetadataToOutMetricEvent(
 				commonMetadataFromSingularEvent,
 				&reportingtypes.StatusLabels{},
 				event.singularEvent,
-			))
+			)
 
 			if !allowedBatchKeys[event.dedupKey] {
 				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
 				sourceDupStats[dupStatKey{sourceID: event.eventParams.SourceId}] += 1
+				outMetricEvent.StatusLabels.StatusCode = reportingtypes.FilterEventCode
+				subJobs.metricsCollector.Collect(outMetricEvent)
 				continue
 			}
 			dedupKeys[event.dedupKey.Key] = struct{}{}
 			dedupedJobsWithMetaData = append(dedupedJobsWithMetaData, event)
+			subJobs.metricsCollector.Collect(outMetricEvent)
 		}
 	}
 
