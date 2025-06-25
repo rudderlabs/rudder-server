@@ -126,10 +126,7 @@ func (m *mirror) printErrs(interval time.Duration) {
 			select {
 			case <-m.stopPrintErrs:
 				return
-			case err, ok := <-m.errs:
-				if !ok {
-					return
-				}
+			case err := <-m.errs:
 				m.logger.Errorn("Dedup mirroring error", obskit.Error(err))
 			}
 		}
