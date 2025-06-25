@@ -193,6 +193,71 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			Expect(res).To(BeNil())
 		})
 
+		// Test for transport round trip error logging with valid destination info
+		It("should log transport round trip errors with destination details", func() {
+			// Setup
+			cache := v2.NewCache()
+			ctrl := gomock.NewController(GinkgoT())
+			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
+
+			// Setup mock expectations - return an error from RoundTrip after pre-round trip processing
+			transportError := errors.New("connection timeout")
+			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(nil, transportError)
+
+			// Create a destination info with valid account ID
+			destination := &v2.DestinationInfo{
+				ID:             "test-destination-id",
+				WorkspaceID:    "test-workspace-id",
+				DefinitionName: "test-definition-name",
+				Config: map[string]interface{}{
+					"rudderAccountId": "test-account-id",
+				},
+			}
+
+			// Create a mock token provider and connector
+			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
+
+			// Create the OAuth handler
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+
+			// Create the transport directly to test its RoundTrip method
+			transportArgs := &httpClient.TransportArgs{
+				FlowType:             common.RudderFlowDelivery,
+				TokenCache:           &cache,
+				Locker:               kitsync.NewPartitionRWLocker(),
+				GetAuthErrorCategory: rtTf.GetAuthErrorCategoryFromTransformResponse,
+				Augmenter:            extensions.RouterBodyAugmenter,
+				OAuthHandler:         oauthHandler,
+				OriginalTransport:    mockRoundTrip,
+			}
+
+			transport := httpClient.NewOAuthTransport(transportArgs)
+
+			// Create a request with destination info in context
+			req, _ := http.NewRequest("GET", "http://example.com", nil)
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+
+			// Test the RoundTrip method directly
+			res, err := transport.RoundTrip(req)
+
+			// Assertions
+			Expect(err).NotTo(BeNil())
+			Expect(err.Error()).To(ContainSubstring("connection timeout"))
+			Expect(res).To(BeNil())
+
+			// The error should be the original transport error
+			Expect(err).To(Equal(transportError))
+		})
+
 		// Test for errors from getAuthErrorCategory
 		It("should handle errors from getAuthErrorCategory in postRoundTrip", func() {
 			// Setup
@@ -520,6 +585,122 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			// For this test, we're just verifying that the response contains the original JSON
 			Expect(string(respBody)).To(ContainSubstring("Bad Request Error"))
 			Expect(string(respBody)).To(ContainSubstring("Invalid input"))
+		})
+
+		// Test for missing destination info in request context
+		It("should handle missing destination info in request context", func() {
+			// Setup
+			cache := v2.NewCache()
+			ctrl := gomock.NewController(GinkgoT())
+			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
+
+			// No need to set up mock expectations since we expect the transport to return early
+			// when destination info is missing from context
+
+			// Create a mock token provider and connector
+			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
+
+			// Create the OAuth handler
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+
+			// Create the transport directly to test its RoundTrip method
+			transportArgs := &httpClient.TransportArgs{
+				FlowType:             common.RudderFlowDelivery,
+				TokenCache:           &cache,
+				Locker:               kitsync.NewPartitionRWLocker(),
+				GetAuthErrorCategory: rtTf.GetAuthErrorCategoryFromTransformResponse,
+				Augmenter:            extensions.RouterBodyAugmenter,
+				OAuthHandler:         oauthHandler,
+				OriginalTransport:    mockRoundTrip,
+			}
+
+			transport := httpClient.NewOAuthTransport(transportArgs)
+
+			// Create a request WITHOUT destination info in context
+			req, _ := http.NewRequest("GET", "http://example.com", nil)
+			// Note: We're NOT adding destination info to the context here
+
+			// Test the RoundTrip method directly
+			res, err := transport.RoundTrip(req)
+
+			// Assertions
+			Expect(err).To(BeNil())
+			Expect(res).NotTo(BeNil())
+			Expect(res.StatusCode).To(Equal(http.StatusInternalServerError))
+
+			// Read the response body
+			respBody, err := io.ReadAll(res.Body)
+			Expect(err).To(BeNil())
+
+			// Verify that the response contains the expected error message
+			Expect(string(respBody)).To(Equal("request context data is not of destinationInfo type"))
+		})
+
+		// Test for nil destination info in request context
+		It("should handle nil destination info in request context", func() {
+			// Setup
+			cache := v2.NewCache()
+			ctrl := gomock.NewController(GinkgoT())
+			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
+
+			// No need to set up mock expectations since we expect the transport to return early
+			// when destination info is nil
+
+			// Create a mock token provider and connector
+			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
+			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+
+			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
+
+			// Create the OAuth handler
+			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
+				v2.WithCache(v2.NewCache()),
+				v2.WithLocker(kitsync.NewPartitionRWLocker()),
+				v2.WithStats(stats.Default),
+				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
+				v2.WithCpConnector(mockCpConnector),
+			)
+
+			// Create the transport directly to test its RoundTrip method
+			transportArgs := &httpClient.TransportArgs{
+				FlowType:             common.RudderFlowDelivery,
+				TokenCache:           &cache,
+				Locker:               kitsync.NewPartitionRWLocker(),
+				GetAuthErrorCategory: rtTf.GetAuthErrorCategoryFromTransformResponse,
+				Augmenter:            extensions.RouterBodyAugmenter,
+				OAuthHandler:         oauthHandler,
+				OriginalTransport:    mockRoundTrip,
+			}
+
+			transport := httpClient.NewOAuthTransport(transportArgs)
+
+			// Create a request with nil destination info in context
+			req, _ := http.NewRequest("GET", "http://example.com", nil)
+			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), nil))
+
+			// Test the RoundTrip method directly
+			res, err := transport.RoundTrip(req)
+
+			// Assertions
+			Expect(err).To(BeNil())
+			Expect(res).NotTo(BeNil())
+			Expect(res.StatusCode).To(Equal(http.StatusInternalServerError))
+
+			// Read the response body
+			respBody, err := io.ReadAll(res.Body)
+			Expect(err).To(BeNil())
+
+			// Verify that the response contains the expected error message
+			Expect(string(respBody)).To(Equal("request context data is not of destinationInfo type"))
 		})
 	})
 })
