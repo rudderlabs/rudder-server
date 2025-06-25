@@ -31,7 +31,7 @@ type mirror struct {
 
 func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger) *mirror {
 	waitGroup := &sync.WaitGroup{}
-	waitGroupSemaphore := make(chan struct{}, conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", 1000))
+	waitGroupSemaphore := make(chan struct{}, conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", 3000))
 
 	dedupMirror := &mirror{
 		Dedup:              d,
@@ -80,7 +80,7 @@ func (m *mirror) Allowed(keys ...BatchKey) (map[BatchKey]bool, error) {
 		}()
 	default:
 		m.metrics.maxRoutinesCount.Increment()
-		m.logLeakyErr(fmt.Errorf("max routines limit reached"))
+		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", cap(m.waitGroupSemaphore)))
 	}
 
 	return m.Dedup.Allowed(keys...)
@@ -103,7 +103,7 @@ func (m *mirror) Commit(keys []string) error {
 		}()
 	default:
 		m.metrics.maxRoutinesCount.Increment()
-		m.logLeakyErr(fmt.Errorf("max routines limit reached"))
+		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", cap(m.waitGroupSemaphore)))
 	}
 
 	return m.Dedup.Commit(keys)
