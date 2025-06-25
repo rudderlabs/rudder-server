@@ -136,15 +136,12 @@ func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, e
 func (d *Dedup) Commit(keys []string) error {
 	kvs := make([]types.BatchKey, len(keys))
 
-	d.uncommittedMu.RLock()
 	for i, key := range keys {
-		if _, ok := d.uncommitted[key]; !ok {
-			d.uncommittedMu.RUnlock()
-			return fmt.Errorf("key %v has not been previously set", key)
-		}
+		// TODO re-add uncommitted error here if we end up using keydb in production without mirroring
+		// Atm we don't want to error here since we are relying on the primary dedup service for deciding what to commit
+		// which won't always agree with what the mirroring dedup service thinks.
 		kvs[i] = types.BatchKey{Key: key}
 	}
-	d.uncommittedMu.RUnlock()
 
 	if err := d.keyDB.Set(keys); err != nil {
 		return fmt.Errorf("setting keys in keydb: %w", err)

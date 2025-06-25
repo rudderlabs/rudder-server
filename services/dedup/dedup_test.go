@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	dkdb "github.com/rudderlabs/rudder-server/services/dedup/keydb"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -40,15 +41,19 @@ func Test_Dedup(t *testing.T) {
 	dbPath := t.TempDir()
 
 	for _, dedupDB := range []string{"badger", "keydb"} {
-		conf := config.New()
+		var (
+			d    dedup.Dedup
+			conf = config.New()
+			err  error
+		)
 		if dedupDB == "badger" {
 			t.Setenv("RUDDER_TMPDIR", dbPath)
+			d, err = dedup.New(conf, stats.NOP, logger.NOP)
 		} else {
 			conf.Set("KeyDB.Dedup.Enabled", true)
 			startKeydb(t, conf)
+			d, err = dkdb.NewKeyDB(conf, stats.NOP, logger.NOP)
 		}
-
-		d, err := dedup.New(conf, stats.Default, logger.NOP)
 		require.Nil(t, err)
 		t.Cleanup(d.Close)
 
@@ -78,15 +83,17 @@ func Test_Dedup(t *testing.T) {
 			require.Equal(t, false, found[key])
 		})
 
-		t.Run(dedupDB+"/committing a key not present in committed list", func(t *testing.T) {
-			key := dedup.SingleKey("c")
-			found, err := d.Allowed(key)
-			require.Nil(t, err)
-			require.Equal(t, true, found[key])
+		if dedupDB == "badger" {
+			t.Run(dedupDB+"/committing a key not present in committed list", func(t *testing.T) {
+				key := dedup.SingleKey("c")
+				found, err := d.Allowed(key)
+				require.Nil(t, err)
+				require.Equal(t, true, found[key])
 
-			err = d.Commit([]string{"d"})
-			require.NotNil(t, err)
-		})
+				err = d.Commit([]string{"d"})
+				require.NotNil(t, err)
+			})
+		}
 
 		t.Run(dedupDB+"/unique keys", func(t *testing.T) {
 			kvs := []types.BatchKey{
