@@ -1657,32 +1657,34 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 }
 
 type preTransformationMessage struct {
-	partition                    string
-	subJobs                      subJob
-	eventSchemaJobs              []*jobsdb.JobT
-	archivalJobs                 []*jobsdb.JobT
-	connectionDetailsMap         map[string]*reportingtypes.ConnectionDetails
-	statusDetailsMap             map[string]map[string]*reportingtypes.StatusDetail
-	enricherConnectionDetailsMap map[string]*reportingtypes.ConnectionDetails
-	enricherStatusDetailsMap     map[string]map[string]*reportingtypes.StatusDetail
-	reportMetrics                []*reportingtypes.PUReportedMetric
-	destFilterStatusDetailMap    map[string]map[string]*reportingtypes.StatusDetail
-	inCountMetadataMap           map[string]MetricMetadata
-	inCountMap                   map[string]int64
-	outCountMap                  map[string]int64
-	totalEvents                  int
-	marshalStart                 time.Time
-	groupedEventsBySourceId      map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
-	procErrorJobs                []*jobsdb.JobT
-	jobIDToSpecificDestMapOnly   map[int64]string
-	groupedEvents                map[string][]types.TransformerEvent
-	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
-	statusList                   []*jobsdb.JobStatusT
-	jobList                      []*jobsdb.JobT
-	start                        time.Time
-	sourceDupStats               map[dupStatKey]int
-	dedupKeys                    map[string]struct{}
+	partition                         string
+	subJobs                           subJob
+	eventSchemaJobs                   []*jobsdb.JobT
+	archivalJobs                      []*jobsdb.JobT
+	connectionDetailsMap              map[string]*reportingtypes.ConnectionDetails
+	statusDetailsMap                  map[string]map[string]*reportingtypes.StatusDetail
+	enricherConnectionDetailsMap      map[string]*reportingtypes.ConnectionDetails
+	enricherStatusDetailsMap          map[string]map[string]*reportingtypes.StatusDetail
+	botManagementConnectionDetailsMap map[string]*reportingtypes.ConnectionDetails
+	botManagementStatusDetailsMap     map[string]map[string]*reportingtypes.StatusDetail
+	reportMetrics                     []*reportingtypes.PUReportedMetric
+	destFilterStatusDetailMap         map[string]map[string]*reportingtypes.StatusDetail
+	inCountMetadataMap                map[string]MetricMetadata
+	inCountMap                        map[string]int64
+	outCountMap                       map[string]int64
+	totalEvents                       int
+	marshalStart                      time.Time
+	groupedEventsBySourceId           map[SourceIDT][]types.TransformerEvent
+	eventsByMessageID                 map[string]types.SingularEventWithReceivedAt
+	procErrorJobs                     []*jobsdb.JobT
+	jobIDToSpecificDestMapOnly        map[int64]string
+	groupedEvents                     map[string][]types.TransformerEvent
+	uniqueMessageIdsBySrcDestKey      map[string]map[string]struct{}
+	statusList                        []*jobsdb.JobStatusT
+	jobList                           []*jobsdb.JobT
+	start                             time.Time
+	sourceDupStats                    map[dupStatKey]int
+	dedupKeys                         map[string]struct{}
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
@@ -1734,6 +1736,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	destFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	enricherConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	enricherStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	botManagementStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
+	botManagementConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -1884,6 +1888,58 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			jobIDToSpecificDestMapOnly[event.jobID] = event.eventParams.DestinationID
 		}
 
+		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
+			event.singularEvent,
+			event.userId,
+			event.jobID,
+			event.recievedAt,
+			event.source,
+			event.eventParams,
+		)
+
+		// dummy event for metrics purposes only
+		transformerEvent := &types.TransformerResponse{}
+		transformerEvent.Metadata = *commonMetadataFromSingularEvent
+
+		if event.eventParams.IsBot {
+			// REPORTING - BOT_MANAGEMENT metrics - START
+			if proc.isReportingEnabled() {
+				status := reportingtypes.BotDetectedStatus
+				transformerEvent.StatusCode = reportingtypes.SuccessEventCode
+				if event.eventParams.BotAction == reportingtypes.DropBotEventAction {
+					status = jobsdb.Filtered.State
+					transformerEvent.StatusCode = reportingtypes.FilterEventCode
+				}
+
+				proc.updateMetricMaps(
+					nil,
+					nil,
+					botManagementConnectionDetailsMap,
+					botManagementStatusDetailsMap,
+					transformerEvent,
+					status,
+					reportingtypes.BOT_MANAGEMENT,
+					func() json.RawMessage {
+						return nil
+					},
+					nil,
+				)
+
+				transformerEvent.StatusCode = 0 // reset status code to 0
+			}
+			// REPORTING - BOT_MANAGEMENT metrics - END
+
+			if event.eventParams.BotAction == reportingtypes.DropBotEventAction {
+				proc.logger.Debugn("Dropping event because it is a bot event and bot action is drop")
+				continue
+			}
+		}
+
+		if event.eventParams.IsEventBlocked {
+			proc.logger.Debugn("Dropping event because it is blocked by event blocking")
+			continue
+		}
+
 		if proc.config.enableDedup {
 			if !allowedBatchKeys[event.dedupKey] {
 				proc.logger.Debugn("Dropping event with duplicate key %s", logger.NewStringField("key", event.dedupKey.Key))
@@ -1893,11 +1949,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			dedupKeys[event.dedupKey.Key] = struct{}{}
 		}
 
-		if event.eventParams.IsEventBlocked {
-			proc.logger.Debugn("Dropping event because it is blocked by event blocking")
-			continue
-		}
-
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
 		totalEvents++
 		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
@@ -1905,14 +1956,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			ReceivedAt:    event.recievedAt,
 		}
 
-		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
-			event.singularEvent,
-			event.userId,
-			event.jobID,
-			event.recievedAt,
-			event.source,
-			event.eventParams,
-		)
 		sourceIsTransient := proc.transientSources.Apply(sourceId)
 		if proc.config.eventSchemaV2Enabled && // schemas enabled
 			proc.eventAuditEnabled(event.workspaceID) &&
@@ -1954,10 +1997,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			}
 		}
 		// REPORTING - GATEWAY metrics - START
-		// dummy event for metrics purposes only
-		transformerEvent := &types.TransformerResponse{}
 		if proc.isReportingEnabled() {
-			transformerEvent.Metadata = *commonMetadataFromSingularEvent
 			proc.updateMetricMaps(
 				inCountMetadataMap,
 				inCountMap,
@@ -1980,8 +2020,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 			if event.eventParams.IsBot {
 				botStatus := reportingtypes.BotDetectedStatus
-				// TODO: remove the empty check after ingestion service is released with BotAction field
-				if event.eventParams.BotAction == "flag" || event.eventParams.BotAction == "" {
+				if event.eventParams.BotAction == reportingtypes.FlagBotEventAction {
 					botStatus = reportingtypes.BotFlaggedStatus
 				}
 
@@ -2048,32 +2087,34 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	}
 
 	return &preTransformationMessage{
-		partition:                    partition,
-		subJobs:                      subJobs,
-		eventSchemaJobs:              eventSchemaJobs,
-		archivalJobs:                 archivalJobs,
-		connectionDetailsMap:         connectionDetailsMap,
-		statusDetailsMap:             statusDetailsMap,
-		enricherConnectionDetailsMap: enricherConnectionDetailsMap,
-		enricherStatusDetailsMap:     enricherStatusDetailsMap,
-		reportMetrics:                reportMetrics,
-		destFilterStatusDetailMap:    destFilterStatusDetailMap,
-		inCountMetadataMap:           inCountMetadataMap,
-		inCountMap:                   inCountMap,
-		outCountMap:                  outCountMap,
-		totalEvents:                  totalEvents,
-		marshalStart:                 marshalStart,
-		groupedEventsBySourceId:      groupedEventsBySourceId,
-		eventsByMessageID:            eventsByMessageID,
-		procErrorJobs:                procErrorJobs,
-		jobIDToSpecificDestMapOnly:   jobIDToSpecificDestMapOnly,
-		groupedEvents:                groupedEvents,
-		uniqueMessageIdsBySrcDestKey: uniqueMessageIdsBySrcDestKey,
-		statusList:                   statusList,
-		jobList:                      jobList,
-		start:                        start,
-		sourceDupStats:               sourceDupStats,
-		dedupKeys:                    dedupKeys,
+		partition:                         partition,
+		subJobs:                           subJobs,
+		eventSchemaJobs:                   eventSchemaJobs,
+		archivalJobs:                      archivalJobs,
+		connectionDetailsMap:              connectionDetailsMap,
+		statusDetailsMap:                  statusDetailsMap,
+		enricherConnectionDetailsMap:      enricherConnectionDetailsMap,
+		enricherStatusDetailsMap:          enricherStatusDetailsMap,
+		botManagementConnectionDetailsMap: botManagementConnectionDetailsMap,
+		botManagementStatusDetailsMap:     botManagementStatusDetailsMap,
+		reportMetrics:                     reportMetrics,
+		destFilterStatusDetailMap:         destFilterStatusDetailMap,
+		inCountMetadataMap:                inCountMetadataMap,
+		inCountMap:                        inCountMap,
+		outCountMap:                       outCountMap,
+		totalEvents:                       totalEvents,
+		marshalStart:                      marshalStart,
+		groupedEventsBySourceId:           groupedEventsBySourceId,
+		eventsByMessageID:                 eventsByMessageID,
+		procErrorJobs:                     procErrorJobs,
+		jobIDToSpecificDestMapOnly:        jobIDToSpecificDestMapOnly,
+		groupedEvents:                     groupedEvents,
+		uniqueMessageIdsBySrcDestKey:      uniqueMessageIdsBySrcDestKey,
+		statusList:                        statusList,
+		jobList:                           jobList,
+		start:                             start,
+		sourceDupStats:                    sourceDupStats,
+		dedupKeys:                         dedupKeys,
 	}, nil
 }
 
@@ -2139,8 +2180,22 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		return nil, err
 	}
 
-	// REPORTING - GATEWAY metrics - START
 	if proc.isReportingEnabled() {
+
+		// REPORTING - BOT_MANAGEMENT metrics - START
+		reportingtypes.AssertSameKeys(preTrans.botManagementConnectionDetailsMap, preTrans.botManagementStatusDetailsMap)
+		for k, cd := range preTrans.botManagementConnectionDetailsMap {
+			for _, sd := range preTrans.botManagementStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.BOT_MANAGEMENT, false, false),
+					StatusDetail:      sd,
+				})
+			}
+		}
+		// REPORTING - BOT_MANAGEMENT metrics - END
+
+		// REPORTING - GATEWAY metrics - START
 		reportingtypes.AssertSameKeys(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
 		for k, cd := range preTrans.connectionDetailsMap {
 			for _, sd := range preTrans.statusDetailsMap[k] {
@@ -2188,8 +2243,8 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			proc.config.enableUpdatedEventNameReporting.Load(),
 		)
 		preTrans.reportMetrics = append(preTrans.reportMetrics, diffMetrics...)
+		// REPORTING - GATEWAY metrics - END
 	}
-	// REPORTING - GATEWAY metrics - END
 
 	proc.stats.statNumEvents(preTrans.partition).Count(preTrans.totalEvents)
 
