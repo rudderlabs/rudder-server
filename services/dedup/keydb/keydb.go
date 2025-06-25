@@ -85,10 +85,6 @@ type Dedup struct {
 }
 
 func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
-	if len(batchKeys) == 0 {
-		return nil, nil
-	}
-
 	result := make(map[types.BatchKey]bool, len(batchKeys))
 	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
 
