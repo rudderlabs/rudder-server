@@ -132,10 +132,17 @@ var (
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 
-	WarehouseDestinationMap = lo.SliceToMap(WarehouseDestinations, func(destination string) (string, struct{}) {
+	PseudoWarehouseDestinationMap = pseudoWarehouseDestinations()
+)
+
+func pseudoWarehouseDestinations() map[string]struct{} {
+	all := make([]string, len(WarehouseDestinations)+1)
+	all = append(all, WarehouseDestinations...)
+	all = append(all, SnowpipeStreaming)
+	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})
-)
+}
 
 var WHDestNameMap = map[string]string{
 	BQ:            "bigquery",

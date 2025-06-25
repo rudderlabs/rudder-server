@@ -370,7 +370,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 func (d *Client) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", d.config.destTransformationURL, strings.ToLower(destType))
 
-	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
+	if _, ok := warehouseutils.PseudoWarehouseDestinationMap[destType]; ok {
 		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", d.conf.GetBool("Warehouse.enableIDResolution", false))
 		switch destType {
 		case warehouseutils.RS:
@@ -378,12 +378,11 @@ func (d *Client) destTransformURL(destType string) string {
 		case warehouseutils.CLICKHOUSE:
 			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", d.conf.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
+		case warehouseutils.SnowpipeStreaming:
+			return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, d.conf.GetBool("Warehouse.enableIDResolution", false))
 		default:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
 		}
-	}
-	if destType == warehouseutils.SnowpipeStreaming {
-		return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, d.conf.GetBool("Warehouse.enableIDResolution", false))
 	}
 	return destinationEndPoint
 }
@@ -435,10 +434,7 @@ func deepCopy[T any](src T) T {
 }
 
 func (c *Client) canRunWarehouseTransformations(destType string) bool {
-	if _, ok := warehouseutils.WarehouseDestinationMap[destType]; ok {
-		return c.config.warehouseTransformations.enable.Load()
-	}
-	if destType == warehouseutils.SnowpipeStreaming {
+	if _, ok := warehouseutils.PseudoWarehouseDestinationMap[destType]; ok {
 		return c.config.warehouseTransformations.enable.Load()
 	}
 	return false
