@@ -69,6 +69,7 @@ func (m *mirror) Allowed(keys ...BatchKey) (map[BatchKey]bool, error) {
 		m.waitGroup.Add(1)
 		go func() { // fire & forget
 			defer m.waitGroup.Done()
+			defer func() { <-m.waitGroupSemaphore }()
 
 			_, err := m.mirror.Allowed(keys...)
 			if err == nil {
@@ -92,6 +93,7 @@ func (m *mirror) Commit(keys []string) error {
 		m.waitGroup.Add(1)
 		go func() { // fire & forget
 			defer m.waitGroup.Done()
+			defer func() { <-m.waitGroupSemaphore }()
 
 			err := m.mirror.Commit(keys)
 			if err == nil {
