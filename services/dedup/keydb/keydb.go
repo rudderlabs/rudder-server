@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/samber/lo"
@@ -52,10 +51,7 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (*Dedup,
 	db.stats.getTimer = stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "keydb"})
 	db.stats.setTimer = stat.NewTaggedStat("dedup_set_duration_seconds", stats.TimerType, stats.Tags{"mode": "keydb"})
 
-	return &Dedup{
-		keyDB:       db,
-		uncommitted: make(map[string]struct{}),
-	}, nil
+	return &Dedup{keyDB: db}, nil
 }
 
 func (d *KeyDB) Get(keys []string) (map[string]bool, error) {
@@ -85,18 +81,19 @@ func (d *KeyDB) Close() {
 }
 
 type Dedup struct {
-	keyDB         *KeyDB
-	uncommittedMu sync.RWMutex
-	uncommitted   map[string]struct{}
+	keyDB *KeyDB
 }
 
 func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
-	result := make(map[types.BatchKey]bool, len(batchKeys))  // keys encountered for the first time
+	if len(batchKeys) == 0 {
+		return nil, nil
+	}
+
+	result := make(map[types.BatchKey]bool, len(batchKeys))
 	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
 
 	// figure out which keys need to be checked against the DB
 	batchKeysToCheck := make([]types.BatchKey, 0, len(batchKeys)) // keys to check in the DB
-	d.uncommittedMu.RLock()
 	for _, batchKey := range batchKeys {
 		// if the key is already seen in the batch, skip it
 		if _, seen := seenInBatch[batchKey.Key]; seen {
@@ -104,28 +101,17 @@ func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, e
 		}
 
 		seenInBatch[batchKey.Key] = struct{}{}
-
-		if _, uncommitted := d.uncommitted[batchKey.Key]; uncommitted {
-			continue
-		}
-
 		batchKeysToCheck = append(batchKeysToCheck, batchKey)
 	}
-	d.uncommittedMu.RUnlock()
 
 	if len(batchKeysToCheck) > 0 {
 		seenInDB, err := d.keyDB.Get(lo.Map(batchKeysToCheck, func(bk types.BatchKey, _ int) string { return bk.Key }))
 		if err != nil {
 			return nil, fmt.Errorf("getting keys from keydb: %w", err)
 		}
-		d.uncommittedMu.Lock()
-		defer d.uncommittedMu.Unlock()
 		for _, batchKey := range batchKeysToCheck {
 			if !seenInDB[batchKey.Key] {
-				if _, race := d.uncommitted[batchKey.Key]; !race { // if another goroutine managed to set this key, we should skip it
-					result[batchKey] = true
-					d.uncommitted[batchKey.Key] = struct{}{} // mark this key as uncommitted
-				}
+				result[batchKey] = true
 			}
 		}
 	}
@@ -138,8 +124,6 @@ func (d *Dedup) Commit(keys []string) error {
 
 	for i, key := range keys {
 		// TODO re-add uncommitted error here if we end up using keydb in production without mirroring
-		// Atm we don't want to error here since we are relying on the primary dedup service for deciding what to commit
-		// which won't always agree with what the mirroring dedup service thinks.
 		kvs[i] = types.BatchKey{Key: key}
 	}
 
@@ -147,11 +131,6 @@ func (d *Dedup) Commit(keys []string) error {
 		return fmt.Errorf("setting keys in keydb: %w", err)
 	}
 
-	d.uncommittedMu.Lock()
-	defer d.uncommittedMu.Unlock()
-	for _, kv := range kvs {
-		delete(d.uncommitted, kv.Key)
-	}
 	return nil
 }
 
