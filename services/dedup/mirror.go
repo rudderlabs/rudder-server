@@ -5,10 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
@@ -19,8 +18,9 @@ type mirror struct {
 	waitGroup          *sync.WaitGroup
 	waitGroupSemaphore chan struct{}
 
-	errs   chan error
-	logger logger.Logger
+	errs          chan error
+	stopPrintErrs chan struct{}
+	logger        logger.Logger
 
 	metrics struct {
 		allowedErrorsCount stats.Counter
@@ -39,6 +39,7 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		waitGroup:          waitGroup,
 		waitGroupSemaphore: waitGroupSemaphore,
 		errs:               make(chan error, 1),
+		stopPrintErrs:      make(chan struct{}),
 		logger:             log,
 	}
 	dedupMirror.metrics.allowedErrorsCount = s.NewTaggedStat("dedup_err_count", stats.CountType, stats.Tags{
@@ -53,10 +54,10 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		"mode": "keydb",
 	})
 
-	waitGroup.Add(1) // no need to use the semaphore here
+	waitGroup.Add(1)
 	go func() {
-		defer waitGroup.Done()
 		dedupMirror.printErrs(conf.GetDuration("KeyDB.Dedup.Mirror.PrintErrorsInterval", 10, time.Second))
+		waitGroup.Done()
 	}()
 
 	return dedupMirror
@@ -117,19 +118,26 @@ func (m *mirror) logLeakyErr(err error) {
 
 func (m *mirror) printErrs(interval time.Duration) {
 	ticker := time.NewTicker(interval)
-	for range ticker.C {
+	for {
 		select {
-		case err, ok := <-m.errs:
-			if !ok {
+		case <-m.stopPrintErrs:
+			return
+		case <-ticker.C:
+			select {
+			case <-m.stopPrintErrs:
 				return
+			case err, ok := <-m.errs:
+				if !ok {
+					return
+				}
+				m.logger.Errorn("Dedup mirroring error", obskit.Error(err))
 			}
-			m.logger.Errorn("Dedup mirroring error", obskit.Error(err))
-		default:
 		}
 	}
 }
 
 func (m *mirror) Close() {
+	close(m.stopPrintErrs)
 	m.mirror.Close()
 	m.Dedup.Close()
 	m.waitGroup.Wait()
