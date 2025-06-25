@@ -131,7 +131,7 @@ func (m *mirror) printErrs(interval time.Duration) {
 
 func (m *mirror) Close() {
 	m.mirror.Close()
-	close(m.errs)
 	m.Dedup.Close()
 	m.waitGroup.Wait()
+	close(m.errs)
 }
