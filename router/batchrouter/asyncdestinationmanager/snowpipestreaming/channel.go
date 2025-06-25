@@ -228,7 +228,5 @@ func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) 
 		Type:        m.destination.DestinationDefinition.Name,
 		Identifier:  m.destination.WorkspaceID + ":" + m.destination.ID,
 	}
-	modelWarehouse.Destination.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
-
 	return m.managerCreator(ctx, modelWarehouse, m.appConfig, m.logger, m.statsFactory)
 }
