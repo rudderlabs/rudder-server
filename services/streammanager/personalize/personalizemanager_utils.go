@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents/types"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
@@ -111,4 +112,11 @@ func (i *Items) ToPutItemsInput() *personalizeevents.PutItemsInput {
 		DatasetArn: i.DatasetArn,
 		Items:      lo.Map(i.Items, func(item Item, _ int) types.Item { return item.ToAWSItem() }),
 	}
+}
+
+func stringifyJsonRaw(raw *json.RawMessage) *string {
+	if raw == nil {
+		return nil
+	}
+	return aws.String(string(*raw))
 }
