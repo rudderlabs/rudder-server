@@ -51,15 +51,15 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		stopPrintErrs: make(chan struct{}),
 		logger:        log,
 	}
-	dedupMirror.metrics.allowedErrorsCount = s.NewTaggedStat("dedup_err_count", stats.CountType, stats.Tags{
+	dedupMirror.metrics.allowedErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
 		"mode": "keydb",
 		"type": "allowed",
 	})
-	dedupMirror.metrics.commitErrorsCount = s.NewTaggedStat("dedup_err_count", stats.CountType, stats.Tags{
+	dedupMirror.metrics.commitErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
 		"mode": "keydb",
 		"type": "commit",
 	})
-	dedupMirror.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_max_routines_count", stats.CountType, stats.Tags{
+	dedupMirror.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_mirroring_max_routines_count", stats.CountType, stats.Tags{
 		"mode": "keydb",
 	})
 
@@ -138,9 +138,11 @@ func (m *mirror) printErrs(interval time.Duration) {
 }
 
 func (m *mirror) Close() {
+	// first we need to stop all mirroring goroutines
 	close(m.stopPrintErrs)
-	m.mirror.Close()
-	m.Dedup.Close()
 	_ = m.group.Wait()
 	close(m.errs)
+	// then can close both mirror and primary dedup services
+	m.mirror.Close()
+	m.Dedup.Close()
 }
