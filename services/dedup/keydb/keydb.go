@@ -116,10 +116,6 @@ func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, e
 }
 
 func (d *Dedup) Commit(keys []string) error {
-	kvs := make([]types.BatchKey, len(keys))
-	for i, key := range keys {
-		kvs[i] = types.BatchKey{Key: key}
-	}
 	if err := d.keyDB.Set(keys); err != nil {
 		return fmt.Errorf("setting keys in keydb: %w", err)
 	}
