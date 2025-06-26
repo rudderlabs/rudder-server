@@ -63,7 +63,7 @@ type DestinationT struct {
 	RevisionID            string
 	DeliveryAccount       *Account `json:"deliveryAccount,omitempty"`
 	DeleteAccount         *Account `json:"deleteAccount,omitempty"`
-	HasDynamicConfig      bool     `json:"hasDynamicConfig,omitempty"`
+	HasDynamicConfig      bool     `json:"hasDynamicConfig"`
 }
 
 // UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns
