@@ -41,19 +41,26 @@ type MetricAttribution struct {
 	EventAttributionSource *string
 }
 
+func (ma *MetricAttribution) ToAWSEventAttribution() *types.MetricAttribution {
+	if ma == nil {
+		return nil
+	}
+	return &types.MetricAttribution{
+		EventAttributionSource: ma.EventAttributionSource,
+	}
+}
+
 func (e *Event) ToAWSEvent() types.Event {
 	return types.Event{
-		EventId:          e.EventId,
-		EventType:        e.EventType,
-		ItemId:           e.ItemId,
-		SentAt:           e.SentAt,
-		Properties:       stringifyJsonRaw(e.Properties),
-		Impression:       e.Impression,
-		RecommendationId: e.RecommendationId,
-		EventValue:       e.EventValue,
-		MetricAttribution: &types.MetricAttribution{
-			EventAttributionSource: e.MetricAttribution.EventAttributionSource,
-		},
+		EventId:           e.EventId,
+		EventType:         e.EventType,
+		ItemId:            e.ItemId,
+		SentAt:            e.SentAt,
+		Properties:        stringifyJsonRaw(e.Properties),
+		Impression:        e.Impression,
+		RecommendationId:  e.RecommendationId,
+		EventValue:        e.EventValue,
+		MetricAttribution: e.MetricAttribution.ToAWSEventAttribution(),
 	}
 }
 
