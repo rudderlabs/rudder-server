@@ -2,25 +2,29 @@ package dedup
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+)
+
+const (
+	defaultMaxRoutines = 3000
 )
 
 type mirror struct {
 	Dedup
 	mirror Dedup
 
-	waitGroup          *sync.WaitGroup
-	waitGroupSemaphore chan struct{}
-
+	group         *sync.ErrGroup
+	groupLimit    int
 	errs          chan error
 	stopPrintErrs chan struct{}
-	logger        logger.Logger
+
+	logger logger.Logger
 
 	metrics struct {
 		allowedErrorsCount stats.Counter
@@ -30,17 +34,22 @@ type mirror struct {
 }
 
 func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger) *mirror {
-	waitGroup := &sync.WaitGroup{}
-	waitGroupSemaphore := make(chan struct{}, conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", 3000))
+	groupLimit := conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", defaultMaxRoutines)
+	if groupLimit < 1 {
+		groupLimit = defaultMaxRoutines
+	}
+
+	group := &sync.ErrGroup{}
+	group.SetLimit(groupLimit)
 
 	dedupMirror := &mirror{
-		Dedup:              d,
-		mirror:             m,
-		waitGroup:          waitGroup,
-		waitGroupSemaphore: waitGroupSemaphore,
-		errs:               make(chan error, 1),
-		stopPrintErrs:      make(chan struct{}),
-		logger:             log,
+		Dedup:         d,
+		mirror:        m,
+		group:         group,
+		groupLimit:    groupLimit, // storing limit for enriching error
+		errs:          make(chan error, 1),
+		stopPrintErrs: make(chan struct{}),
+		logger:        log,
 	}
 	dedupMirror.metrics.allowedErrorsCount = s.NewTaggedStat("dedup_err_count", stats.CountType, stats.Tags{
 		"mode": "keydb",
@@ -54,58 +63,51 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		"mode": "keydb",
 	})
 
-	waitGroup.Add(1)
-	go func() {
+	group.Go(func() error {
 		dedupMirror.printErrs(conf.GetDuration("KeyDB.Dedup.Mirror.PrintErrorsInterval", 10, time.Second))
-		waitGroup.Done()
-	}()
+		return nil
+	})
 
 	return dedupMirror
 }
 
 func (m *mirror) Allowed(keys ...BatchKey) (map[BatchKey]bool, error) {
-	select {
-	case m.waitGroupSemaphore <- struct{}{}:
-		m.waitGroup.Add(1)
-		go func() { // fire & forget
-			defer m.waitGroup.Done()
-			defer func() { <-m.waitGroupSemaphore }()
+	fired := m.group.TryGo(func() error {
+		_, err := m.mirror.Allowed(keys...)
+		if err == nil {
+			return nil
+		}
 
-			_, err := m.mirror.Allowed(keys...)
-			if err == nil {
-				return
-			}
+		m.metrics.allowedErrorsCount.Increment()
+		m.logLeakyErr(fmt.Errorf("call to Allowed failed: %w", err))
 
-			m.metrics.allowedErrorsCount.Increment()
-			m.logLeakyErr(fmt.Errorf("call to Allowed failed: %w", err))
-		}()
-	default:
+		return nil
+	})
+
+	if !fired {
 		m.metrics.maxRoutinesCount.Increment()
-		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", cap(m.waitGroupSemaphore)))
+		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", m.groupLimit))
 	}
 
 	return m.Dedup.Allowed(keys...)
 }
 
 func (m *mirror) Commit(keys []string) error {
-	select {
-	case m.waitGroupSemaphore <- struct{}{}:
-		m.waitGroup.Add(1)
-		go func() { // fire & forget
-			defer m.waitGroup.Done()
-			defer func() { <-m.waitGroupSemaphore }()
+	fired := m.group.TryGo(func() error {
+		err := m.mirror.Commit(keys)
+		if err == nil {
+			return nil
+		}
 
-			err := m.mirror.Commit(keys)
-			if err == nil {
-				return
-			}
+		m.metrics.commitErrorsCount.Increment()
+		m.logLeakyErr(fmt.Errorf("call to Commit failed: %w", err))
 
-			m.metrics.commitErrorsCount.Increment()
-			m.logLeakyErr(fmt.Errorf("call to Commit failed: %w", err))
-		}()
-	default:
+		return nil
+	})
+
+	if !fired {
 		m.metrics.maxRoutinesCount.Increment()
-		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", cap(m.waitGroupSemaphore)))
+		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", m.groupLimit))
 	}
 
 	return m.Dedup.Commit(keys)
@@ -139,7 +141,6 @@ func (m *mirror) Close() {
 	close(m.stopPrintErrs)
 	m.mirror.Close()
 	m.Dedup.Close()
-	m.waitGroup.Wait()
+	_ = m.group.Wait()
 	close(m.errs)
-	close(m.waitGroupSemaphore)
 }
