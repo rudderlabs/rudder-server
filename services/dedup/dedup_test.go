@@ -2,6 +2,8 @@ package dedup_test
 
 import (
 	"context"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path"
@@ -13,13 +15,20 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
+	keydbcache "github.com/rudderlabs/keydb/cache"
+	keydbclient "github.com/rudderlabs/keydb/client"
+	keydb "github.com/rudderlabs/keydb/node"
+	keydbproto "github.com/rudderlabs/keydb/proto"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	dkdb "github.com/rudderlabs/rudder-server/services/dedup/keydb"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -33,7 +42,7 @@ func Test_Dedup(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -109,6 +118,82 @@ func Test_Dedup(t *testing.T) {
 	})
 }
 
+func Test_KeyDB(t *testing.T) {
+	conf := config.New()
+	startKeydb(t, conf)
+
+	var (
+		d   dedup.Dedup
+		err error
+	)
+	d, err = dkdb.NewKeyDB(conf, stats.NOP, logger.NOP)
+	require.Nil(t, err)
+	defer d.Close()
+
+	t.Run("key a not present in cache and badger db", func(t *testing.T) {
+		key := dedup.SingleKey("a")
+		found, err := d.Allowed(key)
+		require.NoError(t, err)
+		require.True(t, found[key])
+
+		// Checking it again should give us the same result since we're not using any cache for keydb due to mirroring
+		found, err = d.Allowed(key)
+		require.NoError(t, err)
+		require.True(t, found[key])
+	})
+
+	t.Run("key a gets committed", func(t *testing.T) {
+		keyB := dedup.SingleKey("b")
+		found, err := d.Allowed(keyB)
+		require.NoError(t, err)
+		require.True(t, found[keyB])
+
+		err = d.Commit([]string{"a"})
+		require.NoError(t, err)
+
+		keyA := dedup.SingleKey("a")
+		found, err = d.Allowed(keyA, keyB)
+		require.Nil(t, err)
+		require.False(t, found[keyA])
+		require.True(t, found[keyB])
+	})
+
+	t.Run("unique keys", func(t *testing.T) {
+		kvs := []types.BatchKey{
+			{Index: 0, Key: "e"},
+			{Index: 1, Key: "f"},
+			{Index: 2, Key: "g"},
+		}
+		found, err := d.Allowed(kvs...)
+		require.NoError(t, err)
+		for _, kv := range kvs {
+			require.True(t, found[kv])
+		}
+		err = d.Commit([]string{"e", "f", "g"})
+		require.NoError(t, err)
+	})
+
+	t.Run("non-unique keys", func(t *testing.T) {
+		kvs := []types.BatchKey{
+			{Index: 0, Key: "g"},
+			{Index: 1, Key: "h"},
+			{Index: 2, Key: "h"},
+		}
+		expected := map[types.BatchKey]bool{
+			kvs[0]: false,
+			kvs[1]: true,
+			kvs[2]: false,
+		}
+		found, err := d.Allowed(kvs...)
+		require.NoError(t, err)
+		for i, kv := range kvs {
+			require.Equalf(t, expected[kv], found[kv], "index %d", i)
+		}
+		err = d.Commit([]string{"h"})
+		require.NoError(t, err)
+	})
+}
+
 func Test_Dedup_Window(t *testing.T) {
 	config.Reset()
 	logger.Reset()
@@ -120,7 +205,7 @@ func Test_Dedup_Window(t *testing.T) {
 	_ = os.RemoveAll(dbPath)
 	conf.Set("Dedup.dedupWindow", "1s")
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -152,7 +237,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	defer func() { _ = os.RemoveAll(dbPath) }()
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -180,7 +265,7 @@ func Test_Dedup_Race(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -221,7 +306,7 @@ func Benchmark_Dedup(b *testing.B) {
 	_ = os.MkdirAll(dbPath, 0o750)
 	conf := config.New()
 	b.Setenv("RUDDER_TMPDIR", dbPath)
-	d, err := dedup.New(conf, stats.Default)
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.NoError(b, err)
 	b.ResetTimer()
 	b.Run("no duplicates", func(b *testing.B) {
@@ -287,4 +372,83 @@ func Benchmark_Dedup(b *testing.B) {
 	}
 
 	b.Log("db size:", string(out))
+}
+
+func startKeydb(t testing.TB, conf *config.Config) {
+	t.Helper()
+
+	freePort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+
+	var service *keydb.Service
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	address := "localhost:" + strconv.Itoa(freePort)
+	conf.Set("KeyDB.Dedup.Addresses", address)
+	conf.Set("KeyDB.Dedup.RetryCount", 3)
+
+	nodeConfig := keydb.Config{
+		NodeID:           0,
+		ClusterSize:      1,
+		TotalHashRanges:  128,
+		SnapshotInterval: time.Minute,
+		Addresses:        []string{address},
+	}
+	cf := func(hashRange uint32) (keydb.Cache, error) {
+		conf.Set("BadgerDB.Dedup.Path", t.TempDir())
+		return keydbcache.BadgerFactory(conf, logger.NOP)(hashRange)
+	}
+	require.NoError(t, err)
+	service, err = keydb.NewService(ctx, nodeConfig, cf, &mockedCloudStorage{}, logger.NOP)
+	require.NoError(t, err)
+
+	// Create a gRPC server
+	server := grpc.NewServer()
+	keydbproto.RegisterNodeServiceServer(server, service)
+
+	lis, err := net.Listen("tcp", address)
+	require.NoError(t, err)
+
+	// Start the server
+	go func() {
+		require.NoError(t, server.Serve(lis))
+	}()
+	t.Cleanup(func() {
+		cancel()
+		server.GracefulStop()
+		_ = lis.Close()
+		service.Close()
+	})
+
+	c, err := keydbclient.NewClient(keydbclient.Config{
+		Addresses:       []string{address},
+		TotalHashRanges: 128,
+		RetryCount:      3,
+		RetryDelay:      time.Second,
+	}, logger.NOP)
+	require.NoError(t, err)
+	resp, err := c.GetNodeInfo(context.Background(), 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, resp.ClusterSize)
+	require.NoError(t, c.Close())
+
+	t.Logf("keydb address: %s", address)
+}
+
+type mockedFilemanagerSession struct{}
+
+func (m *mockedFilemanagerSession) Next() (fileObjects []*filemanager.FileInfo, err error) {
+	return nil, nil
+}
+
+type mockedCloudStorage struct{}
+
+func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string) error { return nil }
+func (m *mockedCloudStorage) UploadReader(_ context.Context, _ string, _ io.Reader) (filemanager.UploadedFile, error) {
+	return filemanager.UploadedFile{}, nil
+}
+
+func (m *mockedCloudStorage) ListFilesWithPrefix(_ context.Context, _, _ string, _ int64) filemanager.ListSession {
+	return &mockedFilemanagerSession{}
 }
