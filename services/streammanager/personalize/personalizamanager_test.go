@@ -8,6 +8,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/smithy-go"
 	"github.com/tidwall/gjson"
 
@@ -82,17 +83,17 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 		"choice": "PutEvents",
 		"payload": PersonalizeEvent{
 			EventList: []Event{{
-				EventId:   "eventId",
-				EventType: "eventType",
-				ItemId:    "itemId",
-				SentAt:    time.Now(),
+				EventId:   aws.String("eventId"),
+				EventType: aws.String("eventType"),
+				ItemId:    aws.String("itemId"),
+				SentAt:    aws.Time(time.Now()),
 				MetricAttribution: &MetricAttribution{
-					EventAttributionSource: "source",
+					EventAttributionSource: aws.String("source"),
 				},
 			}},
-			SessionId:  "sessionId",
-			TrackingId: "trackingId",
-			UserId:     "userId",
+			SessionId:  aws.String("sessionId"),
+			TrackingId: aws.String("trackingId"),
+			UserId:     aws.String("userId"),
 		},
 	})
 
@@ -138,8 +139,8 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutUsers",
 		"payload": Users{
-			DatasetArn: "datasetArn",
-			Users:      []User{{UserId: "userId"}},
+			DatasetArn: aws.String("datasetArn"),
+			Users:      []User{{UserId: aws.String("userId")}},
 		},
 	})
 
@@ -177,8 +178,8 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutItems",
 		"payload": Items{
-			DatasetArn: "datasetArn",
-			Items:      []Item{{ItemId: "itemId"}},
+			DatasetArn: aws.String("datasetArn"),
+			Items:      []Item{{ItemId: aws.String("itemId")}},
 		},
 	})
 
