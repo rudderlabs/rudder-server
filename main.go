@@ -39,11 +39,16 @@ func main() {
 
 	shutdownOnNonReloadableConfigChange := c.GetReloadableBoolVar(false, "shutdownOnNonReloadableConfigChange")
 	c.OnNonReloadableConfigChange(func(key string) {
-		if shutdownOnNonReloadableConfigChange.Load() {
-			log.Infon("Config change detected, shutting down server...", logger.NewStringField("key", key))
-			cancel()
-		} else {
-			log.Infon("Config change detected, but server will not shut down", logger.NewStringField("key", key))
+		switch key {
+		case "statsExcludedTags": // keys to ignore
+			// no-op
+		default:
+			if shutdownOnNonReloadableConfigChange.Load() {
+				log.Infon("Config change detected, shutting down server...", logger.NewStringField("key", key))
+				cancel()
+			} else {
+				log.Infon("Config change detected, but server will not shut down", logger.NewStringField("key", key))
+			}
 		}
 	})
 

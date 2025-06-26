@@ -55,33 +55,33 @@ func (producer *PersonalizeProducerV2) Produce(jsonData json.RawMessage, _ inter
 
 	switch eventChoice {
 	case "PutEvents":
-		input := personalizeevents.PutEventsInput{}
-		err = jsonrs.Unmarshal(eventPayload, &input)
+		input := &PersonalizeEvent{}
+		err = jsonrs.Unmarshal(eventPayload, input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}
-		response, err = client.PutEvents(context.Background(), &input)
+		response, err = client.PutEvents(context.Background(), input.ToPutEventsInput())
 	case "PutUsers":
-		input := personalizeevents.PutUsersInput{}
-		err = jsonrs.Unmarshal(eventPayload, &input)
+		input := &Users{}
+		err = jsonrs.Unmarshal(eventPayload, input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutUsers input structure"
 		}
-		response, err = client.PutUsers(context.Background(), &input)
+		response, err = client.PutUsers(context.Background(), input.ToPutUsersInput())
 	case "PutItems":
-		input := personalizeevents.PutItemsInput{}
-		err = jsonrs.Unmarshal(eventPayload, &input)
+		input := &Items{}
+		err = jsonrs.Unmarshal(eventPayload, input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutItems input structure"
 		}
-		response, err = client.PutItems(context.Background(), &input)
+		response, err = client.PutItems(context.Background(), input.ToPutItemsInput())
 	default:
-		input := personalizeevents.PutEventsInput{}
-		err = jsonrs.Unmarshal(jsonData, &input)
+		input := &PersonalizeEvent{}
+		err = jsonrs.Unmarshal(jsonData, input)
 		if err != nil {
 			return 400, err.Error(), "Could not unmarshal jsonData according to PutEvents input structure"
 		}
-		response, err = client.PutEvents(context.Background(), &input)
+		response, err = client.PutEvents(context.Background(), input.ToPutEventsInput())
 	}
 
 	if err != nil {

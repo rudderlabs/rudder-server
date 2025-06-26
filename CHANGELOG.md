@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.53.1](https://github.com/rudderlabs/rudder-server/compare/v1.53.0...v1.53.1) (2025-06-26)
+
+
+### Bug Fixes
+
+* ensure hasDynamicConfig field always present in DestinationT JSON ([#6057](https://github.com/rudderlabs/rudder-server/issues/6057)) ([e328ffb](https://github.com/rudderlabs/rudder-server/commit/e328ffb37dbd352be5404e21858744bd6b20c0a1))
+* personalise aws v2 implementation fails with unmarshal error ([#6050](https://github.com/rudderlabs/rudder-server/issues/6050)) ([7b1d80d](https://github.com/rudderlabs/rudder-server/commit/7b1d80d545a75b443e8954624209ba80d01a43df))
+* statsExcludedTags causes server to shutdown immediately ([#6060](https://github.com/rudderlabs/rudder-server/issues/6060)) ([6eee5d2](https://github.com/rudderlabs/rudder-server/commit/6eee5d260c71f2e68c37c4e1ebe1957e6d9efdd7))
+
+
+### Miscellaneous
+
+* add logging for HasDynamicConfig flag in destination config ([#6054](https://github.com/rudderlabs/rudder-server/issues/6054)) ([985d7b2](https://github.com/rudderlabs/rudder-server/commit/985d7b26c3095114ceaa6811cda946d65daed1d5))
+* keydb deduplication mirroring ([#6058](https://github.com/rudderlabs/rudder-server/issues/6058)) ([c6e415d](https://github.com/rudderlabs/rudder-server/commit/c6e415d36f532e2d30a3ac512c0b71a71a0f78e3))
+* oauth platform error logs ([#6053](https://github.com/rudderlabs/rudder-server/issues/6053)) ([63203a2](https://github.com/rudderlabs/rudder-server/commit/63203a2c5c1de726bdff06960a08cf7b39d41a89))
+
 ## [1.53.0](https://github.com/rudderlabs/rudder-server/compare/v1.52.0...v1.53.0) (2025-06-23)
 
 

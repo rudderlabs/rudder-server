@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
-	"github.com/aws/aws-sdk-go-v2/service/personalizeevents/types"
 	"github.com/aws/smithy-go"
 	"github.com/tidwall/gjson"
 
@@ -82,12 +81,15 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutEvents",
-		"payload": personalizeevents.PutEventsInput{
-			EventList: []types.Event{{
+		"payload": PersonalizeEvent{
+			EventList: []Event{{
 				EventId:   aws.String("eventId"),
 				EventType: aws.String("eventType"),
 				ItemId:    aws.String("itemId"),
 				SentAt:    aws.Time(time.Now()),
+				MetricAttribution: &MetricAttribution{
+					EventAttributionSource: aws.String("source"),
+				},
 			}},
 			SessionId:  aws.String("sessionId"),
 			TrackingId: aws.String("trackingId"),
@@ -95,22 +97,20 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 		},
 	})
 
-	var putEventsInput personalizeevents.PutEventsInput
+	var eventInput PersonalizeEvent
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	_ = jsonrs.Unmarshal(eventPayload, &putEventsInput)
+	_ = jsonrs.Unmarshal(eventPayload, &eventInput)
+	expectedInput := eventInput.ToPutEventsInput()
 
-	// PutEvents with event choice
-	// Time struct is changing during marshalling and unmarshalling so we can't directly
-	// define personalizeevents.PutEventsInput variable and use in expect
-	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(&personalizeevents.PutEventsOutput{}, nil)
+	mockClient.EXPECT().PutEvents(gomock.Any(), expectedInput, gomock.Any()).Return(&personalizeevents.PutEventsOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	// Put event without event choice in the payload so pull payload will be sent to PutEvents
-	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(&personalizeevents.PutEventsOutput{}, nil)
+	mockClient.EXPECT().PutEvents(gomock.Any(), expectedInput, gomock.Any()).Return(&personalizeevents.PutEventsOutput{}, nil)
 	statusCode, statusMsg, respMsg = producer.Produce(eventPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
@@ -118,7 +118,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 
 	// Return service error
 	errorCode := "someError"
-	mockClient.EXPECT().PutEvents(gomock.Any(), &putEventsInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+	mockClient.EXPECT().PutEvents(gomock.Any(), expectedInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
 		Code:    errorCode,
 		Message: errorCode,
 		Fault:   smithy.FaultClient,
@@ -138,27 +138,26 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutUsers",
-		"payload": personalizeevents.PutUsersInput{
+		"payload": Users{
 			DatasetArn: aws.String("datasetArn"),
-			Users:      []types.User{{UserId: aws.String("userId")}},
+			Users:      []User{{UserId: aws.String("userId")}},
 		},
 	})
 
-	var putUsersInput personalizeevents.PutUsersInput
+	var usersInput Users
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	_ = jsonrs.Unmarshal(eventPayload, &putUsersInput)
+	_ = jsonrs.Unmarshal(eventPayload, &usersInput)
+	expectedInput := usersInput.ToPutUsersInput()
 
-	// Time struct is changing during marshalling and unmarshalling so we can't directly
-	// define personalizeevents.PutUsersInput variable and use in expect
-	mockClient.EXPECT().PutUsers(gomock.Any(), &putUsersInput, gomock.Any()).Return(&personalizeevents.PutUsersOutput{}, nil)
+	mockClient.EXPECT().PutUsers(gomock.Any(), expectedInput).Return(&personalizeevents.PutUsersOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	errorCode := "someError"
-	mockClient.EXPECT().PutUsers(gomock.Any(), &putUsersInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+	mockClient.EXPECT().PutUsers(gomock.Any(), expectedInput).Return(nil, &smithy.GenericAPIError{
 		Code:    errorCode,
 		Message: errorCode,
 		Fault:   smithy.FaultClient,
@@ -178,27 +177,26 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
 		"choice": "PutItems",
-		"payload": personalizeevents.PutItemsInput{
+		"payload": Items{
 			DatasetArn: aws.String("datasetArn"),
-			Items:      []types.Item{{ItemId: aws.String("itemId")}},
+			Items:      []Item{{ItemId: aws.String("itemId")}},
 		},
 	})
 
-	var putItemsInput personalizeevents.PutItemsInput
+	var itemsInput Items
 	parsedJSON := gjson.ParseBytes(sampleJsonPayload)
 	eventPayload := []byte(parsedJSON.Get("payload").String())
-	_ = jsonrs.Unmarshal(eventPayload, &putItemsInput)
+	_ = jsonrs.Unmarshal(eventPayload, &itemsInput)
+	expectedInput := itemsInput.ToPutItemsInput()
 
-	// Time struct is changing during marshalling and unmarshalling so we can't directly
-	// define personalizeevents.PutItemsInput variable and use in expect
-	mockClient.EXPECT().PutItems(gomock.Any(), &putItemsInput, gomock.Any()).Return(&personalizeevents.PutItemsOutput{}, nil)
+	mockClient.EXPECT().PutItems(gomock.Any(), expectedInput, gomock.Any()).Return(&personalizeevents.PutItemsOutput{}, nil)
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
 
 	errorCode := "someError"
-	mockClient.EXPECT().PutItems(gomock.Any(), &putItemsInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+	mockClient.EXPECT().PutItems(gomock.Any(), expectedInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
 		Code:    errorCode,
 		Message: errorCode,
 		Fault:   smithy.FaultClient,
