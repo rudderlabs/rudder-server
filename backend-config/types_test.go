@@ -1,10 +1,11 @@
 package backendconfig
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 func TestDestinationT_MarshalJSON_HasDynamicConfigAlwaysPresent(t *testing.T) {
@@ -41,12 +42,12 @@ func TestDestinationT_MarshalJSON_HasDynamicConfigAlwaysPresent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Marshal the destination to JSON
-			jsonData, err := json.Marshal(tt.destination)
+			jsonData, err := jsonrs.Marshal(tt.destination)
 			require.NoError(t, err)
 
 			// Unmarshal to a map to check for key presence
 			var result map[string]interface{}
-			err = json.Unmarshal(jsonData, &result)
+			err = jsonrs.Unmarshal(jsonData, &result)
 			require.NoError(t, err)
 
 			// Verify that hasDynamicConfig key is present
