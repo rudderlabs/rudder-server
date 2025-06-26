@@ -25,15 +25,15 @@ type PersonalizeEvent struct {
 }
 
 type Event struct {
-	EventId           *string
 	EventType         *string
-	ItemId            *string
 	SentAt            *time.Time
-	Properties        *json.RawMessage
-	Impression        []string
-	RecommendationId  *string
+	EventId           *string
 	EventValue        *float32
+	Impression        []string
+	ItemId            *string
 	MetricAttribution *MetricAttribution
+	Properties        *json.RawMessage
+	RecommendationId  *string
 }
 
 type MetricAttribution struct {
@@ -46,7 +46,7 @@ func (e *Event) ToAWSEvent() types.Event {
 		EventType:        e.EventType,
 		ItemId:           e.ItemId,
 		SentAt:           e.SentAt,
-		Properties:       aws.String(string(*e.Properties)),
+		Properties:       stringifyJsonRaw(e.Properties),
 		Impression:       e.Impression,
 		RecommendationId: e.RecommendationId,
 		EventValue:       e.EventValue,
@@ -57,12 +57,8 @@ func (e *Event) ToAWSEvent() types.Event {
 }
 
 func (p *PersonalizeEvent) ToPutEventsInput() *personalizeevents.PutEventsInput {
-	eventList := make([]types.Event, len(p.EventList))
-	for i, event := range p.EventList {
-		eventList[i] = event.ToAWSEvent()
-	}
 	return &personalizeevents.PutEventsInput{
-		EventList:  eventList,
+		EventList:  lo.Map(p.EventList, func(e Event, _ int) types.Event { return e.ToAWSEvent() }),
 		SessionId:  p.SessionId,
 		TrackingId: p.TrackingId,
 		UserId:     p.UserId,
@@ -82,24 +78,20 @@ type User struct {
 func (u *User) ToAWSUser() types.User {
 	return types.User{
 		UserId:     u.UserId,
-		Properties: aws.String(string(*u.Properties)),
+		Properties: stringifyJsonRaw(u.Properties),
 	}
 }
 
 func (u *Users) ToPutUsersInput() *personalizeevents.PutUsersInput {
-	users := make([]types.User, len(u.Users))
-	for i, user := range u.Users {
-		users[i] = user.ToAWSUser()
-	}
 	return &personalizeevents.PutUsersInput{
-		Users:      users,
+		Users:      lo.Map(u.Users, func(u User, _ int) types.User { return u.ToAWSUser() }),
 		DatasetArn: u.DatasetArn,
 	}
 }
 
 type Items struct {
-	Items      []Item
 	DatasetArn *string
+	Items      []Item
 }
 
 type Item struct {
@@ -110,17 +102,13 @@ type Item struct {
 func (i *Item) ToAWSItem() types.Item {
 	return types.Item{
 		ItemId:     i.ItemId,
-		Properties: aws.String(string(*i.Properties)),
+		Properties: stringifyJsonRaw(i.Properties),
 	}
 }
 
 func (i *Items) ToPutItemsInput() *personalizeevents.PutItemsInput {
-	items := make([]types.Item, len(i.Items))
-	for i, item := range i.Items {
-		items[i] = item.ToAWSItem()
-	}
 	return &personalizeevents.PutItemsInput{
-		Items:      items,
 		DatasetArn: i.DatasetArn,
+		Items:      lo.Map(i.Items, func(item Item, _ int) types.Item { return item.ToAWSItem() }),
 	}
 }
