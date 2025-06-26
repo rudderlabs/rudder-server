@@ -140,6 +140,9 @@ type Handle struct {
 	msgValidator messageValidator
 
 	webhookAuthMiddleware *auth.WebhookAuth
+
+	// leakyUploader is an optional function that can be set to handle uploading of invalid payloads
+	leakyUploader func(upload leakyUpload)
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -779,14 +782,24 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		isUserSuppressed = gw.memoizedIsUserSuppressed()
 		res              []jobWithStat
 		stat             = gwstats.SourceStat{ReqType: reqType}
+		err              error
 	)
 
-	err := jsonrs.Unmarshal(body, &messages)
+	defer func() {
+		// Upload the raw payload via leaky uploader if available
+		if err != nil && gw.leakyUploader != nil {
+			gw.leakyUploader(leakyUpload{
+				payload: body,
+				fields:  []logger.Field{obskit.Error(err)},
+			})
+		}
+	}()
+
+	err = jsonrs.Unmarshal(body, &messages)
 	if err != nil {
 		stat.RequestFailed(response.InvalidJSON)
 		stat.Report(gw.stats)
-		gw.logger.Errorn("invalid json in request",
-			obskit.Error(err))
+		gw.logger.Errorn("invalid json in request", obskit.Error(err))
 		return nil, errors.New((response.InvalidJSON))
 	}
 	gw.requestSizeStat.Observe(float64(len(body)))

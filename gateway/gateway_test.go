@@ -16,6 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -2746,4 +2750,128 @@ func waitForBackendConfigInit(gw *Handle) {
 		},
 		2*time.Second,
 	).Should(BeTrue())
+}
+
+func TestLeakyUploader(t *testing.T) {
+	// Setup Minio test container
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	t.Run("invalid JSON payload should be uploaded to Minio", func(t *testing.T) {
+		minioContainer, err := minio.Setup(pool, t)
+		require.NoError(t, err)
+
+		// create test gateway with leaky uploader enabled
+		gw, cleanupFn := createTestGatewayWithLeakyUploader(t, minioContainer.Endpoint, minioContainer.AccessKeyID, minioContainer.AccessKeySecret)
+		t.Cleanup(cleanupFn)
+
+		// Prepare invalid JSON payload
+		invalidPayload := []byte(`{"invalid": "json`)
+
+		// Call internal batch handler
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", invalidPayload)
+
+		// Verify error response
+		require.Error(t, err)
+		require.Equal(t, response.InvalidJSON, err.Error())
+		require.Nil(t, jobs)
+
+		// verify file was uploaded to Minio
+		require.Eventually(t, func() bool {
+			contents, err := minioContainer.Contents(context.Background(), "gw-failed-events")
+			require.NoError(t, err)
+			return len(contents) != 0
+		}, 2*time.Second, time.Second, "Minio bucket not updated within timeout")
+	})
+
+	t.Run("valid JSON payload should be processed normally", func(t *testing.T) {
+		// Prepare valid payload
+		validPayload := []byte(`[
+			{
+				"properties": {
+					"requestType": "track",
+					"routingKey": "test-key",
+					"workspaceId": "workspace1",
+					"sourceId": "source-id-1",
+					"receivedAt": "2023-01-01T00:00:00Z",
+					"requestIP": "127.0.0.1"
+				},
+				"payload": "{\"type\":\"track\",\"event\":\"TestEvent\"}"
+			}
+		]`)
+
+		minioContainer, err := minio.Setup(pool, t)
+		require.NoError(t, err)
+
+		// create test gateway with leaky uploader enabled
+		gw, cleanupFn := createTestGatewayWithLeakyUploader(t, minioContainer.Endpoint, minioContainer.AccessKeyID, minioContainer.AccessKeySecret)
+		t.Cleanup(cleanupFn)
+
+		// Call internal batch handler
+		jobs, err := gw.extractJobsFromInternalBatchPayload("batch", validPayload)
+
+		// Verify successful processing
+		require.NoError(t, err)
+		require.NotNil(t, jobs)
+		require.Len(t, jobs, 1)
+
+		// Verify no files uploaded to Minio
+		// verify file was uploaded to Minio
+		require.Never(t, func() bool {
+			contents, err := minioContainer.Contents(context.Background(), "gw-failed-events")
+			require.NoError(t, err)
+			return len(contents) != 0
+		}, 2*time.Second, time.Second, "Minio bucket not updated within timeout")
+	})
+}
+
+// Helper function to create test gateway with leaky uploader
+func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, secretKey string) (gw *Handle, cleanup func()) {
+	mockCtrl := gomock.NewController(t)
+	mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+	mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockApp := mocksApp.NewMockApp(mockCtrl)
+	mockRateLimiter := mockGateway.NewMockThrottler(mockCtrl)
+	mockWebhook := mockGateway.NewMockWebhookRequestHandler(mockCtrl)
+	mockWebhook.EXPECT().Shutdown().AnyTimes()
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+			// on Subscribe, emulate a backend configuration event
+			go func() {
+				<-ctx.Done()
+				close(ch)
+			}()
+			return ch
+		})
+	mockVersionHandler := func(w http.ResponseWriter, r *http.Request) {}
+	enterpriseFeatures := &app.Features{}
+	mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
+	gw = &Handle{}
+	conf := config.New()
+	conf.Set("gateway.leakyUploader.enabled", true)
+	conf.Set("leakyUploader.Storage.Endpoint", endpoint)
+	conf.Set("leakyUploader.Storage.AccessKeyId", accessKeyID)
+	conf.Set("leakyUploader.Storage.AccessKey", secretKey)
+	conf.Set("leakyUploader.Storage.Bucket", "rudder-saas")
+	conf.Set("leakyUploader.Timeout", "2s")
+	conf.Set("leakyUploader.Storage.DisableSsl", true)
+	conf.Set("leakyUploader.Storage.UseGlue", true)
+	conf.Set("leakyUploader.Storage.S3ForcePathStyle", true)
+	err := gw.Setup(context.Background(), conf, logger.NewLogger().With("component", "test"), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockErrJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		select {
+		case <-gw.backendConfigInitialisedChan:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, time.Second)
+	return gw, func() {
+		_ = gw.Shutdown()
+		mockCtrl.Finish()
+	}
 }
