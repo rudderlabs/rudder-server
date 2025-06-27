@@ -130,36 +130,6 @@ func TestBotEnricher(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "bot event with empty BotAction should be enriched",
-			request: &types.GatewayBatchRequest{
-				Batch: []types.SingularEventT{
-					{
-						"event": "test-event",
-					},
-				},
-			},
-			eventParams: &types.EventParams{
-				IsBot:     true,
-				BotName:   "test-bot",
-				BotURL:    "https://test-bot.com",
-				BotAction: "",
-			},
-			expectedEvents: []types.SingularEventT{
-				{
-					"event": "test-event",
-					"context": map[string]interface{}{
-						"isBot": true,
-						"bot": botDetails{
-							Name:             "test-bot",
-							URL:              "https://test-bot.com",
-							IsInvalidBrowser: false,
-						},
-					},
-				},
-			},
-			expectError: false,
-		},
-		{
 			name: "bot event with BotAction 'flag' and without context should be enriched with new context",
 			request: &types.GatewayBatchRequest{
 				Batch: []types.SingularEventT{

@@ -13,6 +13,10 @@ const (
 	FilterEventCode   = 298
 	SuppressEventCode = 299
 	DrainEventCode    = 410
+	SuccessEventCode  = 200
+
+	FlagBotEventAction = "flag"
+	DropBotEventAction = "drop"
 )
 
 // UserSuppression is interface to access Suppress user feature

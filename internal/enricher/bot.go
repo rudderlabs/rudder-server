@@ -5,6 +5,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	utils "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type botDetails struct {
@@ -27,9 +28,7 @@ func (e *botEnricher) Enrich(_ *backendconfig.SourceT, request *types.GatewayBat
 			continue
 		}
 
-		// BotAction empty check is for backward compatibility, BotAction field might be absent indicating ingestion service is not released with BotAction field
-		// TODO: remove the empty check after ingestion service is released with BotAction field
-		if eventParams.BotAction != "flag" && eventParams.BotAction != "" {
+		if eventParams.BotAction != utils.FlagBotEventAction {
 			continue
 		}
 

@@ -27,6 +27,7 @@ const (
 	BotDetectedStatus = "bot_detected"
 
 	// Module names
+	BOT_MANAGEMENT         = "bot_management"
 	GATEWAY                = "gateway"
 	DESTINATION_FILTER     = "destination_filter"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
