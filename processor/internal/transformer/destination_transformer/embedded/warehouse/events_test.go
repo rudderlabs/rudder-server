@@ -2806,14 +2806,16 @@ func TestEvents(t *testing.T) {
 				processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
 				warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
-				eventContexts := []testhelper.EventContext{
-					{
-						Payload:     []byte(tc.eventPayload),
-						Metadata:    tc.metadata,
-						Destination: tc.destination,
-					},
-				}
-				testhelper.ValidateEvents(t, eventContexts, processorTransformer, warehouseTransformer, tc.expectedResponse)
+				var singularEvent types.SingularEventT
+				err := jsonrs.Unmarshal([]byte(tc.eventPayload), &singularEvent)
+				require.NoError(t, err)
+
+				ctx := context.Background()
+				events := []types.TransformerEvent{{Message: singularEvent, Metadata: tc.metadata, Destination: tc.destination}}
+
+				legacyResponse := processorTransformer.Transform(ctx, events)
+				embeddedResponse := warehouseTransformer.Transform(ctx, events)
+				testhelper.ValidateExpectedEvents(t, tc.expectedResponse, embeddedResponse, legacyResponse)
 			})
 		}
 	})
@@ -3000,13 +3002,7 @@ func TestEvents(t *testing.T) {
 				}}
 				legacyResponse := processorTransformer.Transform(ctx, events)
 				embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-				require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-				require.Nil(t, legacyResponse.FailedEvents)
-				require.Nil(t, embeddedResponse.FailedEvents)
-				for i := range legacyResponse.Events {
-					require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-				}
+				testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 			})
 		}
 	})
@@ -3047,13 +3043,7 @@ func TestEvents(t *testing.T) {
 					}}
 					legacyResponse := processorTransformer.Transform(ctx, events)
 					embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-					require.Nil(t, legacyResponse.FailedEvents)
-					require.Nil(t, embeddedResponse.FailedEvents)
-					for i := range legacyResponse.Events {
-						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-					}
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 				})
 			}
 		})
@@ -3061,6 +3051,37 @@ func TestEvents(t *testing.T) {
 			message := map[string]any{
 				"context": map[string]any{
 					"geo": "{\"city\":\"Madison\",\"country\":\"US\",\"ip\":\"104.176.44.185\",\"loc\":\"43.0371,-89.3932\",\"postal\":\"53713\",\"region\":\"Wisconsin\",\"timezone\":\"America/Chicago\"}",
+				},
+				"messageId":         "messageId",
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			}
+			for destination := range whutils.WarehouseDestinationMap {
+				t.Run(destination, func(t *testing.T) {
+					c := setupConfig(transformerResource, map[string]any{})
+
+					processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+					warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
+
+					ctx := context.Background()
+					events := []types.TransformerEvent{{
+						Message:     message,
+						Metadata:    getMetadata("track", destination),
+						Destination: getDestination(destination, map[string]any{}),
+					}}
+					legacyResponse := processorTransformer.Transform(ctx, events)
+					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
+				})
+			}
+		})
+		t.Run("geo (from UT) for safe key", func(t *testing.T) {
+			message := map[string]any{
+				"context": map[string]any{
+					"geo	": "{\"city\":\"Madison\",\"country\":\"US\",\"ip\":\"104.176.44.185\",\"loc\":\"43.0371,-89.3932\",\"postal\":\"53713\",\"region\":\"Wisconsin\",\"timezone\":\"America/Chicago\"}",
 				},
 				"messageId":         "messageId",
 				"originalTimestamp": "2021-09-01T00:00:00.000Z",
@@ -3094,10 +3115,26 @@ func TestEvents(t *testing.T) {
 				})
 			}
 		})
-		t.Run("geo (from UT) for safe key", func(t *testing.T) {
+		t.Run("bot (from processor)", func(t *testing.T) {
+			type botDetails struct {
+				Name             string `json:"name,omitempty"`
+				URL              string `json:"url,omitempty"`
+				IsInvalidBrowser bool   `json:"isInvalidBrowser,omitempty"`
+			}
+
 			message := map[string]any{
 				"context": map[string]any{
-					"geo	": "{\"city\":\"Madison\",\"country\":\"US\",\"ip\":\"104.176.44.185\",\"loc\":\"43.0371,-89.3932\",\"postal\":\"53713\",\"region\":\"Wisconsin\",\"timezone\":\"America/Chicago\"}",
+					"isBot": true,
+					"bot": botDetails{
+						Name:             "ExampleBot",
+						URL:              "https://example.com/bot",
+						IsInvalidBrowser: true,
+					},
+					"botPtr": &botDetails{
+						Name:             "ExampleBot",
+						URL:              "https://example.com/bot",
+						IsInvalidBrowser: true,
+					},
 				},
 				"messageId":         "messageId",
 				"originalTimestamp": "2021-09-01T00:00:00.000Z",
@@ -3184,13 +3221,7 @@ func TestEvents(t *testing.T) {
 
 			legacyResponse := processorTransformer.Transform(ctx, events)
 			embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-			require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-			require.Nil(t, legacyResponse.FailedEvents)
-			require.Nil(t, embeddedResponse.FailedEvents)
-			for i := range legacyResponse.Events {
-				require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-			}
+			testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 		})
 	})
 }

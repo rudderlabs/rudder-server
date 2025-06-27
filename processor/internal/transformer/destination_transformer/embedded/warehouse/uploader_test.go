@@ -45,7 +45,7 @@ func TestTransformer_CompareResponsesAndUpload(t *testing.T) {
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt, 50)
 	for index := 0; index < 50; index++ {
 		eventsByMessageID[strconv.Itoa(index)] = types.SingularEventWithReceivedAt{
-			SingularEvent: map[string]interface{}{
+			SingularEvent: map[string]any{
 				"event": "track" + strconv.Itoa(index),
 			},
 		}
