@@ -141,7 +141,7 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) process(ctx context.Context) error {
-	m.logger.Infow("starting source jobs processing")
+	m.logger.Infon("starting source jobs processing")
 
 	for {
 		pendingJobs, err := m.sourceRepo.GetToProcess(ctx, m.config.maxBatchSizeToProcess)
@@ -157,7 +157,7 @@ func (m *Manager) process(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			m.logger.Infow("source jobs processing stopped due to context cancelled")
+			m.logger.Infon("source jobs processing stopped due to context cancelled")
 			return nil
 		case <-m.trigger.processingSleepInterval():
 		}
@@ -209,7 +209,7 @@ func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.So
 
 	select {
 	case <-ctx.Done():
-		m.logger.Infow("pending jobs process stopped due to context cancelled", "ids", pendingJobIDs)
+		m.logger.Infon("pending jobs process stopped due to context cancelled", logger.NewStringField("ids", fmt.Sprintf("%v", pendingJobIDs)))
 		return nil
 	case responses, ok := <-ch:
 		if !ok {
