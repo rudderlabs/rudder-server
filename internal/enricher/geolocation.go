@@ -172,7 +172,7 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 		return downloadPath, nil
 	}
 
-	log.Infof("downloading new geolocation db from key: %s", dbKey)
+	log.Infon("downloading new geolocation db from key", logger.NewStringField("key", dbKey))
 
 	if err := os.MkdirAll(baseDIR, os.ModePerm); err != nil {
 		return "", fmt.Errorf("creating directory for storing db: %w", err)
