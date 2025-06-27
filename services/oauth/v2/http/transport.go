@@ -98,7 +98,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	body, err := io.ReadAll(rts.req.Body)
 	if err != nil {
-		t.log.Errorn("[preRoundTrip] reading request body",
+		t.log.Errorn("[OAuthPlatformError] reading request body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
@@ -110,7 +110,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
 		err = t.Augment(rts.req, body, authResponse.Account.Secret)
 		if err != nil {
-			t.log.Errorn("[preRoundTrip] secret augmentation",
+			t.log.Errorn("[OAuthPlatformError] secret augmentation",
 				obskit.DestinationID(rts.destination.ID),
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
 				obskit.DestinationType(rts.destination.DefinitionName),
@@ -135,7 +135,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 	respData, err := io.ReadAll(rts.res.Body)
 	if err != nil {
-		t.log.Errorn("[postRoundTrip] reading response body",
+		t.log.Errorn("[OAuthPlatformError] reading response body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
@@ -158,7 +158,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 	}
 	authErrorCategory, err := t.getAuthErrorCategory(respData)
 	if err != nil {
-		t.log.Errorn("[postRoundTrip] get authErrorCategory",
+		t.log.Errorn("[OAuthPlatformError] get authErrorCategory",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
@@ -168,7 +168,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		// Instead of returning an error, set a 500 status code in the interceptor response
 		// This will make the error retryable instead of causing a panic
 		interceptorResp.StatusCode = http.StatusInternalServerError
-		interceptorResp.Response = "[postRoundTrip]Error processing response: " + string(respData)
+		interceptorResp.Response = "[OAuthPlatformError]Error processing response: " + string(respData)
 		applyInterceptorRespToHttpResp()
 		return rts.res
 	}
@@ -179,14 +179,14 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		var oldSecret json.RawMessage
 		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
 		if !ok {
-			t.log.Errorn("[postRoundTrip] get secret from context",
+			t.log.Errorn("[OAuthPlatformError] get secret from context",
 				obskit.DestinationID(rts.destination.ID),
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
 				obskit.DestinationType(rts.destination.DefinitionName),
 				logger.NewStringField("flow", string(t.flow)))
 			// Instead of returning an error, set a 500 status code in the interceptor response
 			interceptorResp.StatusCode = http.StatusInternalServerError
-			interceptorResp.Response = "[postRoundTrip]Error getting secret from context"
+			interceptorResp.Response = "[OAuthPlatformError]Error getting secret from context"
 			applyInterceptorRespToHttpResp()
 			return rts.res
 		}
@@ -236,10 +236,10 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 func (rts *roundTripState) getAccountID(flow common.RudderFlow) (string, error) {
 	accountId, err := rts.destination.GetAccountID(flow)
 	if err != nil {
-		return "", fmt.Errorf("accountId not found for destination(%s) in %s flow", rts.destination.ID, flow)
+		return "", fmt.Errorf("[OAuthPlatformError]accountId not found for destination(%s) in %s flow", rts.destination.ID, flow)
 	}
 	if accountId == "" {
-		return "", fmt.Errorf("accountId is empty for destination(%s) in %s flow", rts.destination.ID, flow)
+		return "", fmt.Errorf("[OAuthPlatformError]accountId is empty for destination(%s) in %s flow", rts.destination.ID, flow)
 	}
 	return accountId, nil
 }
@@ -250,13 +250,9 @@ func (t *OAuthTransport) fireTimerStats(statName string, tags stats.Tags, startT
 
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	destination, ok := cntx.DestInfoFromCtx(req.Context())
-	if !ok {
-		t.log.Errorn("destinationInfo is not present in request context", logger.NewStringField("flow", string(t.flow)))
-		return httpResponseCreator(http.StatusInternalServerError, []byte("request context data is not of destinationInfo type")), nil
-	}
-	if destination == nil {
-		t.log.Errorn("nil destination info in request context", logger.NewStringField("flow", string(t.flow)))
-		return httpResponseCreator(http.StatusInternalServerError, []byte("no destination found in context of the request")), nil
+	if !ok || destination == nil {
+		t.log.Errorn("[OAuthPlatformError]destinationInfo is not present in request context", logger.NewStringField("flow", string(t.flow)))
+		return httpResponseCreator(http.StatusInternalServerError, []byte("[OAuthPlatformError]request context data is not of destinationInfo type")), nil
 	}
 
 	tags := stats.Tags{
@@ -270,7 +266,14 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
 	isOauthDestination, err := destination.IsOAuthDestination(t.flow)
 	if err != nil {
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("checking if destination is oauth destination: %v", err.Error()))), nil
+		t.log.Errorn("[OAuthPlatformError]checking if destination is oauth destination",
+			obskit.DestinationID(destination.ID),
+			obskit.WorkspaceID(destination.WorkspaceID),
+			obskit.DestinationType(destination.DefinitionName),
+			logger.NewStringField("flow", string(t.flow)),
+			logger.NewErrorField(err),
+		)
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[OAuthPlatformError]checking if destination is oauth destination: %v", err.Error()))), nil
 	}
 	if !isOauthDestination {
 		return t.Transport.RoundTrip(req)
@@ -279,7 +282,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	rts.destination = destination
 	rts.accountID, err = rts.getAccountID(t.flow)
 	if rts.accountID == "" {
-		t.log.Errorn("accountId not found or empty for destination",
+		t.log.Errorn("[OAuthPlatformError]accountId not found or empty for destination",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
@@ -304,7 +307,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	roundTripStartTime := time.Now()
 	res, err := t.Transport.RoundTrip(rts.req)
 	if err != nil {
-		t.log.Errorn("[RoundTrip] transport round trip",
+		t.log.Errorn("[RoundTrip]transport round trip",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),

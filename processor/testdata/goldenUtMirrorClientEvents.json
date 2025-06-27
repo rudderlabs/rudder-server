@@ -52,7 +52,8 @@
                 }
             ],
             "IsProcessorEnabled": true,
-            "RevisionID": ""
+            "RevisionID": "",
+            "hasDynamicConfig": false
         },
         "connection": {
             "sourceId": "",
@@ -116,7 +117,8 @@
                 }
             ],
             "IsProcessorEnabled": true,
-            "RevisionID": ""
+            "RevisionID": "",
+            "hasDynamicConfig": false
         },
         "connection": {
             "sourceId": "",
@@ -178,7 +180,8 @@
                 }
             ],
             "IsProcessorEnabled": true,
-            "RevisionID": ""
+            "RevisionID": "",
+            "hasDynamicConfig": false
         },
         "connection": {
             "sourceId": "",

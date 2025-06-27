@@ -6,6 +6,9 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 )
 
@@ -60,7 +63,7 @@ type DestinationT struct {
 	RevisionID            string
 	DeliveryAccount       *Account `json:"deliveryAccount,omitempty"`
 	DeleteAccount         *Account `json:"deleteAccount,omitempty"`
-	HasDynamicConfig      bool     `json:"hasDynamicConfig,omitempty"`
+	HasDynamicConfig      bool     `json:"hasDynamicConfig"`
 }
 
 // UpdateHasDynamicConfig checks if the destination config contains dynamic config patterns
@@ -81,6 +84,12 @@ func (d *DestinationT) UpdateHasDynamicConfig(cache dynamicconfig.Cache) {
 
 	// RevisionID is not in cache or has changed, recompute the dynamic config flag
 	d.HasDynamicConfig = dynamicconfig.ContainsPattern(d.Config)
+
+	pkgLogger.Infon("HasDynamicConfig flag updated",
+		obskit.DestinationID(d.ID),
+		obskit.WorkspaceID(d.WorkspaceID),
+		logger.NewBoolField("hasDynamicConfig", d.HasDynamicConfig),
+	)
 
 	// Update the cache with the new value
 	cache.Set(d.ID, &dynamicconfig.DestinationRevisionInfo{
@@ -176,6 +185,7 @@ func (c *ConfigT) DestinationsMap() map[string]*DestinationT {
 type Settings struct {
 	DataRetention     DataRetention `json:"dataRetention"`
 	EventAuditEnabled bool          `json:"eventAuditEnabled"`
+	EventBlocking     EventBlocking `json:"eventBlocking"`
 }
 
 type DataRetention struct {
@@ -262,4 +272,8 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType
 type TrackingPlanT struct {
 	Id      string `json:"id"`
 	Version int    `json:"version"`
+}
+
+type EventBlocking struct {
+	Events map[string][]string `json:"events"`
 }

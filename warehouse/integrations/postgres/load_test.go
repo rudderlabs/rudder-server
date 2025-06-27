@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -62,9 +63,6 @@ func TestLoadUsersTable(t *testing.T) {
 
 	misc.Init()
 	warehouseutils.Init()
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
 
 	const (
 		namespace   = "test_namespace"
@@ -156,6 +154,9 @@ func TestLoadUsersTable(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
 
 			pgResource, err := pgdocker.Setup(pool, t)
 			require.NoError(t, err)

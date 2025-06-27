@@ -571,7 +571,7 @@ func (proc *Handle) Setup(
 
 	if proc.config.enableDedup {
 		var err error
-		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory)
+		proc.dedup, err = dedup.New(proc.conf, proc.statsFactory, proc.logger)
 		if err != nil {
 			return err
 		}
@@ -1891,6 +1891,11 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				continue
 			}
 			dedupKeys[event.dedupKey.Key] = struct{}{}
+		}
+
+		if event.eventParams.IsEventBlocked {
+			proc.logger.Debugn("Dropping event because it is blocked by event blocking")
+			continue
 		}
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
