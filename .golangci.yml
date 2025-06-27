@@ -43,6 +43,28 @@ linters:
         - pattern: ^json\.NewEncoder.*$
           pkg: ^encoding/json$
           msg: use jsonrs.NewEncoder instead
+        # Rules for enforcing the go-kit non-sugared logger
+        - pattern: Logger.Debug(f|w)?$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use Logger.Debugn instead
+        - pattern: Logger\.Info(f|w)?$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use Logger.Infon instead
+        - pattern: Logger.Warn(f|w)?$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use Logger.Warnn instead
+        - pattern: Logger.Error(f|w)?$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use Logger.Errorn instead
+        - pattern: Logger.Fatal(f|w)?$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use Logger.Fataln instead
+        - pattern: Logger.With$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use Logger.Withn instead
+        - pattern: NewField$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use type specific counterpart e.g. NewStringField, NewIntField, etc...
       analyze-types: true
   exclusions:
     generated: lax
