@@ -136,8 +136,7 @@ var (
 )
 
 func pseudoWarehouseDestinations() map[string]struct{} {
-	all := make([]string, len(WarehouseDestinations)+1)
-	all = append(all, WarehouseDestinations...)
+	all := append([]string{}, WarehouseDestinations...)
 	all = append(all, SnowpipeStreaming)
 	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
