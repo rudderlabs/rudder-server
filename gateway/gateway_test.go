@@ -2820,7 +2820,8 @@ func TestLeakyUploader(t *testing.T) {
 		// Verify no files uploaded to Minio
 		require.Never(t, func() bool {
 			contents, err := minioContainer.Contents(context.Background(), "gw-failed-events")
-			return len(contents) != 0 && err == nil
+			require.NoError(t, err)
+			return len(contents) != 0
 		}, 5*time.Second, time.Second, "Minio bucket not updated within timeout")
 	})
 }
