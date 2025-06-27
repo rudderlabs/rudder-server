@@ -65,6 +65,9 @@ linters:
         - pattern: NewField$
           pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
           msg: use type specific counterpart e.g. NewStringField, NewIntField, etc...
+        - pattern: NewErrorField$
+          pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
+          msg: use rudder-observability-kit Error function
       analyze-types: true
   exclusions:
     generated: lax
