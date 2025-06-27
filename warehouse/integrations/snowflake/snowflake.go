@@ -1082,6 +1082,11 @@ func (sf *Snowflake) connect(ctx context.Context, opts optionalCreds) (*sqlmw.DB
 		Application:          "Rudderstack_Warehouse",
 		LoginTimeout:         timeout,
 	}
+	if sf.Warehouse.Destination.DestinationDefinition.Name == whutils.SnowpipeStreaming {
+		// Unlike Snowflake destination, we don't expose the useKeyPairAuth config for Snowpipe Streaming in the UI
+		// So we should set it explicitly here
+		data.UseKeyPairAuth = true
+	}
 
 	credentialsJSON, err := jsonrs.Marshal(data)
 	if err != nil {

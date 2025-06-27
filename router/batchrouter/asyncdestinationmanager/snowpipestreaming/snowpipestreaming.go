@@ -139,7 +139,6 @@ func (m *Manager) retryableClient() *retryablehttp.Client {
 }
 
 func (m *Manager) validateConfig(ctx context.Context, dest *backendconfig.DestinationT) error {
-	dest.Config["useKeyPairAuth"] = true // Since we are currently only supporting key pair auth
 	response := m.validator.Validate(ctx, dest)
 	if response.Success {
 		return nil

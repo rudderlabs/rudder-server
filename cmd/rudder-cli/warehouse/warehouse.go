@@ -42,6 +42,9 @@ func Query(c *cli.Context) (err error) {
 		}
 		sqlStmt = string(content)
 	}
+	if sqlStmt == "" {
+		return fmt.Errorf("no SQL statement provided")
+	}
 
 	input := QueryInput{
 		DestID:       c.String("dest"),

@@ -2985,7 +2985,7 @@ func TestEvents(t *testing.T) {
 			},
 			"type": "track",
 		}
-		for destination := range whutils.WarehouseDestinationMap {
+		for destination := range whutils.PseudoWarehouseDestinationMap {
 			t.Run(destination, func(t *testing.T) {
 				c := setupConfig(transformerResource, map[string]any{})
 
@@ -3032,7 +3032,7 @@ func TestEvents(t *testing.T) {
 				"timestamp":         "2021-09-01T00:00:00.000Z",
 				"type":              "track",
 			}
-			for destination := range whutils.WarehouseDestinationMap {
+			for destination := range whutils.PseudoWarehouseDestinationMap {
 				t.Run(destination, func(t *testing.T) {
 					c := setupConfig(transformerResource, map[string]any{})
 
@@ -3069,7 +3069,7 @@ func TestEvents(t *testing.T) {
 				"timestamp":         "2021-09-01T00:00:00.000Z",
 				"type":              "track",
 			}
-			for destination := range whutils.WarehouseDestinationMap {
+			for destination := range whutils.PseudoWarehouseDestinationMap {
 				t.Run(destination, func(t *testing.T) {
 					c := setupConfig(transformerResource, map[string]any{})
 
@@ -3106,7 +3106,7 @@ func TestEvents(t *testing.T) {
 				"timestamp":         "2021-09-01T00:00:00.000Z",
 				"type":              "track",
 			}
-			for destination := range whutils.WarehouseDestinationMap {
+			for destination := range whutils.PseudoWarehouseDestinationMap {
 				t.Run(destination, func(t *testing.T) {
 					c := setupConfig(transformerResource, map[string]any{})
 
