@@ -1,6 +1,7 @@
 package warehouse_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"testing"
@@ -8,6 +9,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -617,14 +620,16 @@ func TestTransformer(t *testing.T) {
 			processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
 			warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
-			eventContexts := []testhelper.EventContext{
-				{
-					Payload:     []byte(tc.eventPayload),
-					Metadata:    tc.metadata,
-					Destination: tc.destination,
-				},
-			}
-			testhelper.ValidateEvents(t, eventContexts, processorTransformer, warehouseTransformer, tc.expectedResponse)
+			var singularEvent types.SingularEventT
+			err = jsonrs.Unmarshal([]byte(tc.eventPayload), &singularEvent)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			events := []types.TransformerEvent{{Message: singularEvent, Metadata: tc.metadata, Destination: tc.destination}}
+
+			legacyResponse := processorTransformer.Transform(ctx, events)
+			embeddedResponse := warehouseTransformer.Transform(ctx, events)
+			testhelper.ValidateExpectedEvents(t, tc.expectedResponse, embeddedResponse, legacyResponse)
 		})
 	}
 }
@@ -642,6 +647,7 @@ func setupConfig(resource *transformertest.Resource, configOverride map[string]a
 
 func getDestination(destinationType string, config map[string]any) backendconfig.DestinationT {
 	return backendconfig.DestinationT{
+		ID:     "destinationID",
 		Name:   destinationType,
 		Config: config,
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
