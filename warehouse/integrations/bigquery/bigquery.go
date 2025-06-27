@@ -558,7 +558,7 @@ func (bq *BigQuery) loadTableByAppend(
 		return nil, nil, fmt.Errorf("waiting for append job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return nil, nil, fmt.Errorf("status for append job: %w, errors: %s", status.Err(), jobStatusError(status))
+		return nil, nil, fmt.Errorf("status for append job: %w", jobStatusError(status))
 	}
 
 	log.Debugn("job statistics")
@@ -579,13 +579,13 @@ func (bq *BigQuery) loadTableByAppend(
 	return tableStats, response, nil
 }
 
-func jobStatusError(status *bigquery.JobStatus) string {
-	return strings.Join(lo.Map(status.Errors, func(item *bigquery.Error, index int) string {
+func jobStatusError(status *bigquery.JobStatus) error {
+	return fmt.Errorf("job status with errors: %v", lo.Map(status.Errors, func(item *bigquery.Error, index int) string {
 		if item == nil {
 			return ""
 		}
 		return item.Error()
-	}), ",")
+	}))
 }
 
 // jobStatistics returns statistics for a job
@@ -758,7 +758,7 @@ func (bq *BigQuery) createAndLoadStagingUsersTable(ctx context.Context, stagingT
 		return fmt.Errorf("waiting for staging table load job: %w", err)
 	}
 	if err := status.Err(); err != nil {
-		return fmt.Errorf("status for staging table load job: %w, errors: %s", status.Err(), jobStatusError(status))
+		return fmt.Errorf("status for staging table load job: %w", jobStatusError(status))
 	}
 	return nil
 }
@@ -1249,7 +1249,7 @@ func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName strin
 		return fmt.Errorf("waiting for test data load job: %w", err)
 	}
 	if status.Err() != nil {
-		return fmt.Errorf("status for test data load job: %w, errors: %s", status.Err(), jobStatusError(status))
+		return fmt.Errorf("status for test data load job: %w", jobStatusError(status))
 	}
 	return nil
 }
