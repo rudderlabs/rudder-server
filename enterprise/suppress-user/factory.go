@@ -25,6 +25,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -45,11 +46,11 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 	}
 
 	if m.EnterpriseToken == "" {
-		m.Log.Info("Suppress User feature is enterprise only")
+		m.Log.Infon("Suppress User feature is enterprise only")
 		return &NOOP{}, nil
 	}
 
-	m.Log.Info("Setting up Suppress User Feature")
+	m.Log.Infon("Setting up Suppress User Feature")
 
 	backendConfig.WaitForConfig(ctx)
 
@@ -81,17 +82,17 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 			subCtx, latestSyncCancel := context.WithCancel(ctx)
 			rruntime.Go(func() {
-				m.Log.Infof("Starting latest suppression sync")
+				m.Log.Infon("Starting latest suppression sync")
 				latestSyncer.SyncLoop(subCtx)
 				err = latestRepo.Stop()
 				if err != nil {
-					m.Log.Warnf("Latest Sync failed: could not stop repo: %w", err)
+					m.Log.Warnn("Latest Sync failed: could not stop repo", obskit.Error(err))
 				}
 				err = os.RemoveAll(latestSuppressionPath)
 				if err != nil {
-					m.Log.Errorf("Latest Sync failed: could not remove repo: %w", err)
+					m.Log.Errorn("Latest Sync failed: could not remove repo", obskit.Error(err))
 				}
-				m.Log.Info("Latest suppression sync stopped")
+				m.Log.Infon("Latest suppression sync stopped")
 			})
 
 			repo := &RepoSwitcher{Repository: latestRepo}
@@ -106,28 +107,28 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 						return err
 					}, 5*time.Second)
 
-				m.Log.Info("First full suppression sync started")
+				m.Log.Infon("First full suppression sync started")
 				m.retryIndefinitely(ctx,
 					func() error { return fullSyncer.Sync(ctx) },
 					5*time.Second)
-				m.Log.Info("First full suppression sync done")
+				m.Log.Infon("First full suppression sync done")
 
 				_, err = os.Create(filepath.Join(fullSuppressionPath, model.SyncDoneMarker))
 				if err != nil {
-					m.Log.Errorf("Could not create sync done marker: %w", err)
+					m.Log.Errorn("Could not create sync done marker", obskit.Error(err))
 				}
 				repo.Switch(fullRepo)
-				m.Log.Info("Switched to full suppression repository")
+				m.Log.Infon("Switched to full suppression repository")
 				latestSyncCancel()
 				fullSyncer.SyncLoop(ctx)
 				err = fullRepo.Stop()
 				if err != nil {
-					m.Log.Warnf("Full Sync failed: could not stop repo: %w", err)
+					m.Log.Warnn("Full Sync failed: could not stop repo", obskit.Error(err))
 				}
 			})
 			return newHandler(repo, m.Log), nil
 		} else {
-			m.Log.Info("fullSuppression repo is already synced with backup service, starting syncLoop")
+			m.Log.Infon("fullSuppression repo is already synced with backup service, starting syncLoop")
 			syncer, fullRepo, err := m.newSyncerWithBadgerRepo(fullSuppressionPath, nil, 0, identifier, pollInterval)
 			if err != nil {
 				return nil, err
@@ -136,7 +137,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 				syncer.SyncLoop(ctx)
 				err = fullRepo.Stop()
 				if err != nil {
-					m.Log.Warnf("could not stop full sync repo: %w", err)
+					m.Log.Warnn("could not stop full sync repo", obskit.Error(err))
 				}
 			})
 			return newHandler(fullRepo, m.Log), nil
@@ -159,7 +160,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 			syncer.SyncLoop(ctx)
 			err = memoryRepo.Stop()
 			if err != nil {
-				m.Log.Warnf("Sync failed: could not stop repo: %w", err)
+				m.Log.Warnn("Sync failed: could not stop repo", obskit.Error(err))
 			}
 		})
 		h := newHandler(memoryRepo, m.Log)
@@ -180,7 +181,7 @@ func (m *Factory) retryIndefinitely(ctx context.Context, f func() error, wait ti
 		if err == nil {
 			return
 		}
-		m.Log.Errorf("retry failed: %v", err)
+		m.Log.Errorn("retry failed", obskit.Error(err))
 		select {
 		case <-ctx.Done():
 			return
