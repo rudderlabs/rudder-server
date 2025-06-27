@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/services/geolocation"
@@ -41,7 +42,7 @@ type geoEnricher struct {
 }
 
 func NewGeoEnricher(conf *config.Config, log logger.Logger, statClient stats.Stats) (PipelineEnricher, error) {
-	log.Infof("Setting up new event geo enricher")
+	log.Infon("Setting up new event geo enricher")
 
 	dbPath, err := downloadMaxmindDB(context.Background(), conf, log)
 	if err != nil {
@@ -68,7 +69,7 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 		return nil
 	}
 
-	e.logger.Debugw("received a call to enrich gateway events for source", "sourceID", source.ID)
+	e.logger.Debugn("received a call to enrich gateway events for source", obskit.SourceID(source.ID))
 	defer e.stats.NewTaggedStat(
 		"proc_geo_enricher_request_latency",
 		stats.TimerType,
@@ -139,7 +140,7 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 }
 
 func (e *geoEnricher) Close() error {
-	e.logger.Info("closing the geolocation enricher")
+	e.logger.Infon("closing the geolocation enricher")
 
 	if err := e.fetcher.Close(); err != nil {
 		return fmt.Errorf("closing the geo enricher: %w", err)
