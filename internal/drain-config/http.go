@@ -7,13 +7,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func (dcm *drainConfigManager) DrainConfigHttpHandler() http.Handler {
+func (d *drainConfigManager) DrainConfigHttpHandler() http.Handler {
 	srvMux := chi.NewRouter()
-	srvMux.Put("/job/{job_run_id}", dcm.drainJob)
+	srvMux.Put("/job/{job_run_id}", d.drainJob)
 	return srvMux
 }
 
-func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) {
+func (d *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	jobRunIDVal := chi.URLParam(r, "job_run_id")
 	if jobRunIDVal == "" {
@@ -21,7 +21,7 @@ func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := dcm.insert(ctx, jobRunIDKey, jobRunIDVal); err != nil {
+	if err := d.insert(ctx, jobRunIDKey, jobRunIDVal); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -29,8 +29,8 @@ func (dcm *drainConfigManager) drainJob(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func (dcm *drainConfigManager) insert(ctx context.Context, key, value string) error {
-	_, err := dcm.db.ExecContext(
+func (d *drainConfigManager) insert(ctx context.Context, key, value string) error {
+	_, err := d.db.ExecContext(
 		ctx,
 		"INSERT INTO drain_config (key, value) VALUES ($1, $2)",
 		key,
