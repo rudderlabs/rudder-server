@@ -2,13 +2,13 @@ package gateway
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
+	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,7 +53,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 )
 
-type leakyUpload struct {
+type msgToUpload struct {
 	payload []byte
 	fields  []logger.Field
 }
@@ -185,10 +185,28 @@ func (gw *Handle) Setup(
 			return authCtx, nil
 		})
 
+	// new bg ctx for leaky logger
+	// we don't want to cancel the main context.
+	leakyCtx, leakyCancel := context.WithCancel(context.Background())
+	leakyUploaderEnabled := gw.config.GetBool("Gateway.leakyUploader.enabled", false)
+	var leakyUploaderDone chan struct{}
+	var leakyUploaderBuffer chan msgToUpload
+
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := kitsync.ErrGroupWithContext(ctx)
 	gw.backgroundCancel = cancel
-	gw.backgroundWait = g.Wait
+	gw.backgroundWait = func() error {
+		err := g.Wait()
+		if err != nil {
+			return err
+		}
+		if leakyUploaderEnabled {
+			leakyCancel()
+			<-leakyUploaderDone
+			close(leakyUploaderBuffer)
+		}
+		return nil
+	}
 	gw.initUserWebRequestWorkers()
 	gw.backendConfigInitialisedChan = make(chan struct{})
 	gw.transformerFeaturesInitialised = transformerFeaturesService.Wait()
@@ -214,28 +232,21 @@ func (gw *Handle) Setup(
 		return nil
 	}))
 
-	if gw.config.GetBool("gateway.leakyUploader.enabled", false) {
-		leakyUploaderDone := make(chan struct{})
-		leakyUploaderBuffer := make(chan leakyUpload, config.GetInt("gateway.leakyUploader.bufferSize", 1))
+	if leakyUploaderEnabled {
+		leakyUploaderDone = make(chan struct{})
+		leakyUploaderBuffer = make(chan msgToUpload, config.GetInt("Gateway.leakyUploader.bufferSize", 1))
 		fm, err := getLeakyUploaderFileManager(gw.config, gw.logger)
 		if err == nil {
-			gw.leakyUploader = func(upload leakyUpload) {
+			gw.leakyUploader = func(upload msgToUpload) {
 				select {
-				case leakyUploaderBuffer <- leakyUpload{payload: upload.payload, fields: upload.fields}:
+				case leakyUploaderBuffer <- msgToUpload{payload: upload.payload, fields: upload.fields}:
 				default:
 					// drop the payload if the channel is full
 				}
 			}
-			g.Go(crash.Wrapper(func() error {
-				leakyUploader(ctx, gw.config, gw.logger, leakyUploaderDone, leakyUploaderBuffer, fm)
-				defer func() {
-					<-leakyUploaderDone
-					close(leakyUploaderBuffer)
-				}()
-				return nil
-			}))
+			go leakyUploader(leakyCtx, gw.config, gw.logger.Child("leaky-uploader"), leakyUploaderDone, leakyUploaderBuffer, fm)
 		} else {
-			gw.logger.Errorn("failed to create leaky uploader file manager", obskit.Error(err))
+			gw.logger.Errorn("failed to create leaky uploader in gateway", obskit.Error(err))
 		}
 	}
 	return nil
@@ -243,16 +254,16 @@ func (gw *Handle) Setup(
 
 func getLeakyUploaderFileManager(conf *config.Config, log logger.Logger) (filemanager.FileManager, error) {
 	var (
-		regionHint       = conf.GetStringVar("us-east-1", "leakyUploader.Storage.RegionHint", "AWS_S3_REGION_HINT")
-		endpoint         = conf.GetString("leakyUploader.Storage.Endpoint", "")
-		accessKeyID      = conf.GetStringVar("", "leakyUploader.Storage.AccessKeyId", "AWS_ACCESS_KEY_ID")
-		accessKey        = conf.GetStringVar("", "leakyUploader.Storage.AccessKey", "AWS_SECRET_ACCESS_KEY")
-		s3ForcePathStyle = conf.GetBool("leakyUploader.Storage.S3ForcePathStyle", false)
-		disableSSL       = conf.GetBool("leakyUploader.Storage.DisableSsl", false)
-		enableSSE        = conf.GetBoolVar(false, "leakyUploader.Storage.EnableSse", "AWS_ENABLE_SSE")
-		useGlue          = conf.GetBool("leakyUploader.Storage.UseGlue", false)
-		region           = conf.GetStringVar("us-east-1", "leakyUploader.Storage.Region", "AWS_DEFAULT_REGION")
-		bucket           = conf.GetStringVar("rudder-customer-sample-payloads-us", "leakyUploader.Storage.Bucket")
+		regionHint       = conf.GetStringVar("us-east-1", "Gateway.leakyUploader.Storage.RegionHint", "AWS_S3_REGION_HINT")
+		endpoint         = conf.GetString("Gateway.leakyUploader.Storage.Endpoint", "")
+		accessKeyID      = conf.GetStringVar("", "Gateway.leakyUploader.Storage.AccessKeyId", "AWS_ACCESS_KEY_ID")
+		accessKey        = conf.GetStringVar("", "Gateway.leakyUploader.Storage.AccessKey", "AWS_SECRET_ACCESS_KEY")
+		s3ForcePathStyle = conf.GetBool("Gateway.leakyUploader.Storage.S3ForcePathStyle", false)
+		disableSSL       = conf.GetBool("Gateway.leakyUploader.Storage.DisableSsl", false)
+		enableSSE        = conf.GetBoolVar(false, "Gateway.leakyUploader.Storage.EnableSse", "AWS_ENABLE_SSE")
+		useGlue          = conf.GetBool("Gateway.leakyUploader.Storage.UseGlue", false)
+		region           = conf.GetStringVar("us-east-1", "Gateway.leakyUploader.Storage.Region", "AWS_DEFAULT_REGION")
+		bucket           = conf.GetStringVar("rudder-customer-sample-payloads-us", "Gateway.leakyUploader.Storage.Bucket")
 	)
 
 	s3Config := map[string]any{
@@ -272,13 +283,13 @@ func getLeakyUploaderFileManager(conf *config.Config, log logger.Logger) (filema
 		s3Config,
 		log.Withn(logger.NewStringField("component", "leaky-uploader")),
 		func() time.Duration {
-			return conf.GetDuration("leakyUploader.Timeout", 120, time.Second)
+			return conf.GetDuration("Gateway.leakyUploader.Timeout", 120, time.Second)
 		},
 	)
 }
 
-func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, done chan struct{}, uploads <-chan leakyUpload, fm filemanager.FileManager) {
-	backoff := conf.GetDuration("gateway.leakyUploader.backoff", 1, time.Second)
+func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, done chan struct{}, uploads <-chan msgToUpload, fm filemanager.FileManager) {
+	backoff := conf.GetDuration("Gateway.leakyUploader.backoff", 1, time.Second)
 	instanceName := conf.GetString("INSTANCE_ID", "unknown-instance")
 	log.Infon("starting leaky payload uploader", logger.NewStringField("instanceName", instanceName))
 	defer close(done)
@@ -287,29 +298,15 @@ func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, 
 		case <-ctx.Done():
 			return
 		case upload := <-uploads:
-			file, err := os.CreateTemp("", "payload-dump*.txt")
+			fileName := path.Join("gw-failed-events", instanceName, time.Now().Format("2006-01-02"), uuid.New().String())
+			uploadedFile, err := fm.UploadReader(ctx, fileName, strings.NewReader(string(upload.payload)))
 			if err != nil {
-				log.Errorn("Payload dump: cannot create temp file", obskit.Error(err))
-				continue
-			}
-			_, err = file.WriteString(base64.StdEncoding.EncodeToString(upload.payload))
-			if err != nil {
-				log.Errorn("Payload dump: cannot write base64 encoded payload to the file", obskit.Error(err))
-				continue
-			}
-			file, err = os.Open(file.Name())
-			if err != nil {
-				log.Errorn("Payload dump: cannot open temp file", obskit.Error(err))
-				continue
-			}
-			uploadedFile, err := fm.Upload(ctx, file, "gw-failed-events", instanceName, time.Now().Format("2006-01-02"))
-			if err != nil {
-				log.Errorn("Payload dump: cannot upload", obskit.Error(err))
+				log.Errorn("cannot upload payload dump", obskit.Error(err))
 				continue
 			}
 			upload.fields = append(upload.fields, logger.NewStringField("payload", uploadedFile.Location))
 
-			log.Infon("Payload dump uploaded", upload.fields...)
+			log.Infon("payload dump uploaded", upload.fields...)
 			select {
 			case <-ctx.Done():
 				return

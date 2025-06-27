@@ -2756,8 +2756,10 @@ func TestLeakyUploader(t *testing.T) {
 	// Setup Minio test container
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+	pool.MaxWait = time.Minute
 
 	t.Run("invalid JSON payload should be uploaded to Minio", func(t *testing.T) {
+		t.Parallel()
 		minioContainer, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
@@ -2779,12 +2781,12 @@ func TestLeakyUploader(t *testing.T) {
 		// verify file was uploaded to Minio
 		require.Eventually(t, func() bool {
 			contents, err := minioContainer.Contents(context.Background(), "gw-failed-events")
-			require.NoError(t, err)
-			return len(contents) != 0
-		}, 2*time.Second, time.Second, "Minio bucket not updated within timeout")
+			return err == nil && len(contents) != 0
+		}, 10*time.Second, time.Second, "Minio bucket not updated within timeout")
 	})
 
 	t.Run("valid JSON payload should be processed normally", func(t *testing.T) {
+		t.Parallel()
 		// Prepare valid payload
 		validPayload := []byte(`[
 			{
@@ -2816,12 +2818,10 @@ func TestLeakyUploader(t *testing.T) {
 		require.Len(t, jobs, 1)
 
 		// Verify no files uploaded to Minio
-		// verify file was uploaded to Minio
 		require.Never(t, func() bool {
 			contents, err := minioContainer.Contents(context.Background(), "gw-failed-events")
-			require.NoError(t, err)
-			return len(contents) != 0
-		}, 2*time.Second, time.Second, "Minio bucket not updated within timeout")
+			return len(contents) != 0 && err == nil
+		}, 5*time.Second, time.Second, "Minio bucket not updated within timeout")
 	})
 }
 
@@ -2851,15 +2851,15 @@ func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, sec
 	mockApp.EXPECT().Features().Return(enterpriseFeatures).AnyTimes()
 	gw = &Handle{}
 	conf := config.New()
-	conf.Set("gateway.leakyUploader.enabled", true)
-	conf.Set("leakyUploader.Storage.Endpoint", endpoint)
-	conf.Set("leakyUploader.Storage.AccessKeyId", accessKeyID)
-	conf.Set("leakyUploader.Storage.AccessKey", secretKey)
-	conf.Set("leakyUploader.Storage.Bucket", "rudder-saas")
-	conf.Set("leakyUploader.Timeout", "2s")
-	conf.Set("leakyUploader.Storage.DisableSsl", true)
-	conf.Set("leakyUploader.Storage.UseGlue", true)
-	conf.Set("leakyUploader.Storage.S3ForcePathStyle", true)
+	conf.Set("Gateway.leakyUploader.enabled", true)
+	conf.Set("Gateway.leakyUploader.Storage.Endpoint", endpoint)
+	conf.Set("Gateway.leakyUploader.Storage.AccessKeyId", accessKeyID)
+	conf.Set("Gateway.leakyUploader.Storage.AccessKey", secretKey)
+	conf.Set("Gateway.leakyUploader.Storage.Bucket", "rudder-saas")
+	conf.Set("Gateway.leakyUploader.Timeout", "2s")
+	conf.Set("Gateway.leakyUploader.Storage.DisableSsl", true)
+	conf.Set("Gateway.leakyUploader.Storage.UseGlue", true)
+	conf.Set("Gateway.leakyUploader.Storage.S3ForcePathStyle", true)
 	err := gw.Setup(context.Background(), conf, logger.NewLogger().With("component", "test"), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockErrJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {

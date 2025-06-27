@@ -142,7 +142,7 @@ type Handle struct {
 	webhookAuthMiddleware *auth.WebhookAuth
 
 	// leakyUploader is an optional function that can be set to handle uploading of invalid payloads
-	leakyUploader func(upload leakyUpload)
+	leakyUploader func(upload msgToUpload)
 }
 
 // findUserWebRequestWorker finds and returns the worker that works on a particular `userID`.
@@ -788,7 +788,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	defer func() {
 		// Upload the raw payload via leaky uploader if available
 		if err != nil && gw.leakyUploader != nil {
-			gw.leakyUploader(leakyUpload{
+			gw.leakyUploader(msgToUpload{
 				payload: body,
 				fields:  []logger.Field{obskit.Error(err)},
 			})
