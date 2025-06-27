@@ -3,6 +3,8 @@ package processor
 import (
 	"context"
 
+	"database/sql"
+
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/collector"
 	rt "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -74,6 +76,7 @@ func (s *RouterStage) Process(ctx context.Context, input []*rt.InMetricEvent) ([
 
 type SubJob struct {
 	InputEvents      []*rt.InMetricEvent
+	OutputEvents     []*rt.OutMetricEvent
 	MetricsCollector *collector.MetricsCollectorMediator
 }
 
@@ -101,11 +104,15 @@ func Example() {
 
 	mergedCollector := collector.NewMetricsCollectorMediator(rt.StageDetails{Stage: "merged"}, nil, nil)
 	mergedCollector.End()
+	outMetricEvents := []*rt.OutMetricEvent{}
+
 	for _, subJob := range subJobs {
 		mergedCollector.Merge(subJob.MetricsCollector)
+		outMetricEvents = append(outMetricEvents, subJob.OutputEvents...)
 	}
-	mergedCollector.Flush(ctx, nil)
 
+	store(outMetricEvents, nil)
+	mergedCollector.Flush(ctx, nil)
 }
 
 func getStageInstance(stage string) ProcessorStage {
@@ -158,4 +165,8 @@ func getInputEventsFromOutputEvents(outputEvents []*rt.OutMetricEvent) []*rt.InM
 
 func splitIntoSubJobs(events []*rt.InMetricEvent, chunkSize int) []*SubJob {
 	return nil
+}
+
+func store(events []*rt.OutMetricEvent, tx *sql.Tx) {
+
 }
