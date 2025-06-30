@@ -329,9 +329,9 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.Ta
 
 func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) error {
 	if job.config.disableAlter {
-		job.logger.Debugw("skipping alter columns to warehouse",
-			logfield.TableName, tName,
-			"columns", columnsMap,
+		job.logger.Debugn("skipping alter columns to warehouse",
+			logger.NewStringField(logfield.TableName, tName),
+			logger.NewStringField("columns", columnsMap.String()),
 		)
 		return nil
 	}
