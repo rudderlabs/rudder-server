@@ -2763,7 +2763,7 @@ func TestLeakyUploader(t *testing.T) {
 		minioContainer, err := minio.Setup(pool, t)
 		require.NoError(t, err)
 
-		// create test gateway with leaky uploader enabled
+		// create a test gateway with leaky uploader enabled
 		gw, cleanupFn := createTestGatewayWithLeakyUploader(t, minioContainer.Endpoint, minioContainer.AccessKeyID, minioContainer.AccessKeySecret)
 		t.Cleanup(cleanupFn)
 

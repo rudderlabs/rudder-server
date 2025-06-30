@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"net/url"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -241,7 +241,7 @@ func (gw *Handle) Setup(
 				select {
 				case leakyUploaderBuffer <- msgToUpload{payload: upload.payload, fields: upload.fields}:
 				default:
-					// drop the payload if the channel is full
+					gw.logger.Warnn("leakyUploader buffer full", upload.fields...)
 				}
 			}
 			go leakyUploader(leakyCtx, gw.config, gw.logger.Child("leaky-uploader"), leakyUploaderDone, leakyUploaderBuffer, fm)
@@ -291,7 +291,7 @@ func getLeakyUploaderFileManager(conf *config.Config, log logger.Logger) (filema
 func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, done chan struct{}, uploads <-chan msgToUpload, fm filemanager.FileManager) {
 	backoff := conf.GetDuration("Gateway.leakyUploader.backoff", 1, time.Second)
 	instanceName := conf.GetString("INSTANCE_ID", "unknown-instance")
-	log.Infon("starting leaky payload uploader", logger.NewStringField("instanceName", instanceName))
+	log.Infon("starting leaky payload uploader")
 	defer close(done)
 	for {
 		select {
@@ -299,7 +299,7 @@ func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, 
 			return
 		case upload := <-uploads:
 			fileName := path.Join("gw-failed-events", instanceName, time.Now().Format("2006-01-02"), uuid.New().String())
-			uploadedFile, err := fm.UploadReader(ctx, fileName, strings.NewReader(string(upload.payload)))
+			uploadedFile, err := fm.UploadReader(ctx, fileName, bytes.NewReader(upload.payload))
 			if err != nil {
 				log.Errorn("cannot upload payload dump", obskit.Error(err))
 				continue

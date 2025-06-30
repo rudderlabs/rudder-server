@@ -787,11 +787,14 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	defer func() {
 		// Upload the raw payload via leaky uploader if available
-		if err != nil && gw.leakyUploader != nil {
-			gw.leakyUploader(msgToUpload{
+		if (err != nil && gw.leakyUploader != nil) || len(messages) == 0 {
+			toUpload := msgToUpload{
 				payload: body,
-				fields:  []logger.Field{obskit.Error(err)},
-			})
+			}
+			if err != nil {
+				toUpload.fields = []logger.Field{obskit.Error(err)}
+			}
+			gw.leakyUploader(toUpload)
 		}
 	}()
 
@@ -817,7 +820,13 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	res = make([]jobWithStat, 0, len(messages))
 
 	for _, msg := range messages {
-		var messageID string
+		var (
+			rudderId         uuid.UUID
+			messageID        string
+			marshalledParams []byte
+			payload          []byte
+		)
+
 		stat := gwstats.SourceStat{ReqType: reqType}
 
 		if internalBatchEnrichmentEnabled {
@@ -862,7 +871,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 					return nil, errors.New((response.NotRudderEvent))
 				}
 			}
-			rudderId, err := getRudderId(userIDFromReq, anonIDFromReq)
+			rudderId, err = getRudderId(userIDFromReq, anonIDFromReq)
 			if err != nil {
 				stat.RequestFailed((response.NotRudderEvent))
 				stat.Report(gw.stats)
@@ -902,7 +911,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 
 		if internalBatchValidatorEnabled {
-			ok, err := gw.msgValidator.Validate(msg.Payload, &msg.Properties)
+			var ok bool
+			ok, err = gw.msgValidator.Validate(msg.Payload, &msg.Properties)
 			if err != nil || !ok {
 				errMsg := "validations failed"
 				if err != nil {
@@ -970,7 +980,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotAction:           msg.Properties.BotAction,
 		}
 
-		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
+		marshalledParams, err = jsonrs.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
 				logger.NewField("params", jobsDBParams),
@@ -988,7 +998,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			WriteKey:   writeKey,
 		}
 
-		payload, err := jsonrs.Marshal(eventBatch)
+		payload, err = jsonrs.Marshal(eventBatch)
 		if err != nil {
 			err = fmt.Errorf("marshalling event batch: %w", err)
 			stat.RequestEventsFailed(1, err.Error())
