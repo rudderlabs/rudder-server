@@ -787,7 +787,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 	defer func() {
 		// Upload the raw payload via leaky uploader if available
-		if (err != nil || len(messages) == 0) && gw.leakyUploader != nil {
+		if gw.leakyUploader != nil && (err != nil || len(messages) == 0) {
 			toUpload := msgToUpload{
 				payload: body,
 			}
