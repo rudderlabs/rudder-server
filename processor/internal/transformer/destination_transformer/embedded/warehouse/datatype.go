@@ -23,7 +23,7 @@ func dataTypeFor(destType, key string, val any, isJSONKey bool) string {
 
 func primitiveType(val any) string {
 	switch v := val.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, uintptr:
 		return model.IntDataType
 	case float64:
 		return getFloatType(v)

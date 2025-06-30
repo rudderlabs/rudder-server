@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -331,16 +332,26 @@ func TestIsJSONCompatibleStructure(t *testing.T) {
 	}{
 		{nil, false},
 		{true, false},
+		{lo.ToPtr(true), true},
 		{123, false},
+		{lo.ToPtr(123), true},
 		{"hello", false},
+		{lo.ToPtr("hello"), true},
 		{[]any{"a", 1}, false},
+		{lo.ToPtr([]any{"a", 1}), true},
 		{map[string]any{"k": "v"}, false},
+		{lo.ToPtr(map[string]any{"k": "v"}), true},
 		{testStruct{}, true},
-		{&testStruct{}, true},
+		{lo.ToPtr(testStruct{}), true},
 		{[]any{}, false},
+		{lo.ToPtr([]any{}), true},
 		{[]any{1, 2, 3}, false},
+		{lo.ToPtr([]any{1, 2, 3}), true},
 		{[]testStruct{{}, {}}, true},
+		{[]*testStruct{lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}, true},
 		{[][]testStruct{{{}, {}}, {{}, {}}}, true},
+		{[][]*testStruct{{lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}, {lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}}, true},
+		{[]*[]testStruct{lo.ToPtr([]testStruct{{}, {}}), lo.ToPtr([]testStruct{{}, {}})}, true},
 	}
 
 	for i, tc := range testCases {

@@ -15,7 +15,7 @@ import (
 func ValidateExpectedEvents(t testing.TB, expectedResponse, embeddedResponse, legacyResponse types.Response) {
 	t.Helper()
 	expectedResponse, embeddedResponse, legacyResponse = deepCopyResponse(t, expectedResponse), deepCopyResponse(t, embeddedResponse), deepCopyResponse(t, legacyResponse)
-	checkForMarshalledFieldsAndRemove(t, expectedResponse.Events, embeddedResponse.Events, legacyResponse.Events)
+	checkForMarshalledFieldsAndRemove(t, expectedResponse.Events, embeddedResponse.Events, legacyResponse.Events, []string{"data.rudder_event"}...)
 	cmpEvents(t, expectedResponse.Events, embeddedResponse.Events)
 	cmpFailedEvents(t, expectedResponse.FailedEvents, embeddedResponse.FailedEvents)
 	cmpEvents(t, expectedResponse.Events, legacyResponse.Events)
@@ -41,10 +41,8 @@ func cmpEvents(t testing.TB, expected, actual []types.TransformerResponse) {
 	}
 }
 
-func checkForMarshalledFieldsAndRemove(t testing.TB, expected, embedded, legacy []types.TransformerResponse) {
+func checkForMarshalledFieldsAndRemove(t testing.TB, expected, embedded, legacy []types.TransformerResponse, fields ...string) {
 	t.Helper()
-
-	fields := []string{"data.rudder_event"}
 
 	for i := range expected {
 		for _, field := range fields {
