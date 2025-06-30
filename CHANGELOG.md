@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.53.2](https://github.com/rudderlabs/rudder-server/compare/v1.53.1...v1.53.2) (2025-06-30)
+
+
+### Bug Fixes
+
+* bigquery load errors population ([#6065](https://github.com/rudderlabs/rudder-server/issues/6065)) ([0e3e4ab](https://github.com/rudderlabs/rudder-server/commit/0e3e4ab6d1944e3f2f027d2455a6293b52f51e4c))
+* custom type in payload during enrichment ([#6064](https://github.com/rudderlabs/rudder-server/issues/6064)) ([fdcd09f](https://github.com/rudderlabs/rudder-server/commit/fdcd09fd9a49f515ebb65a7f4751cb4c1602ed45))
+
 ## [1.53.1](https://github.com/rudderlabs/rudder-server/compare/v1.53.0...v1.53.1) (2025-06-26)
 
 
