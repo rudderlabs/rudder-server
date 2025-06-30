@@ -35,6 +35,13 @@ func setDataAndMetadataFromInput(
 		if utils.IsEmptyString(val) {
 			continue
 		}
+		if utils.IsJSONCompatibleStructure(val) {
+			valMap, err := utils.ToJSONCompatible(val)
+			if err != nil {
+				return fmt.Errorf("could not convert struct to map: %w", err)
+			}
+			val = valMap
+		}
 		if isValidJSONPath(tec, key, pi) {
 			if err := handleValidJSONPath(tec, key, val, data, metadata, pi); err != nil {
 				return fmt.Errorf("handling valid JSON path: %w", err)
@@ -89,19 +96,7 @@ func addDataAndMetadata(tec *transformEventContext, key string, val any, isJSONK
 
 	dataType := dataTypeFor(tec.event.Metadata.DestinationType, safeKey, val, isJSONKey)
 	metadata[safeKey] = dataType
-
-	switch safeKey {
-	case "context_geo", "CONTEXT_GEO":
-		if err := addDataAndMetadataForContextGeoEnrichment(tec, data, metadata, safeKey, val); err != nil {
-			return fmt.Errorf("adding context geo enrichment: %w", err)
-		}
-	case "context_tracking_plan_version", "CONTEXT_TRACKING_PLAN_VERSION":
-		data[safeKey] = convertToFloat64IfInteger(val)
-	case "context_violation_errors", "CONTEXT_VIOLATION_ERRORS":
-		data[safeKey] = convertToSliceIfViolationErrors(val)
-	default:
-		data[safeKey] = convertValIfDateTime(val, dataType)
-	}
+	data[safeKey] = convertValIfDateTime(val, dataType)
 	return nil
 }
 

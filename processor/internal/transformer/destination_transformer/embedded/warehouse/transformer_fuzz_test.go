@@ -24,6 +24,7 @@ import (
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -575,67 +576,34 @@ func FuzzTransformer(f *testing.F) {
 		processorTransformer := destination_transformer.New(conf, logger.NOP, stats.Default)
 		warehouseTransformer := warehouse.New(conf, logger.NOP, stats.NOP)
 
-		eventContexts := []testhelper.EventContext{
-			{
-				Payload: []byte(sanitizedPayload),
-				Metadata: types.Metadata{
-					EventType:       eventType,
-					EventName:       eventName,
-					DestinationType: destType,
-					ReceivedAt:      receivedAt.Format(misc.RFC3339Milli),
-					SourceID:        "sourceID",
-					DestinationID:   "destinationID",
-					SourceType:      "sourceType",
-					MessageID:       messageID,
-					RecordID:        recordID,
-				},
-				Destination: backendconfig.DestinationT{
-					Name:   destType,
-					Config: destConfig,
-					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name: destType,
-					},
-				},
-			},
-		}
-		cmpEvents(t, eventContexts, processorTransformer, warehouseTransformer)
-	})
-}
-
-func cmpEvents(t *testing.T, eventContexts []testhelper.EventContext, pTransformer *destination_transformer.Client, dTransformer *warehouse.Transformer) {
-	t.Helper()
-
-	events := make([]types.TransformerEvent, 0, len(eventContexts))
-	for _, eventContext := range eventContexts {
 		var singularEvent types.SingularEventT
-		err := jsonrs.Unmarshal(eventContext.Payload, &singularEvent)
+		err = jsonrs.Unmarshal([]byte(sanitizedPayload), &singularEvent)
 		require.NoError(t, err)
 
-		events = append(events, types.TransformerEvent{
-			Message:     singularEvent,
-			Metadata:    eventContext.Metadata,
-			Destination: eventContext.Destination,
-		})
-	}
-
-	ctx := context.Background()
-
-	legacyResponse := pTransformer.Transform(ctx, events)
-	embeddedResponse := dTransformer.Transform(ctx, events)
-
-	require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-	require.Equal(t, len(embeddedResponse.FailedEvents), len(legacyResponse.FailedEvents))
-
-	for i := range legacyResponse.Events {
-		require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-	}
-	for i := range legacyResponse.FailedEvents {
-		require.NotEmpty(t, legacyResponse.FailedEvents[i].Error)
-		require.NotEmpty(t, embeddedResponse.FailedEvents[i].Error)
-
-		require.NotZero(t, legacyResponse.FailedEvents[i].StatusCode)
-		require.NotZero(t, embeddedResponse.FailedEvents[i].StatusCode)
-	}
+		ctx := context.Background()
+		metadata := types.Metadata{
+			EventType:       eventType,
+			EventName:       eventName,
+			DestinationType: destType,
+			ReceivedAt:      receivedAt.Format(misc.RFC3339Milli),
+			SourceID:        "sourceID",
+			DestinationID:   "destinationID",
+			SourceType:      "sourceType",
+			MessageID:       messageID,
+			RecordID:        recordID,
+		}
+		destination := backendconfig.DestinationT{
+			Name:   destType,
+			Config: destConfig,
+			DestinationDefinition: backendconfig.DestinationDefinitionT{
+				Name: destType,
+			},
+		}
+		events := []types.TransformerEvent{{Message: singularEvent, Metadata: metadata, Destination: destination}}
+		legacyResponse := processorTransformer.Transform(ctx, events)
+		embeddedResponse := warehouseTransformer.Transform(ctx, events)
+		testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
+	})
 }
 
 func sanitizePayload(input string) (string, error) {
