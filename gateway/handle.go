@@ -107,9 +107,11 @@ type Handle struct {
 	trackFailureCount int
 
 	// backendconfig state
-	configSubscriberLock sync.RWMutex
-	writeKeysSourceMap   map[string]backendconfig.SourceT
-	sourceIDSourceMap    map[string]backendconfig.SourceT
+	configSubscriberLock              sync.RWMutex
+	writeKeysSourceMap                map[string]backendconfig.SourceT
+	sourceIDSourceMap                 map[string]backendconfig.SourceT
+	nonEventStreamSources             map[string]bool
+	blockedEventsWorkspaceTypeNameMap map[string]map[string]map[string]bool
 
 	conf struct { // configuration parameters
 		webPort, maxUserWebRequestWorkerProcess, maxDBWriterProcess                       int
@@ -128,6 +130,7 @@ type Handle struct {
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
+		enableEventBlocking                  config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
 	}
 
@@ -582,6 +585,40 @@ func (gw *Handle) isUserSuppressed(workspaceID, userID, sourceID string) bool {
 	return false
 }
 
+func (gw *Handle) memoizedIsEventBlocked() func(workspaceID, sourceID, eventType, eventName string) bool {
+	cache := map[string]bool{}
+	return func(workspaceID, sourceID, eventType, eventName string) bool {
+		key := workspaceID + ":" + sourceID + ":" + eventType + ":" + eventName
+		if val, ok := cache[key]; ok {
+			return val
+		}
+		val := gw.isEventBlocked(workspaceID, sourceID, eventType, eventName)
+		cache[key] = val
+		return val
+	}
+}
+
+// isEventBlocked checks if an event should be blocked based on workspace settings
+func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName string) bool {
+	if !gw.conf.enableEventBlocking.Load() {
+		return false
+	}
+
+	// Event blocking is only supported for track events
+	if eventName == "" || eventType != "track" {
+		return false
+	}
+
+	gw.configSubscriberLock.RLock()
+	defer gw.configSubscriberLock.RUnlock()
+
+	if gw.nonEventStreamSources[sourceID] {
+		return false
+	}
+
+	return gw.blockedEventsWorkspaceTypeNameMap[workspaceID][eventType][eventName]
+}
+
 // getPayload reads the request body and returns the payload's bytes or an error if the payload cannot be read
 func (gw *Handle) getPayload(arctx *gwtypes.AuthRequestContext, r *http.Request, reqType string) ([]byte, error) {
 	payload, err := gw.getPayloadFromRequest(r)
@@ -658,15 +695,15 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var (
-			ctx           = r.Context()
-			reqType       = ctx.Value(gwtypes.CtxParamCallType).(string)
-			jobsWithStats []jobWithStat
-			body          []byte
-			err           error
-			status        int
-			errorMessage  string
-			responseBody  string
-			stat          = gwstats.SourceStat{ReqType: reqType}
+			ctx              = r.Context()
+			reqType          = ctx.Value(gwtypes.CtxParamCallType).(string)
+			jobsWithMetadata []jobWithMetadata
+			body             []byte
+			err              error
+			status           int
+			errorMessage     string
+			responseBody     string
+			stat             = gwstats.SourceStat{ReqType: reqType}
 		)
 
 		// TODO: add tracing
@@ -677,33 +714,35 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 			stat.Report(gw.stats)
 			goto requestError
 		}
-		jobsWithStats, err = gw.extractJobsFromInternalBatchPayload(reqType, body)
+		jobsWithMetadata, err = gw.extractJobsFromInternalBatchPayload(reqType, body)
 		if err != nil {
 			goto requestError
 		}
 
-		if len(jobsWithStats) > 0 {
-			jobs := lo.Map(jobsWithStats, func(jws jobWithStat, _ int) *jobsdb.JobT {
-				return jws.job
+		if len(jobsWithMetadata) > 0 {
+			jobs := lo.Map(jobsWithMetadata, func(jwm jobWithMetadata, _ int) *jobsdb.JobT {
+				return jwm.job
 			})
 			if err = gw.storeJobs(ctx, jobs); err != nil {
-				for _, jws := range jobsWithStats {
-					jws.stat.EventsFailed(1, "storeFailed")
-					jws.stat.Report(gw.stats)
+				for _, jwm := range jobsWithMetadata {
+					jwm.stat.EventsFailed(1, "storeFailed")
+					jwm.stat.Report(gw.stats)
 				}
 				stat.RequestFailed("storeFailed")
 				stat.Report(gw.stats)
 				goto requestError
 			}
-			for _, jws := range jobsWithStats {
-				jws.stat.EventsSuccess(1)
-				jws.stat.Report(gw.stats)
+			for _, jwm := range jobsWithMetadata {
+				jwm.stat.EventsSuccess(1)
+				jwm.stat.Report(gw.stats)
 				// Sending events to config backend
-				if jws.stat.WriteKey == "" {
+				if jwm.stat.WriteKey == "" {
 					gw.logger.Errorn("writeKey not found in event payload")
 					continue
 				}
-				gw.sourcehandle.RecordEvent(jws.stat.WriteKey, jws.job.EventPayload)
+				if !jwm.skipLiveEventRecording {
+					gw.sourcehandle.RecordEvent(jwm.stat.WriteKey, jwm.job.EventPayload)
+				}
 			}
 			stat.RequestSucceeded()
 			stat.Report(gw.stats)
@@ -743,13 +782,14 @@ func (gw *Handle) internalBatchHandlerFunc() http.HandlerFunc {
 	}
 }
 
-type jobWithStat struct {
-	job  *jobsdb.JobT
-	stat gwstats.SourceStat
+type jobWithMetadata struct {
+	job                    *jobsdb.JobT
+	stat                   gwstats.SourceStat
+	skipLiveEventRecording bool
 }
 
 func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
-	[]jobWithStat, error,
+	[]jobWithMetadata, error,
 ) {
 	type params struct {
 		MessageID           string `json:"message_id"`
@@ -765,6 +805,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		BotURL              string `json:"bot_url,omitempty"`
 		BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
 		BotAction           string `json:"bot_action,omitempty"`
+		IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
 	}
 
 	type singularEventBatch struct {
@@ -777,7 +818,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	var (
 		messages         []stream.Message
 		isUserSuppressed = gw.memoizedIsUserSuppressed()
-		res              []jobWithStat
+		isEventBlocked   = gw.memoizedIsEventBlocked()
+		res              []jobWithMetadata
 		stat             = gwstats.SourceStat{ReqType: reqType}
 	)
 
@@ -801,7 +843,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	internalBatchValidatorEnabled := gw.conf.enableInternalBatchValidator.Load()
 	internalBatchEnrichmentEnabled := gw.conf.enableInternalBatchEnrichment.Load()
 
-	res = make([]jobWithStat, 0, len(messages))
+	res = make([]jobWithMetadata, 0, len(messages))
 
 	for _, msg := range messages {
 		var messageID string
@@ -957,6 +999,11 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotAction:           msg.Properties.BotAction,
 		}
 
+		eventName := gjson.GetBytes(msg.Payload, "event").String()
+		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, msg.Properties.RequestType, eventName) {
+			jobsDBParams.IsEventBlocked = true
+		}
+
 		marshalledParams, err := jsonrs.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
@@ -987,8 +1034,9 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			return nil, fmt.Errorf("marshalling event batch: %w", err)
 		}
 		jobUUID := uuid.New()
-		res = append(res, jobWithStat{
-			stat: stat,
+		res = append(res, jobWithMetadata{
+			stat:                   stat,
+			skipLiveEventRecording: jobsDBParams.IsEventBlocked,
 			job: &jobsdb.JobT{
 				UUID:         jobUUID,
 				UserID:       msg.Properties.RoutingKey,

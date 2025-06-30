@@ -78,7 +78,7 @@ func newIcebergTableManager(externalVolume string) tableManager {
 			"bigint":   "number(19,0)",
 			"float":    "double precision",
 			"string":   "varchar",
-			"datetime": "timestamp_ltz(6)",
+			"datetime": "timestamp_ntz(6)",
 			"json":     "varchar",
 		},
 		externalVolume: externalVolume,
