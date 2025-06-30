@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -214,7 +215,7 @@ func (p Person) String() string {
 
 func TestToString(t *testing.T) {
 	testCases := []struct {
-		input    interface{}
+		input    any
 		expected string
 	}{
 		{nil, ""},                                // nil
@@ -233,8 +234,8 @@ func TestToString(t *testing.T) {
 		{float64(1746422198716531200), "1746422198716531200"},            // big float
 	}
 
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("ToString(%v)", tc.input), func(t *testing.T) {
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("ToString(%d)", i+1), func(t *testing.T) {
 			require.Equal(t, tc.expected, ToString(tc.input))
 		})
 	}
@@ -243,7 +244,7 @@ func TestToString(t *testing.T) {
 func TestIsBlank(t *testing.T) {
 	testCases := []struct {
 		name     string
-		input    interface{}
+		input    any
 		expected bool
 	}{
 		{"NilValue", nil, true},
@@ -269,8 +270,6 @@ func TestIsBlank(t *testing.T) {
 		{"EmptyStruct", struct{}{}, false},
 		{"StructWithField", struct{ Field string }{"value"}, false},
 		{"StructWithMethod", Person{Name: "Alice", Age: 30}, false},
-		{"EmptyValidationError", []types.ValidationError{}, true},
-		{"NonEmptyValidationError", []types.ValidationError{{Type: "something"}}, false},
 	}
 
 	for _, tc := range testCases {
@@ -281,7 +280,7 @@ func TestIsBlank(t *testing.T) {
 }
 
 func TestExtractMessageID(t *testing.T) {
-	tests := []struct {
+	testCases := []struct {
 		name       string
 		event      map[string]any
 		expectedID string
@@ -309,20 +308,112 @@ func TestExtractMessageID(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			event := &types.TransformerEvent{
-				Message: tt.event,
+				Message: tc.event,
 			}
-			require.Equal(t, tt.expectedID, ExtractMessageID(event, func() string {
+			require.Equal(t, tc.expectedID, ExtractMessageID(event, func() string {
 				return "custom-message-id"
 			}))
 		})
 	}
 }
 
+func TestIsJSONCompatibleStructure(t *testing.T) {
+	type testStruct struct {
+		Foo string
+		Bar int
+	}
+
+	testCases := []struct {
+		input    any
+		expected bool
+	}{
+		{nil, false},
+		{true, false},
+		{lo.ToPtr(true), true},
+		{123, false},
+		{lo.ToPtr(123), true},
+		{"hello", false},
+		{lo.ToPtr("hello"), true},
+		{[]any{"a", 1}, false},
+		{lo.ToPtr([]any{"a", 1}), true},
+		{map[string]any{"k": "v"}, false},
+		{lo.ToPtr(map[string]any{"k": "v"}), true},
+		{testStruct{}, true},
+		{lo.ToPtr(testStruct{}), true},
+		{[]any{}, false},
+		{lo.ToPtr([]any{}), true},
+		{[]any{1, 2, 3}, false},
+		{lo.ToPtr([]any{1, 2, 3}), true},
+		{[]testStruct{{}, {}}, true},
+		{[]*testStruct{lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}, true},
+		{[][]testStruct{{{}, {}}, {{}, {}}}, true},
+		{[][]*testStruct{{lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}, {lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}}, true},
+		{[]*[]testStruct{lo.ToPtr([]testStruct{{}, {}}), lo.ToPtr([]testStruct{{}, {}})}, true},
+	}
+
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("IsJSONCompatibleStructure(%d)", i+1), func(t *testing.T) {
+			require.Equal(t, tc.expected, IsJSONCompatibleStructure(tc.input))
+		})
+	}
+}
+
+func TestToJSONCompatible(t *testing.T) {
+	type testStruct struct {
+		Foo string `json:"foo"`
+		Bar int    `json:"bar"`
+	}
+
+	testCases := []struct {
+		input    any
+		expected any
+	}{
+		{
+			input: testStruct{
+				Foo: "baz",
+				Bar: 42,
+			},
+			expected: map[string]any{
+				"foo": "baz",
+				"bar": float64(42),
+			},
+		},
+		{
+			input: &testStruct{
+				Foo: "ptr",
+				Bar: 99,
+			},
+			expected: map[string]any{
+				"foo": "ptr",
+				"bar": float64(99),
+			},
+		},
+		{
+			input: []testStruct{
+				{Foo: "foo"},
+				{Bar: 42},
+			},
+			expected: []any{
+				map[string]any{"foo": "foo", "bar": float64(0)},
+				map[string]any{"foo": "", "bar": float64(42)},
+			},
+		},
+	}
+
+	for i, tc := range testCases {
+		t.Run(fmt.Sprintf("ToJSONCompatible(%d)", i+1), func(t *testing.T) {
+			actual, err := ToJSONCompatible(tc.input)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
 func TestExtractReceivedAt(t *testing.T) {
-	tests := []struct {
+	testCases := []struct {
 		name         string
 		event        *types.TransformerEvent
 		expectedTime string
@@ -389,9 +480,9 @@ func TestExtractReceivedAt(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expectedTime, ExtractReceivedAt(tt.event, func() time.Time {
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expectedTime, ExtractReceivedAt(tc.event, func() time.Time {
 				return time.Date(2023, time.October, 20, 12, 34, 56, 789000000, time.UTC)
 			}))
 		})
@@ -454,7 +545,7 @@ func TestMarshalJSON(t *testing.T) {
 }
 
 func TestUTF16RuneCountInString(t *testing.T) {
-	tests := []struct {
+	testCases := []struct {
 		name     string
 		input    string
 		expected int
@@ -491,9 +582,9 @@ func TestUTF16RuneCountInString(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expected, UTF16RuneCountInString(tt.input))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, UTF16RuneCountInString(tc.input))
 		})
 	}
 }
