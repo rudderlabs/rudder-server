@@ -342,7 +342,7 @@ func TestSlaveJob(t *testing.T) {
 			writer, releaseWriter, err := jr.writer(table, stagingFileInfo{
 				ID:       p.StagingFileID,
 				Location: p.StagingFileLocation,
-			})
+			}, "")
 			require.NoError(t, err)
 
 			for i := 0; i < lines; i++ {

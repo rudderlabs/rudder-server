@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/lo"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -271,6 +273,7 @@ func (w *worker) processSingleStagingFile(
 	jr *jobRun,
 	job *basePayload,
 	stagingFile stagingFileInfo,
+	loadFileNamePrefix string,
 ) error {
 	processingStart := jr.now()
 	var err error
@@ -345,7 +348,7 @@ func (w *worker) processSingleStagingFile(
 		}
 
 		// Create separate load file for each table
-		if writer, releaseWriter, err = jr.writer(tableName, stagingFile); err != nil {
+		if writer, releaseWriter, err = jr.writer(tableName, stagingFile, loadFileNamePrefix); err != nil {
 			return err
 		}
 
@@ -446,7 +449,7 @@ func (w *worker) processSingleStagingFile(
 						eventLoader.AddEmptyColumn(columnName)
 					}
 
-					discardWriter, releaseDiscardWriter, err := jr.writer(discardsTable, stagingFile)
+					discardWriter, releaseDiscardWriter, err := jr.writer(discardsTable, stagingFile, loadFileNamePrefix)
 					if err != nil {
 						return err
 					}
@@ -531,7 +534,7 @@ func (w *worker) processStagingFile(ctx context.Context, job *payload) ([]upload
 	if err := w.processSingleStagingFile(ctx, jr, &job.basePayload, stagingFileInfo{
 		ID:       job.StagingFileID,
 		Location: job.StagingFileLocation,
-	}); err != nil {
+	}, ""); err != nil {
 		return nil, err
 	}
 
@@ -554,6 +557,11 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 		jr.cleanup()
 	}()
 
+	// calculate load file name prefix using md5 hash of all staging file locations
+	loadFileNamePrefix := warehouseutils.Md5Hash(lo.Reduce(job.StagingFiles, func(agg string, item stagingFileInfo, index int) string {
+		return agg + item.Location
+	}, ""))
+
 	// Initialize Discards Table
 	discardsTable := job.discardsTable()
 	jr.tableEventCountMap[discardsTable] = 0
@@ -566,7 +574,7 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 			w.log.Infon("Processing staging-file for upload_v2 job",
 				logger.NewField("stagingFileID", stagingFile.ID),
 			)
-			if err := w.processSingleStagingFile(gCtx, jr, &job.basePayload, stagingFile); err != nil {
+			if err := w.processSingleStagingFile(gCtx, jr, &job.basePayload, stagingFile, loadFileNamePrefix); err != nil {
 				return fmt.Errorf("processing staging file %d: %w", stagingFile.ID, err)
 			}
 			return nil
