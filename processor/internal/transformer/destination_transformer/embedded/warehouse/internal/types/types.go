@@ -16,7 +16,7 @@ type Metadata struct {
 	DestinationType   string         `json:"destinationType"`
 	SourceCategory    string         `json:"sourceCategory"`
 	EventType         string         `json:"eventType,omitempty"`
-	RecordID          interface{}    `json:"recordId,omitempty"`
+	RecordID          any            `json:"recordId,omitempty"`
 	DestinationConfig map[string]any `json:"destinationConfig"`
 }
 

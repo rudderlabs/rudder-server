@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -95,6 +96,48 @@ func IsObject(val any) bool {
 	return ok
 }
 
+func IsJSONCompatibleStructure(val any) bool {
+	switch val.(type) {
+	case nil,
+		bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64,
+		complex64, complex128,
+		string,
+		[]any,
+		map[string]any:
+		return false
+	}
+	v := reflect.ValueOf(val)
+	switch v.Kind() {
+	case reflect.Struct, reflect.Ptr:
+		return true
+	case reflect.Slice, reflect.Array:
+		if v.Len() > 0 {
+			return IsJSONCompatibleStructure(v.Index(0).Interface())
+		}
+		return false
+
+	default:
+		return false
+	}
+}
+
+func ToJSONCompatible(structVal any) (any, error) {
+	valJSON, err := jsonrs.Marshal(structVal)
+	if err != nil {
+		return nil, fmt.Errorf("could not marshal json object: %w", err)
+	}
+
+	var t any
+	err = jsonrs.Unmarshal(valJSON, &t)
+	if err != nil {
+		return nil, fmt.Errorf("could not unmarshal json object: %w", err)
+	}
+	return t, nil
+}
+
 func IsArray(val any) bool {
 	_, ok := val.([]any)
 	return ok
@@ -179,7 +222,7 @@ func parseTimestamp(input string) (time.Time, error) {
 // - If the value is nil, it returns an empty string.
 // - If the value implements the fmt.Stringer interface, it returns the result of the String() method.
 // - Otherwise, it returns a string representation using fmt.Sprintf.
-func ToString(value interface{}) string {
+func ToString(value any) string {
 	if value == nil {
 		return ""
 	}
@@ -212,7 +255,7 @@ func ToString(value interface{}) string {
 //	   return false;
 //	 }
 //	};
-func IsEmptyString(value interface{}) bool {
+func IsEmptyString(value any) bool {
 	if value == nil {
 		return true
 	}
@@ -234,8 +277,6 @@ func IsEmptyString(value interface{}) bool {
 			return IsEmptyString(v[0])
 		}
 		return false
-	case []types.ValidationError:
-		return len(v) == 0
 	default:
 		return false
 	}

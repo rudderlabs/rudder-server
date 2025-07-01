@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -2806,14 +2807,16 @@ func TestEvents(t *testing.T) {
 				processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
 				warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
 
-				eventContexts := []testhelper.EventContext{
-					{
-						Payload:     []byte(tc.eventPayload),
-						Metadata:    tc.metadata,
-						Destination: tc.destination,
-					},
-				}
-				testhelper.ValidateEvents(t, eventContexts, processorTransformer, warehouseTransformer, tc.expectedResponse)
+				var singularEvent types.SingularEventT
+				err := jsonrs.Unmarshal([]byte(tc.eventPayload), &singularEvent)
+				require.NoError(t, err)
+
+				ctx := context.Background()
+				events := []types.TransformerEvent{{Message: singularEvent, Metadata: tc.metadata, Destination: tc.destination}}
+
+				legacyResponse := processorTransformer.Transform(ctx, events)
+				embeddedResponse := warehouseTransformer.Transform(ctx, events)
+				testhelper.ValidateExpectedEvents(t, tc.expectedResponse, embeddedResponse, legacyResponse)
 			})
 		}
 	})
@@ -3000,13 +3003,7 @@ func TestEvents(t *testing.T) {
 				}}
 				legacyResponse := processorTransformer.Transform(ctx, events)
 				embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-				require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-				require.Nil(t, legacyResponse.FailedEvents)
-				require.Nil(t, embeddedResponse.FailedEvents)
-				for i := range legacyResponse.Events {
-					require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-				}
+				testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 			})
 		}
 	})
@@ -3047,13 +3044,7 @@ func TestEvents(t *testing.T) {
 					}}
 					legacyResponse := processorTransformer.Transform(ctx, events)
 					embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-					require.Nil(t, legacyResponse.FailedEvents)
-					require.Nil(t, embeddedResponse.FailedEvents)
-					for i := range legacyResponse.Events {
-						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-					}
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 				})
 			}
 		})
@@ -3084,13 +3075,7 @@ func TestEvents(t *testing.T) {
 					}}
 					legacyResponse := processorTransformer.Transform(ctx, events)
 					embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-					require.Nil(t, legacyResponse.FailedEvents)
-					require.Nil(t, embeddedResponse.FailedEvents)
-					for i := range legacyResponse.Events {
-						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-					}
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 				})
 			}
 		})
@@ -3121,13 +3106,124 @@ func TestEvents(t *testing.T) {
 					}}
 					legacyResponse := processorTransformer.Transform(ctx, events)
 					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
+				})
+			}
+		})
+		t.Run("bot (from processor)", func(t *testing.T) {
+			type botDetails struct {
+				Name             string `json:"name,omitempty"`
+				URL              string `json:"url,omitempty"`
+				IsInvalidBrowser bool   `json:"isInvalidBrowser,omitempty"`
+			}
 
-					require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-					require.Nil(t, legacyResponse.FailedEvents)
-					require.Nil(t, embeddedResponse.FailedEvents)
-					for i := range legacyResponse.Events {
-						require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-					}
+			message := map[string]any{
+				"context": map[string]any{
+					"isBot": true,
+					"bot": botDetails{
+						Name:             "ExampleBot",
+						URL:              "https://example.com/bot",
+						IsInvalidBrowser: true,
+					},
+					"botPtr": &botDetails{
+						Name:             "ExampleBot",
+						URL:              "https://example.com/bot",
+						IsInvalidBrowser: true,
+					},
+				},
+				"messageId":         "messageId",
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			}
+			for destination := range whutils.WarehouseDestinationMap {
+				t.Run(destination, func(t *testing.T) {
+					c := setupConfig(transformerResource, map[string]any{})
+
+					processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+					warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
+
+					ctx := context.Background()
+					events := []types.TransformerEvent{{
+						Message:     message,
+						Metadata:    getMetadata("track", destination),
+						Destination: getDestination(destination, map[string]any{}),
+					}}
+					legacyResponse := processorTransformer.Transform(ctx, events)
+					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
+				})
+			}
+		})
+		t.Run("pointers", func(t *testing.T) {
+			message := map[string]any{
+				"context": map[string]any{
+					"boolVal": true,
+					"boolPtr": lo.ToPtr(true),
+
+					"intVal":   int(1),
+					"intPtr":   lo.ToPtr(int(1)),
+					"int8Val":  int8(2),
+					"int8Ptr":  lo.ToPtr(int8(2)),
+					"int16Val": int16(3),
+					"int16Ptr": lo.ToPtr(int16(3)),
+					"int32Val": int32(4),
+					"int32Ptr": lo.ToPtr(int32(4)),
+					"int64Val": int64(5),
+					"int64Ptr": lo.ToPtr(int64(5)),
+
+					"uintVal":    uint(6),
+					"uintPtr":    lo.ToPtr(uint(6)),
+					"uint8Val":   uint8(7),
+					"uint8Ptr":   lo.ToPtr(uint8(7)),
+					"uint16Val":  uint16(8),
+					"uint16Ptr":  lo.ToPtr(uint16(8)),
+					"uint32Val":  uint32(9),
+					"uint32Ptr":  lo.ToPtr(uint32(9)),
+					"uint64Val":  uint64(10),
+					"uint64Ptr":  lo.ToPtr(uint64(10)),
+					"uintptrVal": uintptr(12345),
+					"uintptrPtr": lo.ToPtr(uintptr(12345)),
+
+					"float32Val": float32(1.23),
+					"float32Ptr": lo.ToPtr(float32(1.23)),
+					"float64Val": float64(4.56),
+					"float64Ptr": lo.ToPtr(float64(4.56)),
+
+					"stringVal": "Hello",
+					"stringPtr": lo.ToPtr("Hello"),
+
+					"sliceVal": []any{1, 2, 3},
+					"slicePtr": &[]any{1, 2, 3},
+
+					"mapVal": map[string]any{"a": 1},
+					"mapPtr": &map[string]any{"a": 1},
+				},
+				"messageId":         "messageId",
+				"originalTimestamp": "2021-09-01T00:00:00.000Z",
+				"receivedAt":        "2021-09-01T00:00:00.000Z",
+				"sentAt":            "2021-09-01T00:00:00.000Z",
+				"timestamp":         "2021-09-01T00:00:00.000Z",
+				"type":              "track",
+			}
+			for destination := range whutils.WarehouseDestinationMap {
+				t.Run(destination, func(t *testing.T) {
+					c := setupConfig(transformerResource, map[string]any{})
+
+					processorTransformer := destination_transformer.New(c, logger.NOP, stats.Default)
+					warehouseTransformer := warehouse.New(c, logger.NOP, stats.NOP)
+
+					ctx := context.Background()
+					events := []types.TransformerEvent{{
+						Message:     message,
+						Metadata:    getMetadata("track", destination),
+						Destination: getDestination(destination, map[string]any{}),
+					}}
+					legacyResponse := processorTransformer.Transform(ctx, events)
+					embeddedResponse := warehouseTransformer.Transform(ctx, events)
+					testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 				})
 			}
 		})
@@ -3184,13 +3280,7 @@ func TestEvents(t *testing.T) {
 
 			legacyResponse := processorTransformer.Transform(ctx, events)
 			embeddedResponse := warehouseTransformer.Transform(ctx, events)
-
-			require.Equal(t, len(embeddedResponse.Events), len(legacyResponse.Events))
-			require.Nil(t, legacyResponse.FailedEvents)
-			require.Nil(t, embeddedResponse.FailedEvents)
-			for i := range legacyResponse.Events {
-				require.EqualValues(t, embeddedResponse.Events[i], legacyResponse.Events[i])
-			}
+			testhelper.ValidateEvents(t, embeddedResponse, legacyResponse)
 		})
 	})
 }

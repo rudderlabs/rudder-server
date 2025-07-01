@@ -12,21 +12,25 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
 
 const tableName = `tracked_users_reports`
 
+const problematicHLLValue = "5c78313139303766"
+
 type TrackedUsersInAppAggregator struct {
-	db    *sql.DB
-	stats stats.Stats
+	db     *sql.DB
+	stats  stats.Stats
+	logger logger.Logger
 
 	reportsCounter    stats.Measurement
 	aggReportsCounter stats.Measurement
 }
 
-func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Config, module string) *TrackedUsersInAppAggregator {
-	t := TrackedUsersInAppAggregator{db: db, stats: s}
+func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Config, module string, logger logger.Logger) *TrackedUsersInAppAggregator {
+	t := TrackedUsersInAppAggregator{db: db, stats: s, logger: logger}
 	tags := stats.Tags{
 		"instance": conf.GetString("INSTANCE_ID", "1"),
 		"table":    tableName,
@@ -55,6 +59,14 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		if err != nil {
 			return nil, fmt.Errorf("cannot scan row %w", err)
 		}
+
+		if r.UserIDHLLHex == problematicHLLValue || r.AnonymousIDHLLHex == problematicHLLValue || r.IdentifiedAnonymousIDHLLHex == problematicHLLValue {
+			a.logger.Errorn("found problematic hll value from database",
+				logger.NewStringField("workspace_id", r.WorkspaceID),
+				logger.NewStringField("source_id", r.SourceID),
+			)
+		}
+
 		r.UserIDHLL, err = a.decodeHLL(r.UserIDHLLHex)
 		if err != nil {
 			return nil, fmt.Errorf("cannot decode hll %w", err)
@@ -85,7 +97,7 @@ func (a *TrackedUsersInAppAggregator) Aggregate(ctx context.Context, start, end 
 		return nil, fmt.Errorf("rows errors %w", err)
 	}
 
-	jsonReports, err = marshalReports(aggReportsMap)
+	jsonReports, err = marshalReports(aggReportsMap, a.logger)
 	if err != nil {
 		return nil, fmt.Errorf("error marshalling reports %w", err)
 	}
@@ -108,13 +120,21 @@ func (a *TrackedUsersInAppAggregator) decodeHLL(encoded string) (*hll.Hll, error
 	return &hll, nil
 }
 
-func marshalReports(aggReportsMap map[string]*TrackedUsersReport) ([]json.RawMessage, error) {
+func marshalReports(aggReportsMap map[string]*TrackedUsersReport, log logger.Logger) ([]json.RawMessage, error) {
 	jsonReports := make([]json.RawMessage, 0, len(aggReportsMap))
 	for _, v := range aggReportsMap {
 		data, err := jsonrs.Marshal(v)
 		if err != nil {
 			return nil, err
 		}
+
+		if v.UserIDHLLHex == problematicHLLValue || v.AnonymousIDHLLHex == problematicHLLValue || v.IdentifiedAnonymousIDHLLHex == problematicHLLValue {
+			log.Errorn("found problematic hll value in marshalled data",
+				logger.NewStringField("workspace_id", v.WorkspaceID),
+				logger.NewStringField("source_id", v.SourceID),
+			)
+		}
+
 		jsonReports = append(jsonReports, data)
 	}
 	return jsonReports, nil
