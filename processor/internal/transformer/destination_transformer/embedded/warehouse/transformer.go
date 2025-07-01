@@ -20,7 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/internal/enricher"
+	embeddedutils "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded"
+
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	wtypes "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/types"
@@ -35,25 +36,6 @@ const (
 	violationErrors     = "violationErrors"
 	redshiftStringLimit = 512
 )
-
-// Compile-time check to ensure ValidationError struct remains unchanged.
-var _ = struct {
-	Type     string
-	Message  string
-	Meta     map[string]string
-	Property string
-}(types.ValidationError{})
-
-// Compile-time check to ensure Geolocation struct remains unchanged
-var _ = struct {
-	IP       string
-	City     string
-	Country  string
-	Region   string
-	Postal   string
-	Location string
-	Timezone string
-}(enricher.Geolocation{})
 
 var unicodePattern = regexp.MustCompile(`\\u[0-9a-fA-F]{4}`)
 
@@ -162,7 +144,7 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 		g.Go(func() error {
 			r, err := t.processWarehouseMessage(c, &event)
 			if err != nil {
-				results <- transformerResponseFromErr(&eventMetadata, err)
+				results <- transformerResponseFromErr(&eventMetadata, embeddedutils.GetValidationErrorStatTags(event.Destination), err)
 				return nil
 			}
 			for _, item := range r {
@@ -210,7 +192,7 @@ func (t *Transformer) eventContext(tec *transformEventContext) any {
 		return contextVal
 	}
 	if !exists || contextVal == nil {
-		contextVal = map[string]interface{}{}
+		contextVal = map[string]any{}
 	}
 	clonedContext := maps.Clone(contextVal.(map[string]any))
 	clonedContext["sourceId"] = tec.event.Metadata.SourceID
@@ -258,7 +240,7 @@ func (t *Transformer) handleEvent(event *wtypes.TransformerEvent, cache *cache) 
 	}
 }
 
-func transformerResponseFromErr(metadata *types.Metadata, err error) types.TransformerResponse {
+func transformerResponseFromErr(metadata *types.Metadata, statTags map[string]string, err error) types.TransformerResponse {
 	var te *response.TransformerError
 	if ok := errors.As(err, &te); ok {
 		return types.TransformerResponse{
@@ -266,6 +248,7 @@ func transformerResponseFromErr(metadata *types.Metadata, err error) types.Trans
 			Metadata:   *metadata,
 			Error:      te.Error(),
 			StatusCode: te.StatusCode(),
+			StatTags:   statTags,
 		}
 	}
 	return types.TransformerResponse{
@@ -273,6 +256,7 @@ func transformerResponseFromErr(metadata *types.Metadata, err error) types.Trans
 		Metadata:   *metadata,
 		Error:      response.ErrInternalServer.Error(),
 		StatusCode: response.ErrInternalServer.StatusCode(),
+		StatTags:   statTags,
 	}
 }
 

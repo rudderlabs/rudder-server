@@ -685,3 +685,287 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
+	type testCase struct {
+		name                      string
+		messages                  []stream.Message
+		eventBlockingSettings     backendconfig.EventBlocking
+		expectedSkipLiveEventRecs []bool
+		description               string
+	}
+
+	tests := []testCase{
+		{
+			name: "normal events should not skip live event recording",
+			messages: []stream.Message{
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-1",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "identify",
+						RoutingKey:  "routing-key-2",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"identify","messageId":"msg-2","userId":"user1","traits":{"name":"John"}}`),
+				},
+			},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{},
+			},
+			expectedSkipLiveEventRecs: []bool{false, false},
+			description:               "Normal events should allow live event recording",
+		},
+		{
+			name: "blocked events should skip live event recording",
+			messages: []stream.Message{
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-1",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-2",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1"}`),
+				},
+			},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
+				},
+			},
+			expectedSkipLiveEventRecs: []bool{true, false},
+			description:               "Blocked events should skip live event recording while non-blocked events should not",
+		},
+		{
+			name: "bot events with drop action should skip live event recording",
+			messages: []stream.Message{
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-1",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "test-bot",
+						BotURL:      "https://test-bot.com",
+						BotAction:   "drop",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-2",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"AddToCart","messageId":"msg-2","userId":"user1"}`),
+				},
+			},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{},
+			},
+			expectedSkipLiveEventRecs: []bool{true, false},
+			description:               "Bot events with 'drop' action should skip live event recording",
+		},
+		{
+			name: "bot events with flag action should not skip live event recording",
+			messages: []stream.Message{
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-1",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "test-bot",
+						BotURL:      "https://test-bot.com",
+						BotAction:   "flag",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-2",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "another-bot",
+						BotAction:   "disable",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1"}`),
+				},
+			},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{},
+			},
+			expectedSkipLiveEventRecs: []bool{false, false},
+			description:               "Bot events with 'flag' or 'disable' actions should allow live event recording",
+		},
+		{
+			name: "mixed scenario - blocked events and bot events with drop action",
+			messages: []stream.Message{
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-1",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-2",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "crawler-bot",
+						BotAction:   "drop",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-3",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "analytics-bot",
+						BotAction:   "flag",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"AddToCart","messageId":"msg-3","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-4",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1",
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       false,
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"Checkout","messageId":"msg-4","userId":"user1"}`),
+				},
+			},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
+				},
+			},
+			expectedSkipLiveEventRecs: []bool{true, true, false, false},
+			description:               "Complex scenario: blocked events and bot drop events skip recording, others don't",
+		},
+		{
+			name: "blocked bot events with drop action and blocked events should skip live event recording",
+			messages: []stream.Message{
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-1",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "blocked-bot",
+						BotAction:   "drop",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-2",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+						IsBot:       true,
+						BotName:     "blocked-bot-2",
+						BotAction:   "flag",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1"}`),
+				},
+			},
+			eventBlockingSettings: backendconfig.EventBlocking{
+				Events: map[string][]string{
+					"track": {"Purchase"},
+				},
+			},
+			expectedSkipLiveEventRecs: []bool{true, true},
+			description:               "Both blocked events and bot drop events should skip live event recording",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gw := createTestGateway(t, true, tt.eventBlockingSettings)
+
+			payloadBytes, err := jsonrs.Marshal(tt.messages)
+			require.NoError(t, err, "Failed to marshal test messages")
+
+			jobs, err := gw.extractJobsFromInternalBatchPayload("batch", payloadBytes)
+			require.NoError(t, err, "extractJobsFromInternalBatchPayload should not return error")
+
+			require.Len(t, jobs, len(tt.expectedSkipLiveEventRecs), "Number of jobs should match expected")
+
+			for i, expectedSkip := range tt.expectedSkipLiveEventRecs {
+				job := jobs[i]
+				require.Equal(t, expectedSkip, job.skipLiveEventRecording,
+					"Job %d: skipLiveEventRecording should be %t - %s",
+					i, expectedSkip, tt.description)
+			}
+		})
+	}
+}

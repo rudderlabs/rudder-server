@@ -8,18 +8,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestDataType(t *testing.T) {
-	anySlice, validationErrorSlice := make([]any, 600), make([]types.ValidationError, 600)
+	anySlice := make([]any, 600)
 	anyMap := make(map[string]any)
 	for i := 0; i < 600; i++ {
 		anySlice[i] = i
-		validationErrorSlice[i] = types.ValidationError{
-			Type: "type",
-		}
 		anyMap[strconv.Itoa(i)] = i
 	}
 
@@ -60,8 +56,6 @@ func TestDataType(t *testing.T) {
 		// Redshift with text and string types
 		{"Redshift Text Type (Any Slice)", whutils.RS, "someKey", anySlice, false, "text"},
 		{"Redshift String Type (Any Slice)", whutils.RS, "someKey", []any{1, 2, 3}, false, "string"},
-		{"Redshift Text Type (Validation Error Slice)", whutils.RS, "someKey", validationErrorSlice, false, "text"},
-		{"Redshift String Type (Validation Error Slice)", whutils.RS, "someKey", []types.ValidationError{{Type: "type"}, {Type: "type"}, {Type: "type"}}, false, "string"},
 		{"Redshift Text Type (Any Map)", whutils.RS, "someKey", anyMap, false, "text"},
 		{"Redshift String Type (Any Map)", whutils.RS, "someKey", map[string]any{"1": 1, "2": 2, "3": 3}, false, "string"},
 		{"Redshift Text Type", whutils.RS, "someKey", strings.Repeat("a", 600), false, "text"},
