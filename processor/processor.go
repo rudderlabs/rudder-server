@@ -1924,8 +1924,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 					},
 					nil,
 				)
-
-				transformerEvent.StatusCode = 0 // reset status code to 0
+				// reset status code to 0 because transformerEvent is reused for GATEWAY metrics below, which expect statusCode = 0
+				transformerEvent.StatusCode = 0
 			}
 			// REPORTING - BOT_MANAGEMENT metrics - END
 
