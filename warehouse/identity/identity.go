@@ -12,20 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/loadfiles/downloader"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -95,7 +92,10 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 	pkgLogger.Debugf(`IDR: Fetching all rudder_id's corresponding to the merge_rule: %v`, sqlStatement)
 	err = txn.QueryRow(sqlStatement).Scan(pq.Array(&rudderIDs))
 	if err != nil {
-		pkgLogger.Errorf("IDR: Error fetching all rudder_id's corresponding to the merge_rule: %v\nwith Error: %v", sqlStatement, err)
+		pkgLogger.Errorn("IDR: Error fetching all rudder_id's corresponding to the merge_rule",
+			logger.NewStringField("sqlStatement", sqlStatement),
+			obskit.Error(err),
+		)
 		return
 	}
 
@@ -128,7 +128,9 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 		pkgLogger.Debugf(`IDR: Inserting properties from merge_rule into mappings table: %v`, sqlStatement)
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error inserting properties from merge_rule into mappings table: %v`, err)
+			pkgLogger.Errorn("IDR: Error inserting properties from merge_rule into mappings table",
+				obskit.Error(err),
+			)
 			return
 		}
 	} else {
@@ -206,17 +208,26 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 						AS SELECT * FROM %s
 						WITH NO DATA;`, mergeRulesStagingTable, idr.mergeRulesTable())
 
-	pkgLogger.Infof(`IDR: Creating temp table %s in postgres for loading %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
+	pkgLogger.Infon("IDR: Creating temp table in postgres for loading data",
+		logger.NewStringField("tempTable", mergeRulesStagingTable),
+		logger.NewStringField("sourceTable", idr.mergeRulesTable()),
+		logger.NewStringField("sqlStatement", sqlStatement),
+	)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error creating temp table %s in postgres: %v`, mergeRulesStagingTable, err)
+		pkgLogger.Errorn("IDR: Error creating temp table in postgres",
+			logger.NewStringField("tempTable", mergeRulesStagingTable),
+			obskit.Error(err),
+		)
 		return
 	}
 
 	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
 	stmt, err := txn.Prepare(pq.CopyIn(mergeRulesStagingTable, sortedColumnNames...))
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error starting bulk copy using CopyIn: %v`, err)
+		pkgLogger.Errorn("IDR: Error starting bulk copy using CopyIn",
+			obskit.Error(err),
+		)
 		return
 	}
 	defer func() {
@@ -229,7 +240,10 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		var gzipFile *os.File
 		gzipFile, err = os.Open(loadFileName)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error opening downloaded load file at %s: %v`, loadFileName, err)
+			pkgLogger.Errorn("IDR: Error opening downloaded load file",
+				logger.NewStringField("loadFileName", loadFileName),
+				obskit.Error(err),
+			)
 			return
 		}
 		defer gzipFile.Close()
@@ -237,7 +251,10 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error reading downloaded load file at %s: %v`, loadFileName, err)
+			pkgLogger.Errorn("IDR: Error reading downloaded load file",
+				logger.NewStringField("loadFileName", loadFileName),
+				obskit.Error(err),
+			)
 			return
 		}
 		defer gzipReader.Close()
@@ -251,7 +268,11 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
+				pkgLogger.Errorn("IDR: Error while reading merge rule file for loading in staging table locally",
+					logger.NewStringField("loadFileName", loadFileName),
+					logger.NewStringField("stagingTable", mergeRulesStagingTable),
+					obskit.Error(err),
+				)
 				return
 			}
 			var recordInterface [5]interface{}
@@ -265,7 +286,9 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
 			if err != nil {
-				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
+				pkgLogger.Errorn("IDR: Error while adding rowID to merge_rules table",
+					obskit.Error(err),
+				)
 				return
 			}
 		}
@@ -273,7 +296,10 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 
 	_, err = stmt.Exec()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error bulk copy using CopyIn: %v for uploadID: %v`, err, idr.uploadID)
+		pkgLogger.Errorn("IDR: Error bulk copy using CopyIn",
+			obskit.Error(err),
+			obskit.UploadID(idr.uploadID),
+		)
 		return
 	}
 
@@ -288,17 +314,28 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 					AND
 					(original.merge_property_2_value = staging.merge_property_2_value)`,
 		mergeRulesStagingTable, idr.mergeRulesTable())
-	pkgLogger.Infof(`IDR: Deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), sqlStatement)
+	pkgLogger.Infon("IDR: Deleting from staging table using source table",
+		logger.NewStringField("stagingTable", mergeRulesStagingTable),
+		logger.NewStringField("sourceTable", idr.mergeRulesTable()),
+		logger.NewStringField("sqlStatement", sqlStatement),
+	)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error deleting from staging table %s using %s: %v`, mergeRulesStagingTable, idr.mergeRulesTable(), err)
+		pkgLogger.Errorn("IDR: Error deleting from staging table using source table",
+			logger.NewStringField("stagingTable", mergeRulesStagingTable),
+			logger.NewStringField("sourceTable", idr.mergeRulesTable()),
+			obskit.Error(err),
+		)
 		return
 	}
 
 	// write merge rules to file to be uploaded to warehouse in later steps
 	err = idr.writeTableToFile(mergeRulesStagingTable, txn, gzWriter)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error writing staging table %s to file: %v`, mergeRulesStagingTable, err)
+		pkgLogger.Errorn("IDR: Error writing staging table to file",
+			logger.NewStringField("stagingTable", mergeRulesStagingTable),
+			obskit.Error(err),
+		)
 		return
 	}
 
@@ -313,10 +350,18 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 							FROM %s
 						) t
 		 				ORDER BY id ASC RETURNING id`, idr.mergeRulesTable(), mergeRulesStagingTable)
-	pkgLogger.Infof(`IDR: Inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, sqlStatement)
+	pkgLogger.Infon("IDR: Inserting into target table from staging table",
+		logger.NewStringField("targetTable", idr.mergeRulesTable()),
+		logger.NewStringField("stagingTable", mergeRulesStagingTable),
+		logger.NewStringField("sqlStatement", sqlStatement),
+	)
 	rows, err := txn.Query(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error inserting into %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
+		pkgLogger.Errorn("IDR: Error inserting into target table from staging table",
+			logger.NewStringField("targetTable", idr.mergeRulesTable()),
+			logger.NewStringField("stagingTable", mergeRulesStagingTable),
+			obskit.Error(err),
+		)
 		return
 	}
 	defer func() { _ = rows.Close() }()
@@ -324,13 +369,21 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		var id int64
 		err = rows.Scan(&id)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error reading id from inserted column in %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
+			pkgLogger.Errorn("IDR: Error reading id from inserted column",
+				logger.NewStringField("targetTable", idr.mergeRulesTable()),
+				logger.NewStringField("stagingTable", mergeRulesStagingTable),
+				obskit.Error(err),
+			)
 			return
 		}
 		ids = append(ids, id)
 	}
 	if err = rows.Err(); err != nil {
-		pkgLogger.Errorf(`IDR: Error reading rows from %s from %s: %v`, idr.mergeRulesTable(), mergeRulesStagingTable, err)
+		pkgLogger.Errorn("IDR: Error reading rows",
+			logger.NewStringField("targetTable", idr.mergeRulesTable()),
+			logger.NewStringField("stagingTable", mergeRulesStagingTable),
+			obskit.Error(err),
+		)
 		return
 	}
 	pkgLogger.Debugf(`IDR: Number of merge rules inserted for uploadID %v : %v`, idr.uploadID, len(ids))
@@ -406,7 +459,10 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 		Conf: config.Default,
 	})
 	if err != nil {
-		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.warehouse.Destination.DestinationDefinition.Name, err)
+		pkgLogger.Errorn("IDR: Error in creating a file manager",
+			logger.NewStringField("destinationName", idr.warehouse.Destination.DestinationDefinition.Name),
+			obskit.Error(err),
+		)
 		return err
 	}
 	output, err := uploader.Upload(ctx, outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.warehouse.Source.ID, tableName)
@@ -415,10 +471,16 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 	}
 
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET location='%s', total_events=%d WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, output.Location, totalRecords, idr.uploadID, warehouseutils.ToProviderCase(idr.warehouse.Destination.DestinationDefinition.Name, tableName))
-	pkgLogger.Infof(`IDR: Updating load file location for table: %s: %s `, tableName, sqlStatement)
+	pkgLogger.Infon("IDR: Updating load file location for table",
+		logger.NewStringField("tableName", tableName),
+		logger.NewStringField("sqlStatement", sqlStatement),
+	)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error updating load file location for table: %s: %v`, tableName, err)
+		pkgLogger.Errorn("IDR: Error updating load file location for table",
+			logger.NewStringField("tableName", tableName),
+			obskit.Error(err),
+		)
 	}
 	return err
 }
@@ -453,11 +515,17 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 
 	ruleIDs, err := idr.addRules(txn, fileNames, &mergeRulesFileGzWriter)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error adding rules to %s: %v`, idr.mergeRulesTable(), err)
+		pkgLogger.Errorn("IDR: Error adding rules to table",
+			logger.NewStringField("tableName", idr.mergeRulesTable()),
+			obskit.Error(err),
+		)
 		return
 	}
 	_ = mergeRulesFileGzWriter.CloseGZ()
-	pkgLogger.Infof(`IDR: Added %d unique rules to %s and file`, len(ruleIDs), idr.mergeRulesTable())
+	pkgLogger.Infon("IDR: Added unique rules to table and file",
+		logger.NewIntField("ruleCount", int64(len(ruleIDs))),
+		logger.NewStringField("tableName", idr.mergeRulesTable()),
+	)
 	// END: Add new merge rules to local pg table and also to file
 
 	// START: Add new/changed identity mappings to local pg table and also to file
@@ -468,19 +536,22 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 		var count int
 		count, err = idr.applyRule(txn, ruleID, &mappingsFileGzWriter)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error applying rule %d in %s: %v`, ruleID, idr.mergeRulesTable(), err)
+			pkgLogger.Errorn("IDR: Error applying rule in table",
+				logger.NewIntField("ruleID", ruleID),
+				logger.NewStringField("tableName", idr.mergeRulesTable()),
+				obskit.Error(err),
+			)
 			return
 		}
 		totalMappingRecords += count
 		if idx%1000 == 0 {
-			pkgLogger.Infof(
-				`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namespace: %s, Destination: %s:%s`,
-				idx+1,
-				len(ruleIDs),
-				totalMappingRecords,
-				idr.warehouse.Namespace,
-				idr.warehouse.Type,
-				idr.warehouse.Destination.ID,
+			pkgLogger.Infon("IDR: Applied rules progress",
+				logger.NewIntField("rulesApplied", int64(idx+1)),
+				logger.NewIntField("totalRules", int64(len(ruleIDs))),
+				logger.NewIntField("totalMappingRecords", int64(totalMappingRecords)),
+				logger.NewStringField("namespace", idr.warehouse.Namespace),
+				logger.NewStringField("destinationType", idr.warehouse.Type),
+				logger.NewStringField("destinationID", idr.warehouse.Destination.ID),
 			)
 		}
 	}
@@ -490,20 +561,30 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 	// upload new merge rules to object storage
 	err = idr.uploadFile(ctx, mergeRulesFilePath, txn, idr.whMergeRulesTable(), len(ruleIDs))
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, idr.mergeRulesTable(), mergeRulesFilePath, err)
+		pkgLogger.Errorn("IDR: Error uploading load file to object storage",
+			logger.NewStringField("tableName", idr.mergeRulesTable()),
+			logger.NewStringField("filePath", mergeRulesFilePath),
+			obskit.Error(err),
+		)
 		return
 	}
 
 	// upload new/changed identity mappings to object storage
 	err = idr.uploadFile(ctx, mappingsFilePath, txn, idr.whMappingsTable(), totalMappingRecords)
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error uploading load file for %s at %s to object storage: %v`, mappingsFilePath, mergeRulesFilePath, err)
+		pkgLogger.Errorn("IDR: Error uploading load file to object storage",
+			logger.NewStringField("mappingsFilePath", mappingsFilePath),
+			logger.NewStringField("mergeRulesFilePath", mergeRulesFilePath),
+			obskit.Error(err),
+		)
 		return
 	}
 
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error committing transaction: %v`, err)
+		pkgLogger.Errorn("IDR: Error committing transaction",
+			obskit.Error(err),
+		)
 		return
 	}
 	return
