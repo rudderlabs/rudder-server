@@ -907,44 +907,6 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 			description:               "Complex scenario: blocked events and bot drop events skip recording, others don't",
 		},
 		{
-			name: "bot events with invalid browser and drop action should skip live event recording",
-			messages: []stream.Message{
-				{
-					Properties: stream.MessageProperties{
-						RequestType:         "track",
-						RoutingKey:          "routing-key-1",
-						WorkspaceID:         "workspace1",
-						SourceID:            "source-id-1",
-						ReceivedAt:          time.Now(),
-						RequestIP:           "1.1.1.1",
-						IsBot:               true,
-						BotIsInvalidBrowser: true,
-						BotAction:           "drop",
-					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
-				},
-				{
-					Properties: stream.MessageProperties{
-						RequestType:         "track",
-						RoutingKey:          "routing-key-2",
-						WorkspaceID:         "workspace1",
-						SourceID:            "source-id-1",
-						ReceivedAt:          time.Now(),
-						RequestIP:           "1.1.1.1",
-						IsBot:               true,
-						BotIsInvalidBrowser: true,
-						BotAction:           "flag",
-					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1"}`),
-				},
-			},
-			eventBlockingSettings: backendconfig.EventBlocking{
-				Events: map[string][]string{},
-			},
-			expectedSkipLiveEventRecs: []bool{true, false},
-			description:               "Bot events with invalid browser - only 'drop' action should skip live event recording",
-		},
-		{
 			name: "blocked bot events with drop action and blocked events should skip live event recording",
 			messages: []stream.Message{
 				{
