@@ -97,27 +97,27 @@ func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 }
 
 func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
-	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
-	objectStorageConfig := misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-		Provider:                    storageProvider,
-		Config:                      config,
-		UseRudderStorage:            useRudderStorage,
-		RudderStoragePrefixOverride: p.RudderStoragePrefix,
-		WorkspaceID:                 p.WorkspaceID,
-	})
+	configMap := config.(map[string]interface{})
 
-	// create a new config map to avoid modifying the original config map
-	filemanagerConfig := make(map[string]interface{}, len(objectStorageConfig))
-	for k, v := range objectStorageConfig {
-		filemanagerConfig[k] = v
+	// create a new config map to avoid modifying the original config
+	clonedConfig := make(map[string]interface{})
+	for k, v := range configMap {
+		clonedConfig[k] = v
 	}
 
-	filemanagerConfig["uploadIfNotExist"] = true
+	clonedConfig["uploadIfNotExist"] = true
 
+	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
-		Config:   filemanagerConfig,
-		Conf:     appConfig.Default,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:                    storageProvider,
+			Config:                      clonedConfig,
+			UseRudderStorage:            useRudderStorage,
+			RudderStoragePrefixOverride: p.RudderStoragePrefix,
+			WorkspaceID:                 p.WorkspaceID,
+		}),
+		Conf: appConfig.Default,
 	})
 	return fileManager, err
 }
