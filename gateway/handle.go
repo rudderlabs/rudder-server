@@ -1036,7 +1036,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		jobUUID := uuid.New()
 		res = append(res, jobWithMetadata{
 			stat:                   stat,
-			skipLiveEventRecording: jobsDBParams.IsEventBlocked,
+			skipLiveEventRecording: (jobsDBParams.IsEventBlocked || (jobsDBParams.IsBot && jobsDBParams.BotAction == types.DropBotEventAction)),
 			job: &jobsdb.JobT{
 				UUID:         jobUUID,
 				UserID:       msg.Properties.RoutingKey,
