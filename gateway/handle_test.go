@@ -945,7 +945,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 			description:               "Bot events with invalid browser - only 'drop' action should skip live event recording",
 		},
 		{
-			name: "blocked bot events with drop action should skip live event recording",
+			name: "blocked bot events with drop action and blocked events should skip live event recording",
 			messages: []stream.Message{
 				{
 					Properties: stream.MessageProperties{
