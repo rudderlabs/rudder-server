@@ -281,7 +281,6 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 				logger.NewStringField("requestType", loggerNm),
 				logger.NewStringField("logTypeName", logTypeName),
 				logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
-				logger.NewStringField("secret", string(refVal.Account.Secret)),
 			)
 			return http.StatusOK, refVal
 		}
@@ -292,12 +291,10 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
 		accountMutex.Unlock()
 		if refVal != nil {
-			secret := refVal.Account.Secret
 			authErrHandler.logger.Debugn("[Active] :: (Read) response received from cache",
 				logger.NewStringField("requestType", loggerNm),
 				logger.NewStringField("logTypeName", logTypeName),
 				logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
-				logger.NewStringField("secret", string(secret)),
 			)
 			return http.StatusOK, refVal
 		}

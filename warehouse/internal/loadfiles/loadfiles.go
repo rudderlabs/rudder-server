@@ -10,14 +10,12 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -378,7 +376,8 @@ func (lf *LoadFileGenerator) processNotifierResponse(ctx context.Context, ch <-c
 		}
 
 		if resp.Status == notifier.Aborted && resp.Error != nil {
-			lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
+			lf.Logger.Errorn("[WH]: Error in generating load files",
+				obskit.Error(resp.Error))
 			sampleError := errors.New(resp.Error.Error())
 			err := lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
 			if err != nil {
@@ -387,7 +386,7 @@ func (lf *LoadFileGenerator) processNotifierResponse(ctx context.Context, ch <-c
 			continue
 		}
 		if len(jobResponse.Output) == 0 {
-			lf.Logger.Errorf("[WH]: No LoadFiles returned by worker")
+			lf.Logger.Errorn("[WH]: No LoadFiles returned by worker")
 			continue
 		}
 		for _, output := range jobResponse.Output {
@@ -430,11 +429,12 @@ func (lf *LoadFileGenerator) processNotifierResponseV2(ctx context.Context, ch <
 		}
 
 		if resp.Status == notifier.Aborted && resp.Error != nil {
-			lf.Logger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
+			lf.Logger.Errorn("[WH]: Error in generating load files",
+				obskit.Error(resp.Error))
 			continue
 		}
 		if len(response.Output) == 0 {
-			lf.Logger.Errorf("[WH]: No LoadFiles returned by worker")
+			lf.Logger.Errorn("[WH]: No LoadFiles returned by worker")
 			continue
 		}
 		for _, output := range response.Output {
