@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -749,7 +750,10 @@ func anyNonTerminalCode(respStatusCodes map[int64]int) bool {
 
 func (w *worker) proxyRequest(ctx context.Context, destinationJob types.DestinationJobT, val integrations.PostParametersT) transformer.ProxyRequestResponse {
 	jobID := destinationJob.JobMetadataArray[0].JobID
-	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, w.rt.destType, jobID)
+	w.logger.Debugn("TransformerProxy: Request started",
+		obskit.DestinationType(w.rt.destType),
+		logger.NewIntField("jobID", jobID),
+	)
 
 	// setting metadata
 	var m []transformer.ProxyRequestMetadata
