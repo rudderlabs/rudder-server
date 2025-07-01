@@ -805,10 +805,13 @@ func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
 }
 
 func (ms *MSSQL) dropStagingTable(ctx context.Context, stagingTableName string) {
-	ms.logger.Infof("MSSQL: dropping table %+v\n", stagingTableName)
+	ms.logger.Infon("MSSQL: dropping table",
+		logger.NewStringField("stagingTableName", stagingTableName))
 	_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.namespace+"."+stagingTableName))
 	if err != nil {
-		ms.logger.Errorf("MSSQL:  Error dropping staging table %s in mssql: %v", ms.namespace+"."+stagingTableName, err)
+		ms.logger.Errorn("MSSQL: Error dropping staging table in mssql",
+			logger.NewStringField("stagingTableName", ms.namespace+"."+stagingTableName),
+			obskit.Error(err))
 	}
 }
 
@@ -816,7 +819,9 @@ func (ms *MSSQL) createTable(ctx context.Context, name string, columns model.Tab
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 
-	ms.logger.Infof("MSSQL: Creating table in mssql for MSSQL:%s : %v", ms.warehouse.Destination.ID, sqlStatement)
+	ms.logger.Infon("MSSQL: Creating table in mssql for MSSQL",
+		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
+		logger.NewStringField("sqlStatement", sqlStatement))
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	return
 }
@@ -829,7 +834,9 @@ func (ms *MSSQL) CreateTable(ctx context.Context, tableName string, columnMap mo
 
 func (ms *MSSQL) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	ms.logger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", ms.warehouse.Destination.ID, sqlStatement)
+	ms.logger.Infon("AZ: Dropping table in synapse for AZ",
+		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
+		logger.NewStringField("sqlStatement", sqlStatement))
 	_, err = ms.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, ms.namespace, tableName))
 	return
 }
@@ -872,7 +879,10 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
-	ms.logger.Infof("MSSQL: Adding columns for destinationID: %s, tableName: %s with query: %v", ms.warehouse.Destination.ID, tableName, query)
+	ms.logger.Infon("MSSQL: Adding columns",
+		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
+		logger.NewStringField("tableName", tableName),
+		logger.NewStringField("query", query))
 	_, err = ms.db.ExecContext(ctx, query)
 	return
 }
@@ -937,7 +947,9 @@ func (ms *MSSQL) dropDanglingStagingTables(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterating dangling staging tables: %w", err)
 	}
-	ms.logger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
+	ms.logger.Infon("WH: MSSQL: Dropping dangling staging tables",
+		logger.NewIntField("count", int64(len(stagingTableNames))),
+		logger.NewStringField("stagingTableNames", fmt.Sprintf("%+v", stagingTableNames)))
 	for _, stagingTableName := range stagingTableNames {
 		_, err := ms.db.ExecContext(ctx, fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.namespace, stagingTableName))
 		if err != nil {
@@ -1015,17 +1027,14 @@ func (ms *MSSQL) Cleanup(ctx context.Context) {
 		// extra check aside dropStagingTable(table)
 		err := ms.dropDanglingStagingTables(ctx)
 		if err != nil {
-			ms.logger.Warnw("Error dropping dangling staging tables",
-				logfield.DestinationID, ms.warehouse.Destination.ID,
-				logfield.DestinationType, ms.warehouse.Destination.DestinationDefinition.Name,
-				logfield.SourceID, ms.warehouse.Source.ID,
-				logfield.SourceType, ms.warehouse.Source.SourceDefinition.Name,
-				logfield.DestinationID, ms.warehouse.Destination.ID,
-				logfield.DestinationType, ms.warehouse.Destination.DestinationDefinition.Name,
-				logfield.WorkspaceID, ms.warehouse.WorkspaceID,
-				logfield.Namespace, ms.warehouse.Namespace,
-
-				logfield.Error, err,
+			ms.logger.Warnn("Error dropping dangling staging tables",
+				logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
+				logger.NewStringField(logfield.DestinationType, ms.warehouse.Destination.DestinationDefinition.Name),
+				logger.NewStringField(logfield.SourceID, ms.warehouse.Source.ID),
+				logger.NewStringField(logfield.SourceType, ms.warehouse.Source.SourceDefinition.Name),
+				logger.NewStringField(logfield.WorkspaceID, ms.warehouse.WorkspaceID),
+				logger.NewStringField(logfield.Namespace, ms.warehouse.Namespace),
+				obskit.Error(err),
 			)
 		}
 
