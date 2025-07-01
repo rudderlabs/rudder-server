@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.0](https://github.com/rudderlabs/rudder-server/compare/v1.53.2...v1.54.0) (2025-07-01)
+
+
+### Features
+
+* implement leaky uploader for invalid payloads ([#6059](https://github.com/rudderlabs/rudder-server/issues/6059)) ([d5b01a3](https://github.com/rudderlabs/rudder-server/commit/d5b01a3c722f9c9efaa985d46ce65261461504f3))
+
 ## [1.53.2](https://github.com/rudderlabs/rudder-server/compare/v1.53.1...v1.53.2) (2025-06-30)
 
 
