@@ -112,11 +112,7 @@ func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (fi
 		filemanagerConfig[k] = v
 	}
 
-	// If the storage provider is GCS, we need to set uploadIfNotExists to true to avoid re-uploading files
-	// GCS requires delete privileges to overwrite files, which won't be granted
-	if storageProvider == warehouseutils.GCS {
-		filemanagerConfig["uploadIfNotExist"] = true
-	}
+	filemanagerConfig["uploadIfNotExist"] = true
 
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,

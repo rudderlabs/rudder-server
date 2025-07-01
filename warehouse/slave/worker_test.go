@@ -1771,7 +1771,7 @@ func TestLoadFileDeterministicNaming(t *testing.T) {
 		// Verify that all load files have the same deterministic path structure
 		// The path should be: {loadFileNamePrefix}.{sourceID}.{fileFormat}
 		// where loadFileNamePrefix is MD5 hash of all staging file locations
-		expectedLoadFileNamePrefix := warehouseutils.Md5Hash(strings.Join(stagingFileLocations, ""))
+		expectedLoadFileNamePrefix := misc.GetMD5Hash(strings.Join(stagingFileLocations, ""))
 		expectedFileFormat := warehouseutils.GetLoadFileFormat("csv") // csv.gz
 
 		for _, result := range output {

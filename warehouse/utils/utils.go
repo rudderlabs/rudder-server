@@ -2,7 +2,6 @@ package warehouseutils
 
 import (
 	"context"
-	"crypto/md5"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -882,9 +881,4 @@ func GetConnectionTimeout(destType, destID string) time.Duration {
 		return config.GetDuration(destTypeLevelConfig, defaultTimeout, defaultTimeoutUnits)
 	}
 	return config.GetDuration(warehouseLevelConfig, defaultTimeout, defaultTimeoutUnits)
-}
-
-// Md5Hash returns the MD5 hash of the input string
-func Md5Hash(input string) string {
-	return fmt.Sprintf("%x", md5.Sum([]byte(input)))
 }

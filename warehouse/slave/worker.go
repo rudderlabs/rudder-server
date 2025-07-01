@@ -18,6 +18,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
@@ -534,7 +535,7 @@ func (w *worker) processStagingFile(ctx context.Context, job *payload) ([]upload
 	if err := w.processSingleStagingFile(ctx, jr, &job.basePayload, stagingFileInfo{
 		ID:       job.StagingFileID,
 		Location: job.StagingFileLocation,
-	}, ""); err != nil {
+	}, misc.GetMD5Hash(job.StagingFileLocation)); err != nil {
 		return nil, err
 	}
 
@@ -558,7 +559,7 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 	}()
 
 	// calculate load file name prefix using md5 hash of all staging file locations
-	loadFileNamePrefix := warehouseutils.Md5Hash(lo.Reduce(job.StagingFiles, func(agg string, item stagingFileInfo, index int) string {
+	loadFileNamePrefix := misc.GetMD5Hash(lo.Reduce(job.StagingFiles, func(agg string, item stagingFileInfo, index int) string {
 		return agg + item.Location
 	}, ""))
 
