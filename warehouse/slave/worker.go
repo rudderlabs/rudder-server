@@ -559,7 +559,7 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 	}()
 
 	// calculate load file name prefix using md5 hash of all staging file locations
-	loadFileNamePrefix := misc.GetMD5Hash(lo.Reduce(job.StagingFiles, func(agg string, item stagingFileInfo, index int) string {
+	loadFileNamePrefix := misc.GetMD5Hash(lo.Reduce(job.StagingFiles, func(agg string, item stagingFileInfo, _ int) string {
 		return agg + item.Location
 	}, ""))
 
