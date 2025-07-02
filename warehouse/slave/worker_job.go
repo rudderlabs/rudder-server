@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -97,13 +98,12 @@ func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 }
 
 func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
-	configMap := config.(map[string]interface{})
-
-	// create a new config map to avoid modifying the original config
-	clonedConfig := make(map[string]interface{})
-	for k, v := range configMap {
-		clonedConfig[k] = v
+	configMap, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("config is not a map[string]interface{}: %T", config)
 	}
+
+	clonedConfig := maps.Clone(configMap)
 
 	clonedConfig["uploadIfNotExist"] = true
 
@@ -401,7 +401,10 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 			// upload output will be empty in case of precondition failure
 			// but this is acceptable for datalake destinations as file is not downloaded further in the process
 			if errors.Is(err, filemanager.ErrPreConditionFailed) {
-				jr.logger.Warnf("Precondition failed while uploading load file, load file name: %s, table: %s", file.Name(), tableName)
+				jr.logger.Warnn("Precondition failed while uploading load file",
+					logger.NewField("loadFileName", file.Name()),
+					logger.NewField("tableName", tableName),
+				)
 				return uploadOutput, nil
 			}
 

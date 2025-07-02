@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -559,9 +560,12 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 	}()
 
 	// calculate load file name prefix using md5 hash of all staging file locations
-	loadFileNamePrefix := misc.GetMD5Hash(lo.Reduce(job.StagingFiles, func(agg string, item stagingFileInfo, index int) string {
-		return agg + item.Location
-	}, ""))
+	loadFileNamePrefixBuilder := strings.Builder{}
+	loadFileNamePrefixBuilder.Grow(len(job.StagingFiles) * len(job.StagingFiles[0].Location))
+	for _, stagingFile := range job.StagingFiles {
+		loadFileNamePrefixBuilder.WriteString(stagingFile.Location)
+	}
+	loadFileNamePrefix := misc.GetMD5Hash(loadFileNamePrefixBuilder.String())
 
 	// Initialize Discards Table
 	discardsTable := job.discardsTable()
