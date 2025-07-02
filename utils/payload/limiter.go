@@ -4,6 +4,9 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 // LimiterState represents the LimiterState of the adaptive payload limiter algorithm
@@ -89,7 +92,7 @@ func (r *adaptivePayloadLimitAlgorithm) Stats() LimiterStats {
 func (r *adaptivePayloadLimitAlgorithm) tick() {
 	freeMem, err := r.config.FreeMemory()
 	if err != nil {
-		r.config.Log.Warnf("failed to get free memory: %v", err)
+		r.config.Log.Warnn("failed to get free memory", obskit.Error(err))
 		freeMem = 100
 	}
 	newState := LimiterStateCritical
@@ -112,7 +115,7 @@ func (r *adaptivePayloadLimitAlgorithm) stateChanged(newState LimiterState) {
 	case LimiterStateNormal:
 		r.thresholdFactor = 1
 	case LimiterStateCritical:
-		r.config.Log.Warnf("critical memory state, free memory percentage: %f %", r.freeMem)
+		r.config.Log.Warnn("critical memory state", logger.NewFloatField("freeMem", r.freeMem))
 		r.thresholdFactor = r.thresholdFactor + 1
 		if r.thresholdFactor > r.config.MaxThresholdFactor {
 			r.thresholdFactor = r.config.MaxThresholdFactor

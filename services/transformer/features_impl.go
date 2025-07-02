@@ -12,6 +12,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -83,7 +84,7 @@ func (t *featuresService) Wait() chan struct{} {
 
 func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 	var initDone bool
-	t.logger.Infof("Fetching transformer features from %s", t.options.TransformerURL)
+	t.logger.Infon("Fetching transformer features", logger.NewStringField("transformerURL", t.options.TransformerURL))
 	for {
 		var downloaded bool
 		for i := 0; i < t.options.FeaturesRetryMaxAttempts; i++ {
@@ -94,7 +95,10 @@ func (t *featuresService) syncTransformerFeatureJson(ctx context.Context) {
 
 			retry := t.makeFeaturesFetchCall()
 			if retry {
-				t.logger.Infof("Fetched transformer features from %s (retry: %v)", t.options.TransformerURL, retry)
+				t.logger.Infon("Fetched transformer features",
+					logger.NewStringField("transformerURL", t.options.TransformerURL),
+					logger.NewBoolField("retry", retry),
+				)
 				select {
 				case <-ctx.Done():
 					return
@@ -123,12 +127,12 @@ func (t *featuresService) makeFeaturesFetchCall() bool {
 	url := t.options.TransformerURL + "/features"
 	req, err := http.NewRequest("GET", url, bytes.NewReader([]byte{}))
 	if err != nil {
-		t.logger.Error("error creating request - ", err)
+		t.logger.Errorn("error creating request", obskit.Error(err))
 		return true
 	}
 	res, err := t.client.Do(req)
 	if err != nil {
-		t.logger.Error("error sending request - ", err)
+		t.logger.Errorn("error sending request", obskit.Error(err))
 		return true
 	}
 

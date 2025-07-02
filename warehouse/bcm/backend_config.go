@@ -6,19 +6,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
@@ -157,7 +154,9 @@ func (bcm *BackendConfigManager) processData(ctx context.Context, data map[strin
 
 			for _, destination := range source.Destinations {
 				if _, ok := whutils.WarehouseDestinationMap[destination.DestinationDefinition.Name]; !ok {
-					bcm.logger.Debugf("Not a warehouse destination, skipping %s", destination.DestinationDefinition.Name)
+					bcm.logger.Debugn("Not a warehouse destination, skipping",
+						logger.NewStringField(logfield.DestinationType, destination.DestinationDefinition.Name),
+					)
 					continue
 				}
 
@@ -183,7 +182,10 @@ func (bcm *BackendConfigManager) processData(ctx context.Context, data map[strin
 
 				if destination.Config["sslMode"] == "verify-ca" {
 					if err := whutils.WriteSSLKeys(destination); err.IsError() {
-						bcm.logger.Error(err.Error())
+						bcm.logger.Errorn("Error writing SSL keys",
+							logger.NewStringField(logfield.Error, err.Error()),
+							logger.NewStringField("errorTag", err.GetErrTag()),
+						)
 						bcm.persistSSLFileErrorStat(
 							workspaceID, destination.DestinationDefinition.Name, destination.Name, destination.ID,
 							source.Name, source.ID, err.GetErrTag(),
@@ -242,12 +244,12 @@ func (bcm *BackendConfigManager) namespace(ctx context.Context, source backendco
 
 	namespace, err := bcm.schema.GetNamespace(ctx, source.ID, destination.ID)
 	if err != nil {
-		bcm.logger.Errorw("getting namespace",
-			logfield.SourceID, source.ID,
-			logfield.DestinationID, destination.ID,
-			logfield.DestinationType, destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, destination.WorkspaceID,
-			logfield.Error, err.Error(),
+		bcm.logger.Errorn("getting namespace",
+			logger.NewStringField(logfield.SourceID, source.ID),
+			logger.NewStringField(logfield.DestinationID, destination.ID),
+			logger.NewStringField(logfield.DestinationType, destination.DestinationDefinition.Name),
+			logger.NewStringField(logfield.WorkspaceID, destination.WorkspaceID),
+			obskit.Error(err),
 		)
 		return ""
 	}
@@ -314,17 +316,25 @@ func (bcm *BackendConfigManager) attachSSHTunnellingInfo(
 		return upstream
 	}
 
-	bcm.logger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+	bcm.logger.Debugn("Fetching ssh keys for destination",
+		logger.NewStringField(logfield.DestinationID, upstream.ID),
+	)
 
 	keys, err := bcm.internalControlPlaneClient.GetDestinationSSHKeys(ctx, upstream.ID)
 	if err != nil {
-		bcm.logger.Errorf("fetching ssh keys for destination: %s", err.Error())
+		bcm.logger.Errorn("fetching ssh keys for destination",
+			logger.NewStringField(logfield.DestinationID, upstream.ID),
+			obskit.Error(err),
+		)
 		return upstream
 	}
 
 	replica := backendconfig.DestinationT{}
 	if err := deepCopy(upstream, &replica); err != nil {
-		bcm.logger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
+		bcm.logger.Errorn("deep copying the destination failed",
+			logger.NewStringField(logfield.DestinationID, upstream.ID),
+			obskit.Error(err),
+		)
 		return upstream
 	}
 

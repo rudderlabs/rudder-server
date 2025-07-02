@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -47,11 +48,11 @@ type drainConfigManager struct {
 func NewDrainConfigManager(conf *config.Config, log logger.Logger, stats stats.Stats) (*drainConfigManager, error) {
 	db, err := setupDBConn(conf, stats)
 	if err != nil {
-		log.Errorw("db setup", "error", err)
+		log.Errorn("db setup", obskit.Error(err))
 		return nil, fmt.Errorf("db setup: %v", err)
 	}
 	if err = migrate(db); err != nil {
-		log.Errorw("db migrations", "error", err)
+		log.Errorn("db migrations", obskit.Error(err))
 	}
 	return &drainConfigManager{
 		log:  log,
@@ -74,7 +75,7 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 			"DELETE FROM drain_config WHERE created_at < $1",
 			time.Now().Add(-d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
 		); err != nil && ctx.Err() == nil {
-			d.log.Errorw("db cleanup", "error", err)
+			d.log.Errorn("db cleanup", obskit.Error(err))
 			return fmt.Errorf("db cleanup: %v", err)
 		}
 
@@ -113,7 +114,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 				time.Now().Add(-1*d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
 			)
 			if err != nil {
-				d.log.Errorw("db query", "error", err)
+				d.log.Errorn("db query", obskit.Error(err))
 				return fmt.Errorf("db query: %v", err)
 			}
 			for rows.Next() {
@@ -122,7 +123,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 					value string
 				)
 				if err := rows.Scan(&key, &value); err != nil {
-					d.log.Errorw("db scan", "error", err)
+					d.log.Errorn("db scan", obskit.Error(err))
 					return fmt.Errorf("db scan: %v", err)
 				}
 
@@ -132,11 +133,11 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 				dbConfigMap[key] = append(dbConfigMap[key], value)
 			}
 			if err := rows.Err(); err != nil {
-				d.log.Errorw("db rows", "error", err)
+				d.log.Errorn("db rows", obskit.Error(err))
 				return fmt.Errorf("db rows.Err: %v", err)
 			}
 			if err := rows.Close(); err != nil {
-				d.log.Errorw("db rows close", "error", err)
+				d.log.Errorn("db rows close", obskit.Error(err))
 				return fmt.Errorf("db rows close: %v", err)
 			}
 			return nil

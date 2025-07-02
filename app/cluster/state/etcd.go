@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -150,13 +151,14 @@ func (manager *ETCDManager) unmarshalMode(raw []byte) servermode.ChangeEvent {
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			manager.logger.Infof("Mode Change Acknowledgement Key: %s", req.AckKey)
+			log := manager.logger.Withn(logger.NewStringField("key", req.AckKey))
+			log.Infon("Mode Change Acknowledgement")
 			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
 			if err != nil {
-				manager.logger.Errorf("Failed to acknowledge mode change for key: %s", req.AckKey)
+				log.Errorn("Failed to acknowledge mode change", obskit.Error(err))
 				return fmt.Errorf("put value to ack key %q: %w", req.AckKey, err)
 			} else {
-				manager.logger.Debugf("Mode change for key %q acknowledged", req.AckKey)
+				log.Debugn("Mode change acknowledged")
 			}
 			return err
 		})
