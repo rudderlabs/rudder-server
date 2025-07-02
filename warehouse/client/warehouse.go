@@ -38,7 +38,7 @@ type StagingFile struct {
 	SourceJobID      string
 	SourceJobRunID   string
 	TimeWindow       time.Time
-	ServerInstanceId string
+	ServerInstanceID string
 }
 
 // legacyPayload is used to maintain backwards compatibility with the /v1 endpoint.
@@ -60,7 +60,7 @@ type legacyPayload struct {
 	SourceJobID      string
 	SourceJobRunID   string
 	TimeWindow       time.Time
-	ServerInstanceId string
+	ServerInstanceID string
 }
 
 type stagingFileBatchDestination struct {
@@ -116,7 +116,7 @@ func (w *Warehouse) Process(ctx context.Context, stagingFile StagingFile) error 
 		SourceJobID:           stagingFile.SourceJobID,
 		SourceJobRunID:        stagingFile.SourceJobRunID,
 		TimeWindow:            stagingFile.TimeWindow,
-		ServerInstanceId:      stagingFile.ServerInstanceId,
+		ServerInstanceID:      stagingFile.ServerInstanceID,
 	}
 
 	jsonPayload, err := jsonrs.Marshal(legacy)

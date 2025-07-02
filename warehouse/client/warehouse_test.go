@@ -116,7 +116,7 @@ func TestWarehouse(t *testing.T) {
 					"uuid_ts":                  "datetime",
 				},
 			},
-			ServerInstanceId: "test-instance-id-v0",
+			ServerInstanceID: "test-instance-id-v0",
 		})
 		require.NoError(t, err)
 		require.EqualValues(t, 1, statsStore.Get("warehouse_process_api_status_count", stats.Tags{

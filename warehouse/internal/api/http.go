@@ -56,7 +56,7 @@ type stagingFileSchema struct {
 	SourceJobID      string
 	SourceJobRunID   string
 	TimeWindow       time.Time
-	ServerInstanceId string
+	ServerInstanceID string
 }
 
 func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, error) {
@@ -101,7 +101,7 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 		SourceJobID:           payload.SourceJobID,
 		SourceJobRunID:        payload.SourceJobRunID,
 		TimeWindow:            payload.TimeWindow,
-		ServerInstanceId:      payload.ServerInstanceId,
+		ServerInstanceID:      payload.ServerInstanceID,
 	}).WithSchema(schema), nil
 }
 

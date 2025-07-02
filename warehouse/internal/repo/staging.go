@@ -50,7 +50,7 @@ type metadataSchema struct {
 	TimeWindowDay         int    `json:"time_window_day"`
 	TimeWindowHour        int    `json:"time_window_hour"`
 	DestinationRevisionID string `json:"destination_revision_id"`
-	ServerInstanceId      string `json:"server_instance_id"`
+	ServerInstanceID      string `json:"server_instance_id"`
 }
 
 func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
@@ -72,7 +72,7 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 		TimeWindowDay:         stagingFile.TimeWindow.Day(),
 		TimeWindowHour:        stagingFile.TimeWindow.Hour(),
 		DestinationRevisionID: stagingFile.DestinationRevisionID,
-		ServerInstanceId:      stagingFile.ServerInstanceId,
+		ServerInstanceID:      stagingFile.ServerInstanceID,
 	}
 }
 
@@ -94,7 +94,7 @@ func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
 	stagingFile.SourceJobRunID = m.SourceJobRunID
 	stagingFile.TimeWindow = time.Date(m.TimeWindowYear, time.Month(m.TimeWindowMonth), m.TimeWindowDay, m.TimeWindowHour, 0, 0, 0, time.UTC)
 	stagingFile.DestinationRevisionID = m.DestinationRevisionID
-	stagingFile.ServerInstanceId = m.ServerInstanceId
+	stagingFile.ServerInstanceID = m.ServerInstanceID
 }
 
 // Insert inserts a staging file into the staging files table. It returns the ID of the inserted staging file.
