@@ -70,6 +70,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
 				TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
+				ServerInstanceId:      "test-instance-id-v1",
 			}.WithSchema([]byte(`{"type": "object"}`)),
 		},
 		{
@@ -110,6 +111,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
 				TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
+				ServerInstanceId:      "test-instance-id-v2",
 			}.WithSchema([]byte(`{"type": "object"}`)),
 		},
 		{

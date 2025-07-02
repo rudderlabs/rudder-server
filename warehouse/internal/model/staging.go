@@ -31,6 +31,8 @@ type StagingFile struct {
 	SourceJobRunID  string
 	TimeWindow      time.Time
 
+	ServerInstanceId string
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

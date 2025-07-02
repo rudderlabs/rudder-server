@@ -67,5 +67,6 @@
     "SourceTaskRunID": "<source-task-run-id>",
     "SourceJobID": "<source-job-id>",
     "SourceJobRunID": "<source-job-run-id>",
-    "TimeWindow": "0001-01-01T00:40:00Z"
+    "TimeWindow": "0001-01-01T00:40:00Z",
+    "ServerInstanceId": "test-instance-id-v0"
 }

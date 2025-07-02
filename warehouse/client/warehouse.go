@@ -34,10 +34,11 @@ type StagingFile struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceTaskRunID string
-	SourceJobID     string
-	SourceJobRunID  string
-	TimeWindow      time.Time
+	SourceTaskRunID  string
+	SourceJobID      string
+	SourceJobRunID   string
+	TimeWindow       time.Time
+	ServerInstanceId string
 }
 
 // legacyPayload is used to maintain backwards compatibility with the /v1 endpoint.
@@ -55,10 +56,11 @@ type legacyPayload struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceTaskRunID string
-	SourceJobID     string
-	SourceJobRunID  string
-	TimeWindow      time.Time
+	SourceTaskRunID  string
+	SourceJobID      string
+	SourceJobRunID   string
+	TimeWindow       time.Time
+	ServerInstanceId string
 }
 
 type stagingFileBatchDestination struct {
@@ -114,6 +116,7 @@ func (w *Warehouse) Process(ctx context.Context, stagingFile StagingFile) error 
 		SourceJobID:           stagingFile.SourceJobID,
 		SourceJobRunID:        stagingFile.SourceJobRunID,
 		TimeWindow:            stagingFile.TimeWindow,
+		ServerInstanceId:      stagingFile.ServerInstanceId,
 	}
 
 	jsonPayload, err := jsonrs.Marshal(legacy)

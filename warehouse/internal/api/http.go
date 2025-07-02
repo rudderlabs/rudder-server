@@ -52,10 +52,11 @@ type stagingFileSchema struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceTaskRunID string
-	SourceJobID     string
-	SourceJobRunID  string
-	TimeWindow      time.Time
+	SourceTaskRunID  string
+	SourceJobID      string
+	SourceJobRunID   string
+	TimeWindow       time.Time
+	ServerInstanceId string
 }
 
 func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, error) {
@@ -100,6 +101,7 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 		SourceJobID:           payload.SourceJobID,
 		SourceJobRunID:        payload.SourceJobRunID,
 		TimeWindow:            payload.TimeWindow,
+		ServerInstanceId:      payload.ServerInstanceId,
 	}).WithSchema(schema), nil
 }
 
