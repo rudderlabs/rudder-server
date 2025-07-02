@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -136,8 +137,7 @@ var (
 )
 
 func pseudoWarehouseDestinations() map[string]struct{} {
-	all := append([]string{}, WarehouseDestinations...)
-	all = append(all, SnowpipeStreaming)
+	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming)
 	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})

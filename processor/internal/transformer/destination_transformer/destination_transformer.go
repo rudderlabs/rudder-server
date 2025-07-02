@@ -373,13 +373,9 @@ func (d *Client) destTransformURL(destType string) string {
 	if _, ok := warehouseutils.PseudoWarehouseDestinationMap[destType]; ok {
 		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", d.conf.GetBool("Warehouse.enableIDResolution", false))
 		switch destType {
-		case warehouseutils.RS:
-			return destinationEndPoint + "?" + whSchemaVersionQueryParam
 		case warehouseutils.CLICKHOUSE:
 			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", d.conf.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
-		case warehouseutils.SnowpipeStreaming:
-			return fmt.Sprintf("%s?whIDResolve=%t", destinationEndPoint, d.conf.GetBool("Warehouse.enableIDResolution", false))
 		default:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
 		}
