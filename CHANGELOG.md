@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.54.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.53.0...v1.54.0-rc.1) (2025-07-02)
+
+
+### Features
+
+* implement configurable event blocking ([#6018](https://github.com/rudderlabs/rudder-server/issues/6018)) ([0901e5f](https://github.com/rudderlabs/rudder-server/commit/0901e5f0d6f65d6ca31e179d859b664b9e9a41bd))
+* implement leaky uploader for invalid payloads ([#6072](https://github.com/rudderlabs/rudder-server/issues/6072)) ([d17efc1](https://github.com/rudderlabs/rudder-server/commit/d17efc11e81181e7b10d5d3d93085adc7d296d0f))
+* propagate snowpipe iceberg config to snowpipe service ([#6013](https://github.com/rudderlabs/rudder-server/issues/6013)) ([0901e5f](https://github.com/rudderlabs/rudder-server/commit/0901e5f0d6f65d6ca31e179d859b664b9e9a41bd))
+
+
+### Bug Fixes
+
+* bigquery load errors population ([#6065](https://github.com/rudderlabs/rudder-server/issues/6065)) ([75085f2](https://github.com/rudderlabs/rudder-server/commit/75085f2abdc77a0f6bfc328e545b3b7d0888f4c6))
+* custom type in payload during enrichment ([#6064](https://github.com/rudderlabs/rudder-server/issues/6064)) ([75085f2](https://github.com/rudderlabs/rudder-server/commit/75085f2abdc77a0f6bfc328e545b3b7d0888f4c6))
+* ensure hasDynamicConfig field always present in DestinationT JSON ([#6057](https://github.com/rudderlabs/rudder-server/issues/6057)) ([7a1c1d6](https://github.com/rudderlabs/rudder-server/commit/7a1c1d60717f0d8407bedb393260eb99cdc01739))
+* personalise aws v2 implementation fails with unmarshal error ([#6050](https://github.com/rudderlabs/rudder-server/issues/6050)) ([7a1c1d6](https://github.com/rudderlabs/rudder-server/commit/7a1c1d60717f0d8407bedb393260eb99cdc01739))
+* statsExcludedTags causes server to shutdown immediately ([#6060](https://github.com/rudderlabs/rudder-server/issues/6060)) ([7a1c1d6](https://github.com/rudderlabs/rudder-server/commit/7a1c1d60717f0d8407bedb393260eb99cdc01739))
+
+
+### Miscellaneous
+
+* add logging for HasDynamicConfig flag in destination config ([#6054](https://github.com/rudderlabs/rudder-server/issues/6054)) ([7a1c1d6](https://github.com/rudderlabs/rudder-server/commit/7a1c1d60717f0d8407bedb393260eb99cdc01739))
+* add logging to trace double-encoded HLL value issue ([#6044](https://github.com/rudderlabs/rudder-server/issues/6044)) ([4bddb5d](https://github.com/rudderlabs/rudder-server/commit/4bddb5d5fc840b1f11bf756337cb6d2bee29ab9a))
+* drop bot events in processor after capturing metrics ([#6052](https://github.com/rudderlabs/rudder-server/issues/6052)) ([5e2efc5](https://github.com/rudderlabs/rudder-server/commit/5e2efc53e879a867e621fbf719cbda10ddfbc861))
+* inject stats in source transformer ([#6047](https://github.com/rudderlabs/rudder-server/issues/6047)) ([4998beb](https://github.com/rudderlabs/rudder-server/commit/4998beb25e3016c1bc1f3c38eef07d7ec65ba042))
+* keydb deduplication mirroring ([#6058](https://github.com/rudderlabs/rudder-server/issues/6058)) ([7a1c1d6](https://github.com/rudderlabs/rudder-server/commit/7a1c1d60717f0d8407bedb393260eb99cdc01739))
+* oauth platform error logs ([#6053](https://github.com/rudderlabs/rudder-server/issues/6053)) ([7a1c1d6](https://github.com/rudderlabs/rudder-server/commit/7a1c1d60717f0d8407bedb393260eb99cdc01739))
+* postgres docker load test ([#6061](https://github.com/rudderlabs/rudder-server/issues/6061)) ([a7b4ceb](https://github.com/rudderlabs/rudder-server/commit/a7b4ceb6ab573ef58db869daac249417059d3450))
+
 ## [1.53.2](https://github.com/rudderlabs/rudder-server/compare/v1.53.1...v1.53.2) (2025-06-30)
 
 
