@@ -195,7 +195,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSlice("Warehouse.snowflake.debugDuplicateTables", nil), func(item string, index int) string {
 		return strings.ToUpper(item)
 	})
-	sf.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
+	sf.config.useAWSV2 = conf.GetBool("FileManager.useAwsSdkV2", false)
 	sf.config.privileges.fetchSchema.required = conf.GetStringSlice("Warehouse.snowflake.privileges.fetchSchema.required", []string{"USAGE"})
 	sf.config.privileges.fetchSchema.enabled = conf.GetBool("Warehouse.snowflake.privileges.fetchSchema.enabled", false)
 
