@@ -42,18 +42,18 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.35.3
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.72.0
 	github.com/aws/aws-sdk-go-v2/service/personalizeevents v1.26.4
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.82.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.83.0
 	github.com/aws/smithy-go v1.22.4
 	github.com/bufbuild/httplb v0.4.1
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.10.1
-	github.com/databricks/databricks-sql-go v1.7.1
+	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/dlclark/regexp2 v1.11.5
-	github.com/docker/docker v28.3.0+incompatible
-	github.com/go-chi/chi/v5 v5.2.2
-	github.com/go-redis/redis v6.15.9+incompatible
+	github.com/docker/docker v28.3.1+incompatible
+	github.com/go-chi/chi/v5 v5.2.1
+	github.com/go-redis/redis v6.15.8+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/golang/mock v1.6.0
@@ -88,7 +88,7 @@ require (
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/keydb v0.1.0-alpha
-	github.com/rudderlabs/rudder-go-kit v0.56.4
+	github.com/rudderlabs/rudder-go-kit v0.57.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.7.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250507094647-f18f2e217449
@@ -120,10 +120,17 @@ require (
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.15.0
 	golang.org/x/time v0.12.0
-	google.golang.org/api v0.239.0
+	google.golang.org/api v0.240.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
+)
+
+require (
+	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
+	github.com/99designs/keyring v1.2.2 // indirect
+	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 )
 
 require (
@@ -135,11 +142,7 @@ require (
 	cloud.google.com/go/iam v1.5.2 // indirect
 	cloud.google.com/go/monitoring v1.24.2 // indirect
 	dario.cat/mergo v1.0.1 // indirect
-	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
-	github.com/99designs/keyring v1.2.2 // indirect
 	github.com/AthenZ/athenz v1.12.13 // indirect
-	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.11.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.0 // indirect
