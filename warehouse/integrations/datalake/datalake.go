@@ -52,7 +52,7 @@ func New(conf *config.Config, log logger.Logger) *Datalake {
 func (d *Datalake) Setup(_ context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) (err error) {
 	d.Warehouse = warehouse
 	d.Uploader = uploader
-	useGlueV2 := d.conf.GetBool("FileManager.useAWSV2", false)
+	useGlueV2 := d.conf.GetBool("FileManager.useAwsSdkV2", false)
 	d.SchemaRepository, err = schemarepository.NewSchemaRepository(d.conf, d.logger, d.Warehouse, d.Uploader, useGlueV2)
 
 	return err

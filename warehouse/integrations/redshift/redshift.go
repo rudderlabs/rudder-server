@@ -194,7 +194,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 	rs.config.loadByFolderPath = conf.GetBool("Warehouse.redshift.loadByFolderPath", false)
-	rs.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
+	rs.config.useAWSV2 = conf.GetBool("FileManager.useAwsSdkV2", false)
 	return rs
 }
 
