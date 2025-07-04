@@ -176,7 +176,7 @@ func TestReaderLoader(t *testing.T) {
 			nullCount := metadata.GetStatistics().GetNullCount()
 			return columnName, nullCount
 		})
-		require.Equal(t, nullsMap, map[string]int64{
+		require.Equal(t, map[string]int64{
 			"column1":  0,
 			"column10": 100,
 			"column11": 100,
@@ -194,7 +194,7 @@ func TestReaderLoader(t *testing.T) {
 			"column7":  0,
 			"column8":  0,
 			"column9":  100,
-		})
+		}, nullsMap)
 	})
 
 	t.Run("JSON", func(t *testing.T) {
