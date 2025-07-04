@@ -194,10 +194,10 @@ func TestAssertKeysSubset(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.shouldPass {
-				types.AssertKeysSubset(tc.subset, tc.superset)
+				types.AssertKeysSubset(tc.superset, tc.subset)
 			} else {
 				require.Panics(t, func() {
-					types.AssertKeysSubset(tc.subset, tc.superset)
+					types.AssertKeysSubset(tc.superset, tc.subset)
 				})
 			}
 		})

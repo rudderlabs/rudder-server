@@ -2200,12 +2200,11 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// REPORTING - START
 	if proc.isReportingEnabled() {
 
-		reportingtypes.AssertSameKeys(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
-		reportingtypes.AssertSameKeys(preTrans.connectionDetailsMap, preTrans.destFilterStatusDetailMap)
-
-		reportingtypes.AssertKeysSubset(preTrans.botManagementStatusDetailsMap, preTrans.connectionDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.eventBlockingStatusDetailsMap, preTrans.connectionDetailsMap)
-		reportingtypes.AssertKeysSubset(preTrans.enricherStatusDetailsMap, preTrans.connectionDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.destFilterStatusDetailMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.botManagementStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.eventBlockingStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.enricherStatusDetailsMap)
 
 		for k, cd := range preTrans.connectionDetailsMap {
 			for _, sd := range preTrans.botManagementStatusDetailsMap[k] {
