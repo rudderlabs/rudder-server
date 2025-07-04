@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/fsouza/fake-gcs-server/fakestorage"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
@@ -21,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
@@ -1522,13 +1526,13 @@ func TestStagingFileDuplicateEventsMetric(t *testing.T) {
 			jr.stagingFilePaths = map[int64]string{1: stagingFilePath1, 2: stagingFilePath2}
 			return nil
 		}
-		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 1})
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 1}, "")
 		require.NoError(t, err)
 		m := statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, 1, m.LastValue())
 		value1 := m.LastValue()
 
-		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2})
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2}, "")
 		require.NoError(t, err)
 		m = statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, value1+(value1+1), m.LastValue())
@@ -1552,9 +1556,238 @@ func TestStagingFileDuplicateEventsMetric(t *testing.T) {
 			jr.stagingFilePaths = map[int64]string{2: stagingFilePath}
 			return nil
 		}
-		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2, Location: stagingFilePath})
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2, Location: stagingFilePath}, "")
 		require.NoError(t, err)
 		m := statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, 0, m.LastValue()) // no duplicates
+	})
+}
+
+func TestLoadFileDeterministicNaming(t *testing.T) {
+	misc.Init()
+	const (
+		workspaceID     = "test_workspace_id"
+		sourceID        = "test_source_id"
+		sourceName      = "test_source_name"
+		destinationID   = "test_destination_id"
+		destinationType = "test_destination_type"
+		destinationName = "test_destination_name"
+		namespace       = "test_namespace"
+		workerIdx       = 1
+	)
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	minioResource, err := minio.Setup(pool, t)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	destConf := map[string]interface{}{
+		"bucketName":       minioResource.BucketName,
+		"accessKeyID":      minioResource.AccessKeyID,
+		"accessKey":        minioResource.AccessKeyID,
+		"secretAccessKey":  minioResource.AccessKeySecret,
+		"endPoint":         minioResource.Endpoint,
+		"forcePathStyle":   true,
+		"s3ForcePathStyle": true,
+		"disableSSL":       true,
+		"region":           minioResource.Region,
+		"enableSSE":        false,
+		"bucketProvider":   "MINIO",
+	}
+
+	t.Run("deterministic load file naming disabled", func(t *testing.T) {
+		jobLocation := uploadFile(t, ctx, destConf, "testdata/staging.json.gz")
+
+		schemaMap := stagingSchema(t)
+		ef := encoding.NewFactory(config.New())
+
+		c := config.New()
+		c.Set("Warehouse.useDeterministicLoadFileName", false)
+
+		tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+		slaveWorker := newWorker(
+			c,
+			logger.NOP,
+			stats.NOP,
+			nil, // notifier not needed for direct call
+			bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+			constraints.New(config.New()),
+			ef,
+			workerIdx,
+		)
+
+		stagingFiles := []stagingFileInfo{
+			{ID: 1, Location: jobLocation},
+		}
+
+		job := payloadV2{
+			basePayload: basePayload{
+				UploadID:                     1,
+				UploadSchema:                 schemaMap,
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              destinationType,
+				DestinationNamespace:         namespace,
+				DestinationRevisionID:        uuid.New().String(),
+				StagingDestinationRevisionID: uuid.New().String(),
+				DestinationConfig:            destConf,
+				StagingDestinationConfig:     map[string]interface{}{},
+				UniqueLoadGenID:              uuid.New().String(),
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				LoadFileType:                 "csv",
+			},
+			StagingFiles: stagingFiles,
+		}
+
+		output, err := slaveWorker.processMultiStagingFiles(ctx, &job)
+		require.NoError(t, err)
+
+		// Verify that load files have non-deterministic paths (contain UUID)
+		for _, result := range output {
+			location := result.Location
+			fileName := path.Base(location)
+
+			// file name should be {stagingFilePath}.{sourceID}.{UUID}.{fileFormat}
+			parts := strings.Split(fileName, ".")
+			// In this case csv.gz file format is used
+			uuidPart := parts[len(parts)-3]
+			require.True(t, misc.IsValidUUID(uuidPart), "Non-deterministic file name should contain UUID")
+		}
+	})
+
+	t.Run("deterministic load file name with GCS", func(t *testing.T) {
+		port, err := testhelper.GetFreePort()
+		require.NoError(t, err)
+
+		server, err := fakestorage.NewServerWithOptions(fakestorage.Options{
+			Scheme: "http",
+			Host:   "127.0.0.1",
+			Port:   uint16(port),
+			InitialObjects: []fakestorage.Object{
+				{
+					ObjectAttrs: fakestorage.ObjectAttrs{
+						BucketName: "test-bucket",
+						Name:       "test-prefix/testFile",
+					},
+					Content: []byte("inside the file"),
+				},
+			},
+		})
+		require.NoError(t, err)
+		defer server.Stop()
+		_ = os.Setenv("STORAGE_EMULATOR_HOST", server.URL())
+		_ = os.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
+
+		gcsURL := fmt.Sprintf("%s/storage/v1/", server.URL())
+		t.Log("GCS URL:", gcsURL)
+
+		conf := map[string]interface{}{
+			"bucketName": "test-bucket",
+			"prefix":     "test-prefix",
+			"endPoint":   gcsURL,
+			"disableSSL": true,
+			"jsonReads":  true,
+		}
+
+		fm, err := filemanager.New(&filemanager.Settings{
+			Provider: warehouseutils.GCS,
+			Config:   conf,
+			Conf:     config.Default,
+		})
+		require.NoError(t, err)
+
+		stagingFiles := []string{
+			"testdata/staging.json.gz",
+			"testdata/staging2.json.gz",
+			"testdata/staging3.json.gz",
+		}
+
+		stagingFileLocations := []string{}
+
+		for _, stagingFile := range stagingFiles {
+			file, err := os.Open(stagingFile)
+			require.NoError(t, err)
+			uploadedFile, err := fm.Upload(ctx, file)
+			require.NoError(t, err)
+			stagingFileLocations = append(stagingFileLocations, fm.GetDownloadKeyFromFileLocation(uploadedFile.Location))
+			_ = file.Close()
+		}
+
+		schemaMap := stagingSchema(t)
+		ef := encoding.NewFactory(config.New())
+
+		c := config.New()
+		c.Set("Warehouse.useDeterministicLoadFileName", true)
+
+		tenantManager := multitenant.New(config.New(), backendconfig.DefaultBackendConfig)
+
+		slaveWorker := newWorker(
+			c,
+			logger.NOP,
+			stats.NOP,
+			nil,
+			bcm.New(config.New(), nil, tenantManager, logger.NOP, stats.NOP),
+			constraints.New(config.New()),
+			ef,
+			workerIdx,
+		)
+
+		stagingFileInfo := lo.Map(stagingFileLocations, func(location string, i int) stagingFileInfo {
+			return stagingFileInfo{ID: int64(i + 1), Location: location}
+		})
+
+		job := payloadV2{
+			basePayload: basePayload{
+				UploadID:                     1,
+				UploadSchema:                 schemaMap,
+				WorkspaceID:                  workspaceID,
+				SourceID:                     sourceID,
+				SourceName:                   sourceName,
+				DestinationID:                destinationID,
+				DestinationName:              destinationName,
+				DestinationType:              warehouseutils.GCSDatalake, // Use time window destination
+				DestinationNamespace:         namespace,
+				DestinationRevisionID:        uuid.New().String(),
+				StagingDestinationRevisionID: uuid.New().String(),
+				DestinationConfig:            conf,
+				StagingDestinationConfig:     conf,
+				UniqueLoadGenID:              uuid.New().String(),
+				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
+				LoadFileType:                 "csv",
+			},
+			StagingFiles: stagingFileInfo,
+		}
+
+		output, err := slaveWorker.processMultiStagingFiles(ctx, &job)
+		require.NoError(t, err)
+
+		// Verify that all load files have the same deterministic path structure
+		// The path should be: {loadFileNamePrefix}.{sourceID}.{fileFormat}
+		// where loadFileNamePrefix is MD5 hash of all staging file locations
+		expectedLoadFileNamePrefix := misc.GetMD5Hash(strings.Join(stagingFileLocations, ""))
+		expectedFileFormat := warehouseutils.GetLoadFileFormat("csv") // csv.gz
+
+		for _, result := range output {
+			location := result.Location
+			fileName := path.Base(location)
+
+			// Verify the file name follows the deterministic pattern
+			expectedFileName := fmt.Sprintf("%s.%s.%s", expectedLoadFileNamePrefix, sourceID, expectedFileFormat)
+			require.Equal(t, expectedFileName, fileName, "Load file name does not match expected pattern")
+		}
+
+		// reprocess the files, Test fails if GCS upload is not idempotent
+		output, err = slaveWorker.processMultiStagingFiles(ctx, &job)
+		require.NoError(t, err)
+		for _, result := range output {
+			require.Empty(t, result.Location, "location should be empty")
+		}
 	})
 }
