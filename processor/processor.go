@@ -1247,9 +1247,7 @@ func (proc *Handle) updateMetricMaps(
 		event.Metadata.TransformationID + ":" +
 		event.Metadata.TransformationVersionID + ":" +
 		event.Metadata.TrackingPlanID + ":" +
-		strconv.Itoa(event.Metadata.TrackingPlanVersion) + ":" +
-		status + ":" + strconv.Itoa(event.StatusCode) + ":" +
-		eventName + ":" + eventType
+		strconv.Itoa(event.Metadata.TrackingPlanVersion)
 
 	if _, ok := connectionDetailsMap[key]; !ok {
 		connectionDetailsMap[key] = &reportingtypes.ConnectionDetails{
@@ -1657,34 +1655,33 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 }
 
 type preTransformationMessage struct {
-	partition                         string
-	subJobs                           subJob
-	eventSchemaJobs                   []*jobsdb.JobT
-	archivalJobs                      []*jobsdb.JobT
-	connectionDetailsMap              map[string]*reportingtypes.ConnectionDetails
-	statusDetailsMap                  map[string]map[string]*reportingtypes.StatusDetail
-	enricherConnectionDetailsMap      map[string]*reportingtypes.ConnectionDetails
-	enricherStatusDetailsMap          map[string]map[string]*reportingtypes.StatusDetail
-	botManagementConnectionDetailsMap map[string]*reportingtypes.ConnectionDetails
-	botManagementStatusDetailsMap     map[string]map[string]*reportingtypes.StatusDetail
-	reportMetrics                     []*reportingtypes.PUReportedMetric
-	destFilterStatusDetailMap         map[string]map[string]*reportingtypes.StatusDetail
-	inCountMetadataMap                map[string]MetricMetadata
-	inCountMap                        map[string]int64
-	outCountMap                       map[string]int64
-	totalEvents                       int
-	marshalStart                      time.Time
-	groupedEventsBySourceId           map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID                 map[string]types.SingularEventWithReceivedAt
-	procErrorJobs                     []*jobsdb.JobT
-	jobIDToSpecificDestMapOnly        map[int64]string
-	groupedEvents                     map[string][]types.TransformerEvent
-	uniqueMessageIdsBySrcDestKey      map[string]map[string]struct{}
-	statusList                        []*jobsdb.JobStatusT
-	jobList                           []*jobsdb.JobT
-	start                             time.Time
-	sourceDupStats                    map[dupStatKey]int
-	dedupKeys                         map[string]struct{}
+	partition                     string
+	subJobs                       subJob
+	eventSchemaJobs               []*jobsdb.JobT
+	archivalJobs                  []*jobsdb.JobT
+	connectionDetailsMap          map[string]*reportingtypes.ConnectionDetails
+	statusDetailsMap              map[string]map[string]*reportingtypes.StatusDetail
+	enricherStatusDetailsMap      map[string]map[string]*reportingtypes.StatusDetail
+	botManagementStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
+	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
+	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
+	reportMetrics                 []*reportingtypes.PUReportedMetric
+	inCountMetadataMap            map[string]MetricMetadata
+	inCountMap                    map[string]int64
+	outCountMap                   map[string]int64
+	totalEvents                   int
+	marshalStart                  time.Time
+	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
+	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
+	procErrorJobs                 []*jobsdb.JobT
+	jobIDToSpecificDestMapOnly    map[int64]string
+	groupedEvents                 map[string][]types.TransformerEvent
+	uniqueMessageIdsBySrcDestKey  map[string]map[string]struct{}
+	statusList                    []*jobsdb.JobStatusT
+	jobList                       []*jobsdb.JobT
+	start                         time.Time
+	sourceDupStats                map[dupStatKey]int
+	dedupKeys                     map[string]struct{}
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
@@ -1734,10 +1731,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 	outCountMap := make(map[string]int64) // destinations enabled
 	destFilterStatusDetailMap := make(map[string]map[string]*reportingtypes.StatusDetail)
-	enricherConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	enricherStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	botManagementStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
-	botManagementConnectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
+	eventBlockingStatusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	// map of jobID to destinationID: for messages that needs to be delivered to a specific destinations only
 	jobIDToSpecificDestMapOnly := make(map[int64]string)
 
@@ -1914,7 +1910,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				proc.updateMetricMaps(
 					nil,
 					nil,
-					botManagementConnectionDetailsMap,
+					connectionDetailsMap,
 					botManagementStatusDetailsMap,
 					transformerEvent,
 					status,
@@ -1924,7 +1920,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 					},
 					nil,
 				)
-				// reset status code to 0 because transformerEvent is reused for GATEWAY metrics below, which expect statusCode = 0
+				// reset status code to 0 because transformerEvent is reused for other metrics
 				transformerEvent.StatusCode = 0
 			}
 			// REPORTING - BOT_MANAGEMENT metrics - END
@@ -1936,6 +1932,28 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		}
 
 		if event.eventParams.IsEventBlocked {
+			// REPORTING - EVENT_BLOCKING metrics - START
+			if proc.isReportingEnabled() {
+				transformerEvent.StatusCode = reportingtypes.FilterEventCode
+
+				proc.updateMetricMaps(
+					nil,
+					nil,
+					connectionDetailsMap,
+					eventBlockingStatusDetailsMap,
+					transformerEvent,
+					jobsdb.Filtered.State,
+					reportingtypes.EVENT_BLOCKING,
+					func() json.RawMessage {
+						return nil
+					},
+					nil,
+				)
+				// reset status code to 0 because transformerEvent is reused for other metrics
+				transformerEvent.StatusCode = 0
+			}
+			// REPORTING - EVENT_BLOCKING metrics - END
+
 			proc.logger.Debugn("Dropping event because it is blocked by event blocking")
 			continue
 		}
@@ -2028,7 +2046,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 				proc.updateMetricMaps(
 					nil,
 					nil,
-					enricherConnectionDetailsMap,
+					connectionDetailsMap,
 					enricherStatusDetailsMap,
 					transformerEvent,
 					botStatus,
@@ -2087,34 +2105,33 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	}
 
 	return &preTransformationMessage{
-		partition:                         partition,
-		subJobs:                           subJobs,
-		eventSchemaJobs:                   eventSchemaJobs,
-		archivalJobs:                      archivalJobs,
-		connectionDetailsMap:              connectionDetailsMap,
-		statusDetailsMap:                  statusDetailsMap,
-		enricherConnectionDetailsMap:      enricherConnectionDetailsMap,
-		enricherStatusDetailsMap:          enricherStatusDetailsMap,
-		botManagementConnectionDetailsMap: botManagementConnectionDetailsMap,
-		botManagementStatusDetailsMap:     botManagementStatusDetailsMap,
-		reportMetrics:                     reportMetrics,
-		destFilterStatusDetailMap:         destFilterStatusDetailMap,
-		inCountMetadataMap:                inCountMetadataMap,
-		inCountMap:                        inCountMap,
-		outCountMap:                       outCountMap,
-		totalEvents:                       totalEvents,
-		marshalStart:                      marshalStart,
-		groupedEventsBySourceId:           groupedEventsBySourceId,
-		eventsByMessageID:                 eventsByMessageID,
-		procErrorJobs:                     procErrorJobs,
-		jobIDToSpecificDestMapOnly:        jobIDToSpecificDestMapOnly,
-		groupedEvents:                     groupedEvents,
-		uniqueMessageIdsBySrcDestKey:      uniqueMessageIdsBySrcDestKey,
-		statusList:                        statusList,
-		jobList:                           jobList,
-		start:                             start,
-		sourceDupStats:                    sourceDupStats,
-		dedupKeys:                         dedupKeys,
+		partition:                     partition,
+		subJobs:                       subJobs,
+		eventSchemaJobs:               eventSchemaJobs,
+		archivalJobs:                  archivalJobs,
+		connectionDetailsMap:          connectionDetailsMap,
+		statusDetailsMap:              statusDetailsMap,
+		enricherStatusDetailsMap:      enricherStatusDetailsMap,
+		botManagementStatusDetailsMap: botManagementStatusDetailsMap,
+		eventBlockingStatusDetailsMap: eventBlockingStatusDetailsMap,
+		reportMetrics:                 reportMetrics,
+		destFilterStatusDetailMap:     destFilterStatusDetailMap,
+		inCountMetadataMap:            inCountMetadataMap,
+		inCountMap:                    inCountMap,
+		outCountMap:                   outCountMap,
+		totalEvents:                   totalEvents,
+		marshalStart:                  marshalStart,
+		groupedEventsBySourceId:       groupedEventsBySourceId,
+		eventsByMessageID:             eventsByMessageID,
+		procErrorJobs:                 procErrorJobs,
+		jobIDToSpecificDestMapOnly:    jobIDToSpecificDestMapOnly,
+		groupedEvents:                 groupedEvents,
+		uniqueMessageIdsBySrcDestKey:  uniqueMessageIdsBySrcDestKey,
+		statusList:                    statusList,
+		jobList:                       jobList,
+		start:                         start,
+		sourceDupStats:                sourceDupStats,
+		dedupKeys:                     dedupKeys,
 	}, nil
 }
 
@@ -2180,11 +2197,16 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		return nil, err
 	}
 
+	// REPORTING - START
 	if proc.isReportingEnabled() {
 
-		// REPORTING - BOT_MANAGEMENT metrics - START
-		reportingtypes.AssertSameKeys(preTrans.botManagementConnectionDetailsMap, preTrans.botManagementStatusDetailsMap)
-		for k, cd := range preTrans.botManagementConnectionDetailsMap {
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.destFilterStatusDetailMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.botManagementStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.eventBlockingStatusDetailsMap)
+		reportingtypes.AssertKeysSubset(preTrans.connectionDetailsMap, preTrans.enricherStatusDetailsMap)
+
+		for k, cd := range preTrans.connectionDetailsMap {
 			for _, sd := range preTrans.botManagementStatusDetailsMap[k] {
 				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
@@ -2192,12 +2214,15 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					StatusDetail:      sd,
 				})
 			}
-		}
-		// REPORTING - BOT_MANAGEMENT metrics - END
 
-		// REPORTING - GATEWAY metrics - START
-		reportingtypes.AssertSameKeys(preTrans.connectionDetailsMap, preTrans.statusDetailsMap)
-		for k, cd := range preTrans.connectionDetailsMap {
+			for _, sd := range preTrans.eventBlockingStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.EVENT_BLOCKING, false, false),
+					StatusDetail:      sd,
+				})
+			}
+
 			for _, sd := range preTrans.statusDetailsMap[k] {
 				m := &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
@@ -2207,6 +2232,14 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				preTrans.reportMetrics = append(preTrans.reportMetrics, m)
 			}
 
+			for _, sd := range preTrans.enricherStatusDetailsMap[k] {
+				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
+					ConnectionDetails: *cd,
+					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
+					StatusDetail:      sd,
+				})
+			}
+
 			for _, dsd := range preTrans.destFilterStatusDetailMap[k] {
 				destFilterMetric := &reportingtypes.PUReportedMetric{
 					ConnectionDetails: *cd,
@@ -2214,17 +2247,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					StatusDetail:      dsd,
 				}
 				preTrans.reportMetrics = append(preTrans.reportMetrics, destFilterMetric)
-			}
-		}
-
-		reportingtypes.AssertSameKeys(preTrans.enricherConnectionDetailsMap, preTrans.enricherStatusDetailsMap)
-		for k, cd := range preTrans.enricherConnectionDetailsMap {
-			for _, sd := range preTrans.enricherStatusDetailsMap[k] {
-				preTrans.reportMetrics = append(preTrans.reportMetrics, &reportingtypes.PUReportedMetric{
-					ConnectionDetails: *cd,
-					PUDetails:         *reportingtypes.CreatePUDetails("", reportingtypes.GATEWAY, false, true),
-					StatusDetail:      sd,
-				})
 			}
 		}
 
@@ -2243,8 +2265,8 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			proc.config.enableUpdatedEventNameReporting.Load(),
 		)
 		preTrans.reportMetrics = append(preTrans.reportMetrics, diffMetrics...)
-		// REPORTING - GATEWAY metrics - END
 	}
+	// REPORTING - END
 
 	proc.stats.statNumEvents(preTrans.partition).Count(preTrans.totalEvents)
 
