@@ -73,9 +73,19 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	if !ok {
 		return payload, fmt.Errorf("conversionTime field is not a string")
 	}
-	if _, err := time.Parse(time.RFC3339, conversionTimeStr); err != nil {
-		return payload, fmt.Errorf("conversionTime must be in ISO 8601 format like 2006-01-02T15:04:05Z07:00")
+
+	// Try RFC3339 first
+	parsedTime, parseErr := time.Parse(time.RFC3339, conversionTimeStr)
+	if parseErr != nil {
+		// Try Bing Ads format
+		parsedTime, parseErr = time.Parse("2/1/2006 3:04:05 PM", conversionTimeStr)
+		if parseErr != nil {
+			return payload, fmt.Errorf("conversionTime must be in ISO 8601 (e.g. 2006-01-02T15:04:05Z07:00) or mm/dd/yyyy hh:mm:ss AM/PM (e.g. 7/2/2025 6:50:54 PM) format")
+		}
 	}
+
+	// Always convert to Bing Ads format
+	fields["conversionTime"] = parsedTime.Format("2/1/2006 3:04:05 PM")
 
 	// validate for mscklid
 	clickID, hasClickID := fields["microsoftClickId"]
