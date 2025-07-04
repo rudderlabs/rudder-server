@@ -3,8 +3,11 @@ package slave
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -95,12 +98,21 @@ func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 }
 
 func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+	configMap, ok := config.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("config is not a map[string]interface{}: %T", config)
+	}
+
+	clonedConfig := maps.Clone(configMap)
+
+	clonedConfig["uploadIfNotExist"] = true
+
 	storageProvider := warehouseutils.ObjectStorageType(p.DestinationType, config, useRudderStorage)
 	fileManager, err := filemanager.New(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 			Provider:                    storageProvider,
-			Config:                      config,
+			Config:                      clonedConfig,
 			UseRudderStorage:            useRudderStorage,
 			RudderStoragePrefixOverride: p.RudderStoragePrefix,
 			WorkspaceID:                 p.WorkspaceID,
@@ -317,14 +329,29 @@ func (jr *jobRun) path(stagingFileInfo stagingFileInfo) (string, error) {
 
 // loadFilePath generates a unique path for a load file based on the staging file path.
 // Every call to this function will generate a new path even if the same staging file is used.
-func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo) (string, error) {
+// If Warehouse.useDeterministicLoadFileName is true, the load file path will be unique but the file name will be constant.
+func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo, loadFileNamePrefix string) (string, error) {
 	stagingFilePath, err := jr.path(stagingFileInfo)
 	if err != nil {
 		return "", fmt.Errorf("getting staging file path: %w", err)
 	}
 
+	stagingFilePathWithoutExt := strings.TrimSuffix(stagingFilePath, ".json.gz")
+
+	if jr.conf.GetBool("Warehouse.useDeterministicLoadFileName", false) && slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) && len(loadFileNamePrefix) > 0 {
+		loadFileName := fmt.Sprintf("%s.%s.%s", loadFileNamePrefix, jr.job.SourceID, warehouseutils.GetLoadFileFormat(jr.job.LoadFileType))
+		// adding uuid to the load file path to ensure that the load file is unique
+		// Even if same batch is processed by same worker, load file path will be unique but file name is constant
+		loadFileDir := path.Join(path.Dir(stagingFilePathWithoutExt), misc.FastUUID().String())
+		if err := os.MkdirAll(loadFileDir, os.ModePerm); err != nil {
+			return "", fmt.Errorf("creating load file directory: %w", err)
+		}
+		loadFilePath := path.Join(loadFileDir, loadFileName)
+		return loadFilePath, nil
+	}
+
 	return fmt.Sprintf("%s.%s.%s.%s",
-		strings.TrimSuffix(stagingFilePath, ".json.gz"),
+		stagingFilePathWithoutExt,
 		jr.job.SourceID,
 		misc.FastUUID().String(),
 		warehouseutils.GetLoadFileFormat(jr.job.LoadFileType),
@@ -364,12 +391,24 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 		}()
 
 		if slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) {
-			return uploader.Upload(
+			uploadOutput, err := uploader.Upload(
 				ctx,
 				file,
 				warehouseutils.GetTablePathInObjectStorage(jr.job.DestinationNamespace, tableName),
 				jr.job.LoadFilePrefix,
 			)
+
+			// upload output will be empty in case of precondition failure
+			// but this is acceptable for datalake destinations as file is not downloaded further in the process
+			if errors.Is(err, filemanager.ErrPreConditionFailed) {
+				jr.logger.Warnn("Precondition failed while uploading load file",
+					logger.NewField("loadFileName", file.Name()),
+					logger.NewField("tableName", tableName),
+				)
+				return uploadOutput, nil
+			}
+
+			return uploadOutput, err
 		}
 		return uploader.Upload(
 			ctx,
@@ -479,7 +518,7 @@ func (jr *jobRun) reader(stagingFileInfo stagingFileInfo) (*gzip.Reader, error) 
 
 // writer returns a writer for the table and an unlock function that MUST be called when done using the writer
 // If two goroutines request a writer for the same table, they will block on the mutex until the first goroutine is done writing
-func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo) (encoding.LoadFileWriter, func(), error) {
+func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo, loadFileNamePrefix string) (encoding.LoadFileWriter, func(), error) {
 	// Get or create mutex for this table
 	jr.tableWriterMutexesMu.Lock()
 	tableMutex, exists := jr.tableWriterMutexes[tableName]
@@ -499,7 +538,7 @@ func (jr *jobRun) writer(tableName string, stagingFileInfo stagingFileInfo) (enc
 		return writer, tableMutex.Unlock, nil
 	}
 
-	outputFilePath, err := jr.loadFilePath(stagingFileInfo)
+	outputFilePath, err := jr.loadFilePath(stagingFileInfo, loadFileNamePrefix)
 	if err != nil {
 		tableMutex.Unlock()
 		return nil, nil, fmt.Errorf("failed to get output file path for table %s: %w", tableName, err)
