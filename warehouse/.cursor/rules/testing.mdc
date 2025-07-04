@@ -1,0 +1,418 @@
+---
+description: Refer to this rule for writing tests
+globs: 
+alwaysApply: false
+---
+# Warehouse Testing Guidelines
+
+This document outlines the testing conventions and best practices for the `warehouse/` directory in the RudderStack server codebase.
+
+## Table of Contents
+
+- [Assertion Library](mdc:#assertion-library)
+- [Test Structure](mdc:#test-structure)
+- [Parallelization](mdc:#parallelization)
+- [Context Management](mdc:#context-management)
+- [Setup and Teardown](mdc:#setup-and-teardown)
+- [Database Testing](mdc:#database-testing)
+- [Mocking](mdc:#mocking)
+- [File Management](mdc:#file-management)
+- [Configuration](mdc:#configuration)
+- [Test Naming](mdc:#test-naming)
+- [Error Testing](mdc:#error-testing)
+- [Helper Patterns](mdc:#helper-patterns)
+- [Integration Test Patterns](mdc:#integration-test-patterns)
+- [Common Anti-patterns to Avoid](mdc:#common-anti-patterns-to-avoid)
+- [Example Test Structure](mdc:#example-test-structure)
+
+## Assertion Library
+
+**ALWAYS** use `github.com/stretchr/testify/require` for assertions in warehouse tests.
+
+- Prefer `require` over `assert` to fail fast on critical assertions
+- Use `require.NoError(t, err)` for error checking
+- Use `require.Equal(t, expected, actual)` for equality checks
+- Use `require.True(t, condition)` and `require.False(t, condition)` for boolean checks
+
+```go
+import (
+    "github.com/stretchr/testify/require"
+)
+
+func TestExample(t *testing.T) {
+    result, err := someFunction()
+    require.NoError(t, err)
+    require.Equal(t, expected, result)
+}
+```
+
+## Test Structure
+
+Use **table-driven tests** for multiple scenarios:
+
+- Structure table-driven tests with `name`, input, and `expected` fields
+- Always use `t.Run(tc.name, func(t *testing.T) {})` for subtests
+- Include both positive and negative test cases
+
+```go
+func TestWarehouseFunction(t *testing.T) {
+    testCases := []struct {
+        name     string
+        input    InputType
+        expected ExpectedType
+        wantErr  bool
+    }{
+        {
+            name:     "successful case",
+            input:    validInput,
+            expected: expectedOutput,
+            wantErr:  false,
+        },
+        {
+            name:    "error case",
+            input:   invalidInput,
+            wantErr: true,
+        },
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            // test implementation
+        })
+    }
+}
+```
+
+## Parallelization
+
+- Use `t.Parallel()` for tests that can run concurrently
+- Apply parallelization to both main tests and subtests where safe
+- Avoid parallelization for tests that modify shared resources
+
+```go
+func TestConcurrentFunction(t *testing.T) {
+    t.Parallel()
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            t.Parallel()
+            // test implementation
+        })
+    }
+}
+```
+
+## Context Management
+
+- Use `context.Background()` as the default context for most tests
+- Use `context.WithTimeout()` for tests with time constraints
+- Always pass context as the first parameter to functions under test
+
+```go
+func TestWithContext(t *testing.T) {
+    ctx := context.Background()
+    // or for timeouts:
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+    defer cancel()
+    
+    result, err := functionUnderTest(ctx, input)
+    require.NoError(t, err)
+}
+```
+
+## Setup and Teardown
+
+- Use `t.Cleanup()` for resource cleanup (files, database connections, etc.)
+- Clean up temporary files with `require.NoError(t, os.Remove(filePath))`
+- Use `defer` for cleanup when `t.Cleanup()` is not sufficient
+- Create helper functions for complex test setup
+
+```go
+func TestWithCleanup(t *testing.T) {
+    tempFile, err := os.CreateTemp("", "test_*.txt")
+    require.NoError(t, err)
+    
+    t.Cleanup(func() {
+        require.NoError(t, os.Remove(tempFile.Name()))
+    })
+    
+    // test implementation
+}
+```
+
+## Database Testing
+
+- Use `dockertest` for PostgreSQL integration tests
+- Set up database migrations with `migrator.Migrator`
+- Use `sqlmiddleware.New()` for database connections
+- Clean up database resources properly in `t.Cleanup()`
+
+```go
+func TestDatabaseIntegration(t *testing.T) {
+    pool, err := dockertest.NewPool("")
+    require.NoError(t, err)
+    
+    pgResource, err := postgres.Setup(pool, t)
+    require.NoError(t, err)
+    
+    err = (&migrator.Migrator{
+        Handle:          pgResource.DB,
+        MigrationsTable: "wh_schema_migrations",
+    }).Migrate("warehouse")
+    require.NoError(t, err)
+    
+    db := sqlmiddleware.New(pgResource.DB)
+    
+    // test implementation
+}
+```
+
+## Mocking
+
+- Use `go.uber.org/mock/gomock` for interface mocking
+- Create mock expectations with clear `.EXPECT()` calls
+- Use `gomock.NewController(t)` for mock controller setup
+- Place mock generation comments: `//go:generate go run go.uber.org/mock/mockgen`
+
+```go
+//go:generate go run go.uber.org/mock/mockgen -destination=mocks/mock_interface.go -package=mocks . InterfaceName
+
+func TestWithMocks(t *testing.T) {
+    ctrl := gomock.NewController(t)
+    defer ctrl.Finish()
+    
+    mockInterface := mocks.NewMockInterfaceName(ctrl)
+    mockInterface.EXPECT().Method(gomock.Any()).Return(expectedResult, nil).Times(1)
+    
+    // test implementation
+}
+```
+
+## File Management
+
+- Create temporary files with `os.CreateTemp()` or `t.TempDir()`
+- Always clean up files with `t.Cleanup(func() { require.NoError(t, os.Remove(fileName)) })`
+- Use proper file handling patterns for testing file operations
+- Test both successful file operations and error cases
+
+```go
+func TestFileOperations(t *testing.T) {
+    tempDir := t.TempDir()
+    
+    tempFile, err := os.CreateTemp(tempDir, "test_*.json")
+    require.NoError(t, err)
+    
+    t.Cleanup(func() {
+        require.NoError(t, tempFile.Close())
+    })
+    
+    // test file operations
+}
+```
+
+## Configuration
+
+- Use `config.New()` for test configuration
+- Override config values with `c.Set(key, value)` for test scenarios
+- Use environment variable overrides when testing config behavior
+- Test both default and custom configuration values
+
+```go
+func TestConfiguration(t *testing.T) {
+    c := config.New()
+    c.Set("Warehouse.testKey", "testValue")
+    
+    // test with configuration
+}
+```
+
+## Test Naming
+
+- Use descriptive test function names: `TestFunctionName_Scenario`
+- Use underscores to separate components in test names
+- Include the component being tested in the function name
+- Use clear, descriptive names for table-driven test cases
+
+```go
+func TestWarehouse_GetBoolDestinationConfig(t *testing.T) { /* ... */ }
+func TestLoadFileGenerator_GetLoadFilePrefix(t *testing.T) { /* ... */ }
+func TestStagingFileRepo_GetPending(t *testing.T) { /* ... */ }
+```
+
+## Error Testing
+
+- Test both success and error scenarios
+- Use `require.Error(t, err)` for expected errors
+- Use `require.ErrorIs(t, err, expectedError)` for specific error types
+- Use `require.EqualError(t, err, expectedMessage)` for exact error messages
+
+```go
+func TestErrorHandling(t *testing.T) {
+    testCases := []struct {
+        name    string
+        input   InputType
+        wantErr bool
+        errMsg  string
+    }{
+        {
+            name:    "invalid input",
+            input:   invalidInput,
+            wantErr: true,
+            errMsg:  "expected error message",
+        },
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            result, err := functionUnderTest(tc.input)
+            
+            if tc.wantErr {
+                require.Error(t, err)
+                if tc.errMsg != "" {
+                    require.EqualError(t, err, tc.errMsg)
+                }
+                return
+            }
+            
+            require.NoError(t, err)
+            // assert on result
+        })
+    }
+}
+```
+
+## Helper Patterns
+
+- Create test helper functions for complex setups
+- Use `t.Helper()` in helper functions to get correct line numbers
+- Extract common test data into helper functions or constants
+- Create factory functions for test models and objects
+
+```go
+func createTestWarehouse(t *testing.T) model.Warehouse {
+    t.Helper()
+    
+    return model.Warehouse{
+        WorkspaceID: "test-workspace",
+        Source: backendconfig.SourceT{
+            ID: "test-source",
+        },
+        Destination: backendconfig.DestinationT{
+            ID: "test-destination",
+        },
+    }
+}
+
+func setupTestDatabase(t *testing.T) (*sql.DB, func()) {
+    t.Helper()
+    
+    // setup logic
+    
+    cleanup := func() {
+        // cleanup logic
+    }
+    
+    return db, cleanup
+}
+```
+
+## Integration Test Patterns
+
+- Use docker-compose for complex integration test setups
+- Set up real warehouse connections for integration tests
+- Use conditional skips: `if os.Getenv("SLOW") != "1" { t.Skip() }`
+- Test end-to-end workflows with real data
+
+```go
+func TestIntegration(t *testing.T) {
+    if os.Getenv("SLOW") != "1" {
+        t.Skip("Skipping integration tests. Add 'SLOW=1' env var to run test.")
+    }
+    
+    // integration test implementation
+}
+```
+
+## Common Anti-patterns to Avoid
+
+- ❌ Don't use `testing.T.Fatal()` or `t.Fatalf()` - use `require` instead
+- ❌ Don't ignore cleanup errors - always check with `require.NoError()`
+- ❌ Don't create tests without cleanup for temporary resources
+- ❌ Don't use sleep for timing - use proper synchronization or timeouts
+- ❌ Don't test implementation details - focus on behavior
+
+## Example Test Structure
+
+Here's a complete example following all the guidelines:
+
+```go
+package warehouse_test
+
+import (
+    "context"
+    "os"
+    "testing"
+    "time"
+
+    "github.com/stretchr/testify/require"
+    "go.uber.org/mock/gomock"
+
+    "github.com/rudderlabs/rudder-go-kit/config"
+    "github.com/rudderlabs/rudder-server/warehouse/internal/model"
+)
+
+func TestWarehouseFunction_Scenario(t *testing.T) {
+    testCases := []struct {
+        name     string
+        input    InputType
+        expected ExpectedType
+        wantErr  bool
+    }{
+        {
+            name:     "successful case",
+            input:    validInput,
+            expected: expectedOutput,
+            wantErr:  false,
+        },
+        {
+            name:    "error case",
+            input:   invalidInput,
+            wantErr: true,
+        },
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            t.Parallel()
+            
+            // Setup
+            ctx := context.Background()
+            ctrl := gomock.NewController(t)
+            defer ctrl.Finish()
+            
+            tempFile, err := os.CreateTemp("", "test_*.json")
+            require.NoError(t, err)
+            
+            t.Cleanup(func() {
+                require.NoError(t, os.Remove(tempFile.Name()))
+            })
+            
+            // Test execution
+            result, err := functionUnderTest(ctx, tc.input)
+            
+            // Assertions
+            if tc.wantErr {
+                require.Error(t, err)
+                return
+            }
+            
+            require.NoError(t, err)
+            require.Equal(t, tc.expected, result)
+        })
+    }
+}
+```
+
+## Reference
+
+This document is based on analysis of existing test patterns in the warehouse directory. For questions or suggestions about these guidelines, please refer to the test files in the warehouse directory for examples of these patterns in practice. 
