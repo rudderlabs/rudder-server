@@ -13,7 +13,7 @@ replace (
 	github.com/gocql/gocql => github.com/scylladb/gocql v1.14.4
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
-	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.2
+	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.3
 	golang.org/x/image => golang.org/x/image v0.24.0
 	golang.org/x/net => golang.org/x/net v0.34.0
 	golang.org/x/net/html => golang.org/x/net/html v0.41.0
