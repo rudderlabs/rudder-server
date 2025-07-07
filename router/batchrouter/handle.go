@@ -506,6 +506,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		SourceJobID:           sampleParameters.SourceJobID,
 		SourceJobRunID:        sampleParameters.SourceJobRunID,
 		DestinationRevisionID: batchJobs.Connection.Destination.RevisionID,
+		ServerInstanceID:      brt.conf.GetString("INSTANCE_ID", ""),
 	}
 
 	if slices.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
