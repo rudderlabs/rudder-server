@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.2](https://github.com/rudderlabs/rudder-server/compare/v1.54.1...v1.54.2) (2025-07-07)
+
+
+### Bug Fixes
+
+* disable column index for parquet writer ([#6088](https://github.com/rudderlabs/rudder-server/issues/6088)) ([2b7583e](https://github.com/rudderlabs/rudder-server/commit/2b7583e4830c4746e3be1d7c4f931256d8a661b4))
+
 ## [1.54.1](https://github.com/rudderlabs/rudder-server/compare/v1.54.0...v1.54.1) (2025-07-04)
 
 
