@@ -133,3 +133,73 @@ func TestMetricJSONMarshaling(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, expectedJSON, string(marshaledJSON))
 }
+
+func TestAssertKeysSubset(t *testing.T) {
+	testcases := []struct {
+		name       string
+		subset     map[string]string
+		superset   map[string]string
+		shouldPass bool
+	}{
+		{
+			name:       "maps_are_identical",
+			subset:     map[string]string{"key1": "value1", "key2": "value2"},
+			superset:   map[string]string{"key1": "value1", "key2": "value2"},
+			shouldPass: true,
+		},
+		{
+			name:       "subset_is_proper_subset_of_superset",
+			subset:     map[string]string{"key1": "value1", "key2": "value2"},
+			superset:   map[string]string{"key1": "value1", "key2": "value2", "key3": "value3"},
+			shouldPass: true,
+		},
+		{
+			name:       "both_maps_are_empty",
+			subset:     map[string]string{},
+			superset:   map[string]string{},
+			shouldPass: true,
+		},
+		{
+			name:       "subset_is_empty_and_superset_has_keys",
+			subset:     map[string]string{},
+			superset:   map[string]string{"key1": "value1", "key2": "value2"},
+			shouldPass: true,
+		},
+		{
+			name:       "subset_has_keys_and_superset_is_empty",
+			subset:     map[string]string{"key1": "value1"},
+			superset:   map[string]string{},
+			shouldPass: false,
+		},
+		{
+			name:       "same_keys_have_different_values",
+			subset:     map[string]string{"key1": "original", "key2": "data"},
+			superset:   map[string]string{"key1": "modified", "key2": "info"},
+			shouldPass: true,
+		},
+		{
+			name:       "subset_has_extra_keys",
+			subset:     map[string]string{"key1": "value1", "key2": "value2", "extra": "value3"},
+			superset:   map[string]string{"key1": "value1", "key2": "value2"},
+			shouldPass: false,
+		},
+		{
+			name:       "maps_have_no_common_keys",
+			subset:     map[string]string{"x": "1", "y": "2"},
+			superset:   map[string]string{"a": "1", "b": "2"},
+			shouldPass: false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.shouldPass {
+				types.AssertKeysSubset(tc.superset, tc.subset)
+			} else {
+				require.Panics(t, func() {
+					types.AssertKeysSubset(tc.superset, tc.subset)
+				})
+			}
+		})
+	}
+}
