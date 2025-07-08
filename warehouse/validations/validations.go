@@ -53,8 +53,8 @@ func Init() {
 	fileManagerFactory = filemanager.New
 	objectStorageTimeout = config.GetDuration("Warehouse.Validations.ObjectStorageTimeout", 15, time.Second)
 
-	// Since we have a cp-router default timeout of 30 seconds, keeping the query timeout to 25 seconds
-	queryTimeout = config.GetDuration("Warehouse.Validations.QueryTimeout", 25, time.Second)
+	// setting default query timeout less than config-backend timeout of 60 seconds
+	queryTimeout = config.GetDuration("Warehouse.Validations.QueryTimeout", 55, time.Second)
 }
 
 // Validate the destination by running all the validation steps
