@@ -42,6 +42,15 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireJobsCount(t, "rt", "failed", 0)
 
 				scenario.requireTotalJobsCount(t, "rt", 0)
+
+				// reporting metrics
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDroppedCount: 1})
+
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 0})
 			})
 	})
 
@@ -55,6 +64,15 @@ func TestProcessorEventDropping(t *testing.T) {
 			Run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 3)
 				scenario.requireJobsCount(t, "rt", "aborted", 3)
+
+				// reporting metrics
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDetectedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedDetectedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDetectedCount: 1})
+
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
 			})
 	})
 
@@ -75,6 +93,11 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireJobsCount(t, "rt", "failed", 0)
 
 				scenario.requireTotalJobsCount(t, "rt", 0)
+
+				// reporting metrics
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "user-login", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "user-logout", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "add-to-cart", ExpectedIngestedCount: 0})
 			})
 	})
 
@@ -90,6 +113,10 @@ func TestProcessorEventDropping(t *testing.T) {
 			Run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 2)
 				scenario.requireJobsCount(t, "rt", "aborted", 2)
+
+				// reporting metrics
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "test-event", ExpectedIngestedCount: 1})
 			})
 	})
 
@@ -105,6 +132,10 @@ func TestProcessorEventDropping(t *testing.T) {
 			Run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 2)
 				scenario.requireJobsCount(t, "rt", "aborted", 2)
+
+				// reporting metrics
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1})
 			})
 	})
 
@@ -119,7 +150,7 @@ func TestProcessorEventDropping(t *testing.T) {
 				NewTrackEventConfig("BlockedEvent"),                // Blocked track event - should be dropped
 				NewBotEventConfig("identify", "", "drop"),          // Bot identify event - should be dropped
 				NewIdentifyEventConfig(),                           // Normal identify event - should reach router
-				NewBotEventConfig("screen", "TestEvent", "flag"),   // Bot screen event with flag action - should reach router
+				NewBotEventConfig("screen", "", "flag"),            // Bot screen event with flag action - should reach router
 				NewBotEventConfig("track", "BlockedEvent", "drop"), // Bot track event with drop action and blocked event - should be dropped
 			}).
 			Run(t, func(t *testing.T, scenario *eventDropScenario) {
@@ -127,6 +158,19 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireJobsCount(t, "rt", "aborted", 3)
 				scenario.requireJobsCount(t, "rt", "succeeded", 0)
 				scenario.requireJobsCount(t, "rt", "failed", 0)
+
+				// reporting metrics
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "NormalEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 0})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "BlockedEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDetectedCount: 1, ExpectedDroppedCount: 0})
+
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "NormalEvent", ExpectedIngestedCount: 1})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "BlockedEvent", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
+				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
 			})
 	})
 }
@@ -142,6 +186,21 @@ type eventDropScenario struct {
 	db                  *sql.DB
 	blockedEventsConfig map[string][]string
 	eventConfigs        []eventConfig
+}
+
+type BotManagementReportExpectations struct {
+	EventType             string
+	EventName             string
+	ExpectedDetectedCount int
+	ExpectedDroppedCount  int
+}
+
+type GatewayReportExpectations struct {
+	EventType                string
+	EventName                string
+	ExpectedIngestedCount    int
+	ExpectedBotFlaggedCount  int
+	ExpectedBotDetectedCount int
 }
 
 func (s *eventDropScenario) WithBlockedEventsConfig(config map[string][]string) *eventDropScenario {
@@ -362,6 +421,69 @@ func (s *eventDropScenario) requireTotalJobsCount(t *testing.T, queue string, ex
 		t.Logf("%s Total Count: %d", queue, jobsCount)
 		return err == nil && jobsCount == expectedCount
 	}, 20*time.Second, 1*time.Second, fmt.Sprintf("%d total events should be in %s queue", expectedCount, queue))
+}
+
+func (s *eventDropScenario) requireReportsFromBotManagement(t *testing.T, expectations BotManagementReportExpectations) {
+	require.Eventually(t, func() bool {
+		var detectedCount int
+		var droppedCount int
+		commonLabel := `workspace_id = 'workspace-1' AND source_id = 'source-1' AND destination_id = '' AND in_pu = '' AND pu = 'bot_management' AND error_type = '' AND initial_state IS FALSE AND terminal_state IS FALSE AND event_type = $1 AND event_name = $2`
+
+		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 200 AND status = 'bot_detected'", commonLabel), expectations.EventType, expectations.EventName).Scan(&detectedCount)
+		t.Logf("Bot events detected reports count: %d", detectedCount)
+
+		if err != nil || detectedCount != expectations.ExpectedDetectedCount {
+			t.Logf("Bot management reports not matching expectations for %s event '%s': expected detected=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedDetectedCount, detectedCount)
+			return false
+		}
+
+		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 298 AND status = 'filtered'", commonLabel), expectations.EventType, expectations.EventName).Scan(&droppedCount)
+		t.Logf("Bot events dropped reports count: %d", droppedCount)
+
+		if err != nil || droppedCount != expectations.ExpectedDroppedCount {
+			t.Logf("Bot management reports not matching expectations for %s event '%s': expected dropped=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedDroppedCount, droppedCount)
+			return false
+		}
+
+		return true
+	}, 20*time.Second, 1*time.Second, fmt.Sprintf("Bot management reports not matching expectations for %s event '%s': expected detected=%d, dropped=%d",
+		expectations.EventType, expectations.EventName, expectations.ExpectedDetectedCount, expectations.ExpectedDroppedCount))
+}
+
+func (s *eventDropScenario) requireReportsFromGateway(t *testing.T, expectations GatewayReportExpectations) {
+	require.Eventually(t, func() bool {
+		var ingestedCount int
+		var botFlaggedCount int
+		var botDetectedCount int
+		commonLabel := `workspace_id = 'workspace-1' AND source_id = 'source-1' AND destination_id = '' AND in_pu = '' AND pu = 'gateway' AND status_code = 0 AND error_type = '' AND initial_state IS TRUE AND terminal_state IS FALSE AND event_type = $1 AND event_name = $2`
+
+		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'bot_detected'", commonLabel), expectations.EventType, expectations.EventName).Scan(&botDetectedCount)
+		t.Logf("Bot events detected reports count: %d", botDetectedCount)
+
+		if err != nil || botDetectedCount != expectations.ExpectedBotDetectedCount {
+			t.Logf("Gateway reports not matching expectations for %s event '%s': expected bot_detected=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedBotDetectedCount, botDetectedCount)
+			return false
+		}
+
+		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'bot_flagged'", commonLabel), expectations.EventType, expectations.EventName).Scan(&botFlaggedCount)
+		t.Logf("Bot events flagged reports count: %d", botFlaggedCount)
+
+		if err != nil || botFlaggedCount != expectations.ExpectedBotFlaggedCount {
+			t.Logf("Gateway reports not matching expectations for %s event '%s': expected bot_flagged=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedBotFlaggedCount, botFlaggedCount)
+			return false
+		}
+
+		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'succeeded'", commonLabel), expectations.EventType, expectations.EventName).Scan(&ingestedCount)
+		t.Logf("Bot events ingested reports count: %d", ingestedCount)
+
+		if err != nil || ingestedCount != expectations.ExpectedIngestedCount {
+			t.Logf("Gateway reports not matching expectations for %s event '%s': expected ingested=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedIngestedCount, ingestedCount)
+			return false
+		}
+
+		return true
+	}, 20*time.Second, 1*time.Second, fmt.Sprintf("Gateway reports not matching expectations for %s event '%s': expected ingested=%d, bot_flagged=%d, bot_detected=%d",
+		expectations.EventType, expectations.EventName, expectations.ExpectedIngestedCount, expectations.ExpectedBotFlaggedCount, expectations.ExpectedBotDetectedCount))
 }
 
 // Helper functions to create eventConfig objects
