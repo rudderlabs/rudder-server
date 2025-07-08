@@ -95,6 +95,10 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireTotalJobsCount(t, "rt", 0)
 
 				// reporting metrics
+				scenario.requireReportsFromEventBlocking(t, "track", "user-login", 1)
+				scenario.requireReportsFromEventBlocking(t, "track", "user-logout", 1)
+				scenario.requireReportsFromEventBlocking(t, "track", "add-to-cart", 1)
+
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "user-login", ExpectedIngestedCount: 0})
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "user-logout", ExpectedIngestedCount: 0})
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "add-to-cart", ExpectedIngestedCount: 0})
@@ -117,6 +121,9 @@ func TestProcessorEventDropping(t *testing.T) {
 				// reporting metrics
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "test-event", ExpectedIngestedCount: 1})
+
+				scenario.requireReportsFromEventBlocking(t, "identify", "", 0)
+				scenario.requireReportsFromEventBlocking(t, "track", "test-event", 0)
 			})
 	})
 
@@ -136,6 +143,9 @@ func TestProcessorEventDropping(t *testing.T) {
 				// reporting metrics
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1})
+
+				scenario.requireReportsFromEventBlocking(t, "identify", "BlockedEvent", 0)
+				scenario.requireReportsFromEventBlocking(t, "screen", "BlockedEvent", 0)
 			})
 	})
 
@@ -165,6 +175,12 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "BlockedEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
 				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
 				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDetectedCount: 1, ExpectedDroppedCount: 0})
+
+				scenario.requireReportsFromEventBlocking(t, "track", "NormalEvent", 0)
+				scenario.requireReportsFromEventBlocking(t, "track", "TestEvent", 0)    // this event was dropped by bot management
+				scenario.requireReportsFromEventBlocking(t, "track", "BlockedEvent", 1) // only one event was blocked other event was dropped by bot management
+				scenario.requireReportsFromEventBlocking(t, "identify", "", 0)
+				scenario.requireReportsFromEventBlocking(t, "screen", "", 0)
 
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "NormalEvent", ExpectedIngestedCount: 1})
 				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 0})
@@ -448,6 +464,24 @@ func (s *eventDropScenario) requireReportsFromBotManagement(t *testing.T, expect
 		return true
 	}, 20*time.Second, 1*time.Second, fmt.Sprintf("Bot management reports not matching expectations for %s event '%s': expected detected=%d, dropped=%d",
 		expectations.EventType, expectations.EventName, expectations.ExpectedDetectedCount, expectations.ExpectedDroppedCount))
+}
+
+func (s *eventDropScenario) requireReportsFromEventBlocking(t *testing.T, eventType, eventName string, expectedBlockedCount int) {
+	require.Eventually(t, func() bool {
+		var blockedCount int
+		commonLabel := `workspace_id = 'workspace-1' AND source_id = 'source-1' AND destination_id = '' AND in_pu = '' AND pu = 'event_blocking' AND error_type = '' AND initial_state IS FALSE AND terminal_state IS FALSE AND event_type = $1 AND event_name = $2`
+
+		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 298 AND status = 'filtered'", commonLabel), eventType, eventName).Scan(&blockedCount)
+		t.Logf("Event blocking reports count: %d", blockedCount)
+
+		if err != nil || blockedCount != expectedBlockedCount {
+			t.Logf("Event blocking reports not matching expectations for %s event '%s': expected blocked=%d, got=%d", eventType, eventName, expectedBlockedCount, blockedCount)
+			return false
+		}
+
+		return true
+	}, 20*time.Second, 1*time.Second, fmt.Sprintf("Event blocking reports not matching expectations for %s event '%s': expected blocked=%d",
+		eventType, eventName, expectedBlockedCount))
 }
 
 func (s *eventDropScenario) requireReportsFromGateway(t *testing.T, expectations GatewayReportExpectations) {
