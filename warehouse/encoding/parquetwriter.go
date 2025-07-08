@@ -73,7 +73,7 @@ type parquetWriter struct {
 	schema     []string
 }
 
-func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64) (LoadFileWriter, error) {
+func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool) (LoadFileWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,8 @@ func createParquetWriter(outputFilePath string, schema model.TableSchema, destTy
 		return nil, err
 	}
 
-	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, maxParallelWriters)
+	// Disable column index to avoid the column index being written to the parquet file.
+	w, err := writer.NewCSVWriterFromWriter(pSchema, bufWriter, maxParallelWriters, writer.WithDisableColumnIndex(disableParquetColumnIndex))
 	if err != nil {
 		return nil, err
 	}
