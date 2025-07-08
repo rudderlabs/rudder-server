@@ -1,0 +1,162 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Documentation Guidelines for Docs Folder
+
+This document provides guidelines for creating and updating documentation files in the `docs/` directory after implementing features or making significant changes.
+
+## When to Create Documentation
+
+Create new documentation files when:
+- **Major flow implementations** that involve multiple components/layers
+- **Cross-cutting architectural changes** that affect how future work should be done
+- **Complex patterns** that will be repeated by other developers
+- **Integration points** between different subsystems
+
+Update existing documentation files when:
+- **Implementation details change** the documented flow
+- **New patterns emerge** that should be captured
+- **Common pitfalls are discovered** during implementation
+
+## Documentation Structure
+
+### Essential Sections
+
+1. **Brief Overview** - What the document covers in 1-2 sentences
+2. **Flow Architecture** - Clear description of data/control flow between components
+3. **Step-by-step Components** - Each layer/step explained concisely
+4. **Implementation Checklist** - Actionable steps for making similar changes
+5. **Key Concepts** - Important patterns or principles
+6. **Common Pitfalls** - Issues encountered during implementation
+7. **File Organization** - Quick reference for relevant locations
+
+### Optional Sections
+- **Reference Patterns** - If there are reusable patterns worth highlighting
+- **Backward Compatibility** - If relevant to the change type
+
+## Writing Principles
+
+### Be Concept-Focused, Not Code-Specific
+- ❌ **Avoid:** Specific method names, exact file paths, code snippets, struct field names
+- ✅ **Use:** Component roles, architectural patterns, responsibility boundaries
+- ✅ **Preserve:** Architectural component names that are part of the system design
+
+**What to Avoid (Implementation Details):**
+- ❌ "Update `pingWarehouse()` method in `router/batchrouter/handle.go`"
+- ❌ "Modify the `StagingFile` struct in `internal/model/staging.go`"
+- ❌ "Call `repo.GetByWorkspaceID(workspaceID)`"
+
+**What to Keep (Architectural Components):**
+- ✅ "Set field value in batch router's warehouse notification"
+- ✅ "Batch router creates staging file payload after uploading to object storage"
+- ✅ "Warehouse client converts staging file to HTTP payload format"
+- ✅ "Calls warehouse API endpoint `POST /v1/process` to notify about staging files"
+
+**Key Distinction:** Preserve named architectural components (batch router, warehouse client, warehouse API), API endpoints, and service contracts while avoiding implementation details (method names, file paths, struct fields).
+
+### Keep Examples Generic
+- ❌ **Avoid:** Detailed field examples that might become outdated
+- ✅ **Use:** General patterns or simple references to "existing fields"
+
+**Example:**
+- ❌ "String from environment: Like instance ID, server name, pod ID"
+- ✅ "Look at existing staging file fields for implementation patterns"
+
+### Focus on Architectural Boundaries
+- Emphasize **who is responsible** for what
+- Highlight **data flow direction** and transformation points
+- Document **responsibility separation** between components
+- Include **API endpoints and service contracts** that define integration points
+
+### Include Essential Architectural Information
+- ✅ **Service boundaries:** Component names and their responsibilities
+- ✅ **Integration contracts:** API endpoints, message formats, service protocols
+- ✅ **Data flow patterns:** How information moves between components
+- ✅ **Configuration points:** Where system behavior can be modified
+- ❌ **Implementation details:** Method names, variable names, file paths
+- ❌ **Code specifics:** Function signatures, class hierarchies, internal APIs
+
+### Use Timeless Language
+- ❌ **Avoid:** "Currently", "at the moment", version-specific details
+- ✅ **Use:** Present tense, architectural statements
+
+## Implementation Workflow
+
+### During Implementation
+1. **Take notes** on architectural insights and patterns discovered
+2. **Document pitfalls** encountered and how they were resolved
+3. **Track flow dependencies** between components
+4. **Note responsibility boundaries** that become clear
+
+### After Implementation
+1. **Create outline** based on the flow you implemented
+2. **Write concept-focused descriptions** of each component's role
+3. **Create actionable checklist** for similar future changes
+4. **Document common pitfalls** observed during implementation
+5. **Review for code-specific details** and generalize them
+
+### Before Finalizing
+1. **Remove implementation specifics** (method names, file paths, code snippets) while **preserving architectural component names**
+2. **Test readability** - would someone unfamiliar understand the flow?
+3. **Verify checklist completeness** - does it cover all necessary steps?
+4. **Check for redundancy** between sections
+
+## File Organization Strategy
+
+### Naming Convention
+- Use descriptive, hyphenated names: `staging-file-flow.md`
+- Focus on the **process or flow**, not specific features
+- Keep names **broad enough** to encompass related future changes
+- All documentation files use `.md` extension
+
+### File Scope
+- **One major flow per file** - don't combine unrelated processes
+- **Component-focused files** for complex subsystems
+- **Architectural flows and patterns** that help future development
+
+## Maintenance Strategy
+
+### Regular Reviews
+- **After major refactors** - verify documentation still reflects reality
+- **During onboarding** - check if documentation helps new developers
+- **When patterns change** - update to reflect new approaches
+
+### Update Triggers
+- **Flow architecture changes** affecting multiple components
+- **New responsibility boundaries** emerging
+- **Repeated questions** from team members about the same flow
+
+### Deprecation
+- **Remove outdated files** when flows no longer exist
+- **Merge related files** if they become too similar
+- **Archive rather than delete** if historical context is valuable
+
+## Quality Checklist
+
+Before committing documentation:
+
+- [ ] **Flow is clear** without code knowledge
+- [ ] **Checklist is actionable** and complete  
+- [ ] **Examples are generic** and won't become outdated
+- [ ] **Pitfalls are architectural** not implementation-specific
+- [ ] **Integration points are documented** (API endpoints, service contracts)
+- [ ] **File organization is helpful** for quick reference
+- [ ] **Language is timeless** and concept-focused (preserves architectural component names, avoids implementation details)
+- [ ] **Redundancy is eliminated** between sections
+
+## Benefits of Good Documentation
+
+### For Current Implementation
+- **Validates understanding** of the architectural flow
+- **Identifies gaps** in the implementation approach
+- **Creates shared vocabulary** for the team
+
+### For Future Development
+- **Reduces onboarding time** for new team members
+- **Prevents repeated mistakes** through pitfall documentation
+- **Enables consistent patterns** across similar changes
+- **Speeds up similar implementations** with clear checklists
+
+This approach ensures documentation remains valuable and current while capturing the essential architectural knowledge needed for future development.
