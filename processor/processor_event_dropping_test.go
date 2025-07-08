@@ -30,12 +30,12 @@ import (
 func TestProcessorEventDropping(t *testing.T) {
 	t.Run("bot events with drop action should be dropped", func(t *testing.T) {
 		new(eventDropScenario).
-			WithEventConfigs([]eventConfig{
-				NewBotEventConfig("track", "TestEvent", "drop"),
-				NewBotEventConfig("identify", "", "drop"),
-				NewBotEventConfig("screen", "", "drop"),
+			withEventConfigs([]eventConfig{
+				newBotEventConfig("track", "TestEvent", "drop"),
+				newBotEventConfig("identify", "", "drop"),
+				newBotEventConfig("screen", "", "drop"),
 			}).
-			Run(t, func(t *testing.T, scenario *eventDropScenario) {
+			run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 3)
 				scenario.requireJobsCount(t, "rt", "succeeded", 0)
 				scenario.requireJobsCount(t, "rt", "aborted", 0)
@@ -44,49 +44,49 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireTotalJobsCount(t, "rt", 0)
 
 				// reporting metrics
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedDroppedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDroppedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "track", eventName: "TestEvent", botDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "identify", eventName: "", botDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "screen", eventName: "", botDroppedCount: 1})
 
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 0})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 0})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "TestEvent", ingestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "identify", eventName: "", ingestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "screen", eventName: "", ingestedCount: 0})
 			})
 	})
 
 	t.Run("bot events with flag action should not be dropped", func(t *testing.T) {
 		new(eventDropScenario).
-			WithEventConfigs([]eventConfig{
-				NewBotEventConfig("identify", "", "flag"),
-				NewBotEventConfig("track", "TestEvent", "flag"),
-				NewBotEventConfig("screen", "", "flag"),
+			withEventConfigs([]eventConfig{
+				newBotEventConfig("identify", "", "flag"),
+				newBotEventConfig("track", "TestEvent", "flag"),
+				newBotEventConfig("screen", "", "flag"),
 			}).
-			Run(t, func(t *testing.T, scenario *eventDropScenario) {
+			run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 3)
 				scenario.requireJobsCount(t, "rt", "aborted", 3)
 
 				// reporting metrics
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDetectedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedDetectedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDetectedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "identify", eventName: "", botDetectedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "track", eventName: "TestEvent", botDetectedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "screen", eventName: "", botDetectedCount: 1})
 
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "identify", eventName: "", ingestedCount: 1, botFlaggedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "TestEvent", ingestedCount: 1, botFlaggedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "screen", eventName: "", ingestedCount: 1, botFlaggedCount: 1})
 			})
 	})
 
 	t.Run("blocked events should be dropped", func(t *testing.T) {
 		new(eventDropScenario).
-			WithBlockedEventsConfig(map[string][]string{
+			withBlockedEventsConfig(map[string][]string{
 				"track": {"user-login", "user-logout", "add-to-cart"},
 			}).
-			WithEventConfigs([]eventConfig{
-				NewTrackEventConfig("user-login"),
-				NewTrackEventConfig("user-logout"),
-				NewTrackEventConfig("add-to-cart"),
+			withEventConfigs([]eventConfig{
+				newTrackEventConfig("user-login"),
+				newTrackEventConfig("user-logout"),
+				newTrackEventConfig("add-to-cart"),
 			}).
-			Run(t, func(t *testing.T, scenario *eventDropScenario) {
+			run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 3)
 				scenario.requireJobsCount(t, "rt", "succeeded", 0)
 				scenario.requireJobsCount(t, "rt", "aborted", 0)
@@ -99,28 +99,28 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireReportsFromEventBlocking(t, "track", "user-logout", 1)
 				scenario.requireReportsFromEventBlocking(t, "track", "add-to-cart", 1)
 
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "user-login", ExpectedIngestedCount: 0})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "user-logout", ExpectedIngestedCount: 0})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "add-to-cart", ExpectedIngestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "user-login", ingestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "user-logout", ingestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "add-to-cart", ingestedCount: 0})
 			})
 	})
 
 	t.Run("non blocked events should not be dropped", func(t *testing.T) {
 		new(eventDropScenario).
-			WithBlockedEventsConfig(map[string][]string{
+			withBlockedEventsConfig(map[string][]string{
 				"track": {"user-login", "user-logout", "add-to-cart"},
 			}).
-			WithEventConfigs([]eventConfig{
-				NewIdentifyEventConfig(),
-				NewTrackEventConfig("test-event"),
+			withEventConfigs([]eventConfig{
+				newIdentifyEventConfig(),
+				newTrackEventConfig("test-event"),
 			}).
-			Run(t, func(t *testing.T, scenario *eventDropScenario) {
+			run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 2)
 				scenario.requireJobsCount(t, "rt", "aborted", 2)
 
 				// reporting metrics
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "test-event", ExpectedIngestedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "identify", eventName: "", ingestedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "test-event", ingestedCount: 1})
 
 				scenario.requireReportsFromEventBlocking(t, "identify", "", 0)
 				scenario.requireReportsFromEventBlocking(t, "track", "test-event", 0)
@@ -129,20 +129,20 @@ func TestProcessorEventDropping(t *testing.T) {
 
 	t.Run("non-track events should not be blocked even if event name is blocked", func(t *testing.T) {
 		new(eventDropScenario).
-			WithBlockedEventsConfig(map[string][]string{
+			withBlockedEventsConfig(map[string][]string{
 				"track": {"BlockedEvent"},
 			}).
-			WithEventConfigs([]eventConfig{
+			withEventConfigs([]eventConfig{
 				{eventType: "identify", eventName: "BlockedEvent"},
 				{eventType: "screen", eventName: "BlockedEvent"},
 			}).
-			Run(t, func(t *testing.T, scenario *eventDropScenario) {
+			run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 2)
 				scenario.requireJobsCount(t, "rt", "aborted", 2)
 
 				// reporting metrics
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "identify", eventName: "", ingestedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "screen", eventName: "", ingestedCount: 1})
 
 				scenario.requireReportsFromEventBlocking(t, "identify", "BlockedEvent", 0)
 				scenario.requireReportsFromEventBlocking(t, "screen", "BlockedEvent", 0)
@@ -151,30 +151,30 @@ func TestProcessorEventDropping(t *testing.T) {
 
 	t.Run("mixed event types with different dropping conditions", func(t *testing.T) {
 		new(eventDropScenario).
-			WithBlockedEventsConfig(map[string][]string{
+			withBlockedEventsConfig(map[string][]string{
 				"track": {"BlockedEvent"},
 			}).
-			WithEventConfigs([]eventConfig{
-				NewTrackEventConfig("NormalEvent"),                 // Normal track event - should reach router
-				NewBotEventConfig("track", "TestEvent", "drop"),    // Bot track event - should be dropped
-				NewTrackEventConfig("BlockedEvent"),                // Blocked track event - should be dropped
-				NewBotEventConfig("identify", "", "drop"),          // Bot identify event - should be dropped
-				NewIdentifyEventConfig(),                           // Normal identify event - should reach router
-				NewBotEventConfig("screen", "", "flag"),            // Bot screen event with flag action - should reach router
-				NewBotEventConfig("track", "BlockedEvent", "drop"), // Bot track event with drop action and blocked event - should be dropped
+			withEventConfigs([]eventConfig{
+				newTrackEventConfig("NormalEvent"),                 // Normal track event - should reach router
+				newBotEventConfig("track", "TestEvent", "drop"),    // Bot track event - should be dropped
+				newTrackEventConfig("BlockedEvent"),                // Blocked track event - should be dropped
+				newBotEventConfig("identify", "", "drop"),          // Bot identify event - should be dropped
+				newIdentifyEventConfig(),                           // Normal identify event - should reach router
+				newBotEventConfig("screen", "", "flag"),            // Bot screen event with flag action - should reach router
+				newBotEventConfig("track", "BlockedEvent", "drop"), // Bot track event with drop action and blocked event - should be dropped
 			}).
-			Run(t, func(t *testing.T, scenario *eventDropScenario) {
+			run(t, func(t *testing.T, scenario *eventDropScenario) {
 				scenario.requireJobsCount(t, "gw", "succeeded", 7)
 				scenario.requireJobsCount(t, "rt", "aborted", 3)
 				scenario.requireJobsCount(t, "rt", "succeeded", 0)
 				scenario.requireJobsCount(t, "rt", "failed", 0)
 
 				// reporting metrics
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "NormalEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 0})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "track", EventName: "BlockedEvent", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "identify", EventName: "", ExpectedDetectedCount: 0, ExpectedDroppedCount: 1})
-				scenario.requireReportsFromBotManagement(t, BotManagementReportExpectations{EventType: "screen", EventName: "", ExpectedDetectedCount: 1, ExpectedDroppedCount: 0})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "track", eventName: "TestEvent", botDetectedCount: 0, botDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "track", eventName: "NormalEvent", botDetectedCount: 0, botDroppedCount: 0})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "track", eventName: "BlockedEvent", botDetectedCount: 0, botDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "identify", eventName: "", botDetectedCount: 0, botDroppedCount: 1})
+				scenario.requireReportsFromBotManagement(t, botManagementReportExpectations{eventType: "screen", eventName: "", botDetectedCount: 1, botDroppedCount: 0})
 
 				scenario.requireReportsFromEventBlocking(t, "track", "NormalEvent", 0)
 				scenario.requireReportsFromEventBlocking(t, "track", "TestEvent", 0)    // this event was dropped by bot management
@@ -182,11 +182,11 @@ func TestProcessorEventDropping(t *testing.T) {
 				scenario.requireReportsFromEventBlocking(t, "identify", "", 0)
 				scenario.requireReportsFromEventBlocking(t, "screen", "", 0)
 
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "NormalEvent", ExpectedIngestedCount: 1})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "TestEvent", ExpectedIngestedCount: 0})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "track", EventName: "BlockedEvent", ExpectedIngestedCount: 0})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "identify", EventName: "", ExpectedIngestedCount: 1})
-				scenario.requireReportsFromGateway(t, GatewayReportExpectations{EventType: "screen", EventName: "", ExpectedIngestedCount: 1, ExpectedBotFlaggedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "NormalEvent", ingestedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "TestEvent", ingestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "track", eventName: "BlockedEvent", ingestedCount: 0})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "identify", eventName: "", ingestedCount: 1})
+				scenario.requireReportsFromGateway(t, gatewayReportExpectations{eventType: "screen", eventName: "", ingestedCount: 1, botFlaggedCount: 1})
 			})
 	})
 }
@@ -204,32 +204,32 @@ type eventDropScenario struct {
 	eventConfigs        []eventConfig
 }
 
-type BotManagementReportExpectations struct {
-	EventType             string
-	EventName             string
-	ExpectedDetectedCount int
-	ExpectedDroppedCount  int
+type botManagementReportExpectations struct {
+	eventType        string
+	eventName        string
+	botDetectedCount int
+	botDroppedCount  int
 }
 
-type GatewayReportExpectations struct {
-	EventType                string
-	EventName                string
-	ExpectedIngestedCount    int
-	ExpectedBotFlaggedCount  int
-	ExpectedBotDetectedCount int
+type gatewayReportExpectations struct {
+	eventType        string
+	eventName        string
+	ingestedCount    int
+	botFlaggedCount  int
+	botDetectedCount int
 }
 
-func (s *eventDropScenario) WithBlockedEventsConfig(config map[string][]string) *eventDropScenario {
+func (s *eventDropScenario) withBlockedEventsConfig(config map[string][]string) *eventDropScenario {
 	s.blockedEventsConfig = config
 	return s
 }
 
-func (s *eventDropScenario) WithEventConfigs(configs []eventConfig) *eventDropScenario {
+func (s *eventDropScenario) withEventConfigs(configs []eventConfig) *eventDropScenario {
 	s.eventConfigs = configs
 	return s
 }
 
-func (s *eventDropScenario) Run(t *testing.T, verification func(t *testing.T, scenario *eventDropScenario)) {
+func (s *eventDropScenario) run(t *testing.T, verification func(t *testing.T, scenario *eventDropScenario)) {
 	config.Reset()
 	defer config.Reset()
 	writeKey := "writekey-1"
@@ -439,31 +439,31 @@ func (s *eventDropScenario) requireTotalJobsCount(t *testing.T, queue string, ex
 	}, 20*time.Second, 1*time.Second, fmt.Sprintf("%d total events should be in %s queue", expectedCount, queue))
 }
 
-func (s *eventDropScenario) requireReportsFromBotManagement(t *testing.T, expectations BotManagementReportExpectations) {
+func (s *eventDropScenario) requireReportsFromBotManagement(t *testing.T, expectations botManagementReportExpectations) {
 	require.Eventually(t, func() bool {
 		var detectedCount int
 		var droppedCount int
 		commonLabel := `workspace_id = 'workspace-1' AND source_id = 'source-1' AND destination_id = '' AND in_pu = '' AND pu = 'bot_management' AND error_type = '' AND initial_state IS FALSE AND terminal_state IS FALSE AND event_type = $1 AND event_name = $2`
 
-		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 200 AND status = 'bot_detected'", commonLabel), expectations.EventType, expectations.EventName).Scan(&detectedCount)
+		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 200 AND status = 'bot_detected'", commonLabel), expectations.eventType, expectations.eventName).Scan(&detectedCount)
 		t.Logf("Bot events detected reports count: %d", detectedCount)
 
-		if err != nil || detectedCount != expectations.ExpectedDetectedCount {
-			t.Logf("Bot management reports not matching expectations for %s event '%s': expected detected=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedDetectedCount, detectedCount)
+		if err != nil || detectedCount != expectations.botDetectedCount {
+			t.Logf("Bot management reports not matching expectations for %s event '%s': expected detected=%d, got=%d", expectations.eventType, expectations.eventName, expectations.botDetectedCount, detectedCount)
 			return false
 		}
 
-		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 298 AND status = 'filtered'", commonLabel), expectations.EventType, expectations.EventName).Scan(&droppedCount)
+		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status_code = 298 AND status = 'filtered'", commonLabel), expectations.eventType, expectations.eventName).Scan(&droppedCount)
 		t.Logf("Bot events dropped reports count: %d", droppedCount)
 
-		if err != nil || droppedCount != expectations.ExpectedDroppedCount {
-			t.Logf("Bot management reports not matching expectations for %s event '%s': expected dropped=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedDroppedCount, droppedCount)
+		if err != nil || droppedCount != expectations.botDroppedCount {
+			t.Logf("Bot management reports not matching expectations for %s event '%s': expected dropped=%d, got=%d", expectations.eventType, expectations.eventName, expectations.botDroppedCount, droppedCount)
 			return false
 		}
 
 		return true
 	}, 20*time.Second, 1*time.Second, fmt.Sprintf("Bot management reports not matching expectations for %s event '%s': expected detected=%d, dropped=%d",
-		expectations.EventType, expectations.EventName, expectations.ExpectedDetectedCount, expectations.ExpectedDroppedCount))
+		expectations.eventType, expectations.eventName, expectations.botDetectedCount, expectations.botDroppedCount))
 }
 
 func (s *eventDropScenario) requireReportsFromEventBlocking(t *testing.T, eventType, eventName string, expectedBlockedCount int) {
@@ -484,44 +484,44 @@ func (s *eventDropScenario) requireReportsFromEventBlocking(t *testing.T, eventT
 		eventType, eventName, expectedBlockedCount))
 }
 
-func (s *eventDropScenario) requireReportsFromGateway(t *testing.T, expectations GatewayReportExpectations) {
+func (s *eventDropScenario) requireReportsFromGateway(t *testing.T, expectations gatewayReportExpectations) {
 	require.Eventually(t, func() bool {
 		var ingestedCount int
 		var botFlaggedCount int
 		var botDetectedCount int
 		commonLabel := `workspace_id = 'workspace-1' AND source_id = 'source-1' AND destination_id = '' AND in_pu = '' AND pu = 'gateway' AND status_code = 0 AND error_type = '' AND initial_state IS TRUE AND terminal_state IS FALSE AND event_type = $1 AND event_name = $2`
 
-		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'bot_detected'", commonLabel), expectations.EventType, expectations.EventName).Scan(&botDetectedCount)
+		err := s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'bot_detected'", commonLabel), expectations.eventType, expectations.eventName).Scan(&botDetectedCount)
 		t.Logf("Bot events detected reports count: %d", botDetectedCount)
 
-		if err != nil || botDetectedCount != expectations.ExpectedBotDetectedCount {
-			t.Logf("Gateway reports not matching expectations for %s event '%s': expected bot_detected=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedBotDetectedCount, botDetectedCount)
+		if err != nil || botDetectedCount != expectations.botDetectedCount {
+			t.Logf("Gateway reports not matching expectations for %s event '%s': expected bot_detected=%d, got=%d", expectations.eventType, expectations.eventName, expectations.botDetectedCount, botDetectedCount)
 			return false
 		}
 
-		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'bot_flagged'", commonLabel), expectations.EventType, expectations.EventName).Scan(&botFlaggedCount)
+		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'bot_flagged'", commonLabel), expectations.eventType, expectations.eventName).Scan(&botFlaggedCount)
 		t.Logf("Bot events flagged reports count: %d", botFlaggedCount)
 
-		if err != nil || botFlaggedCount != expectations.ExpectedBotFlaggedCount {
-			t.Logf("Gateway reports not matching expectations for %s event '%s': expected bot_flagged=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedBotFlaggedCount, botFlaggedCount)
+		if err != nil || botFlaggedCount != expectations.botFlaggedCount {
+			t.Logf("Gateway reports not matching expectations for %s event '%s': expected bot_flagged=%d, got=%d", expectations.eventType, expectations.eventName, expectations.botFlaggedCount, botFlaggedCount)
 			return false
 		}
 
-		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'succeeded'", commonLabel), expectations.EventType, expectations.EventName).Scan(&ingestedCount)
+		err = s.db.QueryRow(fmt.Sprintf("SELECT COALESCE(SUM(count), 0) FROM reports WHERE %s AND status = 'succeeded'", commonLabel), expectations.eventType, expectations.eventName).Scan(&ingestedCount)
 		t.Logf("Bot events ingested reports count: %d", ingestedCount)
 
-		if err != nil || ingestedCount != expectations.ExpectedIngestedCount {
-			t.Logf("Gateway reports not matching expectations for %s event '%s': expected ingested=%d, got=%d", expectations.EventType, expectations.EventName, expectations.ExpectedIngestedCount, ingestedCount)
+		if err != nil || ingestedCount != expectations.ingestedCount {
+			t.Logf("Gateway reports not matching expectations for %s event '%s': expected ingested=%d, got=%d", expectations.eventType, expectations.eventName, expectations.ingestedCount, ingestedCount)
 			return false
 		}
 
 		return true
 	}, 20*time.Second, 1*time.Second, fmt.Sprintf("Gateway reports not matching expectations for %s event '%s': expected ingested=%d, bot_flagged=%d, bot_detected=%d",
-		expectations.EventType, expectations.EventName, expectations.ExpectedIngestedCount, expectations.ExpectedBotFlaggedCount, expectations.ExpectedBotDetectedCount))
+		expectations.eventType, expectations.eventName, expectations.ingestedCount, expectations.botFlaggedCount, expectations.botDetectedCount))
 }
 
 // Helper functions to create eventConfig objects
-func NewTrackEventConfig(eventName string) eventConfig {
+func newTrackEventConfig(eventName string) eventConfig {
 	return eventConfig{
 		eventType: "track",
 		eventName: eventName,
@@ -530,7 +530,7 @@ func NewTrackEventConfig(eventName string) eventConfig {
 	}
 }
 
-func NewIdentifyEventConfig() eventConfig {
+func newIdentifyEventConfig() eventConfig {
 	return eventConfig{
 		eventType: "identify",
 		eventName: "",
@@ -539,7 +539,7 @@ func NewIdentifyEventConfig() eventConfig {
 	}
 }
 
-func NewBotEventConfig(eventType, eventName, botAction string) eventConfig {
+func newBotEventConfig(eventType, eventName, botAction string) eventConfig {
 	return eventConfig{
 		eventType: eventType,
 		eventName: eventName,
