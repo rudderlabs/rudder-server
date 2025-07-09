@@ -67,25 +67,10 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 		}
 	}
 
-	// Validate conversionTime format as ISO 8601 (RFC3339)
-	// Bing ads supports timestamp of the format 2020-01-01T00:00:00.10000Z
-	conversionTimeStr, ok := fields["conversionTime"].(string)
-	if !ok {
-		return payload, fmt.Errorf("conversionTime field is not a string")
+	err = validateAndTransformTimeFields(fields)
+	if err != nil {
+		return payload, err
 	}
-
-	// Try RFC3339 first
-	parsedTime, parseErr := time.Parse(time.RFC3339, conversionTimeStr)
-	if parseErr != nil {
-		// Try Bing Ads format
-		parsedTime, parseErr = time.Parse("1/2/2006 3:04:05 PM", conversionTimeStr)
-		if parseErr != nil {
-			return payload, fmt.Errorf("conversionTime must be in ISO 8601 (e.g. 2006-01-02T15:04:05Z07:00) or mm/dd/yyyy hh:mm:ss AM/PM (e.g. 7/2/2025 6:50:54 PM) format")
-		}
-	}
-
-	// Always convert to Bing Ads format
-	fields["conversionTime"] = parsedTime.Format("1/2/2006 3:04:05 PM")
 
 	// validate for mscklid
 	clickID, hasClickID := fields["microsoftClickId"]
