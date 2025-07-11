@@ -22,6 +22,7 @@ type Factory struct {
 	config struct {
 		maxStagingFileReadBufferCapacityInK int
 		parquetParallelWriters              config.ValueLoader[int64]
+		disableParquetColumnIndex           config.ValueLoader[bool]
 	}
 }
 
@@ -30,7 +31,7 @@ func NewFactory(conf *config.Config) *Factory {
 
 	m.config.maxStagingFileReadBufferCapacityInK = conf.GetIntVar(10240, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
 	m.config.parquetParallelWriters = conf.GetReloadableInt64Var(8, 1, "Warehouse.parquetParallelWriters")
-
+	m.config.disableParquetColumnIndex = conf.GetReloadableBoolVar(true, "Warehouse.disableParquetColumnIndex")
 	return m
 }
 
@@ -46,7 +47,7 @@ type LoadFileWriter interface {
 func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema model.TableSchema, destType string) (LoadFileWriter, error) {
 	switch loadFileType {
 	case warehouseutils.LoadFileTypeParquet:
-		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load())
+		return createParquetWriter(outputFilePath, schema, destType, m.config.parquetParallelWriters.Load(), m.config.disableParquetColumnIndex.Load())
 	default:
 		return misc.CreateGZ(outputFilePath)
 	}
