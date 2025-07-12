@@ -153,8 +153,6 @@ type Handle struct {
 		maxLoopSleep                              config.ValueLoader[time.Duration]
 		storeTimeout                              config.ValueLoader[time.Duration]
 		maxEventsToProcess                        config.ValueLoader[int]
-		transformBatchSize                        config.ValueLoader[int]
-		userTransformBatchSize                    config.ValueLoader[int]
 		sourceIdDestinationMap                    map[string][]backendconfig.DestinationT
 		sourceIdSourceMap                         map[string]backendconfig.SourceT
 		workspaceLibrariesMap                     map[string]backendconfig.LibrariesT
@@ -772,8 +770,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.storeTimeout = proc.conf.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
 	proc.config.pingerSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
 	proc.config.readLoopSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
-	proc.config.transformBatchSize = proc.conf.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
-	proc.config.userTransformBatchSize = proc.conf.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
 	proc.config.enableEventCount = proc.conf.GetReloadableBoolVar(true, "Processor.enableEventCount")
 	proc.config.maxEventsToProcess = proc.conf.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
 	proc.config.archivalEnabled = proc.conf.GetReloadableBoolVar(true, "archival.Enabled")

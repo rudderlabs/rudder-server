@@ -221,7 +221,6 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "recovery.enabled"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Profiler.Enabled"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.enableSuppressUserFeature"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.enableTransformationV2"), strconv.FormatBool(transformationV2))
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
