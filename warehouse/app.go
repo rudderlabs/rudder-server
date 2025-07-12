@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -291,7 +292,10 @@ func (a *App) migrate() error {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		a.logger.Warnf("retrying warehouse database migration in %s: %v", t, err)
+		a.logger.Warnn("retrying warehouse database migration",
+			logger.NewDurationField("retryIn", t),
+			obskit.Error(err),
+		)
 	})
 	if err != nil {
 		return fmt.Errorf("could not migrate: %w", err)
@@ -302,11 +306,11 @@ func (a *App) migrate() error {
 
 // Run runs the warehouse service
 func (a *App) Run(ctx context.Context) error {
-	a.logger.Info("Starting Warehouse service...")
+	a.logger.Infon("Starting Warehouse service...")
 
 	defer func() {
 		if r := recover(); r != nil {
-			a.logger.Fatal(r)
+			a.logger.Fataln("warehouse service panic", logger.NewStringField("panic", fmt.Sprintf("%+v", r)))
 			panic(r)
 		}
 	}()
@@ -334,7 +338,7 @@ func (a *App) Run(ctx context.Context) error {
 	})
 
 	if mode.IsDegraded(a.config.runningMode) {
-		a.logger.Info("Running warehouse service in degraded mode...")
+		a.logger.Infon("Running warehouse service in degraded mode...")
 
 		if mode.IsMaster(a.config.mode) {
 			g.Go(func() error {
@@ -369,7 +373,7 @@ func (a *App) Run(ctx context.Context) error {
 				info.WarehouseComponent.Features,
 			)
 			if err != nil {
-				a.logger.Errorf("sending warehouse features: %v", err)
+				a.logger.Errorn("sending warehouse features", obskit.Error(err))
 			}
 
 			// We don't want to exit if we fail to send features
@@ -377,7 +381,7 @@ func (a *App) Run(ctx context.Context) error {
 		})
 	}
 	if mode.IsSlave(a.config.mode) {
-		a.logger.Info("Starting warehouse slave...")
+		a.logger.Infon("Starting warehouse slave...")
 
 		g.Go(crash.NotifyWarehouse(func() error {
 			s := slave.New(
@@ -393,7 +397,7 @@ func (a *App) Run(ctx context.Context) error {
 		}))
 	}
 	if mode.IsMaster(a.config.mode) {
-		a.logger.Info("[WH]: Starting warehouse master...")
+		a.logger.Infon("[WH]: Starting warehouse master...")
 
 		a.bcConfig.WaitForConfig(ctx)
 
@@ -469,11 +473,15 @@ func (a *App) onConfigDataEvent(
 
 				_, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if ok {
-					a.logger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+					a.logger.Debugn("Enabling existing Destination",
+						logger.NewStringField("destinationName", destination.DestinationDefinition.Name),
+					)
 					continue
 				}
 
-				a.logger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+				a.logger.Infon("Starting a new Warehouse Destination Router",
+					logger.NewStringField("destinationName", destination.DestinationDefinition.Name),
+				)
 
 				r := router.New(
 					a.reporting,

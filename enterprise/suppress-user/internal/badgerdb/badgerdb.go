@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -237,7 +238,7 @@ func (b *Repository) start() (startErr error) {
 		restoreDone := lo.Async(func() error {
 			defer func() { _ = seeder.Close() }()
 			if err := b.Restore(seeder); err != nil {
-				b.log.Error("Failed to restore badgerdb", "error", err)
+				b.log.Errorn("Failed to restore badgerdb", obskit.Error(err))
 				return err
 			}
 			return nil
@@ -249,7 +250,7 @@ func (b *Repository) start() (startErr error) {
 				return startErr
 			}
 		case <-time.After(b.maxSeedWait):
-			b.log.Warn("Badgerdb still restoring after %s, proceeding...", b.maxSeedWait)
+			b.log.Warnn("Badgerdb still restoring after period, proceeding...", logger.NewDurationField("period", b.maxSeedWait))
 		}
 	}
 
@@ -269,7 +270,7 @@ func (b *Repository) start() (startErr error) {
 			}
 			lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(b.db.Opts().Dir)
 			if err != nil {
-				b.log.Errorf("Error while getting badgerDB usage: %v", err)
+				b.log.Errorn("Error while getting badgerDB usage", obskit.Error(err))
 				continue
 			}
 			statName := "suppress-user"

@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -68,7 +69,7 @@ func (w *worker) workLoop() {
 		case message, hasMore := <-w.input:
 			if !hasMore {
 				if len(w.routerJobs) == 0 {
-					w.logger.Debugf("worker channel closed")
+					w.logger.Debugn("worker channel closed")
 					return
 				}
 
@@ -78,11 +79,11 @@ func (w *worker) workLoop() {
 					w.destinationJobs = w.transform(w.routerJobs)
 				}
 				w.processDestinationJobs()
-				w.logger.Debugf("worker channel closed, processed %d jobs", len(w.routerJobs))
+				w.logger.Debugn("worker channel closed, processed jobs", logger.NewIntField("jobCount", int64(len(w.routerJobs))))
 				return
 			}
 
-			w.logger.Debugf("performing checks to send payload")
+			w.logger.Debugn("performing checks to send payload")
 
 			job := message.job
 			userID := job.UserID
@@ -136,13 +137,18 @@ func (w *worker) workLoop() {
 					if previousFailedJobID != nil {
 						previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 					}
-					w.logger.Debugf("EventOrder: [%d] job %d of key %s must wait (previousFailedJobID: %s)",
-						w.id, job.JobID, orderKey, previousFailedJobIDStr,
+					w.logger.Debugn("EventOrder: job must wait",
+						logger.NewIntField("workerID", int64(w.id)),
+						logger.NewIntField("jobID", job.JobID),
+						logger.NewStringField("orderKey", orderKey.String()),
+						logger.NewStringField("previousFailedJobID", previousFailedJobIDStr),
 					)
 
 					// mark job as waiting if prev job from same user has not succeeded yet
-					w.logger.Debugf("skipping processing job for orderKey: %v since prev failed job exists, prev id %v, current id %v",
-						orderKey, previousFailedJobID, job.JobID,
+					w.logger.Debugn("skipping processing job since previous failed job exists",
+						logger.NewStringField("orderKey", orderKey.String()),
+						logger.NewIntField("previousFailedJobID", *previousFailedJobID),
+						logger.NewIntField("currentJobID", job.JobID),
 					)
 					resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "blocking_id", *previousFailedJobID)
 					resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
@@ -200,18 +206,27 @@ func (w *worker) workLoop() {
 				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
-					w.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
+					w.logger.Debugn("FetchToken: Token Fetch Method to be called",
+						obskit.DestinationType(destination.DestinationDefinition.Name),
+					)
 					// Get Access Token Information to send it as part of the event
 					tokenStatusCode, accountSecretInfo := w.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
 						AccountId:   rudderAccountID,
 						WorkspaceId: jobMetadata.WorkspaceID,
 						DestDefName: destination.DestinationDefinition.Name,
 					})
-					w.logger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo)
+					w.logger.Debugn("FetchToken: Token Fetch Method finished",
+						obskit.DestinationType(destination.DestinationDefinition.Name),
+						logger.NewIntField("statusCode", int64(tokenStatusCode)),
+					)
 					if tokenStatusCode == http.StatusOK {
 						jobMetadata.Secret = accountSecretInfo.Account.Secret
 					} else {
-						w.logger.Errorf(`[%s][FetchToken] Token Fetch Method error (statusCode, error): (%d, %s)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
+						w.logger.Errorn("FetchToken: Token Fetch Method error",
+							obskit.DestinationType(destination.DestinationDefinition.Name),
+							logger.NewIntField("statusCode", int64(tokenStatusCode)),
+							logger.NewStringField("error", accountSecretInfo.Err),
+						)
 					}
 				}
 			}
@@ -521,7 +536,10 @@ func (w *worker) processDestinationJobs() {
 						})
 						// limiting the log to print 10KB of transformed payload
 						truncatedMessage := misc.TruncateStr(string(destinationJob.Message), int(10*bytesize.KB))
-						w.logger.Errorw("transformer response unmarshal error", "message", truncatedMessage, "jobIDs", jobIDs)
+						w.logger.Errorn("transformer response unmarshal error",
+							logger.NewStringField("message", truncatedMessage),
+							logger.NewField("jobIDs", jobIDs),
+						)
 						respStatusCodes, respBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBody)
 					} else {
 						var respStatusCode int
@@ -531,7 +549,10 @@ func (w *worker) processDestinationJobs() {
 						respBodyArrs := make([]map[int64]string, 0)
 						for i, val := range result {
 
-							w.logger.Debugf(`responseTransform status :%v, %s`, w.rt.reloadableConfig.transformerProxy, w.rt.destType)
+							w.logger.Debugn("responseTransform status",
+								logger.NewBoolField("transformerProxy", w.rt.reloadableConfig.transformerProxy.Load()),
+								obskit.DestinationType(w.rt.destType),
+							)
 							errorAt = routerutils.ERROR_AT_DEL
 							if transformerProxy {
 								attemptedRequests++
@@ -587,9 +608,10 @@ func (w *worker) processDestinationJobs() {
 								"workspaceId":   workspaceID,
 							}).Count(len(result))
 
-							w.logger.Debugf(`[TransformerProxy] (Dest-%v) Input Router Events: %v, Out router events: %v`, w.rt.destType,
-								len(result),
-								len(respBodyArr),
+							w.logger.Debugn("TransformerProxy: Input and output router events",
+								obskit.DestinationType(w.rt.destType),
+								logger.NewIntField("inputEvents", int64(len(result))),
+								logger.NewIntField("outputEvents", int64(len(respBodyArr))),
 							)
 
 							stats.Default.NewTaggedStat("transformer_proxy.output_events_count", stats.CountType, stats.Tags{
@@ -783,7 +805,10 @@ func anyNonTerminalCode(respStatusCodes map[int64]int) bool {
 
 func (w *worker) proxyRequest(ctx context.Context, destinationJob types.DestinationJobT, val integrations.PostParametersT) transformer.ProxyRequestResponse {
 	jobID := destinationJob.JobMetadataArray[0].JobID
-	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, w.rt.destType, jobID)
+	w.logger.Debugn("TransformerProxy: Request started",
+		obskit.DestinationType(w.rt.destType),
+		logger.NewIntField("jobID", jobID),
+	)
 
 	// setting metadata
 	var m []transformer.ProxyRequestMetadata

@@ -70,7 +70,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 	err = migration.Up()
 	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
 		if err == os.ErrNotExist {
-			pkgLogger.Infof("\n*****************\nMigrate could not find migration file for the version in db.\nPlease set env RSERVER_SQLMIGRATOR_FORCE_SET_LOWER_VERSION to true and restart to force set version in DB to latest version of migration sql files\nAlso please keep in mind that this does not undo the additional migrations done in version specified in DB. It just sets the value in MigrationsTable and marks it as dirty false.\n*****************\n")
+			pkgLogger.Infon("\n*****************\nMigrate could not find migration file for the version in db.\nPlease set env RSERVER_SQLMIGRATOR_FORCE_SET_LOWER_VERSION to true and restart to force set version in DB to latest version of migration sql files\nAlso please keep in mind that this does not undo the additional migrations done in version specified in DB. It just sets the value in MigrationsTable and marks it as dirty false.\n*****************\n")
 		}
 		return fmt.Errorf("run migration from directory %q, %w", migrationsDir, err)
 	}
@@ -213,7 +213,10 @@ func (m *Migrator) forceSetLowerVersion(migration *migrate.Migrate, sourceDriver
 	// to handle cases where we are reverting back to old version
 	// this assumes applied changes on database are also compatible with older versions
 	if versionInDB > latestVersionOnFile {
-		pkgLogger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
+		pkgLogger.Infon("Force setting migration version",
+			logger.NewIntField("latestVersionOnFile", int64(latestVersionOnFile)),
+			logger.NewStringField("migrationsTable", m.MigrationsTable),
+		)
 		err = migration.Force(latestVersionOnFile)
 		if err != nil {
 			return fmt.Errorf("force set migration to latest version on file: %w", err)

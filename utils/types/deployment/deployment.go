@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 type Type string // skipcq: RVV-B0009
@@ -48,7 +48,7 @@ func (t Type) Valid() bool {
 func GetConnectionToken() (string, string, bool, error) {
 	deploymentType, err := GetFromEnv()
 	if err != nil {
-		pkgLogger.Errorf("error getting deployment type: %v", err)
+		pkgLogger.Errorn("error getting deployment type", obskit.Error(err))
 		return "", "", false, err
 	}
 	var connectionToken, tokenType string
@@ -65,7 +65,7 @@ func GetConnectionToken() (string, string, bool, error) {
 			connectionToken = config.GetString("WORKSPACE_NAMESPACE", "")
 		} else {
 			if !config.IsSet("HOSTED_SERVICE_SECRET") {
-				pkgLogger.Error("hosted service secret not set")
+				pkgLogger.Errorn("hosted service secret not set")
 				return "", "", false, errors.New("hosted service secret not set")
 			}
 			connectionToken = config.GetString("HOSTED_SERVICE_SECRET", "")
