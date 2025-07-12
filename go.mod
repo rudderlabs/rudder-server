@@ -119,7 +119,7 @@ require (
 	go.uber.org/mock v0.5.2
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	golang.org/x/oauth2 v0.30.0
-	golang.org/x/sync v0.15.0
+	golang.org/x/sync v0.16.0
 	golang.org/x/time v0.12.0
 	google.golang.org/api v0.235.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237
