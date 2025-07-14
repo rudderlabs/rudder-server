@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 const workflowFile = "./.github/workflows/tests.yaml"

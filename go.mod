@@ -10,7 +10,6 @@ replace (
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.5
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
-	github.com/gocql/gocql => github.com/scylladb/gocql v1.14.4
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.3
@@ -18,7 +17,6 @@ replace (
 	golang.org/x/net => golang.org/x/net v0.34.0
 	golang.org/x/net/html => golang.org/x/net/html v0.41.0
 	golang.org/x/text => golang.org/x/text v0.22.0
-	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
 	k8s.io/kubernetes => k8s.io/kubernetes v1.32.1
 )
