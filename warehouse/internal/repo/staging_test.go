@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -40,12 +41,11 @@ func TestStagingFileRepo(t *testing.T) {
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()
+	db := setupDB(t)
 
-	r := repo.NewStagingFiles(setupDB(t),
-		repo.WithNow(func() time.Time {
-			return now
-		}),
-	)
+	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
 
 	testcases := []struct {
 		name        string
@@ -153,6 +153,72 @@ func TestStagingFileRepo(t *testing.T) {
 			require.Equal(t, expected.StagingFile, retrieved)
 		})
 	}
+
+	t.Run("schema snapshot and patch", func(t *testing.T) {
+		snapshotRepo := repo.NewStagingFileSchemaSnapshots(db)
+
+		originalSchema := []byte(`{"event1": {"key1": "string"}, "event2": {"key2": "string"}, "event3": {"key3": "string"}, "event4": {"key4": "string"}, "event5": {"key5": "string"}, "event6": {"key6": "string"}, "event7": {"key7": "string"}, "event8": {"key8": "string"}}`)
+		modifiedSchema := []byte(`{"event1": {"key1": "string"}, "event2": {"key2": "string"}, "event3": {"key3": "string"}, "event4": {"key4": "string"}, "event5": {"key5": "string"}, "event6": {"key6": "string"}, "event7": {"key7": "string"}, "event8": {"key8": "string"}, "event9": {"key9": "string"}}`)
+
+		snapshotID, err := snapshotRepo.Insert(ctx, "source_id", "destination_id", "workspace_id", originalSchema)
+		require.NoError(t, err)
+
+		patchSchema, err := warehouseutils.GenerateJSONPatch(originalSchema, modifiedSchema)
+		require.NoError(t, err)
+
+		stagingFile := model.StagingFile{
+			WorkspaceID:           "workspace_id",
+			Location:              "s3://bucket/path/to/file",
+			SourceID:              "source_id",
+			DestinationID:         "destination_id",
+			Status:                warehouseutils.StagingFileWaitingState,
+			Error:                 fmt.Errorf("dummy error"),
+			FirstEventAt:          now.Add(time.Second),
+			LastEventAt:           now,
+			UseRudderStorage:      true,
+			DestinationRevisionID: "destination_revision_id",
+			TotalEvents:           100,
+			SourceTaskRunID:       "source_task_run_id",
+			SourceJobID:           "source_job_id",
+			SourceJobRunID:        "source_job_run_id",
+			TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
+			ServerInstanceID:      "test-instance-id-v4",
+		}
+		stagingFileWithSchema := stagingFile.
+			WithSchema(modifiedSchema).
+			WithSnapshotSchemaAndPatch(&model.StagingFileSchemaSnapshot{ID: snapshotID, Schema: originalSchema}, patchSchema)
+		id, err := r.Insert(ctx, &stagingFileWithSchema)
+		require.NoError(t, err)
+		require.NotZero(t, id)
+
+		retrieved, err := r.GetByID(ctx, id)
+		require.NoError(t, err)
+
+		expected := stagingFile
+		expected.ID = id
+		expected.Error = nil
+		expected.CreatedAt = now
+		expected.UpdatedAt = now
+		require.Equal(t, expected, retrieved)
+
+		var schema json.RawMessage
+		var schemaSnapshotID string
+		var schemaSnapshotPatch []byte
+		var snapshotPatchBytes int
+		var snapshotPatchCompressionRatio float64
+
+		err = db.QueryRowContext(ctx, `
+			SELECT schema, schema_snapshot_id, schema_snapshot_patch, metadata->>'snapshot_patch_bytes', metadata->>'snapshot_patch_compression_ratio'
+			FROM wh_staging_files
+			WHERE id = $1
+		`, id).Scan(&schema, &schemaSnapshotID, &schemaSnapshotPatch, &snapshotPatchBytes, &snapshotPatchCompressionRatio)
+		require.NoError(t, err)
+		require.Equal(t, snapshotID.String(), schemaSnapshotID)
+		require.JSONEq(t, string(modifiedSchema), string(schema))
+		require.JSONEq(t, string(patchSchema), string(schemaSnapshotPatch))
+		require.Equal(t, len(stagingFileWithSchema.SnapshotPatch), snapshotPatchBytes)
+		require.Equal(t, 1-float64(len(stagingFileWithSchema.SnapshotPatch))/float64(len(stagingFileWithSchema.Schema)), snapshotPatchCompressionRatio)
+	})
 
 	t.Run("get missing id", func(t *testing.T) {
 		_, err := r.GetByID(ctx, -1)
