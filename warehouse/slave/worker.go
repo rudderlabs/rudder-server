@@ -329,7 +329,7 @@ func (w *worker) processSingleStagingFile(
 
 		if err := jsonrs.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
 			jr.logger.Warnn("Failed to unmarshal line from staging file to BatchRouterEvent",
-				logger.NewIntField("stagingFileID", int64(stagingFile.ID)),
+				logger.NewIntField("stagingFileID", stagingFile.ID),
 				obskit.Error(err),
 			)
 			continue

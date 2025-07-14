@@ -193,7 +193,7 @@ func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string)
 
 	err = fManager.Delete(ctx, locations)
 	if err != nil {
-		a.log.Errorf("[Archiver]: Error in deleting objects in Rudder S3: %v", err)
+		a.log.Errorn("[Archiver]: Error in deleting objects in Rudder S3", obskit.Error(err))
 	}
 	return err
 }
@@ -203,7 +203,7 @@ func (*Archiver) usedRudderStorage(metadata []byte) bool {
 }
 
 func (a *Archiver) Do(ctx context.Context) error {
-	a.log.Infof(`[Archiver]: Started archiving for warehouse`)
+	a.log.Infon("[Archiver]: Started archiving for warehouse")
 
 	uploadsToArchive, err := a.countUploadsToArchive(ctx)
 	if err != nil {
@@ -298,12 +298,12 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 	)
 	defer func() {
 		if err != nil {
-			a.log.Errorf(`[Archiver]: Error occurred while archiving for warehouse uploads with error: %v`, err)
+			a.log.Errorn("[Archiver]: Error occurred while archiving for warehouse uploads", obskit.Error(err))
 			a.archiveFailedStat.Increment()
 		}
 	}()
 	if errors.Is(err, sql.ErrNoRows) {
-		a.log.Debugf(`[Archiver]: No uploads found for archival. Query: %s`, sqlStatement)
+		a.log.Debugn("[Archiver]: No uploads found for archival", logger.NewStringField(logfield.Query, sqlStatement))
 		return nil
 	}
 	if err != nil {
@@ -325,7 +325,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 			&u.workspaceID,
 		)
 		if err != nil {
-			a.log.Errorf(`[Archiver]: Error scanning wh_upload for archival. Error: %v`, err)
+			a.log.Errorn("[Archiver]: Error scanning wh_upload for archival", obskit.Error(err))
 			continue
 		}
 		uploadsToArchive = append(uploadsToArchive, &u)
@@ -341,14 +341,17 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 	for _, u := range uploadsToArchive {
 		txn, err := a.db.BeginTx(ctx, &sql.TxOptions{})
 		if err != nil {
-			a.log.Errorf(`[Archiver]: Error creating txn in archiveUploadFiles. Error: %v`, err)
+			a.log.Errorn("[Archiver]: Error creating txn in archiveUploadFiles", obskit.Error(err))
 			continue
 		}
 
 		// archive staging files
 		stagingFileIDs, err := a.getStagingFilesData(ctx, txn, u)
 		if err != nil {
-			a.log.Errorf(`[Archiver]: Error getting staging files data for upload %d: %v`, u.uploadID, err)
+			a.log.Errorn("[Archiver]: Error getting staging files data for upload",
+				obskit.UploadID(u.uploadID),
+				obskit.Error(err),
+			)
 			_ = txn.Rollback()
 			continue
 		}
@@ -364,7 +367,10 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 				uploadID:       u.uploadID,
 			})
 			if err != nil {
-				a.log.Errorf(`[Archiver]: Error backing up staging files for upload: %d: %v`, u.uploadID, err)
+				a.log.Errorn("[Archiver]: Error backing up staging files for upload",
+					obskit.UploadID(u.uploadID),
+					obskit.Error(err),
+				)
 				_ = txn.Rollback()
 				continue
 			}
@@ -377,7 +383,10 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 			)
 			_, err = txn.ExecContext(ctx, stmt, pq.Array(stagingFileIDs))
 			if err != nil {
-				a.log.Errorf(`[Archiver]: Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				a.log.Errorn("[Archiver]: Error running txn in archiveUploadFiles",
+					logger.NewStringField(logfield.Query, stmt),
+					obskit.Error(err),
+				)
 				_ = txn.Rollback()
 				continue
 			}
@@ -386,7 +395,10 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 
 			// delete load file records
 			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, u.uploadID, hasUsedRudderStorage); err != nil {
-				a.log.Errorf("[Archiver]: Error while deleting load file records for upload %d: %v", u.uploadID, err)
+				a.log.Errorn("[Archiver]: Error while deleting load file records for upload",
+					obskit.UploadID(u.uploadID),
+					obskit.Error(err),
+				)
 				_ = txn.Rollback()
 				continue
 			}
@@ -402,21 +414,25 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 		)
 		_, err = txn.ExecContext(ctx, stmt, u.uploadMetadata, u.uploadID)
 		if err != nil {
-			a.log.Errorf(`[Archiver]: Error running txn while archiving upload files. Query: %s Error: %v`, stmt, err)
+			a.log.Errorn("[Archiver]: Error running txn while archiving upload files",
+				logger.NewStringField(logfield.Query, stmt),
+				obskit.Error(err),
+			)
 			_ = txn.Rollback()
 			continue
 		}
 
 		if err = txn.Commit(); err != nil {
-			a.log.Errorf(`[Archiver]: Error committing txn while archiving upload files. Error: %v`, err)
+			a.log.Errorn("[Archiver]: Error committing txn while archiving upload files", obskit.Error(err))
 			_ = txn.Rollback()
 			continue
 		}
 
 		archivedUploads++
 		if storedStagingFilesLocation != "" {
-			a.log.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`,
-				u.uploadID, storedStagingFilesLocation,
+			a.log.Debugn("[Archiver]: Archived upload related staging files",
+				obskit.UploadID(u.uploadID),
+				logger.NewStringField("location", storedStagingFilesLocation),
 			)
 		}
 
@@ -426,7 +442,9 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 		}).Increment()
 	}
 
-	a.log.Infof(`[Archiver]: Successfully archived %d uploads`, archivedUploads)
+	a.log.Infon("[Archiver]: Successfully archived uploads",
+		logger.NewIntField("archivedUploads", int64(archivedUploads)),
+	)
 	return nil
 }
 
@@ -521,7 +539,7 @@ func (a *Archiver) deleteLoadFileRecords(
 }
 
 func (a *Archiver) Delete(ctx context.Context) error {
-	a.log.Infon(`Started deleting for warehouse`)
+	a.log.Infon("Started deleting for warehouse")
 
 	maxLimit := a.config.maxLimit.Load()
 

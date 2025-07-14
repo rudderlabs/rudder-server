@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -143,11 +144,11 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
-	pkgLogger.Debugf("response code: %v", resp.StatusCode, "response body: %v", resp.Body)
+	pkgLogger.Debugn("response code and body", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	} else {
-		pkgLogger.Errorf("update status failed with status code: %v", resp.StatusCode)
+		pkgLogger.Errorn("update status failed", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 		return fmt.Errorf("update status failed with status code: %d", resp.StatusCode)
 	}
 }
@@ -166,7 +167,7 @@ func mapPayloadToJob(wjs jobSchema) (model.Job, error) {
 	}
 	jobID, err := strconv.Atoi(wjs.JobID)
 	if err != nil {
-		pkgLogger.Errorf("error while getting jobId: %v", err)
+		pkgLogger.Errorn("error while getting jobId", obskit.Error(err))
 		return model.Job{}, fmt.Errorf("error while get JobID:%w", err)
 	}
 
