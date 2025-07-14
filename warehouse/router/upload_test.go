@@ -832,7 +832,7 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 
 func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
 	t.Helper()
-	stagingFilesRepo := repo.NewStagingFiles(db)
+	stagingFilesRepo := repo.NewStagingFiles(db, config.New())
 	stagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{},
 	}

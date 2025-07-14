@@ -119,7 +119,7 @@ func NewApi(
 		bcManager:     bcManager,
 		sourceManager: sourceManager,
 		triggerStore:  triggerStore,
-		stagingRepo:   repo.NewStagingFiles(db),
+		stagingRepo:   repo.NewStagingFiles(db, conf),
 		uploadRepo:    repo.NewUploads(db),
 		schemaRepo:    repo.NewWHSchemas(db, conf),
 	}

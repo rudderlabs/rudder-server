@@ -187,7 +187,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.db, f.conf),
 		uploadsRepo:          repo.NewUploads(f.db),
-		stagingFileRepo:      repo.NewStagingFiles(f.db),
+		stagingFileRepo:      repo.NewStagingFiles(f.db, f.conf),
 		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf),
 		whSchemaRepo:         repo.NewWHSchemas(f.db, f.conf),
 		upload:               dto.Upload,
@@ -340,7 +340,7 @@ func (job *UploadJob) run() (err error) {
 		job.statsFactory,
 		whManager,
 		repo.NewWHSchemas(job.db, job.conf),
-		repo.NewStagingFiles(job.db),
+		repo.NewStagingFiles(job.db, job.conf),
 	)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
