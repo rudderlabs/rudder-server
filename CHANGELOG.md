@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.3](https://github.com/rudderlabs/rudder-server/compare/v1.54.2...v1.54.3) (2025-07-14)
+
+
+### Miscellaneous
+
+* upgrade go kit ([#6103](https://github.com/rudderlabs/rudder-server/issues/6103)) ([4f1e8d9](https://github.com/rudderlabs/rudder-server/commit/4f1e8d9bb78207d1c89bcbd7dab133905005c863))
+
 ## [1.54.2](https://github.com/rudderlabs/rudder-server/compare/v1.54.1...v1.54.2) (2025-07-07)
 
 
