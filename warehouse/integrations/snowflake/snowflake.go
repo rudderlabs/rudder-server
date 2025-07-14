@@ -211,9 +211,9 @@ func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns 
 
 	sqlStatement := sf.tableManager.createTableQuery(schemaIdentifier, tableName, columns)
 
-	sf.logger.Infow("Creating table in snowflake",
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.Query, sqlStatement,
+	sf.logger.Infon("Creating table in snowflake",
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return
@@ -254,11 +254,10 @@ func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) 
 func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
-	sf.logger.Infow(
-		"Creating schema name in snowflake",
-		lf.Namespace, sf.Warehouse.Namespace,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.Query, sqlStatement,
+	sf.logger.Infon("Creating schema name in snowflake",
+		logger.NewStringField(lf.Namespace, sf.Warehouse.Namespace),
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return
@@ -1133,7 +1132,9 @@ func (sf *Snowflake) CreateSchema(ctx context.Context) (err error) {
 		return err
 	}
 	if schemaExists {
-		sf.logger.Infow("Skipping schema creation (it already exists)", lf.Schema, schemaIdentifier)
+		sf.logger.Infon("Skipping schema creation (it already exists)",
+			logger.NewStringField(lf.Schema, schemaIdentifier),
+		)
 		return nil
 	}
 	return sf.createSchema(ctx)
@@ -1146,9 +1147,9 @@ func (sf *Snowflake) CreateTable(ctx context.Context, tableName string, columnMa
 func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]q`, schemaIdentifier, tableName)
-	sf.logger.Infow("Dropping table in snowflake",
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.Query, sqlStatement,
+	sf.logger.Infon("Dropping table in snowflake",
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return
@@ -1213,7 +1214,9 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		} else if hasUserID {
 			toSelectFields = `NULL AS "ANONYMOUS_ID", "USER_ID"`
 		} else {
-			sf.logger.Infow("ANONYMOUS_ID, USER_ID columns not present in table", lf.TableName, tableName)
+			sf.logger.Infon("ANONYMOUS_ID, USER_ID columns not present in table",
+				logger.NewStringField(lf.TableName, tableName),
+			)
 			return nil
 		}
 
@@ -1225,9 +1228,9 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 				`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`,
 				toSelectFields, schemaIdentifier, tableName, batchSize, offset,
 			)
-			sf.logger.Infow("Downloading distinct combinations of anonymous_id, user_id",
-				lf.Query, sqlStatement,
-				lf.TotalRows, totalRows,
+			sf.logger.Infon("Downloading distinct combinations of anonymous_id, user_id",
+				logger.NewStringField(lf.Query, sqlStatement),
+				logger.NewIntField(lf.TotalRows, totalRows),
 			)
 			var rows *sqlmw.Rows
 			rows, err = sf.DB.QueryContext(ctx, sqlStatement)
