@@ -24,13 +24,11 @@ import (
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -410,21 +408,21 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 		dataInt := make([]int64, 0)
 		err := jsonrs.Unmarshal([]byte(data), &dataInt)
 		if err != nil {
-			ch.logger.Error("Error while unmarshalling data into array of int: %s", err.Error())
+			ch.logger.Errorn("Error while unmarshalling data into array of int", obskit.Error(err))
 		}
 		return dataInt
 	case "array(float)":
 		dataFloat := make([]float64, 0)
 		err := jsonrs.Unmarshal([]byte(data), &dataFloat)
 		if err != nil {
-			ch.logger.Error("Error while unmarshalling data into array of float: %s", err.Error())
+			ch.logger.Errorn("Error while unmarshalling data into array of float", obskit.Error(err))
 		}
 		return dataFloat
 	case "array(string)":
 		dataInterface := make([]interface{}, 0)
 		err := jsonrs.Unmarshal([]byte(data), &dataInterface)
 		if err != nil {
-			ch.logger.Error("Error while unmarshalling data into array of interface: %s", err.Error())
+			ch.logger.Errorn("Error while unmarshalling data into array of interface", obskit.Error(err))
 		}
 		dataString := make([]string, 0)
 		for _, value := range dataInterface {
@@ -440,7 +438,7 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 		dataTime := make([]time.Time, 0)
 		err := jsonrs.Unmarshal([]byte(data), &dataTime)
 		if err != nil {
-			ch.logger.Error("Error while unmarshalling data into array of date time: %s", err.Error())
+			ch.logger.Errorn("Error while unmarshalling data into array of date time", obskit.Error(err))
 		}
 		return dataTime
 	case "array(boolean)":
@@ -459,7 +457,7 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 
 		err := jsonrs.Unmarshal([]byte(data), &dataBool)
 		if err != nil {
-			ch.logger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
+			ch.logger.Errorn("Error while unmarshalling data into array of bool", obskit.Error(err))
 			return dataBool
 		}
 		return dataBool
@@ -522,8 +520,12 @@ func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 }
 
 func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
-	ch.logger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
-	defer ch.logger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
+	ch.logger.Infon("LoadTable Started",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
+	defer ch.logger.Infon("LoadTable Completed",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
 
 	// Clickhouse stats
 	chStats := ch.newClickHouseStat(tableName)
@@ -548,7 +550,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(ch.config.loadTableFailureRetries))
 	retryError := backoff.RetryNotify(operation, backoffWithMaxRetry, func(error error, t time.Duration) {
 		err = fmt.Errorf("%s Error occurred while retrying for load tables with error: %v", ch.GetLogIdentifier(tableName), error)
-		ch.logger.Error(err)
+		ch.logger.Errorn("Error occurred while retrying for load tables", obskit.Error(err))
 		chStats.failRetries.Count(1)
 	})
 	if retryError != nil {
@@ -568,7 +570,9 @@ func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey string, err er
 }
 
 func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) error {
-	ch.logger.Infof("LoadTable By COPY command Started for table: %s", tableName)
+	ch.logger.Infon("LoadTable By COPY command Started for table",
+		logger.NewStringField(logfield.TableName, tableName),
+	)
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
@@ -621,7 +625,9 @@ func (ch *Clickhouse) loadByCopyCommand(ctx context.Context, tableName string, t
 		return fmt.Errorf("executing insert query for load table with error: %w", err)
 	}
 
-	ch.logger.Infof("LoadTable By COPY command Completed for table: %s", tableName)
+	ch.logger.Infon("LoadTable By COPY command Completed for table",
+		logger.NewStringField(logfield.TableName, tableName),
+	)
 	return nil
 }
 
@@ -631,8 +637,12 @@ type tableError struct {
 }
 
 func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema, fileNames []string, chStats *clickHouseStat) (terr tableError) {
-	ch.logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
-	defer ch.logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
+	ch.logger.Debugn("LoadTablesFromFilesNamesWithRetry Started",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
+	defer ch.logger.Debugn("LoadTablesFromFilesNamesWithRetry Completed",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
 
 	var txn *sqlmw.Tx
 	var err error
@@ -640,30 +650,44 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	onError := func(err error) {
 		if txn != nil {
 			go func() {
-				ch.logger.Debugf("%s Rollback Started for loading in table", ch.GetLogIdentifier(tableName))
+				ch.logger.Debugn("Rollback Started for loading in table",
+					logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+				)
 				_ = txn.Rollback()
-				ch.logger.Debugf("%s Rollback Completed for loading in table", ch.GetLogIdentifier(tableName))
+				ch.logger.Debugn("Rollback Completed for loading in table",
+					logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+				)
 			}()
 		}
 		terr.err = err
-		ch.logger.Errorf("%s OnError for loading in table with error: %v", ch.GetLogIdentifier(tableName), err)
+		ch.logger.Errorn("OnError for loading in table",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+			obskit.Error(err),
+		)
 	}
 
-	ch.logger.Debugf("%s Beginning a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
+	ch.logger.Debugn("Beginning a transaction in db for loading in table",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
 	txn, err = ch.DB.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
 		return
 	}
-	ch.logger.Debugf("%s Completed a transaction in db for loading in table", ch.GetLogIdentifier(tableName))
+	ch.logger.Debugn("Completed a transaction in db for loading in table",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
 
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString(len(sortedColumnKeys)))
-	ch.logger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
+	ch.logger.Debugn("Preparing statement exec in db for loading in table",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	stmt, err := txn.PrepareContext(ctx, sqlStatement)
 	if err != nil {
 		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
@@ -673,7 +697,9 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	defer func() {
 		_ = stmt.Close()
 	}()
-	ch.logger.Debugf("%s Prepared statement exec in db for loading in table", ch.GetLogIdentifier(tableName))
+	ch.logger.Debugn("Prepared statement exec in db for loading in table",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
 
 	for _, objectFileName := range fileNames {
 		syncStart := time.Now()
@@ -702,7 +728,10 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			record, err = csvReader.Read()
 			if err != nil {
 				if errors.Is(err, io.EOF) {
-					ch.logger.Debugf("%s File reading completed while reading csv file for loading in table for objectFileName:%s", ch.GetLogIdentifier(tableName), objectFileName)
+					ch.logger.Debugn("File reading completed while reading csv file for loading in table",
+						logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+						logger.NewStringField("objectFileName", objectFileName),
+					)
 					break
 				}
 				err = fmt.Errorf("%s Error while reading csv file %s for loading in table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err)
@@ -724,12 +753,18 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 
 			stmtCtx, stmtCancel := context.WithCancel(ctx)
 			misc.RunWithTimeout(func() {
-				ch.logger.Debugf("%s Starting Prepared statement exec", ch.GetLogIdentifier(tableName))
+				ch.logger.Debugn("Starting Prepared statement exec",
+					logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+				)
 				_, err = stmt.ExecContext(stmtCtx, recordInterface...)
-				ch.logger.Debugf("%s Completed Prepared statement exec", ch.GetLogIdentifier(tableName))
+				ch.logger.Debugn("Completed Prepared statement exec",
+					logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+				)
 				stmtCancel()
 			}, func() {
-				ch.logger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
+				ch.logger.Debugn("Cancelling and closing statement",
+					logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+				)
 				stmtCancel()
 				go func() {
 					_ = stmt.Close()
@@ -758,12 +793,16 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	misc.RunWithTimeout(func() {
 		defer chStats.commitTime.RecordDuration()()
 
-		ch.logger.Debugf("%s Committing transaction", ch.GetLogIdentifier(tableName))
+		ch.logger.Debugn("Committing transaction",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+		)
 		if err = txn.Commit(); err != nil {
 			err = fmt.Errorf("%s Error while committing transaction as there was error while loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 			return
 		}
-		ch.logger.Debugf("%v Committed transaction", ch.GetLogIdentifier(tableName))
+		ch.logger.Debugn("Committed transaction",
+			logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+		)
 	}, func() {
 		err = fmt.Errorf("%s Timed out while committing", ch.GetLogIdentifier(tableName))
 		terr.enableRetry = true
@@ -775,7 +814,9 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		onError(err)
 		return
 	}
-	ch.logger.Infof("%s Completed loading the table", ch.GetLogIdentifier(tableName))
+	ch.logger.Infon("Completed loading the table",
+		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
+	)
 	return
 }
 
@@ -809,7 +850,10 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 		engineOptions = fmt.Sprintf(`'/clickhouse/{cluster}/tables/%s/{database}/{table}', '{replica}'`, uuid.New().String())
 	}
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
-	ch.logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
+	ch.logger.Infon("CH: Creating table in clickhouse for ch",
+		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return
 }
@@ -862,7 +906,10 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v ) ENGINE = %s(%s) %s %s`, ch.Namespace, tableName, clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
 
-	ch.logger.Infof("CH: Creating table in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
+	ch.logger.Infon("CH: Creating table in clickhouse for ch",
+		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return
 }
@@ -900,7 +947,11 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
-	ch.logger.Infof("CH: Adding columns for destinationID: %s, tableName: %s with query: %v", ch.Warehouse.Destination.ID, tableName, query)
+	ch.logger.Infon("CH: Adding columns for destinationID with query",
+		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewStringField(logfield.Query, query),
+	)
 	_, err = ch.DB.ExecContext(ctx, query)
 	return
 }
@@ -922,7 +973,15 @@ func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
 	}
 	defer func() { _ = db.Close() }()
 
-	ch.logger.Infow("Creating schema", append(ch.defaultLogFields(), "clusterClause", ch.clusterClause()))
+	ch.logger.Infon("Creating schema",
+		logger.NewStringField(logfield.SourceID, ch.Warehouse.Source.ID),
+		logger.NewStringField(logfield.SourceType, ch.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.DestinationType, ch.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(logfield.WorkspaceID, ch.Warehouse.WorkspaceID),
+		logger.NewStringField(logfield.Namespace, ch.Namespace),
+		logger.NewStringField("clusterClause", ch.clusterClause()),
+	)
 
 	query := fmt.Sprintf(`CREATE DATABASE IF NOT EXISTS %q %s`, ch.Namespace, ch.clusterClause())
 	if _, err = db.ExecContext(ctx, query); err != nil {
