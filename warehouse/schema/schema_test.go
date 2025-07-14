@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -36,7 +37,7 @@ type mockSchemaRepo struct {
 	mu        sync.RWMutex
 }
 
-func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, namespace string) (model.WHSchema, error) {
+func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, namespace string, _ bool) (model.WHSchema, error) {
 	key := schemaKey(destinationID, namespace)
 
 	m.mu.RLock()
@@ -46,14 +47,14 @@ func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, names
 	return schema, nil
 }
 
-func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int64, error) {
+func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema, _ bool) error {
 	key := schemaKey(schema.DestinationID, schema.Namespace)
 
 	m.mu.Lock()
 	m.schemaMap[key] = *schema
 	m.mu.Unlock()
 
-	return 0, nil
+	return nil
 }
 
 type mockFetchSchemaRepo struct{}
