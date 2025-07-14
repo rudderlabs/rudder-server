@@ -92,6 +92,13 @@ m["a"] = "b"
 log.Infon("starting", logger.NewIntField("map", fmt.Sprintf("%v", m)))
 ```
 
+**ABSOLUTELY NO REFLECTION**: Never use `fmt.Sprintf`, `fmt.Printf`, or any other reflection-based formatting in logging calls. Instead:
+- For string slices: use `strings.Join(slice, ", ")`
+- For custom types: implement a `String() string` method that manually builds the output
+- For primitive types: use appropriate `logger.NewXXXField` constructors directly
+- For complex data: break down into individual fields or implement custom string methods
+- Never use logger.NewField since it takes `any`
+
 #### Error Logging
 
 Always use `obskit.Error` for error logging:
@@ -104,6 +111,7 @@ log.Errorn("operation failed", obskit.Error(err))
 
 **For code in the /warehouse folder:**
 - Use fields from `logfield` package when available (e.g., `logfield.SourceID`, `logfield.TableName`)
+- Use `logfield.Query` if in the code we're logging queries e.g. `sqlStatement`
 - For errors, always use `obskit.Error(err)`
 - Import: `"github.com/rudderlabs/rudder-server/warehouse/logfield"`
 
@@ -116,12 +124,12 @@ Examples:
 
 ```go
 // In warehouse folder
-log.Infon("processing table", 
+log.Infon("processing table",
     logger.NewStringField(logfield.SourceID, sourceID),
     logger.NewStringField(logfield.TableName, tableName),
 )
 
-// Outside warehouse folder  
+// Outside warehouse folder
 log.Infon("processing source",
     obskit.SourceID(sourceID),
     logger.NewStringField("tableName", tableName),
@@ -142,8 +150,8 @@ Example migration:
 // Before
 log.Infof("AZ: Creating table for destination %s: %v", destID, query)
 
-// After  
-log.Infon("AZ: Creating table for destination", 
+// After
+log.Infon("AZ: Creating table for destination",
     logger.NewStringField(logfield.DestinationID, destID),
     logger.NewStringField(logfield.Query, query),
 )

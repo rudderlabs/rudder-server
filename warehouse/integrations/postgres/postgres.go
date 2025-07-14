@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -266,7 +267,11 @@ func (*Postgres) IsEmpty(context.Context, model.Warehouse) (empty bool, err erro
 
 // DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
 func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pg.logger.Infof("PG: Cleaning up the following tables in postgres for PG:%s : %+v", tableNames, params)
+	pg.logger.Infon("PG: Cleaning up the following tables in postgres for PG",
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField("tableNames", strings.Join(tableNames, ", ")),
+		logger.NewStringField("params", params.String()),
+	)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
@@ -276,8 +281,12 @@ func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params wa
 			pg.Namespace,
 			tb,
 		)
-		pg.logger.Infof("PG: Deleting rows in table in postgres for PG:%s", pg.Warehouse.Destination.ID)
-		pg.logger.Debugf("PG: Executing the statement  %v", sqlStatement)
+		pg.logger.Infon("PG: Deleting rows in table in postgres for PG",
+			logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		)
+		pg.logger.Debugn("PG: Executing the statement",
+			logger.NewStringField(logfield.Query, sqlStatement),
+		)
 		if pg.config.enableDeleteByJobs {
 			_, err = pg.DB.ExecContext(ctx, sqlStatement,
 				params.JobRunId,
@@ -285,7 +294,7 @@ func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params wa
 				params.SourceId,
 				params.StartTime)
 			if err != nil {
-				pg.logger.Errorf("Error %s", err)
+				pg.logger.Errorn("Error", obskit.Error(err))
 				return err
 			}
 		}
@@ -304,22 +313,33 @@ func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
 	var schemaExists bool
 	schemaExists, err = pg.schemaExists(ctx, pg.Namespace)
 	if err != nil {
-		pg.logger.Errorf("PG: Error checking if schema: %s exists: %v", pg.Namespace, err)
+		pg.logger.Errorn("PG: Error checking if schema exists",
+			logger.NewStringField(logfield.Schema, pg.Namespace),
+			obskit.Error(err),
+		)
 		return err
 	}
 	if schemaExists {
-		pg.logger.Infof("PG: Skipping creating schema: %s since it already exists", pg.Namespace)
+		pg.logger.Infon("PG: Skipping creating schema since it already exists",
+			logger.NewStringField(logfield.Schema, pg.Namespace),
+		)
 		return
 	}
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, pg.Namespace)
-	pg.logger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	pg.logger.Infon("PG: Creating schema name in postgres for PG",
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
 func (pg *Postgres) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
-	pg.logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	pg.logger.Infon("PG: Creating table in postgres for PG",
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	return
 }
@@ -331,15 +351,22 @@ func (pg *Postgres) CreateTable(ctx context.Context, tableName string, columnMap
 	if err != nil {
 		return err
 	}
-	pg.logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	pg.logger.Infon("PG: Updated search_path in postgres for PG",
+		logger.NewStringField(logfield.Schema, pg.Namespace),
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
 	err = pg.createTable(ctx, tableName, columnMap)
 	return err
 }
 
 func (pg *Postgres) DropTable(ctx context.Context, tableName string) (err error) {
-	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	pg.logger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.DB.ExecContext(ctx, fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
+	sqlStatement := fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, tableName)
+	pg.logger.Infon("PG: Dropping table in postgres for PG",
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, sqlStatement),
+	)
+	_, err = pg.DB.ExecContext(ctx, sqlStatement)
 	return
 }
 
@@ -354,7 +381,11 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 	if _, err = pg.DB.ExecContext(ctx, query); err != nil {
 		return
 	}
-	pg.logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, query)
+	pg.logger.Infon("PG: Updated search_path in postgres for PG",
+		logger.NewStringField(logfield.Schema, pg.Namespace),
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.Query, query),
+	)
 
 	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
@@ -370,7 +401,11 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
-	pg.logger.Infof("PG: Adding columns for destinationID: %s, tableName: %s with query: %v", pg.Warehouse.Destination.ID, tableName, query)
+	pg.logger.Infon("PG: Adding columns for destinationID with query",
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewStringField(logfield.Query, query),
+	)
 	_, err = pg.DB.ExecContext(ctx, query)
 	return
 }
@@ -481,7 +516,7 @@ func (*Postgres) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err e
 func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
-			pg.logger.Error(err.Error())
+			pg.logger.Errorn("Connect error", obskit.Error(err))
 			return client.Client{}, errors.New(err.Error())
 		}
 	}

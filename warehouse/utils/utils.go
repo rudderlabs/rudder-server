@@ -209,6 +209,10 @@ type DeleteByParams struct {
 	StartTime time.Time
 }
 
+func (d DeleteByParams) String() string {
+	return "SourceId: " + d.SourceId + ", JobRunId: " + d.JobRunId + ", TaskRunId: " + d.TaskRunId + ", StartTime: " + d.StartTime.Format(time.RFC3339)
+}
+
 type ColumnInfo struct {
 	Name  string
 	Value interface{}
