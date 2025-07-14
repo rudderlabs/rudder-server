@@ -534,7 +534,7 @@ func FuzzTransformer(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, destType, destConfigJSON, payload string) {
-		if _, exist := whutils.WarehouseDestinationMap[destType]; !exist {
+		if _, exist := whutils.PseudoWarehouseDestinationMap[destType]; !exist {
 			return
 		}
 
