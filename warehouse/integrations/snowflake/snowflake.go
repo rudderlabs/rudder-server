@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
 
@@ -623,7 +625,9 @@ func (sf *Snowflake) copyInto(
 		return strings.ToLower(item) == "rows_loaded"
 	})
 	if !found {
-		sf.logger.Warnw("rows_loaded column not found in copy command result", "columns", columns)
+		sf.logger.Warnn("rows_loaded column not found in copy command result",
+			logger.NewStringField("columns", strings.Join(columns, ",")),
+		)
 		return &types.LoadTableStats{}, nil
 	}
 
@@ -661,8 +665,8 @@ func (sf *Snowflake) copyInto(
 }
 
 func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
-	log := sf.logger.With(lf.TableName, identityMergeRulesTable)
-	log.Infow("Fetching load file location")
+	log := sf.logger.Withn(logger.NewStringField(lf.TableName, identityMergeRulesTable))
+	log.Infon("Fetching load file location")
 
 	loadFile, err := sf.Uploader.GetSingleLoadFile(ctx, identityMergeRulesTable)
 	if err != nil {
@@ -671,7 +675,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 
 	db, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
-		log.Errorw("Error establishing connection for copying table", lf.Error, err.Error())
+		log.Errorn("Error establishing connection for copying table", obskit.Error(err))
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
@@ -698,15 +702,15 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
-		log.Infow("Copying identity merge rules for table", lf.Query, sanitisedSQLStmt)
+		log.Infon("Copying identity merge rules for table", logger.NewStringField(lf.Query, sanitisedSQLStmt))
 	}
 
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
-		log.Errorw("Error while copying identity merge rules for table", lf.Error, err.Error())
+		log.Errorn("Error while copying identity merge rules for table", obskit.Error(err))
 		return fmt.Errorf("cannot copy into table %q: %w", identityMergeRulesTable, err)
 	}
 
-	log.Infow("Completed load for table")
+	log.Infon("Completed load for table")
 
 	return nil
 }
