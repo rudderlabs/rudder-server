@@ -34,8 +34,8 @@ var deprecatedColumnsRegex = regexp.MustCompile(
 )
 
 type schemaRepo interface {
-	GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error)
-	Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error)
+	GetForNamespace(ctx context.Context, destID, namespace string, enableTableLevelSchema bool) (model.WHSchema, error)
+	Insert(ctx context.Context, whSchema *model.WHSchema, enableTableLevelSchema bool) error
 }
 
 type stagingFileRepo interface {
@@ -75,6 +75,7 @@ type schema struct {
 	stagingFilesSchemaPaginationSize int
 	stagingFileRepo                  stagingFileRepo
 	enableIDResolution               bool
+	enableTableLevelSchema           bool
 	fetchSchemaRepo                  fetchSchemaRepo
 	now                              func() time.Time
 	cachedSchema                     model.Schema
@@ -101,6 +102,7 @@ func New(
 		stagingFileRepo:                  stagingFileRepo,
 		fetchSchemaRepo:                  fetchSchemaRepo,
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
+		enableTableLevelSchema:           conf.GetBool("Warehouse.enableTableLevelSchema", false),
 		now:                              timeutil.Now,
 	}
 	sh.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
@@ -118,6 +120,7 @@ func New(
 		ctx,
 		sh.warehouse.Destination.ID,
 		sh.warehouse.Namespace,
+		sh.enableTableLevelSchema,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
@@ -230,14 +233,17 @@ func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema) er
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 
 	expiresAt := sh.now().Add(sh.ttlInMinutes)
-	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		SourceID:        sh.warehouse.Source.ID,
-		Namespace:       sh.warehouse.Namespace,
-		DestinationID:   sh.warehouse.Destination.ID,
-		DestinationType: sh.warehouse.Type,
-		Schema:          updatedSchema,
-		ExpiresAt:       expiresAt,
-	})
+	err = sh.schemaRepo.Insert(ctx,
+		&model.WHSchema{
+			SourceID:        sh.warehouse.Source.ID,
+			Namespace:       sh.warehouse.Namespace,
+			DestinationID:   sh.warehouse.Destination.ID,
+			DestinationType: sh.warehouse.Type,
+			Schema:          updatedSchema,
+			ExpiresAt:       expiresAt,
+		},
+		sh.enableTableLevelSchema,
+	)
 	if err != nil {
 		return fmt.Errorf("inserting schema: %w", err)
 	}
