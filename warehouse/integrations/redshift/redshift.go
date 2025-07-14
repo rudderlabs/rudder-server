@@ -486,15 +486,15 @@ func (rs *Redshift) loadTable(
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
 	shouldMerge := rs.ShouldMerge(tableName)
-	log := rs.logger.With(
-		logfield.SourceID, rs.Warehouse.Source.ID,
-		logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, rs.Warehouse.Destination.ID,
-		logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, rs.Warehouse.WorkspaceID,
-		logfield.Namespace, rs.Namespace,
-		logfield.TableName, tableName,
-		logfield.ShouldMerge, shouldMerge,
+	log := rs.logger.Withn(
+		logger.NewStringField(logfield.SourceID, rs.Warehouse.Source.ID),
+		logger.NewStringField(logfield.SourceType, rs.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(logfield.DestinationID, rs.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.DestinationType, rs.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(logfield.WorkspaceID, rs.Warehouse.WorkspaceID),
+		logger.NewStringField(logfield.Namespace, rs.Namespace),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewBoolField(logfield.ShouldMerge, shouldMerge),
 	)
 	log.Infon("started loading")
 
