@@ -35,155 +35,152 @@ import (
 )
 
 func TestTransformerContract(t *testing.T) {
-	transformationV2 := []bool{true, false}
-	for _, v := range transformationV2 {
-		t.Run("User Transformer", func(t *testing.T) {
-			config.Reset()
-			defer config.Reset()
+	t.Run("User Transformer", func(t *testing.T) {
+		config.Reset()
+		defer config.Reset()
 
-			workspaceConfig := backendconfig.ConfigT{
-				WorkspaceID: "workspace-1",
-				Sources: []backendconfig.SourceT{
-					{
-						ID:   "source-1",
-						Name: "source-name-1",
-						SourceDefinition: backendconfig.SourceDefinitionT{
-							ID:       "source-def-1",
-							Name:     "source-def-name-1",
-							Category: "source-def-category-1",
-							Type:     "source-def-type-1",
-						},
-						WriteKey:    "writekey-1",
-						WorkspaceID: "workspace-1",
-						Enabled:     true,
-						Destinations: []backendconfig.DestinationT{
-							{
-								ID:   "destination-1",
-								Name: "destination-name-1",
-								DestinationDefinition: backendconfig.DestinationDefinitionT{
-									ID:          "destination-def-1",
-									Name:        "destination-def-name-1",
-									DisplayName: "destination-def-display-name-1",
-								},
-								Enabled:     true,
-								WorkspaceID: "workspace-1",
-								Transformations: []backendconfig.TransformationT{
-									{
-										ID:        "transformation-1",
-										VersionID: "version-1",
-									},
-								},
-								IsProcessorEnabled: true,
-								RevisionID:         "revision-1",
-							},
-						},
-						DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
-							SourceId:            "source-1",
-							SourceConfigVersion: 1,
-							Deleted:             false,
-							TrackingPlan: backendconfig.TrackingPlanT{
-								Id:      "tracking-plan-1",
-								Version: 1,
-							},
-						},
+		workspaceConfig := backendconfig.ConfigT{
+			WorkspaceID: "workspace-1",
+			Sources: []backendconfig.SourceT{
+				{
+					ID:   "source-1",
+					Name: "source-name-1",
+					SourceDefinition: backendconfig.SourceDefinitionT{
+						ID:       "source-def-1",
+						Name:     "source-def-name-1",
+						Category: "source-def-category-1",
+						Type:     "source-def-type-1",
 					},
-				},
-				Credentials: map[string]backendconfig.Credential{
-					"credential-1": {
-						Key:      "key-1",
-						Value:    "value-1",
-						IsSecret: false,
-					},
-				},
-			}
-
-			bcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/workspaceConfig":
-					response, _ := jsonrs.Marshal(workspaceConfig)
-					_, _ = w.Write(response)
-				default:
-					w.WriteHeader(http.StatusNotFound)
-				}
-			}))
-
-			trServer := transformertest.NewBuilder().
-				WithUserTransformHandler(
-					func(request []types.TransformerEvent) (response []types.TransformerResponse) {
-						for i := range request {
-							req := request[i]
-
-							require.Equal(t, req.Metadata.SourceID, "source-1")
-							require.Equal(t, req.Metadata.SourceName, "source-name-1")
-							require.Equal(t, req.Metadata.SourceType, "source-def-name-1")
-							require.Equal(t, req.Metadata.SourceCategory, "source-def-category-1")
-							require.Equal(t, req.Metadata.SourceDefinitionID, "source-def-1")
-							require.Equal(t, req.Metadata.WorkspaceID, "workspace-1")
-							require.Equal(t, req.Metadata.DestinationID, "destination-1")
-							require.Equal(t, req.Metadata.DestinationType, "destination-def-name-1")
-							require.Equal(t, req.Metadata.DestinationName, "destination-name-1")
-							require.Equal(t, req.Metadata.TransformationID, "transformation-1")
-							require.Equal(t, req.Metadata.TransformationVersionID, "version-1")
-							require.Equal(t, req.Metadata.EventType, "identify")
-							require.Equal(t, req.Credentials, []types.Credential{
+					WriteKey:    "writekey-1",
+					WorkspaceID: "workspace-1",
+					Enabled:     true,
+					Destinations: []backendconfig.DestinationT{
+						{
+							ID:   "destination-1",
+							Name: "destination-name-1",
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								ID:          "destination-def-1",
+								Name:        "destination-def-name-1",
+								DisplayName: "destination-def-display-name-1",
+							},
+							Enabled:     true,
+							WorkspaceID: "workspace-1",
+							Transformations: []backendconfig.TransformationT{
 								{
-									ID:       "credential-1",
-									Key:      "key-1",
-									Value:    "value-1",
-									IsSecret: false,
+									ID:        "transformation-1",
+									VersionID: "version-1",
 								},
-							})
-							response = append(response, types.TransformerResponse{
-								Metadata:   req.Metadata,
-								Output:     req.Message,
-								StatusCode: http.StatusOK,
-							})
-						}
-						return
+							},
+							IsProcessorEnabled: true,
+							RevisionID:         "revision-1",
+						},
 					},
-				).
-				Build()
-			defer trServer.Close()
+					DgSourceTrackingPlanConfig: backendconfig.DgSourceTrackingPlanConfigT{
+						SourceId:            "source-1",
+						SourceConfigVersion: 1,
+						Deleted:             false,
+						TrackingPlan: backendconfig.TrackingPlanT{
+							Id:      "tracking-plan-1",
+							Version: 1,
+						},
+					},
+				},
+			},
+			Credentials: map[string]backendconfig.Credential{
+				"credential-1": {
+					Key:      "key-1",
+					Value:    "value-1",
+					IsSecret: false,
+				},
+			},
+		}
 
-			pool, err := dockertest.NewPool("")
-			require.NoError(t, err)
+		bcServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/workspaceConfig":
+				response, _ := jsonrs.Marshal(workspaceConfig)
+				_, _ = w.Write(response)
+			default:
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
 
-			postgresContainer, err := postgres.Setup(pool, t)
-			require.NoError(t, err)
+		trServer := transformertest.NewBuilder().
+			WithUserTransformHandler(
+				func(request []types.TransformerEvent) (response []types.TransformerResponse) {
+					for i := range request {
+						req := request[i]
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+						require.Equal(t, req.Metadata.SourceID, "source-1")
+						require.Equal(t, req.Metadata.SourceName, "source-name-1")
+						require.Equal(t, req.Metadata.SourceType, "source-def-name-1")
+						require.Equal(t, req.Metadata.SourceCategory, "source-def-category-1")
+						require.Equal(t, req.Metadata.SourceDefinitionID, "source-def-1")
+						require.Equal(t, req.Metadata.WorkspaceID, "workspace-1")
+						require.Equal(t, req.Metadata.DestinationID, "destination-1")
+						require.Equal(t, req.Metadata.DestinationType, "destination-def-name-1")
+						require.Equal(t, req.Metadata.DestinationName, "destination-name-1")
+						require.Equal(t, req.Metadata.TransformationID, "transformation-1")
+						require.Equal(t, req.Metadata.TransformationVersionID, "version-1")
+						require.Equal(t, req.Metadata.EventType, "identify")
+						require.Equal(t, req.Credentials, []types.Credential{
+							{
+								ID:       "credential-1",
+								Key:      "key-1",
+								Value:    "value-1",
+								IsSecret: false,
+							},
+						})
+						response = append(response, types.TransformerResponse{
+							Metadata:   req.Metadata,
+							Output:     req.Message,
+							StatusCode: http.StatusOK,
+						})
+					}
+					return
+				},
+			).
+			Build()
+		defer trServer.Close()
 
-			gwPort, err := kithelper.GetFreePort()
-			require.NoError(t, err)
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
 
-			wg, ctx := errgroup.WithContext(ctx)
-			wg.Go(func() error {
-				err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), v)
-				if err != nil {
-					t.Logf("rudder-server exited with error: %v", err)
-				}
-				return err
-			})
+		postgresContainer, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
 
-			url := fmt.Sprintf("http://localhost:%d", gwPort)
-			health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-			eventsCount := 12
+		gwPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
 
-			err = sendEvents(eventsCount, "identify", "writekey-1", url)
-			require.NoError(t, err)
-
-			requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-			requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
-
-			cancel()
-			require.NoError(t, wg.Wait())
+		wg, ctx := errgroup.WithContext(ctx)
+		wg.Go(func() error {
+			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir())
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
 		})
-		// TODO: Add tests for dest transformer and tracking plan validation
-		t.Run("Dest Transformer", func(t *testing.T) {})
-		t.Run("Tracking Plan Validation", func(t *testing.T) {})
-	}
+
+		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		eventsCount := 12
+
+		err = sendEvents(eventsCount, "identify", "writekey-1", url)
+		require.NoError(t, err)
+
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+
+		cancel()
+		require.NoError(t, wg.Wait())
+	})
+	// TODO: Add tests for dest transformer and tracking plan validation
+	t.Run("Dest Transformer", func(t *testing.T) {})
+	t.Run("Tracking Plan Validation", func(t *testing.T) {})
 }
 
 func runRudderServer(
@@ -193,7 +190,6 @@ func runRudderServer(
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL,
 	tmpDir string,
-	transformationV2 bool,
 ) (err error) {
 	t.Setenv("CONFIG_BACKEND_URL", cbURL)
 	t.Setenv("WORKSPACE_TOKEN", "token")

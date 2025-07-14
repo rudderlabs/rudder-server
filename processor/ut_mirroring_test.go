@@ -190,7 +190,6 @@ func TestUTMirroring(t *testing.T) {
 		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
 		require.NoError(t, err)
 		processor.isolationStrategy = isolationStrategy
-		processor.config.enableConcurrentStore = config.SingleValueLoader(false)
 
 		c := &testContext{}
 		c.Setup(t)
