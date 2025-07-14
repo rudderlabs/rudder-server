@@ -516,7 +516,7 @@ func (*Postgres) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err e
 func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
-			pg.logger.Errorn("Connect error", obskit.Error(err))
+			pg.logger.Errorn("Connect error", logger.NewStringField("error", err.Error()))
 			return client.Client{}, errors.New(err.Error())
 		}
 	}
