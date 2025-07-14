@@ -24,6 +24,7 @@ import (
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/google/uuid"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
