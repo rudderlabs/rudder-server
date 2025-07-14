@@ -1057,14 +1057,6 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		// TODO: update after observing the sizes of the payloads
 	}
 
-	// Saving payload to DB only
-	// 1. if job failed and
-	// 2. if router job undergoes batching or dest transform.
-	if payload != nil && (w.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-		if w.rt.reloadableConfig.savePayloadOnError.Load() {
-			status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
-		}
-	}
 	// the job failed
 	w.logger.Debugn("Job failed to send, analyzing...")
 
