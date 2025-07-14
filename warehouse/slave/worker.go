@@ -13,30 +13,24 @@ import (
 	"sync/atomic"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"golang.org/x/sync/errgroup"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 type uploadProcessingResult struct {
@@ -138,8 +132,8 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 		select {
 		case <-ctx.Done():
 			w.log.Infon("Slave worker is shutting down",
-				logger.NewField("workerIdx", w.workerIdx),
-				logger.NewField("slaveId", slaveID),
+				logger.NewIntField("workerIdx", int64(w.workerIdx)),
+				logger.NewStringField("slaveId", slaveID),
 			)
 			return
 		case claimedJob, ok := <-notificationChan:
@@ -149,10 +143,10 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			w.stats.workerIdleTime.Since(workerIdleTimeStart)
 
 			w.log.Debugn("Successfully claimed job by slave worker",
-				logger.NewField("jobId", claimedJob.Job.ID),
-				logger.NewField("workerIdx", w.workerIdx),
-				logger.NewField("slaveId", slaveID),
-				logger.NewField("jobType", claimedJob.Job.Type),
+				logger.NewIntField("jobId", claimedJob.Job.ID),
+				logger.NewIntField("workerIdx", int64(w.workerIdx)),
+				logger.NewStringField("slaveId", slaveID),
+				logger.NewStringField("jobType", string(claimedJob.Job.Type)),
 			)
 
 			// Set active job ID
@@ -166,9 +160,9 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 			}
 
 			w.log.Infon("Successfully processed job",
-				logger.NewField("jobId", claimedJob.Job.ID),
-				logger.NewField("workerIdx", w.workerIdx),
-				logger.NewField("slaveId", slaveID),
+				logger.NewIntField("jobId", claimedJob.Job.ID),
+				logger.NewIntField("workerIdx", int64(w.workerIdx)),
+				logger.NewStringField("slaveId", slaveID),
 			)
 			// Clear active job ID after processing
 			w.activeJobId.Store(0)
@@ -193,7 +187,10 @@ func (w *worker) runClaimRefresh(ctx context.Context) {
 		case <-ticker.C:
 			if w.activeJobId.Load() != 0 {
 				if err := w.notifier.RefreshClaim(ctx, w.activeJobId.Load()); err != nil {
-					w.log.Errorf("Failed to refresh claim for job %d: %v", w.activeJobId.Load(), err)
+					w.log.Errorn("Failed to refresh claim for job",
+						logger.NewIntField("jobId", w.activeJobId.Load()),
+						obskit.Error(err),
+					)
 				}
 			}
 		}
@@ -227,7 +224,7 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 		}
 		job.BatchID = claimedJob.Job.BatchID
 		w.log.Infon("Starting processing staging-files from claim",
-			logger.NewField("jobId", claimedJob.Job.ID),
+			logger.NewIntField("jobId", claimedJob.Job.ID),
 		)
 		job.Output, err = w.processMultiStagingFiles(ctx, &job)
 		if err != nil {
@@ -243,8 +240,8 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 		}
 		job.BatchID = claimedJob.Job.BatchID
 		w.log.Infon("Starting processing staging-file from claim",
-			logger.NewField("stagingFileID", job.StagingFileID),
-			logger.NewField("jobId", claimedJob.Job.ID),
+			logger.NewIntField("stagingFileID", job.StagingFileID),
+			logger.NewIntField("jobId", claimedJob.Job.ID),
 		)
 		job.Output, err = w.processStagingFile(ctx, &job)
 		if err != nil {
@@ -290,7 +287,7 @@ func (w *worker) processSingleStagingFile(
 	}
 	defer func() {
 		if err := stagingFileReader.Close(); err != nil {
-			jr.logger.Errorf("Error closing staging file reader: %v", err)
+			jr.logger.Errorn("Error closing staging file reader", obskit.Error(err))
 		}
 	}()
 
@@ -314,7 +311,9 @@ func (w *worker) processSingleStagingFile(
 		ok := bufScanner.Scan()
 		if !ok {
 			if scanErr := bufScanner.Err(); scanErr != nil {
-				jr.logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+				jr.logger.Errorn("WH: Error in scanner reading line from staging file",
+					obskit.Error(scanErr),
+				)
 			}
 			break
 		}
@@ -330,7 +329,7 @@ func (w *worker) processSingleStagingFile(
 
 		if err := jsonrs.Unmarshal(lineBytes, &batchRouterEvent); err != nil {
 			jr.logger.Warnn("Failed to unmarshal line from staging file to BatchRouterEvent",
-				logger.NewIntField("stagingFileID", stagingFile.ID),
+				logger.NewIntField("stagingFileID", int64(stagingFile.ID)),
 				obskit.Error(err),
 			)
 			continue
@@ -456,7 +455,7 @@ func (w *worker) processSingleStagingFile(
 
 					err = jr.handleDiscardTypes(tableName, columnName, columnVal, columnData, violatedConstraints, discardWriter, reason)
 					if err != nil {
-						jr.logger.Errorf("Failed to write to discards: %v", err)
+						jr.logger.Errorn("Failed to write to discards", obskit.Error(err))
 					}
 					releaseDiscardWriter()
 
@@ -494,14 +493,14 @@ func (w *worker) processSingleStagingFile(
 	if duplicateCount > 0 {
 		jr.stagingFileDuplicateEvents.Count(duplicateCount)
 		jr.logger.Infon("Found duplicate events in staging file",
-			logger.NewField("stagingFileID", stagingFile.ID),
+			logger.NewIntField("stagingFileID", stagingFile.ID),
 			logger.NewIntField("duplicateEvents", int64(duplicateCount)),
 		)
 	}
 
 	jr.logger.Debugn("Process bytes from downloaded staging file",
-		logger.NewField("bytes", lineBytesCounter),
-		logger.NewField("location", stagingFile.Location),
+		logger.NewIntField("bytes", int64(lineBytesCounter)),
+		logger.NewStringField("location", stagingFile.Location),
 	)
 	jr.processingStagingFileStat.Since(processingStart)
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
@@ -515,9 +514,9 @@ func (w *worker) processStagingFile(ctx context.Context, job *payload) ([]upload
 	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory)
 
 	w.log.Debugn("Starting processing staging file",
-		logger.NewField("stagingFileID", job.StagingFileID),
-		logger.NewField("stagingFileLocation", job.StagingFileLocation),
-		logger.NewField("identifier", jr.identifier),
+		logger.NewIntField("stagingFileID", job.StagingFileID),
+		logger.NewStringField("stagingFileLocation", job.StagingFileLocation),
+		logger.NewStringField("identifier", jr.identifier),
 	)
 
 	defer func() {
@@ -575,7 +574,7 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 	for _, stagingFile := range job.StagingFiles {
 		g.Go(func() error {
 			w.log.Infon("Processing staging-file for upload_v2 job",
-				logger.NewField("stagingFileID", stagingFile.ID),
+				logger.NewIntField("stagingFileID", stagingFile.ID),
 			)
 			if err := w.processSingleStagingFile(gCtx, jr, &job.basePayload, stagingFile, loadFileNamePrefix); err != nil {
 				return fmt.Errorf("processing staging file %d: %w", stagingFile.ID, err)
@@ -595,7 +594,7 @@ func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) (
 
 func (w *worker) processClaimedSourceJob(ctx context.Context, claimedJob *notifier.ClaimJob) {
 	handleErr := func(err error, claimedJob *notifier.ClaimJob) {
-		w.log.Errorf("Error processing claim: %v", err)
+		w.log.Errorn("Error processing claim", obskit.Error(err))
 
 		w.notifier.UpdateClaim(ctx, claimedJob, &notifier.ClaimJobResponse{
 			Err: err,

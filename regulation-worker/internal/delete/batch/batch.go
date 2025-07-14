@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -505,18 +506,22 @@ func getFileSize(fileAbsPath string) int {
 }
 
 func (b *Batch) cleanup(ctx context.Context, prefix string) {
-	pkgLogger.Debugf("cleaning up temp files created during the operation")
+	pkgLogger.Debugn("cleaning up temp files created during the operation")
 
 	err := b.FM.Delete(
 		ctx,
 		[]string{filepath.Join(prefix, StatusTrackerFileName)},
 	)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
+		pkgLogger.Errorn("error while deleting delete status tracker file from destination",
+			obskit.Error(err),
+		)
 	}
 
 	err = os.RemoveAll(b.TmpDirPath)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting temporary directory locally: %v", err)
+		pkgLogger.Errorn("error while deleting temporary directory locally",
+			obskit.Error(err),
+		)
 	}
 }

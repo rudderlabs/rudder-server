@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
 	"github.com/rudderlabs/rudder-server/utils/filemanagerutil"
@@ -25,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -101,13 +103,16 @@ func New(
 }
 
 func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (backupLocation string, err error) {
-	a.log.Infof("[Archiver]: Starting backupRecords for uploadId: %d, sourceId: %s, destinationId: %s, tableName: %s,",
-		args.uploadID, args.sourceID, args.destID, args.tableName,
+	a.log.Infon("[Archiver]: Starting backupRecords",
+		obskit.UploadID(args.uploadID),
+		logger.NewStringField(logfield.SourceID, args.sourceID),
+		logger.NewStringField(logfield.DestinationID, args.destID),
+		logger.NewStringField(logfield.TableName, args.tableName),
 	)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		a.log.Errorf("[Archiver]: Failed to create tmp DIR")
+		a.log.Errorn("[Archiver]: Failed to create tmp DIR", obskit.Error(err))
 		return
 	}
 	backupPathDirName := "/" + misc.RudderArchives + "/"
@@ -165,8 +170,11 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	a.log.Infof(`[Archiver]: Completed backupRecords for uploadId: %d, sourceId: %s, destinationId: %s, tableName: %s,`,
-		args.uploadID, args.sourceID, args.destID, args.tableName,
+	a.log.Infon("[Archiver]: Completed backupRecords",
+		obskit.UploadID(args.uploadID),
+		logger.NewStringField(logfield.SourceID, args.sourceID),
+		logger.NewStringField(logfield.DestinationID, args.destID),
+		logger.NewStringField(logfield.TableName, args.tableName),
 	)
 
 	return
