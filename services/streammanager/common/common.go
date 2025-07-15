@@ -9,9 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/smithy-go"
 )
+
+type Producer interface {
+	io.Closer
+	Produce(jsonData json.RawMessage, _ interface{}) (int, string, string)
+}
 
 type StreamProducer interface {
 	io.Closer
@@ -33,20 +37,6 @@ func mapErrorMessageToStatusCode(errorMessage string, defaultStatusCode int) int
 		return 500
 	}
 	return defaultStatusCode
-}
-
-func ParseAWSError(err error) (statusCode int, respStatus, responseMessage string) {
-	statusCode = 500
-	respStatus = "Failure"
-	responseMessage = err.Error()
-	if reqErr, ok := err.(awserr.RequestFailure); ok {
-		responseMessage = reqErr.Error()
-		respStatus = reqErr.Code()
-		statusCode = reqErr.StatusCode()
-	}
-
-	statusCode = mapErrorMessageToStatusCode(responseMessage, statusCode)
-	return statusCode, respStatus, responseMessage
 }
 
 func getStatusCodeFromFault(fault smithy.ErrorFault) int {

@@ -1,45 +1,47 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge_v1/mock_eventbridge_v1.go -package mock_eventbridge_v1 github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClientV1
+//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbridge.go -package mock_eventbridge github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
 
 package eventbridge
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	common "github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-type EventBridgeProducerV1 struct {
-	client EventBridgeClientV1
+type EventBridgeProducer struct {
+	client EventBridgeClient
 }
 
-type EventBridgeClientV1 interface {
-	PutEvents(input *eventbridge.PutEventsInput) (*eventbridge.PutEventsOutput, error)
+type EventBridgeClient interface {
+	PutEvents(ctx context.Context, input *eventbridge.PutEventsInput, opts ...func(*eventbridge.Options)) (*eventbridge.PutEventsOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, eventbridge.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "eventbridge")
 	if err != nil {
 		return nil, err
 	}
 	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.EVENTBRIDGE.httpMaxIdleConnsPerHost", "Router.EVENTBRIDGE.noOfWorkers", "Router.noOfWorkers")
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &EventBridgeProducerV1{client: eventbridge.New(awsSession)}, nil
+	return &EventBridgeProducer{client: eventbridge.NewFromConfig(awsConfig)}, nil
 }
 
 // Produce creates a producer and send data to EventBridge.
-func (producer *EventBridgeProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
 	// get producer
 	client := producer.client
 	if client == nil {
@@ -47,23 +49,22 @@ func (producer *EventBridgeProducerV1) Produce(jsonData json.RawMessage, _ inter
 		return 400, "Could not create producer for EventBridge", "Could not create producer for EventBridge"
 	}
 	// create eventbridge event
-	putRequestEntry := eventbridge.PutEventsRequestEntry{}
+	putRequestEntry := types.PutEventsRequestEntry{}
 	err := jsonrs.Unmarshal(jsonData, &putRequestEntry)
 	if err != nil {
 		return 400, "[EventBridge] Failed to create eventbridge event", err.Error()
 	}
 
 	// create eventbridge request
-	putRequestEntryList := []*eventbridge.PutEventsRequestEntry{&putRequestEntry}
-	requestInput := eventbridge.PutEventsInput{}
-	requestInput.SetEntries(putRequestEntryList)
-	if err = requestInput.Validate(); err != nil {
-		return 400, "InvalidInput", err.Error()
+	putRequestEntryList := []types.PutEventsRequestEntry{putRequestEntry}
+	requestInput := eventbridge.PutEventsInput{
+		Entries: putRequestEntryList,
 	}
+
 	// send request to event bridge
-	putEventsOutput, err := client.PutEvents(&requestInput)
+	putEventsOutput, err := client.PutEvents(context.Background(), &requestInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
 		pkgLogger.Errorf("[EventBridge] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
@@ -92,7 +93,7 @@ func (producer *EventBridgeProducerV1) Produce(jsonData json.RawMessage, _ inter
 	return 200, "Success", message
 }
 
-func (*EventBridgeProducerV1) Close() error {
+func (*EventBridgeProducer) Close() error {
 	// no-op
 	return nil
 }

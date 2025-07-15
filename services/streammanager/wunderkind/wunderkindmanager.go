@@ -1,56 +1,61 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/wunderkind/mock_wunderkind.go -package mock_wunderkind github.com/rudderlabs/rudder-server/services/streammanager/wunderkind LambdaClient
+
 package wunderkind
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/aws/aws-sdk-go/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/mitchellh/mapstructure"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
-type ProducerV1 struct {
-	conf   *config.Config
-	client lambdaClientV1
+type Producer struct {
+	client LambdaClient
 	logger logger.Logger
+	conf   *config.Config
 }
 
-type lambdaClientV1 interface {
-	Invoke(input *lambda.InvokeInput) (*lambda.InvokeOutput, error)
+type LambdaClient interface {
+	Invoke(ctx context.Context, input *lambda.InvokeInput, opts ...func(*lambda.Options)) (*lambda.InvokeOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV1(conf *config.Config, log logger.Logger) (*ProducerV1, error) {
-	if err := validate(conf); err != nil {
-		return nil, fmt.Errorf("invalid environment config: %w", err)
-	}
+func NewProducer(conf *config.Config, destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
+	region := conf.GetString(WunderkindRegion, "")
+	iamRoleArn := conf.GetString(WunderkindIamRoleArn, "")
+	externalID := conf.GetString(WunderkindExternalId, "")
+
 	sessionConfig := &awsutil.SessionConfig{
-		Region:        conf.GetString(WunderkindRegion, ""),
-		IAMRoleARN:    conf.GetString(WunderkindIamRoleArn, ""),
-		ExternalID:    conf.GetString(WunderkindExternalId, ""),
+		Region:        region,
+		IAMRoleARN:    iamRoleArn,
+		ExternalID:    externalID,
 		RoleBasedAuth: true,
 	}
 	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.WUNDERKIND.httpMaxIdleConnsPerHost", "Router.WUNDERKIND.noOfWorkers", "Router.noOfWorkers")
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
-		return nil, fmt.Errorf("creating session: %w", err)
+		return nil, err
 	}
-
-	return &ProducerV1{
+	return &Producer{
 		conf:   conf,
-		client: lambda.New(awsSession),
-		logger: log.Child("wunderkind"),
+		client: lambda.NewFromConfig(awsConfig),
+		logger: logger.NewLogger().Child("streammanager").Child("wunderkind"),
 	}, nil
 }
 
 // Produce creates a producer and send data to Lambda.
-func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (p *Producer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := p.client
 	var input inputData
 	err := jsonrs.Unmarshal(jsonData, &input)
@@ -62,20 +67,23 @@ func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 		return http.StatusBadRequest, "Failure", "[Wunderkind] error :: Invalid payload"
 	}
 
-	var invokeInput lambda.InvokeInput
-	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
-	invokeInput.SetFunctionName(wunderKindLambda)
-	invokeInput.SetPayload([]byte(input.Payload))
-	invokeInput.SetInvocationType(InvocationType)
-	invokeInput.SetLogType("Tail")
-
-	if err = invokeInput.Validate(); err != nil {
-		return http.StatusBadRequest, "Failure", "[Wunderkind] error :: Invalid invokeInput :: " + err.Error()
+	var config destinationConfig
+	err = mapstructure.Decode(destConfig, &config)
+	if err != nil {
+		returnMessage := "[Wunderkind] error while unmarshalling destConfig :: " + err.Error()
+		return http.StatusBadRequest, "Failure", returnMessage
 	}
 
-	response, err := client.Invoke(&invokeInput)
+	var invokeInput lambda.InvokeInput
+	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
+	invokeInput.FunctionName = &wunderKindLambda
+	invokeInput.Payload = []byte(input.Payload)
+	invokeInput.InvocationType = InvocationType
+	invokeInput.LogType = "Tail"
+
+	response, err := client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
 		p.logger.Warnn("Invocation",
 			logger.NewStringField("statusCode", fmt.Sprint(statusCode)),
 			logger.NewStringField("respStatus", respStatus),
@@ -99,10 +107,10 @@ func (p *ProducerV1) Produce(jsonData json.RawMessage, _ interface{}) (int, stri
 		return statusCode, respStatus, responseMessage
 	}
 
-	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
+	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + config.Lambda
 }
 
-func (*ProducerV1) Close() error {
+func (*Producer) Close() error {
 	// no-op
 	return nil
 }

@@ -25,8 +25,6 @@ import (
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -125,7 +123,6 @@ const (
 var (
 	pkgLogger          logger.Logger
 	enableIDResolution bool
-	awsCredsExpiryInS  config.ValueLoader[int64]
 
 	TimeWindowDestinations    = []string{S3Datalake, GCSDatalake, AzureDatalake}
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
@@ -194,7 +191,6 @@ func Init() {
 
 func loadConfig() {
 	enableIDResolution = config.GetBoolVar(false, "Warehouse.enableIDResolution")
-	awsCredsExpiryInS = config.GetReloadableInt64Var(3600, 1, "Warehouse.awsCredsExpiryInS")
 }
 
 type DeleteByMetaData struct {
@@ -645,38 +641,6 @@ func CreateAWSSessionConfigV2(destination *backendconfig.DestinationT, serviceNa
 }
 
 func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
-	sessionConfig, err := CreateAWSSessionConfig(destination, s3.ServiceID)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	awsSession, err := awsutil.CreateSession(sessionConfig)
-	if err != nil {
-		return "", "", "", err
-	}
-
-	// Role already provides temporary credentials
-	// so we shouldn't call sts.GetSessionToken again
-	if sessionConfig.RoleBasedAuth {
-		creds, err := awsSession.Config.Credentials.Get()
-		if err != nil {
-			return "", "", "", err
-		}
-		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
-	}
-
-	// Create an STS client from just a session.
-	svc := sts.New(awsSession)
-
-	expiryInSec := awsCredsExpiryInS.Load()
-	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &expiryInSec})
-	if err != nil {
-		return "", "", "", err
-	}
-	return *sessionTokenOutput.Credentials.AccessKeyId, *sessionTokenOutput.Credentials.SecretAccessKey, *sessionTokenOutput.Credentials.SessionToken, err
-}
-
-func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, string, string, error) {
 	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3v2.ServiceID)
 	if err != nil {
 		return "", "", "", err

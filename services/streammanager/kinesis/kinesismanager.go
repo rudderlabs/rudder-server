@@ -1,16 +1,17 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/kinesis_v1/mock_kinesis_v1.go -package mock_kinesis_v1 github.com/rudderlabs/rudder-server/services/streammanager/kinesis KinesisClientV1
+//go:generate mockgen -destination=../../../mocks/services/streammanager/kinesis/mock_kinesis.go -package mock_kinesis github.com/rudderlabs/rudder-server/services/streammanager/kinesis KinesisClient
 
 package kinesis
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/kinesis"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -18,32 +19,32 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 )
 
-type KinesisProducerV1 struct {
-	client KinesisClientV1
+type KinesisProducer struct {
+	client KinesisClient
 }
 
-type KinesisClientV1 interface {
-	PutRecord(input *kinesis.PutRecordInput) (*kinesis.PutRecordOutput, error)
+type KinesisClient interface {
+	PutRecord(ctx context.Context, input *kinesis.PutRecordInput, opts ...func(*kinesis.Options)) (*kinesis.PutRecordOutput, error)
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducerV1(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, kinesis.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "kinesis")
 	if err != nil {
 		return nil, err
 	}
 
 	sessionConfig.MaxIdleConnsPerHost = config.GetIntVar(64, 1, "Router.KINESIS.httpMaxIdleConnsPerHost", "Router.KINESIS.noOfWorkers", "Router.noOfWorkers")
 
-	awsSession, err := awsutil.CreateSession(sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return nil, err
 	}
-	return &KinesisProducerV1{client: kinesis.New(awsSession)}, err
+	return &KinesisProducer{client: kinesis.NewFromConfig(awsConfig)}, err
 }
 
 // Produce creates a producer and send data to Kinesis.
-func (producer *KinesisProducerV1) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Could not create producer for Kinesis", "Could not create producer for Kinesis"
@@ -87,12 +88,9 @@ func (producer *KinesisProducerV1) Produce(jsonData json.RawMessage, destConfig 
 		StreamName:   streamName,
 		PartitionKey: aws.String(partitionKey),
 	}
-	if err = putInput.Validate(); err != nil {
-		return 400, "InvalidInput", err.Error()
-	}
-	putOutput, err := client.PutRecord(&putInput)
+	putOutput, err := client.PutRecord(context.Background(), &putInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
 		pkgLogger.Errorf("[Kinesis] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
@@ -100,7 +98,7 @@ func (producer *KinesisProducerV1) Produce(jsonData json.RawMessage, destConfig 
 	return 200, "Success", message
 }
 
-func (*KinesisProducerV1) Close() error {
+func (*KinesisProducer) Close() error {
 	// no-op
 	return nil
 }
