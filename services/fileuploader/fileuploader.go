@@ -243,16 +243,9 @@ func (*defaultProvider) GetStoragePreferences(context.Context, string) (backendc
 }
 
 func getDefaultBucket(ctx context.Context, provider string) backendconfig.StorageBucket {
-	providerConfig := filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(ctx, provider, config.Default))
-
-	// GetProviderConfigFromEnv sets region to AWS_REGION by default,
-	// but we remove it here to allow customers to use their own bucket
-	// in a different region than the default AWS_REGION
-	delete(providerConfig, "region")
-
 	return backendconfig.StorageBucket{
 		Type:   provider,
-		Config: providerConfig,
+		Config: filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(ctx, provider, config.Default)),
 	}
 }
 
@@ -266,6 +259,12 @@ func overrideWithSettings(defaultConfig map[string]interface{}, settings backend
 	}
 	if settings.Type == "S3" && config["iamRoleArn"] != nil {
 		config["externalID"] = workspaceID
+	}
+	// By default, region is set to AWS_REGION by GetProviderConfigFromEnv,
+	// but we remove it here to allow customers to use their own bucket
+	// in a different region than the default AWS_REGION
+	if settings.Type == "S3" && config["region"] != nil {
+		delete(config, "region")
 	}
 	return backendconfig.StorageBucket{
 		Type:   settings.Type,
