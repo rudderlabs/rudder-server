@@ -614,7 +614,7 @@ func (proc *Handle) setupReloadableVars() {
 func (proc *Handle) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	var err error
-	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
+	proc.logger.Infon("Starting processor in isolation mode", logger.NewStringField("isolationMode", string(proc.config.isolationMode)))
 	if proc.isolationStrategy, err = isolation.GetStrategy(proc.config.isolationMode); err != nil {
 		return fmt.Errorf("resolving isolation strategy for mode %q: %w", proc.config.isolationMode, err)
 	}
@@ -653,29 +653,29 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 	// pinger loop
 	g.Go(crash.Wrapper(func() error {
-		proc.logger.Info("Starting pinger loop")
+		proc.logger.Infon("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
-		proc.logger.Info("Backend config received")
+		proc.logger.Infon("Backend config received")
 
 		// waiting for init group
-		proc.logger.Info("Waiting for async init group")
+		proc.logger.Infon("Waiting for async init group")
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-proc.config.asyncInit.Wait():
 			// proceed
 		}
-		proc.logger.Info("Async init group done")
+		proc.logger.Infon("Async init group done")
 
 		// waiting for transformer features
-		proc.logger.Info("Waiting for transformer features")
+		proc.logger.Infon("Waiting for transformer features")
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-proc.transformerFeaturesService.Wait():
 			// proceed
 		}
-		proc.logger.Info("Transformer features received")
+		proc.logger.Infon("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
@@ -820,7 +820,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 						var err error
 						genericConsentManagementMap[SourceID(source.ID)][DestinationID(destination.ID)], err = getGenericConsentManagementData(destination)
 						if err != nil {
-							proc.logger.Error(err)
+							proc.logger.Errorn("Error in pinger loop", obskit.Error(err))
 						}
 					}
 				}
@@ -877,7 +877,7 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 	source, ok := proc.config.sourceIdSourceMap[sourceId]
 	if !ok {
 		err = errors.New("source not found for sourceId")
-		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
+		proc.logger.Errorn("Processor : source not found for sourceId", obskit.SourceID(sourceId))
 	}
 	return &source, err
 }
@@ -1523,7 +1523,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	var eventName string
 	source, err := proc.getSourceBySourceID(sourceId)
 	if err != nil {
-		proc.logger.Errorf("[Processor] Failed to get source by source id: %s", sourceId)
+		proc.logger.Errorn("[Processor] Failed to get source by source id", obskit.SourceID(sourceId))
 		return
 	}
 	if val, ok := event["type"]; ok {
@@ -1716,7 +1716,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	// Event count for performance stat monitoring
 	totalEvents := 0
 
-	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
+	proc.logger.Debugn("[Processor] Total jobs picked up", logger.NewIntField("jobCount", int64(len(jobList))))
 
 	marshalStart := time.Now()
 	dedupKeys := make(map[string]struct{})
@@ -1807,7 +1807,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			if span != nil {
 				span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
 			}
-			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
+			proc.logger.Warnn("json parsing of event payload", logger.NewIntField("jobID", batchEvent.JobID), obskit.Error(err))
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 			continue
 		}
@@ -1829,7 +1829,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 		for _, e := range proc.enrichers {
 			if err := e.Enrich(source, &gatewayBatchEvent, &eventParams); err != nil {
-				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
+				proc.logger.Errorn("unable to enrich the gateway batch event", obskit.Error(err))
 			}
 		}
 
@@ -2166,7 +2166,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		if err != nil {
 			return fmt.Errorf("store into event schema table failed with error: %v", err)
 		}
-		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(preTrans.eventSchemaJobs))
+		proc.logger.Debugn("[Processor] Total jobs written to event_schema", logger.NewIntField("jobCount", int64(len(preTrans.eventSchemaJobs))))
 		return nil
 	})
 
@@ -2189,7 +2189,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		if err != nil {
 			return fmt.Errorf("store into archival table failed with error: %v", err)
 		}
-		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(preTrans.archivalJobs))
+		proc.logger.Debugn("[Processor] Total jobs written to archiver", logger.NewIntField("jobCount", int64(len(preTrans.archivalJobs))))
 		return nil
 	})
 
@@ -2658,17 +2658,17 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 }
 
 func (proc *Handle) sendRetryStoreStats(attempt int) {
-	proc.logger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
+	proc.logger.Warnn("Timeout during store jobs in processor module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *Handle) sendRetryUpdateStats(attempt int) {
-	proc.logger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
+	proc.logger.Warnn("Timeout during update job status in processor module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *Handle) sendQueryRetryStats(attempt int) {
-	proc.logger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
+	proc.logger.Warnn("Timeout during query jobs in processor module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
@@ -2788,7 +2788,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			if err != nil {
 				return err
 			}
-			proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
+			proc.logger.Debugn("[Processor] Total jobs written to batch router", logger.NewIntField("jobCount", int64(len(batchDestJobs))))
 			proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
 			proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
 			proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
@@ -2830,7 +2830,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			if err != nil {
 				return err
 			}
-			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+			proc.logger.Debugn("[Processor] Total jobs written to router", logger.NewIntField("jobCount", int64(len(destJobs))))
 			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
 			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
 			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
@@ -2853,7 +2853,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
 				return err
 			}
-			proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+			proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
 			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 			return nil
 		})
@@ -2910,7 +2910,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		}
 	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
-	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
+	proc.logger.Debugn("Processor GW DB Write Complete", logger.NewIntField("totalProcessed", int64(len(statusList))))
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
 }
 
@@ -3087,7 +3087,7 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationMirroringStat = proc.newUserTransformationStat(sourceID, workspaceID, destination, true)
 			userTransformationMirroringStat.numEvents.Count(noOfEvents)
 		}
-		proc.logger.Debug("Custom Transform input size", noOfEvents)
+		proc.logger.Debugn("Custom Transform input size", logger.NewIntField("eventCount", int64(noOfEvents)))
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
@@ -3278,7 +3278,7 @@ func (proc *Handle) userTransformAndFilter(
 	// Filtering events based on the supported message types - START
 	s := time.Now()
 	eventFilterInCount := len(eventsToTransform)
-	proc.logger.Debug("Supported messages filtering input size", eventFilterInCount)
+	proc.logger.Debugn("Supported messages filtering input size", logger.NewIntField("eventCount", int64(eventFilterInCount)))
 	response = ConvertToFilteredTransformerResponse(
 		eventsToTransform,
 		transformAt != "none",

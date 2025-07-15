@@ -16,6 +16,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
+
 	appConfig "github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -29,9 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-	"github.com/samber/lo"
-	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 )
 
 type basePayload struct {
