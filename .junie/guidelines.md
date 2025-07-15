@@ -48,9 +48,23 @@ import (
 )
 ```
 
-Non-sugared methods SHOULD BE used along with common fields from rudder-observability-kit when available.
+Non-sugared methods MUST BE used along with common fields from rudder-observability-kit when available.
 
-For example if a `sourceId` is available you can use `obskit.SourceID("some-source-id")`.
+For example if a `sourceId` is available you must use `obskit.SourceID("some-source-id")`.
+These fields are available in the rudder-observability-kit:
+
+```go
+var (
+	DestinationID    = func(v string) log.Field { return log.NewStringField("destinationId", v) }
+	DestinationType  = func(v string) log.Field { return log.NewStringField("destinationType", v) }
+	SourceID         = func(v string) log.Field { return log.NewStringField("sourceId", v) }
+	SourceType       = func(v string) log.Field { return log.NewStringField("sourceType", v) }
+	WorkspaceID      = func(v string) log.Field { return log.NewStringField("workspaceId", v) }
+	TransformationID = func(v string) log.Field { return log.NewStringField("transformationId", v) }
+	Namespace        = func(v string) log.Field { return log.NewStringField("namespace", v) }
+	Error            = func(v error) log.Field { return log.NewErrorField(v) }
+)
+```
 
 Non-sugared log methods has `n` suffix.
 
@@ -69,7 +83,7 @@ log.Infow("starting", port, port)
 log.Infof("starting port %d", port)
 ```
 
-DO NOT (string formatting in message):
+DO NOT do string formatting in message:
 
 ```go
 log.Infon("starting on port %d", logger.NewIntField("port", int64(port)))
@@ -81,10 +95,10 @@ DO (descriptive message with structured fields):
 log.Infon("starting", logger.NewIntField("port", int64(port)))
 ```
 
-Avoid `logger.NewField` and use the strong-typed counterparts instead like `logger.NewStringField`,
+DO NOT USE `logger.NewField` and use the strong-typed counterparts instead like `logger.NewStringField`,
 `logger.NewBooldField` etc...
 
-Avoid using reflection like `fmt.Sprintf` to convert values into string, for example DO NOT:
+DO NOT USE reflection like `fmt.Sprintf` to convert values into string, for example DO NOT:
 
 ```go
 m := make(map[string]string)
@@ -97,28 +111,22 @@ log.Infon("starting", logger.NewIntField("map", fmt.Sprintf("%v", m)))
 - For custom types: implement a `String() string` method that manually builds the output
 - For primitive types: use appropriate `logger.NewXXXField` constructors directly
 - For complex data: break down into individual fields or implement custom string methods
-- Never use logger.NewField since it takes `any`
+- Never use `logger.NewField` since it takes `any`
 
 #### Error Logging
 
-Always use `obskit.Error` for error logging:
+`obskit.Error` MUST BE USED when logging errors:
 
 ```go
 log.Errorn("operation failed", obskit.Error(err))
 ```
 
-#### Field Selection Guidelines
-
 **For code in the /warehouse folder:**
-- Use fields from `logfield` package when available (e.g., `logfield.SourceID`, `logfield.TableName`)
+- Use fields from the `github.com/rudderlabs/rudder-server/warehouse/logfield` package when available
+  (e.g. `logfield.SourceID`, `logfield.TableName`) instead of the rudder-observability-kit fields unless it is an error
+  then you must use `obskit.Error(err)`
 - Use `logfield.Query` if in the code we're logging queries e.g. `sqlStatement`
 - For errors, always use `obskit.Error(err)`
-- Import: `"github.com/rudderlabs/rudder-server/warehouse/logfield"`
-
-**For code outside the warehouse folder:**
-- Use fields from `obskit` when available (e.g., `obskit.SourceID("some-id")`)
-- For errors, always use `obskit.Error(err)`
-- For fields not available in `obskit`, use `logger.NewStringField`, `logger.NewIntField`, etc.
 
 Examples:
 

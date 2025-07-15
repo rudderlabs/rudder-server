@@ -400,7 +400,9 @@ func (bm *BatchManager) Delete(
 				// Get filehandler from a factory on every iteration, to not share the data.
 				filehandler := LocalFileHandlerFactory(destName, files[_i].Key)
 				if filehandler == nil {
-					pkgLogger.Warnf("unable to locate filehandler for file: %s under destination: %s", files[_i].Key, destName)
+					pkgLogger.Warnn("unable to locate filehandler for file under destination",
+						logger.NewStringField("fileName", files[_i].Key),
+						logger.NewStringField("destinationName", destName))
 					return nil
 				}
 
@@ -438,11 +440,11 @@ func (bm *BatchManager) Delete(
 		}
 		err = g.Wait()
 		if err != nil {
-			pkgLogger.Errorf("user identity deletion job failed with error: %v", err)
+			pkgLogger.Errorn("user identity deletion job failed with error", obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
-		pkgLogger.Infof("successfully completed loop of ")
+		pkgLogger.Infon("successfully completed loop of ")
 	}
 
 	return model.JobStatus{Status: model.JobStatusComplete}
@@ -476,7 +478,9 @@ func handleIdentityRemoval(
 	attributes []model.User,
 	sourceFile, targetFile string,
 ) error {
-	pkgLogger.Debugf("Handling identity removal for source: %s, destination: %s", sourceFile, targetFile)
+	pkgLogger.Debugn("Handling identity removal for source and destination",
+		logger.NewStringField("sourceFile", sourceFile),
+		logger.NewStringField("targetFile", targetFile))
 
 	if err := handler.Read(ctx, sourceFile); err != nil {
 		return fmt.Errorf("parsing contents of local file: %s, err: %w", sourceFile, err)
