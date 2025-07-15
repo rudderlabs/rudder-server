@@ -1,0 +1,87 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# 🚨 CRITICAL PLAN-ACT WORKFLOW RULE 🚨
+
+## ⚠️ MANDATORY REQUIREMENT FOR ALL DEVELOPMENT TASKS ⚠️
+
+**This is a CRITICAL rule that MUST be followed without exception when working on any development task in the warehouse directory.**
+
+## 🔄 TWO MODES OF OPERATION: PLAN → ACT
+
+### 📋 MODE 1: PLAN (Planning Phase)
+**In PLAN mode, you focus EXCLUSIVELY on planning and analysis. NO CODE IMPLEMENTATION is allowed.**
+
+### ⚡ MODE 2: ACT (Implementation Phase)  
+**In ACT mode, you execute the approved plan. NO NEW PLANNING or scope changes without returning to PLAN mode.**
+
+**🚫 CRITICAL RULE: You CANNOT be in both modes simultaneously. You must explicitly transition from PLAN → ACT.**
+
+---
+
+### RULE: COMPREHENSIVE PLANNING BEFORE IMPLEMENTATION
+
+### 📋 PLAN MODE REQUIREMENTS
+
+**At any step in PLAN mode, always ask the user for clarifications—even for minor uncertainties or assumptions—whenever needed. This applies to requirement gathering, planning, challenge identification, and documentation/approval.**
+
+Complete ALL of the following before transitioning to ACT mode:
+
+#### 0. 📝 REQUIREMENT GATHERING & CLARIFICATION
+- Begin by gathering requirements and understanding the user's goals, constraints, and expectations for the task.
+
+#### 1. 📋 COMPREHENSIVE PLAN
+- Break down task into actionable steps with dependencies and complexity estimates
+- Identify all affected components and define clear success criteria
+
+#### 2. 🔍 CHALLENGE IDENTIFICATION  
+- Technical risks (algorithms, performance, integration, edge cases)
+- Testing requirements (mocks, data, coverage strategy)
+- Compatibility and resource constraints (migrations, external dependencies)
+
+#### 3. 📝 DOCUMENTATION & APPROVAL
+- Document step-by-step approach with risk mitigation and rollback plan
+- **GET EXPLICIT APPROVAL** - ACT mode forbidden until plan is approved
+- **DECLARE TRANSITION**: "Moving from PLAN mode to ACT mode"
+
+### ⚡ ACT MODE REQUIREMENTS
+
+In ACT mode, you MUST:
+
+#### 1. 🎯 EXECUTE THE APPROVED PLAN
+- Follow documented steps exactly, implement only what was planned
+- **DECLARE MODE**: "Currently in ACT mode"
+
+#### 2. 🚫 NO SCOPE CHANGES  
+- Any unexpected issues or new requirements require **RETURN TO PLAN MODE**
+- Track progress and report deviations immediately
+
+### 🚫 VIOLATIONS - STRICTLY PROHIBITED
+
+- **PLAN Mode**: Implementing code, skipping planning steps, proceeding without approval
+- **ACT Mode**: Changing scope without returning to PLAN, deviating from approved plan  
+- **Mode Mixing**: Operating in both modes, transitions without declarations
+
+### ✅ COMPLIANCE CHECKLIST
+
+#### PLAN Mode:
+- [ ] Declared "Currently in PLAN mode"
+- [ ] **Gathered requirements and clarified all uncertainties with the user (and sought clarifications at any step as needed)**
+- [ ] Completed comprehensive plan with steps, challenges, and risks
+- [ ] Received explicit approval  
+- [ ] **Declared transition**: "Moving from PLAN mode to ACT mode"
+
+#### ACT Mode:
+- [ ] Declared "Currently in ACT mode" 
+- [ ] Following approved plan exactly
+- [ ] **If scope changes needed**: Return to PLAN mode first
+
+### 🎯 WHY THIS RULE EXISTS
+
+**Prevents costly mistakes** through upfront planning, **ensures focused execution** by mode separation, **reduces context switching**, and **maintains scope discipline**.
+
+---
+
+**Remember: The PLAN → ACT workflow creates mental clarity and prevents the costly mistake of "planning while coding." This two-mode approach is non-negotiable for maintaining the quality and reliability of the warehouse codebase.** 

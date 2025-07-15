@@ -223,7 +223,7 @@ func (customManager *CustomManagerT) close(destID string) {
 func (customManager *CustomManagerT) refreshClient(destID string) error {
 	startTime := time.Now()
 	defer func() {
-		pkgLogger.Debugn("[CDM]", logger.NewStringField("destType", customManager.destType),
+		pkgLogger.Infon("[CDM]", logger.NewStringField("destType", customManager.destType),
 			logger.NewStringField("destID", destID),
 			logger.NewDurationField("refreshTime", time.Since(startTime)),
 		)
