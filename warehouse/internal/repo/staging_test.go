@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
@@ -290,7 +293,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			t.Parallel()
 
 			stagingIDs := repo.StagingFileIDs(stagingFiles)
-			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs, false)
 			require.NoError(t, err)
 			require.Len(t, expectedSchemas, len(stagingFiles))
 
@@ -306,7 +309,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		t.Run("missing id", func(t *testing.T) {
 			t.Parallel()
 
-			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1, 2, 3, 101, 102, 103})
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1, 2, 3, 101, 102, 103}, false)
 			require.EqualError(t, err, "cannot get schemas by ids: not all schemas were found")
 			require.Nil(t, expectedSchemas)
 		})
@@ -318,7 +321,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			cancel()
 
 			stagingIDs := repo.StagingFileIDs(stagingFiles)
-			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs)
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, stagingIDs, false)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Nil(t, expectedSchemas)
 		})
@@ -342,9 +345,127 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 			r := repo.NewStagingFiles(db)
 
-			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
+			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1}, false)
 			require.ErrorContains(t, err, "cannot get schemas by ids: unmarshal staging schema:")
 			require.Nil(t, expectedSchemas)
+		})
+
+		t.Run("with schema snapshot and patch", func(t *testing.T) {
+			testCases := []struct {
+				name           string
+				originalSchema model.Schema
+				updatedSchema  model.Schema
+				patchExpected  bool
+			}{
+				{
+					name: "no changes (original == updated)",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					patchExpected: false,
+				},
+				{
+					name: "updated has extra table",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table":  model.TableSchema{"column": "type"},
+						"table2": model.TableSchema{"column2": "type2"},
+					},
+					patchExpected: true,
+				},
+				{
+					name: "updated has extra column",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type", "column2": "type2"},
+					},
+					patchExpected: true,
+				},
+				{
+					name: "updated has less table",
+					originalSchema: model.Schema{
+						"table":  model.TableSchema{"column": "type"},
+						"table2": model.TableSchema{"column2": "type2"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					patchExpected: true,
+				},
+				{
+					name: "updated has less column",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type", "column2": "type2"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					patchExpected: true,
+				},
+				{
+					name: "updated has changed column type",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type2"},
+					},
+					patchExpected: true,
+				},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					originalSchemaBytes, err := jsonrs.Marshal(tc.originalSchema)
+					require.NoError(t, err)
+					updatedSchemaBytes, err := jsonrs.Marshal(tc.updatedSchema)
+					require.NoError(t, err)
+
+					snapshotRepo := repo.NewStagingFileSchemaSnapshots(db)
+					snapshotID, err := snapshotRepo.Insert(ctx, "source_id", "destination_id", "workspace_id", originalSchemaBytes)
+					require.NoError(t, err)
+					require.NotEqual(t, uuid.Nil, snapshotID)
+
+					patchSchemaBytes, err := warehouseutils.GenerateJSONPatch(originalSchemaBytes, updatedSchemaBytes)
+					require.NoError(t, err)
+
+					file := model.StagingFile{
+						WorkspaceID:           "workspace_id",
+						Location:              "s3://bucket/path/to/file-patch",
+						SourceID:              "source_id",
+						DestinationID:         "destination_id",
+						Status:                warehouseutils.StagingFileWaitingState,
+						Error:                 nil,
+						FirstEventAt:          now.Add(time.Second),
+						LastEventAt:           now,
+						UseRudderStorage:      true,
+						DestinationRevisionID: "destination_revision_id",
+						TotalEvents:           100,
+						SourceTaskRunID:       "source_task_run_id",
+						SourceJobID:           "source_job_id",
+						SourceJobRunID:        "source_job_run_id",
+						TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
+						ServerInstanceID:      "test-instance-id-patch",
+					}.
+						WithSchema(updatedSchemaBytes).
+						WithSnapshotSchemaAndPatch(&model.StagingFileSchemaSnapshot{ID: snapshotID, Schema: originalSchemaBytes}, patchSchemaBytes)
+
+					id, err := r.Insert(ctx, &file)
+					require.NoError(t, err)
+
+					retrievedSchemas, err := r.GetSchemasByIDs(ctx, []int64{id}, true)
+					require.NoError(t, err)
+					require.Len(t, retrievedSchemas, 1)
+					require.Equal(t, tc.updatedSchema, retrievedSchemas[0])
+				})
+			}
 		})
 	})
 

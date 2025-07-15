@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -77,7 +78,7 @@ type mockStagingFileRepo struct {
 	err     error
 }
 
-func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64) ([]model.Schema, error) {
+func (m *mockStagingFileRepo) GetSchemasByIDs(context.Context, []int64, bool) ([]model.Schema, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

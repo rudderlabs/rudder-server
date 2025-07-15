@@ -39,7 +39,7 @@ type schemaRepo interface {
 }
 
 type stagingFileRepo interface {
-	GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error)
+	GetSchemasByIDs(ctx context.Context, ids []int64, enableStagingFileSchemaSnapshot bool) ([]model.Schema, error)
 }
 
 type fetchSchemaRepo interface {
@@ -79,6 +79,7 @@ type schema struct {
 	now                              func() time.Time
 	cachedSchema                     model.Schema
 	cachedSchemaMu                   sync.RWMutex
+	enableStagingFileSchemaSnapshot  bool
 }
 
 func New(
@@ -102,6 +103,7 @@ func New(
 		fetchSchemaRepo:                  fetchSchemaRepo,
 		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
 		now:                              timeutil.Now,
+		enableStagingFileSchemaSnapshot:  conf.GetBool("Warehouse.enableStagingFileSchemaSnapshot", false),
 	}
 	sh.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{
 		"module":        "warehouse",
@@ -195,7 +197,7 @@ func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFile
 	consolidatedSchema := model.Schema{}
 	batches := lo.Chunk(stagingFiles, sh.stagingFilesSchemaPaginationSize)
 	for _, batch := range batches {
-		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(ctx, repo.StagingFileIDs(batch))
+		schemas, err := sh.stagingFileRepo.GetSchemasByIDs(ctx, repo.StagingFileIDs(batch), sh.enableStagingFileSchemaSnapshot)
 		if err != nil {
 			return nil, fmt.Errorf("getting staging files schema: %v", err)
 		}
