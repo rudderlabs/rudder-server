@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -257,14 +258,14 @@ func (d *Deltalake) connect() (*sqlmiddleware.DB, error) {
 func (d *Deltalake) dropDanglingStagingTables(ctx context.Context) error {
 	tableNames, err := d.fetchTables(ctx, rudderStagingTableRegex)
 	if err != nil {
-		d.logger.Warnw("fetching tables for dropping dangling staging tables",
-			logfield.SourceID, d.Warehouse.Source.ID,
-			logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-			logfield.DestinationID, d.Warehouse.Destination.ID,
-			logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-			logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-			logfield.Namespace, d.Namespace,
-			logfield.Error, err.Error(),
+		d.logger.Warnn("fetching tables for dropping dangling staging tables",
+			logger.NewStringField(logfield.SourceID, d.Warehouse.Source.ID),
+			logger.NewStringField(logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name),
+			logger.NewStringField(logfield.DestinationID, d.Warehouse.Destination.ID),
+			logger.NewStringField(logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name),
+			logger.NewStringField(logfield.WorkspaceID, d.Warehouse.WorkspaceID),
+			logger.NewStringField(logfield.Namespace, d.Namespace),
+			obskit.Error(err),
 		)
 		return fmt.Errorf("fetching tables for dropping dangling staging tables: %w", err)
 	}

@@ -117,7 +117,7 @@ log.Errorn("operation failed", obskit.Error(err))
 
 **For code outside the warehouse folder:**
 - Use fields from `obskit` when available (e.g., `obskit.SourceID("some-id")`)
-- For errors, use `obskit.Error(err)`
+- For errors, always use `obskit.Error(err)`
 - For fields not available in `obskit`, use `logger.NewStringField`, `logger.NewIntField`, etc.
 
 Examples:
