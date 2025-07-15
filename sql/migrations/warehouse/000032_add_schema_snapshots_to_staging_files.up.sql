@@ -11,17 +11,17 @@ CREATE TABLE IF NOT EXISTS wh_staging_file_schema_snapshots (
 
 -- Add columns to wh_staging_files to link each file to a schema snapshot and store a JSON Patch diff.
 ALTER TABLE wh_staging_files
-    ADD COLUMN IF NOT EXISTS schema_snapshot_id UUID REFERENCES wh_staging_file_schema_snapshots(id) ON DELETE SET NULL, -- Link to the schema snapshot
-    ADD COLUMN IF NOT EXISTS schema_patch TEXT; -- JSON Patch (RFC 6902) diff from the snapshot to the actual schema
+    ADD COLUMN IF NOT EXISTS schema_snapshot_id UUID REFERENCES wh_staging_file_schema_snapshots(id) ON DELETE SET NULL DEFAULT NULL,   -- Link to the schema snapshot
+    ADD COLUMN IF NOT EXISTS schema_snapshot_patch TEXT DEFAULT NULL;    -- JSON Patch (RFC 6902) diff from the snapshot to the actual schema
 
--- For fast lookup of staging files by schema_snapshot_id.
+-- For fast lookup of staging files by schema_snapshot_id for archiving purposes.
 CREATE INDEX IF NOT EXISTS wh_staging_files_schema_snapshot_id_index
     ON wh_staging_files(schema_snapshot_id);
 
--- For efficient retrieval of latest snapshot by (source_id, destination_id, workspace_id, created_at DESC).
-CREATE INDEX IF NOT EXISTS wh_staging_file_schema_snapshots_source_id_destination_id_workspace_id_created_at_index
-    ON wh_staging_file_schema_snapshots(source_id, destination_id, workspace_id, created_at DESC);
+-- For efficient retrieval of latest snapshot by (source_id, destination_id, created_at DESC).
+CREATE INDEX IF NOT EXISTS wh_staging_file_schema_snapshots_source_id_destination_id_created_at_index
+    ON wh_staging_file_schema_snapshots(source_id, destination_id, created_at DESC);
 
--- For filtering snapshots by workspace_id.
+-- For filtering snapshots by workspace_id for migration purposes.
 CREATE INDEX IF NOT EXISTS wh_staging_file_schema_snapshots_workspace_id_index
     ON wh_staging_file_schema_snapshots(workspace_id);
