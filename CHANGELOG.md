@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.54.4](https://github.com/rudderlabs/rudder-server/compare/v1.54.3...v1.54.4) (2025-07-15)
+
+
+### Bug Fixes
+
+* remove region from provider config for backups ([#6109](https://github.com/rudderlabs/rudder-server/issues/6109)) ([958b586](https://github.com/rudderlabs/rudder-server/commit/958b5868dbe4dcc2d6c4a2dd2dd404698078abb2))
+
+
+### Miscellaneous
+
+* update golang.org/x/sync to v0.16.0 ([#6111](https://github.com/rudderlabs/rudder-server/issues/6111)) ([d869729](https://github.com/rudderlabs/rudder-server/commit/d86972905799ed426da8bd9d1c271ff745ba4e89))
+
 ## [1.54.3](https://github.com/rudderlabs/rudder-server/compare/v1.54.2...v1.54.3) (2025-07-14)
 
 
