@@ -9,17 +9,10 @@ import (
 )
 
 func GetProviderConfigForBackupsFromEnv(ctx context.Context, config *config.Config) map[string]interface{} {
-	providerConfig := filemanager.GetProviderConfigFromEnv(ProviderConfigOpts(ctx,
+	return filemanager.GetProviderConfigFromEnv(ProviderConfigOpts(ctx,
 		config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		config,
 	))
-
-	// GetProviderConfigFromEnv sets region to AWS_REGION by default,
-	// but we remove it here to allow customers to use their own bucket
-	// in a different region than the default AWS_REGION
-	delete(providerConfig, "region")
-
-	return providerConfig
 }
 
 func ProviderConfigOpts(ctx context.Context, provider string, config *config.Config) filemanager.ProviderConfigOpts {

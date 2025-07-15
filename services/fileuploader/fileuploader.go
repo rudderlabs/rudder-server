@@ -243,9 +243,16 @@ func (*defaultProvider) GetStoragePreferences(context.Context, string) (backendc
 }
 
 func getDefaultBucket(ctx context.Context, provider string) backendconfig.StorageBucket {
+	providerConfig := filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(ctx, provider, config.Default))
+
+	// GetProviderConfigFromEnv sets region to AWS_REGION by default,
+	// but we remove it here to allow customers to use their own bucket
+	// in a different region than the default AWS_REGION
+	delete(providerConfig, "region")
+
 	return backendconfig.StorageBucket{
 		Type:   provider,
-		Config: filemanager.GetProviderConfigFromEnv(filemanagerutil.ProviderConfigOpts(ctx, provider, config.Default)),
+		Config: providerConfig,
 	}
 }
 
