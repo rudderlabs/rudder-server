@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/lib/pq"
 	"github.com/segmentio/ksuid"
 
@@ -419,6 +421,7 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 		case <-sh.cleanupTrigger():
 			err := sh.doCleanupTables(ctx)
 			if err != nil {
+				sh.log.Errorn("Failed to cleanup rsources tables", obskit.Error(err))
 				return err
 			}
 		}
