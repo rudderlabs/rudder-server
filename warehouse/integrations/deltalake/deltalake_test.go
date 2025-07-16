@@ -51,6 +51,10 @@ type testCredentials struct {
 	AccountName   string `json:"accountName"`
 	AccountKey    string `json:"accountKey"`
 	ContainerName string `json:"containerName"`
+	AccessKeyID   string `json:"accessKeyID"`
+	AccessKey     string `json:"accessKey"`
+	Region        string `json:"region"`
+	Bucket        string `json:"bucket"`
 }
 
 const testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
@@ -66,6 +70,28 @@ func deltaLakeTestCredentials() (*testCredentials, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal deltaLake test credentials: %w", err)
 	}
+
+	s3Creds, exists := os.LookupEnv("TEST_S3_DATALAKE_CREDENTIALS")
+	if !exists {
+		return nil, errors.New("s3 test credentials not found")
+	}
+
+	type S3Credentials struct {
+		AccessKeyID string
+		AccessKey   string
+		Region      string
+		Bucket      string
+	}
+	var s3Cred S3Credentials
+	err = jsonrs.Unmarshal([]byte(s3Creds), &s3Cred)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal s3 test credentials: %w", err)
+	}
+	credentials.AccessKeyID = s3Cred.AccessKeyID
+	credentials.AccessKey = s3Cred.AccessKey
+	credentials.Region = s3Cred.Region
+	credentials.Bucket = s3Cred.Bucket
+
 	return &credentials, nil
 }
 
@@ -258,142 +284,154 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				var (
-					sourceID      = whutils.RandHex()
-					destinationID = whutils.RandHex()
-					writeKey      = whutils.RandHex()
-					namespace     = whth.RandSchema(destType)
-				)
+		objectStorages := []string{"S3"}
+		for _, objectStorage := range objectStorages {
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					var (
+						sourceID      = whutils.RandHex()
+						destinationID = whutils.RandHex()
+						writeKey      = whutils.RandHex()
+						namespace     = whth.RandSchema(destType)
+					)
 
-				destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
-					WithID(destinationID).
-					WithRevisionID(destinationID).
-					WithConfigOption("host", credentials.Host).
-					WithConfigOption("port", credentials.Port).
-					WithConfigOption("path", credentials.Path).
-					WithConfigOption("token", credentials.Token).
-					WithConfigOption("namespace", namespace).
-					WithConfigOption("bucketProvider", "AZURE_BLOB").
-					WithConfigOption("containerName", credentials.ContainerName).
-					WithConfigOption("useSTSTokens", false).
-					WithConfigOption("enableSSE", false).
-					WithConfigOption("accountName", credentials.AccountName).
-					WithConfigOption("accountKey", credentials.AccountKey).
-					WithConfigOption("syncFrequency", "30").
-					WithConfigOption("allowUsersContextTraits", true).
-					WithConfigOption("underscoreDivideNumbers", true)
-				for k, v := range tc.configOverride {
-					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
-				}
-				destination := destinationBuilder.Build()
+					destinationBuilder := backendconfigtest.NewDestinationBuilder(destType).
+						WithID(destinationID).
+						WithRevisionID(destinationID).
+						WithConfigOption("host", credentials.Host).
+						WithConfigOption("port", credentials.Port).
+						WithConfigOption("path", credentials.Path).
+						WithConfigOption("token", credentials.Token).
+						WithConfigOption("namespace", namespace).
+						WithConfigOption("bucketProvider", objectStorage).
+						WithConfigOption("containerName", credentials.ContainerName).
+						WithConfigOption("accessKeyID", credentials.AccessKeyID).
+						WithConfigOption("accessKey", credentials.AccessKey).
+						WithConfigOption("region", credentials.Region).
+						WithConfigOption("bucketName", credentials.Bucket).
+						WithConfigOption("useSTSTokens", false).
+						WithConfigOption("enableSSE", false).
+						WithConfigOption("accountName", credentials.AccountName).
+						WithConfigOption("accountKey", credentials.AccountKey).
+						WithConfigOption("syncFrequency", "30").
+						WithConfigOption("useSTSTokens", true).
+						WithConfigOption("allowUsersContextTraits", true).
+						WithConfigOption("underscoreDivideNumbers", true)
+					for k, v := range tc.configOverride {
+						destinationBuilder = destinationBuilder.WithConfigOption(k, v)
+					}
+					destination := destinationBuilder.Build()
 
-				workspaceConfig := backendconfigtest.NewConfigBuilder().
-					WithSource(
-						backendconfigtest.NewSourceBuilder().
-							WithID(sourceID).
-							WithWriteKey(writeKey).
-							WithWorkspaceID(workspaceID).
-							WithConnection(destination).
-							Build(),
-					).
-					WithWorkspaceID(workspaceID).
-					Build()
+					workspaceConfig := backendconfigtest.NewConfigBuilder().
+						WithSource(
+							backendconfigtest.NewSourceBuilder().
+								WithID(sourceID).
+								WithWriteKey(writeKey).
+								WithWorkspaceID(workspaceID).
+								WithConnection(destination).
+								Build(),
+						).
+						WithWorkspaceID(workspaceID).
+						Build()
 
-				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
-				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
-				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
+					t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
+					t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
+					t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
 
-				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
+					whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
-				port, err := strconv.Atoi(credentials.Port)
-				require.NoError(t, err)
+					port, err := strconv.Atoi(credentials.Port)
+					require.NoError(t, err)
 
-				connector, err := dbsql.NewConnector(
-					dbsql.WithServerHostname(credentials.Host),
-					dbsql.WithPort(port),
-					dbsql.WithHTTPPath(credentials.Path),
-					dbsql.WithAccessToken(credentials.Token),
-					dbsql.WithSessionParams(map[string]string{
-						"ansi_mode": "false",
-					}),
-				)
-				require.NoError(t, err)
+					connector, err := dbsql.NewConnector(
+						dbsql.WithServerHostname(credentials.Host),
+						dbsql.WithPort(port),
+						dbsql.WithHTTPPath(credentials.Path),
+						dbsql.WithAccessToken(credentials.Token),
+						dbsql.WithSessionParams(map[string]string{
+							"ansi_mode": "false",
+						}),
+					)
+					require.NoError(t, err)
 
-				db := sql.OpenDB(connector)
-				require.NoError(t, db.Ping())
-				t.Cleanup(func() { _ = db.Close() })
-				t.Cleanup(func() {
-					dropSchema(t, db, namespace)
+					db := sql.OpenDB(connector)
+					require.NoError(t, db.Ping())
+					t.Cleanup(func() { _ = db.Close() })
+					t.Cleanup(func() {
+						dropSchema(t, db, namespace)
+					})
+
+					sqlClient := &warehouseclient.Client{
+						SQL:  db,
+						Type: warehouseclient.SQLClient,
+					}
+
+					conf := map[string]interface{}{
+						"bucketProvider": objectStorage,
+						"containerName":  credentials.ContainerName,
+						"prefix":         "",
+						"useSTSTokens":   true,
+						"enableSSE":      false,
+						"accountName":    credentials.AccountName,
+						"accountKey":     credentials.AccountKey,
+						"accessKeyID":    credentials.AccessKeyID,
+						"accessKey":      credentials.AccessKey,
+						"region":         credentials.Region,
+						"bucketName":     credentials.Bucket,
+					}
+					tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+
+					t.Log("verifying test case 1")
+					ts1 := whth.TestConfig{
+						WriteKey:        writeKey,
+						Schema:          namespace,
+						Tables:          tables,
+						SourceID:        sourceID,
+						DestinationID:   destinationID,
+						Config:          conf,
+						WorkspaceID:     workspaceID,
+						DestinationType: destType,
+						JobsDB:          jobsDB,
+						HTTPPort:        httpPort,
+						Client:          sqlClient,
+						EventsFilePath:  tc.eventFilePath1,
+						UserID:          whth.GetUserId(destType),
+						TransformerURL:  transformerURL,
+						Destination:     destination,
+					}
+					ts1.VerifyEvents(t)
+
+					t.Log("verifying test case 2")
+					ts2 := whth.TestConfig{
+						WriteKey:           writeKey,
+						Schema:             namespace,
+						Tables:             tables,
+						SourceID:           sourceID,
+						DestinationID:      destinationID,
+						WarehouseEventsMap: tc.warehouseEventsMap2,
+						Config:             conf,
+						WorkspaceID:        workspaceID,
+						DestinationType:    destType,
+						JobsDB:             jobsDB,
+						HTTPPort:           httpPort,
+						Client:             sqlClient,
+						EventsFilePath:     tc.eventFilePath2,
+						UserID:             whth.GetUserId(destType),
+						TransformerURL:     transformerURL,
+						Destination:        destination,
+					}
+					if tc.useSameUserID {
+						ts2.UserID = ts1.UserID
+					}
+					ts2.VerifyEvents(t)
+
+					t.Log("verifying schema")
+					verifySchema(t, db, namespace)
+
+					t.Log("verifying records")
+					tc.verifyRecords(t, db, sourceID, destinationID, namespace)
 				})
-
-				sqlClient := &warehouseclient.Client{
-					SQL:  db,
-					Type: warehouseclient.SQLClient,
-				}
-
-				conf := map[string]interface{}{
-					"bucketProvider": "AZURE_BLOB",
-					"containerName":  credentials.ContainerName,
-					"prefix":         "",
-					"useSTSTokens":   false,
-					"enableSSE":      false,
-					"accountName":    credentials.AccountName,
-					"accountKey":     credentials.AccountKey,
-				}
-				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-
-				t.Log("verifying test case 1")
-				ts1 := whth.TestConfig{
-					WriteKey:        writeKey,
-					Schema:          namespace,
-					Tables:          tables,
-					SourceID:        sourceID,
-					DestinationID:   destinationID,
-					Config:          conf,
-					WorkspaceID:     workspaceID,
-					DestinationType: destType,
-					JobsDB:          jobsDB,
-					HTTPPort:        httpPort,
-					Client:          sqlClient,
-					EventsFilePath:  tc.eventFilePath1,
-					UserID:          whth.GetUserId(destType),
-					TransformerURL:  transformerURL,
-					Destination:     destination,
-				}
-				ts1.VerifyEvents(t)
-
-				t.Log("verifying test case 2")
-				ts2 := whth.TestConfig{
-					WriteKey:           writeKey,
-					Schema:             namespace,
-					Tables:             tables,
-					SourceID:           sourceID,
-					DestinationID:      destinationID,
-					WarehouseEventsMap: tc.warehouseEventsMap2,
-					Config:             conf,
-					WorkspaceID:        workspaceID,
-					DestinationType:    destType,
-					JobsDB:             jobsDB,
-					HTTPPort:           httpPort,
-					Client:             sqlClient,
-					EventsFilePath:     tc.eventFilePath2,
-					UserID:             whth.GetUserId(destType),
-					TransformerURL:     transformerURL,
-					Destination:        destination,
-				}
-				if tc.useSameUserID {
-					ts2.UserID = ts1.UserID
-				}
-				ts2.VerifyEvents(t)
-
-				t.Log("verifying schema")
-				verifySchema(t, db, namespace)
-
-				t.Log("verifying records")
-				tc.verifyRecords(t, db, sourceID, destinationID, namespace)
-			})
+			}
 		}
 	})
 
