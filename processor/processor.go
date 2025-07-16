@@ -181,6 +181,7 @@ type Handle struct {
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
+		enableOptimizedConnectionDetailsKey       config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -785,6 +786,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
+	proc.config.enableOptimizedConnectionDetailsKey = proc.conf.GetReloadableBoolVar(false, "Processor.enableOptimizedConnectionDetailsKey")
 }
 
 type connection struct {
@@ -1247,7 +1249,19 @@ func (proc *Handle) updateMetricMaps(
 		event.Metadata.TransformationID + ":" +
 		event.Metadata.TransformationVersionID + ":" +
 		event.Metadata.TrackingPlanID + ":" +
-		strconv.Itoa(event.Metadata.TrackingPlanVersion)
+		strconv.Itoa(event.Metadata.TrackingPlanVersion) + ":" +
+		status + ":" + strconv.Itoa(event.StatusCode) + ":" +
+		eventName + ":" + eventType
+
+	if proc.config.enableOptimizedConnectionDetailsKey.Load() {
+		key = event.Metadata.SourceID + ":" +
+			event.Metadata.DestinationID + ":" +
+			event.Metadata.SourceJobRunID + ":" +
+			event.Metadata.TransformationID + ":" +
+			event.Metadata.TransformationVersionID + ":" +
+			event.Metadata.TrackingPlanID + ":" +
+			strconv.Itoa(event.Metadata.TrackingPlanVersion)
+	}
 
 	if _, ok := connectionDetailsMap[key]; !ok {
 		connectionDetailsMap[key] = &reportingtypes.ConnectionDetails{
