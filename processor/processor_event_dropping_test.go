@@ -319,6 +319,7 @@ func (s *eventDropScenario) runRudderServer(ctx context.Context, port int, postg
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
 	config.Set("archival.Enabled", false)
 	config.Set("Reporting.syncer.enabled", false)
+	config.Set("Reporting.enabled", false)
 	config.Set("BatchRouter.pingFrequency", "1s")
 	config.Set("BatchRouter.uploadFreq", "1s")
 	config.Set("Gateway.webPort", strconv.Itoa(port))
