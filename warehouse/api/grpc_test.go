@@ -36,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -232,13 +233,13 @@ func TestGRPC(t *testing.T) {
 		t.Run("Get syncs", func(t *testing.T) {
 			tables := []string{"table_name", "table_name_2"}
 			now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoTableUploads := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
+			repoTableUploads := repo.NewTableUploads(db, c, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -534,10 +535,10 @@ func TestGRPC(t *testing.T) {
 
 		t.Run("Trigger", func(t *testing.T) {
 			now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -709,10 +710,10 @@ func TestGRPC(t *testing.T) {
 
 		t.Run("Retry", func(t *testing.T) {
 			now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -1237,13 +1238,13 @@ func TestGRPC(t *testing.T) {
 				generateTableUploads bool,
 				timings model.Timings,
 			) {
-				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 					return now
 				}))
-				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 					return now
 				}))
-				repoTableUpload := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
+				repoTableUpload := repo.NewTableUploads(db, c, stats.NOP, repo.WithNow(func() time.Time {
 					return now
 				}))
 
@@ -1683,10 +1684,10 @@ func TestGRPC(t *testing.T) {
 
 		t.Run("GetFirstAbortedUploadsInContinuousAborts", func(t *testing.T) {
 			now := time.Now().UTC()
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return time.Now().UTC()
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return time.Now().UTC()
 			}))
 
@@ -1773,10 +1774,10 @@ func TestGRPC(t *testing.T) {
 			}
 
 			for i := range uploads {
-				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 					return now
 				}))
-				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 					return now.Add(time.Duration(i) * time.Hour)
 				}))
 

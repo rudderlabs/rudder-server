@@ -170,10 +170,10 @@ func TestRouter_CronTrack(t *testing.T) {
 				now := time.Date(2023, 1, 1, 6, 19, 0, 0, time.UTC)
 				nowSQL := fmt.Sprintf("'%s'::timestamp", now.Format(time.DateTime))
 
-				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 					return now.Add(-time.Hour*1 - time.Minute*30)
 				}))
-				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+				repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 					return now.Add(-time.Hour * 1)
 				}))
 
@@ -254,7 +254,7 @@ func TestRouter_CronTrack(t *testing.T) {
 		now := time.Date(2023, 1, 1, 6, 19, 0, 0, time.UTC)
 		nowSQL := fmt.Sprintf("'%s'::timestamp", now.Format(time.DateTime))
 
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now.Add(-time.Hour*1 - time.Minute*30)
 		}))
 

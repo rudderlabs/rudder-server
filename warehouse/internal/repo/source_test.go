@@ -10,6 +10,8 @@ import (
 
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/stretchr/testify/require"
@@ -28,7 +30,7 @@ func TestSource_Insert(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -75,7 +77,7 @@ func TestSource_Reset(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -142,7 +144,7 @@ func TestSource_GetToProcess(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -221,7 +223,7 @@ func TestSource_GetByJobRunTaskRun(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -283,7 +285,7 @@ func TestSource_OnUpdateSuccess(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -348,7 +350,7 @@ func TestSource_OnUpdateFailure(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -436,7 +438,7 @@ func TestSource_MarkExecuting(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoSource := repo.NewSource(db, repo.WithNow(func() time.Time {
+	repoSource := repo.NewSource(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 

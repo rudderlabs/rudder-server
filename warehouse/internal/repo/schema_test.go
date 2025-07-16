@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/stretchr/testify/require"
@@ -19,7 +21,7 @@ func TestWHSchemasRepo(t *testing.T) {
 		ctx = context.Background()
 		now = time.Now().Truncate(time.Second).UTC()
 		db  = setupDB(t)
-		r   = repo.NewWHSchemas(db, repo.WithNow(func() time.Time {
+		r   = repo.NewWHSchemas(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 	)

@@ -819,7 +819,7 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 					TableName: "test_table2",
 				},
 			}
-			err := repo.NewLoadFiles(db, conf).Insert(ctx, loadFiles)
+			err := repo.NewLoadFiles(db, conf, stats.NOP).Insert(ctx, loadFiles)
 			require.NoError(t, err)
 			result, err := job.GetLoadFilesMetadata(ctx, warehouseutils.GetLoadFilesOptions{
 				Table: tc.tableName,
@@ -833,7 +833,7 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 
 func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
 	t.Helper()
-	stagingFilesRepo := repo.NewStagingFiles(db)
+	stagingFilesRepo := repo.NewStagingFiles(db, stats.NOP)
 	stagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{},
 	}
@@ -841,7 +841,7 @@ func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int6
 	stagingFile.ID, err = stagingFilesRepo.Insert(ctx, &stagingFile)
 	require.NoError(t, err)
 	stagingFiles := []*model.StagingFile{&stagingFile.StagingFile}
-	uploadRepo := repo.NewUploads(db)
+	uploadRepo := repo.NewUploads(db, stats.NOP)
 	upload := model.Upload{}
 	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, upload, stagingFiles)
 	require.NoError(t, err)

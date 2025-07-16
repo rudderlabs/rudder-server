@@ -12,6 +12,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
@@ -383,10 +385,10 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			ctx := context.Background()
 
 			now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 

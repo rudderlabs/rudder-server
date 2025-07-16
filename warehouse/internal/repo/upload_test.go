@@ -12,10 +12,13 @@ import (
 	"github.com/samber/lo"
 	"github.com/samber/lo/mutable"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -29,10 +32,10 @@ func TestUploads_Count(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -140,10 +143,10 @@ func TestUploads_Get(t *testing.T) {
 	db := setupDB(t)
 
 	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -279,10 +282,10 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 	prepareUpload := func(db *sqlmiddleware.DB, sourceID string, status model.UploadStatus, priority int, now, nextRetryTime time.Time) model.Upload {
 		stagingFileID := int64(0)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -357,7 +360,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 		var (
 			db         = setupDB(t)
-			repoUpload = repo.NewUploads(db)
+			repoUpload = repo.NewUploads(db, stats.NOP)
 			priority   = 100
 
 			uploads []model.Upload
@@ -385,7 +388,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 		var (
 			db         = setupDB(t)
-			repoUpload = repo.NewUploads(db)
+			repoUpload = repo.NewUploads(db, stats.NOP)
 			priority   = 100
 
 			uploads []model.Upload
@@ -421,7 +424,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 		var (
 			db         = setupDB(t)
-			repoUpload = repo.NewUploads(db)
+			repoUpload = repo.NewUploads(db, stats.NOP)
 			priority   = 100
 
 			uploads []model.Upload
@@ -456,7 +459,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 		var (
 			db                = setupDB(t)
-			repoUpload        = repo.NewUploads(db)
+			repoUpload        = repo.NewUploads(db, stats.NOP)
 			lowPriority       = 100
 			highPriority      = 0
 			differentSourceID = "source_id_2"
@@ -503,7 +506,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 		var (
 			db                = setupDB(t)
-			repoUpload        = repo.NewUploads(db)
+			repoUpload        = repo.NewUploads(db, stats.NOP)
 			lowPriority       = 100
 			highPriority      = 0
 			differentSourceID = "source_id_2"
@@ -550,7 +553,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 
 		var (
 			db                = setupDB(t)
-			repoUpload        = repo.NewUploads(db)
+			repoUpload        = repo.NewUploads(db, stats.NOP)
 			priority          = 100
 			differentSourceID = "source_id_2"
 
@@ -628,10 +631,10 @@ func TestUploads_Processing(t *testing.T) {
 	db := setupDB(t)
 
 	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -812,10 +815,10 @@ func TestUploads_Delete(t *testing.T) {
 	db := setupDB(t)
 
 	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -874,13 +877,13 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		db  = setupDB(t)
 		now = time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
 
-		repoUpload = repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload = repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoTableUpload = repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+		repoTableUpload = repo.NewTableUploads(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging = repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging = repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 	)
@@ -1088,12 +1091,12 @@ func TestUploads_ResetInProgress(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
 	t.Run("success", func(t *testing.T) {
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -1148,19 +1151,19 @@ func TestUploads_LastCreatedAt(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
 	t.Run("many uploads", func(t *testing.T) {
 		for i := 0; i < 5; i++ {
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 			stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 			require.NoError(t, err)
 
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now.Add(time.Second * time.Duration(i+1))
 			}))
 
@@ -1211,10 +1214,10 @@ func TestUploads_TriggerUpload(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1273,10 +1276,10 @@ func TestUploads_Retry(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1418,10 +1421,10 @@ func TestUploads_SyncsInfo(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 1, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1741,10 +1744,10 @@ func TestUploads_GetLatestUploadInfo(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1819,13 +1822,13 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		timings model.Timings,
 		now time.Time,
 	) {
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoTableUpload := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+		repoTableUpload := repo.NewTableUploads(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -1921,7 +1924,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -1992,7 +1995,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2105,7 +2108,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2190,7 +2193,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2299,7 +2302,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2392,7 +2395,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2437,7 +2440,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		cancel()
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2511,7 +2514,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		}
 
 		db := setupDB(t)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -2580,10 +2583,10 @@ func TestUploads_Update(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -2740,7 +2743,7 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 
 	db, ctx := setupDB(t), context.Background()
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -2762,7 +2765,7 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 		abortedUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
 		inProgressUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
 
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return createdAt
 		}))
 
@@ -2864,7 +2867,7 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 			syncLatencies, err := repoUpload.GetSyncLatencies(ctx, model.SyncLatencyRequest{
@@ -2889,10 +2892,10 @@ func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
 	db, ctx := setupDB(t), context.Background()
 
 	now := time.Now().UTC()
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return time.Now().UTC()
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return time.Now().UTC()
 	}))
 

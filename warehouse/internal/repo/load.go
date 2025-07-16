@@ -6,11 +6,14 @@ import (
 	jsonstd "encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -39,10 +42,11 @@ type LoadFiles struct {
 	queryWithUploadID config.ValueLoader[bool]
 }
 
-func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *LoadFiles {
+func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, statsFactory stats.Stats, opts ...Opt) *LoadFiles {
 	lfRepo := &repo{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: statsFactory,
 	}
 	r := &LoadFiles{
 		repo:              lfRepo,
@@ -54,8 +58,9 @@ func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *LoadF
 	return r
 }
 
-// DeleteByStagingFiles deletes load files associated with stagingFileIDs.
+// Delete deletes load files associated with stagingFileIDs.
 func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error {
+	defer lf.DeferActionTimer("delete", stats.Tags{})()
 	sqlStatement := `
 		DELETE FROM
 		  ` + loadTableName + `
@@ -73,6 +78,10 @@ func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs 
 
 // Insert loadFiles into the database.
 func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
+	defer lf.DeferActionTimer("insert", stats.Tags{
+		"sourceId":      loadFiles[0].SourceID,
+		"destinationId": loadFiles[0].DestinationID,
+	})()
 	return lf.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(
 			ctx,
@@ -111,7 +120,13 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 }
 
 func (lf *LoadFiles) Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
-	if lf.queryWithUploadID.Load() {
+	withUploadID := lf.queryWithUploadID.Load()
+
+	defer lf.DeferActionTimer("get", stats.Tags{
+		"withUploadID": strconv.FormatBool(withUploadID),
+	})()
+
+	if withUploadID {
 		return lf.getByUploadId(ctx, uploadID)
 	}
 	return lf.getByStagingFiles(ctx, stagingFileIDs)
@@ -246,6 +261,8 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 
 // GetByID returns the load file matching the id.
 func (lf *LoadFiles) GetByID(ctx context.Context, id int64) (*model.LoadFile, error) {
+	defer lf.DeferActionTimer("get_by_id", stats.Tags{})()
+
 	row := lf.db.QueryRowContext(ctx, `
 		SELECT
 		`+loadTableColumns+`
@@ -275,11 +292,16 @@ func (lf *LoadFiles) TotalExportedEvents(
 	stagingFileIDs []int64,
 	skipTables []string,
 ) (int64, error) {
+	withUploadID := lf.queryWithUploadID.Load()
+	defer lf.DeferActionTimer("total_exported_events", stats.Tags{
+		"withUploadID": strconv.FormatBool(withUploadID),
+	})()
+
 	if skipTables == nil {
 		skipTables = []string{}
 	}
 
-	if lf.queryWithUploadID.Load() {
+	if withUploadID {
 		return lf.totalExportedEventsByUploadID(ctx, uploadID, skipTables)
 	}
 	return lf.totalExportedEventsByStagingFileIDs(ctx, stagingFileIDs, skipTables)
@@ -361,6 +383,11 @@ func (lf *LoadFiles) DistinctTableName(
 	startID int64,
 	endID int64,
 ) ([]string, error) {
+	defer lf.DeferActionTimer("distinct_table_name", stats.Tags{
+		"sourceId":      sourceID,
+		"destinationId": destinationID,
+	})()
+
 	rows, err := lf.db.QueryContext(ctx, `
 		SELECT
 		  distinct table_name

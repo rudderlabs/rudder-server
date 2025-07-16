@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 
@@ -107,10 +108,10 @@ func NewGRPCServer(
 		logger:             logger.Child("grpc"),
 		tenantManager:      tenantManager,
 		bcManager:          bcManager,
-		stagingRepo:        repo.NewStagingFiles(db),
-		uploadRepo:         repo.NewUploads(db),
-		tableUploadsRepo:   repo.NewTableUploads(db, conf),
-		schemaRepo:         repo.NewWHSchemas(db),
+		stagingRepo:        repo.NewStagingFiles(db, statsFactory),
+		uploadRepo:         repo.NewUploads(db, statsFactory),
+		tableUploadsRepo:   repo.NewTableUploads(db, conf, statsFactory),
+		schemaRepo:         repo.NewWHSchemas(db, statsFactory),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
 		now:                timeutil.Now,
