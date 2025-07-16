@@ -83,7 +83,7 @@ func (p *Producer) Produce(jsonData json.RawMessage, destConfig interface{}) (in
 
 	response, err := client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		p.logger.Warnn("Invocation",
 			logger.NewStringField("statusCode", fmt.Sprint(statusCode)),
 			logger.NewStringField("respStatus", respStatus),
@@ -107,7 +107,7 @@ func (p *Producer) Produce(jsonData json.RawMessage, destConfig interface{}) (in
 		return statusCode, respStatus, responseMessage
 	}
 
-	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + config.Lambda
+	return http.StatusOK, "Success", "Event delivered to Wunderkind :: " + wunderKindLambda
 }
 
 func (*Producer) Close() error {

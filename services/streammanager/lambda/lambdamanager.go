@@ -76,7 +76,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig int
 
 	_, err = client.Invoke(context.Background(), &invokeInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[Lambda] Invocation error :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}

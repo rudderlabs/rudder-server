@@ -49,7 +49,7 @@ func getStatusCodeFromFault(fault smithy.ErrorFault) int {
 	return 500
 }
 
-func ParseAWSErrorV2(err error) (statusCode int, respStatus, responseMessage string) {
+func ParseAWSError(err error) (statusCode int, respStatus, responseMessage string) {
 	statusCode = 500
 	respStatus = "Failure"
 	responseMessage = err.Error()

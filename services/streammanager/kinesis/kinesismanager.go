@@ -90,7 +90,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	}
 	putOutput, err := client.PutRecord(context.Background(), &putInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
+		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
 		pkgLogger.Errorf("[Kinesis] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
 		return statusCode, respStatus, responseMessage
 	}
