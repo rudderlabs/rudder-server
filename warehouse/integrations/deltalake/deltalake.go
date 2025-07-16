@@ -612,17 +612,17 @@ func (d *Deltalake) loadTable(
 	tableSchemaAfterUpload model.TableSchema,
 	skipTempTableDelete bool,
 ) (*types.LoadTableStats, string, error) {
-	log := d.logger.With(
-		logfield.SourceID, d.Warehouse.Source.ID,
-		logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, d.Warehouse.Destination.ID,
-		logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, d.Warehouse.WorkspaceID,
-		logfield.Namespace, d.Namespace,
-		logfield.TableName, tableName,
-		logfield.ShouldMerge, d.ShouldMerge(),
+	log := d.logger.Withn(
+		logger.NewStringField(logfield.SourceID, d.Warehouse.Source.ID),
+		logger.NewStringField(logfield.SourceType, d.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(logfield.DestinationID, d.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.DestinationType, d.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(logfield.WorkspaceID, d.Warehouse.WorkspaceID),
+		logger.NewStringField(logfield.Namespace, d.Namespace),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewBoolField(logfield.ShouldMerge, d.ShouldMerge()),
 	)
-	log.Infow("started loading")
+	log.Infon("started loading")
 
 	stagingTableName := warehouseutils.StagingTableName(
 		provider,
@@ -630,7 +630,7 @@ func (d *Deltalake) loadTable(
 		tableNameLimit,
 	)
 
-	log.Debugw("creating staging table")
+	log.Debugn("creating staging table")
 	if err := d.CreateTable(ctx, stagingTableName, tableSchemaAfterUpload); err != nil {
 		return nil, "", fmt.Errorf("creating staging table: %w", err)
 	}
@@ -639,14 +639,12 @@ func (d *Deltalake) loadTable(
 		defer func() {
 			err := d.dropStagingTables(ctx, []string{stagingTableName})
 			if err != nil {
-				log.Errorw("dropping staging table",
-					logfield.Error, err.Error(),
-				)
+				log.Errorn("dropping staging table", obskit.Error(err))
 			}
 		}()
 	}
 
-	log.Infow("copying data into staging table")
+	log.Infon("copying data into staging table")
 	err := d.copyIntoLoadTable(
 		ctx, tableName, stagingTableName,
 		tableSchemaInUpload, tableSchemaAfterUpload,
@@ -657,13 +655,13 @@ func (d *Deltalake) loadTable(
 
 	var loadTableStat *types.LoadTableStats
 	if !d.ShouldMerge() {
-		log.Infow("inserting data from staging table to main table")
+		log.Infon("inserting data from staging table to main table")
 		loadTableStat, err = d.insertIntoLoadTable(
 			ctx, tableName, stagingTableName,
 			tableSchemaAfterUpload,
 		)
 	} else {
-		log.Infow("merging data from staging table to main table")
+		log.Infon("merging data from staging table to main table")
 		loadTableStat, err = d.mergeIntoLoadTable(
 			ctx, tableName, stagingTableName,
 			tableSchemaInUpload,
@@ -673,7 +671,7 @@ func (d *Deltalake) loadTable(
 		return nil, "", fmt.Errorf("moving data from main table to staging table: %w", err)
 	}
 
-	log.Infow("completed loading")
+	log.Infon("completed loading")
 
 	return loadTableStat, stagingTableName, nil
 }
