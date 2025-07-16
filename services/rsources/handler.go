@@ -429,6 +429,7 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 }
 
 func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
+	sh.log.Infon("Cleaning up rsources tables")
 	tx, err := sh.localDB.Begin()
 	if err != nil {
 		return err
@@ -458,7 +459,11 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if commitErr := tx.Commit(); commitErr != nil {
+		return commitErr
+	}
+	sh.log.Infon("Finished cleaning up rsources tables")
+	return nil
 }
 
 func (sh *sourcesHandler) readDB() *sql.DB {
