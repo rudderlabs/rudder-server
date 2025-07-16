@@ -185,17 +185,17 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		conf:                 f.conf,
 		logger:               log,
 		statsFactory:         f.statsFactory,
-		tableUploadsRepo:     repo.NewTableUploads(f.db, f.conf),
-		uploadsRepo:          repo.NewUploads(f.db),
-		stagingFileRepo:      repo.NewStagingFiles(f.db, f.conf),
-		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf),
-		whSchemaRepo:         repo.NewWHSchemas(f.db, f.conf),
+		tableUploadsRepo:     repo.NewTableUploads(f.db, f.conf, repo.WithStats(f.statsFactory)),
+		uploadsRepo:          repo.NewUploads(f.db, repo.WithStats(f.statsFactory)),
+		stagingFileRepo:      repo.NewStagingFiles(f.db, f.conf, repo.WithStats(f.statsFactory)),
+		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf, repo.WithStats(f.statsFactory)),
+		whSchemaRepo:         repo.NewWHSchemas(f.db, f.conf, repo.WithStats(f.statsFactory)),
 		upload:               dto.Upload,
 		warehouse:            dto.Warehouse,
 		stagingFiles:         dto.StagingFiles,
 		stagingFileIDs:       repo.StagingFileIDs(dto.StagingFiles),
 
-		pendingTableUploadsRepo: repo.NewUploads(f.db),
+		pendingTableUploadsRepo: repo.NewUploads(f.db, repo.WithStats(f.statsFactory)),
 		pendingTableUploads:     []model.PendingTableUpload{},
 
 		alertSender: alerta.NewClient(
@@ -339,8 +339,8 @@ func (job *UploadJob) run() (err error) {
 		job.logger.Child("warehouse"),
 		job.statsFactory,
 		whManager,
-		repo.NewWHSchemas(job.db, job.conf),
-		repo.NewStagingFiles(job.db, job.conf),
+		repo.NewWHSchemas(job.db, job.conf, repo.WithStats(job.statsFactory)),
+		repo.NewStagingFiles(job.db, job.conf, repo.WithStats(job.statsFactory)),
 	)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
