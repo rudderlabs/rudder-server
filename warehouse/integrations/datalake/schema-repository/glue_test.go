@@ -6,20 +6,17 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -135,7 +132,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 			t.Cleanup(func() {
 				t.Log("Cleaning up")
-				_, err = g.GlueClient.DeleteDatabase(t.Context(), &glue.DeleteDatabaseInput{
+				_, err = g.GlueClient.DeleteDatabase(context.Background(), &glue.DeleteDatabaseInput{
 					Name: &testNamespace,
 				})
 				require.NoError(t, err)
