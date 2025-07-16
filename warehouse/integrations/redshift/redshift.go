@@ -161,7 +161,7 @@ type Redshift struct {
 		skipComputingUserLatestTraits bool
 		enableDeleteByJobs            bool
 		loadByFolderPath              bool
-		useAWSV2                      bool
+		useAwsSdkV2                   bool
 	}
 }
 
@@ -194,7 +194,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
 	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
 	rs.config.loadByFolderPath = conf.GetBool("Warehouse.redshift.loadByFolderPath", false)
-	rs.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
+	rs.config.useAwsSdkV2 = conf.GetBool("FileManager.useAwsSdkV2", false)
 	return rs
 }
 
@@ -584,7 +584,7 @@ func (rs *Redshift) copyIntoLoadTable(
 ) error {
 	var tempAccessKeyId, tempSecretAccessKey, token string
 	var err error
-	if rs.config.useAWSV2 {
+	if rs.config.useAwsSdkV2 {
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3CredV2(&rs.Warehouse.Destination)
 	} else {
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
@@ -1407,7 +1407,7 @@ func (rs *Redshift) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 
 func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) (err error) {
 	var tempAccessKeyId, tempSecretAccessKey, token string
-	if rs.config.useAWSV2 {
+	if rs.config.useAwsSdkV2 {
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3CredV2(&rs.Warehouse.Destination)
 	} else {
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)

@@ -314,4 +314,37 @@ func TestOverride(t *testing.T) {
 		"iamRoleArn": "abc",
 		"externalID": "wrk-1",
 	}))
+
+	config = map[string]interface{}{
+		"a":      "1",
+		"b":      "2",
+		"c":      "3",
+		"region": "us-east-1",
+	}
+	settings = backendconfig.StorageBucket{
+		Type: "S3",
+	}
+	bucket = overrideWithSettings(config, settings, "wrk-1")
+	Expect(bucket.Config).To(Equal(map[string]interface{}{
+		"a": "1",
+		"b": "2",
+		"c": "3",
+	}))
+
+	config = map[string]interface{}{
+		"a":      "1",
+		"b":      "2",
+		"c":      "3",
+		"region": "us-east-1",
+	}
+	settings = backendconfig.StorageBucket{
+		Type: "MINIO",
+	}
+	bucket = overrideWithSettings(config, settings, "wrk-1")
+	Expect(bucket.Config).To(Equal(map[string]interface{}{
+		"a":      "1",
+		"b":      "2",
+		"c":      "3",
+		"region": "us-east-1",
+	}))
 }
