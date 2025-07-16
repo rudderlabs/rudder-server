@@ -31,9 +31,3 @@ type WHSchema struct {
 	UpdatedAt       time.Time
 	ExpiresAt       time.Time
 }
-
-type WHTableSchema struct {
-	WHSchema
-
-	TableName string
-}

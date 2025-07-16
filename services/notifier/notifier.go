@@ -288,6 +288,18 @@ func (n *Notifier) setupDatabase(
 }
 
 func (n *Notifier) setupTables() error {
+	err := n.migrate()
+	if err != nil {
+		return fmt.Errorf("could not migrate: %w", err)
+	}
+	err = n.migrateAlways()
+	if err != nil {
+		return fmt.Errorf("could not migrate always: %w", err)
+	}
+	return nil
+}
+
+func (n *Notifier) migrate() error {
 	m := &migrator.Migrator{
 		Handle:                     n.db.DB,
 		MigrationsTable:            "pg_notifier_queue_migrations",
@@ -305,6 +317,31 @@ func (n *Notifier) setupTables() error {
 	})
 	if err != nil {
 		return fmt.Errorf("could not migrate pg_notifier_queue: %w", err)
+	}
+	return nil
+}
+
+func (n *Notifier) migrateAlways() error {
+	m := &migrator.Migrator{
+		Handle:                     n.db.DB,
+		MigrationsTable:            "pg_notifier_queue_runalways_migrations",
+		ShouldForceSetLowerVersion: n.config.shouldForceSetLowerVersion,
+		RunAlways:                  true,
+	}
+
+	operation := func() error {
+		return m.MigrateFromTemplates("pg_notifier_queue_always", map[string]interface{}{
+			"config": n.conf,
+		})
+	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		n.logger.Warnf("retrying warehouse database run always migration in %s: %v", t, err)
+	})
+	if err != nil {
+		return fmt.Errorf("could not migrate pg_notifier_queue always: %w", err)
 	}
 	return nil
 }
