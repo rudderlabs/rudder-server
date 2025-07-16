@@ -682,7 +682,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, h, proc.statsFactory.NewTracer("partitionWorker"))
+			return newPartitionWorker(partition, h, proc.statsFactory.NewTracer("partitionWorker"), proc.statsFactory)
 		}, proc.logger)
 		defer pool.Shutdown()
 		for {
@@ -3547,6 +3547,8 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 		}
 		rsourcesStats := rsources.NewDroppedJobsCollector(
 			proc.rsourcesService,
+			"processor",
+			proc.statsFactory,
 			rsources.IgnoreDestinationID(),
 		)
 		rsourcesStats.JobsDropped(droppedJobs)
@@ -3786,7 +3788,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 		return false
 	}
 
-	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService, rsources.IgnoreDestinationID())
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService, "processor", proc.statsFactory, rsources.IgnoreDestinationID())
 	rsourcesStats.BeginProcessing(unprocessedList.Jobs)
 
 	var transMessage *transformationMessage
@@ -3858,7 +3860,7 @@ func (proc *Handle) isReportingEnabled() bool {
 }
 
 func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
-	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
+	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService, "processor", proc.statsFactory)
 	rsourcesStats.JobsStored(jobs)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	return err

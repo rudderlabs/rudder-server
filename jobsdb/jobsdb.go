@@ -1782,7 +1782,7 @@ func (jd *Handle) WithTx(f func(tx *Tx) error) error {
 	err = f(tx)
 	if err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("%w; %s", err, rollbackErr)
+			return fmt.Errorf("%w; rollback error: %s", err, rollbackErr)
 		}
 		return err
 	}
@@ -2449,6 +2449,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							if err != nil {
 								return err
 							}
+							jd.logger.Infon("Acquired lock", logger.NewField("ds", latestDS), logger.NewStringField("jobsdb", jd.tablePrefix))
 							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
