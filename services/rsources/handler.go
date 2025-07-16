@@ -107,8 +107,10 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 		sqlStatement,
 		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
 		stats.In, stats.Out, stats.Failed)
-
-	return fmt.Errorf("inserting into rsources_stats: %w", err)
+	if err != nil {
+		return fmt.Errorf("inserting into rsources_stats: %w", err)
+	}
+	return nil
 }
 
 func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
