@@ -1008,10 +1008,10 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		}
 	}
 
-	// destinationJob.Message is the router output payload
+	// destinationJob.Message is the actual payload we tried to send to destination
 	// destinationJobMetadata.JobT.EventPayload is the router input payload
 	// capture router output payload in workerJobStatus if reportJobsdbPayload is false
-	// by default reportJobsdbPayload is true so we capture router input payload
+	// by default reportJobsdbPayload is true so we capture router input payload in workerJobStatus
 	inputPayload := destinationJobMetadata.JobT.EventPayload
 	payload := inputPayload
 	if !w.rt.reportJobsdbPayload.Load() { // TODO: update default/remove this flag after monitoring the payload sizes
@@ -1048,7 +1048,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		default: // includes ERROR_AT_DEL, ERROR_AT_CUST
 			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_delivery")
 			if !w.rt.reportJobsdbPayload.Load() {
-				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_output")
+				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "delivery")
 			} else {
 				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 			}
