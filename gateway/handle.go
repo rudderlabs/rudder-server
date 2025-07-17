@@ -1142,9 +1142,18 @@ func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 		// rsources stats
 		rsourcesStats := rsources.NewStatsCollector(
 			gw.rsourcesService,
+			"gw",
+			gw.stats,
 			rsources.IgnoreDestinationID(),
 		)
 		rsourcesStats.JobsStoredWithErrors(jobs, nil)
-		return rsourcesStats.Publish(ctx, tx.SqlTx())
+		err := rsourcesStats.Publish(ctx, tx.SqlTx())
+		if err != nil {
+			gw.logger.Errorn("Failed to publish rsources stats",
+				obskit.Error(err),
+			)
+			return err
+		}
+		return nil
 	})
 }

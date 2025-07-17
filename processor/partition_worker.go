@@ -18,22 +18,24 @@ import (
 )
 
 type partitionWorker struct {
-	partition string
-	pipelines []*pipelineWorker
-	logger    logger.Logger
-	stats     *processorStats
-	tracer    *tracing.Tracer
-	handle    workerHandle
+	partition    string
+	pipelines    []*pipelineWorker
+	logger       logger.Logger
+	stats        *processorStats
+	tracer       *tracing.Tracer
+	handle       workerHandle
+	statsFactory stats.Stats
 }
 
 // newPartitionWorker creates a new worker for the specified partition
-func newPartitionWorker(partition string, h workerHandle, t stats.Tracer) *partitionWorker {
+func newPartitionWorker(partition string, h workerHandle, t stats.Tracer, statsFactory stats.Stats) *partitionWorker {
 	w := &partitionWorker{
-		partition: partition,
-		logger:    h.logger().Child(partition),
-		stats:     h.stats(),
-		tracer:    tracing.New(t, tracing.WithNamePrefix("partitionWorker")),
-		handle:    h,
+		partition:    partition,
+		logger:       h.logger().Child(partition),
+		stats:        h.stats(),
+		tracer:       tracing.New(t, tracing.WithNamePrefix("partitionWorker")),
+		handle:       h,
+		statsFactory: statsFactory,
 	}
 	// Create workers for each pipeline
 	pipelinesPerPartition := h.config().pipelinesPerPartition
@@ -131,7 +133,7 @@ func (w *partitionWorker) sendToPreProcess(ctx context.Context, jobsByPipeline m
 		partition := pipelineIdx
 		jobs := pipelineJobs
 		// Initialize rsources stats
-		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), rsources.IgnoreDestinationID())
+		rsourcesStats := rsources.NewStatsCollector(w.handle.rsourcesService(), "processor", w.statsFactory, rsources.IgnoreDestinationID())
 		rsourcesStats.BeginProcessing(jobs)
 
 		g.Go(func() error {
