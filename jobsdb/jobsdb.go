@@ -518,6 +518,7 @@ type Handle struct {
 		maxTableSize                   config.ValueLoader[int64]
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
+		addNewDSTimeout                config.ValueLoader[time.Duration]
 		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
 		minDSRetentionPeriod           config.ValueLoader[time.Duration]
 		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
@@ -925,6 +926,8 @@ func (jd *Handle) loadConfig() {
 	jd.conf.cacheExpiration = jd.config.GetReloadableDurationVar(120, time.Minute, jd.configKeys("cacheExpiration")...)
 	// addNewDSLoopSleepDuration: How often is the loop (which checks for adding new DS) run
 	jd.conf.addNewDSLoopSleepDuration = jd.config.GetReloadableDurationVar(5, time.Second, jd.configKeys("addNewDSLoopSleepDuration")...)
+	// addNewDSTimeout: How long to wait for adding a new DS
+	jd.conf.addNewDSTimeout = jd.config.GetReloadableDurationVar(60, time.Second, jd.configKeys("addNewDSTimeout")...)
 	// refreshDSListLoopSleepDuration: How often is the loop (which refreshes DSList) run
 	jd.conf.refreshDSListLoopSleepDuration = jd.config.GetReloadableDurationVar(10, time.Second, jd.configKeys("refreshDSListLoopSleepDuration")...)
 
@@ -2417,7 +2420,9 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 		var dsListLock lock.LockToken
 		var releaseDsListLock chan<- lock.LockToken
 		addNewDS := func() error {
+			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.addNewDSTimeout.Load())
 			defer func() {
+				cancel()
 				if releaseDsListLock != nil && dsListLock != nil {
 					releaseDsListLock <- dsListLock
 				}
@@ -2445,11 +2450,11 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 						if full {
 							// We acquire the list lock only after we have acquired the advisory lock.
 							// We will release the list lock after the transaction ends, that's why we need to use an async lock
-							dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+							dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(timeoutCtx)
 							if err != nil {
 								return err
 							}
-							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+							if _, err = tx.ExecContext(timeoutCtx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
 
@@ -2465,7 +2470,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							}
 						} else {
 							// maybe another node added a new DS that we need to make visible to us
-							if err := jd.refreshDSList(ctx); err != nil {
+							if err := jd.refreshDSList(timeoutCtx); err != nil {
 								return fmt.Errorf("refreshDSList: %w", err)
 							}
 						}
