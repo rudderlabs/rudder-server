@@ -583,7 +583,6 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 	if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
 		log.Infon("Channel not found during polling, attempting to recreate channel", logger.NewStringField("channelID", info.ChannelID))
 
-		// Get destination config
 		var destConf destConfig
 		if decodeErr := destConf.Decode(m.destination.Config); decodeErr != nil {
 			return false, fmt.Errorf("failed to decode destination config during channel recreation: %w", decodeErr)
@@ -598,10 +597,9 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 
 		log.Infon("Recreated channel for polling", logger.NewStringField("channelID", recreatedChannel.ChannelID))
 
-		// Update the channel ID in importInfo for future polls
+		// Update the channel ID in importInfo for future polls. Though I'm not sure if this is needed.
 		info.ChannelID = recreatedChannel.ChannelID
 
-		// Try to get status again with new channel
 		statusRes2, err2 := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
 		if err2 != nil {
 			return false, fmt.Errorf("getting status after channel recreation: %w", err2)
@@ -620,8 +618,6 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 
 		return statusRes2.Offset != info.Offset, nil
 	}
-
-	// For all other errors, return the original error
 	return false, fmt.Errorf("getting status: %w", err)
 }
 
