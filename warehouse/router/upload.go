@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -410,7 +411,7 @@ func (job *UploadJob) run() (err error) {
 				// schema is being cleared only in ExportedData case and not in other cases.
 				invErr := job.whSchemaRepo.SetExpiryForDestination(job.ctx, job.warehouse.Destination.ID, job.now())
 				if invErr != nil {
-					job.logger.Errorf("Failed to invalidate schema cache: %v", invErr)
+					job.logger.Errorn("Failed to invalidate schema cache", obskit.Error(err))
 				} else {
 					job.logger.Infon("Invalidated warehouse schema cache due to sync error")
 				}
