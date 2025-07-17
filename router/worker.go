@@ -62,8 +62,8 @@ type workerJob struct {
 }
 
 func (w *worker) workLoop() {
-	timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 	for {
+		timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 		select {
 		case message, hasMore := <-w.input:
 			if !hasMore {
@@ -251,8 +251,6 @@ func (w *worker) workLoop() {
 			}
 
 		case <-timeout:
-			timeout = time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
-
 			if len(w.routerJobs) > 0 {
 				if w.rt.enableBatching {
 					w.destinationJobs = w.batchTransform(w.routerJobs)
@@ -1048,14 +1046,6 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 	}
 
-	// Saving payload to DB only
-	// 1. if job failed and
-	// 2. if router job undergoes batching or dest transform.
-	if payload != nil && (w.rt.enableBatching || destinationJobMetadata.TransformAt == "router") {
-		if w.rt.reloadableConfig.savePayloadOnError.Load() {
-			status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "payload", string(payload))
-		}
-	}
 	// the job failed
 	w.logger.Debugn("Job failed to send, analyzing...")
 
