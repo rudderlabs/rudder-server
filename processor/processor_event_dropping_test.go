@@ -230,8 +230,6 @@ func (s *eventDropScenario) withEventConfigs(configs []eventConfig) *eventDropSc
 }
 
 func (s *eventDropScenario) run(t *testing.T, verification func(t *testing.T, scenario *eventDropScenario)) {
-	config.Reset()
-	defer config.Reset()
 	writeKey := "writekey-1"
 	workspaceID := "workspace-1"
 	sourceID := "source-1"
@@ -319,7 +317,6 @@ func (s *eventDropScenario) runRudderServer(ctx context.Context, port int, postg
 	config.Set("JobsDB.migrateDSLoopSleepDuration", "60m")
 	config.Set("archival.Enabled", false)
 	config.Set("Reporting.syncer.enabled", false)
-	config.Set("Reporting.enabled", false)
 	config.Set("BatchRouter.pingFrequency", "1s")
 	config.Set("BatchRouter.uploadFreq", "1s")
 	config.Set("Gateway.webPort", strconv.Itoa(port))
