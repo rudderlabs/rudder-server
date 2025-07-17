@@ -36,11 +36,11 @@ import (
 
 type mockSchemaRepo struct{}
 
-func (m *mockSchemaRepo) GetForNamespace(context.Context, string, string, bool) (model.WHSchema, error) {
+func (m *mockSchemaRepo) GetForNamespace(context.Context, string, string) (model.WHSchema, error) {
 	return model.WHSchema{}, nil
 }
 
-func (m *mockSchemaRepo) Insert(context.Context, *model.WHSchema, bool) error {
+func (m *mockSchemaRepo) Insert(context.Context, *model.WHSchema) error {
 	return nil
 }
 

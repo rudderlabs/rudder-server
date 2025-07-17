@@ -21,7 +21,7 @@ func TestWHSchemasRepo(t *testing.T) {
 		ctx = context.Background()
 		now = time.Now().Truncate(time.Second).UTC()
 		db  = setupDB(t)
-		r   = repo.NewWHSchemas(db, repo.WithNow(func() time.Time {
+		r   = repo.NewWHSchemas(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 	)
@@ -72,20 +72,20 @@ func TestWHSchemasRepo(t *testing.T) {
 
 	t.Run("Insert", func(t *testing.T) {
 		t.Log("new")
-		err := r.Insert(ctx, &schema, false)
+		err := r.Insert(ctx, &schema)
 		require.NoError(t, err)
 
 		t.Log("duplicate")
-		err = r.Insert(ctx, &schema, false)
+		err = r.Insert(ctx, &schema)
 		require.NoError(t, err)
 
 		t.Log("cancelled context")
-		err = r.Insert(cancelledCtx, &schema, false)
+		err = r.Insert(cancelledCtx, &schema)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("GetForNamespace", func(t *testing.T) {
-		expectedSchema, err := r.GetForNamespace(ctx, destinationID, namespace, false)
+		expectedSchema, err := r.GetForNamespace(ctx, destinationID, namespace)
 		require.NoError(t, err)
 		require.Equal(t, sourceID, expectedSchema.SourceID)
 		require.Equal(t, namespace, expectedSchema.Namespace)
@@ -97,11 +97,11 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.Equal(t, now.Add(time.Hour), expectedSchema.ExpiresAt)
 
 		t.Log("cancelled context")
-		_, err = r.GetForNamespace(cancelledCtx, destinationID, namespace, false)
+		_, err = r.GetForNamespace(cancelledCtx, destinationID, namespace)
 		require.ErrorIs(t, err, context.Canceled)
 
 		t.Log("not found")
-		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound, false)
+		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
 		require.Empty(t, expectedSchema)
 	})
@@ -156,7 +156,7 @@ func TestWHSchemasRepo(t *testing.T) {
 			CreatedAt:       now,
 			UpdatedAt:       now,
 		}
-		err = r.Insert(ctx, &schemaLatest, false)
+		err = r.Insert(ctx, &schemaLatest)
 		require.NoError(t, err)
 		expectedTableNames, err = r.GetTablesForConnection(ctx, []warehouseutils.SourceIDDestinationID{connection})
 		require.NoError(t, err)
@@ -171,14 +171,14 @@ func TestWHSchemasRepo(t *testing.T) {
 		err := r.SetExpiryForDestination(ctx, destinationID, now)
 		require.NoError(t, err)
 
-		err = r.Insert(ctx, &schema, false)
+		err = r.Insert(ctx, &schema)
 		require.NoError(t, err)
 
 		expiryTime := now.Add(2 * time.Hour)
 		err = r.SetExpiryForDestination(ctx, destinationID, expiryTime)
 		require.NoError(t, err)
 
-		updatedSchema, err := r.GetForNamespace(ctx, destinationID, namespace, false)
+		updatedSchema, err := r.GetForNamespace(ctx, destinationID, namespace)
 		require.NoError(t, err)
 		require.Equal(t, expiryTime, updatedSchema.ExpiresAt)
 	})
@@ -186,22 +186,22 @@ func TestWHSchemasRepo(t *testing.T) {
 	t.Run("Insert schema propagation to all connections with same destination_id and namespace", func(t *testing.T) {
 		// Create first connection schema
 		firstConnectionSchema := schema
-		err := r.Insert(ctx, &firstConnectionSchema, false)
+		err := r.Insert(ctx, &firstConnectionSchema)
 		require.NoError(t, err)
 
 		// Create second connection schema with same destination_id and namespace
 		secondConnectionSchema := firstConnectionSchema
 		secondConnectionSchema.SourceID = "other_source_id"
 		secondConnectionSchema.ID = 0 // Reset ID for new insert
-		err = r.Insert(ctx, &secondConnectionSchema, false)
+		err = r.Insert(ctx, &secondConnectionSchema)
 		require.NoError(t, err)
 
 		// Verify both connections have the same initial schema
-		firstRetrieved, err := r.GetForNamespace(ctx, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace, false)
+		firstRetrieved, err := r.GetForNamespace(ctx, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, firstConnectionSchema.Schema, firstRetrieved.Schema)
 
-		secondRetrieved, err := r.GetForNamespace(ctx, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace, false)
+		secondRetrieved, err := r.GetForNamespace(ctx, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, firstConnectionSchema.Schema, secondRetrieved.Schema)
 
@@ -213,15 +213,15 @@ func TestWHSchemasRepo(t *testing.T) {
 			},
 		}
 		updatedSchema.ID = 0 // Reset ID for new insert
-		err = r.Insert(ctx, &updatedSchema, false)
+		err = r.Insert(ctx, &updatedSchema)
 		require.NoError(t, err)
 
 		// Verify both connections are updated with the new schema
-		firstRetrieved, err = r.GetForNamespace(ctx, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace, false)
+		firstRetrieved, err = r.GetForNamespace(ctx, firstConnectionSchema.DestinationID, firstConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, updatedSchema.Schema, firstRetrieved.Schema)
 
-		secondRetrieved, err = r.GetForNamespace(ctx, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace, false)
+		secondRetrieved, err = r.GetForNamespace(ctx, secondConnectionSchema.DestinationID, secondConnectionSchema.Namespace)
 		require.NoError(t, err)
 		require.Equal(t, updatedSchema.Schema, secondRetrieved.Schema)
 	})
@@ -235,7 +235,7 @@ func TestWHSchemasRepoWithTableLevel(t *testing.T) {
 		ctx = context.Background()
 		now = time.Now().Truncate(time.Second).UTC()
 		db  = setupDB(t)
-		r   = repo.NewWHSchemas(db, repo.WithNow(func() time.Time {
+		r   = repo.NewWHSchemas(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 	)
@@ -286,20 +286,20 @@ func TestWHSchemasRepoWithTableLevel(t *testing.T) {
 
 	t.Run("Insert", func(t *testing.T) {
 		t.Log("new")
-		err := r.Insert(ctx, &schema, true)
+		err := r.Insert(ctx, &schema)
 		require.NoError(t, err)
 
 		t.Log("duplicate")
-		err = r.Insert(ctx, &schema, true)
+		err = r.Insert(ctx, &schema)
 		require.NoError(t, err)
 
 		t.Log("cancelled context")
-		err = r.Insert(cancelledCtx, &schema, true)
+		err = r.Insert(cancelledCtx, &schema)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 
 	t.Run("GetForNamespace", func(t *testing.T) {
-		expectedSchema, err := r.GetForNamespace(ctx, destinationID, namespace, true)
+		expectedSchema, err := r.GetForNamespace(ctx, destinationID, namespace)
 		require.NoError(t, err)
 		require.Equal(t, sourceID, expectedSchema.SourceID)
 		require.Equal(t, namespace, expectedSchema.Namespace)
@@ -311,11 +311,11 @@ func TestWHSchemasRepoWithTableLevel(t *testing.T) {
 		require.Equal(t, now.Add(time.Hour), expectedSchema.ExpiresAt)
 
 		t.Log("cancelled context")
-		_, err = r.GetForNamespace(cancelledCtx, destinationID, namespace, true)
+		_, err = r.GetForNamespace(cancelledCtx, destinationID, namespace)
 		require.ErrorIs(t, err, context.Canceled)
 
 		t.Log("not found")
-		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound, true)
+		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
 		require.Empty(t, expectedSchema)
 	})

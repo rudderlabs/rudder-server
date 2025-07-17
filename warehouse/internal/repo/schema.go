@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -32,22 +33,29 @@ const whSchemaTableColumns = `
 	expires_at
 `
 
-type WHSchema repo
+type WHSchema struct {
+	*repo
+	conf *config.Config
+}
 
-func NewWHSchemas(db *sqlmiddleware.DB, opts ...Opt) *WHSchema {
-	r := &WHSchema{
+func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSchema {
+	whSchemaRepo := &repo{
 		db:  db,
 		now: timeutil.Now,
 	}
+	r := &WHSchema{
+		repo: whSchemaRepo,
+		conf: conf,
+	}
 	for _, opt := range opts {
-		opt((*repo)(r))
+		opt(whSchemaRepo)
 	}
 	return r
 }
 
 // Insert inserts a schema row in wh_schemas with the given schema.
-// If enableTableLevelSchema is true, it also inserts/updates table-level schemas for each table in the schema.
-func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema, enableTableLevelSchema bool) error {
+// If Warehouse.enableTableLevelSchema is true in config, it also inserts/updates table-level schemas for each table in the schema.
+func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error {
 	now := sh.now()
 
 	schemaPayload, err := jsonrs.Marshal(whSchema.Schema)
@@ -55,7 +63,9 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema, enable
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
 
-	err = (*repo)(sh).WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+	enableTableLevelSchema := sh.conf.GetBool("Warehouse.enableTableLevelSchema", false)
+
+	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		// update all schemas with the same destination_id and namespace but different source_id
 		// this is to ensure all the connections for a destination have the same schema copy
 		_, err = tx.ExecContext(ctx, `
@@ -120,21 +130,14 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema, enable
 				if err != nil {
 					return fmt.Errorf("marshaling table schema for table %s: %w", tableName, err)
 				}
-				err = sh.updateOtherTableLevelSchemas(ctx, tx, whSchema, tableName, tableSchemaPayload, now)
+				err = sh.updateOtherTableLevelSchemas(ctx, tx, whSchema, tableName, tableSchemaPayload)
 				if err != nil {
 					return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
 				}
 
 				tableWHSchema := &model.WHTableSchema{
-					SourceID:        whSchema.SourceID,
-					Namespace:       whSchema.Namespace,
-					DestinationID:   whSchema.DestinationID,
-					DestinationType: whSchema.DestinationType,
-					Schema:          tableSchema,
-					TableName:       tableName,
-					CreatedAt:       now,
-					UpdatedAt:       now,
-					ExpiresAt:       whSchema.ExpiresAt,
+					WHSchema:  *whSchema,
+					TableName: tableName,
 				}
 				err = sh.insertTableSchema(ctx, tx, tableWHSchema, tableSchemaPayload)
 				if err != nil {
@@ -150,7 +153,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema, enable
 }
 
 // updateOtherTableLevelSchemas updates all other schemas with the same destination_id, namespace, and table_name but different source_id.
-func (sh *WHSchema) updateOtherTableLevelSchemas(ctx context.Context, tx *sqlmiddleware.Tx, whSchema *model.WHSchema, tableName string, tableSchemaPayload []byte, now time.Time) error {
+func (sh *WHSchema) updateOtherTableLevelSchemas(ctx context.Context, tx *sqlmiddleware.Tx, whSchema *model.WHSchema, tableName string, tableSchemaPayload []byte) error {
 	_, err := tx.ExecContext(ctx, `
 		UPDATE `+whSchemaTableName+`
 		SET
@@ -164,7 +167,7 @@ func (sh *WHSchema) updateOtherTableLevelSchemas(ctx context.Context, tx *sqlmid
 			table_name = $7;
 	`,
 		tableSchemaPayload,
-		now.UTC(),
+		sh.now().UTC(),
 		whSchema.ExpiresAt,
 		whSchema.DestinationID,
 		whSchema.Namespace,
@@ -213,7 +216,8 @@ func (sh *WHSchema) insertTableSchema(ctx context.Context, tx *sqlmiddleware.Tx,
 }
 
 // GetForNamespace fetches the schema for a namespace, supporting both legacy and table-level modes.
-func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace string, enableTableLevelSchema bool) (model.WHSchema, error) {
+func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error) {
+	enableTableLevelSchema := sh.conf.GetBool("Warehouse.enableTableLevelSchema", false)
 	if !enableTableLevelSchema {
 		return sh.getForNamespace(ctx, destID, namespace)
 	}

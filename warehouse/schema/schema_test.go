@@ -37,7 +37,7 @@ type mockSchemaRepo struct {
 	mu        sync.RWMutex
 }
 
-func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, namespace string, _ bool) (model.WHSchema, error) {
+func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, namespace string) (model.WHSchema, error) {
 	key := schemaKey(destinationID, namespace)
 
 	m.mu.RLock()
@@ -47,7 +47,7 @@ func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, names
 	return schema, nil
 }
 
-func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema, _ bool) error {
+func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) error {
 	key := schemaKey(schema.DestinationID, schema.Namespace)
 
 	m.mu.Lock()
@@ -1350,7 +1350,7 @@ func TestSchema(t *testing.T) {
 
 	t.Run("SchemaOperationsAcrossConnections", func(t *testing.T) {
 		db, ctx := setupDB(t), context.Background()
-		schemaRepo := repo.NewWHSchemas(db)
+		schemaRepo := repo.NewWHSchemas(db, config.New())
 
 		// Create initial schema for connection 1
 		warehouse1 := model.Warehouse{
