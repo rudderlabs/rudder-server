@@ -672,22 +672,23 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, string, string, error) {
 	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3v2.ServiceID)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to create aws session config v2: %w", err)
 	}
 	awsConfig, err := awsutil_v2.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to create aws config v2: %w", err)
 	}
 
 	// If using role-based auth, just retrieve credentials
 	if sessionConfig.RoleBasedAuth {
 		creds, err := awsConfig.Credentials.Retrieve(context.Background())
 		if err != nil {
-			return "", "", "", err
+			return "", "", "", fmt.Errorf("failed to retrieve credentials: %w", err)
 		}
 		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
 	}
 
+	awsConfig.Region = "us-east-1"
 	// Explicitly call STS to get session token (temporary credentials)
 	client := stsv2.NewFromConfig(awsConfig)
 	expiryInSec := awsCredsExpiryInS.Load()
@@ -696,7 +697,7 @@ func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, stri
 	}
 	output, err := client.GetSessionToken(context.Background(), input)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", fmt.Errorf("failed to get session token: %w", err)
 	}
 	return *output.Credentials.AccessKeyId, *output.Credentials.SecretAccessKey, *output.Credentials.SessionToken, nil
 }

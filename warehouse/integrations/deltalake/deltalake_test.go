@@ -284,7 +284,7 @@ func TestIntegration(t *testing.T) {
 			},
 		}
 
-		objectStorages := []string{"S3"}
+		objectStorages := []string{"S3", "AZURE_BLOB"}
 		for _, objectStorage := range objectStorages {
 			for _, tc := range testCases {
 				t.Run(tc.name, func(t *testing.T) {
