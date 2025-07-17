@@ -78,7 +78,6 @@ type reloadableConfig struct {
 	sourcesRetryTimeWindow            config.ValueLoader[time.Duration]
 	pickupFlushInterval               config.ValueLoader[time.Duration]
 	maxDSQuerySize                    config.ValueLoader[int]
-	savePayloadOnError                config.ValueLoader[bool]
 	transformerProxy                  config.ValueLoader[bool]
 	skipRtAbortAlertForTransformation config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForDelivery       config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def

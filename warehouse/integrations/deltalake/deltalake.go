@@ -139,7 +139,7 @@ type Deltalake struct {
 		retryMinWait           time.Duration
 		retryMaxWait           time.Duration
 		maxErrorLength         int
-		useAWSV2               bool
+		useAwsSdkV2            bool
 	}
 }
 
@@ -157,7 +157,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.config.retryMinWait = conf.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
 	dl.config.retryMaxWait = conf.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
 	dl.config.maxErrorLength = conf.GetInt("Warehouse.deltalake.maxErrorLength", 64*1024) // 64 KB
-	dl.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
+	dl.config.useAwsSdkV2 = conf.GetBool("FileManager.useAwsSdkV2", false)
 	return dl
 }
 
@@ -954,7 +954,7 @@ func (d *Deltalake) authQuery() (string, error) {
 	}
 	var tempAccessKeyId, tempSecretAccessKey, token string
 	var err error
-	if d.config.useAWSV2 {
+	if d.config.useAwsSdkV2 {
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3CredV2(&d.Warehouse.Destination)
 	} else {
 		tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&d.Warehouse.Destination)

@@ -260,6 +260,12 @@ func overrideWithSettings(defaultConfig map[string]interface{}, settings backend
 	if settings.Type == "S3" && config["iamRoleArn"] != nil {
 		config["externalID"] = workspaceID
 	}
+	// By default, region is set to AWS_REGION by GetProviderConfigFromEnv,
+	// but we remove it here to allow customers to use their own bucket
+	// in a different region than the default AWS_REGION
+	if settings.Type == "S3" && config["region"] != nil {
+		delete(config, "region")
+	}
 	return backendconfig.StorageBucket{
 		Type:   settings.Type,
 		Config: config,
