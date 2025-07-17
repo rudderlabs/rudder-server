@@ -495,22 +495,23 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		return fmt.Errorf("creating file manager: %w", err)
 	}
 
-	loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID, job.stagingFileIDs)
-	if err != nil {
-		return fmt.Errorf("fetching loading files: %w", err)
+	filesToDel := lo.Map(job.stagingFiles, func(file *model.StagingFile, _ int) string {
+		return fm.GetDownloadKeyFromFileLocation(file.Location)
+	})
+	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
+		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID, job.stagingFileIDs)
+		if err != nil {
+			return fmt.Errorf("fetching loading files: %w", err)
+		}
+		loadingKeysToDel := lo.Map(loadingFiles, func(file model.LoadFile, _ int) string {
+			return fm.GetDownloadKeyFromFileLocation(file.Location)
+		})
+		filesToDel = append(filesToDel, loadingKeysToDel...)
 	}
-	stagingKeysToDel := lo.Map(job.stagingFiles, func(file *model.StagingFile, _ int) string {
-		return fm.GetDownloadKeyFromFileLocation(file.Location)
-	})
-	loadingKeysToDel := lo.Map(loadingFiles, func(file model.LoadFile, _ int) string {
-		return fm.GetDownloadKeyFromFileLocation(file.Location)
-	})
+	job.stats.objectsDeleted.Gauge(len(filesToDel))
 
-	filesToDel := append(stagingKeysToDel, loadingKeysToDel...)
 	concurrency := 1
 	chunkSize := len(filesToDel)
-
-	job.stats.objectsDeleted.Gauge(len(filesToDel))
 
 	// GCS doesn't support batch delete, so we need to delete files in chunks to speed up the deletion
 	if storageProvider == whutils.GCS {

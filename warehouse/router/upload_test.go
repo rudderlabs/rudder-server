@@ -862,12 +862,12 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		{Location: "test-load-location-4"},
 	}
 
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
-	mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
-
 	t.Run("cleanup disabled", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
+		mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
+
 		job := &UploadJob{
 			ctx: context.Background(),
 			upload: model.Upload{
@@ -879,6 +879,9 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 					Config: map[string]interface{}{
 						model.CleanupObjectStorageFilesSetting.String(): false,
 						"bucketProvider": "s3",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.SNOWFLAKE,
 					},
 				},
 			},
@@ -897,7 +900,12 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("cleanup enabled, successful deletion", func(t *testing.T) {
+	t.Run("cleanup enabled, successful deletion for Non-Datalakes", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
+		mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
+
 		// Mock GetDownloadKeyFromFileLocation for staging files
 		for _, file := range stagingFiles[:2] {
 			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
@@ -932,6 +940,60 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 						model.CleanupObjectStorageFilesSetting.String(): true,
 						"bucketProvider": "s3",
 					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.SNOWFLAKE,
+					},
+				},
+			},
+			conf: config.Default,
+			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
+				return mockFileManager, nil
+			},
+			loadFilesRepo:  mockLoadFilesRepo,
+			stagingFiles:   stagingFiles[:2],
+			stagingFileIDs: []int64{1, 2},
+			statsFactory:   stats.NOP,
+			now:            time.Now,
+		}
+		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
+		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
+
+		err := job.cleanupObjectStorageFiles()
+		require.NoError(t, err)
+	})
+
+	t.Run("cleanup enabled, successful deletion for Datalakes", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
+		mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
+
+		// Mock GetDownloadKeyFromFileLocation for staging files
+		for _, file := range stagingFiles[:2] {
+			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
+		}
+
+		// Mock Delete call with specific expected keys
+		expectedKeys := append(
+			lo.Map(stagingFiles[:2], func(f *model.StagingFile, _ int) string { return f.Location }),
+		)
+		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(nil).Times(1)
+
+		job := &UploadJob{
+			ctx: context.Background(),
+			upload: model.Upload{
+				WorkspaceID: "test-workspace",
+				ID:          1,
+			},
+			warehouse: model.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						model.CleanupObjectStorageFilesSetting.String(): true,
+						"bucketProvider": "s3",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.S3Datalake,
+					},
 				},
 			},
 			conf: config.Default,
@@ -952,6 +1014,11 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 	})
 
 	t.Run("cleanup enabled, deletion error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
+		mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
+
 		for _, file := range stagingFiles[:2] {
 			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
 		}
@@ -983,6 +1050,9 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 						model.CleanupObjectStorageFilesSetting.String(): true,
 						"bucketProvider": "s3",
 					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.SNOWFLAKE,
+					},
 				},
 			},
 			conf: config.Default,
@@ -1003,6 +1073,11 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 	})
 
 	t.Run("GCS cleanup enabled, chunked deletion", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+		mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
+		mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
+
 		for _, file := range stagingFiles {
 			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
 		}
@@ -1038,6 +1113,9 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 					Config: map[string]interface{}{
 						model.CleanupObjectStorageFilesSetting.String(): true,
 						"bucketProvider": "GCS",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.BQ,
 					},
 				},
 			},
