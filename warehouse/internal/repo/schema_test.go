@@ -229,7 +229,9 @@ func TestWHSchemasRepo(t *testing.T) {
 
 func TestWHSchemasRepoWithTableLevel(t *testing.T) {
 	config.Set("Warehouse.enableTableLevelSchema", true)
-	defer config.Set("Warehouse.enableTableLevelSchema", false)
+	defer func() {
+		config.Set("Warehouse.enableTableLevelSchema", false)
+	}()
 
 	var (
 		ctx = context.Background()

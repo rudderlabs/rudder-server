@@ -31,7 +31,6 @@ func setupDB(t testing.TB) *sqlmiddleware.DB {
 		Handle:          pgResource.DB,
 		MigrationsTable: "wh_schema_migrations",
 	}).Migrate("warehouse")
-
 	require.NoError(t, err)
 	err = (&migrator.Migrator{
 		Handle:          pgResource.DB,

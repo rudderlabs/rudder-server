@@ -1,4 +1,4 @@
-{{ if .config.GetBoolVar false "Warehouse.enableTableLevelSchema" }}
+{{ if .config.GetBoolVar false "Warehouse.populateTableLevelSchema" }}
   INSERT INTO wh_schemas (
     source_id,
     namespace,
