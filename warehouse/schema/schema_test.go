@@ -56,9 +56,14 @@ func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int6
 	return 0, nil
 }
 
-type mockFetchSchemaRepo struct{}
+type mockFetchSchemaRepo struct {
+	err error
+}
 
 func (m *mockFetchSchemaRepo) FetchSchema(ctx context.Context) (model.Schema, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
 	return model.Schema{
 		"table1": {
 			"column1": "string",
@@ -1410,6 +1415,51 @@ func TestSchema(t *testing.T) {
 		require.False(t, sch1_new.IsSchemaEmpty(ctx))
 		require.Equal(t, initialSchema["table1"], sch1_new.GetTableSchema(ctx, "table1"))
 		require.Equal(t, table2Schema, sch1_new.GetTableSchema(ctx, "table2"))
+	})
+
+	t.Run("schema initialization", func(t *testing.T) {
+		t.Run("DB returns no schema, warehouse fetch succeeds", func(t *testing.T) {
+			warehouse := model.Warehouse{
+				Destination: backendconfig.DestinationT{ID: "dest_id"},
+				Namespace:   "namespace",
+				Source:      backendconfig.SourceT{ID: "source_id"},
+			}
+			schemaRepo := &mockSchemaRepo{schemaMap: make(map[string]model.WHSchema)}
+			fetchSchemaRepo := &mockFetchSchemaRepo{}
+			sh, err := New(context.Background(), warehouse, config.New(), logger.NOP, stats.NOP, fetchSchemaRepo, schemaRepo, nil)
+			require.NoError(t, err)
+			require.False(t, sh.IsSchemaEmpty(context.Background()))
+			tbl := sh.GetTableSchema(context.Background(), "table1")
+			require.Equal(t, model.TableSchema{"column1": "string", "column2": "int"}, tbl)
+		})
+
+		t.Run("DB returns schema (even empty), no fetching from warehouse", func(t *testing.T) {
+			warehouse := model.Warehouse{
+				Destination: backendconfig.DestinationT{ID: "dest_id2"},
+				Namespace:   "namespace2",
+				Source:      backendconfig.SourceT{ID: "source_id2"},
+			}
+			schemaRepo := &mockSchemaRepo{schemaMap: map[string]model.WHSchema{
+				"dest_id2_namespace2": {Schema: model.Schema{}, ExpiresAt: timeutil.Now().Add(10 * time.Minute)},
+			}}
+			fetchSchemaRepo := &mockFetchSchemaRepo{}
+			sh, err := New(context.Background(), warehouse, config.New(), logger.NOP, stats.NOP, fetchSchemaRepo, schemaRepo, nil)
+			require.NoError(t, err)
+			require.True(t, sh.IsSchemaEmpty(context.Background()))
+		})
+
+		t.Run("DB returns no schema, warehouse fetch fails", func(t *testing.T) {
+			warehouse := model.Warehouse{
+				Destination: backendconfig.DestinationT{ID: "dest_id3"},
+				Namespace:   "namespace3",
+				Source:      backendconfig.SourceT{ID: "source_id3"},
+			}
+			schemaRepo := &mockSchemaRepo{schemaMap: make(map[string]model.WHSchema)}
+			fetchSchemaRepo := &mockFetchSchemaRepo{err: errors.New("warehouse fetch error")}
+			_, err := New(context.Background(), warehouse, config.New(), logger.NOP, stats.NOP, fetchSchemaRepo, schemaRepo, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "warehouse fetch error")
+		})
 	})
 }
 

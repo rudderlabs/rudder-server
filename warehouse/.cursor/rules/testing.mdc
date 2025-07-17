@@ -1,8 +1,10 @@
 ---
-description: Refer to this rule for writing tests
-globs: 
-alwaysApply: false
+description: Testing guidelines for the warehouse directory in RudderStack.
+globs:
+  - "**/*_test.go"
+alwaysApply: true
 ---
+
 # Warehouse Testing Guidelines
 
 This document outlines the testing conventions and best practices for the `warehouse/` directory in the RudderStack server codebase.
@@ -52,9 +54,11 @@ Use **table-driven tests** for multiple scenarios:
 
 - Structure table-driven tests with `name`, input, and `expected` fields
 - Always use `t.Run(tc.name, func(t *testing.T) {})` for subtests
+- Group related subtests under a parent `t.Run("group name", ...)` block for clarity and maintainability.
 - Include both positive and negative test cases
 
 ```go
+// Table-driven tests for parameterized scenarios
 func TestWarehouseFunction(t *testing.T) {
     testCases := []struct {
         name     string
@@ -80,6 +84,21 @@ func TestWarehouseFunction(t *testing.T) {
             // test implementation
         })
     }
+}
+
+// Grouped subtests for related functionality
+func TestWarehouseComponent(t *testing.T) {
+    t.Run("initialization", func(t *testing.T) {
+        t.Run("valid configuration", func(t *testing.T) { /* ... */ })
+        t.Run("invalid configuration", func(t *testing.T) { /* ... */ })
+        t.Run("missing configuration", func(t *testing.T) { /* ... */ })
+    })
+    
+    t.Run("data processing", func(t *testing.T) {
+        t.Run("single record", func(t *testing.T) { /* ... */ })
+        t.Run("batch processing", func(t *testing.T) { /* ... */ })
+        t.Run("empty input", func(t *testing.T) { /* ... */ })
+    })
 }
 ```
 
@@ -173,19 +192,24 @@ func TestDatabaseIntegration(t *testing.T) {
 - Create mock expectations with clear `.EXPECT()` calls
 - Use `gomock.NewController(t)` for mock controller setup
 - Place mock generation comments: `//go:generate go run go.uber.org/mock/mockgen`
+- For error path testing, prefer extending mocks with error fields or behaviors rather than creating many separate mock types.
 
 ```go
-//go:generate go run go.uber.org/mock/mockgen -destination=mocks/mock_interface.go -package=mocks . InterfaceName
-
-func TestWithMocks(t *testing.T) {
-    ctrl := gomock.NewController(t)
-    defer ctrl.Finish()
-    
-    mockInterface := mocks.NewMockInterfaceName(ctrl)
-    mockInterface.EXPECT().Method(gomock.Any()).Return(expectedResult, nil).Times(1)
-    
-    // test implementation
+type mockRepository struct {
+    data map[string]interface{}
+    err  error
 }
+
+func (m *mockRepository) Get(key string) (interface{}, error) {
+    if m.err != nil {
+        return nil, m.err
+    }
+    return m.data[key], nil
+}
+
+// Usage in tests:
+successMock := &mockRepository{data: map[string]interface{}{"key": "value"}}
+errorMock := &mockRepository{err: errors.New("connection failed")}
 ```
 
 ## File Management
@@ -245,40 +269,15 @@ func TestStagingFileRepo_GetPending(t *testing.T) { /* ... */ }
 - Use `require.Error(t, err)` for expected errors
 - Use `require.ErrorIs(t, err, expectedError)` for specific error types
 - Use `require.EqualError(t, err, expectedMessage)` for exact error messages
+- For fallback or multi-source logic, ensure tests cover all branches, including "no data," "empty but present," and error propagation.
 
 ```go
-func TestErrorHandling(t *testing.T) {
-    testCases := []struct {
-        name    string
-        input   InputType
-        wantErr bool
-        errMsg  string
-    }{
-        {
-            name:    "invalid input",
-            input:   invalidInput,
-            wantErr: true,
-            errMsg:  "expected error message",
-        },
-    }
-    
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            result, err := functionUnderTest(tc.input)
-            
-            if tc.wantErr {
-                require.Error(t, err)
-                if tc.errMsg != "" {
-                    require.EqualError(t, err, tc.errMsg)
-                }
-                return
-            }
-            
-            require.NoError(t, err)
-            // assert on result
-        })
-    }
-}
+t.Run("data retrieval with fallback", func(t *testing.T) {
+    t.Run("primary source succeeds", func(t *testing.T) { /* ... */ })
+    t.Run("primary source fails, fallback succeeds", func(t *testing.T) { /* ... */ })
+    t.Run("both primary and fallback fail", func(t *testing.T) { /* ... */ })
+    t.Run("primary source returns empty, no fallback", func(t *testing.T) { /* ... */ })
+})
 ```
 
 ## Helper Patterns
