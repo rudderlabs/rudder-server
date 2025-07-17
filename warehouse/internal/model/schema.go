@@ -33,14 +33,7 @@ type WHSchema struct {
 }
 
 type WHTableSchema struct {
-	ID              int64
-	SourceID        string
-	Namespace       string
-	DestinationID   string
-	DestinationType string
-	Schema          TableSchema
-	TableName       string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ExpiresAt       time.Time
+	WHSchema
+
+	TableName string
 }

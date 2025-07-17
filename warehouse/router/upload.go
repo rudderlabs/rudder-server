@@ -119,7 +119,6 @@ type UploadJob struct {
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
 		skipPreviouslyFailedTables          bool
-		enableTableLevelSchema              bool
 		queryLoadFilesWithUploadID          config.ValueLoader[bool]
 		// max number of parallel delete requests to filemanager (applies to GCS only)
 		maxConcurrentObjDeleteRequests func(workspaceID string) int
@@ -190,7 +189,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf),
-		whSchemaRepo:         repo.NewWHSchemas(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db, f.conf),
 		upload:               dto.Upload,
 		warehouse:            dto.Warehouse,
 		stagingFiles:         dto.StagingFiles,
@@ -234,7 +233,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 			"Warehouse.filemanager.GCS.fileDeleteBatchSize",
 		)
 	}
-	uj.config.enableTableLevelSchema = f.conf.GetBool("Warehouse.enableTableLevelSchema", false)
 
 	uj.stats.uploadTime = uj.timerStat("upload_time")
 	uj.stats.userTablesLoadTime = uj.timerStat("user_tables_load_time")
@@ -341,7 +339,7 @@ func (job *UploadJob) run() (err error) {
 		job.logger.Child("warehouse"),
 		job.statsFactory,
 		whManager,
-		repo.NewWHSchemas(job.db),
+		repo.NewWHSchemas(job.db, job.conf),
 		repo.NewStagingFiles(job.db),
 	)
 	if err != nil {
@@ -1045,7 +1043,6 @@ func (job *UploadJob) GetLocalSchema(ctx context.Context) (model.Schema, error) 
 		ctx,
 		job.warehouse.Destination.ID,
 		job.warehouse.Namespace,
-		job.config.enableTableLevelSchema,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)

@@ -116,7 +116,7 @@ func NewApi(
 		triggerStore:  triggerStore,
 		stagingRepo:   repo.NewStagingFiles(db),
 		uploadRepo:    repo.NewUploads(db),
-		schemaRepo:    repo.NewWHSchemas(db),
+		schemaRepo:    repo.NewWHSchemas(db, conf),
 	}
 	a.config.healthTimeout = conf.GetDuration("Warehouse.healthTimeout", 10, time.Second)
 	a.config.readerHeaderTimeout = conf.GetDuration("Warehouse.readerHeaderTimeout", 3, time.Second)
