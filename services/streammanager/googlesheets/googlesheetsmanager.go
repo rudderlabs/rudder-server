@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tidwall/gjson"
 	"golang.org/x/oauth2"
@@ -78,12 +79,12 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	if config.TestConfig.Endpoint != "" { // test configuration
 		opts = testClientOptions(&config)
 	} else { // normal configuration
-		if opts, err = clientOptions(&config); err != nil {
+		if opts, err = clientOptions(&config, o.Timeout); err != nil {
 			return nil, fmt.Errorf("[GoogleSheets] error :: %w", err)
 		}
 	}
 
-	service, err := generateService(opts...)
+	service, err := generateService(o.Timeout, opts...)
 	// If err is not nil then retrun
 	if err != nil {
 		pkgLogger.Errorf("[Googlesheets] error  :: %w", err)
@@ -144,8 +145,9 @@ func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interf
 }
 
 // generateService produces a google-sheets client using the specified client options
-func generateService(opts ...option.ClientOption) (*sheets.Service, error) {
-	ctx := context.Background()
+func generateService(timeout time.Duration, opts ...option.ClientOption) (*sheets.Service, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	sheetService, err := sheets.NewService(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] error  :: Unable to create sheet service :: %w", err)
@@ -290,7 +292,7 @@ func handleServiceError(err error) (statusCode int, responseMessage string) {
 	return statusCode, responseMessage
 }
 
-func clientOptions(config *Config) ([]option.ClientOption, error) {
+func clientOptions(config *Config, timeout time.Duration) ([]option.ClientOption, error) {
 	var credentials Credentials
 	if config.Credentials != "" {
 		err := jsonrs.Unmarshal([]byte(config.Credentials), &credentials)
@@ -312,7 +314,7 @@ func clientOptions(config *Config) ([]option.ClientOption, error) {
 		},
 		TokenURL: tokenURI,
 	}
-	client, err := generateOAuthClient(jwtconfig)
+	client, err := generateOAuthClient(jwtconfig, timeout)
 	if err != nil {
 		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
 		return nil, err
@@ -321,8 +323,9 @@ func clientOptions(config *Config) ([]option.ClientOption, error) {
 }
 
 // generateOAuthClient produces an OAuth client based on a jwt Config
-func generateOAuthClient(jwtconfig *jwt.Config) (*http.Client, error) {
-	ctx := context.Background()
+func generateOAuthClient(jwtconfig *jwt.Config, timeout time.Duration) (*http.Client, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 	var oauthconfig *oauth2.Config
 	token, err := jwtconfig.TokenSource(ctx).Token()
 	if err != nil {
