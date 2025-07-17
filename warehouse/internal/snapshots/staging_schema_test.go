@@ -63,10 +63,10 @@ func TestStagingFileSchema(t *testing.T) {
 				return uuid.Nil, errors.New("should not be called")
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
-		cache.cache.Put(cacheKey("279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ"), snapshot, cache.cacheRefreshTTL())
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
+		schemaCache.cache.Put(cacheKey("279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ"), snapshot, schemaCache.cacheRefreshTTL())
 
-		got, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		got, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.NoError(t, err)
 		require.Equal(t, snapshot, got, "expected cache hit to return cached snapshot")
 		require.Zero(t, db.getLatestCalls.Load(), "expected no DB calls")
@@ -90,10 +90,10 @@ func TestStagingFileSchema(t *testing.T) {
 				return fresh.ID, nil
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
-		cache.cache.Put(cacheKey("279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ"), &model.StagingFileSchemaSnapshot{CreatedAt: time.Now().Add(-time.Hour)}, cache.cacheRefreshTTL())
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
+		schemaCache.cache.Put(cacheKey("279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ"), &model.StagingFileSchemaSnapshot{CreatedAt: time.Now().Add(-time.Hour)}, schemaCache.cacheRefreshTTL())
 
-		got, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		got, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.NoError(t, err)
 		require.Equal(t, fresh.ID, got.ID, "expected to fetch and cache new snapshot after expiry")
 		require.Equal(t, int64(1), db.insertCalls.Load(), "expected 1 insert call")
@@ -117,8 +117,8 @@ func TestStagingFileSchema(t *testing.T) {
 				return uuid.Nil, errors.New("should not be called")
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
-		got, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
+		got, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.NoError(t, err)
 		require.Equal(t, dbSnap.ID, got.ID, "expected to return DB snapshot on cache miss")
 		require.Equal(t, int64(1), db.getLatestCalls.Load(), "expected 1 DB getLatest call")
@@ -142,8 +142,8 @@ func TestStagingFileSchema(t *testing.T) {
 				return fresh.ID, nil
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
-		got, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
+		got, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.NoError(t, err)
 		require.Equal(t, fresh.ID, got.ID, "expected to insert and return new snapshot when DB is expired")
 		require.Equal(t, int64(1), db.insertCalls.Load(), "expected 1 insert call")
@@ -172,8 +172,8 @@ func TestStagingFileSchema(t *testing.T) {
 				return fresh, nil
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
-		got, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
+		got, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.NoError(t, err)
 		require.Equal(t, fresh.ID, got.ID, "expected to insert and return new snapshot when DB returns ErrNoSchemaSnapshot")
 		require.Equal(t, int64(1), db.insertCalls.Load(), "expected 1 insert call")
@@ -189,8 +189,8 @@ func TestStagingFileSchema(t *testing.T) {
 				return uuid.Nil, nil
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
-		_, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
+		_, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.Error(t, err)
 		require.Equal(t, int64(1), db.getLatestCalls.Load(), "expected 1 DB getLatest call")
 		require.Equal(t, int64(0), db.insertCalls.Load(), "expected no DB insert calls")
@@ -213,8 +213,8 @@ func TestStagingFileSchema(t *testing.T) {
 				return uuid.Nil, errors.New("db error")
 			},
 		}
-		cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
-		_, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
+		schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: true})
+		_, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", schema)
 		require.Error(t, err)
 		require.Equal(t, int64(1), db.getLatestCalls.Load(), "expected 1 DB getLatest call")
 		require.Equal(t, int64(1), db.insertCalls.Load(), "expected 1 DB insert call")
@@ -237,14 +237,14 @@ func TestStagingFileSchema_ConcurrentAccess(t *testing.T) {
 			return uuid.Nil, nil
 		},
 	}
-	cache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
+	schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
 
 	var wg sync.WaitGroup
 	for i := 0; i < 1000; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := cache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", json.RawMessage(`{"foo":"bar"}`))
+			_, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", json.RawMessage(`{"foo":"bar"}`))
 			require.NoError(t, err)
 		}()
 	}
