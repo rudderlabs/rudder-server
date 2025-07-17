@@ -62,8 +62,8 @@ type workerJob struct {
 }
 
 func (w *worker) workLoop() {
-	timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 	for {
+		timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 		select {
 		case message, hasMore := <-w.input:
 			if !hasMore {
@@ -251,8 +251,6 @@ func (w *worker) workLoop() {
 			}
 
 		case <-timeout:
-			timeout = time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
-
 			if len(w.routerJobs) > 0 {
 				if w.rt.enableBatching {
 					w.destinationJobs = w.batchTransform(w.routerJobs)
