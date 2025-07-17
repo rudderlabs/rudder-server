@@ -20,7 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3manager "github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
 	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
@@ -671,10 +670,25 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 }
 
 func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, string, string, error) {
-	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3v2.ServiceID)
+	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3.ServiceID)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create aws session config v2: %w", err)
 	}
+
+	if sessionConfig.Region == "" {
+		bucketName, ok := destination.Config["bucketName"].(string)
+		if !ok {
+			return "", "", "", fmt.Errorf("bucketName not found in destination config")
+		}
+		region, err := s3manager.GetBucketRegion(context.Background(), s3.New(s3.Options{
+			Region: misc.GetRegionHint(),
+		}), bucketName)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to fetch AWS region for bucket: %w", err)
+		}
+		sessionConfig.Region = region
+	}
+
 	awsConfig, err := awsutil_v2.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create aws config v2: %w", err)
@@ -689,17 +703,6 @@ func GetTemporaryS3CredV2(destination *backendconfig.DestinationT) (string, stri
 		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
 	}
 
-	if awsConfig.Region == "" {
-		bucketName, ok := destination.Config["bucketName"].(string)
-		if !ok {
-			return "", "", "", fmt.Errorf("bucketName not found in destination config")
-		}
-		region, err := s3manager.GetBucketRegion(context.Background(), s3.New(s3.Options{}), bucketName)
-		if err != nil {
-			return "", "", "", fmt.Errorf("failed to fetch AWS region for bucket: %w", err)
-		}
-		awsConfig.Region = region
-	}
 	// Explicitly call STS to get session token (temporary credentials)
 	client := stsv2.NewFromConfig(awsConfig)
 	expiryInSec := awsCredsExpiryInS.Load()

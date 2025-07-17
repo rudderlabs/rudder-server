@@ -622,6 +622,10 @@ func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
 	return config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
 }
 
+func GetRegionHint() string {
+	return config.GetString("AWS_S3_REGION_HINT", "us-east-1")
+}
+
 func GetRudderObjectStoragePrefix() (prefix string) {
 	return config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
 }

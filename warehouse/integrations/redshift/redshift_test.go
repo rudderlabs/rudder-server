@@ -34,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -220,9 +221,11 @@ func TestIntegration(t *testing.T) {
 				configOverride: map[string]any{
 					"useIAMForAuth":     true,
 					"user":              iamCredentials.UserName,
+					"iamRoleARN":        iamCredentials.IAMRoleARN,
 					"iamRoleARNForAuth": iamCredentials.IAMRoleARN,
 					"clusterId":         iamCredentials.ClusterID,
 					"clusterRegion":     iamCredentials.ClusterRegion,
+					"externalID":        workspaceID,
 				},
 				verifySchema: func(t *testing.T, db *sql.DB, namespace string) {
 					t.Helper()
@@ -564,11 +567,13 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("useRudderStorage", false).
 					WithConfigOption("syncFrequency", "30").
 					WithConfigOption("allowUsersContextTraits", true).
-					WithConfigOption("underscoreDivideNumbers", true)
+					WithConfigOption("underscoreDivideNumbers", true).
+					WithConfigOption("externalID", workspaceID)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
 				destination := destinationBuilder.Build()
+				destination.WorkspaceID = workspaceID
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().
 					WithSource(
@@ -644,6 +649,7 @@ func TestIntegration(t *testing.T) {
 					"accessKey":        tc.credentials.AccessKey,
 					"enableSSE":        false,
 					"useRudderStorage": false,
+					"externalID":       workspaceID,
 				}
 
 				t.Log("verifying test case 1")
