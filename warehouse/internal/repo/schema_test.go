@@ -2,11 +2,13 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -228,14 +230,14 @@ func TestWHSchemasRepo(t *testing.T) {
 }
 
 func TestWHSchemasRepoWithTableLevel(t *testing.T) {
-	config.Set("Warehouse.enableTableLevelSchema", true)
-	defer config.Set("Warehouse.enableTableLevelSchema", false)
+	conf := config.New()
+	conf.Set("Warehouse.enableTableLevelSchema", true)
 
 	var (
 		ctx = context.Background()
 		now = time.Now().Truncate(time.Second).UTC()
 		db  = setupDB(t)
-		r   = repo.NewWHSchemas(db, config.New(), repo.WithNow(func() time.Time {
+		r   = repo.NewWHSchemas(db, conf, repo.WithNow(func() time.Time {
 			return now
 		}))
 	)
@@ -298,7 +300,7 @@ func TestWHSchemasRepoWithTableLevel(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 	})
 
-	t.Run("GetForNamespace", func(t *testing.T) {
+	t.Run("GetForNamespace (already populated)", func(t *testing.T) {
 		expectedSchema, err := r.GetForNamespace(ctx, destinationID, namespace)
 		require.NoError(t, err)
 		require.Equal(t, sourceID, expectedSchema.SourceID)
@@ -318,5 +320,61 @@ func TestWHSchemasRepoWithTableLevel(t *testing.T) {
 		expectedSchema, err = r.GetForNamespace(ctx, notFound, notFound)
 		require.NoError(t, err)
 		require.Empty(t, expectedSchema)
+	})
+
+	t.Run("GetForNamespace (not already populated)", func(t *testing.T) {
+		rs1 := repo.NewWHSchemas(db, config.New(), repo.WithNow(func() time.Time {
+			return now
+		}))
+		err := rs1.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_1",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: destinationType,
+			Schema:          schemaModel,
+			CreatedAt:       now,
+			UpdatedAt:       now,
+			ExpiresAt:       now.Add(time.Hour),
+		})
+		require.NoError(t, err)
+
+		rs2 := repo.NewWHSchemas(db, conf, repo.WithNow(func() time.Time {
+			return now
+		}))
+		expectedSchema, err := rs2.GetForNamespace(ctx, "destination_id_1", "namespace_1")
+		require.NoError(t, err)
+		require.Equal(t, "source_id_1", expectedSchema.SourceID)
+		require.Equal(t, "namespace_1", expectedSchema.Namespace)
+		require.Equal(t, "destination_id_1", expectedSchema.DestinationID)
+		require.Equal(t, destinationType, expectedSchema.DestinationType)
+		require.Equal(t, schemaModel, expectedSchema.Schema)
+		require.Equal(t, now, expectedSchema.CreatedAt)
+		require.Equal(t, now, expectedSchema.UpdatedAt)
+		require.Equal(t, now.Add(time.Hour), expectedSchema.ExpiresAt)
+
+		// Verify that the table-level schemas are populated
+		tableLevelSchemasQuery, err := db.QueryContext(ctx, "SELECT table_name, schema FROM wh_schemas WHERE destination_id = $1 AND namespace = $2 AND table_name != '';", "destination_id_1", "namespace_1")
+		require.NoError(t, err)
+		defer func() { _ = tableLevelSchemasQuery.Close() }()
+
+		type TableLevelSchema struct {
+			TableName string
+			Schema    model.TableSchema
+		}
+
+		var tableLevelSchemasResult []TableLevelSchema
+		var tableLevelSchema TableLevelSchema
+		for tableLevelSchemasQuery.Next() {
+			var schemaRaw json.RawMessage
+			err = tableLevelSchemasQuery.Scan(&tableLevelSchema.TableName, &schemaRaw)
+			require.NoError(t, err)
+			err = jsonrs.Unmarshal(schemaRaw, &tableLevelSchema.Schema)
+			require.NoError(t, err)
+			tableLevelSchemasResult = append(tableLevelSchemasResult, tableLevelSchema)
+		}
+		require.ElementsMatch(t, []TableLevelSchema{
+			{TableName: "table_name_1", Schema: schemaModel["table_name_1"]},
+			{TableName: "table_name_2", Schema: schemaModel["table_name_2"]},
+		}, tableLevelSchemasResult)
 	})
 }

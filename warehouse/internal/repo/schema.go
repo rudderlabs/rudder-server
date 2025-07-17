@@ -3,7 +3,6 @@ package repo
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -35,20 +34,22 @@ const whSchemaTableColumns = `
 
 type WHSchema struct {
 	*repo
-	conf *config.Config
+
+	config struct {
+		enableTableLevelSchema config.ValueLoader[bool]
+	}
 }
 
 func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSchema {
-	whSchemaRepo := &repo{
-		db:  db,
-		now: timeutil.Now,
-	}
 	r := &WHSchema{
-		repo: whSchemaRepo,
-		conf: conf,
+		repo: &repo{
+			db:  db,
+			now: timeutil.Now,
+		},
 	}
+	r.config.enableTableLevelSchema = conf.GetReloadableBoolVar(false, "Warehouse.enableTableLevelSchema")
 	for _, opt := range opts {
-		opt(whSchemaRepo)
+		opt(r.repo)
 	}
 	return r
 }
@@ -62,8 +63,6 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
-
-	enableTableLevelSchema := sh.conf.GetBool("Warehouse.enableTableLevelSchema", false)
 
 	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		// update all schemas with the same destination_id and namespace but different source_id
@@ -124,24 +123,66 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 		}
 
 		// If table-level schema is enabled, insert/update for each table
-		if enableTableLevelSchema {
+		if sh.config.enableTableLevelSchema.Load() {
 			for tableName, tableSchema := range whSchema.Schema {
 				tableSchemaPayload, err := jsonrs.Marshal(tableSchema)
 				if err != nil {
 					return fmt.Errorf("marshaling table schema for table %s: %w", tableName, err)
 				}
-				err = sh.updateOtherTableLevelSchemas(ctx, tx, whSchema, tableName, tableSchemaPayload)
+
+				_, err = tx.ExecContext(ctx, `
+					UPDATE `+whSchemaTableName+`
+					SET
+						schema = $1,
+						updated_at = $2,
+						expires_at = $3
+					WHERE
+						destination_id = $4 AND
+						namespace = $5 AND
+						source_id != $6 AND
+						table_name = $7;
+	`,
+					tableSchemaPayload,
+					sh.now().UTC(),
+					whSchema.ExpiresAt,
+					whSchema.DestinationID,
+					whSchema.Namespace,
+					whSchema.SourceID,
+					tableName,
+				)
 				if err != nil {
 					return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
 				}
 
-				tableWHSchema := &model.WHTableSchema{
-					WHSchema:  *whSchema,
-					TableName: tableName,
-				}
-				err = sh.insertTableSchema(ctx, tx, tableWHSchema, tableSchemaPayload)
+				_, err = tx.ExecContext(ctx, `
+					INSERT INTO `+whSchemaTableName+` (
+					  source_id, namespace, destination_id,
+					  destination_type, schema, created_at,
+					  updated_at, expires_at, table_name
+					)
+					VALUES
+					  ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+					ON CONFLICT (
+						source_id, destination_id, namespace, table_name
+					) DO
+					UPDATE
+					SET
+					  schema = $5,
+					  updated_at = $7,
+					  expires_at = $8;
+	`,
+					whSchema.SourceID,
+					whSchema.Namespace,
+					whSchema.DestinationID,
+					whSchema.DestinationType,
+					tableSchemaPayload,
+					whSchema.CreatedAt.UTC(),
+					whSchema.UpdatedAt.UTC(),
+					whSchema.ExpiresAt,
+					tableName,
+				)
 				if err != nil {
-					return fmt.Errorf("inserting table-level schema for table %s: %w", tableName, err)
+					return fmt.Errorf("inserting table-level schema: %w", err)
 				}
 			}
 		}
@@ -152,73 +193,9 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 	return err
 }
 
-// updateOtherTableLevelSchemas updates all other schemas with the same destination_id, namespace, and table_name but different source_id.
-func (sh *WHSchema) updateOtherTableLevelSchemas(ctx context.Context, tx *sqlmiddleware.Tx, whSchema *model.WHSchema, tableName string, tableSchemaPayload []byte) error {
-	_, err := tx.ExecContext(ctx, `
-		UPDATE `+whSchemaTableName+`
-		SET
-			schema = $1,
-			updated_at = $2,
-			expires_at = $3
-		WHERE
-			destination_id = $4 AND
-			namespace = $5 AND
-			source_id != $6 AND
-			table_name = $7;
-	`,
-		tableSchemaPayload,
-		sh.now().UTC(),
-		whSchema.ExpiresAt,
-		whSchema.DestinationID,
-		whSchema.Namespace,
-		whSchema.SourceID,
-		tableName,
-	)
-	if err != nil {
-		return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
-	}
-	return nil
-}
-
-// insertTableSchema inserts or updates a table-level schema row in wh_schemas with the given table name, using the provided transaction and marshaled schema.
-func (sh *WHSchema) insertTableSchema(ctx context.Context, tx *sqlmiddleware.Tx, tableWHSchema *model.WHTableSchema, tableSchemaPayload []byte) error {
-	_, err := tx.ExecContext(ctx, `
-		INSERT INTO `+whSchemaTableName+` (
-		  source_id, namespace, destination_id,
-		  destination_type, schema, created_at,
-		  updated_at, expires_at, table_name
-		)
-		VALUES
-		  ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-		ON CONFLICT (
-			source_id, destination_id, namespace, table_name
-		) DO
-		UPDATE
-		SET
-		  schema = $5,
-		  updated_at = $7,
-		  expires_at = $8;
-	`,
-		tableWHSchema.SourceID,
-		tableWHSchema.Namespace,
-		tableWHSchema.DestinationID,
-		tableWHSchema.DestinationType,
-		tableSchemaPayload,
-		tableWHSchema.CreatedAt.UTC(),
-		tableWHSchema.UpdatedAt.UTC(),
-		tableWHSchema.ExpiresAt,
-		tableWHSchema.TableName,
-	)
-	if err != nil {
-		return fmt.Errorf("inserting table-level schema: %w", err)
-	}
-	return nil
-}
-
 // GetForNamespace fetches the schema for a namespace, supporting both legacy and table-level modes.
 func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error) {
-	enableTableLevelSchema := sh.conf.GetBool("Warehouse.enableTableLevelSchema", false)
-	if !enableTableLevelSchema {
+	if !sh.config.enableTableLevelSchema.Load() {
 		return sh.getForNamespace(ctx, destID, namespace)
 	}
 
@@ -227,7 +204,19 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 		return model.WHSchema{}, err
 	}
 
-	tableLevelSchemas, err := sh.getTableLevelSchemasForNamespace(ctx, destID, namespace)
+	var tableLevelSchemas model.Schema
+	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		err := sh.populateTableLevelSchemasWithTx(ctx, tx, destID, namespace)
+		if err != nil {
+			return err
+		}
+
+		tableLevelSchemas, err = sh.getTableLevelSchemasForNamespaceWithTx(ctx, tx, destID, namespace)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		return model.WHSchema{}, err
 	}
@@ -268,48 +257,90 @@ func (sh *WHSchema) getForNamespace(ctx context.Context, destID, namespace strin
 	return *entries[0], err
 }
 
-// getTableLevelSchemasForNamespace fetches and merges all table-level schemas for destID and namespace.
-// Returns a WHSchema with the merged schema and the latest metadata from any row.
-func (sh *WHSchema) getTableLevelSchemasForNamespace(ctx context.Context, destID, namespace string) (model.Schema, error) {
+// populateTableLevelSchemasWithTx inserts table-level schemas for each table in the parent schema
+// that don't already exist as separate table-level schemas, using the provided transaction.
+func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sqlmiddleware.Tx, destID, namespace string) error {
+	query := `
+		INSERT INTO wh_schemas (
+			source_id,
+			namespace,
+			destination_id,
+			destination_type,
+			schema,
+			table_name,
+			created_at,
+			updated_at,
+			expires_at
+		)
+		SELECT
+			s.source_id,
+			s.namespace,
+			s.destination_id,
+			s.destination_type,
+			j.value AS schema,
+			j.key AS table_name,
+			s.created_at,
+			s.updated_at,
+			s.expires_at
+		FROM wh_schemas s
+		CROSS JOIN LATERAL jsonb_each(s.schema) AS j
+		WHERE
+			s.destination_id = $1 AND
+			s.namespace = $2 AND
+			s.table_name = '' AND
+			NOT EXISTS (
+				SELECT 1 FROM wh_schemas s2
+				WHERE s2.source_id = s.source_id AND
+					s2.namespace = s.namespace AND
+					s2.destination_id = s.destination_id AND
+					s2.table_name = j.key
+			)
+	`
+	_, err := tx.ExecContext(ctx, query, destID, namespace)
+	if err != nil {
+		return fmt.Errorf("populating table-level schemas: %w", err)
+	}
+	return nil
+}
+
+// getTableLevelSchemasForNamespaceWithTx fetches and merges all table-level schemas for destID and namespace,
+// using the provided transaction.
+func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, tx *sqlmiddleware.Tx, destID, namespace string) (model.Schema, error) {
 	tableLevelQuery := `SELECT table_name, schema FROM ` + whSchemaTableName + `
 	WHERE
 		destination_id = $1 AND
 		namespace = $2 AND
 		table_name != ''
-	ORDER BY
-		id DESC;
+	ORDER BY table_name;
 	`
 
-	rows, err := sh.db.QueryContext(ctx, tableLevelQuery, destID, namespace)
+	rows, err := tx.QueryContext(ctx, tableLevelQuery, destID, namespace)
 	if err != nil {
-		return model.Schema{}, err
+		return nil, fmt.Errorf("querying table-level schemas: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
 	var tableLevelSchemas model.Schema
 	for rows.Next() {
-		var (
-			tableName           string
-			schemaPayloadRawRaw json.RawMessage
-		)
-		err := rows.Scan(&tableName, &schemaPayloadRawRaw)
+		var tableName string
+		var schemaJSON []byte
+		err := rows.Scan(&tableName, &schemaJSON)
 		if err != nil {
-			return model.Schema{}, fmt.Errorf("scanning row: %w", err)
+			return nil, fmt.Errorf("scanning table-level schema row: %w", err)
 		}
 
-		var schemaPayload model.TableSchema
-		err = jsonrs.Unmarshal(schemaPayloadRawRaw, &schemaPayload)
+		var tableSchema model.TableSchema
+		err = jsonrs.Unmarshal(schemaJSON, &tableSchema)
 		if err != nil {
-			return model.Schema{}, fmt.Errorf("unmarshal schemaPayload: %w", err)
+			return nil, fmt.Errorf("unmarshaling table schema for table %s: %w", tableName, err)
 		}
-
 		if tableLevelSchemas == nil {
 			tableLevelSchemas = make(model.Schema)
 		}
-		tableLevelSchemas[tableName] = schemaPayload
+		tableLevelSchemas[tableName] = tableSchema
 	}
 	if err := rows.Err(); err != nil {
-		return model.Schema{}, fmt.Errorf("iterating rows: %w", err)
+		return nil, fmt.Errorf("iterating table-level schema rows: %w", err)
 	}
 	return tableLevelSchemas, nil
 }

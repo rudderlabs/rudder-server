@@ -10,7 +10,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/sql/migrations"
 )
@@ -47,10 +46,6 @@ func TestMigrate(t *testing.T) {
 			var err error
 			if strings.HasPrefix(dir, "reports_always") {
 				err = m.MigrateFromTemplates("reports_always", map[string]interface{}{
-					"config": config.Default,
-				})
-			} else if strings.HasPrefix(dir, "warehouse_always") {
-				err = m.MigrateFromTemplates("warehouse_always", map[string]interface{}{
 					"config": config.Default,
 				})
 			} else {

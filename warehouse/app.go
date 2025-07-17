@@ -249,10 +249,6 @@ func (a *App) setupDatabase(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not migrate: %w", err)
 	}
-	err = a.migrateAlways()
-	if err != nil {
-		return fmt.Errorf("could not migrate always: %w", err)
-	}
 
 	return nil
 }
@@ -299,31 +295,6 @@ func (a *App) migrate() error {
 	})
 	if err != nil {
 		return fmt.Errorf("could not migrate: %w", err)
-	}
-
-	return nil
-}
-
-func (a *App) migrateAlways() error {
-	m := &migrator.Migrator{
-		Handle:                     a.db.DB,
-		MigrationsTable:            "wh_schema_runalways_migrations",
-		ShouldForceSetLowerVersion: a.config.shouldForceSetLowerVersion,
-		RunAlways:                  true,
-	}
-
-	operation := func() error {
-		return m.MigrateFromTemplates("warehouse_always", map[string]interface{}{
-			"config": a.conf,
-		})
-	}
-
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		a.logger.Warnf("retrying warehouse database run always migration in %s: %v", t, err)
-	})
-	if err != nil {
-		return fmt.Errorf("could not migrate always: %w", err)
 	}
 
 	return nil

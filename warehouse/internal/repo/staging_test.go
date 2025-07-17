@@ -10,8 +10,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -32,14 +30,6 @@ func setupDB(t testing.TB) *sqlmiddleware.DB {
 		Handle:          pgResource.DB,
 		MigrationsTable: "wh_schema_migrations",
 	}).Migrate("warehouse")
-
-	require.NoError(t, err)
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_runalways_migrations",
-	}).MigrateFromTemplates("warehouse_always", map[string]interface{}{
-		"config": config.Default,
-	})
 	require.NoError(t, err)
 
 	t.Log("db:", pgResource.DBDsn)
