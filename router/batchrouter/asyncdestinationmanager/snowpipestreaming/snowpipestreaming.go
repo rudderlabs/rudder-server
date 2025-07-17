@@ -562,19 +562,67 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 	log.Infon("Polling for import info")
 
 	statusRes, err := m.api.GetStatus(ctx, info.ChannelID)
-	if err != nil {
-		return false, fmt.Errorf("getting status: %w", err)
+	if err == nil {
+		log.Infon("Polled import info",
+			logger.NewBoolField("success", statusRes.Success),
+			logger.NewStringField("polledOffset", statusRes.Offset),
+			logger.NewBoolField("valid", statusRes.Valid),
+			logger.NewBoolField("completed", statusRes.Offset == info.Offset),
+		)
+		if !statusRes.Valid || !statusRes.Success {
+			return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
+		}
+		return statusRes.Offset != info.Offset, nil
 	}
-	log.Infon("Polled import info",
-		logger.NewBoolField("success", statusRes.Success),
-		logger.NewStringField("polledOffset", statusRes.Offset),
-		logger.NewBoolField("valid", statusRes.Valid),
-		logger.NewBoolField("completed", statusRes.Offset == info.Offset),
-	)
-	if !statusRes.Valid || !statusRes.Success {
-		return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
+
+	/*
+		404 can happen in the case where the channel is cached in the rudder-server,
+		but then the snowpipe service restarts making the channel id invalid.
+		During polling, we try to recreate the channel to check the status.
+	*/
+	if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
+		log.Infon("Channel not found during polling, attempting to recreate channel", logger.NewStringField("channelID", info.ChannelID))
+
+		// Get destination config
+		var destConf destConfig
+		if decodeErr := destConf.Decode(m.destination.Config); decodeErr != nil {
+			return false, fmt.Errorf("failed to decode destination config during channel recreation: %w", decodeErr)
+		}
+
+		req := buildCreateChannelRequest(m.destination.ID, m.config.instanceID, &destConf, info.Table)
+		recreatedChannel, recreateErr := m.api.CreateChannel(ctx, req)
+		if recreateErr != nil {
+			return false, fmt.Errorf("recreating channel: %w", recreateErr)
+		}
+		m.channelCache.Store(info.Table, recreatedChannel)
+
+		log.Infon("Recreated channel for polling", logger.NewStringField("channelID", recreatedChannel.ChannelID))
+
+		// Update the channel ID in importInfo for future polls
+		info.ChannelID = recreatedChannel.ChannelID
+
+		// Try to get status again with new channel
+		statusRes2, err2 := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
+		if err2 != nil {
+			return false, fmt.Errorf("getting status after channel recreation: %w", err2)
+		}
+
+		log.Infon("Polled import info after recreation",
+			logger.NewBoolField("success", statusRes2.Success),
+			logger.NewStringField("polledOffset", statusRes2.Offset),
+			logger.NewBoolField("valid", statusRes2.Valid),
+			logger.NewBoolField("completed", statusRes2.Offset == info.Offset),
+		)
+
+		if !statusRes2.Valid || !statusRes2.Success {
+			return false, fmt.Errorf("invalid status response after recreation with valid: %t, success: %t", statusRes2.Valid, statusRes2.Success)
+		}
+
+		return statusRes2.Offset != info.Offset, nil
 	}
-	return statusRes.Offset != info.Offset, nil
+
+	// For all other errors, return the original error
+	return false, fmt.Errorf("getting status: %w", err)
 }
 
 func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
