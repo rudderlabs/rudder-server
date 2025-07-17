@@ -147,7 +147,9 @@ func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) error {
 	duration := math.Round((sh.now().Sub(start).Minutes() * 1000)) / 1000
 	sh.log.Infon("Fetched schema from warehouse", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type), logger.NewFloatField("timeTakenInMinutes", duration))
 	removeDeprecatedColumns(warehouseSchema, sh.warehouse, sh.log)
-	err = sh.saveSchema(ctx, warehouseSchema)
+
+	expiresAt := sh.now().Add(sh.ttlInMinutes)
+	err = sh.saveSchema(ctx, warehouseSchema, expiresAt)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -170,7 +172,7 @@ func (sh *schema) GetTableSchema(ctx context.Context, tableName string) model.Ta
 func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
-	err := sh.saveSchema(ctx, updatedSchema)
+	err := sh.saveSchema(ctx, updatedSchema, time.Time{})
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -182,7 +184,7 @@ func (sh *schema) UpdateTableSchema(ctx context.Context, tableName string, table
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
 	sh.cachedSchema[tableName] = tableSchema
-	err := sh.saveSchema(ctx, sh.cachedSchema)
+	err := sh.saveSchema(ctx, sh.cachedSchema, time.Time{})
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -226,14 +228,24 @@ func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSc
 	return tableSchemaDiff(tableName, sh.cachedSchema, tableSchema), nil
 }
 
-func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema) error {
+/*
+Routine schema updates:
+
+	Always pass time.Time{} (zero value) for expiresAt.
+	This ensures the DB preserves the current expiresAt, so the system can eventually recover
+	from a corrupted or stale schema by re-fetching from the warehouse when the expiry is reached.
+
+Warehouse fetch:
+
+	Only when saving a schema as a result of a successful warehouse fetch should a non-zero expiresAt be passed (i.e., to extend the expiry).
+*/
+func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema, expiresAt time.Time) error {
 	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 
-	expiresAt := sh.now().Add(sh.ttlInMinutes)
 	err = sh.schemaRepo.Insert(ctx,
 		&model.WHSchema{
 			SourceID:        sh.warehouse.Source.ID,

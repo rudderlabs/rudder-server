@@ -51,6 +51,10 @@ func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) error
 	key := schemaKey(schema.DestinationID, schema.Namespace)
 
 	m.mu.Lock()
+	// This is to simulate the logic in the underlying sql repo.
+	if schema.ExpiresAt.IsZero() {
+		schema.ExpiresAt = m.schemaMap[key].ExpiresAt
+	}
 	m.schemaMap[key] = *schema
 	m.mu.Unlock()
 
@@ -1256,6 +1260,38 @@ func TestSchema(t *testing.T) {
 				require.Equal(t, tc.expectedSchema, uploadSchema)
 			})
 		}
+	})
+
+	t.Run("ExpiresAt updated only on warehouse fetch", func(t *testing.T) {
+		mockRepo := &mockSchemaRepo{
+			schemaMap: map[string]model.WHSchema{
+				"dest_id_namespace": {
+					SourceID:      "source_id",
+					Namespace:     "namespace",
+					DestinationID: "dest_id",
+					Schema:        model.Schema{"table": {"col": "string"}},
+					ExpiresAt:     timeutil.Now().Add(-10 * time.Minute),
+				},
+			},
+		}
+		wh := model.Warehouse{
+			Destination: backendconfig.DestinationT{ID: "dest_id"},
+			Namespace:   "namespace",
+			Source:      backendconfig.SourceT{ID: "source_id"},
+		}
+
+		sch := newSchema(t, wh, mockRepo)
+		expiresAt := mockRepo.schemaMap["dest_id_namespace"].ExpiresAt
+		// ExpiresAt is updated since the schema in DB was expired so it was fetched from warehouse
+		require.Greater(t, expiresAt, timeutil.Now())
+
+		sch.UpdateSchema(ctx, model.Schema{"table": {"col": "int"}})
+		// No change to expiresAt
+		require.Equal(t, expiresAt, mockRepo.schemaMap["dest_id_namespace"].ExpiresAt)
+
+		sch.UpdateTableSchema(ctx, "table", model.TableSchema{"col": "string"})
+		// No change to expiresAt
+		require.Equal(t, expiresAt, mockRepo.schemaMap["dest_id_namespace"].ExpiresAt)
 	})
 
 	t.Run("ConcurrentUpdateTableSchema", func(t *testing.T) {

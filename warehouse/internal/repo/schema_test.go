@@ -227,6 +227,43 @@ func TestWHSchemasRepo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, updatedSchema.Schema, secondRetrieved.Schema)
 	})
+
+	t.Run("Insert preserves and updates expiresAt as expected", func(t *testing.T) {
+		// Insert initial schema with a non-zero expiresAt
+		initialExpiresAt := now.Add(3 * time.Hour)
+		initialSchema := schema
+		initialSchema.ExpiresAt = initialExpiresAt
+		_, err := r.Insert(ctx, &initialSchema)
+		require.NoError(t, err)
+
+		retrieved, err := r.GetForNamespace(ctx, destinationID, namespace)
+		require.NoError(t, err)
+		require.Equal(t, initialExpiresAt, retrieved.ExpiresAt)
+
+		// Update schema with zero time for ExpiresAt (should preserve initialExpiresAt)
+		updatedSchema := initialSchema
+		updatedSchema.Schema = model.Schema{"table_name_1": {"column_name_1": "int"}} // change schema
+		updatedSchema.ExpiresAt = time.Time{}                                         // sentinel value
+		_, err = r.Insert(ctx, &updatedSchema)
+		require.NoError(t, err)
+
+		// Check that expiresAt is preserved
+		retrieved, err = r.GetForNamespace(ctx, destinationID, namespace)
+		require.NoError(t, err)
+		require.Equal(t, initialExpiresAt, retrieved.ExpiresAt, "expiresAt should be preserved when zero time is passed")
+		require.Equal(t, updatedSchema.Schema, retrieved.Schema, "schema should be updated")
+
+		// Update schema with a new non-zero expiresAt (should update expiresAt)
+		newExpiresAt := now.Add(5 * time.Hour)
+		updatedSchema.ExpiresAt = newExpiresAt
+		_, err = r.Insert(ctx, &updatedSchema)
+		require.NoError(t, err)
+
+		// Check that expiresAt is updated
+		retrieved, err = r.GetForNamespace(ctx, destinationID, namespace)
+		require.NoError(t, err)
+		require.Equal(t, newExpiresAt, retrieved.ExpiresAt, "expiresAt should be updated when non-zero time is passed")
+	})
 }
 
 func TestWHSchemasRepoWithTableLevel(t *testing.T) {
