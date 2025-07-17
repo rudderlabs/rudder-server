@@ -404,6 +404,16 @@ func (job *UploadJob) run() (err error) {
 		case model.ExportedData:
 			newStatus = nextUploadState.failed
 			if err = job.exportData(); err != nil {
+				// Invalidate schema cache on sync error to prevent repeated export failures
+				// This sets the schema expiry to now, so the next attempt will fetch the latest schema
+				// Since we are not checking if the error is due to schema, to prevent unnecessary invalidations
+				// schema is being cleared only in ExportedData case and not in other cases.
+				invErr := job.whSchemaRepo.SetExpiryForDestination(job.ctx, job.warehouse.Destination.ID, job.now())
+				if invErr != nil {
+					job.logger.Errorf("Failed to invalidate schema cache: %v", invErr)
+				} else {
+					job.logger.Infon("Invalidated warehouse schema cache due to sync error")
+				}
 				break
 			}
 			if err = job.cleanupObjectStorageFiles(); err != nil {
