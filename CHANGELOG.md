@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.5](https://github.com/rudderlabs/rudder-server/compare/v1.54.4...v1.54.5) (2025-07-17)
+
+
+### Miscellaneous
+
+* enhance rsources stats collector with component tagging and error handling ([#6124](https://github.com/rudderlabs/rudder-server/issues/6124)) ([3f01505](https://github.com/rudderlabs/rudder-server/commit/3f0150510a83a2b6d721729a402a07ad550235bd))
+
 ## [1.54.4](https://github.com/rudderlabs/rudder-server/compare/v1.54.3...v1.54.4) (2025-07-15)
 
 
