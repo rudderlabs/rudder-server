@@ -180,10 +180,10 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 }
 
 // router/transformer/transformer_proxy_adapter.go
-// getTransformerProxyURL constructs the transformer proxy URL, prioritizing TRANSFORMER_PROXY_URL for dedicated deployments.
+// getTransformerProxyURL constructs the transformer proxy URL, prioritizing DELIVERY_TRANSFORMER_URL for dedicated deployments.
+// Prefer DELIVERY_TRANSFORMER_URL for dedicated deployments, fallback to DEST_TRANSFORM_URL for backward compatibility
 func getTransformerProxyURL(version, destType string) (string, error) {
-	// Prefer TRANSFORMER_PROXY_URL for dedicated deployments, fallback to DEST_TRANSFORM_URL for backward compatibility
-	baseURL := config.GetString("TRANSFORMER_PROXY_URL", "")
+	baseURL := config.GetString("DELIVERY_TRANSFORMER_URL", "")
 	if baseURL == "" {
 		baseURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	}
