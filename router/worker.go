@@ -1014,7 +1014,8 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	// destinationJobMetadata.JobT.EventPayload is the router input payload
 	// capture router output payload in workerJobStatus if reportJobsdbPayload is false
 	// by default reportJobsdbPayload is true so we capture router input payload
-	payload := destinationJobMetadata.JobT.EventPayload
+	inputPayload := destinationJobMetadata.JobT.EventPayload
+	payload := inputPayload
 	if !w.rt.reportJobsdbPayload.Load() { // TODO: update default/remove this flag after monitoring the payload sizes
 		payload = destinationJob.Message
 	}
@@ -1033,7 +1034,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 			worker:     w,
 			job:        destinationJobMetadata.JobT,
 			status:     status,
-			payload:    payload,
+			payload:    inputPayload,
 			statTags:   destinationJob.StatTags,
 			parameters: destinationJobMetadata.Parameters,
 		}
@@ -1043,7 +1044,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		switch errorAt {
 		case routerutils.ERROR_AT_TF:
 			// we always capture router input payload if we see error from destination transformer
-			payload = destinationJobMetadata.JobT.EventPayload
+			payload = inputPayload
 			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_transformer")
 			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 		default: // includes ERROR_AT_DEL, ERROR_AT_CUST
