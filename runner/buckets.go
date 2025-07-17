@@ -158,5 +158,8 @@ var (
 		"warehouse_dest_transform_output_failed_events": {
 			1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 12500, 15000, 30000, 50000, 75000, 100000,
 		},
+		"rsources_publish_time_second": {
+			0.1, 0.5, 1, 5, 10, 30, 60,
+		},
 	}
 )

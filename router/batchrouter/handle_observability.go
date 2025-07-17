@@ -287,7 +287,7 @@ func (brt *Handle) updateRudderSourcesStats(
 	jobs []*jobsdb.JobT,
 	jobStatuses []*jobsdb.JobStatusT,
 ) error {
-	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
+	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService, "brt", stats.Default)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.CollectStats(jobStatuses)
 	rsourcesStats.CollectFailedRecords(jobStatuses)
