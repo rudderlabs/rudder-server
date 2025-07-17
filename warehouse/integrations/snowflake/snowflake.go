@@ -164,7 +164,7 @@ type Snowflake struct {
 		debugDuplicateTables         []string
 		debugDuplicateIntervalInDays int
 		debugDuplicateLimit          int
-		useAWSV2                     bool
+		useAwsSdkV2                  bool
 
 		privileges struct {
 			fetchSchema struct {
@@ -195,7 +195,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSlice("Warehouse.snowflake.debugDuplicateTables", nil), func(item string, index int) string {
 		return strings.ToUpper(item)
 	})
-	sf.config.useAWSV2 = conf.GetBool("FileManager.useAWSV2", false)
+	sf.config.useAwsSdkV2 = conf.GetBool("FileManager.useAwsSdkV2", false)
 	sf.config.privileges.fetchSchema.required = conf.GetStringSlice("Warehouse.snowflake.privileges.fetchSchema.required", []string{"USAGE"})
 	sf.config.privileges.fetchSchema.enabled = conf.GetBool("Warehouse.snowflake.privileges.fetchSchema.enabled", false)
 
@@ -283,7 +283,7 @@ func (sf *Snowflake) authString() string {
 	var auth string
 	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
 		var tempAccessKeyId, tempSecretAccessKey, token string
-		if sf.config.useAWSV2 {
+		if sf.config.useAwsSdkV2 {
 			tempAccessKeyId, tempSecretAccessKey, token, _ = whutils.GetTemporaryS3CredV2(&sf.Warehouse.Destination)
 		} else {
 			tempAccessKeyId, tempSecretAccessKey, token, _ = whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
