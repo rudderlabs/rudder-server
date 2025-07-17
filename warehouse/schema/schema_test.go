@@ -1285,11 +1285,13 @@ func TestSchema(t *testing.T) {
 		// ExpiresAt is updated since the schema in DB was expired so it was fetched from warehouse
 		require.Greater(t, expiresAt, timeutil.Now())
 
-		sch.UpdateSchema(ctx, model.Schema{"table": {"col": "int"}})
+		err := sch.UpdateSchema(ctx, model.Schema{"table": {"col": "int"}})
+		require.NoError(t, err)
 		// No change to expiresAt
 		require.Equal(t, expiresAt, mockRepo.schemaMap["dest_id_namespace"].ExpiresAt)
 
-		sch.UpdateTableSchema(ctx, "table", model.TableSchema{"col": "string"})
+		err = sch.UpdateTableSchema(ctx, "table", model.TableSchema{"col": "string"})
+		require.NoError(t, err)
 		// No change to expiresAt
 		require.Equal(t, expiresAt, mockRepo.schemaMap["dest_id_namespace"].ExpiresAt)
 	})
