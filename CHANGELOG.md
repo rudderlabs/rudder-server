@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.6](https://github.com/rudderlabs/rudder-server/compare/v1.54.5...v1.54.6) (2025-07-18)
+
+
+### Bug Fixes
+
+* avoid cleanup object storage for datalakes ([#6133](https://github.com/rudderlabs/rudder-server/issues/6133)) ([faaab0e](https://github.com/rudderlabs/rudder-server/commit/faaab0e001b9808b4801ecf9096a007069aaf162))
+
 ## [1.54.5](https://github.com/rudderlabs/rudder-server/compare/v1.54.4...v1.54.5) (2025-07-17)
 
 
