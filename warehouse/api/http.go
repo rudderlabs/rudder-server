@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/snapshots"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -30,6 +32,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -67,26 +70,28 @@ type triggerUploadRequest struct {
 }
 
 type Api struct {
-	mode          string
-	logger        logger.Logger
-	statsFactory  stats.Stats
-	db            *sqlmw.DB
-	notifier      *notifier.Notifier
-	bcConfig      backendconfig.BackendConfig
-	tenantManager *multitenant.Manager
-	bcManager     *bcm.BackendConfigManager
-	sourceManager *source.Manager
-	stagingRepo   *repo.StagingFiles
-	uploadRepo    *repo.Uploads
-	schemaRepo    *repo.WHSchema
-	triggerStore  *sync.Map
+	mode                       string
+	logger                     logger.Logger
+	statsFactory               stats.Stats
+	db                         *sqlmw.DB
+	notifier                   *notifier.Notifier
+	bcConfig                   backendconfig.BackendConfig
+	tenantManager              *multitenant.Manager
+	bcManager                  *bcm.BackendConfigManager
+	sourceManager              *source.Manager
+	stagingRepo                *repo.StagingFiles
+	StagingFileSchemaSnapshots *snapshots.StagingFileSchema
+	uploadRepo                 *repo.Uploads
+	schemaRepo                 *repo.WHSchema
+	triggerStore               *sync.Map
 
 	config struct {
-		healthTimeout       time.Duration
-		readerHeaderTimeout time.Duration
-		runningMode         string
-		webPort             int
-		mode                string
+		healthTimeout                   time.Duration
+		readerHeaderTimeout             time.Duration
+		runningMode                     string
+		webPort                         int
+		mode                            string
+		enableStagingFileSchemaSnapshot config.ValueLoader[bool]
 	}
 }
 
@@ -103,25 +108,34 @@ func NewApi(
 	sourceManager *source.Manager,
 	triggerStore *sync.Map,
 ) *Api {
+	stagingFileSchemaSnapshotTTL := conf.GetDurationVar(12, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
+	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
+		conf,
+		repo.NewStagingFileSchemaSnapshots(db),
+		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
+	)
+
 	a := &Api{
-		mode:          mode,
-		logger:        log.Child("api"),
-		db:            db,
-		notifier:      notifier,
-		bcConfig:      bcConfig,
-		statsFactory:  statsFactory,
-		tenantManager: tenantManager,
-		bcManager:     bcManager,
-		sourceManager: sourceManager,
-		triggerStore:  triggerStore,
-		stagingRepo:   repo.NewStagingFiles(db),
-		uploadRepo:    repo.NewUploads(db),
-		schemaRepo:    repo.NewWHSchemas(db),
+		mode:                       mode,
+		logger:                     log.Child("api"),
+		db:                         db,
+		notifier:                   notifier,
+		bcConfig:                   bcConfig,
+		statsFactory:               statsFactory,
+		tenantManager:              tenantManager,
+		bcManager:                  bcManager,
+		sourceManager:              sourceManager,
+		triggerStore:               triggerStore,
+		stagingRepo:                repo.NewStagingFiles(db),
+		StagingFileSchemaSnapshots: stagingFileSchemaSnapshots,
+		uploadRepo:                 repo.NewUploads(db),
+		schemaRepo:                 repo.NewWHSchemas(db),
 	}
 	a.config.healthTimeout = conf.GetDuration("Warehouse.healthTimeout", 10, time.Second)
 	a.config.readerHeaderTimeout = conf.GetDuration("Warehouse.readerHeaderTimeout", 3, time.Second)
 	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
 	a.config.webPort = conf.GetInt("Warehouse.webPort", 8082)
+	a.config.enableStagingFileSchemaSnapshot = conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
 
 	return a
 }
@@ -159,10 +173,13 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 	a.bcConfig.WaitForConfig(ctx)
 
 	r.Handle("/v1/process", (&api.WarehouseAPI{
-		Logger:      a.logger,
-		Stats:       a.statsFactory,
-		Repo:        a.stagingRepo,
-		Multitenant: a.tenantManager,
+		Logger:                          a.logger,
+		Stats:                           a.statsFactory,
+		Repo:                            a.stagingRepo,
+		Multitenant:                     a.tenantManager,
+		EnableStagingFileSchemaSnapshot: a.config.enableStagingFileSchemaSnapshot,
+		StagingFileSchemaSnapshotGetter: a.StagingFileSchemaSnapshots,
+		JSONPatchGenerator:              warehouseutils.GenerateJSONPatch,
 	}).Handler())
 
 	r.Route("/v1", func(r chi.Router) {
