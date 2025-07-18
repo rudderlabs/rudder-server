@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -66,12 +67,13 @@ const (
 
 // warehouse table names
 const (
-	WarehouseStagingFilesTable = "wh_staging_files"
-	WarehouseLoadFilesTable    = "wh_load_files"
-	WarehouseUploadsTable      = "wh_uploads"
-	WarehouseTableUploadsTable = "wh_table_uploads"
-	WarehouseSchemasTable      = "wh_schemas"
-	WarehouseAsyncJobTable     = "wh_async_jobs"
+	WarehouseStagingFilesTable              = "wh_staging_files"
+	WarehouseStagingFileSchemaSnapshotTable = "wh_staging_file_schema_snapshots"
+	WarehouseLoadFilesTable                 = "wh_load_files"
+	WarehouseUploadsTable                   = "wh_uploads"
+	WarehouseTableUploadsTable              = "wh_table_uploads"
+	WarehouseSchemasTable                   = "wh_schemas"
+	WarehouseAsyncJobTable                  = "wh_async_jobs"
 )
 
 const (
@@ -132,10 +134,15 @@ var (
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
 	S3VirtualHostedRegex      = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 
-	WarehouseDestinationMap = lo.SliceToMap(WarehouseDestinations, func(destination string) (string, struct{}) {
+	PseudoWarehouseDestinationMap = pseudoWarehouseDestinations()
+)
+
+func pseudoWarehouseDestinations() map[string]struct{} {
+	all := append(slices.Clone(WarehouseDestinations), SnowpipeStreaming)
+	return lo.SliceToMap(all, func(destination string) (string, struct{}) {
 		return destination, struct{}{}
 	})
-)
+}
 
 var WHDestNameMap = map[string]string{
 	BQ:            "bigquery",

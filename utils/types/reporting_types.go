@@ -28,6 +28,7 @@ const (
 
 	// Module names
 	BOT_MANAGEMENT         = "bot_management"
+	EVENT_BLOCKING         = "event_blocking"
 	GATEWAY                = "gateway"
 	DESTINATION_FILTER     = "destination_filter"
 	TRACKINGPLAN_VALIDATOR = "tracking_plan_validator"
@@ -205,6 +206,16 @@ func AssertSameKeys[V1, V2 any](m1 map[string]V1, m2 map[string]V2) {
 	for k := range m1 {
 		if _, ok := m2[k]; !ok {
 			panic("key in map1 not found in map2") // TODO improve msg
+		}
+	}
+}
+
+// AssertKeysSubset checks that all keys from the subset map are a subset of keys in the superset map
+// The superset map can have additional keys that are not in the subset map
+func AssertKeysSubset[V1, V2 any](superset map[string]V1, subset map[string]V2) {
+	for k := range subset {
+		if _, ok := superset[k]; !ok {
+			panic("key in subset not found in superset") // TODO improve msg
 		}
 	}
 }
