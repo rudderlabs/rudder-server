@@ -147,7 +147,10 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	for _, source := range config.Sources {
 		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
-			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
+			pkgLogger.Debugn("destination processor status",
+				logger.NewStringField("destinationName", destination.Name),
+				logger.NewBoolField("isProcessorEnabled", destination.IsProcessorEnabled),
+			)
 			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)
 			}
@@ -380,7 +383,7 @@ func (bc *backendConfigImpl) WaitForConfig(ctx context.Context) {
 		}
 		bc.initializedLock.RUnlock()
 
-		pkgLogger.Info("Waiting for backend config")
+		pkgLogger.Infon("Waiting for backend config")
 		select {
 		case <-ctx.Done():
 			return

@@ -103,7 +103,7 @@ type ConnectionModeFilterParams struct {
 func getMessageType(event *types.SingularEventT) string {
 	eventMessageTypeI := misc.MapLookup(*event, "type")
 	if eventMessageTypeI == nil {
-		pkgLogger.Error("Message type is not being sent for the event")
+		pkgLogger.Errorn("Message type is not being sent for the event")
 		return ""
 	}
 	eventMessageType, isEventTypeString := eventMessageTypeI.(string)
@@ -209,13 +209,13 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 	evaluatedDefaultBehaviour := connectionModeFilterParams.DefaultBehaviour
 
 	if srcType == "" {
-		pkgLogger.Debug("sourceType is empty string, filtering event based on default behaviour")
+		pkgLogger.Debugn("sourceType is empty string, filtering event based on default behaviour")
 		return evaluatedDefaultBehaviour
 	}
 
 	destConnModeI := misc.MapLookup(destination.Config, "connectionMode")
 	if destConnModeI == nil {
-		pkgLogger.Debug("connectionMode not present, filtering event based on default behaviour")
+		pkgLogger.Debugn("connectionMode not present, filtering event based on default behaviour")
 		return evaluatedDefaultBehaviour
 	}
 	destConnectionMode, isDestConnModeString := destConnModeI.(string)
@@ -253,7 +253,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 		if eventProperty == "messageType" {
 			messageTypes := ConvertToArrayOfType[string](supportedEventVals)
 			if len(messageTypes) == 0 {
-				pkgLogger.Debug("Problem with message type event property map, filtering event based on default behaviour")
+				pkgLogger.Debugn("Problem with message type event property map, filtering event based on default behaviour")
 				allowEvent = evaluatedDefaultBehaviour
 				continue
 			}
