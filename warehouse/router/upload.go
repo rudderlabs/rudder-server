@@ -481,6 +481,9 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	destination := job.warehouse.Destination
 	storageProvider := whutils.ObjectStorageType(destination.DestinationDefinition.Name, destination.Config, job.upload.UseRudderStorage)
 
+	log := job.logger.Withn(logger.NewStringField("storageProvider", storageProvider))
+	log.Infon("Starting object storage cleanup")
+
 	fm, err := job.fileManagerFactory(&filemanager.Settings{
 		Provider: storageProvider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
@@ -498,6 +501,11 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	filesToDel := lo.Map(job.stagingFiles, func(file *model.StagingFile, _ int) string {
 		return fm.GetDownloadKeyFromFileLocation(file.Location)
 	})
+	log.Infon("Found staging files to delete",
+		logger.NewIntField("stagingFileCount", int64(len(filesToDel))),
+		logger.NewField("stagingFiles", filesToDel),
+	)
+
 	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
 		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID, job.stagingFileIDs)
 		if err != nil {
@@ -506,7 +514,16 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		loadingKeysToDel := lo.Map(loadingFiles, func(file model.LoadFile, _ int) string {
 			return fm.GetDownloadKeyFromFileLocation(file.Location)
 		})
+		log.Infon("Found loading files to delete",
+			logger.NewIntField("loadingFileCount", int64(len(loadingKeysToDel))),
+			logger.NewField("loadingFiles", loadingKeysToDel),
+		)
+
 		filesToDel = append(filesToDel, loadingKeysToDel...)
+	}
+	if len(filesToDel) == 0 {
+		log.Infon("No files to delete")
+		return nil
 	}
 	job.stats.objectsDeleted.Gauge(len(filesToDel))
 
@@ -519,31 +536,32 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		chunkSize = job.config.objDeleteBatchSize(job.upload.WorkspaceID)
 	}
 
-	startTime := job.now()
-	err = job.deleteFilesInChunks(
-		filesToDel,
-		fm,
-		concurrency,
-		chunkSize,
+	log.Infon("Starting file deletion",
+		logger.NewIntField("totalRows", int64(len(filesToDel))),
+		logger.NewIntField("concurrency", int64(concurrency)),
+		logger.NewIntField("chunkSize", int64(chunkSize)),
 	)
-	if err != nil {
-		return fmt.Errorf("deleting files from object storage: %w", err)
-	}
-	job.stats.objectsDeletionTime.Since(startTime)
 
-	return nil
-}
+	startTime := job.now()
 
-func (job *UploadJob) deleteFilesInChunks(keysToDel []string, fm filemanager.FileManager, concurrency, chunkSize int) error {
 	g, ctx := errgroup.WithContext(job.ctx)
 	g.SetLimit(concurrency)
-	chunks := lo.Chunk(keysToDel, chunkSize)
-	for _, chunk := range chunks {
+	for _, chunk := range lo.Chunk(filesToDel, chunkSize) {
 		g.Go(func() error {
 			return fm.Delete(ctx, chunk)
 		})
 	}
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("deleting files from object storage: %w", err)
+	}
+
+	deletionTime := job.now().Sub(startTime)
+	log.Infon("Successfully completed file deletion",
+		logger.NewIntField("totalRows", int64(len(filesToDel))),
+		logger.NewField("deletionDuration", deletionTime),
+	)
+	job.stats.objectsDeletionTime.SendTiming(deletionTime)
+	return nil
 }
 
 // CanAppend returns true if:
