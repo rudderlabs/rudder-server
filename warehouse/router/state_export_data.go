@@ -805,7 +805,7 @@ func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) er
 		err        error
 	)
 
-	if repository, err = schemarepository.NewSchemaRepository(job.conf, job.logger, job.warehouse, job, job.conf.GetBool("FileManager.useAwsSdkV2", false)); err != nil {
+	if repository, err = schemarepository.NewSchemaRepository(job.conf, job.logger, job.warehouse, job); err != nil {
 		return fmt.Errorf("create schema repository: %w", err)
 	}
 
