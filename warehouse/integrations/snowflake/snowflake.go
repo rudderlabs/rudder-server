@@ -399,12 +399,12 @@ func (sf *Snowflake) loadTable(
 	if len(duplicates) > 0 {
 		uploadID, _ := whutils.UploadIDFromCtx(ctx)
 
-		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
+		dupMessagesSlice := lo.Map(duplicates, func(item duplicateMessage, index int) string {
 			return item.String()
 		})
 		log.Infon("sample duplicate rows",
-			logger.NewStringField(lf.UploadJobID, uploadID),
-			logger.NewStringSliceField(lf.SampleDuplicateMessages, formattedDuplicateMessages),
+			logger.NewIntField(lf.UploadJobID, uploadID),
+			logger.NewStringField(lf.SampleDuplicateMessages, strings.Join(dupMessagesSlice, ",")),
 		)
 	}
 
