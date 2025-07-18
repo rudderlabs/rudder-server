@@ -153,8 +153,6 @@ type Handle struct {
 		maxLoopSleep                              config.ValueLoader[time.Duration]
 		storeTimeout                              config.ValueLoader[time.Duration]
 		maxEventsToProcess                        config.ValueLoader[int]
-		transformBatchSize                        config.ValueLoader[int]
-		userTransformBatchSize                    config.ValueLoader[int]
 		sourceIdDestinationMap                    map[string][]backendconfig.DestinationT
 		sourceIdSourceMap                         map[string]backendconfig.SourceT
 		workspaceLibrariesMap                     map[string]backendconfig.LibrariesT
@@ -165,7 +163,6 @@ type Handle struct {
 		batchDestinations                         []string
 		configSubscriberLock                      sync.RWMutex
 		enableDedup                               bool
-		enableEventCount                          config.ValueLoader[bool]
 		transformTimesPQLength                    int
 		captureEventNameStats                     config.ValueLoader[bool]
 		transformerURL                            string
@@ -176,8 +173,6 @@ type Handle struct {
 		eventAuditEnabled                         map[string]bool
 		credentialsMap                            map[string][]types.Credential
 		nonEventStreamSources                     map[string]bool
-		enableUpdatedEventNameReporting           config.ValueLoader[bool]
-		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
@@ -773,15 +768,10 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.storeTimeout = proc.conf.GetReloadableDurationVar(5, time.Minute, "Processor.storeTimeout")
 	proc.config.pingerSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.pingerSleep")
 	proc.config.readLoopSleep = proc.conf.GetReloadableDurationVar(1000, time.Millisecond, "Processor.readLoopSleep")
-	proc.config.transformBatchSize = proc.conf.GetReloadableIntVar(100, 1, "Processor.transformBatchSize")
-	proc.config.userTransformBatchSize = proc.conf.GetReloadableIntVar(200, 1, "Processor.userTransformBatchSize")
-	proc.config.enableEventCount = proc.conf.GetReloadableBoolVar(true, "Processor.enableEventCount")
 	proc.config.maxEventsToProcess = proc.conf.GetReloadableIntVar(defaultMaxEventsToProcess, 1, "Processor.maxLoopProcessEvents")
 	proc.config.archivalEnabled = proc.conf.GetReloadableBoolVar(true, "archival.Enabled")
 	// Capture event name as a tag in event level stats
 	proc.config.captureEventNameStats = proc.conf.GetReloadableBoolVar(false, "Processor.Stats.captureEventName")
-	proc.config.enableUpdatedEventNameReporting = proc.conf.GetReloadableBoolVar(false, "Processor.enableUpdatedEventNameReporting")
-	proc.config.enableConcurrentStore = proc.conf.GetReloadableBoolVar(false, "Processor.enableConcurrentStore")
 	// UserTransformation mirroring settings
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
@@ -1104,21 +1094,17 @@ func (proc *Handle) getTransformerEvents(
 			},
 		)
 
-		// Update metadata with updated event name before reporting
-		if proc.config.enableUpdatedEventNameReporting.Load() {
-			updatedEventName := userTransformedEvent.Metadata.EventName
-			if en, ok := userTransformedEvent.Output["event"].(string); ok {
-				updatedEventName = en
-			}
-			userTransformedEvent.Metadata.EventName = updatedEventName
-
-			updatedEventType := userTransformedEvent.Metadata.EventType
-			if et, ok := userTransformedEvent.Output["type"].(string); ok {
-				updatedEventType = et
-			}
-			userTransformedEvent.Metadata.EventType = updatedEventType
-
+		updatedEventName := userTransformedEvent.Metadata.EventName
+		if en, ok := userTransformedEvent.Output["event"].(string); ok {
+			updatedEventName = en
 		}
+		userTransformedEvent.Metadata.EventName = updatedEventName
+
+		updatedEventType := userTransformedEvent.Metadata.EventType
+		if et, ok := userTransformedEvent.Output["type"].(string); ok {
+			updatedEventType = et
+		}
+		userTransformedEvent.Metadata.EventType = updatedEventType
 
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
@@ -1572,7 +1558,6 @@ func getDiffMetrics(
 	successCountMetadataMap map[string]MetricMetadata,
 	inCountMap, successCountMap, failedCountMap, filteredCountMap map[string]int64,
 	statFactory stats.Stats,
-	useOutputMetricsInDiffState bool,
 ) []*reportingtypes.PUReportedMetric {
 	diffMetrics := make([]*reportingtypes.PUReportedMetric, 0)
 
@@ -1640,18 +1625,16 @@ func getDiffMetrics(
 	}
 
 	// Process success metrics if enabled
-	if useOutputMetricsInDiffState {
-		for key, successMetadata := range successCountMetadataMap {
-			// Skip if this key was already processed from input metrics
-			if _, exists := inCountMap[key]; exists {
-				continue
-			}
+	for key, successMetadata := range successCountMetadataMap {
+		// Skip if this key was already processed from input metrics
+		if _, exists := inCountMap[key]; exists {
+			continue
+		}
 
-			successCount := successCountMap[key]
-			if successCount > 0 {
-				metric := createMetricAndRecordStats(successMetadata, key, successCount)
-				diffMetrics = append(diffMetrics, metric)
-			}
+		successCount := successCountMap[key]
+		if successCount > 0 {
+			metric := createMetricAndRecordStats(successMetadata, key, successCount)
+			diffMetrics = append(diffMetrics, metric)
 		}
 	}
 
@@ -2276,7 +2259,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			map[string]int64{},
 			map[string]int64{},
 			proc.statsFactory,
-			proc.config.enableUpdatedEventNameReporting.Load(),
 		)
 		preTrans.reportMetrics = append(preTrans.reportMetrics, diffMetrics...)
 	}
@@ -2747,13 +2729,9 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
 	g, ctx := errgroup.WithContext(context.Background())
-	enableConcurrentStore := proc.config.enableConcurrentStore.Load()
-	if !enableConcurrentStore {
-		g.SetLimit(1)
-	} else {
-		// lock early to avoid deadlocks due to connection pool exhaustion
-		defer lockRouterDestIDs()()
-	}
+
+	// lock early to avoid deadlocks due to connection pool exhaustion
+	defer lockRouterDestIDs()()
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		g.Go(func() error {
@@ -2815,12 +2793,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 
 	if len(destJobs) > 0 {
 		g.Go(func() error {
-			// Only one goroutine can store to a router destination at a time, otherwise we may have different transactions
-			// committing at different timestamps which can cause events with lower jobIDs to appear after events with higher ones.
-			// For that purpose, before storing, we lock the relevant destination IDs (in sorted order to avoid deadlocks).
-			if !enableConcurrentStore {
-				defer lockRouterDestIDs()()
-			}
 			err := misc.RetryWithNotify(
 				ctx,
 				proc.jobsDBCommandTimeout.Load(),
@@ -2874,11 +2846,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		})
 	}
 
-	if !enableConcurrentStore {
-		if err := g.Wait(); err != nil {
-			panic(err)
-		}
-	}
 	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
@@ -2907,10 +2874,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
-			if enableConcurrentStore {
-				return g.Wait()
-			}
-			return nil
+			return g.Wait()
 		})
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
@@ -3248,7 +3212,6 @@ func (proc *Handle) userTransformAndFilter(
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 					proc.statsFactory,
-					proc.config.enableUpdatedEventNameReporting.Load(),
 				)
 				reportMetrics = append(reportMetrics, successMetrics...)
 
@@ -3337,7 +3300,6 @@ func (proc *Handle) userTransformAndFilter(
 			nonSuccessMetrics.failedCountMap,
 			nonSuccessMetrics.filteredCountMap,
 			proc.statsFactory,
-			proc.config.enableUpdatedEventNameReporting.Load(),
 		)
 		reportMetrics = append(reportMetrics, successMetrics...)
 		reportMetrics = append(reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -3470,7 +3432,6 @@ func (proc *Handle) destTransform(
 					nonSuccessMetrics.failedCountMap,
 					nonSuccessMetrics.filteredCountMap,
 					proc.statsFactory,
-					proc.config.enableUpdatedEventNameReporting.Load(),
 				)
 
 				data.reportMetrics = append(data.reportMetrics, nonSuccessMetrics.failedMetrics...)
@@ -3738,14 +3699,10 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 
 	proc.logger.Debugf("Processor DB Read size: %d", proc.config.maxEventsToProcess)
 
-	eventCount := proc.config.maxEventsToProcess.Load()
-	if !proc.config.enableEventCount.Load() {
-		eventCount = 0
-	}
 	queryParams := jobsdb.GetQueryParams{
 		CustomValFilters: []string{proc.config.GWCustomVal},
 		JobsLimit:        proc.config.maxEventsToProcess.Load(),
-		EventsLimit:      eventCount,
+		EventsLimit:      proc.config.maxEventsToProcess.Load(),
 		PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
 	}
 	proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
