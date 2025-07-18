@@ -59,15 +59,15 @@ func (pg *Postgres) loadTable(
 	tableName string,
 	tableSchemaInUpload model.TableSchema,
 ) (*types.LoadTableStats, string, error) {
-	log := pg.logger.With(
-		logfield.SourceID, pg.Warehouse.Source.ID,
-		logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, pg.Warehouse.Destination.ID,
-		logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, pg.Warehouse.WorkspaceID,
-		logfield.Namespace, pg.Namespace,
-		logfield.TableName, tableName,
-		logfield.ShouldMerge, pg.shouldMerge(tableName),
+	log := pg.logger.Withn(
+		logger.NewStringField(logfield.SourceID, pg.Warehouse.Source.ID),
+		logger.NewStringField(logfield.SourceType, pg.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(logfield.DestinationID, pg.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.DestinationType, pg.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(logfield.WorkspaceID, pg.Warehouse.WorkspaceID),
+		logger.NewStringField(logfield.Namespace, pg.Namespace),
+		logger.NewStringField(logfield.TableName, tableName),
+		logger.NewBoolField(logfield.ShouldMerge, pg.shouldMerge(tableName)),
 	)
 	log.Infon("started loading")
 	defer log.Infon("completed loading")

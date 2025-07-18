@@ -838,7 +838,7 @@ func (bq *BigQuery) dropDanglingStagingTables(ctx context.Context) error {
 		logger.NewStringField(logfield.ProjectID, bq.projectID),
 		obskit.Namespace(bq.namespace),
 		logger.NewIntField("length", int64(len(stagingTableNames))),
-		logger.NewField("stagingTableNames", stagingTableNames),
+		logger.NewStringField("stagingTableNames", strings.Join(stagingTableNames, ", ")),
 	)
 	for _, stagingTableName := range stagingTableNames {
 		err := bq.DeleteTable(ctx, stagingTableName)

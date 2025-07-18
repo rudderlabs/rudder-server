@@ -123,7 +123,7 @@ func (d *Dynamic) start() error {
 	if d.GatewayComponent {
 		return nil
 	}
-	d.logger.Info("Starting the server")
+	d.logger.Infon("Starting the server")
 	start := time.Now()
 	if err := d.ErrorDB.Start(); err != nil {
 		return fmt.Errorf("error db start: %w", err)
@@ -162,19 +162,19 @@ func (d *Dynamic) start() error {
 
 func (d *Dynamic) stop() {
 	if d.GatewayComponent {
-		d.logger.Info("Stopping the gateway")
+		d.logger.Infon("Stopping the gateway")
 		return
 	}
-	d.logger.Info("Stopping the server")
+	d.logger.Infon("Stopping the server")
 	start := time.Now()
 	d.Router.Stop()
-	d.logger.Debug("Router stopped")
+	d.logger.Debugn("Router stopped")
 	d.SchemaForwarder.Stop()
-	d.logger.Debug("JobsForwarder stopped")
+	d.logger.Debugn("JobsForwarder stopped")
 	d.Archiver.Stop()
-	d.logger.Debug("Archiver stopped")
+	d.logger.Debugn("Archiver stopped")
 	d.Processor.Stop()
-	d.logger.Debug("Processor stopped")
+	d.logger.Debugn("Processor stopped")
 
 	d.BatchRouterDB.Stop()
 	d.logger.Debug("BatchRouterDB stopped")
