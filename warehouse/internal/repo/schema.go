@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -31,10 +33,11 @@ const whSchemaTableColumns = `
 
 type WHSchema repo
 
-func NewWHSchemas(db *sqlmiddleware.DB, opts ...Opt) *WHSchema {
+func NewWHSchemas(db *sqlmiddleware.DB, statsFactory stats.Stats, opts ...Opt) *WHSchema {
 	r := &WHSchema{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: statsFactory,
 	}
 	for _, opt := range opts {
 		opt((*repo)(r))
@@ -43,6 +46,12 @@ func NewWHSchemas(db *sqlmiddleware.DB, opts ...Opt) *WHSchema {
 }
 
 func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error) {
+	defer (*repo)(sh).DeferActionTimer("insert", stats.Tags{
+		"sourceId": whSchema.SourceID,
+		"destId":   whSchema.DestinationID,
+		"destType": whSchema.DestinationType,
+	})()
+
 	var (
 		id  int64
 		now = sh.now()
@@ -117,6 +126,8 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 }
 
 func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error) {
+	defer (*repo)(sh).DeferActionTimer("get_for_namespace", stats.Tags{"destId": destID})()
+
 	query := `SELECT ` + whSchemaTableColumns + ` FROM ` + whSchemaTableName + `
 	WHERE
 		destination_id = $1 AND
@@ -196,6 +207,11 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 }
 
 func (sh *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (string, error) {
+	defer (*repo)(sh).DeferActionTimer("get_namespace", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destID,
+	})()
+
 	query := `SELECT namespace FROM ` + whSchemaTableName + `
 		WHERE
 			source_id = $1 AND
@@ -233,6 +249,8 @@ func (sh *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (
 }
 
 func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.SourceIDDestinationID) ([]warehouseutils.FetchTableInfo, error) {
+	defer (*repo)(sh).DeferActionTimer("get_tables_for_connection", stats.Tags{})()
+
 	if len(connections) == 0 {
 		return nil, fmt.Errorf("no source id and destination id pairs provided")
 	}
@@ -285,6 +303,8 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 }
 
 func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID string, expiresAt time.Time) error {
+	defer (*repo)(sh).DeferActionTimer("set_expiry_for_destination", stats.Tags{"destId": destinationID})()
+
 	query := `
 		UPDATE ` + whSchemaTableName + `
 		SET expires_at = $1, updated_at = $2

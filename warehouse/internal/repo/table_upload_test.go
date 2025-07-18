@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
@@ -23,10 +25,10 @@ func TestTableUploadRepo(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
 
-	r := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+	r := repo.NewTableUploads(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	l := repo.NewLoadFiles(db, config.New(), repo.WithNow(func() time.Time {
+	l := repo.NewLoadFiles(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -81,7 +83,7 @@ func TestTableUploadRepo(t *testing.T) {
 	t.Run("SyncsInfo", func(t *testing.T) {
 		t.Run("success", func(t *testing.T) {
 			updatedAt := now.Add(10 * time.Second)
-			updatedRepo := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+			updatedRepo := repo.NewTableUploads(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 				return updatedAt
 			}))
 
@@ -193,7 +195,7 @@ func TestTableUploadRepo(t *testing.T) {
 			now          = now.Add(time.Second)
 		)
 
-		r := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+		r := repo.NewTableUploads(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -369,7 +371,7 @@ func TestTableUploadRepo(t *testing.T) {
 			uploadId := createUpload(t, ctx, db)
 			conf := config.New()
 			conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", true)
-			r := repo.NewTableUploads(db, conf, repo.WithNow(func() time.Time {
+			r := repo.NewTableUploads(db, conf, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 			err := r.Insert(ctx, uploadId, tables2)
@@ -481,13 +483,13 @@ func TestTableUploads_GetByJobRunTaskRun(t *testing.T) {
 	cancel()
 
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoTableUpload := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
+	repoTableUpload := repo.NewTableUploads(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 

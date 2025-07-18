@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -29,6 +30,10 @@ func TestUploadJob_Stats(t *testing.T) {
 
 	t.Run("Generate upload success metrics", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
 		mockStats := mock_stats.NewMockStats(ctrl)
 		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
 
@@ -40,7 +45,7 @@ func TestUploadJob_Stats(t *testing.T) {
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: mockStats,
+			statsFactory: statsStore,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -61,8 +66,9 @@ func TestUploadJob_Stats(t *testing.T) {
 				{ID: 4},
 			},
 		}, nil)
+		t.Log(statsStore.GetAll())
 
-		_, err := repo.NewUploads(job.db).CreateWithStagingFiles(context.Background(), job.upload, job.stagingFiles)
+		_, err = repo.NewUploads(job.db, stats.NOP).CreateWithStagingFiles(context.Background(), job.upload, job.stagingFiles)
 		require.NoError(t, err)
 
 		job.generateUploadSuccessMetrics()
@@ -244,7 +250,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			},
 		}, nil)
 
-		count, err := repo.NewStagingFiles(sqlmiddleware.New(db)).TotalEventsForUploadID(context.Background(), job.upload.ID)
+		count, err := repo.NewStagingFiles(sqlmiddleware.New(db), stats.NOP).TotalEventsForUploadID(context.Background(), job.upload.ID)
 		require.NoError(t, err)
 		require.EqualValues(t, 5, count)
 	})
@@ -291,7 +297,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		exportingData, err := time.Parse(time.RFC3339, "2020-04-21T15:16:19.687716Z")
 		require.NoError(t, err)
 
-		timings, err := repo.NewUploads(job.db).UploadTimings(context.Background(), job.upload.ID)
+		timings, err := repo.NewUploads(job.db, stats.NOP).UploadTimings(context.Background(), job.upload.ID)
 		require.NoError(t, err)
 		require.EqualValues(t, timings, model.Timings{
 			{

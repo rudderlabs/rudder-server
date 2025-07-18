@@ -9,6 +9,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -41,11 +42,9 @@ func TestStagingFileRepo(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 
-	r := repo.NewStagingFiles(setupDB(t),
-		repo.WithNow(func() time.Time {
-			return now
-		}),
-	)
+	r := repo.NewStagingFiles(setupDB(t), stats.NOP, repo.WithNow(func() time.Time {
+		return now
+	}))
 
 	testcases := []struct {
 		name        string
@@ -191,11 +190,9 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db,
-		repo.WithNow(func() time.Time {
-			return now
-		}),
-	)
+	r := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
+		return now
+	}))
 
 	stagingFiles := manyStagingFiles(10, now)
 	for i := range stagingFiles {
@@ -210,7 +207,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	t.Run("GetForUploadID", func(t *testing.T) {
 		t.Parallel()
-		u := repo.NewUploads(db)
+		u := repo.NewUploads(db, stats.NOP)
 		uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 		require.NoError(t, err)
 
@@ -274,7 +271,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			`)
 			require.NoError(t, err)
 
-			r := repo.NewStagingFiles(db)
+			r := repo.NewStagingFiles(db, stats.NOP)
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
 			require.ErrorContains(t, err, "cannot get schemas by ids: unmarshal staging schema:")
@@ -284,7 +281,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	t.Run("GetEventTimeRangesByUploadID", func(t *testing.T) {
 		t.Run("get all", func(t *testing.T) {
-			u := repo.NewUploads(db)
+			u := repo.NewUploads(db, stats.NOP)
 			uploadId, err := u.CreateWithStagingFiles(ctx, model.Upload{}, stagingFiles)
 			require.NoError(t, err)
 
@@ -312,12 +309,11 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db,
-		repo.WithNow(func() time.Time {
-			return now
-		}),
+	r := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
+		return now
+	}),
 	)
-	uploadRepo := repo.NewUploads(db)
+	uploadRepo := repo.NewUploads(db, stats.NOP)
 
 	inputData := []struct {
 		SourceID      string
@@ -406,10 +402,9 @@ func TestStagingFileRepo_Status(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	r := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-
 	n := 10
 	for i := 0; i < n; i++ {
 		file := model.StagingFile{
@@ -514,8 +509,8 @@ func TestStagingFileIDs(t *testing.T) {
 func BenchmarkFiles(b *testing.B) {
 	ctx := context.Background()
 	db := setupDB(b)
-	stagingRepo := repo.NewStagingFiles(db)
-	uploadRepo := repo.NewUploads(db)
+	stagingRepo := repo.NewStagingFiles(db, stats.NOP)
+	uploadRepo := repo.NewUploads(db, stats.NOP)
 
 	size := 100000
 	pending := 2

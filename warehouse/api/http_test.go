@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -184,6 +185,7 @@ func TestHTTPApi(t *testing.T) {
 	sourcesManager := source.New(
 		c,
 		logger.NOP,
+		stats.NOP,
 		db,
 		n,
 	)
@@ -208,13 +210,13 @@ func TestHTTPApi(t *testing.T) {
 	}()
 
 	now := time.Now().Truncate(time.Second).UTC()
-	stagingRepo := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	stagingRepo := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	uploadsRepo := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	uploadsRepo := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
-	tableUploadsRepo := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
+	tableUploadsRepo := repo.NewTableUploads(db, c, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -293,7 +295,7 @@ func TestHTTPApi(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	schemaRepo := repo.NewWHSchemas(db)
+	schemaRepo := repo.NewWHSchemas(db, stats.NOP)
 	_, err = schemaRepo.Insert(ctx, &model.WHSchema{
 		SourceID:        sourceID,
 		Namespace:       namespace,

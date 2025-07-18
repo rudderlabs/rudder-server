@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -19,7 +21,7 @@ import (
 
 func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) int64 {
 	t.Helper()
-	stagingFilesRepo := repo.NewStagingFiles(db)
+	stagingFilesRepo := repo.NewStagingFiles(db, stats.NOP)
 	stagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{
 			ID: 1,
@@ -28,7 +30,7 @@ func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) int64
 	_, err := stagingFilesRepo.Insert(ctx, &stagingFile)
 	require.NoError(t, err)
 	stagingFiles := []*model.StagingFile{&stagingFile.StagingFile}
-	uploadRepo := repo.NewUploads(db)
+	uploadRepo := repo.NewUploads(db, stats.NOP)
 	upload := model.Upload{}
 	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, upload, stagingFiles)
 	require.NoError(t, err)
@@ -40,7 +42,7 @@ func Test_LoadFiles(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
 
-	r := repo.NewLoadFiles(db, config.New(), repo.WithNow(func() time.Time {
+	r := repo.NewLoadFiles(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -144,7 +146,7 @@ func Test_LoadFiles_WithUploadID(t *testing.T) {
 	conf := config.New()
 	conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", true)
 
-	r := repo.NewLoadFiles(db, conf, repo.WithNow(func() time.Time {
+	r := repo.NewLoadFiles(db, conf, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -215,7 +217,7 @@ func TestLoadFiles_GetByID(t *testing.T) {
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 	db := setupDB(t)
 
-	r := repo.NewLoadFiles(db, config.New(), repo.WithNow(func() time.Time {
+	r := repo.NewLoadFiles(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -273,7 +275,7 @@ func TestLoadFiles_TotalExportedEvents(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
 
-	r := repo.NewLoadFiles(db, config.New(), repo.WithNow(func() time.Time {
+	r := repo.NewLoadFiles(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -365,7 +367,7 @@ func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
 	conf := config.New()
 	conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", true)
 
-	r := repo.NewLoadFiles(db, conf, repo.WithNow(func() time.Time {
+	r := repo.NewLoadFiles(db, conf, stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -443,7 +445,7 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
 
-	r := repo.NewLoadFiles(db, config.New(), repo.WithNow(func() time.Time {
+	r := repo.NewLoadFiles(db, config.New(), stats.NOP, repo.WithNow(func() time.Time {
 		return now
 	}))
 

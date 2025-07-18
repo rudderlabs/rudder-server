@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 
@@ -30,6 +31,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -114,9 +116,9 @@ func NewApi(
 		bcManager:     bcManager,
 		sourceManager: sourceManager,
 		triggerStore:  triggerStore,
-		stagingRepo:   repo.NewStagingFiles(db),
-		uploadRepo:    repo.NewUploads(db),
-		schemaRepo:    repo.NewWHSchemas(db),
+		stagingRepo:   repo.NewStagingFiles(db, statsFactory),
+		uploadRepo:    repo.NewUploads(db, statsFactory),
+		schemaRepo:    repo.NewWHSchemas(db, statsFactory),
 	}
 	a.config.healthTimeout = conf.GetDuration("Warehouse.healthTimeout", 10, time.Second)
 	a.config.readerHeaderTimeout = conf.GetDuration("Warehouse.readerHeaderTimeout", 3, time.Second)

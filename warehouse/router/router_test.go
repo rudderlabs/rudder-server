@@ -145,10 +145,10 @@ func TestRouter(t *testing.T) {
 
 		now := timeutil.Now()
 
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -305,10 +305,10 @@ func TestRouter(t *testing.T) {
 		db := sqlmiddleware.New(pgResource.DB)
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -437,10 +437,10 @@ func TestRouter(t *testing.T) {
 		db := sqlmiddleware.New(pgResource.DB)
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -547,10 +547,10 @@ func TestRouter(t *testing.T) {
 		db := sqlmiddleware.New(pgResource.DB)
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -680,10 +680,10 @@ func TestRouter(t *testing.T) {
 		db := sqlmiddleware.New(pgResource.DB)
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -834,10 +834,10 @@ func TestRouter(t *testing.T) {
 			db := sqlmiddleware.New(pgResource.DB)
 
 			now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -943,10 +943,10 @@ func TestRouter(t *testing.T) {
 			db := sqlmiddleware.New(pgResource.DB)
 
 			now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+			repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -1063,7 +1063,7 @@ func TestRouter(t *testing.T) {
 
 				ctx := context.Background()
 
-				jobStats, err := repo.NewUploads(sqlmiddleware.New(pgResource.DB), repo.WithNow(func() time.Time {
+				jobStats, err := repo.NewUploads(sqlmiddleware.New(pgResource.DB), stats.NOP, repo.WithNow(func() time.Time {
 					// nowSQL := "'2022-12-06 22:00:00'"
 					return time.Date(2022, 12, 6, 22, 0, 0, 0, time.UTC)
 				})).UploadJobsStats(ctx, tc.destType, repo.ProcessOptions{
@@ -1098,10 +1098,10 @@ func TestRouter(t *testing.T) {
 		db := sqlmiddleware.New(pgResource.DB)
 
 		now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		repoUpload := repo.NewUploads(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, stats.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
