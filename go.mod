@@ -87,7 +87,7 @@ require (
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/keydb v0.1.0-alpha
-	github.com/rudderlabs/rudder-go-kit v0.57.1
+	github.com/rudderlabs/rudder-go-kit v0.58.1-0.20250718060440-968c4bc53fd0
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.7.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250707171833-9cd525669b1b
@@ -182,7 +182,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.33.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.25.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.34.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.34.0
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect

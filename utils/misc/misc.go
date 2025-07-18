@@ -626,6 +626,10 @@ func GetRudderObjectStoragePrefix() (prefix string) {
 	return config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
 }
 
+func GetRegionHint() string {
+	return config.GetString("AWS_S3_REGION_HINT", "us-east-1")
+}
+
 func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]interface{}) {
 	// TODO: add error log if s3 keys are not available
 	storageConfig = make(map[string]interface{})
