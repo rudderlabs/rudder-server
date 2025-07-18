@@ -30,6 +30,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -283,7 +284,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("accountKey", credentials.AccountKey).
 					WithConfigOption("syncFrequency", "30").
 					WithConfigOption("allowUsersContextTraits", true).
-					WithConfigOption("underscoreDivideNumbers", true)
+					WithConfigOption("underscoreDivideNumbers", true).
+					WithConfigOption("cleanupObjectStorageFiles", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}

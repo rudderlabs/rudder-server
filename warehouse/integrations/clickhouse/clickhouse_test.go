@@ -224,7 +224,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("useRudderStorage", false).
 					WithConfigOption("syncFrequency", "30").
 					WithConfigOption("allowUsersContextTraits", true).
-					WithConfigOption("underscoreDivideNumbers", true)
+					WithConfigOption("underscoreDivideNumbers", true).
+					WithConfigOption("cleanupObjectStorageFiles", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}

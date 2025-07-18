@@ -57,7 +57,7 @@ func TestWorkerPool(t *testing.T) {
 
 		// create a worker pool
 		wp := workerpool.New(poolCtx, func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
 		}, logger.NOP)
 
 		// start pinging for work for 100 partitions
@@ -136,7 +136,7 @@ func TestWorkerPoolIdle(t *testing.T) {
 	// create a worker pool
 	wp := workerpool.New(poolCtx,
 		func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""))
+			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
 		},
 		logger.NOP,
 		workerpool.WithCleanupPeriod(200*time.Millisecond),
@@ -222,7 +222,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	if len(jobs.Jobs) > 0 {
 		_ = m.markExecuting(ctx, partition, jobs.Jobs)
 	}
-	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), rsources.IgnoreDestinationID())
+	rsourcesStats := rsources.NewStatsCollector(m.rsourcesService(), "test", stats.NOP, rsources.IgnoreDestinationID())
 	for _, subJob := range m.jobSplitter(ctx, jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error

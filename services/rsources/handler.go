@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/lib/pq"
 	"github.com/segmentio/ksuid"
 
@@ -107,8 +109,10 @@ func (*sourcesHandler) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunId 
 		sqlStatement,
 		jobRunId, key.TaskRunID, key.SourceID, key.DestinationID,
 		stats.In, stats.Out, stats.Failed)
-
-	return err
+	if err != nil {
+		return fmt.Errorf("inserting into rsources_stats: %w", err)
+	}
+	return nil
 }
 
 func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []FailedRecord) error {
@@ -417,6 +421,7 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 		case <-sh.cleanupTrigger():
 			err := sh.doCleanupTables(ctx)
 			if err != nil {
+				sh.log.Errorn("Failed to cleanup rsources tables", obskit.Error(err))
 				return err
 			}
 		}
@@ -424,6 +429,7 @@ func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
 }
 
 func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
+	sh.log.Infon("Cleaning up rsources tables")
 	tx, err := sh.localDB.Begin()
 	if err != nil {
 		return err
@@ -453,7 +459,11 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		_ = tx.Rollback()
 		return err
 	}
-	return tx.Commit()
+	if commitErr := tx.Commit(); commitErr != nil {
+		return commitErr
+	}
+	sh.log.Infon("Finished cleaning up rsources tables")
+	return nil
 }
 
 func (sh *sourcesHandler) readDB() *sql.DB {

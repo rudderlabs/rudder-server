@@ -152,6 +152,7 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("syncFrequency", "30").
 					WithConfigOption("allowUsersContextTraits", true).
 					WithConfigOption("underscoreDivideNumbers", true).
+					WithConfigOption("cleanupObjectStorageFiles", true).
 					Build()
 
 				workspaceConfig := backendconfigtest.NewConfigBuilder().

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -849,25 +848,21 @@ func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int6
 }
 
 func TestCleanupObjectStorageFiles(t *testing.T) {
-	stagingFiles := []*model.StagingFile{
-		{Location: "test-location-1"},
-		{Location: "test-location-2"},
-		{Location: "test-location-3"},
-		{Location: "test-location-4"},
-	}
-	loadFiles := []model.LoadFile{
-		{Location: "test-load-location-1"},
-		{Location: "test-load-location-2"},
-		{Location: "test-load-location-3"},
-		{Location: "test-load-location-4"},
-	}
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	mockFileManager := mock_filemanager.NewMockFileManager(ctrl)
-	mockLoadFilesRepo := mockupload.NewMockloadFilesRepo(ctrl)
-
-	t.Run("cleanup disabled", func(t *testing.T) {
+	stagingFiles := lo.RepeatBy(4, func(i int) *model.StagingFile {
+		return &model.StagingFile{
+			ID:       int64(i + 1),
+			Location: fmt.Sprintf("test-location-%d", i+1),
+		}
+	})
+	stagingFilesIDs := lo.Map(stagingFiles, func(f *model.StagingFile, _ int) int64 {
+		return f.ID
+	})
+	loadFiles := lo.RepeatBy(4, func(i int) model.LoadFile {
+		return model.LoadFile{
+			Location: fmt.Sprintf("test-load-location-%d", i+1),
+		}
+	})
+	createUploadJob := func(destConfig map[string]interface{}, destName string, mockFileManager filemanager.FileManager, mockLoadFilesRepo loadFilesRepo, stagingFiles []*model.StagingFile) *UploadJob {
 		job := &UploadJob{
 			ctx: context.Background(),
 			upload: model.Upload{
@@ -876,203 +871,130 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			},
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						model.CleanupObjectStorageFilesSetting.String(): false,
-						"bucketProvider": "s3",
+					Config: destConfig,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: destName,
 					},
 				},
 			},
-			conf: config.Default,
+			conf: config.New(),
 			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
 				return mockFileManager, nil
 			},
 			loadFilesRepo:  mockLoadFilesRepo,
-			stagingFiles:   stagingFiles[:2],
-			stagingFileIDs: []int64{1, 2},
+			stagingFiles:   stagingFiles,
+			stagingFileIDs: lo.Map(stagingFiles, func(f *model.StagingFile, _ int) int64 { return f.ID }),
 			statsFactory:   stats.NOP,
+			now:            time.Now,
+			logger:         logger.NOP,
 		}
 		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
 		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
+		return job
+	}
+	setupMockFileLocationCalls := func(mockFileManager *mock_filemanager.MockFileManager, stagingFiles []*model.StagingFile, loadFiles []model.LoadFile) {
+		for _, file := range stagingFiles {
+			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
+		}
+		for _, file := range loadFiles {
+			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
+		}
+	}
+	createDestConfig := func(cleanupEnabled bool, bucketProvider string) map[string]interface{} {
+		return map[string]interface{}{
+			model.CleanupObjectStorageFilesSetting.String(): cleanupEnabled,
+			"bucketProvider": bucketProvider,
+		}
+	}
+	setupMocks := func() (*gomock.Controller, *mock_filemanager.MockFileManager, *mockupload.MockloadFilesRepo) {
+		ctrl := gomock.NewController(t)
+		return ctrl, mock_filemanager.NewMockFileManager(ctrl), mockupload.NewMockloadFilesRepo(ctrl)
+	}
+
+	t.Run("cleanup disabled", func(t *testing.T) {
+		ctrl, mockFileManager, mockLoadFilesRepo := setupMocks()
+		defer ctrl.Finish()
+
+		destConfig := createDestConfig(false, warehouseutils.S3)
+		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
+
 		err := job.cleanupObjectStorageFiles()
 		require.NoError(t, err)
 	})
 
-	t.Run("cleanup enabled, successful deletion", func(t *testing.T) {
-		// Mock GetDownloadKeyFromFileLocation for staging files
-		for _, file := range stagingFiles[:2] {
-			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
-		}
-		// Mock GetDownloadKeyFromFileLocation for load files
-		for _, file := range loadFiles[:2] {
-			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
-		}
+	t.Run("cleanup enabled, successful deletion for Non-Datalakes", func(t *testing.T) {
+		ctrl, mockFileManager, mockLoadFilesRepo := setupMocks()
+		defer ctrl.Finish()
 
-		// Mock Delete call with specific expected keys
+		setupMockFileLocationCalls(mockFileManager, stagingFiles, loadFiles)
 		expectedKeys := append(
-			lo.Map(stagingFiles[:2], func(f *model.StagingFile, _ int) string { return f.Location }),
-			lo.Map(loadFiles[:2], func(f model.LoadFile, _ int) string { return f.Location })...,
+			lo.Map(stagingFiles, func(f *model.StagingFile, _ int) string { return f.Location }),
+			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
 		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
 
-		mockLoadFilesRepo.EXPECT().Get(
-			context.Background(),
-			int64(1),
-			[]int64{1, 2},
-		).Return(loadFiles[:2], nil).Times(1)
+		destConfig := createDestConfig(true, warehouseutils.S3)
+		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
 
-		job := &UploadJob{
-			ctx: context.Background(),
-			upload: model.Upload{
-				WorkspaceID: "test-workspace",
-				ID:          1,
-			},
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						model.CleanupObjectStorageFilesSetting.String(): true,
-						"bucketProvider": "s3",
-					},
-				},
-			},
-			conf: config.Default,
-			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
-				return mockFileManager, nil
-			},
-			loadFilesRepo:  mockLoadFilesRepo,
-			stagingFiles:   stagingFiles[:2],
-			stagingFileIDs: []int64{1, 2},
-			statsFactory:   stats.NOP,
-			now:            time.Now,
-		}
-		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
-		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
+		err := job.cleanupObjectStorageFiles()
+		require.NoError(t, err)
+	})
+
+	t.Run("cleanup enabled, successful deletion for Datalakes", func(t *testing.T) {
+		ctrl, mockFileManager, mockLoadFilesRepo := setupMocks()
+		defer ctrl.Finish()
+
+		setupMockFileLocationCalls(mockFileManager, stagingFiles, nil)
+		expectedKeys := lo.Map(stagingFiles, func(f *model.StagingFile, _ int) string { return f.Location })
+		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(nil).Times(1)
+
+		destConfig := createDestConfig(true, warehouseutils.S3)
+		job := createUploadJob(destConfig, warehouseutils.S3Datalake, mockFileManager, mockLoadFilesRepo, stagingFiles)
 
 		err := job.cleanupObjectStorageFiles()
 		require.NoError(t, err)
 	})
 
 	t.Run("cleanup enabled, deletion error", func(t *testing.T) {
-		for _, file := range stagingFiles[:2] {
-			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
-		}
-		for _, file := range loadFiles[:2] {
-			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
-		}
+		ctrl, mockFileManager, mockLoadFilesRepo := setupMocks()
+		defer ctrl.Finish()
 
+		setupMockFileLocationCalls(mockFileManager, stagingFiles, loadFiles)
 		expectedKeys := append(
-			lo.Map(stagingFiles[:2], func(f *model.StagingFile, _ int) string { return f.Location }),
-			lo.Map(loadFiles[:2], func(f model.LoadFile, _ int) string { return f.Location })...,
+			lo.Map(stagingFiles, func(f *model.StagingFile, _ int) string { return f.Location }),
+			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
 		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(errors.New("delete error")).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
 
-		mockLoadFilesRepo.EXPECT().Get(
-			context.Background(),
-			int64(1),
-			[]int64{1, 2},
-		).Return(loadFiles[:2], nil).Times(1)
-
-		job := &UploadJob{
-			ctx: context.Background(),
-			upload: model.Upload{
-				WorkspaceID: "test-workspace",
-				ID:          1,
-			},
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						model.CleanupObjectStorageFilesSetting.String(): true,
-						"bucketProvider": "s3",
-					},
-				},
-			},
-			conf: config.Default,
-			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
-				return mockFileManager, nil
-			},
-			loadFilesRepo:  mockLoadFilesRepo,
-			stagingFiles:   stagingFiles[:2],
-			stagingFileIDs: []int64{1, 2},
-			statsFactory:   stats.NOP,
-			now:            time.Now,
-		}
-		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
-		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
+		destConfig := createDestConfig(true, warehouseutils.S3)
+		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
 
 		err := job.cleanupObjectStorageFiles()
 		require.EqualError(t, err, "deleting files from object storage: delete error")
 	})
 
 	t.Run("GCS cleanup enabled, chunked deletion", func(t *testing.T) {
-		for _, file := range stagingFiles {
-			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
-		}
+		ctrl, mockFileManager, mockLoadFilesRepo := setupMocks()
+		defer ctrl.Finish()
 
-		for _, file := range loadFiles {
-			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
-		}
-
-		filesDeleted := make([][]string, 0)
-		filesDeletedMu := sync.Mutex{}
-		mockFileManager.EXPECT().Delete(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, keys []string) error {
-			require.Len(t, keys, 4)
-			filesDeletedMu.Lock()
-			filesDeleted = append(filesDeleted, keys)
-			filesDeletedMu.Unlock()
-			return nil
-		}).Times(2)
-
-		mockLoadFilesRepo.EXPECT().Get(
-			context.Background(),
-			int64(1),
-			[]int64{1, 2, 3, 4},
-		).Return(loadFiles, nil).Times(1)
-
-		job := &UploadJob{
-			ctx: context.Background(),
-			upload: model.Upload{
-				WorkspaceID: "test-workspace",
-				ID:          1,
-			},
-			warehouse: model.Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						model.CleanupObjectStorageFilesSetting.String(): true,
-						"bucketProvider": "GCS",
-					},
-				},
-			},
-			conf: config.Default,
-			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
-				return mockFileManager, nil
-			},
-			loadFilesRepo:  mockLoadFilesRepo,
-			stagingFiles:   stagingFiles,
-			stagingFileIDs: []int64{1, 2, 3, 4},
-			statsFactory:   stats.NOP,
-			now:            time.Now,
-		}
-		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
-		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
-
-		// Set up config for chunked deletion
-		job.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {
-			return 2
-		}
-		job.config.objDeleteBatchSize = func(workspaceID string) int {
-			return 4
-		}
-
-		err := job.cleanupObjectStorageFiles()
-		require.NoError(t, err)
-
-		allKeys := make([]string, 0)
-		for _, chunk := range filesDeleted {
-			allKeys = append(allKeys, chunk...)
-		}
+		setupMockFileLocationCalls(mockFileManager, stagingFiles, loadFiles)
 		expectedKeys := append(
 			lo.Map(stagingFiles, func(f *model.StagingFile, _ int) string { return f.Location }),
 			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
-		require.ElementsMatch(t, expectedKeys, allKeys)
+		for _, chunk := range lo.Chunk(expectedKeys, 4) {
+			mockFileManager.EXPECT().Delete(gomock.Any(), chunk).Return(nil).Times(1)
+		}
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+
+		destConfig := createDestConfig(true, warehouseutils.GCS)
+		job := createUploadJob(destConfig, warehouseutils.BQ, mockFileManager, mockLoadFilesRepo, stagingFiles)
+		job.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int { return 2 }
+		job.config.objDeleteBatchSize = func(workspaceID string) int { return 4 }
+
+		err := job.cleanupObjectStorageFiles()
+		require.NoError(t, err)
 	})
 }

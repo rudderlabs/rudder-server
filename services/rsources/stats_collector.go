@@ -8,12 +8,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
+
+const rsourcesPublishTime = "rsources_publish_time_second"
 
 // StatsPublisher publishes stats
 type StatsPublisher interface {
@@ -55,7 +60,7 @@ type FailedJobsStatsCollector interface {
 }
 
 // NewStatsCollector creates a new stats collector
-func NewStatsCollector(jobservice JobService, opts ...OptFunc) StatsCollector {
+func NewStatsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) StatsCollector {
 	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
@@ -67,11 +72,12 @@ func NewStatsCollector(jobservice JobService, opts ...OptFunc) StatsCollector {
 	for _, opt := range opts {
 		opt(sc)
 	}
+	sc.stats.publishTime = statFactory.NewTaggedStat(rsourcesPublishTime, stats.TimerType, stats.Tags{"module": component})
 	return sc
 }
 
 // NewDroppedJobsCollector creates a new stats collector for publishing failed job stats and records
-func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsStatsCollector {
+func NewDroppedJobsCollector(jobservice JobService, component string, statFactory stats.Stats, opts ...OptFunc) FailedJobsStatsCollector {
 	sc := &statsCollector{
 		jobService:            jobservice,
 		jobIdsToStatKeyIndex:  map[int64]statKey{},
@@ -83,6 +89,7 @@ func NewDroppedJobsCollector(jobservice JobService, opts ...OptFunc) FailedJobsS
 	for _, opt := range opts {
 		opt(sc)
 	}
+	sc.stats.publishTime = statFactory.NewTaggedStat(rsourcesPublishTime, stats.TimerType, stats.Tags{"module": component})
 	return sc
 }
 
@@ -105,6 +112,9 @@ type statsCollector struct {
 	statsIndex            map[statKey]*Stats
 	failedRecordsIndex    map[statKey][]FailedRecord
 	parametersParser      parametersParser
+	stats                 struct {
+		publishTime stats.Timer
+	}
 }
 
 func (r *statsCollector) orderedStatMapKeys() []statKey {
@@ -206,6 +216,8 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	if r.jobService == nil {
 		return fmt.Errorf("no JobService provided during initialization")
 	}
+	startTime := time.Now()
+
 	// sort the maps to avoid deadlocks
 	statKeys := r.orderedStatMapKeys()
 	for i := range statKeys {
@@ -216,7 +228,7 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 		}
 		err := r.jobService.IncrementStats(ctx, tx, k.jobRunId, k.JobTargetKey, *v)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to increment stats for job %s, idx %d,: %w", k.String(), i, err)
 		}
 	}
 	failedRecordsKeys := r.orderedFailedRecordsKeys()
@@ -229,9 +241,10 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 		})
 		err := r.jobService.AddFailedRecords(ctx, tx, k.jobRunId, k.JobTargetKey, v)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to add failed records for job %s: %w", k.String(), err)
 		}
 	}
+	r.stats.publishTime.SendTiming(time.Since(startTime))
 
 	return nil
 }

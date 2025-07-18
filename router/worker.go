@@ -1002,16 +1002,20 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 ) {
 	// Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
-	payload := destinationJob.Message
 	if destinationJobMetadata.FirstAttemptedAt != "" {
 		if t, err := time.Parse(misc.RFC3339Milli, destinationJobMetadata.FirstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
 	}
 
+	// destinationJob.Message is the actual payload we tried to send to destination
+	// destinationJobMetadata.JobT.EventPayload is the router input payload
+	// capture router output payload in workerJobStatus if reportJobsdbPayload is false
+	// by default reportJobsdbPayload is true so we capture router input payload in workerJobStatus
 	inputPayload := destinationJobMetadata.JobT.EventPayload
+	payload := inputPayload
 	if !w.rt.reportJobsdbPayload.Load() { // TODO: update default/remove this flag after monitoring the payload sizes
-		inputPayload = payload
+		payload = destinationJob.Message
 	}
 
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
@@ -1037,13 +1041,19 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 	if !isSuccessStatus(respStatusCode) {
 		switch errorAt {
 		case routerutils.ERROR_AT_TF:
-			inputPayload = destinationJobMetadata.JobT.EventPayload
+			// we always capture router input payload if we see error from destination transformer
+			payload = inputPayload
 			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_transformer")
+			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 		default: // includes ERROR_AT_DEL, ERROR_AT_CUST
 			status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "routerSubStage", "router_dest_delivery")
+			if !w.rt.reportJobsdbPayload.Load() {
+				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "delivery")
+			} else {
+				status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
+			}
 		}
 		// TODO: update after observing the sizes of the payloads
-		status.ErrorResponse = misc.UpdateJSONWithNewKeyVal(status.ErrorResponse, "payloadStage", "router_input")
 	}
 
 	// the job failed
@@ -1081,7 +1091,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		worker:     w,
 		job:        destinationJobMetadata.JobT,
 		status:     status,
-		payload:    inputPayload,
+		payload:    payload,
 		statTags:   destinationJob.StatTags,
 		parameters: destinationJobMetadata.Parameters,
 	}

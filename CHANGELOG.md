@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.54.6](https://github.com/rudderlabs/rudder-server/compare/v1.54.5...v1.54.6) (2025-07-18)
+
+
+### Bug Fixes
+
+* avoid cleanup object storage for datalakes ([#6133](https://github.com/rudderlabs/rudder-server/issues/6133)) ([faaab0e](https://github.com/rudderlabs/rudder-server/commit/faaab0e001b9808b4801ecf9096a007069aaf162))
+
+## [1.54.5](https://github.com/rudderlabs/rudder-server/compare/v1.54.4...v1.54.5) (2025-07-17)
+
+
+### Miscellaneous
+
+* enhance rsources stats collector with component tagging and error handling ([#6124](https://github.com/rudderlabs/rudder-server/issues/6124)) ([3f01505](https://github.com/rudderlabs/rudder-server/commit/3f0150510a83a2b6d721729a402a07ad550235bd))
+
 ## [1.54.4](https://github.com/rudderlabs/rudder-server/compare/v1.54.3...v1.54.4) (2025-07-15)
 
 
@@ -18,7 +32,6 @@
 ### Miscellaneous
 
 * upgrade go kit ([#6103](https://github.com/rudderlabs/rudder-server/issues/6103)) ([4f1e8d9](https://github.com/rudderlabs/rudder-server/commit/4f1e8d9bb78207d1c89bcbd7dab133905005c863))
-
 
 ## [1.54.2](https://github.com/rudderlabs/rudder-server/compare/v1.54.1...v1.54.2) (2025-07-07)
 

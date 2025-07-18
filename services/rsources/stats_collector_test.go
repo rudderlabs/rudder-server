@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"go.uber.org/mock/gomock"
 
 	"github.com/google/uuid"
@@ -26,14 +30,24 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		statsCollector          StatsCollector
 		droppedJobsCollector    FailedJobsStatsCollector
 		sourceOnlyStatCollector FailedJobsStatsCollector
+		statsStore              *memstats.Store
+		statsTag                stats.Tags
+		droppedStatsTag         stats.Tags
+		srcOnlyStatsTag         stats.Tags
 	)
 
 	BeforeEach(func() {
 		mockCtrl = gomock.NewController(GinkgoT())
 		js = NewMockJobService(mockCtrl)
-		statsCollector = NewStatsCollector(js)
-		droppedJobsCollector = NewDroppedJobsCollector(js)
-		sourceOnlyStatCollector = NewDroppedJobsCollector(js, IgnoreDestinationID())
+		var err error
+		statsStore, err = memstats.New()
+		Expect(err).To(BeNil())
+		statsTag = stats.Tags{"module": "stats"}
+		droppedStatsTag = stats.Tags{"module": "dropped-jobs"}
+		srcOnlyStatsTag = stats.Tags{"module": "src-only"}
+		statsCollector = NewStatsCollector(js, statsTag["module"], statsStore)
+		droppedJobsCollector = NewDroppedJobsCollector(js, droppedStatsTag["module"], statsStore)
+		sourceOnlyStatCollector = NewDroppedJobsCollector(js, srcOnlyStatsTag["module"], statsStore, IgnoreDestinationID())
 		jobs = []*jobsdb.JobT{}
 		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
@@ -75,6 +89,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 				err := statsCollector.Publish(context.TODO(), nil)
 				Expect(err).To(BeNil())
+				Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 			})
 
 			Context("underlying service returns an error", func() {
@@ -98,6 +113,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				It("fails during publish", func() {
 					err := statsCollector.Publish(context.TODO(), nil)
 					Expect(err).ToNot(BeNil())
+					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 				})
 			})
 		})
@@ -132,6 +148,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 					err := statsCollector.Publish(context.TODO(), nil)
 					Expect(err).To(BeNil())
+					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 				})
 			})
 		})
@@ -214,6 +231,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 							err := statsCollector.Publish(context.TODO(), nil)
 							Expect(err).To(BeNil())
+							Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 						})
 					})
 				})
@@ -253,6 +271,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 							Times(1)
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
+						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 					})
 				})
 			})
@@ -271,6 +290,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 					It("can publish without error all statuses but without actually updating stats", func() {
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
+						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 					})
 				})
 			})
@@ -326,6 +346,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
+						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 					})
 				})
 			})
@@ -367,6 +388,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 				err := droppedJobsCollector.Publish(context.TODO(), nil)
 				Expect(err).To(BeNil())
+				Expect(len(statsStore.Get(rsourcesPublishTime, droppedStatsTag).Durations()), 1)
 			})
 		})
 
@@ -393,6 +415,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 
 				err := sourceOnlyStatCollector.Publish(context.TODO(), nil)
 				Expect(err).To(BeNil())
+				Expect(len(statsStore.Get(rsourcesPublishTime, srcOnlyStatsTag).Durations()), 1)
 			})
 		})
 	})
@@ -415,6 +438,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				// no js.EXPECT
 				err := statsCollector.Publish(context.TODO(), nil)
 				Expect(err).To(BeNil())
+				Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 			})
 		})
 
@@ -437,6 +461,7 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 						// no js.EXPECT
 						err := statsCollector.Publish(context.TODO(), nil)
 						Expect(err).To(BeNil())
+						Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 					})
 				})
 			})
