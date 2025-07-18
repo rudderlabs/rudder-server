@@ -94,7 +94,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) (int64
 			SET
 			  schema = $5,
 			  updated_at = $7,
-			  expires_at = $8
+			  expires_at = COALESCE(NULLIF($8, '0001-01-01 00:00:00+00:00'), `+whSchemaTableName+`.expires_at)
 			RETURNING id;
 		`,
 			whSchema.SourceID,
