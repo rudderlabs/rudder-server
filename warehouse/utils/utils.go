@@ -889,3 +889,7 @@ func GetConnectionTimeout(destType, destID string) time.Duration {
 	}
 	return config.GetDuration(warehouseLevelConfig, defaultTimeout, defaultTimeoutUnits)
 }
+
+func IsDatalakeDestination(destType string) bool {
+	return destType == S3Datalake || destType == GCSDatalake || destType == AzureDatalake
+}
