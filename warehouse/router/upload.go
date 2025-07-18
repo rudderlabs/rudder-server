@@ -189,7 +189,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		uploadsRepo:          repo.NewUploads(f.db),
 		stagingFileRepo:      repo.NewStagingFiles(f.db),
 		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf),
-		whSchemaRepo:         repo.NewWHSchemas(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db, f.conf),
 		upload:               dto.Upload,
 		warehouse:            dto.Warehouse,
 		stagingFiles:         dto.StagingFiles,
@@ -339,7 +339,7 @@ func (job *UploadJob) run() (err error) {
 		job.logger.Child("warehouse"),
 		job.statsFactory,
 		whManager,
-		repo.NewWHSchemas(job.db),
+		repo.NewWHSchemas(job.db, job.conf),
 		repo.NewStagingFiles(job.db),
 	)
 	if err != nil {

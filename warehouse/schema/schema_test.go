@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -46,14 +47,14 @@ func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, names
 	return schema, nil
 }
 
-func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int64, error) {
+func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) error {
 	key := schemaKey(schema.DestinationID, schema.Namespace)
 
 	m.mu.Lock()
 	m.schemaMap[key] = *schema
 	m.mu.Unlock()
 
-	return 0, nil
+	return nil
 }
 
 type mockFetchSchemaRepo struct{}
@@ -1349,7 +1350,7 @@ func TestSchema(t *testing.T) {
 
 	t.Run("SchemaOperationsAcrossConnections", func(t *testing.T) {
 		db, ctx := setupDB(t), context.Background()
-		schemaRepo := repo.NewWHSchemas(db)
+		schemaRepo := repo.NewWHSchemas(db, config.New())
 
 		// Create initial schema for connection 1
 		warehouse1 := model.Warehouse{
