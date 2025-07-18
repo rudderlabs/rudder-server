@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
-
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -70,7 +71,10 @@ func (job *UploadJob) matchRowsInStagingAndLoadFiles(ctx context.Context) error 
 	}
 	rowsInLoadFiles := job.getTotalRowsInLoadFiles(ctx)
 	if (rowsInStagingFiles != rowsInLoadFiles) || rowsInStagingFiles == 0 || rowsInLoadFiles == 0 {
-		job.logger.Errorf(`Error: Rows count mismatch between staging and load files for upload:%d. rowsInStagingFiles: %d, rowsInLoadFiles: %d`, job.upload.ID, rowsInStagingFiles, rowsInLoadFiles)
+		job.logger.Errorn(`Error: Rows count mismatch between staging and load files for upload`,
+			logger.NewIntField(logfield.UploadJobID, job.upload.ID),
+			logger.NewIntField("rowsInStagingFiles", rowsInStagingFiles),
+			logger.NewIntField("rowsInLoadFiles", rowsInLoadFiles))
 		job.stats.stagingLoadFileEventsCountMismatch.Gauge(rowsInStagingFiles - rowsInLoadFiles)
 	}
 	return nil
@@ -81,7 +85,7 @@ func (job *UploadJob) getTotalRowsInLoadFiles(ctx context.Context) int64 {
 		whutils.ToProviderCase(job.warehouse.Type, whutils.DiscardsTable),
 	})
 	if err != nil {
-		job.logger.Errorw(`Getting total rows in load files`, logfield.Error, err)
+		job.logger.Errorn(`Getting total rows in load files`, obskit.Error(err))
 		return 0
 	}
 	return exportedEvents

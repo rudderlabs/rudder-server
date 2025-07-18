@@ -9,9 +9,11 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -378,24 +380,41 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 		upload, hasPendingLoad = r.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {
-			r.logger.Infof("[WH]: Found pending load (populateHistoricIdentities) for %s:%s", r.destType, warehouse.Destination.ID)
+			r.logger.Infon("[WH]: Found pending load (populateHistoricIdentities) for destination",
+				logger.NewStringField(logfield.DestinationType, r.destType),
+				logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID),
+			)
 		} else {
 			if r.hasLocalIdentityData(warehouse) {
-				r.logger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as data exists locally", r.destType, warehouse.Destination.ID)
+				r.logger.Infon("[WH]: Skipping identity tables load (populateHistoricIdentities) for destination as data exists locally",
+					logger.NewStringField(logfield.DestinationType, r.destType),
+					logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID),
+				)
 				return
 			}
 			var hasData bool
 			hasData, err = r.hasWarehouseData(ctx, warehouse)
 			if err != nil {
-				r.logger.Errorf(`[WH]: Error checking for data in %s:%s:%s, err: %s`, r.destType, warehouse.Destination.ID, warehouse.Destination.Name, err.Error())
+				r.logger.Errorn("[WH]: Error checking for data in warehouse",
+					logger.NewStringField(logfield.DestinationType, r.destType),
+					logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID),
+					logger.NewStringField("destinationName", warehouse.Destination.Name),
+					obskit.Error(err),
+				)
 				return
 			}
 			if !hasData {
-				r.logger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as warehouse does not have any data", r.destType, warehouse.Destination.ID)
+				r.logger.Infon("[WH]: Skipping identity tables load (populateHistoricIdentities) for destination as warehouse does not have any data",
+					logger.NewStringField(logfield.DestinationType, r.destType),
+					logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID),
+				)
 				return
 			}
-			r.logger.Infof("[WH]: Did not find local identity tables..")
-			r.logger.Infof("[WH]: Generating identity tables based on data in warehouse %s:%s", r.destType, warehouse.Destination.ID)
+			r.logger.Infon("[WH]: Did not find local identity tables..")
+			r.logger.Infon("[WH]: Generating identity tables based on data in warehouse",
+				logger.NewStringField(logfield.DestinationType, r.destType),
+				logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID),
+			)
 			upload = r.initPrePopulateDestIdentitiesUpload(warehouse)
 		}
 
@@ -413,13 +432,13 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 
 		tableUploadsCreated, tableUploadsErr := job.tableUploadsRepo.ExistsForUploadID(ctx, job.upload.ID)
 		if tableUploadsErr != nil {
-			r.logger.Warnw("table uploads exists",
-				logfield.UploadJobID, job.upload.ID,
-				logfield.SourceID, job.upload.SourceID,
-				logfield.DestinationID, job.upload.DestinationID,
-				logfield.DestinationType, job.upload.DestinationType,
-				logfield.WorkspaceID, job.upload.WorkspaceID,
-				logfield.Error, tableUploadsErr.Error(),
+			r.logger.Warnn("table uploads exists",
+				logger.NewIntField(logfield.UploadJobID, job.upload.ID),
+				logger.NewStringField(logfield.SourceID, job.upload.SourceID),
+				logger.NewStringField(logfield.DestinationID, job.upload.DestinationID),
+				logger.NewStringField(logfield.DestinationType, job.upload.DestinationType),
+				logger.NewStringField(logfield.WorkspaceID, job.upload.WorkspaceID),
+				obskit.Error(tableUploadsErr),
 			)
 			return
 		}
@@ -427,7 +446,7 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 			err := job.createTableUploads()
 			if err != nil {
 				// TODO: Handle error / Retry
-				r.logger.Error("[WH]: Error creating records in wh_table_uploads", err)
+				r.logger.Errorn("[WH]: Error creating records in wh_table_uploads", obskit.Error(err))
 			}
 		}
 
@@ -443,7 +462,7 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 		_ = job.setUploadStatus(UploadStatusOpts{Status: inProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {
-			r.logger.Errorf(`[WH]: Identity table upload errors: %v`, err)
+			r.logger.Errorn("[WH]: Identity table upload errors", obskit.Error(err))
 		}
 		if len(loadErrors) > 0 {
 			_, _ = job.setUploadError(misc.ConcatErrors(loadErrors), model.Aborted)

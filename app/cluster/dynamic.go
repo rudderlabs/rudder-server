@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -80,7 +81,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 	}
 
 	if len(serverModeChan) == 0 {
-		d.logger.Info("No server mode change event received. Starting server in normal mode")
+		d.logger.Infon("No server mode change event received. Starting server in normal mode")
 		if err := d.handleModeChange(servermode.NormalMode); err != nil {
 			return err
 		}
@@ -97,17 +98,19 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				return req.Err()
 			}
 
-			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
+			d.logger.Infon("Got trigger to change the mode",
+				logger.NewStringField("newMode", string(req.Mode())),
+				logger.NewStringField("oldMode", string(d.currentMode)))
 			if d.GatewayComponent {
-				d.logger.Infof("Gateway component, not changing the mode")
+				d.logger.Infon("Gateway component, not changing the mode")
 				continue
 			}
 			err := d.handleModeChange(req.Mode())
 			if err != nil {
-				d.logger.Error(err)
+				d.logger.Errorn("Mode change failed", obskit.Error(err))
 				return err
 			}
-			d.logger.Debugf("Acknowledging the mode change")
+			d.logger.Debugn("Acknowledging the mode change")
 
 			if err := req.Ack(ctx); err != nil {
 				return fmt.Errorf("ack mode change: %w", err)

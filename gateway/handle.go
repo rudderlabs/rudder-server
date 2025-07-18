@@ -433,7 +433,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			var tcOk bool
 			ipAddr, tcOk = toSet["request_ip"].(string)
 			if !tcOk {
-				gw.logger.Warnf("request_ip is not a string: %v", toSet["request_ip"])
+				gw.logger.Warnn("request_ip is not a string")
 			}
 
 		} else {
@@ -456,7 +456,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId, int64(len(eventsBatch)))
 		if errCheck != nil {
 			gw.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
-			gw.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+			gw.logger.Errorn("Rate limiter error: Allowing the request", obskit.Error(errCheck))
 		}
 		if ok {
 			return jobData, errRequestDropped
@@ -485,9 +485,14 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 	marshalledParams, err = jsonrs.Marshal(params)
 	if err != nil {
-		gw.logger.Errorf(
-			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
-			params,
+		gw.logger.Errorn(
+			"[Gateway] Failed to marshal parameters map",
+			obskit.SourceID(sourceID),
+			obskit.DestinationID(destinationID),
+			logger.NewStringField("source_job_run_id", sourcesJobRunID),
+			logger.NewStringField("source_task_run_id", sourcesTaskRunID),
+			logger.NewStringField("traceparent", traceParent),
+			logger.NewStringField("source_category", sourceCategory),
 		)
 		marshalledParams = []byte(
 			`{"error": "rudder-server gateway failed to marshal params"}`,
@@ -680,7 +685,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 
 	traceParent := stats.GetTraceParentFromContext(req.Context())
 	if traceParent == "" {
-		gw.logger.Debugw("traceParent not found in request")
+		gw.logger.Debugn("traceParent not found in request")
 	}
 
 	webReq := webRequestT{

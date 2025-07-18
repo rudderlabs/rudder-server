@@ -306,11 +306,18 @@ func (job *UploadJob) updateSchema(tName string) error {
 }
 
 func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff whutils.TableSchemaDiff) (err error) {
-	job.logger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	job.logger.Infon("[WH]: Starting schema update for table",
+		logger.NewStringField(logfield.TableName, tName),
+		logger.NewStringField(logfield.Namespace, job.warehouse.Namespace),
+		logger.NewStringField(logfield.DestinationType, job.warehouse.Type),
+		logger.NewStringField(logfield.DestinationID, job.warehouse.Destination.ID))
 	if tableSchemaDiff.TableToBeCreated {
 		err = job.whManager.CreateTable(job.ctx, tName, tableSchemaDiff.ColumnMap)
 		if err != nil {
-			job.logger.Errorf("Error creating table %s on namespace: %s, error: %v", tName, job.warehouse.Namespace, err)
+			job.logger.Errorn("Error creating table on namespace",
+				logger.NewStringField(logfield.TableName, tName),
+				logger.NewStringField(logfield.Namespace, job.warehouse.Namespace),
+				obskit.Error(err))
 			return err
 		}
 		return nil
@@ -350,16 +357,13 @@ func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string,
 			continue
 		}
 
-		job.logger.Infof(`
-			[WH]: Altered column %s of type %s in table %s in namespace %s of destination %s:%s
-		`,
-			columnName,
-			columnType,
-			tName,
-			job.warehouse.Namespace,
-			job.warehouse.Type,
-			job.warehouse.Destination.ID,
-		)
+		job.logger.Infon("[WH]: Altered column",
+			logger.NewStringField("columnName", columnName),
+			logger.NewStringField("columnType", columnType),
+			logger.NewStringField(logfield.TableName, tName),
+			logger.NewStringField(logfield.Namespace, job.warehouse.Namespace),
+			logger.NewStringField(logfield.DestinationType, job.warehouse.Type),
+			logger.NewStringField(logfield.DestinationID, job.warehouse.Destination.ID))
 	}
 
 	if len(responseToAlerta) > 0 {
@@ -369,7 +373,7 @@ func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string,
 		}
 
 		query := strings.Join(queries, "\n")
-		job.logger.Infof("altering dependent columns: %s", query)
+		job.logger.Infon("altering dependent columns", logger.NewStringField(logfield.Query, query))
 
 		err := job.alertSender.SendAlert(ctx, "warehouse-column-changes",
 			alerta.SendAlertOpts{
@@ -397,7 +401,11 @@ func (job *UploadJob) alterColumnsToWarehouse(ctx context.Context, tName string,
 }
 
 func (job *UploadJob) addColumnsToWarehouse(ctx context.Context, tName string, columnsMap model.TableSchema) (err error) {
-	job.logger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	job.logger.Infon("[WH]: Adding columns for table",
+		logger.NewStringField(logfield.TableName, tName),
+		logger.NewStringField(logfield.Namespace, job.warehouse.Namespace),
+		logger.NewStringField(logfield.DestinationType, job.warehouse.Type),
+		logger.NewStringField(logfield.DestinationID, job.warehouse.Destination.ID))
 
 	var columnsToAdd []whutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
@@ -471,7 +479,10 @@ func (job *UploadJob) exportIdentities() (err error) {
 }
 
 func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadErrors []error, tableUploadErr error) {
-	job.logger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	job.logger.Infon("[WH]: Starting load for identity tables",
+		logger.NewStringField(logfield.Namespace, job.warehouse.Namespace),
+		logger.NewStringField(logfield.DestinationType, job.warehouse.Type),
+		logger.NewStringField(logfield.DestinationID, job.warehouse.Destination.ID))
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
 	var (
@@ -494,7 +505,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	// var generated bool
 	if generated, _ := job.areIdentityTablesLoadFilesGenerated(job.ctx); !generated {
 		if err := job.resolveIdentities(populateHistoricIdentities); err != nil {
-			job.logger.Errorf(` ID Resolution operation failed: %v`, err)
+			job.logger.Errorn("ID Resolution operation failed", obskit.Error(err))
 			errorMap[job.identityMergeRulesTableName()] = err
 			return job.processLoadTableResponse(errorMap)
 		}
@@ -629,7 +640,11 @@ func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesT
 		}
 	}
 
-	job.logger.Infof(`[WH]: Running %d parallel loads in namespace %s of destination %s:%s`, parallelLoads, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+	job.logger.Infon("[WH]: Running parallel loads",
+		logger.NewIntField("parallelLoads", int64(parallelLoads)),
+		logger.NewStringField(logfield.Namespace, job.warehouse.Namespace),
+		logger.NewStringField(logfield.DestinationType, job.warehouse.Type),
+		logger.NewStringField(logfield.DestinationID, job.warehouse.Destination.ID))
 
 	var loadErrors []error
 	var loadErrorLock sync.Mutex
@@ -703,7 +718,7 @@ func (job *UploadJob) loadTable(tName string) error {
 		return fmt.Errorf("update schema: %w", err)
 	}
 
-	job.logger.Infow("starting load for table", logfield.TableName, tName)
+	job.logger.Infon("starting load for table", logger.NewStringField(logfield.TableName, tName))
 
 	status := model.TableUploadExecuting
 	lastExecTime := job.now()

@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -111,7 +112,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return nil
 	})
 
-	a.log.Info("Clearing DB ", options.ClearDB)
+	a.log.Infon("Clearing DB", logger.NewBoolField("clearDB", options.ClearDB))
 
 	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
@@ -382,7 +383,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer func() {
 		if err := gw.Shutdown(); err != nil {
-			a.log.Warnf("Gateway shutdown error: %v", err)
+			a.log.Warnn("Gateway shutdown error", obskit.Error(err))
 		}
 	}()
 

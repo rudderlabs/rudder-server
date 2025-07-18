@@ -137,8 +137,9 @@ func AllowEventToDestTransformation(transformerEvent *types.TransformerEvent, su
 
 	isSupportedMsgType := slices.Contains(supportedMsgTypes, messageType)
 	if !isSupportedMsgType {
-		pkgLogger.Debugw("event filtered out due to unsupported msg types",
-			"supportedMsgTypes", supportedMsgTypes, "messageType", messageType,
+		pkgLogger.Debugn("event filtered out due to unsupported msg types",
+			logger.NewStringField("supportedMsgTypes", strings.Join(supportedMsgTypes, ",")),
+			logger.NewStringField("messageType", messageType),
 		)
 		// We will not allow the event
 		return false, &types.TransformerResponse{
