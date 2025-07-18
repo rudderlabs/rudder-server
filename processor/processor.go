@@ -1023,7 +1023,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			var params map[string]interface{}
 			err := jsonrs.Unmarshal(job.Parameters, &params)
 			if err != nil {
-				proc.logger.Errorf("Error while UnMarshaling live event parameters: %v", err)
+				proc.logger.Errorn("Error while UnMarshaling live event parameters", obskit.Error(err))
 				continue
 			}
 
@@ -1036,14 +1036,14 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			events := make([]map[string]interface{}, 0)
 			err = jsonrs.Unmarshal(job.EventPayload, &events)
 			if err != nil {
-				proc.logger.Errorf("Error while UnMarshaling live event payload: %v", err)
+				proc.logger.Errorn("Error while UnMarshaling live event payload", obskit.Error(err))
 				continue
 			}
 			for i := range events {
 				event := &events[i]
 				eventPayload, err := jsonrs.Marshal(*event)
 				if err != nil {
-					proc.logger.Errorf("Error while Marshaling live event payload: %v", err)
+					proc.logger.Errorn("Error while Marshaling live event payload", obskit.Error(err))
 					continue
 				}
 
@@ -1120,7 +1120,7 @@ func (proc *Handle) getTransformerEvents(
 
 				sampleEvent, err := jsonrs.Marshal(message)
 				if err != nil {
-					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
+					proc.logger.Errorn("[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events", obskit.Error(err))
 					sampleEvent = nil
 				}
 				return sampleEvent
@@ -1421,7 +1421,7 @@ func (proc *Handle) getTransformationMetrics(
 		)
 		payload, err := jsonrs.Marshal(messages)
 		if err != nil {
-			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
+			proc.logger.Errorn("[Processor: getTransformationMetrics] Failed to unmarshal list of failed events", obskit.Error(err))
 			continue
 		}
 
@@ -1440,7 +1440,7 @@ func (proc *Handle) getTransformationMetrics(
 					}
 					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
-						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
+						proc.logger.Errorn("[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events", obskit.Error(err))
 						sampleEvent = nil
 					}
 					return sampleEvent
@@ -1470,7 +1470,7 @@ func (proc *Handle) getTransformationMetrics(
 		}
 		marshalledParams, err := jsonrs.Marshal(params)
 		if err != nil {
-			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
+			proc.logger.Errorn("[Processor] Failed to marshal parameters", logger.NewStringField("parameters", stringify.Any(params)))
 			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
 		}
 
@@ -2849,8 +2849,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
 			}, proc.sendRetryStoreStats)
 			if err != nil {
-				proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-				proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
+				proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
+				proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
@@ -3525,7 +3525,7 @@ func (proc *Handle) destTransform(
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
-				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+				proc.logger.Errorn("[Processor] Failed to marshal parameters object", logger.NewStringField("parameters", stringify.Any(params)))
 				panic(err)
 			}
 
@@ -3732,7 +3732,7 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 		return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
 	}, proc.sendQueryRetryStats)
 	if err != nil {
-		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
+		proc.logger.Errorn("Failed to get unprocessed jobs from DB", obskit.Error(err))
 		panic(err)
 	}
 

@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/payload"
@@ -93,7 +94,7 @@ func New(
 }
 
 func (a *archiver) Start() error {
-	a.log.Info("Starting archiver")
+	a.log.Infon("Starting archiver")
 	ctx, cancel := context.WithCancel(context.Background())
 	a.stopArchivalTrigger = cancel
 	g, ctx := errgroup.WithContext(ctx)
@@ -168,7 +169,7 @@ func (a *archiver) Start() error {
 					if ctx.Err() != nil {
 						return err
 					}
-					a.log.Errorw("Failed to fetch sources", "error", err)
+					a.log.Errorn("Failed to fetch sources", obskit.Error(err))
 					continue
 				}
 				a.stats.NewStat("arc_active_partitions", stats.GaugeType).Gauge(len(sources))
@@ -193,7 +194,7 @@ func (a *archiver) Start() error {
 }
 
 func (a *archiver) Stop() {
-	a.log.Info("Stopping archiver")
+	a.log.Infon("Stopping archiver")
 	a.stopArchivalTrigger()
 	_ = a.waitGroup.Wait()
 }

@@ -108,7 +108,7 @@ func getMessageType(event *types.SingularEventT) string {
 	}
 	eventMessageType, isEventTypeString := eventMessageTypeI.(string)
 	if !isEventTypeString {
-		pkgLogger.Errorf("Invalid message type: type assertion failed: %v", eventMessageTypeI)
+		pkgLogger.Errorn("Invalid message type: type assertion failed", logger.NewStringField("eventMessageType", "type_assertion_failed"))
 		return ""
 	}
 	return eventMessageType
@@ -219,19 +219,23 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 	}
 	destConnectionMode, isDestConnModeString := destConnModeI.(string)
 	if !isDestConnModeString || destConnectionMode != hybridMode {
-		pkgLogger.Debugf("Provided connectionMode(%v) is in wrong format or the mode is not %q, filtering event based on default behaviour", destConnModeI, hybridMode)
+		pkgLogger.Debugn("Provided connectionMode is in wrong format or the mode is not hybrid, filtering event based on default behaviour",
+			logger.NewStringField("destConnMode", "invalid_format"),
+			logger.NewStringField("expectedMode", hybridMode))
 		return evaluatedDefaultBehaviour
 	}
 
 	sourceEventPropertiesI := misc.MapLookup(destination.DestinationDefinition.Config, hybridModeEventsFilterKey, srcType)
 	if sourceEventPropertiesI == nil {
-		pkgLogger.Debugf("Destination definition config doesn't contain proper values for %[1]v or %[1]v.%[2]v", hybridModeEventsFilterKey, srcType)
+		pkgLogger.Debugn("Destination definition config doesn't contain proper values for hybridModeEventsFilterKey",
+			logger.NewStringField("hybridModeEventsFilterKey", hybridModeEventsFilterKey),
+			logger.NewStringField("srcType", srcType))
 		return evaluatedDefaultBehaviour
 	}
 	eventProperties, isOk := sourceEventPropertiesI.(map[string]interface{})
 
 	if !isOk || len(eventProperties) == 0 {
-		pkgLogger.Debugf("'%v.%v' is not correctly defined", hybridModeEventsFilterKey, srcType)
+		pkgLogger.Debugn("hybridModeEventsFilterKey.srcType is not correctly defined", logger.NewStringField("hybridModeEventsFilterKey", hybridModeEventsFilterKey), logger.NewStringField("srcType", srcType))
 		return evaluatedDefaultBehaviour
 	}
 
@@ -240,7 +244,8 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 	for eventProperty, supportedEventVals := range eventProperties {
 
 		if !allowEvent {
-			pkgLogger.Debugf("Previous evaluation of allowAll is false or type assertion failed for an event property(%v), filtering event based on default behaviour", eventProperty)
+			pkgLogger.Debugn("Previous evaluation of allowAll is false or type assertion failed for an event property, filtering event based on default behaviour",
+				logger.NewStringField("eventProperty", eventProperty))
 			allowEvent = evaluatedDefaultBehaviour
 			break
 		}
@@ -252,7 +257,9 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 				continue
 			}
 
-			pkgLogger.Debugf("MessageTypes allowed: %v -- MessageType from event: %v\n", messageTypes, messageType)
+			pkgLogger.Debugn("MessageTypes allowed vs MessageType from event",
+				logger.NewStringField("messageTypesAllowed", strings.Join(messageTypes, ", ")),
+				logger.NewStringField("messageTypeFromEvent", messageType))
 
 			allowEvent = slices.Contains(messageTypes, messageType) && evaluatedDefaultBehaviour
 		}

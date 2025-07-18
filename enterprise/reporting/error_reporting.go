@@ -245,7 +245,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 
 	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
-		edr.log.Errorf("Failed during statement preparation: %v", err)
+		edr.log.Errorn("Failed during statement preparation", obskit.Error(err))
 		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
@@ -302,14 +302,14 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {
-			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
+			edr.log.Errorn("Failed during statement execution(each metric)", obskit.Error(err))
 			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
 
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
-		edr.log.Errorf("Failed during statement execution: %v", err)
+		edr.log.Errorn("Failed during statement execution", obskit.Error(err))
 		return fmt.Errorf("executing final statement: %v", err)
 	}
 
@@ -487,14 +487,14 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
 				dbHandle, err := edr.getDBHandle(c.ConnInfo)
 				if err != nil {
-					edr.log.Errorf("error reports deletion getDbhandle failed: %v", err)
+					edr.log.Errorn("error reports deletion getDbhandle failed", obskit.Error(err))
 					continue
 				}
 				deleteReportsStart := time.Now()
 				_, err = dbHandle.ExecContext(ctx, `DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 				errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 				if err != nil {
-					edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
+					edr.log.Errorn("[ Error Detail Reporting ]: Error deleting local reports from table", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
 				} else {
 					deletedRows += len(reports)
 				}
@@ -566,14 +566,14 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	var queryMin sql.NullInt64
 	dbHandle, err := edr.getDBHandle(syncerKey)
 	if err != nil {
-		edr.log.Errorf("Failed while getting DbHandle: %v", err)
+		edr.log.Errorn("Failed while getting DbHandle", obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
 	queryStart := time.Now()
 	err = dbHandle.QueryRowContext(ctx, "SELECT reported_at FROM "+ErrorDetailReportsTable+" WHERE reported_at < $1 ORDER BY reported_at ASC LIMIT 1", currentMs).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
-		edr.log.Errorf("Failed while getting reported_at: %v", err)
+		edr.log.Errorn("Failed while getting reported_at", obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	edr.minReportedAtQueryTime.Since(queryStart)
@@ -604,7 +604,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
 	if err != nil {
-		edr.log.Errorf("Failed while getting reports(reported_at=%v): %v", queryMin.Int64, err)
+		edr.log.Errorn("Failed while getting reports", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
@@ -658,14 +658,14 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.EventName,
 		)
 		if err != nil {
-			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
+			edr.log.Errorn("Failed while scanning rows", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
 		dbEdMetric.SampleEvent = []byte(sampleEvent)
 		metrics = append(metrics, dbEdMetric)
 	}
 	if rows.Err() != nil {
-		edr.log.Errorf("Rows error while querying: %v", rows.Err())
+		edr.log.Errorn("Rows error while querying", obskit.Error(rows.Err()))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	return metrics, queryMin.Int64
@@ -778,7 +778,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 		httpRequestStart := time.Now()
 		resp, err := edr.httpClient.Do(req)
 		if err != nil {
-			edr.log.Errorf("Sending request failed: %v", err)
+			edr.log.Errorn("Sending request failed", obskit.Error(err))
 			return err
 		}
 
@@ -791,7 +791,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 		respBody, err := io.ReadAll(resp.Body)
 		edr.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
 		if err != nil {
-			edr.log.Errorf("Reading response failed: %w", err)
+			edr.log.Errorn("Reading response failed", obskit.Error(err))
 			return err
 		}
 
@@ -804,10 +804,10 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		edr.log.Errorf(`[ Error Detail Reporting ]: Error reporting to service: %v`, err)
+		edr.log.Errorn("[ Error Detail Reporting ]: Error reporting to service", obskit.Error(err))
 	})
 	if err != nil {
-		edr.log.Errorf(`[ Error Detail Reporting ]: Error making request to reporting service: %v`, err)
+		edr.log.Errorn("[ Error Detail Reporting ]: Error making request to reporting service", obskit.Error(err))
 	}
 	return err
 }

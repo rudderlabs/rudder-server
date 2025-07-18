@@ -85,7 +85,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if !a.setupDone {
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
-	a.log.Info("Embedded mode: Starting Rudder Core")
+	a.log.Infon("Embedded mode: Starting Rudder Core")
 	g, ctx := errgroup.WithContext(ctx)
 	terminalErrFn := terminalErrorFunction(ctx, g)
 
@@ -93,7 +93,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
-	a.log.Infof("Configured deployment type: %q", deploymentType)
+	a.log.Infon("Configured deployment type", logger.NewStringField("deploymentType", string(deploymentType)))
 
 	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
 	if err != nil {

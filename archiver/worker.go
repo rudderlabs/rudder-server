@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -59,7 +60,7 @@ start:
 		if w.lifecycle.ctx.Err() != nil {
 			return false
 		}
-		w.log.Errorw("failed to fetch jobs for archiving", "error", err)
+		w.log.Errorn("failed to fetch jobs for archiving", obskit.Error(err))
 		panic(err)
 	}
 
@@ -208,7 +209,7 @@ func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
 	params.JobsLimit = w.config.eventsLimit()
 	unProcessed, err := w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
 	if err != nil {
-		w.log.Errorw("failed to fetch unprocessed jobs for backup", "error", err)
+		w.log.Errorn("failed to fetch unprocessed jobs for backup", obskit.Error(err))
 		return nil, false, err
 	}
 	return unProcessed.Jobs, unProcessed.LimitsReached, nil
@@ -256,7 +257,7 @@ func (w *worker) markStatus(jobs []*jobsdb.JobT, state string, response []byte) 
 			)
 		},
 		func(attempt int) {
-			w.log.Warnw("failed to mark jobs' status", "attempt", attempt)
+			w.log.Warnn("failed to mark jobs' status", logger.NewIntField("attempt", int64(attempt)))
 		},
 	); err != nil {
 		return err
