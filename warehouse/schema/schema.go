@@ -123,7 +123,11 @@ func New(
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
 	if whSchema.Schema == nil {
-		sh.cachedSchema = model.Schema{}
+		// No schema found in DB, try fetching from warehouse
+		err := sh.fetchSchemaFromWarehouse(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("fetching schema from warehouse: %w", err)
+		}
 		return sh, nil
 	}
 	if whSchema.ExpiresAt.After(sh.now()) {
