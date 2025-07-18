@@ -27,7 +27,7 @@ type KeyDB struct {
 }
 
 func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (*Dedup, error) {
-	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
+	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "KeyDB.Dedup.dedupWindow", "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 	nodeAddresses := conf.GetString("KeyDB.Dedup.Addresses", "")
 	if len(nodeAddresses) == 0 {
 		return nil, fmt.Errorf("keydb dedup: no node addresses provided")
