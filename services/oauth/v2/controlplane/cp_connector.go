@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -131,7 +132,7 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	}
 	if err != nil {
 		c.logger.Errorn("[request] :: destination request failed",
-			logger.NewErrorField(err))
+			obskit.Error(err))
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
@@ -151,7 +152,7 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	if doErr != nil {
 		// Abort on receiving an error
 		c.logger.Errorn("[request] :: destination request failed",
-			logger.NewErrorField(doErr))
+			obskit.Error(doErr))
 		errorType := GetErrorType(doErr)
 		cpStatTags["error"] = errorType
 		c.stats.NewTaggedStat("oauth_v2_cp_requests", stats.CountType, cpStatTags).Count(1)

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
 
@@ -214,9 +216,9 @@ func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns 
 
 	sqlStatement := sf.tableManager.createTableQuery(schemaIdentifier, tableName, columns)
 
-	sf.logger.Infow("Creating table in snowflake",
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.Query, sqlStatement,
+	sf.logger.Infon("Creating table in snowflake",
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return
@@ -257,11 +259,10 @@ func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) 
 func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
-	sf.logger.Infow(
-		"Creating schema name in snowflake",
-		lf.Namespace, sf.Warehouse.Namespace,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.Query, sqlStatement,
+	sf.logger.Infon("Creating schema name in snowflake",
+		logger.NewStringField(lf.Namespace, sf.Warehouse.Namespace),
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return
@@ -300,11 +301,11 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 		return nil
 	}
 	for _, tb := range tableNames {
-		log := sf.logger.With(
-			lf.TableName, tb,
-			lf.DestinationID, sf.Warehouse.Destination.ID,
+		log := sf.logger.Withn(
+			logger.NewStringField(lf.TableName, tb),
+			logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
 		)
-		log.Infow("Cleaning up the following tables in snowflake")
+		log.Infon("Cleaning up the following tables in snowflake")
 		_, err := sf.DB.ExecContext(ctx,
 			`DELETE FROM "`+sf.Namespace+`"."`+tb+`"
 		WHERE
@@ -318,7 +319,7 @@ func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params w
 			params.StartTime,
 		)
 		if err != nil {
-			log.Errorw("Cannot delete rows in snowflake table", lf.Error, err.Error())
+			log.Errorn("Cannot delete rows in snowflake table", obskit.Error(err))
 			return err
 		}
 	}
@@ -336,17 +337,17 @@ func (sf *Snowflake) loadTable(
 		err error
 	)
 
-	log := sf.logger.With(
-		lf.SourceID, sf.Warehouse.Source.ID,
-		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-		lf.Namespace, sf.Namespace,
-		lf.TableName, tableName,
-		lf.ShouldMerge, sf.ShouldMerge(tableName),
+	log := sf.logger.Withn(
+		logger.NewStringField(lf.SourceID, sf.Warehouse.Source.ID),
+		logger.NewStringField(lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(lf.WorkspaceID, sf.Warehouse.WorkspaceID),
+		logger.NewStringField(lf.Namespace, sf.Namespace),
+		logger.NewStringField(lf.TableName, tableName),
+		logger.NewBoolField(lf.ShouldMerge, sf.ShouldMerge(tableName)),
 	)
-	log.Infow("started loading")
+	log.Infon("started loading")
 	schemaIdentifier := sf.schemaIdentifier()
 	if db, err = sf.connect(ctx, optionalCreds{schemaName: schemaIdentifier}); err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
@@ -367,13 +368,13 @@ func (sf *Snowflake) loadTable(
 	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	if !sf.ShouldMerge(tableName) {
-		log.Infow("copying data into main table")
+		log.Infon("copying data into main table")
 		loadTableStats, err := sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, tableName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("copying data into main table: %w", err)
 		}
 
-		log.Infow("completed loading")
+		log.Infon("completed loading")
 
 		resp := &tableLoadResp{
 			db:           db,
@@ -382,7 +383,7 @@ func (sf *Snowflake) loadTable(
 		return loadTableStats, resp, nil
 	}
 
-	log.Debugw("creating staging table")
+	log.Debugn("creating staging table")
 	createStagingTableStmt := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s.%[2]q LIKE %[1]s.%[3]q;`,
 		schemaIdentifier,
 		stagingTableName,
@@ -392,7 +393,7 @@ func (sf *Snowflake) loadTable(
 		return nil, nil, fmt.Errorf("create staging table: %w", err)
 	}
 
-	log.Infow("loading data into staging table")
+	log.Infon("loading data into staging table")
 	_, err = sf.copyInto(ctx, db, schemaIdentifier, tableName, sortedColumnNames, stagingTableName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("loading data into staging table: %w", err)
@@ -400,18 +401,21 @@ func (sf *Snowflake) loadTable(
 
 	duplicates, err := sf.sampleDuplicateMessages(ctx, db, tableName, stagingTableName)
 	if err != nil {
-		log.Warnw("failed to sample duplicate rows", lf.Error, err.Error())
+		log.Warnn("failed to sample duplicate rows", obskit.Error(err))
 	}
 	if len(duplicates) > 0 {
 		uploadID, _ := whutils.UploadIDFromCtx(ctx)
 
-		formattedDuplicateMessages := lo.Map(duplicates, func(item duplicateMessage, index int) string {
+		dupMessagesSlice := lo.Map(duplicates, func(item duplicateMessage, index int) string {
 			return item.String()
 		})
-		log.Infow("sample duplicate rows", lf.UploadJobID, uploadID, lf.SampleDuplicateMessages, formattedDuplicateMessages)
+		log.Infon("sample duplicate rows",
+			logger.NewIntField(lf.UploadJobID, uploadID),
+			logger.NewStringField(lf.SampleDuplicateMessages, strings.Join(dupMessagesSlice, ",")),
+		)
 	}
 
-	log.Infow("merge data into load table")
+	log.Infon("merge data into load table")
 	loadTableStats, err := sf.mergeIntoLoadTable(
 		ctx, db, schemaIdentifier, tableName, stagingTableName,
 		sortedColumnNames, strKeys,
@@ -420,7 +424,7 @@ func (sf *Snowflake) loadTable(
 		return nil, nil, fmt.Errorf("merge into load table: %w", err)
 	}
 
-	log.Infow("completed loading")
+	log.Infon("completed loading")
 
 	resp := &tableLoadResp{
 		db:           db,
@@ -631,7 +635,9 @@ func (sf *Snowflake) copyInto(
 		return strings.ToLower(item) == "rows_loaded"
 	})
 	if !found {
-		sf.logger.Warnw("rows_loaded column not found in copy command result", "columns", columns)
+		sf.logger.Warnn("rows_loaded column not found in copy command result",
+			logger.NewStringField("columns", strings.Join(columns, ",")),
+		)
 		return &types.LoadTableStats{}, nil
 	}
 
@@ -669,8 +675,8 @@ func (sf *Snowflake) copyInto(
 }
 
 func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
-	log := sf.logger.With(lf.TableName, identityMergeRulesTable)
-	log.Infow("Fetching load file location")
+	log := sf.logger.Withn(logger.NewStringField(lf.TableName, identityMergeRulesTable))
+	log.Infon("Fetching load file location")
 
 	loadFile, err := sf.Uploader.GetSingleLoadFile(ctx, identityMergeRulesTable)
 	if err != nil {
@@ -679,7 +685,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 
 	db, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
-		log.Errorw("Error establishing connection for copying table", lf.Error, err.Error())
+		log.Errorn("Error establishing connection for copying table", obskit.Error(err))
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
@@ -706,22 +712,22 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
-		log.Infow("Copying identity merge rules for table", lf.Query, sanitisedSQLStmt)
+		log.Infon("Copying identity merge rules for table", logger.NewStringField(lf.Query, sanitisedSQLStmt))
 	}
 
 	if _, err = db.ExecContext(ctx, sqlStatement); err != nil {
-		log.Errorw("Error while copying identity merge rules for table", lf.Error, err.Error())
+		log.Errorn("Error while copying identity merge rules for table", obskit.Error(err))
 		return fmt.Errorf("cannot copy into table %q: %w", identityMergeRulesTable, err)
 	}
 
-	log.Infow("Completed load for table")
+	log.Infon("Completed load for table")
 
 	return nil
 }
 
 func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
-	log := sf.logger.With(lf.TableName, identityMappingsTable)
-	log.Infow("Fetching load file location")
+	log := sf.logger.Withn(logger.NewStringField(lf.TableName, identityMappingsTable))
+	log.Infon("Fetching load file location")
 
 	loadFile, err := sf.Uploader.GetSingleLoadFile(ctx, identityMappingsTable)
 	if err != nil {
@@ -730,7 +736,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 
 	db, err := sf.connect(ctx, optionalCreds{schemaName: sf.Namespace})
 	if err != nil {
-		log.Errorw("Error establishing connection for copying table", lf.Error, err.Error())
+		log.Errorn("Error establishing connection for copying table", obskit.Error(err))
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
@@ -741,14 +747,14 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		schemaIdentifier, stagingTableName, identityMappingsTable,
 	)
 
-	log = log.With(lf.StagingTableName, stagingTableName)
-	log.Infow("Creating staging table", lf.Query, sqlStatement)
+	log = log.Withn(logger.NewStringField(lf.StagingTableName, stagingTableName))
+	log.Infon("Creating staging table", logger.NewStringField(lf.Query, sqlStatement))
 
 	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		log.Errorw("Error creating staging table",
-			lf.Query, sqlStatement,
-			lf.Error, err.Error(),
+		log.Errorn("Error creating staging table",
+			logger.NewStringField(lf.Query, sqlStatement),
+			obskit.Error(err),
 		)
 		return fmt.Errorf("cannot create temporary table like %s.%q: %w", schemaIdentifier, identityMappingsTable, err)
 	}
@@ -757,12 +763,12 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		`ALTER TABLE %s.%q ADD COLUMN "ID" int AUTOINCREMENT start 1 increment 1`,
 		schemaIdentifier, stagingTableName,
 	)
-	log.Infow("Adding autoincrement column", lf.Query, sqlStatement)
+	log.Infon("Adding autoincrement column", logger.NewStringField(lf.Query, sqlStatement))
 	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil && !checkAndIgnoreAlreadyExistError(err) {
-		log.Errorw("Error adding autoincrement column",
-			lf.Query, sqlStatement,
-			lf.Error, err.Error(),
+		log.Errorn("Error adding autoincrement column",
+			logger.NewStringField(lf.Query, sqlStatement),
+			obskit.Error(err),
 		)
 		return fmt.Errorf("cannot add autoincrement column to %s.%q: %w", schemaIdentifier, stagingTableName, err)
 	}
@@ -778,12 +784,12 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		sf.authString(),
 	)
 
-	log.Infow("Copying identity mappings for table", lf.Query, sqlStatement)
+	log.Infon("Copying identity mappings for table", logger.NewStringField(lf.Query, sqlStatement))
 	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		log.Errorw("Error running COPY for table",
-			lf.Query, sqlStatement,
-			lf.Error, err.Error(),
+		log.Errorn("Error running COPY for table",
+			logger.NewStringField(lf.Query, sqlStatement),
+			obskit.Error(err),
 		)
 		return fmt.Errorf("cannot run copy into %s.%q: %v", schemaIdentifier, stagingTableName, err)
 	}
@@ -810,17 +816,17 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		);`,
 		identityMappingsTable, stagingTableName, schemaIdentifier,
 	)
-	log.Infow("Merge records for dedup for table", lf.Query, sqlStatement)
+	log.Infon("Merge records for dedup for table", logger.NewStringField(lf.Query, sqlStatement))
 	_, err = db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		log.Errorw("Error running MERGE for dedup",
-			lf.Query, sqlStatement,
-			lf.Error, err.Error(),
+		log.Errorn("Error running MERGE for dedup",
+			logger.NewStringField(lf.Query, sqlStatement),
+			obskit.Error(err),
 		)
 		return fmt.Errorf("cannot run merge for dedup into %s.%q: %w", schemaIdentifier, identityMappingsTable, err)
 	}
 
-	log.Infow("Complete load for table")
+	log.Infon("Complete load for table")
 
 	return nil
 }
@@ -854,17 +860,17 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		updated             int64
 	)
 
-	log := sf.logger.With(
-		lf.SourceID, sf.Warehouse.Source.ID,
-		lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name,
-		lf.WorkspaceID, sf.Warehouse.WorkspaceID,
-		lf.Namespace, sf.Namespace,
-		lf.TableName, whutils.UsersTable,
-		lf.ShouldMerge, sf.ShouldMerge(identifiesTable),
+	log := sf.logger.Withn(
+		logger.NewStringField(lf.SourceID, sf.Warehouse.Source.ID),
+		logger.NewStringField(lf.SourceType, sf.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.DestinationType, sf.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(lf.WorkspaceID, sf.Warehouse.WorkspaceID),
+		logger.NewStringField(lf.Namespace, sf.Namespace),
+		logger.NewStringField(lf.TableName, whutils.UsersTable),
+		logger.NewBoolField(lf.ShouldMerge, sf.ShouldMerge(identifiesTable)),
 	)
-	log.Infow("started loading for identifies and users tables")
+	log.Infon("started loading for identifies and users tables")
 
 	_, resp, err := sf.loadTable(ctx, identifiesTable, identifiesSchema, true)
 	if err != nil {
@@ -907,7 +913,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		// did not leave us with the ability to determine which records were inserted
 		resp.stagingTable = tmpIdentifiesStagingTable
 
-		log.Infow("identifies temp table loaded")
+		log.Infon("identifies temp table loaded")
 	}
 
 	userColMap := sf.Uploader.GetTableSchemaInWarehouse(usersTable)
@@ -968,12 +974,12 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		strings.Join(identifyColNames, ","),
 	)
 
-	log.Infow("creating staging table for users",
-		lf.StagingTableName, stagingTableName,
-		lf.Query, sqlStatement,
+	log.Infon("creating staging table for users",
+		logger.NewStringField(lf.StagingTableName, stagingTableName),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	if _, err = resp.db.ExecContext(ctx, sqlStatement); err != nil {
-		log.Warnw("failure creating staging table for users", lf.Error, err.Error())
+		log.Warnn("failure creating staging table for users", obskit.Error(err))
 		return map[string]error{
 			identifiesTable: nil,
 			usersTable:      fmt.Errorf("creating staging table for users: %w", err),
@@ -1011,13 +1017,13 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		schemaIdentifier,
 	)
 
-	log.Infow("deduplication", lf.Query, sqlStatement)
+	log.Infon("deduplication", logger.NewStringField(lf.Query, sqlStatement))
 
 	row := resp.db.QueryRowContext(ctx, sqlStatement)
 	if row.Err() != nil {
-		log.Warnw("failure running deduplication",
-			lf.Query, sqlStatement,
-			lf.Error, row.Err().Error(),
+		log.Warnn("failure running deduplication",
+			logger.NewStringField(lf.Query, sqlStatement),
+			obskit.Error(row.Err()),
 		)
 		return map[string]error{
 			identifiesTable: nil,
@@ -1025,9 +1031,9 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		}
 	}
 	if err = row.Scan(&inserted, &updated); err != nil {
-		log.Warnw("getting rows affected for dedup",
-			lf.Query, sqlStatement,
-			lf.Error, err.Error(),
+		log.Warnn("getting rows affected for dedup",
+			logger.NewStringField(lf.Query, sqlStatement),
+			obskit.Error(err),
 		)
 		return map[string]error{
 			identifiesTable: nil,
@@ -1045,7 +1051,7 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		"tableName":      whutils.UsersTable,
 	}).Count(int(updated))
 
-	log.Infow("Completed loading for users and identifies tables")
+	log.Infon("Completed loading for users and identifies tables")
 
 	return map[string]error{
 		identifiesTable: nil,
@@ -1133,14 +1139,16 @@ func (sf *Snowflake) CreateSchema(ctx context.Context) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	schemaExists, err = sf.schemaExists(ctx)
 	if err != nil {
-		sf.logger.Errorw("Error checking if schema exists",
-			lf.Schema, schemaIdentifier,
-			lf.Error, err.Error(),
+		sf.logger.Errorn("Error checking if schema exists",
+			logger.NewStringField(lf.Schema, schemaIdentifier),
+			obskit.Error(err),
 		)
 		return err
 	}
 	if schemaExists {
-		sf.logger.Infow("Skipping schema creation (it already exists)", lf.Schema, schemaIdentifier)
+		sf.logger.Infon("Skipping schema creation (it already exists)",
+			logger.NewStringField(lf.Schema, schemaIdentifier),
+		)
 		return nil
 	}
 	return sf.createSchema(ctx)
@@ -1153,9 +1161,9 @@ func (sf *Snowflake) CreateTable(ctx context.Context, tableName string, columnMa
 func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]q`, schemaIdentifier, tableName)
-	sf.logger.Infow("Dropping table in snowflake",
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.Query, sqlStatement,
+	sf.logger.Infon("Dropping table in snowflake",
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return
@@ -1171,12 +1179,12 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 		return fmt.Errorf("adding columns: %w", err)
 	}
 
-	log := sf.logger.With(
-		lf.Schema, schemaIdentifier,
-		lf.DestinationID, sf.Warehouse.Destination.ID,
-		lf.TableName, tableName,
+	log := sf.logger.Withn(
+		logger.NewStringField(lf.Schema, schemaIdentifier),
+		logger.NewStringField(lf.DestinationID, sf.Warehouse.Destination.ID),
+		logger.NewStringField(lf.TableName, tableName),
 	)
-	log.Infow("Adding columns", lf.Query, query)
+	log.Infon("Adding columns", logger.NewStringField(lf.Query, query))
 	_, err = sf.DB.ExecContext(ctx, query)
 	return
 }
@@ -1220,7 +1228,9 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		} else if hasUserID {
 			toSelectFields = `NULL AS "ANONYMOUS_ID", "USER_ID"`
 		} else {
-			sf.logger.Infow("ANONYMOUS_ID, USER_ID columns not present in table", lf.TableName, tableName)
+			sf.logger.Infon("ANONYMOUS_ID, USER_ID columns not present in table",
+				logger.NewStringField(lf.TableName, tableName),
+			)
 			return nil
 		}
 
@@ -1232,9 +1242,9 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 				`SELECT DISTINCT %s FROM %s.%q LIMIT %d OFFSET %d`,
 				toSelectFields, schemaIdentifier, tableName, batchSize, offset,
 			)
-			sf.logger.Infow("Downloading distinct combinations of anonymous_id, user_id",
-				lf.Query, sqlStatement,
-				lf.TotalRows, totalRows,
+			sf.logger.Infon("Downloading distinct combinations of anonymous_id, user_id",
+				logger.NewStringField(lf.Query, sqlStatement),
+				logger.NewIntField(lf.TotalRows, totalRows),
 			)
 			var rows *sqlmw.Rows
 			rows, err = sf.DB.QueryContext(ctx, sqlStatement)

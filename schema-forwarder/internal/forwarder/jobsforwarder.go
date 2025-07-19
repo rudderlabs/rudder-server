@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -163,7 +164,7 @@ func (jf *JobsForwarder) Start() error {
 									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "succeeded"}).Count(len(batch.Jobs))
 								} else {
 									jf.stat.NewTaggedStat("schema_forwarder_processed_jobs", stats.CountType, stats.Tags{"state": "failed"}).Count(len(batch.Jobs))
-									jf.log.Errorf("failed to forward %d jobs : %v", len(batch.Jobs), err)
+									jf.log.Errorn("failed to forward jobs", logger.NewIntField("jobCount", int64(len(batch.Jobs))), obskit.Error(err))
 								}
 							})
 					}

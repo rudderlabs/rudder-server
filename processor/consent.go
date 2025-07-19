@@ -6,6 +6,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -45,7 +46,7 @@ func (proc *Handle) getConsentFilteredDestinations(event types.SingularEventT, s
 	consentManagementInfo, err := getConsentManagementInfo(event)
 	if err != nil {
 		// Log the error for debugging purposes
-		proc.logger.Errorw("failed to get consent management info", "error", err.Error())
+		proc.logger.Errorn("failed to get consent management info", obskit.Error(err))
 	}
 
 	if len(consentManagementInfo.DeniedConsentIDs) == 0 {

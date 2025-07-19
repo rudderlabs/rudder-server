@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -399,7 +400,9 @@ func (bm *BatchManager) Delete(
 				// Get filehandler from a factory on every iteration, to not share the data.
 				filehandler := LocalFileHandlerFactory(destName, files[_i].Key)
 				if filehandler == nil {
-					pkgLogger.Warnf("unable to locate filehandler for file: %s under destination: %s", files[_i].Key, destName)
+					pkgLogger.Warnn("unable to locate filehandler for file under destination",
+						logger.NewStringField("fileName", files[_i].Key),
+						logger.NewStringField("destinationName", destName))
 					return nil
 				}
 
@@ -437,11 +440,11 @@ func (bm *BatchManager) Delete(
 		}
 		err = g.Wait()
 		if err != nil {
-			pkgLogger.Errorf("user identity deletion job failed with error: %v", err)
+			pkgLogger.Errorn("user identity deletion job failed with error", obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
-		pkgLogger.Infof("successfully completed loop of ")
+		pkgLogger.Infon("successfully completed loop of ")
 	}
 
 	return model.JobStatus{Status: model.JobStatusComplete}
@@ -475,7 +478,9 @@ func handleIdentityRemoval(
 	attributes []model.User,
 	sourceFile, targetFile string,
 ) error {
-	pkgLogger.Debugf("Handling identity removal for source: %s, destination: %s", sourceFile, targetFile)
+	pkgLogger.Debugn("Handling identity removal for source and destination",
+		logger.NewStringField("sourceFile", sourceFile),
+		logger.NewStringField("targetFile", targetFile))
 
 	if err := handler.Read(ctx, sourceFile); err != nil {
 		return fmt.Errorf("parsing contents of local file: %s, err: %w", sourceFile, err)
@@ -505,18 +510,22 @@ func getFileSize(fileAbsPath string) int {
 }
 
 func (b *Batch) cleanup(ctx context.Context, prefix string) {
-	pkgLogger.Debugf("cleaning up temp files created during the operation")
+	pkgLogger.Debugn("cleaning up temp files created during the operation")
 
 	err := b.FM.Delete(
 		ctx,
 		[]string{filepath.Join(prefix, StatusTrackerFileName)},
 	)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
+		pkgLogger.Errorn("error while deleting delete status tracker file from destination",
+			obskit.Error(err),
+		)
 	}
 
 	err = os.RemoveAll(b.TmpDirPath)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting temporary directory locally: %v", err)
+		pkgLogger.Errorn("error while deleting temporary directory locally",
+			obskit.Error(err),
+		)
 	}
 }

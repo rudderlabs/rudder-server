@@ -20,6 +20,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -231,7 +232,7 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	// Download the zip file
 	fileLoadResp, err := http.Get(modifiedUrl)
 	if err != nil {
-		b.logger.Errorf("Error downloading zip file: %w", err)
+		b.logger.Errorn("Error downloading zip file", obskit.Error(err))
 		panic(fmt.Errorf("BRT: Error downloading zip file:. Err: %w", err))
 	}
 	defer fileLoadResp.Body.Close()
@@ -331,14 +332,14 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 	// Open the CSV file
 	file, err := os.Open(filePath)
 	if err != nil {
-		b.logger.Errorf("Error opening the CSV file: %w", err)
+		b.logger.Errorn("Error opening the CSV file", obskit.Error(err))
 		return nil, err
 	}
 	// defer file.Close() and remove
 	defer func() {
 		closeErr := file.Close()
 		if closeErr != nil {
-			b.logger.Errorf("Error closing the CSV file: %w", err)
+			b.logger.Errorn("Error closing the CSV file", obskit.Error(err))
 			if err == nil {
 				err = closeErr
 			}
@@ -346,7 +347,7 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 		// remove the file after the response has been written
 		removeErr := os.Remove(filePath)
 		if removeErr != nil {
-			b.logger.Errorf("Error removing the CSV file: %w", removeErr)
+			b.logger.Errorn("Error removing the CSV file", obskit.Error(removeErr))
 			if err == nil {
 				err = removeErr
 			}
@@ -359,7 +360,7 @@ func (b *BingAdsBulkUploader) readPollResults(filePath string) ([][]string, erro
 	// Read all records from the CSV file
 	records, err := reader.ReadAll()
 	if err != nil {
-		b.logger.Errorf("Error reading CSV: %w", err)
+		b.logger.Errorn("Error reading CSV", obskit.Error(err))
 		return nil, err
 	}
 	return records, nil

@@ -34,7 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -208,6 +208,10 @@ type DeleteByParams struct {
 	JobRunId  string
 	TaskRunId string
 	StartTime time.Time
+}
+
+func (d DeleteByParams) String() string {
+	return "SourceId: " + d.SourceId + ", JobRunId: " + d.JobRunId + ", TaskRunId: " + d.TaskRunId + ", StartTime: " + d.StartTime.Format(time.RFC3339)
 }
 
 type ColumnInfo struct {
@@ -832,7 +836,7 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	var err error
 	var directoryName string
 	if directoryName, err = misc.CreateTMPDIR(); err != nil {
-		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
+		pkgLogger.Errorn("Error creating SSL root TMP directory for destination", obskit.Error(err))
 		return
 	}
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)

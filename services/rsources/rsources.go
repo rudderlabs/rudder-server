@@ -86,7 +86,7 @@ func (js *JobStatus) FixCorruptedStats(log logger.Logger) {
 	}
 	if isCorrupted() {
 		corruptedJson, _ := jsonrs.Marshal(js)
-		log.Warnw("Corrupted job status stats detected, fixing", "job_status", string(corruptedJson))
+		log.Warnn("Corrupted job status stats detected, fixing", logger.NewStringField("job_status", string(corruptedJson)))
 		fixCorrupted()
 	}
 }

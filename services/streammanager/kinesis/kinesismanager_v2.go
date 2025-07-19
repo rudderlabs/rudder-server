@@ -14,6 +14,7 @@ import (
 	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
@@ -91,7 +92,10 @@ func (producer *KinesisProducerV2) Produce(jsonData json.RawMessage, destConfig 
 	putOutput, err := client.PutRecord(context.Background(), &putInput)
 	if err != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(err)
-		pkgLogger.Errorf("[Kinesis] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		pkgLogger.Errorn("[Kinesis] error",
+			logger.NewIntField("statusCode", int64(statusCode)),
+			logger.NewStringField("respStatus", respStatus),
+			logger.NewStringField("responseMessage", responseMessage))
 		return statusCode, respStatus, responseMessage
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)

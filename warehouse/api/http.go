@@ -12,28 +12,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-server/utils/crash"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-
 	"github.com/go-chi/chi/v5"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
-	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
-	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/services/notifier"
+	"github.com/rudderlabs/rudder-server/utils/crash"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
+	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -139,9 +137,13 @@ func (a *Api) Start(ctx context.Context) error {
 		if mode.IsMaster(a.mode) {
 			a.addMasterEndpoints(ctx, srvMux)
 
-			a.logger.Infow("Starting warehouse master service on" + strconv.Itoa(a.config.webPort))
+			a.logger.Infon("Starting warehouse master service",
+				logger.NewIntField("port", int64(a.config.webPort)),
+			)
 		} else {
-			a.logger.Infow("Starting warehouse slave service on" + strconv.Itoa(a.config.webPort))
+			a.logger.Infon("Starting warehouse slave service",
+				logger.NewIntField("port", int64(a.config.webPort)),
+			)
 		}
 	}
 
@@ -154,7 +156,9 @@ func (a *Api) Start(ctx context.Context) error {
 }
 
 func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
-	a.logger.Infow("waiting for BackendConfig before starting on " + strconv.Itoa(a.config.webPort))
+	a.logger.Infon("waiting for BackendConfig before starting",
+		logger.NewIntField("port", int64(a.config.webPort)),
+	)
 
 	a.bcConfig.WaitForConfig(ctx)
 
@@ -246,16 +250,16 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	var payload pendingEventsRequest
 	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
-		a.logger.Warnw("invalid JSON in request body for pending events", lf.Error, err.Error())
+		a.logger.Warnn("invalid JSON in request body for pending events", obskit.Error(err))
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	sourceID, taskRunID := payload.SourceID, payload.TaskRunID
 	if sourceID == "" || taskRunID == "" {
-		a.logger.Warnw("empty source or task run id for pending events",
-			lf.SourceID, payload.SourceID,
-			lf.TaskRunID, payload.TaskRunID,
+		a.logger.Warnn("empty source or task run id for pending events",
+			logger.NewStringField(lf.SourceID, payload.SourceID),
+			logger.NewStringField(lf.TaskRunID, payload.TaskRunID),
 		)
 		http.Error(w, "empty source or task run id", http.StatusBadRequest)
 		return
@@ -263,13 +267,13 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), sourceID)
 	if err != nil {
-		a.logger.Warnw("workspace from source not found for pending events", lf.SourceID, payload.SourceID)
+		a.logger.Warnn("workspace from source not found for pending events", logger.NewStringField(lf.SourceID, payload.SourceID))
 		http.Error(w, ierrors.ErrWorkspaceFromSourceNotFound.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if a.tenantManager.DegradedWorkspace(workspaceID) {
-		a.logger.Infow("workspace is degraded for pending events", lf.WorkspaceID, workspaceID)
+		a.logger.Infon("workspace is degraded for pending events", logger.NewStringField(lf.WorkspaceID, workspaceID))
 		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -280,7 +284,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorw("counting pending staging files", lf.Error, err.Error())
+		a.logger.Errorn("counting pending staging files", obskit.Error(err))
 		http.Error(w, "can't get pending staging files count", http.StatusInternalServerError)
 		return
 	}
@@ -297,7 +301,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorw("counting pending uploads", lf.Error, err.Error())
+		a.logger.Errorn("counting pending uploads", obskit.Error(err))
 		http.Error(w, "can't get pending uploads count", http.StatusInternalServerError)
 		return
 	}
@@ -313,7 +317,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorw("counting aborted uploads", lf.Error, err.Error())
+		a.logger.Errorn("counting aborted uploads", obskit.Error(err))
 		http.Error(w, "can't get aborted uploads count", http.StatusInternalServerError)
 		return
 	}
@@ -322,16 +326,16 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	triggerPendingUpload, _ := strconv.ParseBool(r.URL.Query().Get(triggerUploadQPName))
 
 	if pendingEventsAvailable && triggerPendingUpload {
-		a.logger.Infow("triggering upload for all destinations connected to source",
-			lf.WorkspaceID, workspaceID,
-			lf.SourceID, payload.SourceID,
+		a.logger.Infon("triggering upload for all destinations connected to source",
+			logger.NewStringField(lf.WorkspaceID, workspaceID),
+			logger.NewStringField(lf.SourceID, payload.SourceID),
 		)
 
 		wh := a.bcManager.WarehousesBySourceID(sourceID)
 		if len(wh) == 0 {
-			a.logger.Warnw("no warehouse found for pending events",
-				lf.WorkspaceID, workspaceID,
-				lf.SourceID, payload.SourceID,
+			a.logger.Warnn("no warehouse found for pending events",
+				logger.NewStringField(lf.WorkspaceID, workspaceID),
+				logger.NewStringField(lf.SourceID, payload.SourceID),
 			)
 			http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
 			return
@@ -349,7 +353,7 @@ func (a *Api) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		AbortedEvents:            abortedUploadCount > 0,
 	})
 	if err != nil {
-		a.logger.Errorw("marshalling response for pending events", lf.Error, err.Error())
+		a.logger.Errorn("marshalling response for pending events", obskit.Error(err))
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -362,20 +366,20 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	var payload triggerUploadRequest
 	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
-		a.logger.Warnw("invalid JSON in request body for triggering upload", lf.Error, err.Error())
+		a.logger.Warnn("invalid JSON in request body for triggering upload", obskit.Error(err))
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	workspaceID, err := a.tenantManager.SourceToWorkspace(r.Context(), payload.SourceID)
 	if err != nil {
-		a.logger.Warnw("workspace from source not found for triggering upload", lf.SourceID, payload.SourceID)
+		a.logger.Warnn("workspace from source not found for triggering upload", logger.NewStringField(lf.SourceID, payload.SourceID))
 		http.Error(w, ierrors.ErrWorkspaceFromSourceNotFound.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if a.tenantManager.DegradedWorkspace(workspaceID) {
-		a.logger.Infow("workspace is degraded for triggering upload", lf.WorkspaceID, workspaceID)
+		a.logger.Infon("workspace is degraded for triggering upload", logger.NewStringField(lf.WorkspaceID, workspaceID))
 		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
@@ -387,10 +391,10 @@ func (a *Api) triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 		wh = a.bcManager.WarehousesByDestID(payload.DestinationID)
 	}
 	if len(wh) == 0 {
-		a.logger.Warnw("no warehouse found for triggering upload",
-			lf.WorkspaceID, workspaceID,
-			lf.SourceID, payload.SourceID,
-			lf.DestinationID, payload.DestinationID,
+		a.logger.Warnn("no warehouse found for triggering upload",
+			logger.NewStringField(lf.WorkspaceID, workspaceID),
+			logger.NewStringField(lf.SourceID, payload.SourceID),
+			logger.NewStringField(lf.DestinationID, payload.DestinationID),
 		)
 		http.Error(w, ierrors.ErrNoWarehouseFound.Error(), http.StatusBadRequest)
 		return
@@ -408,7 +412,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 
 	var payload fetchTablesRequest
 	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
-		a.logger.Warnw("invalid JSON in request body for fetching tables", lf.Error, err.Error())
+		a.logger.Warnn("invalid JSON in request body for fetching tables", obskit.Error(err))
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
@@ -419,7 +423,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		a.logger.Errorw("fetching tables", lf.Error, err.Error())
+		a.logger.Errorn("fetching tables", obskit.Error(err))
 		http.Error(w, "can't fetch tables", http.StatusInternalServerError)
 		return
 	}
@@ -428,7 +432,7 @@ func (a *Api) fetchTablesHandler(w http.ResponseWriter, r *http.Request) {
 		ConnectionsTables: tables,
 	})
 	if err != nil {
-		a.logger.Errorw("marshalling response for fetching tables", lf.Error, err.Error())
+		a.logger.Errorn("marshalling response for fetching tables", obskit.Error(err))
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -15,6 +15,8 @@ import (
 	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
@@ -55,7 +57,7 @@ func (producer *FireHoseProducerV2) Produce(jsonData json.RawMessage, _ interfac
 	}
 	value, err := jsonrs.Marshal(data)
 	if err != nil {
-		pkgLogger.Errorf("[FireHose] error  :: %v", err)
+		pkgLogger.Errorn("[FireHose] error", obskit.Error(err))
 		return 400, "Failure", "[FireHose] error  :: " + err.Error()
 	}
 
@@ -81,7 +83,7 @@ func (producer *FireHoseProducerV2) Produce(jsonData json.RawMessage, _ interfac
 
 	if errorRec != nil {
 		statusCode, respStatus, responseMessage := common.ParseAWSErrorV2(errorRec)
-		pkgLogger.Errorf("[FireHose] error  :: %d : %s : %s", statusCode, respStatus, responseMessage)
+		pkgLogger.Errorn("[FireHose] error", logger.NewIntField("statusCode", int64(statusCode)), logger.NewStringField("respStatus", respStatus), logger.NewStringField("responseMessage", responseMessage))
 		return statusCode, respStatus, responseMessage
 	}
 

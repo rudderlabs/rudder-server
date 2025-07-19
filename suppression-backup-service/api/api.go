@@ -40,7 +40,7 @@ func (api *API) Handler(ctx context.Context) http.Handler {
 	srvMux.Get("/full-export", ServeFile(api.fullBackup))
 	srvMux.Get("/latest-export", ServeFile(api.latestBackup))
 
-	api.log.Info("Suppression backup service Handler declared")
+	api.log.Infon("Suppression backup service Handler declared")
 	return srvMux
 }
 

@@ -397,7 +397,7 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	closeConfigChan := func(sources int) {
 		if !gw.backendConfigInitialised {
-			gw.logger.Infow("BackendConfig initialised", "sources", sources)
+			gw.logger.Infon("BackendConfig initialised", logger.NewIntField("sources", int64(sources)))
 			gw.backendConfigInitialised = true
 			close(gw.backendConfigInitialisedChan)
 		}
@@ -511,8 +511,8 @@ func (gw *Handle) dbWriterWorkerProcess() {
 			} else {
 				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
 				if err != nil {
-					gw.logger.Errorf("Store into gateway db failed with error: %v", err)
-					gw.logger.Errorf("JobList: %+v", jobBatches)
+					gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
+					gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
 					return err
 				}
 			}
@@ -551,22 +551,22 @@ Supports CORS from all origins. This function will block.
 func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		gw.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", gw.conf.webPort)
+		gw.logger.Infon("WebHandler waiting for BackendConfig before starting", logger.NewIntField("webPort", int64(gw.conf.webPort)))
 		<-gw.backendConfigInitialisedChan
-		gw.logger.Infof("backendConfig initialised")
+		gw.logger.Infon("backendConfig initialised")
 		return nil
 	})
 	g.Go(func() error {
-		gw.logger.Infof("WebHandler waiting for transformer feature before starting on %d", gw.conf.webPort)
+		gw.logger.Infon("WebHandler waiting for transformer feature before starting", logger.NewIntField("webPort", int64(gw.conf.webPort)))
 		<-gw.transformerFeaturesInitialised
-		gw.logger.Infof("transformer feature initialised")
+		gw.logger.Infon("transformer feature initialised")
 		return nil
 	})
 	err := g.Wait()
 	if err != nil {
 		return err
 	}
-	gw.logger.Infof("WebHandler Starting on %d", gw.conf.webPort)
+	gw.logger.Infon("WebHandler Starting", logger.NewIntField("webPort", int64(gw.conf.webPort)))
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs

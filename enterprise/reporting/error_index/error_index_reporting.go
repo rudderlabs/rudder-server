@@ -225,7 +225,7 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 }
 
 func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.Handle) error {
-	eir.log.Infow("Starting main loop for error index reporting")
+	eir.log.Infon("Starting main loop for error index reporting")
 
 	var (
 		bucket           = eir.conf.GetStringVar("rudder-failed-messages", "ErrorIndex.storage.Bucket")
@@ -302,10 +302,10 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 }
 
 func (eir *ErrorIndexReporter) Stop() {
-	eir.log.Infow("stopping error index reporter")
+	eir.log.Infon("stopping error index reporter")
 	eir.cancel()
 	if err := eir.g.Wait(); err != nil {
-		eir.log.Errorw("stopped error index reporter with error", "error", err)
+		eir.log.Errorn("stopped error index reporter with error", obskit.Error(err))
 	}
 }
 

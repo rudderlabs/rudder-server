@@ -7,8 +7,10 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -32,7 +34,7 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			rt.logger.Debugf("[%v Router] :: collectMetrics exiting", rt.destType)
+			rt.logger.Debugn("collectMetrics exiting", logger.NewStringField("destType", rt.destType))
 			return
 		case <-rt.telemetry.diagnosisTicker.C:
 		}
@@ -99,23 +101,23 @@ func (rt *Handle) updateRudderSourcesStats(
 	rsourcesStats.CollectFailedRecords(jobStatuses)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
-		rt.logger.Errorf("publishing rsources stats: %w", err)
+		rt.logger.Errorn("publishing rsources stats", obskit.Error(err))
 	}
 	return err
 }
 
 func (rt *Handle) sendRetryStoreStats(attempt int) {
-	rt.logger.Warnf("Timeout during store jobs in router module, attempt %d", attempt)
+	rt.logger.Warnn("Timeout during store jobs in router module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 
 func (rt *Handle) sendRetryUpdateStats(attempt int) {
-	rt.logger.Warnf("Timeout during update job status in router module, attempt %d", attempt)
+	rt.logger.Warnn("Timeout during update job status in router module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 
 func (rt *Handle) sendQueryRetryStats(attempt int) {
-	rt.logger.Warnf("Timeout during query jobs in router module, attempt %d", attempt)
+	rt.logger.Warnn("Timeout during query jobs in router module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 

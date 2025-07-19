@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -79,7 +80,7 @@ type GoogleCloudFunctionClientImpl struct{}
 func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error) {
 	ts, err := idtoken.NewTokenSource(ctx, functionUrl, opts...)
 	if err != nil {
-		pkgLogger.Errorf("failed to create NewTokenSource: %w", err)
+		pkgLogger.Errorn("failed to create NewTokenSource", obskit.Error(err))
 		return nil, err
 	}
 

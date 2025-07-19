@@ -7,19 +7,18 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
-	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 )
 
@@ -121,27 +120,28 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	var payload stagingFileSchema
 	err := jsonrs.NewDecoder(r.Body).Decode(&payload)
 	if err != nil {
-		api.Logger.Warnw("invalid JSON in request body for processing staging file", lf.Error, err.Error())
+		api.Logger.Warnn("invalid JSON in request body for processing staging file", obskit.Error(err))
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	stagingFile, err := mapStagingFile(&payload)
 	if err != nil {
-		api.Logger.Warnw("invalid payload for processing staging file", lf.Error, err.Error())
+		api.Logger.Warnn("invalid payload for processing staging file", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
 
 	if api.Multitenant.DegradedWorkspace(stagingFile.WorkspaceID) {
-		api.Logger.Infow("workspace is degraded for processing staging file", lf.WorkspaceID, stagingFile.WorkspaceID)
+		api.Logger.Infon("workspace is degraded for processing staging file",
+			logger.NewStringField(lf.WorkspaceID, stagingFile.WorkspaceID))
 		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
 	schemaBytes, err := jsonrs.Marshal(stagingFile.Schema)
 	if err != nil {
-		api.Logger.Warnw("Unable to marshal staging file schema", lf.Error, err.Error())
+		api.Logger.Warnn("Unable to marshal staging file schema", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("Unable to marshal staging file schema: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -150,7 +150,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		api.Logger.Errorw("inserting staging file", lf.Error, err.Error())
+		api.Logger.Errorn("inserting staging file", obskit.Error(err))
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -90,12 +91,12 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 		err             error
 	)
 
-	pkgLogger.Infow("validate destination configuration",
-		logfield.DestinationID, destID,
-		logfield.DestinationType, destType,
-		logfield.DestinationRevisionID, dest.RevisionID,
-		logfield.WorkspaceID, dest.WorkspaceID,
-		logfield.DestinationValidationsStep, stepToValidate,
+	pkgLogger.Infon("validate destination configuration",
+		logger.NewStringField(logfield.DestinationID, destID),
+		logger.NewStringField(logfield.DestinationType, destType),
+		logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
+		logger.NewStringField(logfield.WorkspaceID, dest.WorkspaceID),
+		logger.NewStringField(logfield.DestinationValidationsStep, stepToValidate),
 	)
 
 	// check if req has specified a step in query params
@@ -133,13 +134,13 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 			err = fmt.Errorf("creating validator: %v", err)
 			step.Error = err.Error()
 
-			pkgLogger.Warnw("creating validator",
-				logfield.DestinationID, destID,
-				logfield.DestinationType, destType,
-				logfield.DestinationRevisionID, dest.RevisionID,
-				logfield.WorkspaceID, dest.WorkspaceID,
-				logfield.DestinationValidationsStep, step.Name,
-				logfield.Error, step.Error,
+			pkgLogger.Warnn("creating validator",
+				logger.NewStringField(logfield.DestinationID, destID),
+				logger.NewStringField(logfield.DestinationType, destType),
+				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
+				logger.NewStringField(logfield.WorkspaceID, dest.WorkspaceID),
+				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
+				logger.NewStringField(logfield.Error, step.Error),
 			)
 			break
 		}
@@ -153,13 +154,13 @@ func validateDestination(ctx context.Context, dest *backendconfig.DestinationT, 
 
 		// if any of steps fails, the whole validation fails
 		if !step.Success {
-			pkgLogger.Warnw("not able to validate destination configuration",
-				logfield.DestinationID, destID,
-				logfield.DestinationType, destType,
-				logfield.DestinationRevisionID, dest.RevisionID,
-				logfield.WorkspaceID, dest.WorkspaceID,
-				logfield.DestinationValidationsStep, step.Name,
-				logfield.Error, step.Error,
+			pkgLogger.Warnn("not able to validate destination configuration",
+				logger.NewStringField(logfield.DestinationID, destID),
+				logger.NewStringField(logfield.DestinationType, destType),
+				logger.NewStringField(logfield.DestinationRevisionID, dest.RevisionID),
+				logger.NewStringField(logfield.WorkspaceID, dest.WorkspaceID),
+				logger.NewStringField(logfield.DestinationValidationsStep, step.Name),
+				logger.NewStringField(logfield.Error, step.Error),
 			)
 			break
 		}

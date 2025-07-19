@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 type WunderkindManager interface {
@@ -25,7 +26,7 @@ func NewProducer(conf *config.Config, log logger.Logger) (WunderkindManager, err
 		if v2Enabled.Load() {
 			return nil, err
 		} else {
-			log.Error("Error creating producer v2", err)
+			log.Errorn("Error creating producer v2", obskit.Error(err))
 		}
 	}
 	return &SwitchingWunderkindManager{isV2Enabled: v2Enabled, producerV1: producerV1, producerV2: producerV2}, nil

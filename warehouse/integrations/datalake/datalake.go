@@ -6,18 +6,15 @@ import (
 	"regexp"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/types"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -44,7 +41,9 @@ func New(conf *config.Config, log logger.Logger) *Datalake {
 	d := &Datalake{}
 
 	d.conf = conf
-	d.logger = log.Child("integrations").Child("datalake")
+	d.logger = log.Child("integrations").Child("datalake").Withn(
+		obskit.DestinationID(d.Warehouse.Destination.ID),
+	)
 
 	return d
 }
@@ -83,7 +82,7 @@ func (d *Datalake) AlterColumn(ctx context.Context, tableName, columnName, colum
 }
 
 func (d *Datalake) LoadTable(_ context.Context, tableName string) (*types.LoadTableStats, error) {
-	d.logger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, d.Warehouse.Destination.ID)
+	d.logger.Infon("Skipping load for table", logger.NewStringField("table", tableName))
 	return &types.LoadTableStats{}, nil
 }
 
@@ -92,7 +91,7 @@ func (*Datalake) DeleteBy(context.Context, []string, warehouseutils.DeleteByPara
 }
 
 func (d *Datalake) LoadUserTables(context.Context) map[string]error {
-	d.logger.Infof("Skipping load for user tables : %s is a datalake destination", d.Warehouse.Destination.ID)
+	d.logger.Infon("Skipping load for user tables")
 	// return map with nil error entries for identifies and users(if any) tables
 	// this is so that they are marked as succeeded
 	errorMap := map[string]error{warehouseutils.IdentifiesTable: nil}
@@ -103,12 +102,12 @@ func (d *Datalake) LoadUserTables(context.Context) map[string]error {
 }
 
 func (d *Datalake) LoadIdentityMergeRulesTable(context.Context) error {
-	d.logger.Infof("Skipping load for identity merge rules : %s is a datalake destination", d.Warehouse.Destination.ID)
+	d.logger.Infon("Skipping load for identity merge rules")
 	return nil
 }
 
 func (d *Datalake) LoadIdentityMappingsTable(context.Context) error {
-	d.logger.Infof("Skipping load for identity mappings : %s is a datalake destination", d.Warehouse.Destination.ID)
+	d.logger.Infon("Skipping load for identity mappings")
 	return nil
 }
 

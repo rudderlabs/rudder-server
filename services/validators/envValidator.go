@@ -83,9 +83,19 @@ func killDanglingDBConnections(db *sql.DB) error {
 	}
 
 	if len(dangling) > 0 {
-		pkgLogger.Warnf("Terminated %d dangling connection(s)", len(dangling))
+		pkgLogger.Warnn("Terminated dangling connections",
+			logger.NewIntField("count", int64(len(dangling))),
+		)
 		for i, rowPtr := range dangling {
-			pkgLogger.Warnf("dangling connection #%d: %+v", i+1, *rowPtr)
+			pkgLogger.Warnn("dangling connection details",
+				logger.NewIntField("connectionNumber", int64(i+1)),
+				logger.NewIntField("pid", int64(rowPtr.pid)),
+				logger.NewStringField("waitEventType", rowPtr.waitEventType),
+				logger.NewStringField("waitEvent", rowPtr.waitEvent),
+				logger.NewStringField("state", rowPtr.state),
+				logger.NewStringField("query", rowPtr.query),
+				logger.NewBoolField("terminated", rowPtr.terminated),
+			)
 		}
 	}
 	return nil

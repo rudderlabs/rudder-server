@@ -32,9 +32,9 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -118,7 +118,7 @@ func RemoveFilePaths(filePaths ...string) {
 	for _, fp := range filePaths {
 		err := os.Remove(fp)
 		if err != nil {
-			pkgLogger.Error(err)
+			pkgLogger.Errorn("failed to remove file path", obskit.Error(err))
 		}
 		RemoveEmptyFolderStructureForFilePath(fp)
 	}
@@ -366,10 +366,13 @@ func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Durat
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf("Failed to make call. Error: %v, retrying after %v", err, t)
+		pkgLogger.Errorn("Failed to make call, retrying",
+			obskit.Error(err),
+			logger.NewDurationField("retryAfter", t),
+		)
 	})
 	if err != nil {
-		pkgLogger.Error("Error sending request to the server", err)
+		pkgLogger.Errorn("Error sending request to the server", obskit.Error(err))
 		return respBody, statusCode
 	}
 	return respBody, statusCode
@@ -462,7 +465,11 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 func (w GZipWriter) WriteGZ(s string) error {
 	count, err := w.BufWriter.WriteString(s)
 	if err != nil {
-		pkgLogger.Errorf(`[GZWriter]: Error writing string of length %d by GZipWriter.WriteGZ. Bytes written: %d. Error: %v`, len(s), count, err)
+		pkgLogger.Errorn("[GZWriter]: Error writing string by GZipWriter.WriteGZ",
+			logger.NewIntField("stringLength", int64(len(s))),
+			logger.NewIntField("bytesWritten", int64(count)),
+			obskit.Error(err),
+		)
 	}
 	return err
 }
@@ -470,7 +477,11 @@ func (w GZipWriter) WriteGZ(s string) error {
 func (w GZipWriter) Write(b []byte) (count int, err error) {
 	count, err = w.BufWriter.Write(b)
 	if err != nil {
-		pkgLogger.Errorf(`[GZWriter]: Error writing bytes of length %d by GZipWriter.Write. Bytes written: %d. Error: %v`, len(b), count, err)
+		pkgLogger.Errorn("[GZWriter]: Error writing bytes by GZipWriter.Write",
+			logger.NewIntField("bytesLength", int64(len(b))),
+			logger.NewIntField("bytesWritten", int64(count)),
+			obskit.Error(err),
+		)
 	}
 	return
 }
@@ -490,18 +501,21 @@ func (w GZipWriter) GetLoadFile() *os.File {
 func (w GZipWriter) CloseGZ() error {
 	err := w.BufWriter.Flush()
 	if err != nil {
-		pkgLogger.Errorf(`[GZWriter]: Error flushing GZipWriter.BufWriter : %v`, err)
+		pkgLogger.Errorn("[GZWriter]: Error flushing GZipWriter.BufWriter", obskit.Error(err))
 	}
 	err = w.GzWriter.Close()
 	if err != nil {
-		pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter : %v`, err)
+		pkgLogger.Errorn("[GZWriter]: Error closing GZipWriter", obskit.Error(err))
 	}
 	err = w.File.Close()
 	if err != nil {
 		if pathErr, ok := err.(*os.PathError); ok && pathErr.Err == os.ErrClosed {
 			err = nil
 		} else {
-			pkgLogger.Errorf(`[GZWriter]: Error closing GZipWriter File %s: %v`, w.File.Name(), err)
+			pkgLogger.Errorn("[GZWriter]: Error closing GZipWriter File",
+				logger.NewStringField("fileName", w.File.Name()),
+				obskit.Error(err),
+			)
 		}
 	}
 	return err
@@ -722,7 +736,9 @@ func ConcatErrors(givenErrors []error) error {
 	var errorsToJoin []error
 	for _, err := range givenErrors {
 		if err == nil {
-			pkgLogger.Errorf("%v", string(debug.Stack()))
+			pkgLogger.Errorn("nil error encountered in ConcatErrors",
+				logger.NewStringField("stackTrace", string(debug.Stack())),
+			)
 			continue
 		}
 		errorsToJoin = append(errorsToJoin, err)

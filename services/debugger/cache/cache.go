@@ -24,10 +24,10 @@ type Cache[T any] interface {
 func New[T any](ct CacheType, origin string, l logger.Logger) (Cache[T], error) {
 	switch ct {
 	case BadgerCacheType:
-		l.Info("Using badger cache")
+		l.Infon("Using badger cache")
 		return badger.New[T](origin, l, stats.Default)
 	default:
-		l.Info("Using in-memory cache")
+		l.Infon("Using in-memory cache")
 		return memory.New[T]()
 	}
 }

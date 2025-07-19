@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -112,7 +113,7 @@ func (s *Syncer) SyncLoop(ctx context.Context) {
 		}
 		err := s.Sync(ctx)
 		if err != nil {
-			s.log.Errorf("Failed to sync suppressions: %w", err)
+			s.log.Errorn("Failed to sync suppressions", obskit.Error(err))
 		}
 	}
 }
@@ -130,7 +131,7 @@ again:
 			}
 			goto again
 		}
-		s.log.Errorf("Failed to get token from repository: %w", err)
+		s.log.Errorn("Failed to get token from repository", obskit.Error(err))
 		return err
 	}
 
@@ -140,7 +141,7 @@ again:
 	}
 	err = s.r.Add(suppressions, nextToken)
 	if err != nil {
-		s.log.Errorf("Failed to add %d suppressions to repository: %w", len(suppressions), err)
+		s.log.Errorn("Failed to add suppressions to repository", logger.NewIntField("suppressions", int64(len(suppressions))), obskit.Error(err))
 		return err
 	}
 	if len(suppressions) >= s.pageSize {
@@ -169,7 +170,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 	operation := func() error {
 		var err error
 		req, err := http.NewRequest("GET", urlStr, http.NoBody)
-		s.log.Debugf("regulation service URL: %s", urlStr)
+		s.log.Debugn("regulation service URL", logger.NewStringField("url", urlStr))
 		if err != nil {
 			return fmt.Errorf("failed to create request: %w", err)
 		}
@@ -188,7 +189,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		}
 		respBody, err = io.ReadAll(resp.Body)
 		if err != nil {
-			s.log.Error(err)
+			s.log.Errorn("failed to read response body", obskit.Error(err))
 			return fmt.Errorf("failed to read response body: %w", err)
 		}
 		return err
@@ -196,25 +197,25 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		s.log.Errorf("Failed to fetch source regulations from API with error: %v, retrying after %v", err, t)
+		s.log.Errorn("Failed to fetch source regulations from API, retrying", obskit.Error(err), logger.NewStringField("retryAfter", t.String()))
 	})
 	if err != nil {
-		s.log.Error("Error sending request to the server: ", err)
+		s.log.Errorn("Error sending request to the server", obskit.Error(err))
 		return []model.Suppression{}, nil, err
 	}
 	if respBody == nil {
-		s.log.Error("nil response body, returning")
+		s.log.Errorn("nil response body, returning")
 		return []model.Suppression{}, nil, errors.New("nil response body")
 	}
 	var respJSON suppressionsResponse
 	err = jsonrs.Unmarshal(respBody, &respJSON)
 	if err != nil {
-		s.log.Error("Error while parsing response: ", err, resp.StatusCode)
+		s.log.Errorn("Error while parsing response", obskit.Error(err), logger.NewIntField("statusCode", int64(resp.StatusCode)))
 		return []model.Suppression{}, nil, err
 	}
 
 	if respJSON.Token == "" {
-		s.log.Errorf("No token found in the source regulations response: %v", string(respBody))
+		s.log.Errorn("No token found in the source regulations response", logger.NewStringField("responseBody", string(respBody)))
 		return respJSON.Items, nil, fmt.Errorf("no token returned in regulation API response")
 	}
 	return respJSON.Items, []byte(respJSON.Token), nil

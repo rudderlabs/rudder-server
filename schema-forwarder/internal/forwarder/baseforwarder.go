@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -56,7 +57,7 @@ func (bf *BaseForwarder) GetJobs(ctx context.Context) ([]*jobsdb.JobT, bool, err
 		})
 	}, bf.sendQueryRetryStats)
 	if err != nil {
-		bf.log.Errorf("forwarder error while reading unprocessed from DB: %v", err)
+		bf.log.Errorn("forwarder error while reading unprocessed from DB", obskit.Error(err))
 		return nil, false, err
 	}
 	return unprocessed.Jobs, unprocessed.LimitsReached, nil
@@ -81,6 +82,6 @@ func (bf *BaseForwarder) GetSleepTime(limitReached bool) time.Duration {
 }
 
 func (bf *BaseForwarder) sendQueryRetryStats(attempt int) {
-	bf.log.Warnf("Timeout during query jobs in jobs forwarder, attempt %d", attempt)
+	bf.log.Warnn("Timeout during query jobs in jobs forwarder", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "jobs_forwarder"}).Count(1)
 }

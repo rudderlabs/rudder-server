@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -20,7 +21,7 @@ type Looper struct {
 }
 
 func (l *Looper) Loop(ctx context.Context) error {
-	pkgLogger.Infof("running regulation worker in infinite loop")
+	pkgLogger.Infon("running regulation worker in infinite loop")
 
 	interval, err := getenvInt("INTERVAL_IN_MINUTES", 10)
 	if err != nil {
@@ -36,18 +37,20 @@ func (l *Looper) Loop(ctx context.Context) error {
 		err := l.Svc.JobSvc(ctx)
 
 		if errors.Is(err, model.ErrNoRunnableJob) {
-			pkgLogger.Debugf("no runnable job found... sleeping")
+			pkgLogger.Debugn("no runnable job found... sleeping")
 			if err := misc.SleepCtx(ctx, time.Duration(interval)*time.Minute); err != nil {
-				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
+				pkgLogger.Debugn("context cancelled... exiting infinite loop", obskit.Error(err))
 				return nil
 			}
 			continue
 		}
 		// this is to make sure that we don't panic when any of the API call fails with deadline exceeded error.
 		if errors.Is(err, model.ErrRequestTimeout) {
-			pkgLogger.Errorf("context deadline exceeded... retrying after %d minute(s): %v", retryDelay, err)
+			pkgLogger.Errorn("context deadline exceeded... retrying after minutes",
+				logger.NewIntField("retryDelaySeconds", int64(retryDelay)),
+				obskit.Error(err))
 			if err := misc.SleepCtx(ctx, time.Duration(retryDelay)*time.Second); err != nil {
-				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
+				pkgLogger.Debugn("context cancelled... exiting infinite loop", obskit.Error(err))
 				return nil
 			}
 			continue

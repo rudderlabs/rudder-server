@@ -345,7 +345,7 @@ func (h *OAuthHandler) GetRefreshTokenErrResp(response string, accountSecret *Ac
 		message = gjson.Get(response, "message").String()
 	} else if err := jsonrs.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
-		h.Logger.Debugn("Failed with error response", logger.NewErrorField(err))
+		h.Logger.Debugn("Failed with error response", obskit.Error(err))
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 		errorType = "unmarshallableResponse"
 	} else {

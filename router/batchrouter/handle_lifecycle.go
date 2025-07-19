@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -147,7 +148,7 @@ func (brt *Handle) Setup(
 		}),
 	)
 
-	brt.logger.Infof("BRT: Batch Router started: %s", destType)
+	brt.logger.Infon("BRT: Batch Router started", obskit.DestinationType(destType))
 	brt.crashRecover()
 
 	if asynccommon.IsAsyncDestination(brt.destType) {
@@ -249,18 +250,18 @@ func (brt *Handle) Start() {
 // Shutdown stops the batch router
 func (brt *Handle) Shutdown() {
 	// Signal all goroutines to stop via context cancellation
-	brt.logger.Info("Initiating batch router shutdown")
+	brt.logger.Infon("Initiating batch router shutdown")
 	brt.backgroundCancel()
 	// Wait for all background goroutines to complete
 	_ = brt.backgroundWait()
-	brt.logger.Info("Batch router shutdown complete")
+	brt.logger.Infon("Batch router shutdown complete")
 }
 
 func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
 	_, ok := brt.asyncDestinationStruct[destination.ID]
 	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
 	if err != nil {
-		brt.logger.Errorf("BRT: Error initializing async destination struct for %s destination: %v", destination.Name, err)
+		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": destination.DestinationDefinition.Name,
@@ -290,7 +291,7 @@ func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
 
 func (brt *Handle) crashRecover() {
 	if slices.Contains(objectStoreDestinations, brt.destType) {
-		brt.logger.Debug("BRT: Checking for incomplete journal entries to recover from...")
+		brt.logger.Debugn("BRT: Checking for incomplete journal entries to recover from")
 		entries := brt.jobsDB.GetJournalEntries(jobsdb.RawDataDestUploadOperation)
 		for _, entry := range entries {
 			var object ObjectStorageDefinition
@@ -327,7 +328,7 @@ func (brt *Handle) crashRecover() {
 				panic(err)
 			}
 
-			brt.logger.Debugf("BRT: Downloading data for incomplete journal entry to recover from %s at key: %s\n", object.Provider, object.Key)
+			brt.logger.Debugn("BRT: Downloading data for incomplete journal entry to recover from", logger.NewStringField("provider", object.Provider), logger.NewStringField("key", object.Key))
 
 			var objKey string
 			if prefix, ok := object.Config["prefix"]; ok && prefix != "" {
@@ -337,7 +338,7 @@ func (brt *Handle) crashRecover() {
 
 			err = downloader.Download(context.TODO(), jsonFile, objKey)
 			if err != nil {
-				brt.logger.Errorf("BRT: Failed to download data for incomplete journal entry to recover from %s at key: %s with error: %v\n", object.Provider, object.Key, err)
+				brt.logger.Errorn("BRT: Failed to download data for incomplete journal entry to recover from", logger.NewStringField("provider", object.Provider), logger.NewStringField("key", object.Key), obskit.Error(err))
 				brt.jobsDB.JournalDeleteEntry(entry.OpID)
 				continue
 			}
@@ -355,7 +356,7 @@ func (brt *Handle) crashRecover() {
 
 			sc := bufio.NewScanner(reader)
 
-			brt.logger.Debug("BRT: Setting go map cache for incomplete journal entry to recover from...")
+			brt.logger.Debugn("BRT: Setting go map cache for incomplete journal entry to recover from")
 			for sc.Scan() {
 				lineBytes := sc.Bytes()
 				eventID := gjson.GetBytes(lineBytes, "messageId").String()

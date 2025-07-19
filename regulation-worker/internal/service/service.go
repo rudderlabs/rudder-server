@@ -7,7 +7,9 @@ import (
 
 	"github.com/cenkalti/backoff"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
@@ -37,10 +39,10 @@ type JobSvc struct {
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	loopStart := time.Now()
 	// API request to get new job
-	pkgLogger.Debugf("making API request to get job")
+	pkgLogger.Debugn("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
-		pkgLogger.Warnf("error while getting job: %v", err)
+		pkgLogger.Warnn("error while getting job", obskit.Error(err))
 		return err
 	}
 
@@ -53,7 +55,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	// executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
-		pkgLogger.Errorf("error while getting destination details: %v", err)
+		pkgLogger.Errorn("error while getting destination details", obskit.Error(err))
 		if errors.Is(err, model.ErrInvalidDestination) {
 			return js.updateStatus(ctx, model.JobStatus{Status: model.JobStatusAborted, Error: model.ErrInvalidDestination}, job.ID)
 		}
@@ -79,7 +81,9 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-	pkgLogger.Debugf("updating job: %d status to: %v", jobID, status)
+	pkgLogger.Debugn("updating job status",
+		logger.NewIntField("jobID", int64(jobID)),
+		logger.NewStringField("status", string(status.Status)))
 
 	maxWait := 10 * time.Minute
 	var err error
@@ -90,11 +94,11 @@ func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobI
 
 	if err = backoff.Retry(func() error {
 		err := js.API.UpdateStatus(ctx, status, jobID)
-		pkgLogger.Debugf("trying to update status...")
+		pkgLogger.Debugn("trying to update status...")
 		return err
 	}, boCtx); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
-			pkgLogger.Debugf("reached retry limit...")
+			pkgLogger.Debugn("reached retry limit...")
 			return err
 		}
 	}

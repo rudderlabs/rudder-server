@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
 
@@ -114,7 +115,7 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 
 	err = marshalAndWriteResponse(w, jobStatus)
 	if err != nil {
-		h.logger.Errorf("error while marshalling and writing response body: %v", err)
+		h.logger.Errorn("error while marshalling and writing response body", obskit.Error(err))
 	}
 }
 
@@ -182,7 +183,7 @@ func (h *handler) failedRecordsV1(w http.ResponseWriter, r *http.Request) {
 
 	err = marshalAndWriteResponse(w, failedRecords)
 	if err != nil {
-		h.logger.Errorf("error while marshalling and writing response body: %v", err)
+		h.logger.Errorn("error while marshalling and writing response body", obskit.Error(err))
 	}
 }
 
@@ -223,7 +224,7 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 
 	err = marshalAndWriteResponse(w, failedRecords)
 	if err != nil {
-		h.logger.Errorf("error while marshalling and writing response body: %v", err)
+		h.logger.Errorn("error while marshalling and writing response body", obskit.Error(err))
 	}
 }
 

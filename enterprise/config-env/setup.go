@@ -22,7 +22,7 @@ func (m *Factory) Setup() types.ConfigEnvI {
 	loadConfig()
 	m.Log = logger.NewLogger().Child("enterprise").Child("config-env")
 
-	m.Log.Info("[[ ConfigEnv ]] Setting up config env handler")
+	m.Log.Infon("[[ ConfigEnv ]] Setting up config env handler")
 	handle := &HandleT{Log: m.Log}
 
 	return handle

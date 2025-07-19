@@ -31,8 +31,8 @@ func (p *panicLogger) Notify(team string) func() {
 		if r := recover(); r != nil {
 			p.notifyOnce.Do(func() {
 				p.logger.Fataln("Panic detected. Application will crash.",
+					logger.NewField("panic", r), // nolint:forbidigo
 					logger.NewStringField("stack", string(debug.Stack())),
-					logger.NewField("panic", r),
 					logger.NewStringField("team", team),
 					logger.NewIntField("goRoutines", int64(runtime.NumGoroutine())),
 					logger.NewStringField("version", p.opts.AppVersion),
