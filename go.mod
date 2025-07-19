@@ -46,7 +46,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.11.0
-	github.com/databricks/databricks-sql-go v1.7.1
+	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/dlclark/regexp2 v1.11.5
 	github.com/docker/docker v28.3.2+incompatible
@@ -183,7 +183,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/redshiftdata v1.33.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.25.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.34.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.34.0
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
