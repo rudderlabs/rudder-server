@@ -70,28 +70,27 @@ type triggerUploadRequest struct {
 }
 
 type Api struct {
-	mode                       string
-	logger                     logger.Logger
-	statsFactory               stats.Stats
-	db                         *sqlmw.DB
-	notifier                   *notifier.Notifier
-	bcConfig                   backendconfig.BackendConfig
-	tenantManager              *multitenant.Manager
-	bcManager                  *bcm.BackendConfigManager
-	sourceManager              *source.Manager
-	stagingRepo                *repo.StagingFiles
-	StagingFileSchemaSnapshots *snapshots.StagingFileSchema
-	uploadRepo                 *repo.Uploads
-	schemaRepo                 *repo.WHSchema
-	triggerStore               *sync.Map
+	mode          string
+	conf          *config.Config
+	logger        logger.Logger
+	statsFactory  stats.Stats
+	db            *sqlmw.DB
+	notifier      *notifier.Notifier
+	bcConfig      backendconfig.BackendConfig
+	tenantManager *multitenant.Manager
+	bcManager     *bcm.BackendConfigManager
+	sourceManager *source.Manager
+	stagingRepo   *repo.StagingFiles
+	uploadRepo    *repo.Uploads
+	schemaRepo    *repo.WHSchema
+	triggerStore  *sync.Map
 
 	config struct {
-		healthTimeout                   time.Duration
-		readerHeaderTimeout             time.Duration
-		runningMode                     string
-		webPort                         int
-		mode                            string
-		enableStagingFileSchemaSnapshot config.ValueLoader[bool]
+		healthTimeout       time.Duration
+		readerHeaderTimeout time.Duration
+		runningMode         string
+		webPort             int
+		mode                string
 	}
 }
 
@@ -108,35 +107,26 @@ func NewApi(
 	sourceManager *source.Manager,
 	triggerStore *sync.Map,
 ) *Api {
-	stagingFileSchemaSnapshotTTL := conf.GetDurationVar(12, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
-	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
-		conf,
-		repo.NewStagingFileSchemaSnapshots(db),
-		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
-	)
-
 	a := &Api{
-		mode:                       mode,
-		logger:                     log.Child("api"),
-		db:                         db,
-		notifier:                   notifier,
-		bcConfig:                   bcConfig,
-		statsFactory:               statsFactory,
-		tenantManager:              tenantManager,
-		bcManager:                  bcManager,
-		sourceManager:              sourceManager,
-		triggerStore:               triggerStore,
-		stagingRepo:                repo.NewStagingFiles(db),
-		StagingFileSchemaSnapshots: stagingFileSchemaSnapshots,
-		uploadRepo:                 repo.NewUploads(db),
-		schemaRepo:                 repo.NewWHSchemas(db),
+		mode:          mode,
+		conf:          conf,
+		logger:        log.Child("api"),
+		db:            db,
+		notifier:      notifier,
+		bcConfig:      bcConfig,
+		statsFactory:  statsFactory,
+		tenantManager: tenantManager,
+		bcManager:     bcManager,
+		sourceManager: sourceManager,
+		triggerStore:  triggerStore,
+		stagingRepo:   repo.NewStagingFiles(db),
+		uploadRepo:    repo.NewUploads(db),
+		schemaRepo:    repo.NewWHSchemas(db),
 	}
 	a.config.healthTimeout = conf.GetDuration("Warehouse.healthTimeout", 10, time.Second)
 	a.config.readerHeaderTimeout = conf.GetDuration("Warehouse.readerHeaderTimeout", 3, time.Second)
 	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
 	a.config.webPort = conf.GetInt("Warehouse.webPort", 8082)
-	a.config.enableStagingFileSchemaSnapshot = conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
-
 	return a
 }
 
@@ -172,13 +162,20 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 
 	a.bcConfig.WaitForConfig(ctx)
 
+	stagingFileSchemaSnapshotTTL := a.conf.GetDurationVar(12, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
+	enableStagingFileSchemaSnapshot := a.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
+	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
+		a.conf,
+		repo.NewStagingFileSchemaSnapshots(a.db),
+		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
+	)
 	r.Handle("/v1/process", (&api.WarehouseAPI{
 		Logger:                          a.logger,
 		Stats:                           a.statsFactory,
 		Repo:                            a.stagingRepo,
 		Multitenant:                     a.tenantManager,
-		EnableStagingFileSchemaSnapshot: a.config.enableStagingFileSchemaSnapshot,
-		StagingFileSchemaSnapshotGetter: a.StagingFileSchemaSnapshots,
+		EnableStagingFileSchemaSnapshot: enableStagingFileSchemaSnapshot,
+		StagingFileSchemaSnapshotGetter: stagingFileSchemaSnapshots,
 		JSONPatchGenerator:              warehouseutils.GenerateJSONPatch,
 	}).Handler())
 
