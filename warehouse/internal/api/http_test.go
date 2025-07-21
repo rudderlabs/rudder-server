@@ -200,11 +200,11 @@ func TestAPI_Process(t *testing.T) {
 			require.NoError(t, err)
 
 			wAPI := api.WarehouseAPI{
-				Repo:                            r,
-				Logger:                          logger.NOP,
-				Stats:                           statsStore,
-				Multitenant:                     m,
-				EnableStagingFileSchemaSnapshot: config.SingleValueLoader(false),
+				Repo:                  r,
+				Logger:                logger.NOP,
+				Stats:                 statsStore,
+				Multitenant:           m,
+				SchemaSnapshotHandler: &api.StagingFileSchemaSnapshotHandler{Enable: config.SingleValueLoader(false)},
 			}
 
 			req, err := http.NewRequest(http.MethodPost, "https://localhost:8080/v1/process", bytes.NewBuffer([]byte(tc.reqBody)))
@@ -315,7 +315,7 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 				return nil, fmt.Errorf("db error")
 			},
 			expectedRespCode: http.StatusInternalServerError,
-			expectedRespBody: "Failed to get schema snapshot\n",
+			expectedRespBody: "Failed to process schema snapshot\n",
 		},
 		{
 			name: "error on patch generation",
@@ -326,7 +326,7 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 				return nil, fmt.Errorf("patch error")
 			},
 			expectedRespCode: http.StatusInternalServerError,
-			expectedRespBody: "Failed to generate schema patch\n",
+			expectedRespBody: "Failed to process schema snapshot\n",
 		},
 		{
 			name: "empty patch (should succeed)",
@@ -406,15 +406,17 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 			c := config.New()
 			m := multitenant.New(c, backendconfig.DefaultBackendConfig)
 			w := api.WarehouseAPI{
-				Repo:                            r,
-				Logger:                          logger.NOP,
-				Stats:                           stats.NOP,
-				Multitenant:                     m,
-				EnableStagingFileSchemaSnapshot: config.SingleValueLoader(true),
-				StagingFileSchemaSnapshotGetter: &mockStagingFileSchemaSnapshotGetter{
-					getFunc: tc.getSnapshotFunc,
+				Repo:        r,
+				Logger:      logger.NOP,
+				Stats:       stats.NOP,
+				Multitenant: m,
+				SchemaSnapshotHandler: &api.StagingFileSchemaSnapshotHandler{
+					Enable: config.SingleValueLoader(true),
+					Snapshots: &mockStagingFileSchemaSnapshotGetter{
+						getFunc: tc.getSnapshotFunc,
+					},
+					PatchGen: tc.patchGenerator,
 				},
-				JSONPatchGenerator: tc.patchGenerator,
 			}
 
 			req, err := http.NewRequest(http.MethodPost, "https://localhost:8080/v1/process", bytes.NewBuffer([]byte(body)))

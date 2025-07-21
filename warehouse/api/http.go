@@ -169,14 +169,18 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 		repo.NewStagingFileSchemaSnapshots(a.db),
 		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
 	)
+	schemaSnapshotHandler := &api.StagingFileSchemaSnapshotHandler{
+		Enable:    enableStagingFileSchemaSnapshot,
+		Snapshots: stagingFileSchemaSnapshots,
+		PatchGen:  warehouseutils.GenerateJSONPatch,
+	}
+
 	r.Handle("/v1/process", (&api.WarehouseAPI{
-		Logger:                          a.logger,
-		Stats:                           a.statsFactory,
-		Repo:                            a.stagingRepo,
-		Multitenant:                     a.tenantManager,
-		EnableStagingFileSchemaSnapshot: enableStagingFileSchemaSnapshot,
-		StagingFileSchemaSnapshotGetter: stagingFileSchemaSnapshots,
-		JSONPatchGenerator:              warehouseutils.GenerateJSONPatch,
+		Logger:                a.logger,
+		Stats:                 a.statsFactory,
+		Repo:                  a.stagingRepo,
+		Multitenant:           a.tenantManager,
+		SchemaSnapshotHandler: schemaSnapshotHandler,
 	}).Handler())
 
 	r.Route("/v1", func(r chi.Router) {
