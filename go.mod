@@ -46,7 +46,7 @@ require (
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/confluentinc/confluent-kafka-go/v2 v2.11.0
-	github.com/databricks/databricks-sql-go v1.7.1
+	github.com/databricks/databricks-sql-go v1.6.1
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/dlclark/regexp2 v1.11.5
 	github.com/docker/docker v28.3.2+incompatible
