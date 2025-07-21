@@ -14,13 +14,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/spaolacci/murmur3"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -114,7 +114,7 @@ type Notifier struct {
 	randGenerator       *rand.Rand
 	now                 func() time.Time
 	background          struct {
-		group       *kitsync.ErrGroup
+		group       *errgroup.Group
 		groupCtx    context.Context
 		groupCancel context.CancelFunc
 		groupWait   func() error
@@ -230,7 +230,7 @@ func (n *Notifier) Setup(
 	n.repo = newRepo(n.db)
 
 	groupCtx, groupCancel := context.WithCancel(ctx)
-	n.background.group, n.background.groupCtx = kitsync.ErrGroupWithContext(groupCtx)
+	n.background.group, n.background.groupCtx = errgroup.WithContext(groupCtx)
 	n.background.groupCancel = groupCancel
 	n.background.groupWait = n.background.group.Wait
 
