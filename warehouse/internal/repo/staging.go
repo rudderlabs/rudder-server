@@ -8,9 +8,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -41,16 +44,18 @@ const stagingTableColumns = `
 type StagingFiles repo
 
 type metadataSchema struct {
-	UseRudderStorage      bool   `json:"use_rudder_storage"`
-	SourceTaskRunID       string `json:"source_task_run_id"`
-	SourceJobID           string `json:"source_job_id"`
-	SourceJobRunID        string `json:"source_job_run_id"`
-	TimeWindowYear        int    `json:"time_window_year"`
-	TimeWindowMonth       int    `json:"time_window_month"`
-	TimeWindowDay         int    `json:"time_window_day"`
-	TimeWindowHour        int    `json:"time_window_hour"`
-	DestinationRevisionID string `json:"destination_revision_id"`
-	ServerInstanceID      string `json:"server_instance_id"`
+	UseRudderStorage              bool     `json:"use_rudder_storage"`
+	SourceTaskRunID               string   `json:"source_task_run_id"`
+	SourceJobID                   string   `json:"source_job_id"`
+	SourceJobRunID                string   `json:"source_job_run_id"`
+	TimeWindowYear                int      `json:"time_window_year"`
+	TimeWindowMonth               int      `json:"time_window_month"`
+	TimeWindowDay                 int      `json:"time_window_day"`
+	TimeWindowHour                int      `json:"time_window_hour"`
+	DestinationRevisionID         string   `json:"destination_revision_id"`
+	ServerInstanceID              string   `json:"server_instance_id"`
+	SnapshotPatchSize             *int     `json:"snapshot_patch_size,omitempty"`
+	SnapshotPatchCompressionRatio *float64 `json:"snapshot_patch_compression_ratio,omitempty"`
 }
 
 func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
@@ -121,6 +126,10 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	}
 
 	m := metadataFromStagingFile(&stagingFile.StagingFile)
+	if len(stagingFile.SnapshotPatch) > 0 {
+		m.SnapshotPatchSize = lo.ToPtr[int](len(stagingFile.SnapshotPatch))
+		m.SnapshotPatchCompressionRatio = lo.ToPtr[float64](float64(len(stagingFile.SnapshotPatch)) / float64(len(stagingFile.Schema)))
+	}
 	rawMetadata, err := jsonrs.Marshal(&m)
 	if err != nil {
 		return id, fmt.Errorf("marshaling metadata: %w", err)
@@ -142,6 +151,15 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 		bytesPerTablePayload = nil
 	}
 
+	var schemaSnapshotID interface{}
+	if stagingFile.SnapshotID != uuid.Nil {
+		schemaSnapshotID = stagingFile.SnapshotID.String()
+	}
+	var schemaPatchPayload interface{}
+	if len(stagingFile.SnapshotPatch) > 0 {
+		schemaPatchPayload = stagingFile.SnapshotPatch
+	}
+
 	err = sf.db.QueryRowContext(ctx,
 		`INSERT INTO `+stagingTableName+` (
 			location,
@@ -157,10 +175,12 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 			created_at,
 			updated_at,
 			metadata,
-			bytes_per_table
+			bytes_per_table,
+			schema_snapshot_id,
+			schema_snapshot_patch
 		)
 		VALUES
-		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id`,
 
 		stagingFile.Location,
@@ -177,6 +197,8 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 		now.UTC(),
 		rawMetadata,
 		bytesPerTablePayload,
+		schemaSnapshotID,
+		schemaPatchPayload,
 	).Scan(&id)
 	if err != nil {
 		return id, fmt.Errorf("inserting staging file: %w", err)

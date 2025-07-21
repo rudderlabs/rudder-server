@@ -2,21 +2,25 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -27,11 +31,44 @@ type stagingFilesRepo interface {
 	Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error)
 }
 
+type stagingFileSchemaSnapshotGetter interface {
+	GetOrCreate(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error)
+}
+
+// StagingFileSchemaSnapshotHandler Handler for schema snapshot logic
+type StagingFileSchemaSnapshotHandler struct {
+	Enable    config.ValueLoader[bool]
+	Snapshots stagingFileSchemaSnapshotGetter
+	PatchGen  func(original, modified json.RawMessage) (json.RawMessage, error)
+}
+
+func (h *StagingFileSchemaSnapshotHandler) ApplyIfEnabled(ctx context.Context, stagingFile model.StagingFileWithSchema) (model.StagingFileWithSchema, error) {
+	if !h.Enable.Load() {
+		return stagingFile, nil
+	}
+	snapshot, err := h.Snapshots.GetOrCreate(
+		ctx,
+		stagingFile.SourceID,
+		stagingFile.DestinationID,
+		stagingFile.WorkspaceID,
+		stagingFile.Schema,
+	)
+	if err != nil {
+		return stagingFile, fmt.Errorf("get schema snapshot: %w", err)
+	}
+	patch, err := h.PatchGen(snapshot.Schema, stagingFile.Schema)
+	if err != nil {
+		return stagingFile, fmt.Errorf("generate schema patch: %w", err)
+	}
+	return stagingFile.WithSnapshotIDAndPatch(snapshot.ID, patch), nil
+}
+
 type WarehouseAPI struct {
-	Logger      logger.Logger
-	Stats       stats.Stats
-	Repo        stagingFilesRepo
-	Multitenant *multitenant.Manager
+	Logger                logger.Logger
+	Stats                 stats.Stats
+	Repo                  stagingFilesRepo
+	Multitenant           *multitenant.Manager
+	SchemaSnapshotHandler *StagingFileSchemaSnapshotHandler
 }
 
 type destinationSchema struct {
@@ -145,6 +182,13 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("Unable to marshal staging file schema: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
+	stagingFile, err = api.SchemaSnapshotHandler.ApplyIfEnabled(r.Context(), stagingFile)
+	if err != nil {
+		api.Logger.Warnn("Unable to process schema snapshot", obskit.Error(err))
+		http.Error(w, fmt.Sprintf("Unable to process schema snapshot: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
 	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {
 		if errors.Is(r.Context().Err(), context.Canceled) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
@@ -169,6 +213,9 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	api.Stats.NewTaggedStat("warehouse_staged_schema_size", stats.HistogramType, tags).Observe(float64(len(schemaBytes)))
 	api.Stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(stagingFile.TotalEvents)
-
+	if len(stagingFile.SnapshotPatch) > 0 {
+		api.Stats.NewTaggedStat("schema_snapshot_patch_size", stats.HistogramType, tags).Observe(float64(len(stagingFile.SnapshotPatch)))
+		api.Stats.NewTaggedStat("schema_snapshot_compression_ratio", stats.HistogramType, tags).Observe(float64(len(stagingFile.SnapshotPatch)) / float64(len(schemaBytes)))
+	}
 	w.WriteHeader(http.StatusOK)
 }
