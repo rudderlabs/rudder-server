@@ -13,8 +13,10 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/snapshots"
 
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
@@ -30,6 +32,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -68,6 +71,7 @@ type triggerUploadRequest struct {
 
 type Api struct {
 	mode          string
+	conf          *config.Config
 	logger        logger.Logger
 	statsFactory  stats.Stats
 	db            *sqlmw.DB
@@ -105,6 +109,7 @@ func NewApi(
 ) *Api {
 	a := &Api{
 		mode:          mode,
+		conf:          conf,
 		logger:        log.Child("api"),
 		db:            db,
 		notifier:      notifier,
@@ -122,7 +127,6 @@ func NewApi(
 	a.config.readerHeaderTimeout = conf.GetDuration("Warehouse.readerHeaderTimeout", 3, time.Second)
 	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
 	a.config.webPort = conf.GetInt("Warehouse.webPort", 8082)
-
 	return a
 }
 
@@ -158,11 +162,25 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 
 	a.bcConfig.WaitForConfig(ctx)
 
+	stagingFileSchemaSnapshotTTL := a.conf.GetDurationVar(3, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
+	enableStagingFileSchemaSnapshot := a.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
+	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
+		a.conf,
+		repo.NewStagingFileSchemaSnapshots(a.db),
+		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
+	)
+	schemaSnapshotHandler := &api.StagingFileSchemaSnapshotHandler{
+		Enable:    enableStagingFileSchemaSnapshot,
+		Snapshots: stagingFileSchemaSnapshots,
+		PatchGen:  warehouseutils.GenerateJSONPatch,
+	}
+
 	r.Handle("/v1/process", (&api.WarehouseAPI{
-		Logger:      a.logger,
-		Stats:       a.statsFactory,
-		Repo:        a.stagingRepo,
-		Multitenant: a.tenantManager,
+		Logger:                a.logger,
+		Stats:                 a.statsFactory,
+		Repo:                  a.stagingRepo,
+		Multitenant:           a.tenantManager,
+		SchemaSnapshotHandler: schemaSnapshotHandler,
 	}).Handler())
 
 	r.Route("/v1", func(r chi.Router) {
