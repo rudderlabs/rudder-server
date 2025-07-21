@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/go-chi/chi/v5"
 
@@ -181,13 +182,11 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("Unable to marshal staging file schema: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
-	if api.SchemaSnapshotHandler != nil {
-		stagingFile, err = api.SchemaSnapshotHandler.ApplyIfEnabled(r.Context(), stagingFile)
-		if err != nil {
-			api.Logger.Warnw("schema snapshot error", lf.Error, err.Error())
-			http.Error(w, "Failed to process schema snapshot", http.StatusInternalServerError)
-			return
-		}
+	stagingFile, err = api.SchemaSnapshotHandler.ApplyIfEnabled(r.Context(), stagingFile)
+	if err != nil {
+		api.Logger.Warnn("Unable to process schema snapshot", obskit.Error(err))
+		http.Error(w, fmt.Sprintf("Unable to process schema snapshot: %s", err.Error()), http.StatusInternalServerError)
+		return
 	}
 
 	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {

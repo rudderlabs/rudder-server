@@ -315,7 +315,7 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 				return nil, fmt.Errorf("db error")
 			},
 			expectedRespCode: http.StatusInternalServerError,
-			expectedRespBody: "Failed to process schema snapshot\n",
+			expectedRespBody: "Unable to process schema snapshot: get schema snapshot: db error\n",
 		},
 		{
 			name: "error on patch generation",
@@ -326,7 +326,7 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 				return nil, fmt.Errorf("patch error")
 			},
 			expectedRespCode: http.StatusInternalServerError,
-			expectedRespBody: "Failed to process schema snapshot\n",
+			expectedRespBody: "Unable to process schema snapshot: generate schema patch: patch error\n",
 		},
 		{
 			name: "empty patch (should succeed)",
