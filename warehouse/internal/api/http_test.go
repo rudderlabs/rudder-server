@@ -291,23 +291,23 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 	))
 
 	testcases := []struct {
-		name                string
-		getSnapshotFunc     func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error)
-		patchGenerator      func(original, modified json.RawMessage) (json.RawMessage, error)
-		expectedRespCode    int
-		expectedRespBody    string
-		expectedSchemaPatch json.RawMessage
-		expectedSnapshot    *model.StagingFileSchemaSnapshot
+		name                  string
+		getSnapshotFunc       func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error)
+		patchGenerator        func(original, modified json.RawMessage) (json.RawMessage, error)
+		expectedRespCode      int
+		expectedRespBody      string
+		expectedSnapshotPatch json.RawMessage
+		expectedSnapshotID    uuid.UUID
 	}{
 		{
 			name: "success with snapshot and patch",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return snapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"add","path":"/product_track/event_text","value":"string"},{"op":"add","path":"/product_track/review_id","value":"string"},{"op":"add","path":"/product_track/sent_at","value":"datetime"},{"op":"add","path":"/product_track/timestamp","value":"datetime"},{"op":"add","path":"/product_track/user_id","value":"string"},{"op":"add","path":"/product_track/context_destination_type","value":"string"},{"op":"add","path":"/product_track/context_source_type","value":"string"},{"op":"add","path":"/product_track/original_timestamp","value":"datetime"},{"op":"add","path":"/product_track/received_at","value":"datetime"},{"op":"add","path":"/product_track/revenue","value":"float"},{"op":"add","path":"/product_track/review_body","value":"string"},{"op":"add","path":"/product_track/uuid_ts","value":"datetime"},{"op":"add","path":"/product_track/context_destination_id","value":"string"},{"op":"add","path":"/product_track/context_library_name","value":"string"},{"op":"add","path":"/product_track/product_id","value":"string"},{"op":"add","path":"/product_track/rating","value":"int"},{"op":"add","path":"/product_track/context_ip","value":"string"},{"op":"add","path":"/product_track/context_passed_ip","value":"string"},{"op":"add","path":"/product_track/context_request_ip","value":"string"},{"op":"add","path":"/product_track/context_source_id","value":"string"},{"op":"add","path":"/product_track/event","value":"string"},{"op":"add","path":"/tracks/timestamp","value":"datetime"},{"op":"add","path":"/tracks/context_source_id","value":"string"},{"op":"add","path":"/tracks/received_at","value":"datetime"},{"op":"add","path":"/tracks/user_id","value":"string"},{"op":"add","path":"/tracks/uuid_ts","value":"datetime"},{"op":"add","path":"/tracks/context_request_ip","value":"string"},{"op":"add","path":"/tracks/event_text","value":"string"},{"op":"add","path":"/tracks/context_destination_type","value":"string"},{"op":"add","path":"/tracks/context_source_type","value":"string"},{"op":"add","path":"/tracks/event","value":"string"},{"op":"add","path":"/tracks/context_destination_id","value":"string"},{"op":"add","path":"/tracks/context_ip","value":"string"},{"op":"add","path":"/tracks/context_library_name","value":"string"},{"op":"add","path":"/tracks/context_passed_ip","value":"string"},{"op":"add","path":"/tracks/original_timestamp","value":"datetime"},{"op":"add","path":"/tracks/sent_at","value":"datetime"}]`),
-			expectedSnapshot:    snapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"add","path":"/product_track/event_text","value":"string"},{"op":"add","path":"/product_track/review_id","value":"string"},{"op":"add","path":"/product_track/sent_at","value":"datetime"},{"op":"add","path":"/product_track/timestamp","value":"datetime"},{"op":"add","path":"/product_track/user_id","value":"string"},{"op":"add","path":"/product_track/context_destination_type","value":"string"},{"op":"add","path":"/product_track/context_source_type","value":"string"},{"op":"add","path":"/product_track/original_timestamp","value":"datetime"},{"op":"add","path":"/product_track/received_at","value":"datetime"},{"op":"add","path":"/product_track/revenue","value":"float"},{"op":"add","path":"/product_track/review_body","value":"string"},{"op":"add","path":"/product_track/uuid_ts","value":"datetime"},{"op":"add","path":"/product_track/context_destination_id","value":"string"},{"op":"add","path":"/product_track/context_library_name","value":"string"},{"op":"add","path":"/product_track/product_id","value":"string"},{"op":"add","path":"/product_track/rating","value":"int"},{"op":"add","path":"/product_track/context_ip","value":"string"},{"op":"add","path":"/product_track/context_passed_ip","value":"string"},{"op":"add","path":"/product_track/context_request_ip","value":"string"},{"op":"add","path":"/product_track/context_source_id","value":"string"},{"op":"add","path":"/product_track/event","value":"string"},{"op":"add","path":"/tracks/timestamp","value":"datetime"},{"op":"add","path":"/tracks/context_source_id","value":"string"},{"op":"add","path":"/tracks/received_at","value":"datetime"},{"op":"add","path":"/tracks/user_id","value":"string"},{"op":"add","path":"/tracks/uuid_ts","value":"datetime"},{"op":"add","path":"/tracks/context_request_ip","value":"string"},{"op":"add","path":"/tracks/event_text","value":"string"},{"op":"add","path":"/tracks/context_destination_type","value":"string"},{"op":"add","path":"/tracks/context_source_type","value":"string"},{"op":"add","path":"/tracks/event","value":"string"},{"op":"add","path":"/tracks/context_destination_id","value":"string"},{"op":"add","path":"/tracks/context_ip","value":"string"},{"op":"add","path":"/tracks/context_library_name","value":"string"},{"op":"add","path":"/tracks/context_passed_ip","value":"string"},{"op":"add","path":"/tracks/original_timestamp","value":"datetime"},{"op":"add","path":"/tracks/sent_at","value":"datetime"}]`),
+			expectedSnapshotID:    snapshot.ID,
 		},
 		{
 			name: "error on snapshot retrieval",
@@ -333,70 +333,70 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return emptyPathSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[]`),
-			expectedSnapshot:    emptyPathSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[]`),
+			expectedSnapshotID:    emptyPathSnapshot.ID,
 		},
 		{
 			name: "new column added to existing table",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return newColumnPatchSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"add","path":"/product_track/event_text","value":"string"}]`),
-			expectedSnapshot:    newColumnPatchSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"add","path":"/product_track/event_text","value":"string"}]`),
+			expectedSnapshotID:    newColumnPatchSnapshot.ID,
 		},
 		{
 			name: "new table added",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return newTablePatchSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"add","path":"/tracks","value":{"context_destination_id":"string","context_destination_type":"string","context_ip":"string","context_library_name":"string","context_passed_ip":"string","context_request_ip":"string","context_source_id":"string","context_source_type":"string","event":"string","event_text":"string","id":"string","original_timestamp":"datetime","received_at":"datetime","sent_at":"datetime","timestamp":"datetime","user_id":"string","uuid_ts":"datetime"}}]`),
-			expectedSnapshot:    newTablePatchSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"add","path":"/tracks","value":{"context_destination_id":"string","context_destination_type":"string","context_ip":"string","context_library_name":"string","context_passed_ip":"string","context_request_ip":"string","context_source_id":"string","context_source_type":"string","event":"string","event_text":"string","id":"string","original_timestamp":"datetime","received_at":"datetime","sent_at":"datetime","timestamp":"datetime","user_id":"string","uuid_ts":"datetime"}}]`),
+			expectedSnapshotID:    newTablePatchSnapshot.ID,
 		},
 		{
 			name: "column type changed",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return modifiedColumnPatchSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"replace","path":"/product_track/event_text","value":"string"}]`),
-			expectedSnapshot:    modifiedColumnPatchSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"replace","path":"/product_track/event_text","value":"string"}]`),
+			expectedSnapshotID:    modifiedColumnPatchSnapshot.ID,
 		},
 		{
 			name: "column removed",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return removedColumnPatchSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"remove","path":"/product_track/new_col"}]`),
-			expectedSnapshot:    removedColumnPatchSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"remove","path":"/product_track/new_col"}]`),
+			expectedSnapshotID:    removedColumnPatchSnapshot.ID,
 		},
 		{
 			name: "table removed",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return removedTablePatchSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"remove","path":"/new_table"}]`),
-			expectedSnapshot:    removedTablePatchSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"remove","path":"/new_table"}]`),
+			expectedSnapshotID:    removedTablePatchSnapshot.ID,
 		},
 		{
 			name: "multiple changes",
 			getSnapshotFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
 				return multipleChangesPatchSnapshot, nil
 			},
-			patchGenerator:      whutils.GenerateJSONPatch,
-			expectedRespCode:    http.StatusOK,
-			expectedSchemaPatch: json.RawMessage(`[{"op":"replace","path":"/product_track/event_text","value":"string"},{"op":"remove","path":"/product_track/new_col"},{"op":"remove","path":"/new_table"}]`),
-			expectedSnapshot:    multipleChangesPatchSnapshot,
+			patchGenerator:        whutils.GenerateJSONPatch,
+			expectedRespCode:      http.StatusOK,
+			expectedSnapshotPatch: json.RawMessage(`[{"op":"replace","path":"/product_track/event_text","value":"string"},{"op":"remove","path":"/product_track/new_col"},{"op":"remove","path":"/new_table"}]`),
+			expectedSnapshotID:    multipleChangesPatchSnapshot.ID,
 		},
 	}
 
@@ -432,8 +432,8 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 			if tc.expectedRespCode == http.StatusOK {
 				require.Len(t, r.files, 1)
 				file := r.files[0]
-				require.Equal(t, tc.expectedSnapshot, file.SnapshotSchema)
-				require.ElementsMatch(t, tc.expectedSchemaPatch, file.SnapshotPatch)
+				require.Equal(t, tc.expectedSnapshotID, file.SnapshotID)
+				require.ElementsMatch(t, tc.expectedSnapshotPatch, file.SnapshotPatch)
 			}
 		})
 	}

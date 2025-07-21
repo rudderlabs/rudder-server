@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
@@ -151,8 +152,8 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	}
 
 	var schemaSnapshotID interface{}
-	if stagingFile.SnapshotSchema != nil {
-		schemaSnapshotID = stagingFile.SnapshotSchema.ID.String()
+	if stagingFile.SnapshotID != uuid.Nil {
+		schemaSnapshotID = stagingFile.SnapshotID.String()
 	}
 	var schemaPatchPayload interface{}
 	if len(stagingFile.SnapshotPatch) > 0 {

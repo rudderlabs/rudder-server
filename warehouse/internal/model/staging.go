@@ -3,6 +3,8 @@ package model
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // StagingFile a domain model for a staging file.
@@ -42,9 +44,9 @@ type StagingFile struct {
 //	schema size can be huge, and thus it should be included only when required.
 type StagingFileWithSchema struct {
 	StagingFile
-	Schema         json.RawMessage
-	SnapshotSchema *StagingFileSchemaSnapshot
-	SnapshotPatch  json.RawMessage
+	Schema        json.RawMessage
+	SnapshotID    uuid.UUID
+	SnapshotPatch json.RawMessage
 }
 
 func (s StagingFile) WithSchema(schema json.RawMessage) StagingFileWithSchema {
@@ -54,8 +56,8 @@ func (s StagingFile) WithSchema(schema json.RawMessage) StagingFileWithSchema {
 	}
 }
 
-func (s StagingFileWithSchema) WithSnapshotSchemaAndPatch(schema *StagingFileSchemaSnapshot, patch json.RawMessage) StagingFileWithSchema {
-	s.SnapshotSchema, s.SnapshotPatch = schema, patch
+func (s StagingFileWithSchema) WithSnapshotIDAndPatch(snapshotID uuid.UUID, patch json.RawMessage) StagingFileWithSchema {
+	s.SnapshotID, s.SnapshotPatch = snapshotID, patch
 	return s
 }
 

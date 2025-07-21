@@ -186,7 +186,7 @@ func TestStagingFileRepo(t *testing.T) {
 		}
 		stagingFileWithSchema := stagingFile.
 			WithSchema(modifiedSchema).
-			WithSnapshotSchemaAndPatch(&model.StagingFileSchemaSnapshot{ID: snapshotID, Schema: originalSchema}, patchSchema)
+			WithSnapshotIDAndPatch(snapshotID, patchSchema)
 		id, err := r.Insert(ctx, &stagingFileWithSchema)
 		require.NoError(t, err)
 		require.NotZero(t, id)

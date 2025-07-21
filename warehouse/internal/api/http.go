@@ -176,7 +176,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "Failed to generate schema patch", http.StatusInternalServerError)
 			return
 		}
-		stagingFile = stagingFile.WithSnapshotSchemaAndPatch(snapshot, patch)
+		stagingFile = stagingFile.WithSnapshotIDAndPatch(snapshot.ID, patch)
 	}
 
 	if _, err := api.Repo.Insert(r.Context(), &stagingFile); err != nil {
