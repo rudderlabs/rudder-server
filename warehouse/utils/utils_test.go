@@ -1180,6 +1180,7 @@ func TestCreateAWSSessionConfig_V2(t *testing.T) {
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "redshift",
+				Region:      "us-east-1",
 			},
 		},
 	}
