@@ -21,8 +21,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
 	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -126,7 +124,9 @@ var (
 	pkgLogger          logger.Logger
 	enableIDResolution bool
 
-	TimeWindowDestinations    = []string{S3Datalake, GCSDatalake, AzureDatalake}
+	TimeWindowDestinations = []string{S3Datalake, GCSDatalake, AzureDatalake}
+	awsCredsExpiryInS      config.ValueLoader[int64]
+
 	WarehouseDestinations     = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AzureSynapse, S3Datalake, GCSDatalake, AzureDatalake, DELTALAKE}
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	S3PathStyleRegex          = regexp.MustCompile(`https?://s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<bucket>[^/]+)/(?P<keyname>.*)`)
@@ -193,6 +193,7 @@ func Init() {
 
 func loadConfig() {
 	enableIDResolution = config.GetBoolVar(false, "Warehouse.enableIDResolution")
+	awsCredsExpiryInS = config.GetReloadableInt64Var(3600, 1, "Warehouse.awsCredsExpiryInS")
 }
 
 type DeleteByMetaData struct {
