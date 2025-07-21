@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	mockupload "github.com/rudderlabs/rudder-server/warehouse/router/mocks"
@@ -1003,4 +1004,101 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		err := job.cleanupObjectStorageFiles()
 		require.NoError(t, err)
 	})
+}
+
+type mockManager struct {
+	manager.Manager
+	isSchemaOutdated bool
+}
+
+func (m *mockManager) Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
+	return nil
+}
+
+func (m *mockManager) CreateTable(ctx context.Context, tableName string, schema model.TableSchema) error {
+	return fmt.Errorf("error in creating table")
+}
+
+func (m *mockManager) FetchSchema(ctx context.Context) (model.Schema, error) {
+	var colType string
+	if m.isSchemaOutdated {
+		return model.Schema{
+			"test_table": model.TableSchema{
+				"id": colType,
+			},
+		}, nil
+	}
+	// In this test case based on the conditions, the local schema is not being populated anywhere
+	// So in order to match the schema, we return an empty schema which is the initial schema
+	return model.Schema{}, nil
+}
+
+type mockLoadFilesRepo struct {
+	loadFilesRepo
+}
+
+func (m *mockLoadFilesRepo) DistinctTableName(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]string, error) {
+	return []string{"test_table"}, nil
+}
+
+func TestUploadJob_SchemaResetState(t *testing.T) {
+	db := setupDB(t)
+	factory := UploadJobFactory{
+		db:           db,
+		logger:       logger.NOP,
+		statsFactory: stats.NOP,
+		conf:         config.New(),
+	}
+	manager := snowflake.New(config.New(), logger.NOP, stats.NOP)
+	_, uploadId := createUpload(t, context.Background(), db)
+	testCases := []struct {
+		name             string
+		isSchemaOutdated bool
+		namespace        string // Using different namespaces to ensure that one test case doesn't affect the other
+		expectedStatus   string
+	}{
+		{
+			name:             "schema outdated",
+			isSchemaOutdated: true,
+			namespace:        "test_namespace1",
+			expectedStatus:   model.Waiting,
+		},
+		{
+			name:             "schema up to date",
+			isSchemaOutdated: false,
+			namespace:        "test_namespace2",
+			expectedStatus:   model.ExportingDataFailed,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockManager := &mockManager{
+				Manager:          manager,
+				isSchemaOutdated: tc.isSchemaOutdated,
+			}
+			uploadJob := factory.NewUploadJob(context.Background(), &model.UploadJob{
+				Warehouse: model.Warehouse{
+					Namespace: tc.namespace,
+				},
+				StagingFiles: []*model.StagingFile{
+					{},
+				},
+				Upload: model.Upload{
+					ID:     uploadId,
+					Status: model.ExportingData,
+					UploadSchema: model.Schema{
+						"test_table": model.TableSchema{
+							"id": "string",
+						},
+					},
+				},
+			}, mockManager)
+			uploadJob.loadFilesRepo = &mockLoadFilesRepo{
+				loadFilesRepo: uploadJob.loadFilesRepo,
+			}
+			err := uploadJob.run()
+			require.ErrorContains(t, err, "error in creating table")
+			require.Equal(t, tc.expectedStatus, uploadJob.upload.Status)
+		})
+	}
 }

@@ -415,6 +415,16 @@ func (job *UploadJob) run() (err error) {
 				} else {
 					job.logger.Infon("Invalidated warehouse schema cache due to sync error")
 				}
+				outdated, checkErr := job.schemaHandle.IsSchemaOutdated(job.ctx)
+				if checkErr != nil {
+					job.logger.Errorn("Error checking if warehouse schema is outdated", obskit.Error(checkErr))
+					break
+				}
+				if outdated {
+					job.logger.Infon("Warehouse schema cache was outdated. Forcing job back to waiting to regenerate load files with fresh schema.")
+					newStatus = model.Waiting
+					break
+				}
 				break
 			}
 			if err = job.cleanupObjectStorageFiles(); err != nil {
