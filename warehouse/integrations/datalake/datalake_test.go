@@ -15,7 +15,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/samber/lo"
 	"github.com/spf13/cast"
-	trino "github.com/trinodb/trino-go-client/trino"
+	"github.com/trinodb/trino-go-client/trino"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/reader"
@@ -342,7 +342,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("namespace", namespace).
 					WithConfigOption("syncFrequency", "30").
 					WithConfigOption("allowUsersContextTraits", true).
-					WithConfigOption("underscoreDivideNumbers", true)
+					WithConfigOption("underscoreDivideNumbers", true).
+					WithConfigOption("cleanupObjectStorageFiles", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}
@@ -587,6 +588,7 @@ func TestIntegration(t *testing.T) {
 			WithConfigOption("prefix", "some-prefix").
 			WithConfigOption("allowUsersContextTraits", true).
 			WithConfigOption("underscoreDivideNumbers", true).
+			WithConfigOption("cleanupObjectStorageFiles", true).
 			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(
@@ -872,6 +874,7 @@ func TestIntegration(t *testing.T) {
 			WithConfigOption("prefix", "some-prefix").
 			WithConfigOption("allowUsersContextTraits", true).
 			WithConfigOption("underscoreDivideNumbers", true).
+			WithConfigOption("cleanupObjectStorageFiles", true).
 			Build()
 		workspaceConfig := backendconfigtest.NewConfigBuilder().
 			WithSource(

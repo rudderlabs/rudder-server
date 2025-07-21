@@ -326,7 +326,7 @@ func TestV1Adapter(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_env_priority(t *testing.T) {
-	t.Setenv("TRANSFORMER_PROXY_URL", "http://proxy:1234")
+	t.Setenv("DELIVERY_TRANSFORMER_URL", "http://proxy:1234")
 	t.Setenv("DEST_TRANSFORM_URL", "http://dest:5678")
 	url, err := getTransformerProxyURL("v0", "TestDest")
 	require.NoError(t, err)
@@ -334,7 +334,7 @@ func Test_getTransformerProxyURL_env_priority(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_only_dest_transform(t *testing.T) {
-	t.Setenv("TRANSFORMER_PROXY_URL", "")
+	t.Setenv("DELIVERY_TRANSFORMER_URL", "")
 	t.Setenv("DEST_TRANSFORM_URL", "http://dest:5678")
 	url, err := getTransformerProxyURL("v1", "TestDest")
 	require.NoError(t, err)
@@ -342,7 +342,7 @@ func Test_getTransformerProxyURL_only_dest_transform(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_only_transformer_proxy(t *testing.T) {
-	t.Setenv("TRANSFORMER_PROXY_URL", "http://proxy:1234")
+	t.Setenv("DELIVERY_TRANSFORMER_URL", "http://proxy:1234")
 	t.Setenv("DEST_TRANSFORM_URL", "")
 	url, err := getTransformerProxyURL("v0", "TestDest")
 	require.NoError(t, err)
@@ -350,7 +350,7 @@ func Test_getTransformerProxyURL_only_transformer_proxy(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_default(t *testing.T) {
-	t.Setenv("TRANSFORMER_PROXY_URL", "")
+	t.Setenv("DELIVERY_TRANSFORMER_URL", "")
 	t.Setenv("DEST_TRANSFORM_URL", "")
 	url, err := getTransformerProxyURL("v1", "TestDest")
 	require.NoError(t, err)

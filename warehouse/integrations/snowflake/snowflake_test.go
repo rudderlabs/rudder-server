@@ -30,6 +30,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -437,7 +438,8 @@ func TestIntegration(t *testing.T) {
 					WithConfigOption("underscoreDivideNumbers", true).
 					WithConfigOption("useKeyPairAuth", tc.cred.UseKeyPairAuth).
 					WithConfigOption("privateKey", tc.cred.PrivateKey).
-					WithConfigOption("privateKeyPassphrase", tc.cred.PrivateKeyPassphrase)
+					WithConfigOption("privateKeyPassphrase", tc.cred.PrivateKeyPassphrase).
+					WithConfigOption("cleanupObjectStorageFiles", true)
 				for k, v := range tc.configOverride {
 					destinationBuilder = destinationBuilder.WithConfigOption(k, v)
 				}

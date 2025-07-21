@@ -17,27 +17,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
+	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 const (
@@ -65,12 +66,13 @@ const (
 
 // warehouse table names
 const (
-	WarehouseStagingFilesTable = "wh_staging_files"
-	WarehouseLoadFilesTable    = "wh_load_files"
-	WarehouseUploadsTable      = "wh_uploads"
-	WarehouseTableUploadsTable = "wh_table_uploads"
-	WarehouseSchemasTable      = "wh_schemas"
-	WarehouseAsyncJobTable     = "wh_async_jobs"
+	WarehouseStagingFilesTable              = "wh_staging_files"
+	WarehouseStagingFileSchemaSnapshotTable = "wh_staging_file_schema_snapshots"
+	WarehouseLoadFilesTable                 = "wh_load_files"
+	WarehouseUploadsTable                   = "wh_uploads"
+	WarehouseTableUploadsTable              = "wh_table_uploads"
+	WarehouseSchemasTable                   = "wh_schemas"
+	WarehouseAsyncJobTable                  = "wh_async_jobs"
 )
 
 const (
@@ -645,15 +647,41 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 	if err != nil {
 		return "", "", "", err
 	}
+
+	if sessionConfig.Region == "" {
+		bucketName, ok := destination.Config["bucketName"].(string)
+		if !ok {
+			return "", "", "", fmt.Errorf("bucketName not found in destination config")
+		}
+		region, err := awsutil_v2.GetRegionFromBucket(context.Background(), bucketName, misc.GetRegionHint())
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to fetch AWS region for bucket: %w", err)
+		}
+		sessionConfig.Region = region
+	}
+
 	awsConfig, err := awsutil_v2.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return "", "", "", err
 	}
-	creds, err := awsConfig.Credentials.Retrieve(context.Background())
-	if err != nil {
-		return "", "", "", err
+
+	if sessionConfig.RoleBasedAuth {
+		creds, err := awsConfig.Credentials.Retrieve(context.Background())
+		if err != nil {
+			return "", "", "", err
+		}
+		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
 	}
-	return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
+	client := stsv2.NewFromConfig(awsConfig)
+	expiryInSec := awsCredsExpiryInS.Load()
+	input := &stsv2.GetSessionTokenInput{
+		DurationSeconds: aws.Int32(int32(expiryInSec)),
+	}
+	output, err := client.GetSessionToken(context.Background(), input)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to get session token: %w", err)
+	}
+	return *output.Credentials.AccessKeyId, *output.Credentials.SecretAccessKey, *output.Credentials.SessionToken, nil
 }
 
 type Tag struct {
@@ -851,4 +879,8 @@ func GetConnectionTimeout(destType, destID string) time.Duration {
 		return config.GetDuration(destTypeLevelConfig, defaultTimeout, defaultTimeoutUnits)
 	}
 	return config.GetDuration(warehouseLevelConfig, defaultTimeout, defaultTimeoutUnits)
+}
+
+func IsDatalakeDestination(destType string) bool {
+	return destType == S3Datalake || destType == GCSDatalake || destType == AzureDatalake
 }
