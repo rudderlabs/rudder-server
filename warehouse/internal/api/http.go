@@ -213,6 +213,9 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	api.Stats.NewTaggedStat("warehouse_staged_schema_size", stats.HistogramType, tags).Observe(float64(len(schemaBytes)))
 	api.Stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(stagingFile.TotalEvents)
-
+	if len(stagingFile.SnapshotPatch) > 0 {
+		api.Stats.NewTaggedStat("schema_snapshot_patch_size", stats.HistogramType, tags).Observe(float64(len(stagingFile.SnapshotPatch)))
+		api.Stats.NewTaggedStat("schema_snapshot_compression_ratio", stats.HistogramType, tags).Observe(float64(len(stagingFile.SnapshotPatch)) / float64(len(schemaBytes)))
+	}
 	w.WriteHeader(http.StatusOK)
 }

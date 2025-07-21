@@ -291,9 +291,10 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 	))
 
 	testcases := []struct {
-		name                  string
-		getSnapshotFunc       func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error)
-		patchGenerator        func(original, modified json.RawMessage) (json.RawMessage, error)
+		name            string
+		getSnapshotFunc func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error)
+		patchGenerator  func(original, modified json.RawMessage) (json.RawMessage, error)
+
 		expectedRespCode      int
 		expectedRespBody      string
 		expectedSnapshotPatch json.RawMessage
@@ -402,13 +403,16 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
 			r := &memRepo{}
 			c := config.New()
 			m := multitenant.New(c, backendconfig.DefaultBackendConfig)
 			w := api.WarehouseAPI{
 				Repo:        r,
 				Logger:      logger.NOP,
-				Stats:       stats.NOP,
+				Stats:       statsStore,
 				Multitenant: m,
 				SchemaSnapshotHandler: &api.StagingFileSchemaSnapshotHandler{
 					Enable: config.SingleValueLoader(true),

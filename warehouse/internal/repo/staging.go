@@ -128,7 +128,7 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	m := metadataFromStagingFile(&stagingFile.StagingFile)
 	if len(stagingFile.SnapshotPatch) > 0 {
 		m.SnapshotPatchSize = lo.ToPtr[int](len(stagingFile.SnapshotPatch))
-		m.SnapshotPatchCompressionRatio = lo.ToPtr[float64](1 - float64(len(stagingFile.SnapshotPatch))/float64(len(stagingFile.Schema)))
+		m.SnapshotPatchCompressionRatio = lo.ToPtr[float64](float64(len(stagingFile.SnapshotPatch)) / float64(len(stagingFile.Schema)))
 	}
 	rawMetadata, err := jsonrs.Marshal(&m)
 	if err != nil {

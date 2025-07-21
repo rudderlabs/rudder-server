@@ -217,7 +217,7 @@ func TestStagingFileRepo(t *testing.T) {
 		require.JSONEq(t, string(modifiedSchema), string(schema))
 		require.JSONEq(t, string(patchSchema), string(schemaSnapshotPatch))
 		require.Equal(t, len(stagingFileWithSchema.SnapshotPatch), snapshotPatchSize)
-		require.Equal(t, 1-float64(len(stagingFileWithSchema.SnapshotPatch))/float64(len(stagingFileWithSchema.Schema)), snapshotPatchCompressionRatio)
+		require.Equal(t, float64(len(stagingFileWithSchema.SnapshotPatch))/float64(len(stagingFileWithSchema.Schema)), snapshotPatchCompressionRatio)
 	})
 
 	t.Run("get missing id", func(t *testing.T) {

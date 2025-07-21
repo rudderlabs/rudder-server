@@ -162,7 +162,7 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 
 	a.bcConfig.WaitForConfig(ctx)
 
-	stagingFileSchemaSnapshotTTL := a.conf.GetDurationVar(12, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
+	stagingFileSchemaSnapshotTTL := a.conf.GetDurationVar(3, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
 	enableStagingFileSchemaSnapshot := a.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
 	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
 		a.conf,
