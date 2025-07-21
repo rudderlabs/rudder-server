@@ -204,19 +204,19 @@ func TestStagingFileRepo(t *testing.T) {
 		var schema json.RawMessage
 		var schemaSnapshotID string
 		var schemaSnapshotPatch []byte
-		var snapshotPatchBytes int
+		var snapshotPatchSize int
 		var snapshotPatchCompressionRatio float64
 
 		err = db.QueryRowContext(ctx, `
-			SELECT schema, schema_snapshot_id, schema_snapshot_patch, metadata->>'snapshot_patch_bytes', metadata->>'snapshot_patch_compression_ratio'
+			SELECT schema, schema_snapshot_id, schema_snapshot_patch, metadata->>'snapshot_patch_size', metadata->>'snapshot_patch_compression_ratio'
 			FROM wh_staging_files
 			WHERE id = $1
-		`, id).Scan(&schema, &schemaSnapshotID, &schemaSnapshotPatch, &snapshotPatchBytes, &snapshotPatchCompressionRatio)
+		`, id).Scan(&schema, &schemaSnapshotID, &schemaSnapshotPatch, &snapshotPatchSize, &snapshotPatchCompressionRatio)
 		require.NoError(t, err)
 		require.Equal(t, snapshotID.String(), schemaSnapshotID)
 		require.JSONEq(t, string(modifiedSchema), string(schema))
 		require.JSONEq(t, string(patchSchema), string(schemaSnapshotPatch))
-		require.Equal(t, len(stagingFileWithSchema.SnapshotPatch), snapshotPatchBytes)
+		require.Equal(t, len(stagingFileWithSchema.SnapshotPatch), snapshotPatchSize)
 		require.Equal(t, 1-float64(len(stagingFileWithSchema.SnapshotPatch))/float64(len(stagingFileWithSchema.Schema)), snapshotPatchCompressionRatio)
 	})
 
