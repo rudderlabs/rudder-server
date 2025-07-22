@@ -310,8 +310,7 @@ func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, 
 	WHERE
 		destination_id = $1 AND
 		namespace = $2 AND
-		table_name != ''
-	ORDER BY table_name;
+		table_name != '';
 	`
 
 	rows, err := tx.QueryContext(ctx, tableLevelQuery, destID, namespace)
