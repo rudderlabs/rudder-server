@@ -842,8 +842,7 @@ func TestOAuth(t *testing.T) {
 			status := api.Delete(ctx, tt.job, tt.dest)
 			require.Equal(t, tt.expectedDeleteStatus.Status, status.Status)
 			if tt.expectedDeleteStatus.Status != model.JobStatusComplete {
-				exp := tt.expectedDeleteStatus.Error.Error()
-				exp = tt.expectedDeleteStatus_OAuthV2.Error.Error()
+				exp := tt.expectedDeleteStatus_OAuthV2.Error.Error()
 				jobError := strings.Replace(exp, "__cfgBE_server__", cfgBeSrv.URL, 1)
 
 				require.Contains(t, strings.ToLower(status.Error.Error()), strings.ToLower(jobError))
