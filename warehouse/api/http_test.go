@@ -209,7 +209,7 @@ func TestHTTPApi(t *testing.T) {
 	}()
 
 	now := time.Now().Truncate(time.Second).UTC()
-	stagingRepo := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	stagingRepo := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 		return now
 	}))
 	uploadsRepo := repo.NewUploads(db, repo.WithNow(func() time.Time {

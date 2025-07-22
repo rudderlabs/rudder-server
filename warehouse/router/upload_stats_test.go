@@ -244,7 +244,7 @@ func TestUploadJob_MatchRows(t *testing.T) {
 			},
 		}, nil)
 
-		count, err := repo.NewStagingFiles(sqlmiddleware.New(db)).TotalEventsForUploadID(context.Background(), job.upload.ID)
+		count, err := repo.NewStagingFiles(sqlmiddleware.New(db), config.New()).TotalEventsForUploadID(context.Background(), job.upload.ID)
 		require.NoError(t, err)
 		require.EqualValues(t, 5, count)
 	})

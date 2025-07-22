@@ -32,7 +32,7 @@ func TestUploads_Count(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -143,7 +143,7 @@ func TestUploads_Get(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -282,7 +282,7 @@ func TestUploads_GetToProcess(t *testing.T) {
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -631,7 +631,7 @@ func TestUploads_Processing(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -815,7 +815,7 @@ func TestUploads_Delete(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -880,7 +880,7 @@ func TestUploads_PendingTableUploads(t *testing.T) {
 		repoTableUpload = repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging = repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging = repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 	)
@@ -1093,7 +1093,7 @@ func TestUploads_ResetInProgress(t *testing.T) {
 	}))
 
 	t.Run("success", func(t *testing.T) {
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -1154,7 +1154,7 @@ func TestUploads_LastCreatedAt(t *testing.T) {
 
 	t.Run("many uploads", func(t *testing.T) {
 		for i := 0; i < 5; i++ {
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 				return now
 			}))
 			stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
@@ -1214,7 +1214,7 @@ func TestUploads_TriggerUpload(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1276,7 +1276,7 @@ func TestUploads_Retry(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1421,7 +1421,7 @@ func TestUploads_SyncsInfo(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1744,7 +1744,7 @@ func TestUploads_GetLatestUploadInfo(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -1822,7 +1822,7 @@ func TestUploads_FailedBatchOperations(t *testing.T) {
 		repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 			return now
 		}))
-		repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 			return now
 		}))
 		repoTableUpload := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
@@ -2583,7 +2583,7 @@ func TestUploads_Update(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return now
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -2740,7 +2740,7 @@ func TestUploads_GetSyncLatencies(t *testing.T) {
 
 	db, ctx := setupDB(t), context.Background()
 	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -2892,7 +2892,7 @@ func TestGetFirstAbortedUploadsInContinuousAborts(t *testing.T) {
 	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 		return time.Now().UTC()
 	}))
-	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return time.Now().UTC()
 	}))
 

@@ -107,7 +107,7 @@ func NewGRPCServer(
 		logger:             logger.Child("grpc"),
 		tenantManager:      tenantManager,
 		bcManager:          bcManager,
-		stagingRepo:        repo.NewStagingFiles(db),
+		stagingRepo:        repo.NewStagingFiles(db, conf),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db, conf),
 		schemaRepo:         repo.NewWHSchemas(db, conf),

@@ -7,8 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
@@ -43,7 +48,7 @@ func TestStagingFileRepo(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
 
-	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	r := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -257,11 +262,9 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db,
-		repo.WithNow(func() time.Time {
-			return now
-		}),
-	)
+	r := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
+		return now
+	}))
 
 	stagingFiles := manyStagingFiles(10, now)
 	for i := range stagingFiles {
@@ -340,11 +343,135 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			`)
 			require.NoError(t, err)
 
-			r := repo.NewStagingFiles(db)
+			r := repo.NewStagingFiles(db, config.New())
 
 			expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
 			require.ErrorContains(t, err, "cannot get schemas by ids: unmarshal staging schema:")
 			require.Nil(t, expectedSchemas)
+		})
+
+		t.Run("with schema snapshot and patch", func(t *testing.T) {
+			testCases := []struct {
+				name           string
+				originalSchema model.Schema
+				updatedSchema  model.Schema
+				schemaPatch    []byte
+			}{
+				{
+					name: "no changes (original == updated)",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					schemaPatch: []byte(`[]`),
+				},
+				{
+					name: "updated has extra table",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table":  model.TableSchema{"column": "type"},
+						"table2": model.TableSchema{"column2": "type2"},
+					},
+					schemaPatch: []byte(`[{"op": "add", "path": "/table2", "value": {"column2": "type2"}}]`),
+				},
+				{
+					name: "updated has extra column",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type", "column2": "type2"},
+					},
+					schemaPatch: []byte(`[{"op": "add", "path": "/table/column2", "value": "type2"}]`),
+				},
+				{
+					name: "updated has less table",
+					originalSchema: model.Schema{
+						"table":  model.TableSchema{"column": "type"},
+						"table2": model.TableSchema{"column2": "type2"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					schemaPatch: []byte(`[{"op": "remove", "path": "/table2"}]`),
+				},
+				{
+					name: "updated has less column",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type", "column2": "type2"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					schemaPatch: []byte(`[{"op": "remove", "path": "/table/column2"}]`),
+				},
+				{
+					name: "updated has changed column type",
+					originalSchema: model.Schema{
+						"table": model.TableSchema{"column": "type"},
+					},
+					updatedSchema: model.Schema{
+						"table": model.TableSchema{"column": "type2"},
+					},
+					schemaPatch: []byte(`[{"op": "replace", "path": "/table/column", "value": "type2"}]`),
+				},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					originalSchemaBytes, err := jsonrs.Marshal(tc.originalSchema)
+					require.NoError(t, err)
+					updatedSchemaBytes, err := jsonrs.Marshal(tc.updatedSchema)
+					require.NoError(t, err)
+
+					snapshotRepo := repo.NewStagingFileSchemaSnapshots(db)
+					snapshotID, err := snapshotRepo.Insert(ctx, "source_id", "destination_id", "workspace_id", originalSchemaBytes)
+					require.NoError(t, err)
+					require.NotEqual(t, uuid.Nil, snapshotID)
+
+					patchSchemaBytes, err := warehouseutils.GenerateJSONPatch(originalSchemaBytes, updatedSchemaBytes)
+					require.NoError(t, err)
+					require.JSONEq(t, string(tc.schemaPatch), string(patchSchemaBytes))
+
+					file := model.StagingFile{
+						WorkspaceID:           "workspace_id",
+						Location:              "s3://bucket/path/to/file-patch",
+						SourceID:              "source_id",
+						DestinationID:         "destination_id",
+						Status:                warehouseutils.StagingFileWaitingState,
+						Error:                 nil,
+						FirstEventAt:          now.Add(time.Second),
+						LastEventAt:           now,
+						UseRudderStorage:      true,
+						DestinationRevisionID: "destination_revision_id",
+						TotalEvents:           100,
+						SourceTaskRunID:       "source_task_run_id",
+						SourceJobID:           "source_job_id",
+						SourceJobRunID:        "source_job_run_id",
+						TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
+						ServerInstanceID:      "test-instance-id-patch",
+					}.
+						WithSchema(updatedSchemaBytes).
+						WithSnapshotIDAndPatch(snapshotID, patchSchemaBytes)
+
+					c := config.New()
+					c.Set("Warehouse.enableStagingFileSchemaSnapshot", true)
+					rs := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
+						return now
+					}))
+					id, err := rs.Insert(ctx, &file)
+					require.NoError(t, err)
+
+					retrievedSchemas, err := rs.GetSchemasByIDs(ctx, []int64{id})
+					require.NoError(t, err)
+					require.Len(t, retrievedSchemas, 1)
+					require.Equal(t, tc.updatedSchema, retrievedSchemas[0])
+				})
+			}
 		})
 	})
 
@@ -378,11 +505,9 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 	now := time.Now().Truncate(time.Second).UTC()
 
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db,
-		repo.WithNow(func() time.Time {
-			return now
-		}),
-	)
+	r := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
+		return now
+	}))
 	uploadRepo := repo.NewUploads(db)
 
 	inputData := []struct {
@@ -472,7 +597,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	r := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -580,7 +705,7 @@ func TestStagingFileIDs(t *testing.T) {
 func BenchmarkFiles(b *testing.B) {
 	ctx := context.Background()
 	db := setupDB(b)
-	stagingRepo := repo.NewStagingFiles(db)
+	stagingRepo := repo.NewStagingFiles(db, config.New())
 	uploadRepo := repo.NewUploads(db)
 
 	size := 100000
