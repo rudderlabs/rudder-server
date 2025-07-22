@@ -544,6 +544,7 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 			m.polledImportInfoMap[info.ChannelID] = info
 			continue
 		}
+		info.Failed = false
 		if !inProgress {
 			m.polledImportInfoMap[info.ChannelID] = info
 		}
@@ -597,8 +598,9 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 
 		log.Infon("Recreated channel for polling", logger.NewStringField("channelID", recreatedChannel.ChannelID))
 
-		// Update the channel ID in importInfo for future polls. Though I'm not sure if this is needed.
-		info.ChannelID = recreatedChannel.ChannelID
+		// The new channel id is not being associated with the import info. This is because even if we do that,
+		// it will update the in memory map and not the database
+		// So the next time we poll, we will get the old channel id and not the new one
 
 		statusRes2, err2 := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
 		if err2 != nil {
