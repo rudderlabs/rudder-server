@@ -355,7 +355,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 				name           string
 				originalSchema model.Schema
 				updatedSchema  model.Schema
-				patchExpected  bool
 			}{
 				{
 					name: "no changes (original == updated)",
@@ -365,7 +364,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type"},
 					},
-					patchExpected: false,
 				},
 				{
 					name: "updated has extra table",
@@ -376,7 +374,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 						"table":  model.TableSchema{"column": "type"},
 						"table2": model.TableSchema{"column2": "type2"},
 					},
-					patchExpected: true,
 				},
 				{
 					name: "updated has extra column",
@@ -386,7 +383,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type", "column2": "type2"},
 					},
-					patchExpected: true,
 				},
 				{
 					name: "updated has less table",
@@ -397,7 +393,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type"},
 					},
-					patchExpected: true,
 				},
 				{
 					name: "updated has less column",
@@ -407,7 +402,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type"},
 					},
-					patchExpected: true,
 				},
 				{
 					name: "updated has changed column type",
@@ -417,7 +411,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type2"},
 					},
-					patchExpected: true,
 				},
 			}
 
