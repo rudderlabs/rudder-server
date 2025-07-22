@@ -88,16 +88,15 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 }
 
 func NewStagingFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *StagingFiles {
-	stagingRepo := &repo{
-		db:  db,
-		now: timeutil.Now,
-	}
 	r := &StagingFiles{
-		repo: stagingRepo,
+		repo: &repo{
+			db:  db,
+			now: timeutil.Now,
+		},
 		conf: conf,
 	}
 	for _, opt := range opts {
-		opt(stagingRepo)
+		opt(r.repo)
 	}
 	return r
 }

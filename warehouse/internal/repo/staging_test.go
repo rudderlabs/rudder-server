@@ -355,6 +355,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 				name           string
 				originalSchema model.Schema
 				updatedSchema  model.Schema
+				schemaPatch    []byte
 			}{
 				{
 					name: "no changes (original == updated)",
@@ -364,6 +365,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type"},
 					},
+					schemaPatch: []byte(`[]`),
 				},
 				{
 					name: "updated has extra table",
@@ -374,6 +376,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 						"table":  model.TableSchema{"column": "type"},
 						"table2": model.TableSchema{"column2": "type2"},
 					},
+					schemaPatch: []byte(`[{"op": "add", "path": "/table2", "value": {"column2": "type2"}}]`),
 				},
 				{
 					name: "updated has extra column",
@@ -383,6 +386,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type", "column2": "type2"},
 					},
+					schemaPatch: []byte(`[{"op": "add", "path": "/table/column2", "value": "type2"}]`),
 				},
 				{
 					name: "updated has less table",
@@ -393,6 +397,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type"},
 					},
+					schemaPatch: []byte(`[{"op": "remove", "path": "/table2"}]`),
 				},
 				{
 					name: "updated has less column",
@@ -402,6 +407,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type"},
 					},
+					schemaPatch: []byte(`[{"op": "remove", "path": "/table/column2"}]`),
 				},
 				{
 					name: "updated has changed column type",
@@ -411,6 +417,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 					updatedSchema: model.Schema{
 						"table": model.TableSchema{"column": "type2"},
 					},
+					schemaPatch: []byte(`[{"op": "replace", "path": "/table/column", "value": "type2"}]`),
 				},
 			}
 
@@ -428,6 +435,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 
 					patchSchemaBytes, err := warehouseutils.GenerateJSONPatch(originalSchemaBytes, updatedSchemaBytes)
 					require.NoError(t, err)
+					require.JSONEq(t, string(tc.schemaPatch), string(patchSchemaBytes))
 
 					file := model.StagingFile{
 						WorkspaceID:           "workspace_id",
