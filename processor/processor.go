@@ -579,7 +579,7 @@ func (proc *Handle) Setup(
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
 	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	proc.backgroundWait = g.Wait
 	proc.backgroundCancel = cancel

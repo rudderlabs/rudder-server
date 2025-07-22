@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -110,7 +111,7 @@ func (brt *Handle) Setup(
 		})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	brt.backgroundGroup, brt.backgroundCtx = kitsync.ErrGroupWithContext(ctx)
+	brt.backgroundGroup, brt.backgroundCtx = errgroup.WithContext(ctx)
 	brt.backgroundCancel = cancel
 	brt.backgroundWait = brt.backgroundGroup.Wait
 

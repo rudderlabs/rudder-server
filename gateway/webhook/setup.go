@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
@@ -20,7 +22,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -127,7 +128,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	webhook.statReporterCreator = statReporterCreator
 
-	g, _ := kitsync.ErrGroupWithContext(ctx)
+	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(crash.Wrapper(func() error {
 			bt := batchWebhookTransformerT{

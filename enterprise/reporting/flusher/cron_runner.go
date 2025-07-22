@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
@@ -26,7 +26,7 @@ func (c *NOPCronRunner) Stop() {}
 type CronRunner struct {
 	ctx    context.Context
 	cancel context.CancelFunc
-	g      *kitsync.ErrGroup
+	g      *errgroup.Group
 
 	stats stats.Stats
 	log   logger.Logger
@@ -48,7 +48,7 @@ func NewCronRunner(ctx context.Context, log logger.Logger, stats stats.Stats, co
 	instanceId := conf.GetString("INSTANCE_ID", "1")
 
 	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	c := &CronRunner{
 		ctx:           ctx,

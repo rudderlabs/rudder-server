@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/samber/lo"
@@ -181,7 +183,7 @@ func (rt *Handle) Setup(
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	rt.backgroundCtx = ctx
 	rt.backgroundGroup = g

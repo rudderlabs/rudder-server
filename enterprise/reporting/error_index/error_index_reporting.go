@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
@@ -27,7 +28,7 @@ import (
 type ErrorIndexReporter struct {
 	ctx              context.Context
 	cancel           context.CancelFunc
-	g                *kitsync.ErrGroup
+	g                *errgroup.Group
 	log              logger.Logger
 	conf             *config.Config
 	configSubscriber configSubscriber
@@ -60,7 +61,7 @@ type handleWithSqlDB struct {
 
 func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscriber configSubscriber, conf *config.Config, statsFactory stats.Stats) *ErrorIndexReporter {
 	ctx, cancel := context.WithCancel(ctx)
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	eir := &ErrorIndexReporter{
 		ctx:          ctx,

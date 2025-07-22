@@ -48,7 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
@@ -494,7 +493,7 @@ type Handle struct {
 	isStatDropDSPeriodInitialized bool
 
 	backgroundCancel context.CancelFunc
-	backgroundGroup  *kitsync.ErrGroup
+	backgroundGroup  *errgroup.Group
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
@@ -1014,7 +1013,7 @@ func (jd *Handle) Start() error {
 	jd.conf.readCapacity = make(chan struct{}, jd.conf.maxReaders)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	jd.backgroundCancel = cancel
 	jd.backgroundGroup = g

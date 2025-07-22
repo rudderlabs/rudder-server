@@ -15,12 +15,12 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -1106,7 +1106,7 @@ func TestRouter(t *testing.T) {
 		}))
 
 		ctx, cancel := context.WithCancel(context.Background())
-		g := &kitsync.ErrGroup{}
+		g := &errgroup.Group{}
 		defer cancel()
 
 		warehouse := model.Warehouse{

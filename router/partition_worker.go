@@ -5,9 +5,10 @@ import (
 	"strconv"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -21,7 +22,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		partition: partition,
 		ctx:       ctx,
 	}
-	pw.g, _ = kitsync.ErrGroupWithContext(context.Background())
+	pw.g, _ = errgroup.WithContext(context.Background())
 	pw.workers = make([]*worker, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &worker{
@@ -55,8 +56,8 @@ type partitionWorker struct {
 
 	// state
 	ctx     context.Context
-	g       *kitsync.ErrGroup // group against which all the workers are spawned
-	workers []*worker         // workers that are responsible for processing the jobs
+	g       *errgroup.Group // group against which all the workers are spawned
+	workers []*worker       // workers that are responsible for processing the jobs
 
 	pickupCount   int  // number of jobs picked up by the workers in the last iteration
 	limitsReached bool // whether the limits were reached in the last iteration
