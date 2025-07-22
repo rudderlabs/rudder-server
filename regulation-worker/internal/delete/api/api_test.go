@@ -23,7 +23,6 @@ import (
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -650,7 +649,7 @@ var oauthTests = []oauthTestCases{
 		deleteResponses: []deleteResponseParams{
 			{
 				status:      400,
-				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.AuthStatusInActive),
 			},
 		},
 		cpResponses: []testutils.CpResponseParams{
@@ -697,7 +696,7 @@ var oauthTests = []oauthTestCases{
 		deleteResponses: []deleteResponseParams{
 			{
 				status:      400,
-				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, oauth.AUTH_STATUS_INACTIVE),
+				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.AuthStatusInActive),
 			},
 		},
 		cpResponses: []testutils.CpResponseParams{
@@ -821,8 +820,6 @@ func TestOAuth(t *testing.T) {
 				},
 			}
 
-			oauth.Init()
-			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete), oauth.WithOAuthClientTimeout(tt.oauthHttpClientTimeout))
 			if tt.isOAuthV2Enabled {
 				cache := oauthV2.NewCache()
 				oauthLock := rudderSync.NewPartitionRWLocker()
@@ -835,7 +832,7 @@ func TestOAuth(t *testing.T) {
 					Locker:    oauthLock,
 				}
 				cli = oauthv2_http.NewOAuthHttpClient(
-					cli, common.RudderFlow(oauth.RudderFlow_Delete),
+					cli, common.RudderFlowDelete,
 					&cache, mockBackendConfig,
 					api.GetAuthErrorCategoryFromResponse, &optionalArgs,
 				)
@@ -844,9 +841,7 @@ func TestOAuth(t *testing.T) {
 			api := api.APIManager{
 				Client:                       cli,
 				DestTransformURL:             svr.URL,
-				OAuth:                        OAuth,
 				MaxOAuthRefreshRetryAttempts: 1,
-				IsOAuthV2Enabled:             tt.isOAuthV2Enabled,
 			}
 
 			status := api.Delete(ctx, tt.job, tt.dest)
