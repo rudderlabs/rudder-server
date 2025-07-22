@@ -569,9 +569,7 @@ func TestPayloadLiteral(t *testing.T) {
 
 	prefixes := []string{string(TEXT), string(JSONB), string(BYTEA)}
 	for i := range prefixes {
-		_, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %[1]s_job_status_1 DROP CONSTRAINT fk_%[1]s_job_status_1_job_id`, prefixes[i]))
-		require.NoError(t, err)
-		_, err = db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %[1]s_jobs_1 DROP CONSTRAINT %[1]s_jobs_1_pkey`, prefixes[i]))
+		_, err := db.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %[1]s_jobs_1 DROP CONSTRAINT %[1]s_jobs_1_pkey`, prefixes[i]))
 		require.NoError(t, err)
 	} // we drop these two because migrateJobsInTx moved jobIDs too, and we're only interested in moving jobs between two different column types
 	txn, err := db.Begin()
