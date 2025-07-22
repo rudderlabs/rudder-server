@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -293,21 +294,23 @@ func TestHTTPApi(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	schemaRepo := repo.NewWHSchemas(db)
-	_, err = schemaRepo.Insert(ctx, &model.WHSchema{
-		SourceID:        sourceID,
-		Namespace:       namespace,
-		DestinationID:   destinationID,
-		DestinationType: destinationType,
-		Schema: model.Schema{
-			"test_table": {
-				"test_column": "test_data_type",
+	schemaRepo := repo.NewWHSchemas(db, c)
+	err = schemaRepo.Insert(ctx,
+		&model.WHSchema{
+			SourceID:        sourceID,
+			Namespace:       namespace,
+			DestinationID:   destinationID,
+			DestinationType: destinationType,
+			Schema: model.Schema{
+				"test_table": {
+					"test_column": "test_data_type",
+				},
 			},
+			CreatedAt: now,
+			UpdatedAt: now,
+			ExpiresAt: now.Add(1 * time.Hour),
 		},
-		CreatedAt: now,
-		UpdatedAt: now,
-		ExpiresAt: now.Add(1 * time.Hour),
-	})
+	)
 	require.NoError(t, err)
 
 	t.Run("health handler", func(t *testing.T) {

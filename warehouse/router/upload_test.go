@@ -40,8 +40,8 @@ func (m *mockSchemaRepo) GetForNamespace(context.Context, string, string) (model
 	return model.WHSchema{}, nil
 }
 
-func (m *mockSchemaRepo) Insert(context.Context, *model.WHSchema) (int64, error) {
-	return 0, nil
+func (m *mockSchemaRepo) Insert(context.Context, *model.WHSchema) error {
+	return nil
 }
 
 func TestExtractUploadErrorsByState(t *testing.T) {

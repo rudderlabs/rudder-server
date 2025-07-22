@@ -110,7 +110,7 @@ func NewGRPCServer(
 		stagingRepo:        repo.NewStagingFiles(db),
 		uploadRepo:         repo.NewUploads(db),
 		tableUploadsRepo:   repo.NewTableUploads(db, conf),
-		schemaRepo:         repo.NewWHSchemas(db),
+		schemaRepo:         repo.NewWHSchemas(db, conf),
 		triggerStore:       triggerStore,
 		fileManagerFactory: filemanager.New,
 		now:                timeutil.Now,
