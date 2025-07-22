@@ -91,7 +91,6 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 		}
 
 		// Then, insert/update the new schema using the unique constraint
-		// Since we are not using table_name, we can use the unique constraint on source_id, destination_id, namespace
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO `+whSchemaTableName+` (
 			  source_id, namespace, destination_id,
