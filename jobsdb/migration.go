@@ -58,7 +58,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
-			jd.logger.Errorw("Failed to migrate ds", "error", err)
+			jd.logger.Errorw("migrateDSLoop error", "error", err)
 		}
 	}
 }
