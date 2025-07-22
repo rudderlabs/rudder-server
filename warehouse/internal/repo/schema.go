@@ -207,12 +207,12 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		err := sh.populateTableLevelSchemasWithTx(ctx, tx, destID, namespace)
 		if err != nil {
-			return err
+			return fmt.Errorf("populating table-level schemas: %w", err)
 		}
 
-		tableLevelSchemas, err = sh.getTableLevelSchemasForNamespaceWithTx(ctx, tx, originalSchema.SourceID, destID, namespace)
+		tableLevelSchemas, err = sh.getTableLevelSchemasForNamespaceWithTx(ctx, tx, destID, namespace)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting table-level schemas: %w", err)
 		}
 		return nil
 	})
@@ -302,18 +302,30 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 	return nil
 }
 
-// getTableLevelSchemasForNamespaceWithTx fetches and merges all table-level schemas for destID and namespace,
-// using the provided transaction.
-func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, tx *sqlmiddleware.Tx, sourceID, destID, namespace string) (model.Schema, error) {
-	tableLevelQuery := `SELECT table_name, schema FROM ` + whSchemaTableName + `
-	WHERE
-		source_id = $1 AND
-		destination_id = $2 AND
-		namespace = $3 AND
-		table_name != '';
+// getTableLevelSchemasForNamespaceWithTx fetches the latest schema (by id) for each table in the given destID and namespace, regardless of source.
+func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, tx *sqlmiddleware.Tx, destID, namespace string) (model.Schema, error) {
+	tableLevelQuery := `
+		SELECT
+			table_name,
+			schema
+		FROM (
+			SELECT
+				table_name,
+				schema,
+				ROW_NUMBER() OVER (
+					PARTITION BY destination_id, namespace, table_name
+					ORDER BY id DESC
+				) as rn
+			FROM ` + whSchemaTableName + `
+			WHERE
+				destination_id = $1
+				AND namespace = $2
+				AND table_name != ''
+		) t
+		WHERE rn = 1;
 	`
 
-	rows, err := tx.QueryContext(ctx, tableLevelQuery, sourceID, destID, namespace)
+	rows, err := tx.QueryContext(ctx, tableLevelQuery, destID, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("querying table-level schemas: %w", err)
 	}
