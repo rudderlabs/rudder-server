@@ -210,7 +210,7 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 			return err
 		}
 
-		tableLevelSchemas, err = sh.getTableLevelSchemasForNamespaceWithTx(ctx, tx, destID, namespace)
+		tableLevelSchemas, err = sh.getTableLevelSchemasForNamespaceWithTx(ctx, tx, originalSchema.SourceID, destID, namespace)
 		if err != nil {
 			return err
 		}
@@ -304,15 +304,16 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 
 // getTableLevelSchemasForNamespaceWithTx fetches and merges all table-level schemas for destID and namespace,
 // using the provided transaction.
-func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, tx *sqlmiddleware.Tx, destID, namespace string) (model.Schema, error) {
+func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, tx *sqlmiddleware.Tx, sourceID, destID, namespace string) (model.Schema, error) {
 	tableLevelQuery := `SELECT table_name, schema FROM ` + whSchemaTableName + `
 	WHERE
-		destination_id = $1 AND
-		namespace = $2 AND
+		source_id = $1 AND
+		destination_id = $2 AND
+		namespace = $3 AND
 		table_name != '';
 	`
 
-	rows, err := tx.QueryContext(ctx, tableLevelQuery, destID, namespace)
+	rows, err := tx.QueryContext(ctx, tableLevelQuery, sourceID, destID, namespace)
 	if err != nil {
 		return nil, fmt.Errorf("querying table-level schemas: %w", err)
 	}
