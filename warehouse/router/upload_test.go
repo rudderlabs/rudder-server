@@ -44,6 +44,12 @@ func (m *mockSchemaRepo) Insert(context.Context, *model.WHSchema) error {
 	return nil
 }
 
+type mockFetchSchemaRepo struct{}
+
+func (m *mockFetchSchemaRepo) FetchSchema(context.Context) (model.Schema, error) {
+	return model.Schema{}, nil
+}
+
 func TestExtractUploadErrorsByState(t *testing.T) {
 	input := []struct {
 		InitialErrorState []byte
@@ -188,7 +194,7 @@ func TestColumnCountStat(t *testing.T) {
 				},
 				Warehouse: warehouse,
 			}, whManager)
-			j.schemaHandle, err = schema.New(ctx, warehouse, conf, logger.NOP, statsStore, nil, &mockSchemaRepo{}, nil)
+			j.schemaHandle, err = schema.New(ctx, warehouse, conf, logger.NOP, statsStore, &mockFetchSchemaRepo{}, &mockSchemaRepo{}, nil)
 			require.NoError(t, err)
 			err = j.schemaHandle.UpdateTableSchema(ctx, tableName, model.TableSchema{
 				"test-column-1": "string",
