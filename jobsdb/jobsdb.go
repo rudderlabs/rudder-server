@@ -535,7 +535,6 @@ type Handle struct {
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
 		MaxDSSize                      config.ValueLoader[int]
-		indexOptimizations             config.ValueLoader[bool] // TODO: remove this option after next release (true by default)
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
@@ -964,8 +963,6 @@ func (jd *Handle) loadConfig() {
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
 	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, jd.configKeys("maxDSSize")...)
-
-	jd.conf.indexOptimizations = jd.config.GetReloadableBoolVar(true, jd.configKeys("indexOptimizations")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -1466,10 +1463,6 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
-	jobStatusTablePrimaryKey := ""
-	if !jd.conf.indexOptimizations.Load() { // TODO: Remove this branch after next release
-		jobStatusTablePrimaryKey = `,PRIMARY KEY (job_id, job_state, id)`
-	}
 
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
@@ -1480,7 +1473,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
-		parameters JSONB DEFAULT '{}'::JSONB%s);`, newDS.JobStatusTable, jobStatusTablePrimaryKey)); err != nil {
+		parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 	return nil
@@ -1498,30 +1491,12 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 			return fmt.Errorf("creating %s index: %w", param, err)
 		}
 	}
-	if _, err := tx.ExecContext(
-		ctx,
-		fmt.Sprintf(
-			`ALTER TABLE %[1]q
-			ADD CONSTRAINT "fk_%[1]s_job_id"
-			FOREIGN KEY (job_id)
-			REFERENCES %[2]q (job_id)`,
-			newDS.JobStatusTable,
-			newDS.JobTable,
-		)); err != nil {
-		return fmt.Errorf("adding foreign key constraint: %w", err)
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("adding job_id_id index: %w", err)
 	}
-	if jd.conf.indexOptimizations.Load() {
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
-			return fmt.Errorf("adding job_id_id index: %w", err)
-		}
-		// index used for maxDSRetention during migration
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
-			return fmt.Errorf("adding job_id_js index: %w", err)
-		}
-	} else { // TODO: remove this branch after next release
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
-			return fmt.Errorf("adding job_id_id index: %w", err)
-		}
+	// index used for maxDSRetention during migration
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("adding job_id_js index: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
