@@ -99,6 +99,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 			jobs             []*jobsdb.JobT
 			sourceIDtoFilter map[string]bool
 			trackedUsers     []*UsersReport
+			mtu              int
 		}{
 			{
 				name: "happy case",
@@ -108,6 +109,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user_id", "anon_id", sampleWorkspaceID),
 					prepareJob(sampleSourceID, "user_id_1", "anon_id_1", sampleWorkspaceID),
 				},
+				mtu: 2,
 				trackedUsers: []*UsersReport{
 					{
 						WorkspaceID: sampleWorkspaceID,
@@ -125,10 +127,8 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id", "anon_id")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id_1", "anon_id_1")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -144,6 +144,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID),
 					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID2),
 				},
+				mtu: 3,
 				trackedUsers: []*UsersReport{
 					{
 						WorkspaceID: sampleWorkspaceID,
@@ -163,12 +164,9 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id", "anon_id")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id_1", "anon_id_1")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -186,8 +184,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -203,7 +200,9 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID),
 					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID2),
 					prepareAliasJob(sampleSourceID, "user_id", "user_id_1", sampleWorkspaceID),
+					prepareAliasJob(sampleSourceID, "user_id_1", "user_id", sampleWorkspaceID),
 				},
+				mtu: 2,
 				trackedUsers: []*UsersReport{
 					{
 						WorkspaceID: sampleWorkspaceID,
@@ -223,13 +222,10 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id", "anon_id")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id_1", "anon_id_1")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(combineUserIdPreviousID("user_id", "user_id_1")), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -247,8 +243,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -265,6 +260,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID2),
 					prepareAliasJob(sampleSourceID, "user_id", "user_id", sampleWorkspaceID),
 				},
+				mtu: 3,
 				trackedUsers: []*UsersReport{
 					{
 						WorkspaceID: sampleWorkspaceID,
@@ -284,12 +280,9 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id", "anon_id")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id_1", "anon_id_1")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -307,8 +300,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -322,6 +314,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user", "", sampleWorkspaceID),
 					prepareJob(sampleSourceID, "", "ann", sampleWorkspaceID2),
 				},
+				mtu: 4,
 				trackedUsers: []*UsersReport{
 					{
 						WorkspaceID: sampleWorkspaceID,
@@ -359,6 +352,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user", "", sampleWorkspaceID),
 					prepareJob(sampleSourceID, "ann", "ann", sampleWorkspaceID2),
 				},
+				mtu: 4,
 				trackedUsers: []*UsersReport{
 					{
 						WorkspaceID: sampleWorkspaceID,
@@ -399,6 +393,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID2),
 					prepareJob(sampleSourceToFilter, uuid.NewString(), uuid.NewString(), sampleWorkspaceID2),
 				},
+				mtu: 3,
 				sourceIDtoFilter: map[string]bool{
 					sampleSourceToFilter: true,
 				},
@@ -421,12 +416,9 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id", "anon_id")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user_id_1", "anon_id_1")), murmurSeed))
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -444,8 +436,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 						IdentifiedAnonymousIDHll: func() *hll.Hll {
 							resHll, err := hll.NewHll(hllSettings)
 							require.NoError(t, err)
-							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(
-								combineUserIDAnonymousID("user", "ann")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
 							return &resHll
 						}(),
 					},
@@ -476,6 +467,48 @@ func TestUniqueUsersReporter(t *testing.T) {
 				},
 				trackedUsers: nil,
 			},
+			{
+				name: "happy case - alias jobs + same anon id",
+				jobs: []*jobsdb.JobT{
+					prepareJob(sampleSourceID, "", "anon_id", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id", "", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id", "anon_id", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user_id_1", "anon_id", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user", "anon_id_1", sampleWorkspaceID),
+					prepareJob(sampleSourceID, "user", "ann", sampleWorkspaceID),
+					prepareAliasJob(sampleSourceID, "user_id", "user_id_1", sampleWorkspaceID),
+					prepareAliasJob(sampleSourceID, "user", "user_id_1", sampleWorkspaceID),
+				},
+				mtu: 1,
+				trackedUsers: []*UsersReport{
+					{
+						WorkspaceID: sampleWorkspaceID,
+						SourceID:    sampleSourceID,
+						UserIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("user_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							return &resHll
+						}(),
+						AnonymousIDHll: nil,
+						IdentifiedAnonymousIDHll: func() *hll.Hll {
+							resHll, err := hll.NewHll(hllSettings)
+							require.NoError(t, err)
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("anon_id_1"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte("ann"), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(combineUserIdPreviousID("user_id", "user_id_1")), murmurSeed))
+							resHll.AddRaw(murmur3.Sum64WithSeed([]byte(combineUserIdPreviousID("user", "user_id_1")), murmurSeed))
+							return &resHll
+						}(),
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -483,6 +516,7 @@ func TestUniqueUsersReporter(t *testing.T) {
 				collector := &UniqueUsersReporter{log: logger.NOP, hllSettings: &hllSettings}
 				reports := collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
 				require.ElementsMatch(t, tc.trackedUsers, reports)
+				require.Equal(t, tc.mtu, calculateMtu(t, tc.trackedUsers))
 			})
 		}
 	})
@@ -586,4 +620,27 @@ func TestUniqueUsersReporter(t *testing.T) {
 			})
 		}
 	})
+}
+
+func calculateMtu(t *testing.T, reports []*UsersReport) int {
+	if len(reports) == 0 {
+		return 0
+	}
+	userHll, err := hll.NewHll(hllSettings)
+	require.NoError(t, err)
+	identifiedHll, err := hll.NewHll(hllSettings)
+	require.NoError(t, err)
+	mergedReport := &UsersReport{
+		UserIDHll:                &userHll,
+		IdentifiedAnonymousIDHll: &identifiedHll,
+	}
+	for _, report := range reports {
+		if report.UserIDHll != nil {
+			mergedReport.UserIDHll.Union(*report.UserIDHll)
+		}
+		if report.IdentifiedAnonymousIDHll != nil {
+			mergedReport.IdentifiedAnonymousIDHll.Union(*report.IdentifiedAnonymousIDHll)
+		}
+	}
+	return int(mergedReport.UserIDHll.Cardinality() - mergedReport.IdentifiedAnonymousIDHll.Cardinality())
 }

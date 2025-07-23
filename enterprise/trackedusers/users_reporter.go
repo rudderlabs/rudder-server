@@ -149,8 +149,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		}
 
 		if userID != "" && anonymousID != "" && userID != anonymousID {
-			combinedUserIDAnonymousID := combineUserIDAnonymousID(userID, anonymousID)
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combinedUserIDAnonymousID, idTypeIdentifiedAnonymousID)
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeIdentifiedAnonymousID)
 		}
 
 		// for alias event we will be adding previousId to identifiedAnonymousID hll,
@@ -166,7 +165,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		if eventType == eventTypeAlias {
 			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
 			if previousID != "" && previousID != userID && previousID != anonymousID {
-				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeIdentifiedAnonymousID)
+				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combineUserIdPreviousID(userID, previousID), idTypeIdentifiedAnonymousID)
 			}
 		}
 	}
@@ -262,8 +261,11 @@ func (u *UniqueUsersReporter) hllToString(hllStruct *hll.Hll) (string, error) {
 	return hex.EncodeToString(hllStruct.ToBytes()), nil
 }
 
-func combineUserIDAnonymousID(userID, anonymousID string) string {
-	return userID + ":" + anonymousID
+func combineUserIdPreviousID(userID, previousID string) string {
+	if userID < previousID {
+		return userID + ":" + previousID
+	}
+	return previousID + ":" + userID
 }
 
 func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
