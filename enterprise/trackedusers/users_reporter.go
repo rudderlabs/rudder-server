@@ -58,11 +58,12 @@ type UsersReporter interface {
 }
 
 type UniqueUsersReporter struct {
-	log         logger.Logger
-	hllSettings *hll.Settings
-	instanceID  string
-	now         func() time.Time
-	stats       stats.Stats
+	log                        logger.Logger
+	hllSettings                *hll.Settings
+	instanceID                 string
+	now                        func() time.Time
+	stats                      stats.Stats
+	shouldCombineIdentifiedIDs bool
 }
 
 func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.Stats) (*UniqueUsersReporter, error) {
@@ -79,6 +80,7 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 		now: func() time.Time {
 			return timeutil.Now()
 		},
+		shouldCombineIdentifiedIDs: conf.GetBool("TrackedUsers.shouldCombineIdentifiedIDs", false),
 	}, nil
 }
 
@@ -149,7 +151,11 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		}
 
 		if userID != "" && anonymousID != "" && userID != anonymousID {
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeIdentifiedAnonymousID)
+			identifier := anonymousID
+			if u.shouldCombineIdentifiedIDs {
+				identifier = combineUserIdentifiers(userID, anonymousID)
+			}
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], identifier, idTypeIdentifiedAnonymousID)
 		}
 
 		// for alias event we will be adding previousId to identifiedAnonymousID hll,
@@ -165,7 +171,7 @@ func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 		if eventType == eventTypeAlias {
 			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
 			if previousID != "" && previousID != userID && previousID != anonymousID {
-				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combineUserIdPreviousID(userID, previousID), idTypeIdentifiedAnonymousID)
+				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combineUserIdentifiers(userID, previousID), idTypeIdentifiedAnonymousID)
 			}
 		}
 	}
@@ -261,11 +267,11 @@ func (u *UniqueUsersReporter) hllToString(hllStruct *hll.Hll) (string, error) {
 	return hex.EncodeToString(hllStruct.ToBytes()), nil
 }
 
-func combineUserIdPreviousID(userID, previousID string) string {
-	if userID < previousID {
-		return userID + ":" + previousID
+func combineUserIdentifiers(userID1, userID2 string) string {
+	if userID1 < userID2 {
+		return userID1 + ":" + userID2
 	}
-	return previousID + ":" + userID
+	return userID2 + ":" + userID1
 }
 
 func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
