@@ -3838,132 +3838,7 @@ var _ = Describe("Static Function Tests", func() {
 	})
 
 	Context("getDiffMetrics Tests", func() {
-		It("Should match diffMetrics response for Empty Inputs", func() {
-			response := getDiffMetrics(
-				"some-string-1",
-				"some-string-2",
-				map[string]MetricMetadata{},
-				map[string]MetricMetadata{},
-				map[string]int64{},
-				map[string]int64{},
-				map[string]int64{},
-				map[string]int64{},
-				stats.NOP,
-				false,
-			)
-			Expect(len(response)).To(Equal(0))
-		})
-
 		It("Should match diffMetrics response for Valid Inputs", func() {
-			inCountMetadataMap := map[string]MetricMetadata{
-				"some-key-1": {
-					sourceID:        "some-source-id-1",
-					destinationID:   "some-destination-id-1",
-					sourceJobRunID:  "some-source-job-run-id-1",
-					sourceJobID:     "some-source-job-id-1",
-					sourceTaskRunID: "some-source-task-run-id-1",
-				},
-				"some-key-2": {
-					sourceID:        "some-source-id-2",
-					destinationID:   "some-destination-id-2",
-					sourceJobRunID:  "some-source-job-run-id-2",
-					sourceJobID:     "some-source-job-id-2",
-					sourceTaskRunID: "some-source-task-run-id-2",
-				},
-			}
-
-			inCountMap := map[string]int64{
-				"some-key-1": 3,
-				"some-key-2": 4,
-			}
-			successCountMap := map[string]int64{
-				"some-key-1": 5,
-				"some-key-2": 6,
-			}
-			failedCountMap := map[string]int64{
-				"some-key-1": 1,
-				"some-key-2": 2,
-			}
-			filteredCountMap := map[string]int64{
-				"some-key-1": 2,
-				"some-key-2": 3,
-			}
-
-			expectedResponse := []*reportingtypes.PUReportedMetric{
-				{
-					ConnectionDetails: reportingtypes.ConnectionDetails{
-						SourceID:        "some-source-id-1",
-						DestinationID:   "some-destination-id-1",
-						SourceTaskRunID: "some-source-task-run-id-1",
-						SourceJobID:     "some-source-job-id-1",
-						SourceJobRunID:  "some-source-job-run-id-1",
-					},
-					PUDetails: reportingtypes.PUDetails{
-						InPU:       "some-string-1",
-						PU:         "some-string-2",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &reportingtypes.StatusDetail{
-						Status:         "diff",
-						Count:          5,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    nil,
-					},
-				},
-				{
-					ConnectionDetails: reportingtypes.ConnectionDetails{
-						SourceID:        "some-source-id-2",
-						DestinationID:   "some-destination-id-2",
-						SourceTaskRunID: "some-source-task-run-id-2",
-						SourceJobID:     "some-source-job-id-2",
-						SourceJobRunID:  "some-source-job-run-id-2",
-					},
-					PUDetails: reportingtypes.PUDetails{
-						InPU:       "some-string-1",
-						PU:         "some-string-2",
-						TerminalPU: false,
-						InitialPU:  false,
-					},
-					StatusDetail: &reportingtypes.StatusDetail{
-						Status:         "diff",
-						Count:          7,
-						StatusCode:     0,
-						SampleResponse: "",
-						SampleEvent:    nil,
-					},
-				},
-			}
-
-			statsStore, err := memstats.New()
-			Expect(err).To(BeNil())
-			response := getDiffMetrics(
-				"some-string-1",
-				"some-string-2",
-				inCountMetadataMap,
-				map[string]MetricMetadata{},
-				inCountMap,
-				successCountMap,
-				failedCountMap,
-				filteredCountMap,
-				statsStore,
-				false,
-			)
-			Expect(statsStore.Get("processor_diff_count", stats.Tags{
-				"stage":         "some-string-2",
-				"sourceId":      "some-source-id-1",
-				"destinationId": "some-destination-id-1",
-			}).LastValue()).To(Equal(float64(5)))
-			Expect(statsStore.Get("processor_diff_count", stats.Tags{
-				"stage":         "some-string-2",
-				"sourceId":      "some-source-id-2",
-				"destinationId": "some-destination-id-2",
-			}).LastValue()).To(Equal(float64(7)))
-			assertReportMetric(expectedResponse, response)
-		})
-
-		It("Should match diffMetrics response for Valid Inputs with useOutputMetricsInDiffState enabled", func() {
 			// Case 1: Event name transformation (10 in -> 10 transformed)
 			key1Input := strings.Join([]string{
 				"source1", "dest1", "", "event1", "track",
@@ -4056,7 +3931,6 @@ var _ = Describe("Static Function Tests", func() {
 				failedCountMap,
 				filteredCountMap,
 				statsStore,
-				true,
 			)
 
 			// Sort the response for consistent testing
@@ -5235,33 +5109,6 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState 
 	Expect(status.JobState).To(Equal(expectedState))
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-}
-
-func assertReportMetric(expectedMetric, actualMetric []*reportingtypes.PUReportedMetric) {
-	sort.Slice(expectedMetric, func(i, j int) bool {
-		return expectedMetric[i].SourceID < expectedMetric[j].SourceID
-	})
-	sort.Slice(actualMetric, func(i, j int) bool {
-		return actualMetric[i].SourceID < actualMetric[j].SourceID
-	})
-	Expect(len(expectedMetric)).To(Equal(len(actualMetric)))
-	for index, value := range expectedMetric {
-		Expect(value.SourceID).To(Equal(actualMetric[index].SourceID))
-		Expect(value.DestinationID).To(Equal(actualMetric[index].DestinationID))
-		Expect(value.SourceJobID).To(Equal(actualMetric[index].SourceJobID))
-		Expect(value.SourceJobRunID).To(Equal(actualMetric[index].SourceJobRunID))
-		Expect(value.SourceTaskRunID).To(Equal(actualMetric[index].SourceTaskRunID))
-		Expect(value.PUDetails.InPU).To(Equal(actualMetric[index].InPU))
-		Expect(value.PUDetails.PU).To(Equal(actualMetric[index].PU))
-		Expect(value.PUDetails.TerminalPU).To(Equal(actualMetric[index].TerminalPU))
-		Expect(value.PUDetails.InitialPU).To(Equal(actualMetric[index].InitialPU))
-		Expect(value.StatusDetail.Status).To(Equal(actualMetric[index].StatusDetail.Status))
-		Expect(value.StatusDetail.StatusCode).To(Equal(actualMetric[index].StatusDetail.StatusCode))
-		Expect(value.StatusDetail.Count).To(Equal(actualMetric[index].StatusDetail.Count))
-		Expect(value.StatusDetail.SampleResponse).To(Equal(actualMetric[index].StatusDetail.SampleResponse))
-		Expect(value.StatusDetail.SampleEvent).To(Equal(actualMetric[index].StatusDetail.SampleEvent))
-
-	}
 }
 
 func assertDestinationTransform(
