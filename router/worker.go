@@ -264,8 +264,8 @@ func (w *worker) workLoop() {
 					w.destinationJobs = w.transform(w.routerJobs)
 				}
 				w.processDestinationJobs()
-				resetjobsBatchTimeout()
 			}
+			resetjobsBatchTimeout()
 		}
 	}
 }
