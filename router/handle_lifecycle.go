@@ -204,7 +204,7 @@ func (rt *Handle) Setup(
 	rt.limiter.stats.pickup = partition.NewStats()
 
 	rt.limiter.transform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_transform",
-		getReloadableRouterConfigInt("Limiter.transform.limit", rt.destType, 200),
+		getReloadableRouterConfigInt("Limiter.transform.limit", rt.destType, 1024),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, getRouterConfigKeys("Limiter.transform.dynamicPeriod", destType)...)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),
