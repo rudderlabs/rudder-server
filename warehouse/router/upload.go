@@ -405,23 +405,22 @@ func (job *UploadJob) run() (err error) {
 		case model.ExportedData:
 			newStatus = nextUploadState.failed
 			if err = job.exportData(); err != nil {
-				// Invalidate schema cache on sync error to prevent repeated export failures
-				// This sets the schema expiry to now, so the next attempt will fetch the latest schema
-				// Since we are not checking if the error is due to schema, to prevent unnecessary invalidations
-				// schema is being cleared only in ExportedData case and not in other cases.
-				invErr := job.whSchemaRepo.SetExpiryForDestination(job.ctx, job.warehouse.Destination.ID, job.now())
-				if invErr != nil {
-					job.logger.Errorn("Failed to invalidate schema cache", obskit.Error(err))
-				} else {
-					job.logger.Infon("Invalidated warehouse schema cache due to sync error")
-				}
+				// schema is being checked only for error in ExportedData and not in other cases
+				// to prevent unnecessary calls to warehouse
 				outdated, checkErr := job.schemaHandle.IsSchemaOutdated(job.ctx)
 				if checkErr != nil {
 					job.logger.Errorn("Error checking if warehouse schema is outdated", obskit.Error(checkErr))
 					break
 				}
 				if outdated {
-					job.logger.Infon("Warehouse schema cache was outdated. Forcing job back to waiting to regenerate load files with fresh schema.")
+					// This sets the schema expiry to now, so the next attempt will fetch the latest schema
+					invErr := job.whSchemaRepo.SetExpiryForDestination(job.ctx, job.warehouse.Destination.ID, job.now())
+					if invErr != nil {
+						job.logger.Errorn("Failed to invalidate schema cache", obskit.Error(err))
+					} else {
+						job.logger.Infon("Invalidated warehouse schema cache due to sync error")
+					}
+					job.logger.Infon("Warehouse schema cache is outdated. Forcing job back to waiting to regenerate load files with fresh schema.")
 					newStatus = model.Waiting
 					break
 				}
