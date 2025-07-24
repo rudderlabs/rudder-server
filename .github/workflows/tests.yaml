@@ -23,12 +23,31 @@ jobs:
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Create image cache dir
+        run: mkdir -p ~/image-cache
 
+      - name: Cache Postgres 17-alpine Docker image
+        id: cache-postgres-integration
+        uses: actions/cache@v4
+        with:
+          path: ~/image-cache/postgres-17-alpine.tar
+          key: postgres-17-alpine-image-${{ runner.os }}
+
+      - name: Pull and save Postgres 17-alpine image if not cached
+        if: steps.cache-postgres-integration.outputs.cache-hit != 'true'
+        run: |
+          docker pull postgres:17-alpine
+          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+
+      - name: Load Postgres 17-alpine image from cache
+        if: steps.cache-postgres-integration.outputs.cache-hit == 'true'
+        run: docker load -i ~/image-cache/postgres-17-alpine.tar
       - name: enterprise
         if: matrix.FEATURES == 'enterprise'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
@@ -90,6 +109,25 @@ jobs:
           echo "Setting Redshift Ginkgo AWS Credentials..."
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+      - name: Create image cache dir
+        run: mkdir -p ~/image-cache
+
+      - name: Cache Postgres 17-alpine Docker image
+        id: cache-postgres-warehouse
+        uses: actions/cache@v4
+        with:
+          path: ~/image-cache/postgres-17-alpine.tar
+          key: postgres-17-alpine-image-${{ runner.os }}
+
+      - name: Pull and save Postgres 17-alpine image if not cached
+        if: steps.cache-postgres-warehouse.outputs.cache-hit != 'true'
+        run: |
+          docker pull postgres:17-alpine
+          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+
+      - name: Load Postgres 17-alpine image from cache
+        if: steps.cache-postgres-warehouse.outputs.cache-hit == 'true'
+        run: docker load -i ~/image-cache/postgres-17-alpine.tar
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
         run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
         env:
@@ -147,6 +185,25 @@ jobs:
           echo "Setting Redshift Ginkgo AWS Credentials..."
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+      - name: Create image cache dir
+        run: mkdir -p ~/image-cache
+
+      - name: Cache Postgres 17-alpine Docker image
+        id: cache-postgres-warehouse-v2
+        uses: actions/cache@v4
+        with:
+          path: ~/image-cache/postgres-17-alpine.tar
+          key: postgres-17-alpine-image-${{ runner.os }}
+
+      - name: Pull and save Postgres 17-alpine image if not cached
+        if: steps.cache-postgres-warehouse-v2.outputs.cache-hit != 'true'
+        run: |
+          docker pull postgres:17-alpine
+          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+
+      - name: Load Postgres 17-alpine image from cache
+        if: steps.cache-postgres-warehouse-v2.outputs.cache-hit == 'true'
+        run: docker load -i ~/image-cache/postgres-17-alpine.tar
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
         run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
         env:
@@ -179,6 +236,25 @@ jobs:
           go-version-file: 'go.mod'
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
+      - name: Create image cache dir
+        run: mkdir -p ~/image-cache
+
+      - name: Cache Postgres 17-alpine Docker image
+        id: cache-postgres-unit
+        uses: actions/cache@v4
+        with:
+          path: ~/image-cache/postgres-17-alpine.tar
+          key: postgres-17-alpine-image-${{ runner.os }}
+
+      - name: Pull and save Postgres 17-alpine image if not cached
+        if: steps.cache-postgres-unit.outputs.cache-hit != 'true'
+        run: |
+          docker pull postgres:17-alpine
+          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+
+      - name: Load Postgres 17-alpine image from cache
+        if: steps.cache-postgres-unit.outputs.cache-hit == 'true'
+        run: docker load -i ~/image-cache/postgres-17-alpine.tar
       - name: tests
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
@@ -237,6 +313,25 @@ jobs:
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Create image cache dir
+        run: mkdir -p ~/image-cache
+
+      - name: Cache Postgres 17-alpine Docker image
+        id: cache-postgres-package-unit
+        uses: actions/cache@v4
+        with:
+          path: ~/image-cache/postgres-17-alpine.tar
+          key: postgres-17-alpine-image-${{ runner.os }}
+
+      - name: Pull and save Postgres 17-alpine image if not cached
+        if: steps.cache-postgres-package-unit.outputs.cache-hit != 'true'
+        run: |
+          docker pull postgres:17-alpine
+          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+
+      - name: Load Postgres 17-alpine image from cache
+        if: steps.cache-postgres-package-unit.outputs.cache-hit == 'true'
+        run: docker load -i ~/image-cache/postgres-17-alpine.tar
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}

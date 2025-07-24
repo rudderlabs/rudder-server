@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   primary:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       - POSTGRES_DB=rudderdb
       - POSTGRES_PASSWORD=rudder-password
@@ -16,7 +16,7 @@ services:
       interval: 1s
       retries: 25
   standby:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     environment:
       - POSTGRES_DB=rudderdb
       - POSTGRES_PASSWORD=rudder-password
