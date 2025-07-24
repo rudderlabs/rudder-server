@@ -62,8 +62,11 @@ type workerJob struct {
 }
 
 func (w *worker) workLoop() {
+	jobsBatchTimeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
+	resetjobsBatchTimeout := func() {
+		jobsBatchTimeout = time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
+	}
 	for {
-		timeout := time.After(w.rt.reloadableConfig.jobsBatchTimeout.Load())
 		select {
 		case message, hasMore := <-w.input:
 			if !hasMore {
@@ -227,6 +230,7 @@ func (w *worker) workLoop() {
 				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
 					w.destinationJobs = w.batchTransform(w.routerJobs)
 					w.processDestinationJobs()
+					resetjobsBatchTimeout()
 				}
 			} else if parameters.TransformAt == "router" {
 				w.routerJobs = append(w.routerJobs, types.RouterJobT{
@@ -239,6 +243,7 @@ func (w *worker) workLoop() {
 				if len(w.routerJobs) >= w.rt.reloadableConfig.noOfJobsToBatchInAWorker.Load() {
 					w.destinationJobs = w.transform(w.routerJobs)
 					w.processDestinationJobs()
+					resetjobsBatchTimeout()
 				}
 			} else {
 				w.destinationJobs = append(w.destinationJobs, types.DestinationJobT{
@@ -248,9 +253,10 @@ func (w *worker) workLoop() {
 					JobMetadataArray: []types.JobMetadataT{jobMetadata},
 				})
 				w.processDestinationJobs()
+				resetjobsBatchTimeout()
 			}
 
-		case <-timeout:
+		case <-jobsBatchTimeout:
 			if len(w.routerJobs) > 0 {
 				if w.rt.enableBatching {
 					w.destinationJobs = w.batchTransform(w.routerJobs)
@@ -258,6 +264,7 @@ func (w *worker) workLoop() {
 					w.destinationJobs = w.transform(w.routerJobs)
 				}
 				w.processDestinationJobs()
+				resetjobsBatchTimeout()
 			}
 		}
 	}
