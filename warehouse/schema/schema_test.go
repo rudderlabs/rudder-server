@@ -1417,7 +1417,7 @@ func TestSchema(t *testing.T) {
 		initialSchema := model.Schema{
 			"table1": {
 				"column1": "string",
-				"column2": "int",
+				"column3": "int",
 			},
 		}
 		err = sch1.UpdateSchema(ctx, initialSchema)
@@ -1439,7 +1439,7 @@ func TestSchema(t *testing.T) {
 
 		// Verify schema is same as connection 1
 		require.False(t, sch2.IsSchemaEmpty(ctx))
-		require.Equal(t, initialSchema["table1"], sch1.GetTableSchema(ctx, "table1"))
+		require.Equal(t, initialSchema["table1"], sch2.GetTableSchema(ctx, "table1"))
 
 		// Save new schema for connection 2
 		table2Schema := model.TableSchema{
