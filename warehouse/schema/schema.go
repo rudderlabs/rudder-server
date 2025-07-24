@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"sync"
@@ -62,6 +63,8 @@ type Handler interface {
 	// Computes the difference between the existing schema of a table and a newly provided schema.
 	// Returns details of added and modified columns
 	TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error)
+	// Checks if the cached schema is outdated compared to the warehouse
+	IsSchemaOutdated(ctx context.Context) (bool, error)
 }
 
 type schema struct {
@@ -214,6 +217,28 @@ func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFile
 	consolidatedSchema = enhanceSchemaWithIDResolution(consolidatedSchema, sh.isIDResolutionEnabled(), sh.warehouse.Type)
 
 	return consolidatedSchema, nil
+}
+
+func (sh *schema) IsSchemaOutdated(ctx context.Context) (bool, error) {
+	sh.cachedSchemaMu.RLock()
+	original := make(model.Schema, len(sh.cachedSchema))
+	for k, v := range sh.cachedSchema {
+		cols := make(model.TableSchema, len(v))
+		for col, typ := range v {
+			cols[col] = typ
+		}
+		original[k] = cols
+	}
+	sh.cachedSchemaMu.RUnlock()
+
+	if err := sh.fetchSchemaFromWarehouse(ctx); err != nil {
+		return false, fmt.Errorf("fetching schema from warehouse for comparison: %w", err)
+	}
+
+	sh.cachedSchemaMu.RLock()
+	outdated := !reflect.DeepEqual(original, sh.cachedSchema)
+	sh.cachedSchemaMu.RUnlock()
+	return outdated, nil
 }
 
 func (sh *schema) isIDResolutionEnabled() bool {
