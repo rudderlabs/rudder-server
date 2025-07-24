@@ -1009,6 +1009,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 type mockManager struct {
 	manager.Manager
 	isSchemaOutdated bool
+	fetchSchemaCount int
 }
 
 func (m *mockManager) Setup(ctx context.Context, warehouse model.Warehouse, uploader warehouseutils.Uploader) error {
@@ -1020,16 +1021,16 @@ func (m *mockManager) CreateTable(ctx context.Context, tableName string, schema 
 }
 
 func (m *mockManager) FetchSchema(ctx context.Context) (model.Schema, error) {
-	var colType string
-	if m.isSchemaOutdated {
+	m.fetchSchemaCount++
+	// For the first call in the outdated case, we expect the table to not exist in the warehouse
+	// So we return an empty schema. After that we are returning a non-empty schema to simulate the diff
+	if m.isSchemaOutdated && m.fetchSchemaCount > 1 {
 		return model.Schema{
 			"test_table": model.TableSchema{
-				"id": colType,
+				"id": "int",
 			},
 		}, nil
 	}
-	// In this test case based on the conditions, the local schema is not being populated anywhere
-	// So in order to match the schema, we return an empty schema which is the initial schema
 	return model.Schema{}, nil
 }
 
