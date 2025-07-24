@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.1](https://github.com/rudderlabs/rudder-server/compare/v1.55.0...v1.55.1) (2025-07-24)
+
+
+### Bug Fixes
+
+* **router:** worker's batch timeout is getting resetted after new job arrival ([#6167](https://github.com/rudderlabs/rudder-server/issues/6167)) ([5c7e8d4](https://github.com/rudderlabs/rudder-server/commit/5c7e8d419abd038da0b4326d3e7b74752cb45e30))
+
 ## [1.55.0](https://github.com/rudderlabs/rudder-server/compare/v1.53.0...v1.55.0) (2025-07-22)
 
 
