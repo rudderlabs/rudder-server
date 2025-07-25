@@ -26,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -70,7 +69,6 @@ func Run(ctx context.Context) error {
 	misc.Init()
 	diagnostics.Init()
 	backendconfig.Init()
-	oauth.Init() // initialise oauth
 
 	if err := backendconfig.Setup(nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
@@ -88,13 +86,9 @@ func Run(ctx context.Context) error {
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	identity := backendconfig.DefaultBackendConfig.Identity()
 	dest.Start(ctx)
-	oauthV2Enabled := config.GetBoolVar(false, "RegulationWorker.oauthV2Enabled")
-	pkgLogger.Infon("[regulationApi]", logger.NewBoolField("oauthV2Enabled", oauthV2Enabled))
 	httpTimeout := config.GetDurationVar(60, time.Second, "HttpClient.regulationWorker.regulationManager.timeout")
-	// setting up oauth
-	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
-	apiManagerHttpClient := createHTTPClient(config, httpTimeout, oauthV2Enabled)
+	apiManagerHttpClient := createHTTPClient(config, httpTimeout)
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
@@ -112,8 +106,6 @@ func Run(ctx context.Context) error {
 			&api.APIManager{
 				Client:                       apiManagerHttpClient,
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
-				OAuth:                        OAuth,
-				IsOAuthV2Enabled:             oauthV2Enabled,
 				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 				TransformerFeaturesService: transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
 					PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
@@ -141,7 +133,7 @@ func withLoop(svc service.JobSvc) *service.Looper {
 	}
 }
 
-func createHTTPClient(conf *config.Config, httpTimeout time.Duration, oauthV2Enabled bool) *http.Client {
+func createHTTPClient(conf *config.Config, httpTimeout time.Duration) *http.Client {
 	cli := &http.Client{
 		Timeout: httpTimeout,
 		Transport: &http.Transport{
@@ -151,9 +143,7 @@ func createHTTPClient(conf *config.Config, httpTimeout time.Duration, oauthV2Ena
 			IdleConnTimeout:     300 * time.Second,
 		},
 	}
-	if !oauthV2Enabled {
-		return cli
-	}
+
 	cache := oauthv2.NewCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	optionalArgs := oauthv2http.HttpClientOptionalArgs{
@@ -163,7 +153,7 @@ func createHTTPClient(conf *config.Config, httpTimeout time.Duration, oauthV2Ena
 	}
 	return oauthv2http.NewOAuthHttpClient(
 		cli,
-		common.RudderFlow(oauth.RudderFlow_Delete),
+		common.RudderFlowDelete,
 		&cache, backendconfig.DefaultBackendConfig,
 		api.GetAuthErrorCategoryFromResponse, &optionalArgs,
 	)
