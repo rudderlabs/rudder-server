@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_kinesis "github.com/rudderlabs/rudder-server/mocks/services/streammanager/kinesis_v2"
+	mock_kinesis "github.com/rudderlabs/rudder-server/mocks/services/streammanager/kinesis"
 
 	"github.com/stretchr/testify/assert"
 
@@ -44,7 +44,7 @@ func TestNewProducer(t *testing.T) {
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &KinesisProducerV2{}
+	producer := &KinesisProducer{}
 	sampleJsonPayload := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -64,8 +64,8 @@ var validDestinationConfigNotUseMessageID = Config{
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_kinesis.NewMockKinesisClientV2(ctrl)
-	producer := &KinesisProducerV2{client: mockClient}
+	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
+	producer := &KinesisProducer{client: mockClient}
 
 	// Invalid destination config
 	sampleJsonPayload := []byte("{}")
@@ -91,8 +91,8 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_kinesis.NewMockKinesisClientV2(ctrl)
-	producer := &KinesisProducerV2{client: mockClient}
+	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
+	producer := &KinesisProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
