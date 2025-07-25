@@ -1577,7 +1577,7 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	// pulls an image, creates a container based on it and runs it
 	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
-		Tag:        "15-alpine",
+		Tag:        "17-alpine",
 		NetworkID:  networkId,
 		Hostname:   hostname,
 		Env: []string{
