@@ -13,6 +13,8 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -54,7 +56,7 @@ type TableUploadSetOptions struct {
 
 func NewTableUploads(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *TableUploads {
 	r := &TableUploads{
-		repo:                       &repo{db: db, now: timeutil.Now},
+		repo:                       &repo{db: db, now: timeutil.Now, statsFactory: stats.NOP},
 		queryLoadFilesWithUploadID: conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable"),
 	}
 	for _, opt := range opts {
@@ -68,6 +70,8 @@ func (tu *TableUploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx)
 }
 
 func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
+	defer tu.DeferActionTimerSimple("insert")()
+
 	return tu.repo.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO `+tableUploadTableName+` (
@@ -96,6 +100,8 @@ func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames [
 }
 
 func (tu *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]model.TableUpload, error) {
+	defer tu.DeferActionTimerSimple("get_by_upload_id")()
+
 	query := `SELECT ` + tableUploadColumns + ` FROM ` + tableUploadTableName + `
 	WHERE
 		wh_upload_id = $1;`
@@ -114,6 +120,8 @@ func (tu *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]mo
 }
 
 func (tu *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID int64, tableName string) (model.TableUpload, error) {
+	defer tu.DeferActionTimerSimple("get_by_upload_id_and_table_name")()
+
 	query := `SELECT ` + tableUploadColumns + ` FROM ` + tableUploadTableName + `
 	WHERE
 		wh_upload_id = $1 AND
@@ -190,6 +198,8 @@ func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
 // PopulateTotalEventsWithTx Update the 'total_events' field in the Table Uploads table
 // by summing the 'total_events' from load files associated with specific staging file IDs.
 func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string, stagingFileIDs []int64) error {
+	defer tu.DeferActionTimerSimple("populate_total_events_with_tx")()
+
 	var subQuery string
 	var queryArgs []any
 	if tu.queryLoadFilesWithUploadID.Load() {
@@ -269,6 +279,8 @@ func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmi
 }
 
 func (tu *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int64, skipTables []string) (int64, error) {
+	defer tu.DeferActionTimerSimple("total_exported_events")()
+
 	var (
 		count sql.NullInt64
 		err   error
@@ -303,6 +315,8 @@ func (tu *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int64,
 }
 
 func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName string, options TableUploadSetOptions) error {
+	defer tu.DeferActionTimerSimple("set")()
+
 	var (
 		query     string
 		queryArgs []any
@@ -377,6 +391,8 @@ func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName strin
 }
 
 func (tu *TableUploads) ExistsForUploadID(ctx context.Context, uploadId int64) (bool, error) {
+	defer tu.DeferActionTimerSimple("exists_for_upload_id")()
+
 	var (
 		count int64
 		err   error
@@ -399,6 +415,8 @@ func (tu *TableUploads) ExistsForUploadID(ctx context.Context, uploadId int64) (
 }
 
 func (tu *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]model.TableUploadInfo, error) {
+	defer tu.DeferActionTimerSimple("syncs_info")()
+
 	tableUploads, err := tu.GetByUploadID(ctx, uploadID)
 	if err != nil {
 		return nil, fmt.Errorf("table uploads for upload id: %w", err)
@@ -429,6 +447,11 @@ func (tu *TableUploads) GetByJobRunTaskRun(
 	jobRunID,
 	taskRunID string,
 ) ([]model.TableUpload, error) {
+	defer tu.DeferActionTimer("get_by_job_run_task_run", stats.Tags{
+		"sourceId":      sourceID,
+		"destinationId": destinationID,
+	})()
+
 	rows, err := tu.db.QueryContext(ctx, `
 		SELECT
 			`+tableUploadColumns+`

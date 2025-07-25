@@ -14,10 +14,13 @@ import (
 
 	"github.com/ory/dockertest/v3"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -189,7 +192,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`"Invalid payload"`)))
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.InsertJobHandler(resp, req)
 		require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -201,7 +204,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/v1/warehouse/jobs", bytes.NewReader([]byte(`{}`)))
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.InsertJobHandler(resp, req)
 		require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -221,7 +224,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 			`)))
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.InsertJobHandler(resp, req)
 		require.Equal(t, http.StatusOK, resp.Code)
 
@@ -283,7 +286,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status", nil)
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.StatusJobHandler(resp, req)
 		require.Equal(t, http.StatusBadRequest, resp.Code)
 
@@ -304,7 +307,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.StatusJobHandler(resp, req)
 		require.Equal(t, http.StatusOK, resp.Code)
 
@@ -332,7 +335,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.StatusJobHandler(resp, req)
 		require.Equal(t, http.StatusOK, resp.Code)
 
@@ -353,7 +356,7 @@ func TestManager_StatusJobHandler(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/v1/warehouse/jobs/status?"+qp.Encode(), nil)
 		resp := httptest.NewRecorder()
 
-		sourceManager := New(config.New(), logger.NOP, db, &mockPublisher{})
+		sourceManager := New(config.New(), logger.NOP, stats.NOP, db, &mockPublisher{})
 		sourceManager.StatusJobHandler(resp, req)
 		require.Equal(t, http.StatusNotFound, resp.Code)
 

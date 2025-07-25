@@ -6,20 +6,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
 
 type repo struct {
-	db  *sqlmiddleware.DB
+	db           *sqlmiddleware.DB
+	statsFactory stats.Stats
+
 	now func() time.Time
-}
-
-type Opt func(*repo)
-
-func WithNow(now func() time.Time) Opt {
-	return func(r *repo) {
-		r.now = now
-	}
 }
 
 func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
@@ -40,17 +36,47 @@ func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) e
 	return nil
 }
 
-type UpdateField func(v interface{}) UpdateKeyValue
+func (r *repo) DeferActionTimer(action string, extraTags stats.Tags) func() {
+	// Define a single stat with a more descriptive name
+	statName := "warehouse_repo_query_duration_seconds"
 
-type UpdateKeyValue interface {
-	key() string
-	value() interface{}
+	// Use action as a tag
+	tags := stats.Tags{"action": action, "repoType": r.getRepoType()}
+
+	// Merge any additional tags
+	for k, v := range extraTags {
+		tags[k] = v
+	}
+
+	// Record the duration with the consolidated stat and action tag
+	return r.statsFactory.NewTaggedStat(statName, stats.TimerType, tags).RecordDuration()
 }
 
-type keyValue struct {
-	k string
-	v interface{}
+func (r *repo) DeferActionTimerSimple(action string) func() {
+	// Define a single stat with a more descriptive name
+	statName := "warehouse_repo_query_duration_seconds"
+
+	// Use action and repoType as tags
+	tags := stats.Tags{"action": action, "repoType": r.getRepoType()}
+
+	// Record the duration with the consolidated stat and action tag
+	return r.statsFactory.NewTaggedStat(statName, stats.TimerType, tags).RecordDuration()
 }
 
-func (u keyValue) key() string        { return u.k }
-func (u keyValue) value() interface{} { return u.v }
+func (r *repo) getRepoType() string {
+	switch any(r).(type) {
+	case *StagingFiles:
+		return stagingTableName
+	case *WHSchema:
+		return whSchemaTableName
+	case *Uploads:
+		return uploadsTableName
+	case *LoadFiles:
+		return loadTableName
+	case *TableUploads:
+		return tableUploadTableName
+	case *Source:
+		return sourceJobTableName
+	}
+	return "repo"
+}

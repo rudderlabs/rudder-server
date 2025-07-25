@@ -185,6 +185,7 @@ func TestHTTPApi(t *testing.T) {
 	sourcesManager := source.New(
 		c,
 		logger.NOP,
+		stats.NOP,
 		db,
 		n,
 	)

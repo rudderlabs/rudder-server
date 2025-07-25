@@ -12,9 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -98,7 +101,7 @@ func TestSource(t *testing.T) {
 		publishResponse <- response
 		close(publishResponse)
 
-		m := New(config.New(), logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(config.New(), logger.NOP, stats.NOP, db, newMockPublisher(publishResponse, nil))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -118,7 +121,7 @@ func TestSource(t *testing.T) {
 
 		sourceJobs := createSourceJob(sr, sourceJobRunID, sourceTaskRunID, "test_table")
 
-		m := New(config.New(), logger.NOP, db, newMockPublisher(nil, errors.New("test error")))
+		m := New(config.New(), logger.NOP, stats.NOP, db, newMockPublisher(nil, errors.New("test error")))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -147,7 +150,7 @@ func TestSource(t *testing.T) {
 		publishResponse <- response
 		close(publishResponse)
 
-		m := New(config.New(), logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(config.New(), logger.NOP, stats.NOP, db, newMockPublisher(publishResponse, nil))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -177,7 +180,7 @@ func TestSource(t *testing.T) {
 		c.Set("Warehouse.jobs.processingTimeout", "1s")
 		c.Set("Warehouse.jobs.processingSleepInterval", "1s")
 
-		m := New(c, logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(c, logger.NOP, stats.NOP, db, newMockPublisher(publishResponse, nil))
 		require.Error(t, m.Run(ctx))
 
 		job, err := m.sourceRepo.GetByJobRunTaskRun(ctx, sourceJobRunID, sourceTaskRunID)
@@ -232,7 +235,7 @@ func TestSource(t *testing.T) {
 		c.Set("Warehouse.jobs.processingSleepInterval", "1ms")
 		c.Set("Warehouse.jobs.maxAttemptsPerJob", -1)
 
-		m := New(c, logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(c, logger.NOP, stats.NOP, db, newMockPublisher(publishResponse, nil))
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -326,7 +329,7 @@ func TestSource(t *testing.T) {
 		c.Set("Warehouse.jobs.processingSleepInterval", "1ms")
 		c.Set("Warehouse.jobs.maxAttemptsPerJob", 5)
 
-		m := New(c, logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(c, logger.NOP, stats.NOP, db, newMockPublisher(publishResponse, nil))
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -425,7 +428,7 @@ func TestSource(t *testing.T) {
 		c.Set("Warehouse.jobs.processingSleepInterval", "1ms")
 		c.Set("Warehouse.jobs.maxAttemptsPerJob", 7)
 
-		m := New(c, logger.NOP, db, newMockPublisher(publishResponse, nil))
+		m := New(c, logger.NOP, stats.NOP, db, newMockPublisher(publishResponse, nil))
 
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()

@@ -141,8 +141,8 @@ func New(
 	r.logger.Infof("WH: Warehouse Router started: %s", destType)
 
 	r.db = db
-	r.stagingRepo = repo.NewStagingFiles(db, conf)
-	r.uploadRepo = repo.NewUploads(db)
+	r.stagingRepo = repo.NewStagingFiles(db, conf, repo.WithStats(r.statsFactory))
+	r.uploadRepo = repo.NewUploads(db, repo.WithStats(r.statsFactory))
 
 	r.notifier = notifier
 	r.tenantManager = tenantManager
@@ -167,7 +167,7 @@ func New(
 			Logger:             r.logger.Child("loadfile"),
 			Notifier:           r.notifier,
 			StageRepo:          r.stagingRepo,
-			LoadRepo:           repo.NewLoadFiles(db, r.conf),
+			LoadRepo:           repo.NewLoadFiles(db, r.conf, repo.WithStats(r.statsFactory)),
 			ControlPlaneClient: controlPlaneClient,
 		},
 		encodingFactory: encodingFactory,
