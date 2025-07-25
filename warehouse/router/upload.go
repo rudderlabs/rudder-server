@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -187,9 +188,9 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		statsFactory:         f.statsFactory,
 		tableUploadsRepo:     repo.NewTableUploads(f.db, f.conf),
 		uploadsRepo:          repo.NewUploads(f.db),
-		stagingFileRepo:      repo.NewStagingFiles(f.db),
+		stagingFileRepo:      repo.NewStagingFiles(f.db, f.conf),
 		loadFilesRepo:        repo.NewLoadFiles(f.db, f.conf),
-		whSchemaRepo:         repo.NewWHSchemas(f.db),
+		whSchemaRepo:         repo.NewWHSchemas(f.db, f.conf),
 		upload:               dto.Upload,
 		warehouse:            dto.Warehouse,
 		stagingFiles:         dto.StagingFiles,
@@ -339,8 +340,8 @@ func (job *UploadJob) run() (err error) {
 		job.logger.Child("warehouse"),
 		job.statsFactory,
 		whManager,
-		repo.NewWHSchemas(job.db),
-		repo.NewStagingFiles(job.db),
+		repo.NewWHSchemas(job.db, job.conf),
+		repo.NewStagingFiles(job.db, job.conf),
 	)
 	if err != nil {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
@@ -404,6 +405,25 @@ func (job *UploadJob) run() (err error) {
 		case model.ExportedData:
 			newStatus = nextUploadState.failed
 			if err = job.exportData(); err != nil {
+				// schema is being checked only for error in ExportedData and not in other cases
+				// to prevent unnecessary calls to warehouse
+				outdated, checkErr := job.schemaHandle.IsSchemaOutdated(job.ctx)
+				if checkErr != nil {
+					job.logger.Errorn("Error checking if warehouse schema is outdated", obskit.Error(checkErr))
+					break
+				}
+				if outdated {
+					// This sets the schema expiry to now, so the next attempt will fetch the latest schema
+					invErr := job.whSchemaRepo.SetExpiryForDestination(job.ctx, job.warehouse.Destination.ID, job.now())
+					if invErr != nil {
+						job.logger.Errorn("Failed to invalidate schema cache", obskit.Error(err))
+					} else {
+						job.logger.Infon("Invalidated warehouse schema cache due to sync error")
+					}
+					job.logger.Infon("Warehouse schema cache is outdated. Forcing job back to waiting to regenerate load files with fresh schema.")
+					newStatus = model.Waiting
+					break
+				}
 				break
 			}
 			if err = job.cleanupObjectStorageFiles(); err != nil {

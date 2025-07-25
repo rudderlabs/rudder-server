@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"sync"
@@ -35,7 +36,7 @@ var deprecatedColumnsRegex = regexp.MustCompile(
 
 type schemaRepo interface {
 	GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error)
-	Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error)
+	Insert(ctx context.Context, whSchema *model.WHSchema) error
 }
 
 type stagingFileRepo interface {
@@ -62,6 +63,8 @@ type Handler interface {
 	// Computes the difference between the existing schema of a table and a newly provided schema.
 	// Returns details of added and modified columns
 	TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error)
+	// Checks if the cached schema is outdated compared to the warehouse
+	IsSchemaOutdated(ctx context.Context) (bool, error)
 }
 
 type schema struct {
@@ -123,7 +126,11 @@ func New(
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
 	if whSchema.Schema == nil {
-		sh.cachedSchema = model.Schema{}
+		// No schema found in DB, try fetching from warehouse
+		err := sh.fetchSchemaFromWarehouse(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("fetching schema from warehouse: %w", err)
+		}
 		return sh, nil
 	}
 	if whSchema.ExpiresAt.After(sh.now()) {
@@ -212,6 +219,28 @@ func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFile
 	return consolidatedSchema, nil
 }
 
+func (sh *schema) IsSchemaOutdated(ctx context.Context) (bool, error) {
+	sh.cachedSchemaMu.RLock()
+	original := make(model.Schema, len(sh.cachedSchema))
+	for k, v := range sh.cachedSchema {
+		cols := make(model.TableSchema, len(v))
+		for col, typ := range v {
+			cols[col] = typ
+		}
+		original[k] = cols
+	}
+	sh.cachedSchemaMu.RUnlock()
+
+	if err := sh.fetchSchemaFromWarehouse(ctx); err != nil {
+		return false, fmt.Errorf("fetching schema from warehouse for comparison: %w", err)
+	}
+
+	sh.cachedSchemaMu.RLock()
+	outdated := !reflect.DeepEqual(original, sh.cachedSchema)
+	sh.cachedSchemaMu.RUnlock()
+	return outdated, nil
+}
+
 func (sh *schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
@@ -230,14 +259,16 @@ func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema) er
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 
 	expiresAt := sh.now().Add(sh.ttlInMinutes)
-	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		SourceID:        sh.warehouse.Source.ID,
-		Namespace:       sh.warehouse.Namespace,
-		DestinationID:   sh.warehouse.Destination.ID,
-		DestinationType: sh.warehouse.Type,
-		Schema:          updatedSchema,
-		ExpiresAt:       expiresAt,
-	})
+	err = sh.schemaRepo.Insert(ctx,
+		&model.WHSchema{
+			SourceID:        sh.warehouse.Source.ID,
+			Namespace:       sh.warehouse.Namespace,
+			DestinationID:   sh.warehouse.Destination.ID,
+			DestinationType: sh.warehouse.Type,
+			Schema:          updatedSchema,
+			ExpiresAt:       expiresAt,
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("inserting schema: %w", err)
 	}

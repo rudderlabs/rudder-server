@@ -19,12 +19,12 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
@@ -171,7 +171,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 			jd := startTestJobsDB(t)
 			defer jd.TearDown()
 			var wg sync.WaitGroup
-			bgGroups := make([]*kitsync.ErrGroup, 10)
+			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
 			for i := 0; i < 10; i++ {
 				idx := i
@@ -370,7 +370,7 @@ func TestRefreshDSList(t *testing.T) {
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
 	require.NoError(t, jobsDB.WithTx(func(tx *Tx) error {
-		return jobsDB.createDSInTx(tx, newDataSet(prefix, "2"))
+		return jobsDB.createDSInTx(context.Background(), tx, newDataSet(prefix, "2"))
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {

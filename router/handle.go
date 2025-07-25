@@ -15,6 +15,7 @@ import (
 
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -111,7 +112,7 @@ type Handle struct {
 	throttlingErrorStat            stats.Measurement
 	throttledStat                  stats.Measurement
 	isolationStrategy              isolation.Strategy
-	backgroundGroup                *kitsync.ErrGroup
+	backgroundGroup                *errgroup.Group
 	backgroundCtx                  context.Context
 	backgroundCancel               context.CancelFunc
 	backgroundWait                 func() error

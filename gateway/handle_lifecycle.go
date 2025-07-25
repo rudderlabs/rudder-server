@@ -36,7 +36,6 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -195,7 +194,7 @@ func (gw *Handle) Setup(
 	var leakyUploaderBuffer chan msgToUpload
 
 	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 	gw.backgroundCancel = cancel
 	gw.backgroundWait = func() error {
 		err := g.Wait()

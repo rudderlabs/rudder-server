@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 
 	"github.com/samber/lo"
@@ -181,7 +183,7 @@ func (rt *Handle) Setup(
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	g, ctx := kitsync.ErrGroupWithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 
 	rt.backgroundCtx = ctx
 	rt.backgroundGroup = g
@@ -202,7 +204,7 @@ func (rt *Handle) Setup(
 	rt.limiter.stats.pickup = partition.NewStats()
 
 	rt.limiter.transform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "rt_transform",
-		getReloadableRouterConfigInt("Limiter.transform.limit", rt.destType, 200),
+		getReloadableRouterConfigInt("Limiter.transform.limit", rt.destType, 1024),
 		stats.Default,
 		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, getRouterConfigKeys("Limiter.transform.dynamicPeriod", destType)...)),
 		kitsync.WithLimiterTags(map[string]string{"destType": rt.destType}),

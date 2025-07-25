@@ -104,7 +104,7 @@ type Handle struct {
 
 	// state
 
-	backgroundGroup  *kitsync.ErrGroup
+	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
 	backgroundCancel context.CancelFunc
 	backgroundWait   func() error

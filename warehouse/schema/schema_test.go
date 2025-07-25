@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -46,30 +47,37 @@ func (m *mockSchemaRepo) GetForNamespace(_ context.Context, destinationID, names
 	return schema, nil
 }
 
-func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) (int64, error) {
+func (m *mockSchemaRepo) Insert(_ context.Context, schema *model.WHSchema) error {
 	key := schemaKey(schema.DestinationID, schema.Namespace)
 
 	m.mu.Lock()
 	m.schemaMap[key] = *schema
 	m.mu.Unlock()
 
-	return 0, nil
+	return nil
 }
 
-type mockFetchSchemaRepo struct{}
+type mockFetchSchemaRepo struct {
+	err error
+}
+
+var mockFetchSchema = model.Schema{
+	"table1": {
+		"column1": "string",
+		"column2": "int",
+	},
+	"table2": {
+		"column11": "string",
+		"column12": "int",
+		"column13": "int",
+	},
+}
 
 func (m *mockFetchSchemaRepo) FetchSchema(ctx context.Context) (model.Schema, error) {
-	return model.Schema{
-		"table1": {
-			"column1": "string",
-			"column2": "int",
-		},
-		"table2": {
-			"column11": "string",
-			"column12": "int",
-			"column13": "int",
-		},
-	}, nil
+	if m.err != nil {
+		return nil, m.err
+	}
+	return mockFetchSchema, nil
 }
 
 type mockStagingFileRepo struct {
@@ -108,7 +116,12 @@ func TestSchema(t *testing.T) {
 
 	t.Run("IsSchemaEmpty", func(t *testing.T) {
 		sch := newSchema(t, warehouse, &mockSchemaRepo{
-			schemaMap: make(map[string]model.WHSchema),
+			schemaMap: map[string]model.WHSchema{
+				"dest_id_namespace": {
+					Schema:    model.Schema{},
+					ExpiresAt: timeutil.Now().Add(10 * time.Minute),
+				},
+			},
 		})
 		require.True(t, sch.IsSchemaEmpty(ctx))
 		err := sch.UpdateSchema(ctx, model.Schema{
@@ -1349,7 +1362,7 @@ func TestSchema(t *testing.T) {
 
 	t.Run("SchemaOperationsAcrossConnections", func(t *testing.T) {
 		db, ctx := setupDB(t), context.Background()
-		schemaRepo := repo.NewWHSchemas(db)
+		schemaRepo := repo.NewWHSchemas(db, config.New())
 
 		// Create initial schema for connection 1
 		warehouse1 := model.Warehouse{
@@ -1410,6 +1423,72 @@ func TestSchema(t *testing.T) {
 		require.False(t, sch1_new.IsSchemaEmpty(ctx))
 		require.Equal(t, initialSchema["table1"], sch1_new.GetTableSchema(ctx, "table1"))
 		require.Equal(t, table2Schema, sch1_new.GetTableSchema(ctx, "table2"))
+	})
+
+	t.Run("schema initialization", func(t *testing.T) {
+		t.Run("DB returns no schema, warehouse fetch succeeds", func(t *testing.T) {
+			schemaRepo := &mockSchemaRepo{schemaMap: make(map[string]model.WHSchema)}
+			sh := newSchema(t, warehouse, schemaRepo)
+			require.False(t, sh.IsSchemaEmpty(context.Background()))
+			tbl := sh.GetTableSchema(context.Background(), "table1")
+			require.Equal(t, model.TableSchema{"column1": "string", "column2": "int"}, tbl)
+		})
+
+		t.Run("DB returns schema (even empty), no fetching from warehouse", func(t *testing.T) {
+			schemaRepo := &mockSchemaRepo{schemaMap: map[string]model.WHSchema{
+				"dest_id_namespace": {Schema: model.Schema{}, ExpiresAt: timeutil.Now().Add(10 * time.Minute)},
+			}}
+			sh := newSchema(t, warehouse, schemaRepo)
+			require.True(t, sh.IsSchemaEmpty(context.Background()))
+		})
+
+		t.Run("DB returns no schema, warehouse fetch fails", func(t *testing.T) {
+			schemaRepo := &mockSchemaRepo{schemaMap: make(map[string]model.WHSchema)}
+			fetchSchemaRepo := &mockFetchSchemaRepo{err: errors.New("warehouse fetch error")}
+			_, err := New(context.Background(), warehouse, config.New(), logger.NOP, stats.NOP, fetchSchemaRepo, schemaRepo, nil)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "warehouse fetch error")
+		})
+	})
+
+	t.Run("IsSchemaOutdated", func(t *testing.T) {
+		testsCases := []struct {
+			name            string
+			warehouseSchema map[string]model.WHSchema
+			output          bool
+		}{
+			{
+				name: "returns true for outdated schema",
+				warehouseSchema: map[string]model.WHSchema{
+					"dest_id_namespace": {
+						Schema: model.Schema{
+							"table1": {"column1": "string"},
+						},
+						ExpiresAt: timeutil.Now().Add(10 * time.Minute),
+					},
+				},
+				output: true,
+			},
+			{
+				name: "returns false for not outdated schema",
+				warehouseSchema: map[string]model.WHSchema{
+					"dest_id_namespace": {
+						Schema: mockFetchSchema,
+					},
+				},
+				output: false,
+			},
+		}
+		for _, tc := range testsCases {
+			t.Run(tc.name, func(t *testing.T) {
+				sh := newSchema(t, warehouse, &mockSchemaRepo{
+					schemaMap: tc.warehouseSchema,
+				})
+				outdated, err := sh.IsSchemaOutdated(ctx)
+				require.NoError(t, err)
+				require.Equal(t, tc.output, outdated)
+			})
+		}
 	})
 }
 

@@ -640,6 +640,7 @@ func CreateAWSSessionConfigV2(destination *backendconfig.DestinationT, serviceNa
 		AccessKeyID: accessKeyID,
 		AccessKey:   accessKey,
 		Service:     serviceName,
+		Region:      misc.GetRegionHint(),
 	}, nil
 }
 
@@ -654,6 +655,11 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		if !ok {
 			return "", "", "", fmt.Errorf("bucketName not found in destination config")
 		}
+
+		if bucketName == "" {
+			return "", "", "", fmt.Errorf("bucketName not found in destination config")
+		}
+
 		region, err := awsutil_v2.GetRegionFromBucket(context.Background(), bucketName, misc.GetRegionHint())
 		if err != nil {
 			return "", "", "", fmt.Errorf("failed to fetch AWS region for bucket: %w", err)

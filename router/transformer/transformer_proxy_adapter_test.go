@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
@@ -326,6 +327,7 @@ func TestV1Adapter(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_env_priority(t *testing.T) {
+	config.Reset()
 	t.Setenv("DELIVERY_TRANSFORMER_URL", "http://proxy:1234")
 	t.Setenv("DEST_TRANSFORM_URL", "http://dest:5678")
 	url, err := getTransformerProxyURL("v0", "TestDest")
@@ -334,6 +336,7 @@ func Test_getTransformerProxyURL_env_priority(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_only_dest_transform(t *testing.T) {
+	config.Reset()
 	t.Setenv("DELIVERY_TRANSFORMER_URL", "")
 	t.Setenv("DEST_TRANSFORM_URL", "http://dest:5678")
 	url, err := getTransformerProxyURL("v1", "TestDest")
@@ -342,6 +345,7 @@ func Test_getTransformerProxyURL_only_dest_transform(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_only_transformer_proxy(t *testing.T) {
+	config.Reset()
 	t.Setenv("DELIVERY_TRANSFORMER_URL", "http://proxy:1234")
 	t.Setenv("DEST_TRANSFORM_URL", "")
 	url, err := getTransformerProxyURL("v0", "TestDest")
@@ -350,6 +354,7 @@ func Test_getTransformerProxyURL_only_transformer_proxy(t *testing.T) {
 }
 
 func Test_getTransformerProxyURL_default(t *testing.T) {
+	config.Reset()
 	t.Setenv("DELIVERY_TRANSFORMER_URL", "")
 	t.Setenv("DEST_TRANSFORM_URL", "")
 	url, err := getTransformerProxyURL("v1", "TestDest")

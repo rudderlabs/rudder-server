@@ -1115,8 +1115,10 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 func TestCreateAWSSessionConfig_V2(t *testing.T) {
 	rudderAccessKeyID := "rudderAccessKeyID"
 	rudderAccessKey := "rudderAccessKey"
+	regionHint := "someRegionHint"
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
 	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+	t.Setenv("AWS_S3_REGION_HINT", regionHint)
 
 	someAccessKeyID := "someAccessKeyID"
 	someAccessKey := "someAccessKey"
@@ -1139,6 +1141,7 @@ func TestCreateAWSSessionConfig_V2(t *testing.T) {
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "s3",
+				Region:      regionHint,
 			},
 		},
 		{
@@ -1180,6 +1183,7 @@ func TestCreateAWSSessionConfig_V2(t *testing.T) {
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "redshift",
+				Region:      regionHint,
 			},
 		},
 	}

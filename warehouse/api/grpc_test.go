@@ -235,7 +235,7 @@ func TestGRPC(t *testing.T) {
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 				return now
 			}))
 			repoTableUploads := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
@@ -537,7 +537,7 @@ func TestGRPC(t *testing.T) {
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -712,7 +712,7 @@ func TestGRPC(t *testing.T) {
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 				return now
 			}))
 
@@ -1240,7 +1240,7 @@ func TestGRPC(t *testing.T) {
 				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 					return now
 				}))
-				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				repoStaging := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 					return now
 				}))
 				repoTableUpload := repo.NewTableUploads(db, c, repo.WithNow(func() time.Time {
@@ -1686,7 +1686,7 @@ func TestGRPC(t *testing.T) {
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 				return time.Now().UTC()
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 				return time.Now().UTC()
 			}))
 
@@ -1773,7 +1773,7 @@ func TestGRPC(t *testing.T) {
 			}
 
 			for i := range uploads {
-				repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+				repoStaging := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 					return now
 				}))
 				repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
