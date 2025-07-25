@@ -1,0 +1,46 @@
+{{ if .config.GetBoolVar false "Warehouse.enableLz4Compression" }}
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_attribute a
+    JOIN pg_class c ON a.attrelid = c.oid
+    WHERE c.relname = 'wh_schemas'
+      AND a.attname = 'schema'
+      AND a.attcompression != 'l'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+  ) THEN
+    ALTER TABLE wh_schemas ALTER COLUMN schema SET COMPRESSION lz4;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_attribute a
+    JOIN pg_class c ON a.attrelid = c.oid
+    WHERE c.relname = 'wh_staging_files'
+      AND a.attname = 'schema'
+      AND a.attcompression != 'l'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+  ) THEN
+    ALTER TABLE wh_staging_files ALTER COLUMN schema SET COMPRESSION lz4;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_attribute a
+    JOIN pg_class c ON a.attrelid = c.oid
+    WHERE c.relname = 'wh_uploads'
+      AND a.attname = 'schema'
+      AND a.attcompression != 'l'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+  ) THEN
+    ALTER TABLE wh_uploads ALTER COLUMN schema SET COMPRESSION lz4;
+  END IF;
+END $$;
+{{ end }} 

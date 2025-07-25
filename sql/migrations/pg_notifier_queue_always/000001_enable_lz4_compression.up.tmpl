@@ -1,0 +1,16 @@
+{{ if .config.GetBoolVar false "PgNotifier.enableLz4Compression" }}
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_attribute a
+    JOIN pg_class c ON a.attrelid = c.oid
+    WHERE c.relname = 'pg_notifier_queue'
+      AND a.attname = 'payload'
+      AND a.attcompression != 'l'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+  ) THEN
+    ALTER TABLE pg_notifier_queue ALTER COLUMN payload SET COMPRESSION lz4;
+  END IF;
+END $$;
+{{ end }}
