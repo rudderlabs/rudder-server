@@ -269,7 +269,7 @@ func TestBackoff(t *testing.T) {
 		}
 		workers := []*worker{{
 			logger:  logger.NOP,
-			input:   make(chan workerJob, 3),
+			inputCh: make(chan workerJob, 3),
 			barrier: barrier,
 		}}
 		t.Run("eventorder disabled", func(t *testing.T) {
