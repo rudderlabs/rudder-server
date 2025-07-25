@@ -518,9 +518,7 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			isOAuthDestination:             true,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
+			reloadableConfig:               &reloadableConfig{},
 		},
 	}
 	var limiterWg sync.WaitGroup
@@ -678,9 +676,7 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			isOAuthDestination:             false,
-			reloadableConfig: &reloadableConfig{
-				oauthV2Enabled: config.GetReloadableBoolVar(true),
-			},
+			reloadableConfig:               &reloadableConfig{},
 		},
 	}
 	var limiterWg sync.WaitGroup

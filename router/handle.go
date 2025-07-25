@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -742,81 +741,4 @@ func (rt *Handle) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
 
 func (*Handle) crashRecover() {
 	// NO-OP
-}
-
-func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams, authErrorCategory string) (int, string, string) {
-	trRespStatusCode := params.trRespStCd
-	trRespBody := params.trRespBody
-	destinationJob := params.destinationJob
-
-	workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
-	// Check the category
-	// Trigger the refresh endpoint/disable endpoint
-	rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
-	if strings.TrimSpace(rudderAccountID) == "" {
-		return trRespStatusCode, trRespBody, params.contentType
-	}
-	switch authErrorCategory {
-	case oauth.AUTH_STATUS_INACTIVE:
-		authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
-		authStatusMsg := gjson.Get(trRespBody, "message").Raw
-		return authStatusStCd, authStatusMsg, "text/plain; charset=utf-8"
-	case oauth.REFRESH_TOKEN:
-		refTokenParams := &oauth.RefreshTokenParams{
-			Secret:      params.secret,
-			WorkspaceId: workspaceID,
-			AccountId:   rudderAccountID,
-			DestDefName: destinationJob.Destination.DestinationDefinition.Name,
-			WorkerId:    params.workerID,
-		}
-		errCatStatusCode, refSecret := rt.oauth.RefreshToken(refTokenParams)
-		if routerutils.IsNotEmptyString(refSecret.Err) && refSecret.Err == oauth.REF_TOKEN_INVALID_GRANT {
-			// In-case the refresh token has been revoked, this error comes in
-			// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
-			// As well as to disable destination as well.
-			// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-			authStatusInactiveStCode := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
-			stats.Default.NewTaggedStat(oauth.REF_TOKEN_INVALID_GRANT, stats.CountType, stats.Tags{
-				"destinationId": destinationJob.Destination.ID,
-				"workspaceId":   refTokenParams.WorkspaceId,
-				"accountId":     refTokenParams.AccountId,
-				"destType":      refTokenParams.DestDefName,
-				"flowType":      string(oauth.RudderFlow_Delivery),
-			}).Increment()
-			rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.REF_TOKEN_INVALID_GRANT)
-			return authStatusInactiveStCode, refSecret.ErrorMessage, "text/plain; charset=utf-8"
-		}
-		// Error while refreshing the token or Has an error while refreshing or sending empty access token
-		if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSecret.Err) {
-			return http.StatusTooManyRequests, refSecret.Err, "text/plain; charset=utf-8"
-		}
-		// Retry with Refreshed Token by failing with 5xx
-		return http.StatusInternalServerError, trRespBody, params.contentType
-	default:
-		// By default, send the status code & response from transformed response directly
-		return trRespStatusCode, trRespBody, params.contentType
-	}
-}
-
-func (rt *Handle) updateAuthStatusToInactive(destination *backendconfig.DestinationT, workspaceID, rudderAccountId string) int {
-	inactiveAuthStatusStatTags := stats.Tags{
-		"id":          destination.ID,
-		"destType":    destination.DestinationDefinition.Name,
-		"workspaceId": workspaceID,
-		"success":     "true",
-		"flowType":    string(oauth.RudderFlow_Delivery),
-	}
-	errCatStatusCode, _ := rt.oauth.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-		Destination:     destination,
-		WorkspaceId:     workspaceID,
-		RudderAccountId: rudderAccountId,
-		AuthStatus:      oauth.AuthStatusInactive,
-	})
-	if errCatStatusCode != http.StatusOK {
-		// Error while inactivating authStatus
-		inactiveAuthStatusStatTags["success"] = "false"
-	}
-	stats.Default.NewTaggedStat("auth_status_inactive_category_count", stats.CountType, inactiveAuthStatusStatTags).Increment()
-	// Abort the jobs as the destination is disabled
-	return http.StatusBadRequest
 }
