@@ -71,7 +71,6 @@ type handle struct {
 	// expirationTimeDiff holds the configured time difference for token expiration.
 	expirationTimeDiff config.ValueLoader[time.Duration]
 
-	compactionEnabled   config.ValueLoader[bool]
 	compactionSupported bool
 }
 
@@ -602,7 +601,6 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = trans.stats.NewStat("router_transformer_request_time", stats.TimerType)
-	trans.compactionEnabled = config.GetReloadableBoolVar(false, "Router.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
 	if featuresService != nil {
 		go func() {
 			<-featuresService.Wait()
@@ -782,7 +780,7 @@ func getEndpointFromURL(urlStr string) string {
 }
 
 func (trans *handle) compactRequestPayloads() bool {
-	return (trans.compactionSupported && trans.compactionEnabled.Load())
+	return trans.compactionSupported
 }
 
 func (trans *handle) getRequestPayload(data *types.TransformMessageT, compactRequestPayloads bool) ([]byte, error) {
