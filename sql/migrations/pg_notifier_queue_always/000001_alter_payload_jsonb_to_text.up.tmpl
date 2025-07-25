@@ -1,0 +1,18 @@
+{{ if .config.GetBoolVar false "PgNotifier.enableJsonbToText" }}
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'pg_notifier_queue'
+          AND column_name = 'payload'
+          AND data_type != 'text'
+      ) THEN
+        RAISE NOTICE 'Altering column "payload" in table "pg_notifier_queue" from % to text',
+          (SELECT data_type FROM information_schema.columns WHERE table_name = 'pg_notifier_queue' AND column_name = 'payload');
+        ALTER TABLE pg_notifier_queue ALTER COLUMN payload TYPE TEXT USING payload::TEXT;
+        RAISE NOTICE 'Column "payload" in table "pg_notifier_queue" successfully altered to text.';
+      ELSE
+        RAISE NOTICE 'No alteration needed. Column "payload" in table "pg_notifier_queue" is already of type text.';
+      END IF;
+    END $$;
+{{ end }}
