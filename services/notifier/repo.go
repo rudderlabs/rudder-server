@@ -29,7 +29,7 @@ const (
 		job_type,
 		priority,
 		error,
-		payload,
+		payload::jsonb,
 		created_at,
 		updated_at,
 		last_exec_time
