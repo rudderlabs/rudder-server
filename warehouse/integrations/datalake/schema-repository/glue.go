@@ -7,17 +7,16 @@ import (
 	"net/url"
 	"regexp"
 
-	"github.com/rudderlabs/rudder-go-kit/awsutil"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/glue"
+	"github.com/aws/aws-sdk-go-v2/service/glue/types"
+
+	awsutils "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	utils "github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/glue"
-
-	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -35,35 +34,182 @@ var (
 )
 
 type GlueSchemaRepository struct {
-	GlueClient *glue.Glue
+	GlueClient *glue.Client
+	conf       *config.Config
+	logger     logger.Logger
 	s3bucket   string
 	s3prefix   string
 	Warehouse  model.Warehouse
 	Namespace  string
-	conf       *config.Config
-	logger     logger.Logger
 }
 
-func NewGlueSchemaRepository(conf *config.Config, log logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
-	gl := GlueSchemaRepository{
-		s3bucket:  wh.GetStringDestinationConfig(conf, model.AWSBucketNameSetting),
-		s3prefix:  wh.GetStringDestinationConfig(conf, model.AWSPrefixSetting),
-		Warehouse: wh,
-		Namespace: wh.Namespace,
-		conf:      conf,
-		logger:    log.Child("schema-repository"),
-	}
-
-	glueClient, err := getGlueClient(wh)
+func NewGlueSchemaRepository(conf *config.Config, logger logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
+	sessionConfig, err := utils.NewSimpleSessionConfigForDestinationV2(&wh.Destination, "glue")
 	if err != nil {
 		return nil, err
 	}
-	gl.GlueClient = glueClient
+	awsConfig, err := awsutils.CreateAWSConfig(context.Background(), sessionConfig)
+	if err != nil {
+		return nil, err
+	}
+	glueClient := glue.New(glue.Options{
+		Credentials: awsConfig.Credentials,
+		Region:      awsConfig.Region,
+	})
 
-	return &gl, nil
+	return &GlueSchemaRepository{
+		GlueClient: glueClient,
+		conf:       conf,
+		logger:     logger,
+		s3bucket:   wh.GetStringDestinationConfig(conf, model.AWSBucketNameSetting),
+		s3prefix:   wh.GetStringDestinationConfig(conf, model.AWSPrefixSetting),
+		Warehouse:  wh,
+		Namespace:  wh.Namespace,
+	}, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model.Warehouse) (model.Schema, error) {
+func (g *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
+	_, err = g.GlueClient.CreateDatabase(ctx, &glue.CreateDatabaseInput{
+		DatabaseInput: &types.DatabaseInput{
+			Name: &g.Namespace,
+		},
+	})
+	var alreadyExistsException *types.AlreadyExistsException
+	if errors.As(err, &alreadyExistsException) {
+		g.logger.Infof("Skipping database creation : database %s already exists", g.Namespace)
+		err = nil
+	}
+	return
+}
+
+func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
+	partitionKeys, err := g.partitionColumns()
+	if err != nil {
+		return fmt.Errorf("partition keys: %w", err)
+	}
+
+	tableInput := &types.TableInput{
+		Name:          aws.String(tableName),
+		PartitionKeys: partitionKeys,
+	}
+
+	// create table request
+	input := glue.CreateTableInput{
+		DatabaseName: aws.String(g.Namespace),
+		TableInput:   tableInput,
+	}
+
+	// add storage descriptor to create table request
+	input.TableInput.StorageDescriptor = g.getStorageDescriptor(tableName, columnMap)
+
+	_, err = g.GlueClient.CreateTable(ctx, &input)
+	if err != nil {
+		var alreadyExistsException *types.AlreadyExistsException
+		ok := errors.As(err, &alreadyExistsException)
+		if ok {
+			err = nil
+		}
+	}
+	return
+}
+
+func (g *GlueSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	return g.updateTable(ctx, tableName, columnsInfo)
+}
+
+func (g *GlueSchemaRepository) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, g.updateTable(ctx, tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
+}
+
+func (g *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
+	g.logger.Infof("Refreshing partitions for table: %s", tableName)
+
+	// Skip if time window layout is not defined
+	if layout := g.Warehouse.GetStringDestinationConfig(g.conf, model.TimeWindowLayoutSetting); layout == "" {
+		return nil
+	}
+
+	var (
+		locationsToPartition = make(map[string]*types.PartitionInput)
+		locationFolder       string
+		err                  error
+		partitionInputs      []types.PartitionInput
+		partitionGroups      map[string]string
+	)
+
+	for _, loadFile := range loadFiles {
+		if locationFolder, err = url.QueryUnescape(warehouseutils.GetS3LocationFolder(loadFile.Location)); err != nil {
+			return fmt.Errorf("unesscape location folder: %w", err)
+		}
+
+		// Skip if we are already going to process this locationFolder
+		if _, ok := locationsToPartition[locationFolder]; ok {
+			continue
+		}
+
+		if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionFolderRegex, locationFolder); err != nil {
+			g.logger.Warnf("Skipping refresh partitions for table %s with location %s: %v", tableName, locationFolder, err)
+			continue
+		}
+
+		locationsToPartition[locationFolder] = &types.PartitionInput{
+			StorageDescriptor: &types.StorageDescriptor{
+				Location: aws.String(locationFolder),
+				SerdeInfo: &types.SerDeInfo{
+					Name:                 aws.String(glueSerdeName),
+					SerializationLibrary: aws.String(glueSerdeSerializationLib),
+				},
+				InputFormat:  aws.String(glueParquetInputFormat),
+				OutputFormat: aws.String(glueParquetOutputFormat),
+			},
+			Values: []string{partitionGroups["value"]},
+		}
+	}
+
+	// Check for existing partitions. We do not want to generate unnecessary (for already existing
+	// partitions) changes in Glue tables (since the number of versions of a Glue table
+	// is limited)
+	for location, partition := range locationsToPartition {
+		_, err := g.GlueClient.GetPartition(ctx, &glue.GetPartitionInput{
+			DatabaseName:    aws.String(g.Namespace),
+			PartitionValues: partition.Values,
+			TableName:       aws.String(tableName),
+		})
+
+		if err != nil {
+			var entityNotFoundException *types.EntityNotFoundException
+			if !errors.As(err, &entityNotFoundException) {
+				return fmt.Errorf("get partition: %w", err)
+			}
+
+			partitionInputs = append(partitionInputs, *locationsToPartition[location])
+		} else {
+			g.logger.Debugf("Partition %s already exists in table %s", location, tableName)
+		}
+	}
+	if len(partitionInputs) == 0 {
+		return nil
+	}
+
+	// Updating table partitions with empty columns to create partition keys if not created
+	if err = g.updateTable(ctx, tableName, []warehouseutils.ColumnInfo{}); err != nil {
+		return fmt.Errorf("update table: %w", err)
+	}
+
+	g.logger.Debugf("Refreshing %d partitions", len(partitionInputs))
+
+	if _, err = g.GlueClient.BatchCreatePartition(ctx, &glue.BatchCreatePartitionInput{
+		DatabaseName:       aws.String(g.Namespace),
+		PartitionInputList: partitionInputs,
+		TableName:          aws.String(tableName),
+	}); err != nil {
+		return fmt.Errorf("batch create partitions: %w", err)
+	}
+
+	return nil
+}
+
+func (g *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model.Warehouse) (model.Schema, error) {
 	schema := model.Schema{}
 	var err error
 
@@ -77,11 +223,11 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 			getTablesInput.NextToken = getTablesOutput.NextToken
 		}
 
-		getTablesOutput, err = gl.GlueClient.GetTablesWithContext(ctx, getTablesInput)
+		getTablesOutput, err = g.GlueClient.GetTables(ctx, getTablesInput)
 		if err != nil {
-			var entityNotFoundException *glue.EntityNotFoundException
+			var entityNotFoundException *types.EntityNotFoundException
 			if errors.As(err, &entityNotFoundException) {
-				gl.logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
+				g.logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
 				err = nil
 			}
 			return schema, err
@@ -113,61 +259,15 @@ func (gl *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model
 	return schema, err
 }
 
-func (gl *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
-	_, err = gl.GlueClient.CreateDatabaseWithContext(ctx, &glue.CreateDatabaseInput{
-		DatabaseInput: &glue.DatabaseInput{
-			Name: &gl.Namespace,
-		},
-	})
-	var alreadyExistsException *glue.AlreadyExistsException
-	if errors.As(err, &alreadyExistsException) {
-		gl.logger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
-		err = nil
-	}
-	return
-}
-
-func (gl *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
-	partitionKeys, err := gl.partitionColumns()
-	if err != nil {
-		return fmt.Errorf("partition keys: %w", err)
-	}
-
-	tableInput := &glue.TableInput{
-		Name:          aws.String(tableName),
-		PartitionKeys: partitionKeys,
-	}
-
-	// create table request
-	input := glue.CreateTableInput{
-		DatabaseName: aws.String(gl.Namespace),
-		TableInput:   tableInput,
-	}
-
-	// add storage descriptor to create table request
-	input.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, columnMap)
-
-	_, err = gl.GlueClient.CreateTableWithContext(ctx, &input)
-	if err != nil {
-		var alreadyExistsException *glue.AlreadyExistsException
-		ok := errors.As(err, &alreadyExistsException)
-		if ok {
-			err = nil
-		}
-	}
-	return
-}
-
-func (gl *GlueSchemaRepository) updateTable(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	updateTableInput := glue.UpdateTableInput{
-		DatabaseName: aws.String(gl.Namespace),
-		TableInput: &glue.TableInput{
+func (g *GlueSchemaRepository) updateTable(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+	glueInput := &glue.UpdateTableInput{
+		DatabaseName: aws.String(g.Namespace),
+		TableInput: &types.TableInput{
 			Name: aws.String(tableName),
 		},
 	}
 
-	// fetch schema from glue
-	schema, err := gl.FetchSchema(ctx, gl.Warehouse)
+	schema, err := g.FetchSchema(ctx, g.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -183,45 +283,42 @@ func (gl *GlueSchemaRepository) updateTable(ctx context.Context, tableName strin
 		tableSchema[columnInfo.Name] = columnInfo.Type
 	}
 
-	partitionKeys, err := gl.partitionColumns()
+	partitionKeys, err := g.partitionColumns()
 	if err != nil {
 		return fmt.Errorf("partition keys: %w", err)
 	}
 
 	// add storage descriptor to update table request
-	updateTableInput.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, tableSchema)
-	updateTableInput.TableInput.PartitionKeys = partitionKeys
+	glueInput.TableInput.StorageDescriptor = g.getStorageDescriptor(tableName, tableSchema)
+	glueInput.TableInput.PartitionKeys = partitionKeys
 
-	// update table
-	_, err = gl.GlueClient.UpdateTableWithContext(ctx, &updateTableInput)
+	_, err = g.GlueClient.UpdateTable(ctx, glueInput)
+	return err
+}
+
+func (g *GlueSchemaRepository) partitionColumns() (columns []types.Column, err error) {
+	var (
+		layout          string
+		partitionGroups map[string]string
+	)
+
+	if layout = g.Warehouse.GetStringDestinationConfig(g.conf, model.TimeWindowLayoutSetting); layout == "" {
+		return
+	}
+
+	if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionWindowRegex, layout); err != nil {
+		return columns, fmt.Errorf("capture partition window regex: %w", err)
+	}
+
+	columns = append(columns, types.Column{Name: aws.String(partitionGroups["name"]), Type: aws.String("date")})
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	return gl.updateTable(ctx, tableName, columnsInfo)
-}
-
-func (gl *GlueSchemaRepository) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
-	return model.AlterTableResponse{}, gl.updateTable(ctx, tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
-}
-
-func getGlueClient(wh model.Warehouse) (*glue.Glue, error) {
-	sessionConfig, err := awsutils.NewSimpleSessionConfigForDestination(&wh.Destination, glue.ServiceID)
-	if err != nil {
-		return nil, err
-	}
-	awsSession, err := awsutil.CreateSession(sessionConfig)
-	if err != nil {
-		return nil, err
-	}
-	return glue.New(awsSession), nil
-}
-
-func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap model.TableSchema) *glue.StorageDescriptor {
-	storageDescriptor := glue.StorageDescriptor{
-		Columns:  []*glue.Column{},
-		Location: aws.String(gl.getS3LocationForTable(tableName)),
-		SerdeInfo: &glue.SerDeInfo{
+func (g *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap model.TableSchema) *types.StorageDescriptor {
+	storageDescriptor := types.StorageDescriptor{
+		Columns:  []types.Column{},
+		Location: aws.String(g.getS3LocationForTable(tableName)),
+		SerdeInfo: &types.SerDeInfo{
 			Name:                 aws.String(glueSerdeName),
 			SerializationLibrary: aws.String(glueSerdeSerializationLib),
 		},
@@ -231,7 +328,7 @@ func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap
 
 	// add columns to storage descriptor
 	for colName, colType := range columnMap {
-		storageDescriptor.Columns = append(storageDescriptor.Columns, &glue.Column{
+		storageDescriptor.Columns = append(storageDescriptor.Columns, types.Column{
 			Name: aws.String(colName),
 			Type: aws.String(dataTypesMap[colType]),
 		})
@@ -240,121 +337,12 @@ func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap
 	return &storageDescriptor
 }
 
-func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
-	bucketPath := fmt.Sprintf("s3://%s", gl.s3bucket)
+func (g *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
+	bucketPath := fmt.Sprintf("s3://%s", g.s3bucket)
 	var filePath string
-	if gl.s3prefix != "" {
-		filePath = fmt.Sprintf("%s/", gl.s3prefix)
+	if g.s3prefix != "" {
+		filePath = fmt.Sprintf("%s/", g.s3prefix)
 	}
-	filePath += warehouseutils.GetTablePathInObjectStorage(gl.Namespace, tableName)
+	filePath += warehouseutils.GetTablePathInObjectStorage(g.Namespace, tableName)
 	return fmt.Sprintf("%s/%s", bucketPath, filePath)
-}
-
-// RefreshPartitions takes a tableName and a list of loadFiles and refreshes all the
-// partitions that are modified by the path in those loadFiles. It returns any error
-// reported by Glue
-func (gl *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
-	gl.logger.Infof("Refreshing partitions for table: %s", tableName)
-
-	// Skip if time window layout is not defined
-	if layout := gl.Warehouse.GetStringDestinationConfig(gl.conf, model.TimeWindowLayoutSetting); layout == "" {
-		return nil
-	}
-
-	var (
-		locationsToPartition = make(map[string]*glue.PartitionInput)
-		locationFolder       string
-		err                  error
-		partitionInputs      []*glue.PartitionInput
-		partitionGroups      map[string]string
-	)
-
-	for _, loadFile := range loadFiles {
-		if locationFolder, err = url.QueryUnescape(warehouseutils.GetS3LocationFolder(loadFile.Location)); err != nil {
-			return fmt.Errorf("unesscape location folder: %w", err)
-		}
-
-		// Skip if we are already going to process this locationFolder
-		if _, ok := locationsToPartition[locationFolder]; ok {
-			continue
-		}
-
-		if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionFolderRegex, locationFolder); err != nil {
-			gl.logger.Warnf("Skipping refresh partitions for table %s with location %s: %v", tableName, locationFolder, err)
-			continue
-		}
-
-		locationsToPartition[locationFolder] = &glue.PartitionInput{
-			StorageDescriptor: &glue.StorageDescriptor{
-				Location: aws.String(locationFolder),
-				SerdeInfo: &glue.SerDeInfo{
-					Name:                 aws.String(glueSerdeName),
-					SerializationLibrary: aws.String(glueSerdeSerializationLib),
-				},
-				InputFormat:  aws.String(glueParquetInputFormat),
-				OutputFormat: aws.String(glueParquetOutputFormat),
-			},
-			Values: []*string{aws.String(partitionGroups["value"])},
-		}
-	}
-
-	// Check for existing partitions. We do not want to generate unnecessary (for already existing
-	// partitions) changes in Glue tables (since the number of versions of a Glue table
-	// is limited)
-	for location, partition := range locationsToPartition {
-		_, err := gl.GlueClient.GetPartitionWithContext(ctx, &glue.GetPartitionInput{
-			DatabaseName:    aws.String(gl.Namespace),
-			PartitionValues: partition.Values,
-			TableName:       aws.String(tableName),
-		})
-
-		if err != nil {
-			var entityNotFoundException *glue.EntityNotFoundException
-			if !errors.As(err, &entityNotFoundException) {
-				return fmt.Errorf("get partition: %w", err)
-			}
-
-			partitionInputs = append(partitionInputs, locationsToPartition[location])
-		} else {
-			gl.logger.Debugf("Partition %s already exists in table %s", location, tableName)
-		}
-	}
-	if len(partitionInputs) == 0 {
-		return nil
-	}
-
-	// Updating table partitions with empty columns to create partition keys if not created
-	if err = gl.updateTable(ctx, tableName, []warehouseutils.ColumnInfo{}); err != nil {
-		return fmt.Errorf("update table: %w", err)
-	}
-
-	gl.logger.Debugf("Refreshing %d partitions", len(partitionInputs))
-
-	if _, err = gl.GlueClient.BatchCreatePartitionWithContext(ctx, &glue.BatchCreatePartitionInput{
-		DatabaseName:       aws.String(gl.Namespace),
-		PartitionInputList: partitionInputs,
-		TableName:          aws.String(tableName),
-	}); err != nil {
-		return fmt.Errorf("batch create partitions: %w", err)
-	}
-
-	return nil
-}
-
-func (gl *GlueSchemaRepository) partitionColumns() (columns []*glue.Column, err error) {
-	var (
-		layout          string
-		partitionGroups map[string]string
-	)
-
-	if layout = gl.Warehouse.GetStringDestinationConfig(gl.conf, model.TimeWindowLayoutSetting); layout == "" {
-		return
-	}
-
-	if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionWindowRegex, layout); err != nil {
-		return columns, fmt.Errorf("capture partition window regex: %w", err)
-	}
-
-	columns = append(columns, &glue.Column{Name: aws.String(partitionGroups["name"]), Type: aws.String("date")})
-	return
 }
