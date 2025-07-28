@@ -1,0 +1,58 @@
+{{ if .config.GetBoolVar false "Warehouse.enableLz4Compression" }}
+  DO $$
+  BEGIN
+    -- Enable LZ4 compression for wh_schemas.schema column
+    -- Check if the schema column in wh_schemas table doesn't already have LZ4 compression
+    IF EXISTS (
+      SELECT 1 FROM pg_attribute a
+      JOIN pg_class c ON a.attrelid = c.oid
+      WHERE c.relname = 'wh_schemas'
+        AND a.attname = 'schema'
+        AND a.attcompression != 'l'  -- 'l' indicates LZ4 compression
+        AND a.attnum > 0            -- Exclude system columns
+        AND NOT a.attisdropped      -- Exclude dropped columns
+    ) THEN
+      -- Apply LZ4 compression to the schema column
+      ALTER TABLE wh_schemas ALTER COLUMN schema SET COMPRESSION lz4;
+      RAISE NOTICE 'LZ4 compression enabled for column "schema" in table "wh_schemas".';
+    ELSE
+      RAISE NOTICE 'LZ4 compression already enabled for column "schema" in table "wh_schemas".';
+    END IF;
+
+    -- Enable LZ4 compression for wh_staging_files.schema column
+    -- Check if the schema column in wh_staging_files table doesn't already have LZ4 compression
+    IF EXISTS (
+      SELECT 1 FROM pg_attribute a
+      JOIN pg_class c ON a.attrelid = c.oid
+      WHERE c.relname = 'wh_staging_files'
+        AND a.attname = 'schema'
+        AND a.attcompression != 'l'  -- 'l' indicates LZ4 compression
+        AND a.attnum > 0            -- Exclude system columns
+        AND NOT a.attisdropped      -- Exclude dropped columns
+    ) THEN
+      -- Apply LZ4 compression to the schema column
+      ALTER TABLE wh_staging_files ALTER COLUMN schema SET COMPRESSION lz4;
+      RAISE NOTICE 'LZ4 compression enabled for column "schema" in table "wh_staging_files".';
+    ELSE
+      RAISE NOTICE 'LZ4 compression already enabled for column "schema" in table "wh_staging_files".';
+    END IF;
+
+    -- Enable LZ4 compression for wh_uploads.schema column
+    -- Check if the schema column in wh_uploads table doesn't already have LZ4 compression
+    IF EXISTS (
+      SELECT 1 FROM pg_attribute a
+      JOIN pg_class c ON a.attrelid = c.oid
+      WHERE c.relname = 'wh_uploads'
+        AND a.attname = 'schema'
+        AND a.attcompression != 'l'  -- 'l' indicates LZ4 compression
+        AND a.attnum > 0            -- Exclude system columns
+        AND NOT a.attisdropped      -- Exclude dropped columns
+    ) THEN
+      -- Apply LZ4 compression to the schema column
+      ALTER TABLE wh_uploads ALTER COLUMN schema SET COMPRESSION lz4;
+      RAISE NOTICE 'LZ4 compression enabled for column "schema" in table "wh_uploads".';
+    ELSE
+      RAISE NOTICE 'LZ4 compression already enabled for column "schema" in table "wh_uploads".';
+    END IF;
+  END $$;
+{{ end }} 

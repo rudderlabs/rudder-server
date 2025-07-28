@@ -51,12 +51,14 @@ func TestMigrate(t *testing.T) {
 				})
 			} else if strings.HasPrefix(dir, "warehouse_always") {
 				conf := config.New()
+				conf.Set("PgNotifier.enableLz4Compression", true)
 				conf.Set("PgNotifier.enableJsonbToText", true)
 				err = m.MigrateFromTemplates("warehouse_always", map[string]interface{}{
 					"config": conf,
 				})
 			} else if strings.HasPrefix(dir, "pg_notifier_queue_always") {
 				conf := config.New()
+				conf.Set("Warehouse.enableLz4Compression", true)
 				conf.Set("Warehouse.enableJsonbToText", true)
 				err = m.MigrateFromTemplates("pg_notifier_queue_always", map[string]interface{}{
 					"config": conf,
