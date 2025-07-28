@@ -58,11 +58,13 @@ type UsersReporter interface {
 }
 
 type UniqueUsersReporter struct {
-	log         logger.Logger
-	hllSettings *hll.Settings
-	instanceID  string
-	now         func() time.Time
-	stats       stats.Stats
+	log              logger.Logger
+	hllSettings      *hll.Settings
+	instanceID       string
+	now              func() time.Time
+	stats            stats.Stats
+	enabledV2Metrics config.ValueLoader[bool]
+	shadowV2Metrics  config.ValueLoader[bool]
 }
 
 func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.Stats) (*UniqueUsersReporter, error) {
@@ -79,6 +81,8 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 		now: func() time.Time {
 			return timeutil.Now()
 		},
+		enabledV2Metrics: config.GetReloadableBoolVar(false, "TrackedUsers.v2Metrics.enabled"),
+		shadowV2Metrics:  config.GetReloadableBoolVar(true, "TrackedUsers.v2Metrics.shadow"),
 	}, nil
 }
 
@@ -106,6 +110,108 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 }
 
 func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool) []*UsersReport {
+	if !u.enabledV2Metrics.Load() {
+		return u.generateReportsFromJobsLegacy(jobs, sourceIDtoFilter)
+	}
+
+	shadowEnabled := u.shadowV2Metrics.Load()
+	if shadowEnabled {
+		return append(u.generateReportsFromJobsLegacy(jobs, sourceIDtoFilter), u.generateReportsFromJobs(jobs, sourceIDtoFilter, shadowEnabled)...)
+	}
+
+	return u.generateReportsFromJobs(jobs, sourceIDtoFilter, shadowEnabled)
+}
+
+func (u *UniqueUsersReporter) generateReportsFromJobs(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool, shadowEnabled bool) []*UsersReport {
+	if len(jobs) == 0 {
+		return nil
+	}
+	workspaceSourceUserIdTypeMap := make(map[string]map[string]map[string]*hll.Hll)
+	for _, job := range jobs {
+		if job.WorkspaceId == "" {
+			u.log.Warn("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
+			continue
+		}
+
+		sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
+		if sourceID == "" {
+			u.log.Warn("source_id not found in job parameters", obskit.WorkspaceID(job.WorkspaceId),
+				logger.NewIntField("jobId", job.JobID))
+			continue
+		}
+
+		if sourceIDtoFilter != nil && sourceIDtoFilter[sourceID] {
+			u.log.Debug("source to filter", obskit.SourceID(sourceID))
+			continue
+		}
+		userID := gjson.GetBytes(job.EventPayload, "batch.0.userId").String()
+		anonymousID := gjson.GetBytes(job.EventPayload, "batch.0.anonymousId").String()
+		eventType := gjson.GetBytes(job.EventPayload, "batch.0.type").String()
+		if userID == "" && anonymousID == "" {
+			u.log.Warn("both userID and anonymousID not found in job event payload", obskit.WorkspaceID(job.WorkspaceId),
+				logger.NewIntField("jobId", job.JobID))
+			continue
+		}
+
+		if workspaceSourceUserIdTypeMap[job.WorkspaceId] == nil {
+			workspaceSourceUserIdTypeMap[job.WorkspaceId] = make(map[string]map[string]*hll.Hll)
+		}
+
+		if userID != "" {
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], userID, idTypeUserID)
+		}
+
+		if anonymousID != "" && userID != anonymousID {
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeUserID)
+		}
+
+		if userID != "" && anonymousID != "" && userID != anonymousID {
+			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeIdentifiedAnonymousID)
+		}
+
+		// for alias event we will be adding previousId to identifiedAnonymousID hll,
+		// so for calculating unique users we do not double count the user
+		// e.g. we receive events
+		// {type:track, anonymousID: anon1}
+		// {type:track, userID: user1}
+		// {type:track, userID: user2}
+		// {type:identify, userID: user1, anonymousID: anon1}
+		// {type:alias, previousId: user2, userID: user1}
+		// userHLL: {user1, user2}, anonHLL: {anon1}, identifiedAnonHLL: {user1-anon1, user2}
+		// cardinality: len(userHLL)+len(anonHLL)-len(identifiedAnonHLL): 2+1-2 = 1
+		if eventType == eventTypeAlias {
+			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
+			if previousID != "" && previousID != userID && previousID != anonymousID {
+				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeUserID)
+				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeIdentifiedAnonymousID)
+			}
+		}
+	}
+
+	if len(workspaceSourceUserIdTypeMap) == 0 {
+		u.log.Warn("no data to collect", obskit.WorkspaceID(jobs[0].WorkspaceId))
+		return nil
+	}
+
+	reports := make([]*UsersReport, 0)
+	for workspaceID, sourceUserMp := range workspaceSourceUserIdTypeMap {
+		finalWorkspaceID := getNewID(workspaceID, shadowEnabled)
+
+		reports = append(reports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
+			finalSourceID := getNewID(sourceID, shadowEnabled)
+			return &UsersReport{
+				WorkspaceID:              finalWorkspaceID,
+				SourceID:                 finalSourceID,
+				UserIDHll:                userIdTypeMap[idTypeUserID],
+				AnonymousIDHll:           userIdTypeMap[idTypeAnonymousID],
+				IdentifiedAnonymousIDHll: userIdTypeMap[idTypeIdentifiedAnonymousID],
+			}
+		})...)
+	}
+	return reports
+}
+
+func (u *UniqueUsersReporter) generateReportsFromJobsLegacy(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool) []*UsersReport {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -303,4 +409,11 @@ func (u *UniqueUsersReporter) recordHllSizeStats(report *UsersReport) {
 			"identifier":   idTypeIdentifiedAnonymousID,
 		}).Observe(float64(len(report.IdentifiedAnonymousIDHll.ToBytes())))
 	}
+}
+
+func getNewID(id string, enabled bool) string {
+	if enabled {
+		return id + "-shadow"
+	}
+	return id
 }
