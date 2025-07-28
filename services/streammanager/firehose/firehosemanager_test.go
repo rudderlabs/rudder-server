@@ -14,7 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose_v2"
+	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -42,7 +42,7 @@ func TestNewProducer(t *testing.T) {
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &FireHoseProducerV2{}
+	producer := &FirehoseProducer{}
 	sampleEventJson := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -52,8 +52,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_firehose.NewMockFireHoseClientV2(ctrl)
-	producer := &FireHoseProducerV2{client: mockClient}
+	mockClient := mock_firehose.NewMockFirehoseClient(ctrl)
+	producer := &FirehoseProducer{client: mockClient}
 
 	// Invalid Payload
 	sampleEventJson := []byte("invalid json")
@@ -101,8 +101,8 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_firehose.NewMockFireHoseClientV2(ctrl)
-	producer := &FireHoseProducerV2{client: mockClient}
+	mockClient := mock_firehose.NewMockFirehoseClient(ctrl)
+	producer := &FirehoseProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
