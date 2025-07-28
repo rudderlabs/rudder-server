@@ -839,7 +839,6 @@ func TestUniqueUsersReporter(t *testing.T) {
 					})
 				}
 				require.ElementsMatch(t, trackedUsersWithShadowMetrics, reports)
-
 			})
 		}
 	})

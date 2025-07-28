@@ -196,7 +196,6 @@ func (u *UniqueUsersReporter) generateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 	reports := make([]*UsersReport, 0)
 	for workspaceID, sourceUserMp := range workspaceSourceUserIdTypeMap {
 		finalWorkspaceID := getNewID(workspaceID, shadowEnabled)
-
 		reports = append(reports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
 			finalSourceID := getNewID(sourceID, shadowEnabled)
 			return &UsersReport{
