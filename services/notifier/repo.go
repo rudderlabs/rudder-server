@@ -143,7 +143,7 @@ func (n *repo) insert(
 			UPDATE
   			  `+notifierTableName+`
 			SET
-			  payload = payload || $1
+			  payload = payload::jsonb || $1
 			WHERE
 			  batch_id = $2;
 	`,
@@ -206,7 +206,7 @@ func (n *repo) getByBatchID(
 			job_type,
 			priority,
 			error,
-			payload - 'UploadSchema',
+			payload::jsonb - 'UploadSchema',
 			created_at,
 			updated_at,
 			last_exec_time
@@ -249,6 +249,7 @@ func scanJob(scan scanFn, job *Job) error {
 		errorRaw    sql.NullString
 		workerIDRaw sql.NullString
 		lasExecTime sql.NullTime
+		payloadRaw  []byte
 	)
 
 	err := scan(
@@ -261,7 +262,7 @@ func scanJob(scan scanFn, job *Job) error {
 		&jobTypeRaw,
 		&job.Priority,
 		&errorRaw,
-		&job.Payload,
+		&payloadRaw,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 		&lasExecTime,
@@ -270,6 +271,7 @@ func scanJob(scan scanFn, job *Job) error {
 		return fmt.Errorf("scanning: %w", err)
 	}
 
+	job.Payload = payloadRaw
 	if workerIDRaw.Valid {
 		job.WorkerID = workerIDRaw.String
 	}
