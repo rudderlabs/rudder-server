@@ -156,95 +156,11 @@ jobs:
           SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.destination }}
-          path: coverage.txt
-  warehouse-integration-v2:
-    name: Warehouse Integration V2
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        destination: [ datalake, deltalake, redshift, snowflake ]
-        include:
-          - package: warehouse/integrations/datalake
-            destination: datalake
-          - package: warehouse/integrations/deltalake
-            destination: deltalake
-          - package: warehouse/integrations/redshift
-            destination: redshift
-          - package: warehouse/integrations/snowflake
-            destination: snowflake
-    steps:
-      - name: Disable IPv6 (temporary fix)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-      - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
-      - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
-        with:
-          username: rudderlabs
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Set Redshift Ginkgo AWS Credentials
-        if: matrix.destination == 'redshift'
-        run: |
-          echo "Setting Redshift Ginkgo AWS Credentials..."
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-      - name: Create image cache dir
-        run: mkdir -p ~/image-cache
-
-      - name: Get latest Postgres 17-alpine digest
-        id: get-digest
-        run: |
-          docker pull postgres:17-alpine
-          DIGEST=$(docker images --digests | grep "postgres.*17-alpine" | awk '{print $3}' | head -1)
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
-          echo "Using digest: $DIGEST"
-
-      - name: Cache Postgres Docker image
-        id: cache-postgres-warehouse-v2
-        uses: actions/cache@v4
-        with:
-          path: ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
-          key: postgres-${{ steps.get-digest.outputs.digest }}-${{ runner.os }}
-
-      - name: Pull and save Postgres image if not cached
-        if: steps.cache-postgres-warehouse-v2.outputs.cache-hit != 'true'
-        run: |
-          docker pull postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
-          docker save -o ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
-
-      - name: Load Postgres image from cache
-        if: steps.cache-postgres-warehouse-v2.outputs.cache-hit == 'true'
-        run: docker load -i ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
-      - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
-        env:
-          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-          DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_IAM_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_IAM_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_SERVERLESS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_SERVERLESS_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_SERVERLESS_IAM_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_SERVERLESS_IAM_INTEGRATION_TEST_CREDENTIALS }}
-          SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
-          SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
-          SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_FILE_MANAGER_USE_AWS_SDK_V2: "true"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.destination }}-v2
+          name: ${{ matrix.destination }}
           path: coverage.txt
   unit:
     name: Unit
