@@ -154,7 +154,7 @@ func (rt *Handle) Setup(
 		defer rt.destinationsMapMu.RUnlock()
 		_, ok := rt.destinationsMap[destinationID]
 		return ok
-	}); err != nil {
+	}, config); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
