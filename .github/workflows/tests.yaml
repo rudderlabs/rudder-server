@@ -32,22 +32,30 @@ jobs:
       - name: Create image cache dir
         run: mkdir -p ~/image-cache
 
-      - name: Cache Postgres 17-alpine Docker image
+      - name: Get latest Postgres 17-alpine digest
+        id: get-digest
+        run: |
+          docker pull postgres:17-alpine
+          DIGEST=$(docker images --digests | grep "postgres.*17-alpine" | awk '{print $3}' | head -1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Using digest: $DIGEST"
+
+      - name: Cache Postgres Docker image
         id: cache-postgres-integration
         uses: actions/cache@v4
         with:
-          path: ~/image-cache/postgres-17-alpine.tar
-          key: postgres-17-alpine-image-${{ runner.os }}
+          path: ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
+          key: postgres-${{ steps.get-digest.outputs.digest }}-${{ runner.os }}
 
-      - name: Pull and save Postgres 17-alpine image if not cached
+      - name: Pull and save Postgres image if not cached
         if: steps.cache-postgres-integration.outputs.cache-hit != 'true'
         run: |
-          docker pull postgres:17-alpine
-          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+          docker pull postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
+          docker save -o ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
 
-      - name: Load Postgres 17-alpine image from cache
+      - name: Load Postgres image from cache
         if: steps.cache-postgres-integration.outputs.cache-hit == 'true'
-        run: docker load -i ~/image-cache/postgres-17-alpine.tar
+        run: docker load -i ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
       - name: enterprise
         if: matrix.FEATURES == 'enterprise'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
@@ -112,22 +120,30 @@ jobs:
       - name: Create image cache dir
         run: mkdir -p ~/image-cache
 
-      - name: Cache Postgres 17-alpine Docker image
+      - name: Get latest Postgres 17-alpine digest
+        id: get-digest
+        run: |
+          docker pull postgres:17-alpine
+          DIGEST=$(docker images --digests | grep "postgres.*17-alpine" | awk '{print $3}' | head -1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Using digest: $DIGEST"
+
+      - name: Cache Postgres Docker image
         id: cache-postgres-warehouse
         uses: actions/cache@v4
         with:
-          path: ~/image-cache/postgres-17-alpine.tar
-          key: postgres-17-alpine-image-${{ runner.os }}
+          path: ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
+          key: postgres-${{ steps.get-digest.outputs.digest }}-${{ runner.os }}
 
-      - name: Pull and save Postgres 17-alpine image if not cached
+      - name: Pull and save Postgres image if not cached
         if: steps.cache-postgres-warehouse.outputs.cache-hit != 'true'
         run: |
-          docker pull postgres:17-alpine
-          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+          docker pull postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
+          docker save -o ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
 
-      - name: Load Postgres 17-alpine image from cache
+      - name: Load Postgres image from cache
         if: steps.cache-postgres-warehouse.outputs.cache-hit == 'true'
-        run: docker load -i ~/image-cache/postgres-17-alpine.tar
+        run: docker load -i ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
         run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
         env:
@@ -188,22 +204,30 @@ jobs:
       - name: Create image cache dir
         run: mkdir -p ~/image-cache
 
-      - name: Cache Postgres 17-alpine Docker image
+      - name: Get latest Postgres 17-alpine digest
+        id: get-digest
+        run: |
+          docker pull postgres:17-alpine
+          DIGEST=$(docker images --digests | grep "postgres.*17-alpine" | awk '{print $3}' | head -1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Using digest: $DIGEST"
+
+      - name: Cache Postgres Docker image
         id: cache-postgres-warehouse-v2
         uses: actions/cache@v4
         with:
-          path: ~/image-cache/postgres-17-alpine.tar
-          key: postgres-17-alpine-image-${{ runner.os }}
+          path: ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
+          key: postgres-${{ steps.get-digest.outputs.digest }}-${{ runner.os }}
 
-      - name: Pull and save Postgres 17-alpine image if not cached
+      - name: Pull and save Postgres image if not cached
         if: steps.cache-postgres-warehouse-v2.outputs.cache-hit != 'true'
         run: |
-          docker pull postgres:17-alpine
-          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+          docker pull postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
+          docker save -o ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
 
-      - name: Load Postgres 17-alpine image from cache
+      - name: Load Postgres image from cache
         if: steps.cache-postgres-warehouse-v2.outputs.cache-hit == 'true'
-        run: docker load -i ~/image-cache/postgres-17-alpine.tar
+        run: docker load -i ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
         run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
         env:
@@ -239,22 +263,30 @@ jobs:
       - name: Create image cache dir
         run: mkdir -p ~/image-cache
 
-      - name: Cache Postgres 17-alpine Docker image
+      - name: Get latest Postgres 17-alpine digest
+        id: get-digest
+        run: |
+          docker pull postgres:17-alpine
+          DIGEST=$(docker images --digests | grep "postgres.*17-alpine" | awk '{print $3}' | head -1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Using digest: $DIGEST"
+
+      - name: Cache Postgres Docker image
         id: cache-postgres-unit
         uses: actions/cache@v4
         with:
-          path: ~/image-cache/postgres-17-alpine.tar
-          key: postgres-17-alpine-image-${{ runner.os }}
+          path: ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
+          key: postgres-${{ steps.get-digest.outputs.digest }}-${{ runner.os }}
 
-      - name: Pull and save Postgres 17-alpine image if not cached
+      - name: Pull and save Postgres image if not cached
         if: steps.cache-postgres-unit.outputs.cache-hit != 'true'
         run: |
-          docker pull postgres:17-alpine
-          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+          docker pull postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
+          docker save -o ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
 
-      - name: Load Postgres 17-alpine image from cache
+      - name: Load Postgres image from cache
         if: steps.cache-postgres-unit.outputs.cache-hit == 'true'
-        run: docker load -i ~/image-cache/postgres-17-alpine.tar
+        run: docker load -i ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
       - name: tests
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
@@ -316,22 +348,30 @@ jobs:
       - name: Create image cache dir
         run: mkdir -p ~/image-cache
 
-      - name: Cache Postgres 17-alpine Docker image
+      - name: Get latest Postgres 17-alpine digest
+        id: get-digest
+        run: |
+          docker pull postgres:17-alpine
+          DIGEST=$(docker images --digests | grep "postgres.*17-alpine" | awk '{print $3}' | head -1)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Using digest: $DIGEST"
+
+      - name: Cache Postgres Docker image
         id: cache-postgres-package-unit
         uses: actions/cache@v4
         with:
-          path: ~/image-cache/postgres-17-alpine.tar
-          key: postgres-17-alpine-image-${{ runner.os }}
+          path: ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
+          key: postgres-${{ steps.get-digest.outputs.digest }}-${{ runner.os }}
 
-      - name: Pull and save Postgres 17-alpine image if not cached
+      - name: Pull and save Postgres image if not cached
         if: steps.cache-postgres-package-unit.outputs.cache-hit != 'true'
         run: |
-          docker pull postgres:17-alpine
-          docker save -o ~/image-cache/postgres-17-alpine.tar postgres:17-alpine
+          docker pull postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
+          docker save -o ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar postgres:17-alpine@${{ steps.get-digest.outputs.digest }}
 
-      - name: Load Postgres 17-alpine image from cache
+      - name: Load Postgres image from cache
         if: steps.cache-postgres-package-unit.outputs.cache-hit == 'true'
-        run: docker load -i ~/image-cache/postgres-17-alpine.tar
+        run: docker load -i ~/image-cache/postgres-${{ steps.get-digest.outputs.digest }}.tar
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
