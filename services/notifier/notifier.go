@@ -227,7 +227,7 @@ func (n *Notifier) Setup(
 	if err := n.setupDatabase(ctx, dsn); err != nil {
 		return fmt.Errorf("could not setup db: %w", err)
 	}
-	n.repo = newRepo(n.db)
+	n.repo = newRepo(n.db, WithStats(n.statsFactory))
 
 	groupCtx, groupCancel := context.WithCancel(ctx)
 	n.background.group, n.background.groupCtx = errgroup.WithContext(groupCtx)

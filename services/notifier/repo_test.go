@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -57,6 +59,9 @@ func TestRepo(t *testing.T) {
 			pool, err := dockertest.NewPool("")
 			require.NoError(t, err)
 
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
 			pgResource, err := postgres.Setup(pool, t)
 			require.NoError(t, err)
 
@@ -80,7 +85,7 @@ func TestRepo(t *testing.T) {
 			ctx := context.Background()
 			now := time.Now().Truncate(time.Second).UTC()
 			db := sqlmw.New(pgResource.DB)
-			r := newRepo(db, WithNow(func() time.Time {
+			r := newRepo(db, WithStats(statsStore), WithNow(func() time.Time {
 				return now
 			}))
 
@@ -106,6 +111,12 @@ func TestRepo(t *testing.T) {
 
 					err := r.insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 					require.NoError(t, err)
+					require.Greater(t, statsStore.Get("notifier_repo_query_duration_seconds", stats.Tags{
+						"action":              "insert",
+						"repoType":            "pg_notifier_queue",
+						"workspaceIdentifier": workspaceIdentifier,
+						"jobType":             string(publishRequest.JobType),
+					}).LastDuration(), time.Duration(0))
 
 					jobs, err := r.getByBatchID(ctx, batchID)
 					require.NoError(t, err)
