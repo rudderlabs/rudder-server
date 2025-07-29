@@ -26,7 +26,7 @@ const whSchemaTableColumns = `
 	namespace,
    	destination_id,
 	destination_type,
-	schema,
+	schema::jsonb,
    	created_at,
    	updated_at,
 	expires_at
@@ -282,7 +282,7 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 			s.updated_at,
 			s.expires_at
 		FROM wh_schemas s
-		CROSS JOIN LATERAL jsonb_each(s.schema) AS j
+		CROSS JOIN LATERAL jsonb_each(s.schema::jsonb) AS j
 		WHERE
 			s.destination_id = $1 AND
 			s.namespace = $2 AND
