@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.56.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.55.0...v1.56.0-rc.1) (2025-07-29)
+
+
+### Features
+
+* change datatype from jsonb to text for warehouse ([#6118](https://github.com/rudderlabs/rudder-server/issues/6118)) ([bf90708](https://github.com/rudderlabs/rudder-server/commit/bf9070877a4d23a27fa5b160134fb4081663a960))
+* enable lz4 compression for warehouse ([#6119](https://github.com/rudderlabs/rudder-server/issues/6119)) ([c8afe87](https://github.com/rudderlabs/rudder-server/commit/c8afe873b66557d52a91c0a772cb71c9f29f61a6))
+* stats for notifier repo module ([#6184](https://github.com/rudderlabs/rudder-server/issues/6184)) ([44a0e9f](https://github.com/rudderlabs/rudder-server/commit/44a0e9fe9e43f3917ee49739d08b238ccf2efadf))
+* stats for warehouse repo module ([#6179](https://github.com/rudderlabs/rudder-server/issues/6179)) ([07c0391](https://github.com/rudderlabs/rudder-server/commit/07c03918d8a4e2b5b74d4ab7c3915ce2755717f2))
+
+
+### Bug Fixes
+
+* add validation to adjustedConversionTime ([#6092](https://github.com/rudderlabs/rudder-server/issues/6092)) ([e33bbf9](https://github.com/rudderlabs/rudder-server/commit/e33bbf99b04e4ab3323f071a038e7c1d77cdceb8))
+* dangling connection start time not being logged properly ([#6157](https://github.com/rudderlabs/rudder-server/issues/6157)) ([965e099](https://github.com/rudderlabs/rudder-server/commit/965e0997552e97f646c342101638b88a7a50c2e8))
+* invalidate warehouse schema cache in case of export error ([#6131](https://github.com/rudderlabs/rudder-server/issues/6131)) ([c04a953](https://github.com/rudderlabs/rudder-server/commit/c04a9536b413b54b3496301d15f71e59bff5ce6b))
+* load files not being regenerated if schema is outdated ([#6149](https://github.com/rudderlabs/rudder-server/issues/6149)) ([0b26aed](https://github.com/rudderlabs/rudder-server/commit/0b26aed1c2588bf3f43b7379ce72da685a070d21))
+* negative MTU count ([#6180](https://github.com/rudderlabs/rudder-server/issues/6180)) ([ecdd64f](https://github.com/rudderlabs/rudder-server/commit/ecdd64f26836cfb949adecbce14eca134a113468))
+* **router:** timeout doesn't reset when there are no jobs ([#6171](https://github.com/rudderlabs/rudder-server/issues/6171)) ([1e66738](https://github.com/rudderlabs/rudder-server/commit/1e667383b2cd39216b6cf43c83eafdd8086b1762))
+* **router:** worker's batch timeout is getting resetted after new job arrival ([#6167](https://github.com/rudderlabs/rudder-server/issues/6167)) ([1e66738](https://github.com/rudderlabs/rudder-server/commit/1e667383b2cd39216b6cf43c83eafdd8086b1762))
+* schema not being fetched from warehouse for new warehouse destinations ([#6128](https://github.com/rudderlabs/rudder-server/issues/6128)) ([6e13cd4](https://github.com/rudderlabs/rudder-server/commit/6e13cd4cee3bcc53d3e569f094b7e4b3bd4d75ac))
+* snowpipe events getting duplicated if status API fails ([#6125](https://github.com/rudderlabs/rudder-server/issues/6125)) ([2c11854](https://github.com/rudderlabs/rudder-server/commit/2c1185440534ab2202482b1b6653d8b1c8e9c9b7))
+* update warehouse schema expiry only when fetched from warehouse ([#6130](https://github.com/rudderlabs/rudder-server/issues/6130)) ([e0ded8c](https://github.com/rudderlabs/rudder-server/commit/e0ded8ca19c1d3bb76f23acbf2e65a7743075a49))
+* **warehouse:** add mutex to mockStageFilesRepo to prevent data race in tests (WAR-960 ([#6156](https://github.com/rudderlabs/rudder-server/issues/6156)) ([29c6f01](https://github.com/rudderlabs/rudder-server/commit/29c6f01d8414e6b20a7cd2787e33cbf0135743ed))
+
+
+### Miscellaneous
+
+* bump the go deps group across 1 directory with 12 updates ([#6178](https://github.com/rudderlabs/rudder-server/issues/6178)) ([f57c6e5](https://github.com/rudderlabs/rudder-server/commit/f57c6e5710ea15f17d43f489997b0697f2ac734e))
+* clean up processor vars ([#6159](https://github.com/rudderlabs/rudder-server/issues/6159)) ([0dbc721](https://github.com/rudderlabs/rudder-server/commit/0dbc721b7ae3f893597e4b545d43da7c18e3ecf6))
+* cleanup aws v1 ([#6113](https://github.com/rudderlabs/rudder-server/issues/6113)) ([be1fb41](https://github.com/rudderlabs/rudder-server/commit/be1fb413d96e54bebaa544d909cb7cc2394d5a66))
+* **jobsdb:** introduce context with timeout during add new ds loop ([#6150](https://github.com/rudderlabs/rudder-server/issues/6150)) ([1a151c9](https://github.com/rudderlabs/rudder-server/commit/1a151c9d6018d4248bcc5715e46ab2a4ac2f11b4))
+* **jobsdb:** remove foreign key constraint ([#6154](https://github.com/rudderlabs/rudder-server/issues/6154)) ([6de673f](https://github.com/rudderlabs/rudder-server/commit/6de673f691193fa210580aadbe7b0bcde9a3cab5))
+* modifications and tests related chagnes for the warehouse lz4 and jsonb to text conversion ([#6185](https://github.com/rudderlabs/rudder-server/issues/6185)) ([a043353](https://github.com/rudderlabs/rudder-server/commit/a043353580b736bf8e7303538bae28fc0f3e4166))
+* modifications and tests related changes for the notifier lz4 and jsonb to text conversion ([#6183](https://github.com/rudderlabs/rudder-server/issues/6183)) ([918044b](https://github.com/rudderlabs/rudder-server/commit/918044b83ee5aae00f1dfd8f5966921e9d203be0))
+* **router:** separate worker loop batching logic from processing logic ([#6173](https://github.com/rudderlabs/rudder-server/issues/6173)) ([af4703d](https://github.com/rudderlabs/rudder-server/commit/af4703d83691caced4f6ab5a0a3077ed7d566e9f))
+* sync release v1.55.0 to main branch ([#6158](https://github.com/rudderlabs/rudder-server/issues/6158)) ([3d2156b](https://github.com/rudderlabs/rudder-server/commit/3d2156bfb2dabf5de92ace978aff25f52f2efa0d))
+
 ## [1.55.2](https://github.com/rudderlabs/rudder-server/compare/v1.55.1...v1.55.2) (2025-07-24)
 
 
