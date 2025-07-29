@@ -12,6 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -43,8 +45,10 @@ type WHSchema struct {
 func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSchema {
 	r := &WHSchema{
 		repo: &repo{
-			db:  db,
-			now: timeutil.Now,
+			db:           db,
+			now:          timeutil.Now,
+			statsFactory: stats.NOP,
+			repoType:     whSchemaTableName,
 		},
 	}
 	r.config.enableTableLevelSchema = conf.GetReloadableBoolVar(false, "Warehouse.enableTableLevelSchema")
@@ -57,6 +61,12 @@ func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSch
 // Insert inserts a schema row in wh_schemas with the given schema.
 // If Warehouse.enableTableLevelSchema is true in config, it also inserts/updates table-level schemas for each table in the schema.
 func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error {
+	defer sh.TimerStat("insert", stats.Tags{
+		"sourceId": whSchema.SourceID,
+		"destId":   whSchema.DestinationID,
+		"destType": whSchema.DestinationType,
+	})()
+
 	now := sh.now()
 
 	schemaPayload, err := jsonrs.Marshal(whSchema.Schema)
@@ -194,6 +204,8 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 
 // GetForNamespace fetches the schema for a namespace, supporting both legacy and table-level modes.
 func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error) {
+	defer sh.TimerStat("get_for_namespace", stats.Tags{"destId": destID})()
+
 	if !sh.config.enableTableLevelSchema.Load() {
 		return sh.getForNamespace(ctx, destID, namespace)
 	}
@@ -282,7 +294,7 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 			s.updated_at,
 			s.expires_at
 		FROM wh_schemas s
-		CROSS JOIN LATERAL jsonb_each(s.schema) AS j
+		CROSS JOIN LATERAL jsonb_each(s.schema::jsonb) AS j
 		WHERE
 			s.destination_id = $1 AND
 			s.namespace = $2 AND
@@ -406,6 +418,11 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 }
 
 func (sh *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (string, error) {
+	defer sh.TimerStat("get_namespace", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destID,
+	})()
+
 	query := `SELECT namespace FROM ` + whSchemaTableName + `
 		WHERE
 			source_id = $1 AND
@@ -444,6 +461,8 @@ func (sh *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (
 }
 
 func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []warehouseutils.SourceIDDestinationID) ([]warehouseutils.FetchTableInfo, error) {
+	defer sh.TimerStat("get_tables_for_connection", nil)()
+
 	if len(connections) == 0 {
 		return nil, fmt.Errorf("no source id and destination id pairs provided")
 	}
@@ -498,6 +517,8 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 }
 
 func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID string, expiresAt time.Time) error {
+	defer sh.TimerStat("set_expiry_for_destination", stats.Tags{"destId": destinationID})()
+
 	query := `
 		UPDATE ` + whSchemaTableName + `
 		SET expires_at = $1, updated_at = $2

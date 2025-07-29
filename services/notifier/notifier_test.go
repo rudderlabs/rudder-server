@@ -19,36 +19,18 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/services/notifier"
 )
 
-func setup(t testing.TB) *postgres.Resource {
-	t.Helper()
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	pgResource, err := postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"))
-	require.NoError(t, err)
-
-	t.Log("db:", pgResource.DBDsn)
-
-	return pgResource
-}
-
 func TestNotifier(t *testing.T) {
-	t.Parallel()
-
 	const (
 		workspaceIdentifier = "test_workspace_identifier"
 		workerID            = "test_worker"
 	)
 
 	t.Run("clear jobs", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		publishRequest := &notifier.PublishRequest{
 			Payloads: []json.RawMessage{
@@ -67,7 +49,7 @@ func TestNotifier(t *testing.T) {
 			t.Helper()
 
 			var count int
-			err := pgResource.DB.QueryRowContext(ctx, `
+			err := db.DB.QueryRowContext(ctx, `
 				SELECT
 				  COUNT(*)
 				FROM
@@ -77,86 +59,63 @@ func TestNotifier(t *testing.T) {
 			return count
 		}
 
-		memstatsStore, err := memstats.New()
+		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		notifierWithIdentifier := notifier.New(config.Default, logger.NOP, memstatsStore, workspaceIdentifier)
-		err = notifierWithIdentifier.Setup(ctx, pgResource.DBDsn)
-		require.NoError(t, err)
-
-		notifierWithoutIdentifier := notifier.New(config.Default, logger.NOP, memstatsStore, "")
-		err = notifierWithoutIdentifier.Setup(ctx, pgResource.DBDsn)
-		require.NoError(t, err)
+		notifierWithIdentifier := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier)
+		require.NoError(t, notifierWithIdentifier.Setup(ctx, db.DBDsn))
+		notifierWithoutIdentifier := notifier.New(config.New(), logger.NOP, statsStore, "")
+		require.NoError(t, notifierWithoutIdentifier.Setup(ctx, db.DBDsn))
 
 		t.Run("without workspace identifier", func(t *testing.T) {
-			_, err = notifierWithIdentifier.Publish(ctx, publishRequest)
+			_, err := notifierWithIdentifier.Publish(ctx, publishRequest)
 			require.NoError(t, err)
 			require.Equal(t, len(publishRequest.Payloads), count(t))
-
-			err = notifierWithoutIdentifier.ClearJobs(ctx)
-			require.NoError(t, err)
+			require.NoError(t, notifierWithoutIdentifier.ClearJobs(ctx))
 			require.Equal(t, len(publishRequest.Payloads), count(t))
-
-			err = notifierWithIdentifier.ClearJobs(ctx)
-			require.NoError(t, err)
+			require.NoError(t, notifierWithIdentifier.ClearJobs(ctx))
 			require.Zero(t, count(t))
 		})
-
 		t.Run("with workspace identifier", func(t *testing.T) {
-			_, err = notifierWithoutIdentifier.Publish(ctx, publishRequest)
+			_, err := notifierWithoutIdentifier.Publish(ctx, publishRequest)
 			require.NoError(t, err)
 			require.Equal(t, len(publishRequest.Payloads), count(t))
-
-			err = notifierWithIdentifier.ClearJobs(ctx)
-			require.NoError(t, err)
+			require.NoError(t, notifierWithIdentifier.ClearJobs(ctx))
 			require.Equal(t, len(publishRequest.Payloads), count(t))
-
-			err = notifierWithoutIdentifier.ClearJobs(ctx)
-			require.NoError(t, err)
+			require.NoError(t, notifierWithoutIdentifier.ClearJobs(ctx))
 			require.Equal(t, len(publishRequest.Payloads), count(t))
 		})
-
 		t.Run("context cancelled", func(t *testing.T) {
 			cancelledCtx, cancel := context.WithCancel(ctx)
 			cancel()
-
-			err = notifierWithIdentifier.ClearJobs(cancelledCtx)
-			require.ErrorIs(t, err, context.Canceled)
+			require.ErrorIs(t, notifierWithIdentifier.ClearJobs(cancelledCtx), context.Canceled)
 		})
 	})
 	t.Run("health check", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		t.Run("success", func(t *testing.T) {
-			memstatsStore, err := memstats.New()
+			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			n := notifier.New(config.Default, logger.NOP, memstatsStore, workspaceIdentifier)
-			err = n.Setup(ctx, pgResource.DBDsn)
-			require.NoError(t, err)
+			n := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier)
+			require.NoError(t, n.Setup(ctx, db.DBDsn))
 			require.True(t, n.CheckHealth(ctx))
 		})
 		t.Run("context cancelled", func(t *testing.T) {
 			cancelledCtx, cancel := context.WithCancel(ctx)
 			cancel()
 
-			memstatsStore, err := memstats.New()
+			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			n := notifier.New(config.Default, logger.NOP, memstatsStore, workspaceIdentifier)
-			err = n.Setup(ctx, pgResource.DBDsn)
-			require.NoError(t, err)
+			n := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier)
+			require.NoError(t, n.Setup(ctx, db.DBDsn))
 			require.False(t, n.CheckHealth(cancelledCtx))
 		})
 	})
 	t.Run("basic workflow", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		publishRequest := &notifier.PublishRequest{
 			Payloads: []json.RawMessage{
@@ -185,8 +144,7 @@ func TestNotifier(t *testing.T) {
 		g, gCtx := errgroup.WithContext(groupCtx)
 
 		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
-		err = n.Setup(groupCtx, pgResource.DBDsn)
-		require.NoError(t, err)
+		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		const (
 			totalJobs         = 12
@@ -294,10 +252,7 @@ func TestNotifier(t *testing.T) {
 		}).LastValue(), totalJobs*len(publishRequest.Payloads))
 	})
 	t.Run("many publish jobs", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		const (
 			batchSize         = 1
@@ -328,12 +283,11 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		memstatsStore, err := memstats.New()
+		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, memstatsStore, workspaceIdentifier)
-		err = n.Setup(groupCtx, pgResource.DBDsn)
-		require.NoError(t, err)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		publishResponses := make(chan *notifier.PublishResponse)
 
@@ -341,9 +295,7 @@ func TestNotifier(t *testing.T) {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
-
 				publishResponses <- <-publishCh
-
 				return nil
 			})
 		}
@@ -351,9 +303,7 @@ func TestNotifier(t *testing.T) {
 		for i := 0; i < subscribers; i++ {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
-
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
-
 				for j := 0; j < subscriberWorkers; j++ {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
@@ -387,10 +337,7 @@ func TestNotifier(t *testing.T) {
 		require.NoError(t, g.Wait())
 	})
 	t.Run("bigger batches and many subscribers", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		const (
 			batchSize         = 500
@@ -421,12 +368,11 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		memstatsStore, err := memstats.New()
+		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, memstatsStore, workspaceIdentifier)
-		err = n.Setup(groupCtx, pgResource.DBDsn)
-		require.NoError(t, err)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		publishResponses := make(chan *notifier.PublishResponse)
 
@@ -434,19 +380,14 @@ func TestNotifier(t *testing.T) {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
-
 				publishResponses <- <-publishCh
-
 				return nil
 			})
 		}
-
 		for i := 0; i < subscribers; i++ {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
-
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
-
 				for j := 0; j < subscriberWorkers; j++ {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
@@ -480,10 +421,7 @@ func TestNotifier(t *testing.T) {
 		require.NoError(t, g.Wait())
 	})
 	t.Run("round robin pickup and maintenance workers", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		const (
 			batchSize         = 1
@@ -514,24 +452,20 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		memstatsStore, err := memstats.New()
+		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, memstatsStore, workspaceIdentifier)
-		err = n.Setup(groupCtx, pgResource.DBDsn)
-		require.NoError(t, err)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		publishResponses := make(chan *notifier.PublishResponse)
-
 		claimedWorkers := atomic.NewInt64(0)
 
 		for i := 0; i < jobs; i++ {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
-
 				publishResponses <- <-publishCh
-
 				return nil
 			})
 		}
@@ -539,17 +473,13 @@ func TestNotifier(t *testing.T) {
 		for i := 0; i < subscribers; i++ {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
-
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
-
 				blockSub := make(chan struct{})
 				defer close(blockSub)
-
 				for i := 0; i < subscriberWorkers; i++ {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
 							claimedWorkers.Add(1)
-
 							if claimedWorkers.Load() < subscriberWorkers {
 								select {
 								case <-blockSub:
@@ -557,7 +487,6 @@ func TestNotifier(t *testing.T) {
 									return nil
 								}
 							}
-
 							n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
 								Payload: json.RawMessage(`{"test": "payload"}`),
 							})
@@ -588,66 +517,59 @@ func TestNotifier(t *testing.T) {
 		require.NoError(t, g.Wait())
 	})
 	t.Run("env vars", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-		ctx := context.Background()
+		db, ctx := setupDB(t), context.Background()
 
 		c := config.New()
-		c.Set("PGNOTIFIER_DB_HOST", pgResource.Host)
-		c.Set("PGNOTIFIER_DB_USER", pgResource.User)
-		c.Set("PGNOTIFIER_DB_NAME", pgResource.Database)
-		c.Set("PGNOTIFIER_DB_PORT", pgResource.Port)
-		c.Set("PGNOTIFIER_DB_PASSWORD", pgResource.Password)
+		c.Set("PGNOTIFIER_DB_HOST", db.Host)
+		c.Set("PGNOTIFIER_DB_USER", db.User)
+		c.Set("PGNOTIFIER_DB_NAME", db.Database)
+		c.Set("PGNOTIFIER_DB_PORT", db.Port)
+		c.Set("PGNOTIFIER_DB_PASSWORD", db.Password)
 
-		memstatsStore, err := memstats.New()
+		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, memstatsStore, workspaceIdentifier)
-		err = n.Setup(ctx, pgResource.DBDsn)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		err = n.Setup(ctx, db.DBDsn)
 		require.NoError(t, err)
 	})
 	t.Run("maintenance workflow", func(t *testing.T) {
-		t.Parallel()
-
-		pgResource := setup(t)
-
-		ctx := context.Background()
-
+		db, ctx := setupDB(t), context.Background()
 		c := config.New()
 		c.Set("PgNotifier.jobOrphanTimeout", "1s")
-
 		g, _ := errgroup.WithContext(ctx)
 		g.Go(func() error {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
-
-			memstatsStore, err := memstats.New()
+			statsStore, err := memstats.New()
 			require.NoError(t, err)
-
-			n := notifier.New(c, logger.NOP, memstatsStore, workspaceIdentifier)
-			err = n.Setup(ctx, pgResource.DBDsn)
-			require.NoError(t, err)
-
-			err = n.RunMaintenance(ctxWithTimeout)
-			require.NoError(t, err)
+			n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+			require.NoError(t, n.Setup(ctx, db.DBDsn))
+			require.NoError(t, n.RunMaintenance(ctxWithTimeout))
 			return nil
 		})
 		g.Go(func() error {
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
 			defer cancel()
 
-			memstatsStore, err := memstats.New()
+			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			n := notifier.New(c, logger.NOP, memstatsStore, workspaceIdentifier)
-			err = n.Setup(ctx, pgResource.DBDsn)
-			require.NoError(t, err)
-
-			err = n.RunMaintenance(ctxWithTimeout)
-			require.NoError(t, err)
+			n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+			require.NoError(t, n.Setup(ctx, db.DBDsn))
+			require.NoError(t, n.RunMaintenance(ctxWithTimeout))
 			return nil
 		})
 		require.NoError(t, g.Wait())
 	})
+}
+
+func setupDB(t testing.TB) *postgres.Resource {
+	t.Helper()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	db, err := postgres.Setup(pool, t, postgres.WithOptions("max_connections=1000"))
+	require.NoError(t, err)
+	return db
 }

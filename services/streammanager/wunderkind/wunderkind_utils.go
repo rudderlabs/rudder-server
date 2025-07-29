@@ -1,11 +1,5 @@
 package wunderkind
 
-import (
-	"errors"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-)
-
 const (
 	InvocationType       = "RequestResponse"
 	WunderkindRegion     = "WUNDERKIND_REGION"
@@ -14,26 +8,11 @@ const (
 	WunderkindLambda     = "WUNDERKIND_LAMBDA"
 )
 
-type inputData struct {
-	Payload string `json:"payload"`
+// Config is the config that is required to send data to Wunderkind Lambda
+type destinationConfig struct {
+	Lambda string `json:"lambda"`
 }
 
-func validate(conf *config.Config) error {
-	if conf.GetString(WunderkindRegion, "") == "" {
-		return errors.New("region cannot be empty")
-	}
-
-	if conf.GetString(WunderkindIamRoleArn, "") == "" {
-		return errors.New("iam role arn cannot be empty")
-	}
-
-	if conf.GetString(WunderkindExternalId, "") == "" {
-		return errors.New("external id cannot be empty")
-	}
-
-	if conf.GetString(WunderkindLambda, "") == "" {
-		return errors.New("lambda function cannot be empty")
-	}
-
-	return nil
+type inputData struct {
+	Payload string `json:"payload"`
 }

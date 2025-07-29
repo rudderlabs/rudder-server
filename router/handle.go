@@ -34,7 +34,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/oauth"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -89,7 +89,6 @@ type Handle struct {
 	customDestinationManager       customDestinationManager.DestinationManager
 	transformer                    transformer.Transformer
 	isOAuthDestination             bool
-	oauth                          oauth.Authorizer
 	destinationsMapMu              sync.RWMutex
 	destinationsMap                map[string]*routerutils.DestinationWithSources // destinationID -> destination
 	connectionsMap                 map[types.SourceDest]types.ConnectionWithID

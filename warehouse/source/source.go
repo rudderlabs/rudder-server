@@ -10,9 +10,12 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/services/notifier"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -42,11 +45,11 @@ type Manager struct {
 	}
 }
 
-func New(conf *config.Config, log logger.Logger, db *sqlmw.DB, publisher publisher) *Manager {
+func New(conf *config.Config, log logger.Logger, statsFactory stats.Stats, db *sqlmw.DB, publisher publisher) *Manager {
 	m := &Manager{
 		logger:           log.Child("source"),
-		tableUploadsRepo: repo.NewTableUploads(db, conf),
-		sourceRepo:       repo.NewSource(db),
+		tableUploadsRepo: repo.NewTableUploads(db, conf, repo.WithStats(statsFactory)),
+		sourceRepo:       repo.NewSource(db, repo.WithStats(statsFactory)),
 		publisher:        publisher,
 	}
 
