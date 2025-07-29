@@ -171,14 +171,15 @@ func (u *UniqueUsersReporter) generateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 
 		// for alias event we will be adding previousId to identifiedAnonymousID hll,
 		// so for calculating unique users we do not double count the user
+		// we also add previousId to userId hll to avoid negative cardinality
 		// e.g. we receive events
 		// {type:track, anonymousID: anon1}
 		// {type:track, userID: user1}
 		// {type:track, userID: user2}
 		// {type:identify, userID: user1, anonymousID: anon1}
 		// {type:alias, previousId: user2, userID: user1}
-		// userHLL: {user1, user2}, anonHLL: {anon1}, identifiedAnonHLL: {user1-anon1, user2}
-		// cardinality: len(userHLL)+len(anonHLL)-len(identifiedAnonHLL): 2+1-2 = 1
+		// userHLL: {user1, user2, anon1}, identifiedAnonHLL: {anon1, user2}
+		// cardinality: len(userHLL)-len(identifiedAnonHLL): 3-2 = 1
 		if eventType == eventTypeAlias {
 			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
 			if previousID != "" && previousID != userID && previousID != anonymousID {
@@ -410,8 +411,8 @@ func (u *UniqueUsersReporter) recordHllSizeStats(report *UsersReport) {
 	}
 }
 
-func getNewID(id string, enabled bool) string {
-	if enabled {
+func getNewID(id string, shadowEnabled bool) string {
+	if shadowEnabled {
 		return id + "-shadow"
 	}
 	return id
