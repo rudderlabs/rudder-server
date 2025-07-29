@@ -72,18 +72,18 @@ func (mr *MockloadFilesRepoMockRecorder) DistinctTableName(ctx, sourceID, destin
 }
 
 // Get mocks base method.
-func (m *MockloadFilesRepo) Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (m *MockloadFilesRepo) Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", ctx, uploadID, stagingFileIDs)
+	ret := m.ctrl.Call(m, "Get", ctx, uploadID)
 	ret0, _ := ret[0].([]model.LoadFile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockloadFilesRepoMockRecorder) Get(ctx, uploadID, stagingFileIDs any) *gomock.Call {
+func (mr *MockloadFilesRepoMockRecorder) Get(ctx, uploadID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockloadFilesRepo)(nil).Get), ctx, uploadID, stagingFileIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockloadFilesRepo)(nil).Get), ctx, uploadID)
 }
 
 // GetByID mocks base method.
