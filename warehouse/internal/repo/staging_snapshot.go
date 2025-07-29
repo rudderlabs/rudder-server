@@ -10,6 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -28,8 +30,10 @@ type StagingFileSchemaSnapshots repo
 // NewStagingFileSchemaSnapshots creates a new StagingFileSchemaSnapshots using the given DB connection.
 func NewStagingFileSchemaSnapshots(db *sqlmiddleware.DB, opts ...Opt) *StagingFileSchemaSnapshots {
 	r := &StagingFileSchemaSnapshots{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: stats.NOP,
+		repoType:     stagingFileSchemaSnapshotTableName,
 	}
 	for _, opt := range opts {
 		opt((*repo)(r))
@@ -39,6 +43,12 @@ func NewStagingFileSchemaSnapshots(db *sqlmiddleware.DB, opts ...Opt) *StagingFi
 
 // Insert inserts a new schema snapshot into the database and returns its auto-generated ID.
 func (r *StagingFileSchemaSnapshots) Insert(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (uuid.UUID, error) {
+	defer (*repo)(r).TimerStat("insert", stats.Tags{
+		"sourceId":    sourceID,
+		"destId":      destinationID,
+		"workspaceId": workspaceID,
+	})()
+
 	query := `
 		INSERT INTO ` + stagingFileSchemaSnapshotTableName + ` (
 			id, schema, source_id, destination_id, workspace_id, created_at
@@ -64,6 +74,11 @@ func (r *StagingFileSchemaSnapshots) Insert(ctx context.Context, sourceID, desti
 // GetLatest returns the most recent schema snapshot for the given source and destination.
 // Returns ErrNoSchemaSnapshot if not found.
 func (r *StagingFileSchemaSnapshots) GetLatest(ctx context.Context, sourceID, destinationID string) (*model.StagingFileSchemaSnapshot, error) {
+	defer (*repo)(r).TimerStat("get_latest", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destinationID,
+	})()
+
 	query := `
 		SELECT ` + stagingFileSchemaSnapshotTableColumns + `
 		FROM ` + stagingFileSchemaSnapshotTableName + `

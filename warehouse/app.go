@@ -174,6 +174,7 @@ func (a *App) Setup(ctx context.Context) error {
 	a.sourcesManager = source.New(
 		a.conf,
 		a.logger,
+		a.statsFactory,
 		a.db,
 		a.notifier,
 	)

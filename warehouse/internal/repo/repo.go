@@ -1,3 +1,4 @@
+// Package repo provides database repository functionality for warehouse operations.
 package repo
 
 import (
@@ -6,22 +7,21 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
 
+// repo provides base repository functionality with database access and statistics tracking.
 type repo struct {
-	db  *sqlmiddleware.DB
-	now func() time.Time
+	db           *sqlmiddleware.DB
+	now          func() time.Time
+	statsFactory stats.Stats
+	repoType     string
 }
 
-type Opt func(*repo)
-
-func WithNow(now func() time.Time) Opt {
-	return func(r *repo) {
-		r.now = now
-	}
-}
-
+// WithTx executes a function within a database transaction.
+// Handles begin, commit, and rollback automatically.
 func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) error {
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
@@ -40,17 +40,16 @@ func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) e
 	return nil
 }
 
-type UpdateField func(v interface{}) UpdateKeyValue
-
-type UpdateKeyValue interface {
-	key() string
-	value() interface{}
+// TimerStat returns a function that records the duration of a database action.
+func (r *repo) TimerStat(action string, extraTags stats.Tags) func() {
+	statName := "warehouse_repo_query_duration_seconds"
+	tags := stats.Tags{"action": action, "repoType": r.getRepoType()}
+	for k, v := range extraTags {
+		tags[k] = v
+	}
+	return r.statsFactory.NewTaggedStat(statName, stats.TimerType, tags).RecordDuration()
 }
 
-type keyValue struct {
-	k string
-	v interface{}
+func (r *repo) getRepoType() string {
+	return r.repoType
 }
-
-func (u keyValue) key() string        { return u.k }
-func (u keyValue) value() interface{} { return u.v }

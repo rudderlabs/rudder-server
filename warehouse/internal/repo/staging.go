@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -89,8 +90,10 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 func NewStagingFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
 		repo: &repo{
-			db:  db,
-			now: timeutil.Now,
+			db:           db,
+			now:          timeutil.Now,
+			statsFactory: stats.NOP,
+			repoType:     stagingTableName,
 		},
 		conf: conf,
 	}
@@ -158,6 +161,12 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	} else {
 		bytesPerTablePayload = nil
 	}
+
+	defer sf.TimerStat("insert", stats.Tags{
+		"sourceId":    stagingFile.SourceID,
+		"destId":      stagingFile.DestinationID,
+		"workspaceId": stagingFile.WorkspaceID,
+	})()
 
 	var schemaSnapshotID interface{}
 	if stagingFile.SnapshotID != uuid.Nil {
@@ -291,6 +300,8 @@ func parseStagingFiles(rows *sqlmiddleware.Rows) ([]*model.StagingFile, error) {
 
 // GetByID returns staging file with the given ID.
 func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
+	defer sf.TimerStat("get_by_id", nil)()
+
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE id = $1`
 
 	rows, err := sf.db.QueryContext(ctx, query, ID)
@@ -311,6 +322,8 @@ func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFil
 
 // GetSchemasByIDs returns staging file schemas for the given IDs.
 func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
+	defer sf.TimerStat("get_schemas_by_ids", nil)()
+
 	enableStagingFileSchemaSnapshot := sf.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
 	if !enableStagingFileSchemaSnapshot.Load() {
 		query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
@@ -405,6 +418,8 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 
 // GetForUploadID retrieves all the staging files associated with a specific upload ID.
 func (sf *StagingFiles) GetForUploadID(ctx context.Context, uploadID int64) ([]*model.StagingFile, error) {
+	defer sf.TimerStat("get_for_upload_id", nil)()
+
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE upload_id = $1 ORDER BY id ASC;`
 
 	rows, err := sf.db.QueryContext(ctx, query, uploadID)
@@ -416,6 +431,11 @@ func (sf *StagingFiles) GetForUploadID(ctx context.Context, uploadID int64) ([]*
 }
 
 func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
+	defer sf.TimerStat("pending", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destinationID,
+	})()
+
 	var (
 		uploadID               int64
 		lastStartStagingFileID int64
@@ -458,10 +478,18 @@ func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID str
 }
 
 func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
+	defer sf.TimerStat("count_pending_for_source", stats.Tags{
+		"sourceId": sourceID,
+	})()
+
 	return sf.countPending(ctx, `source_id = $1`, sourceID)
 }
 
 func (sf *StagingFiles) CountPendingForDestination(ctx context.Context, destinationID string) (int64, error) {
+	defer sf.TimerStat("count_pending_for_destination", stats.Tags{
+		"destId": destinationID,
+	})()
+
 	return sf.countPending(ctx, `destination_id = $1`, destinationID)
 }
 
@@ -479,6 +507,8 @@ func (sf *StagingFiles) countPending(ctx context.Context, query string, value in
 }
 
 func (sf *StagingFiles) TotalEventsForUploadID(ctx context.Context, uploadID int64) (int64, error) {
+	defer sf.TimerStat("total_events_for_upload_id", nil)()
+
 	var total sql.NullInt64
 
 	query := `SELECT SUM(total_events) FROM ` + stagingTableName + ` WHERE upload_id = $1`
@@ -491,6 +521,8 @@ func (sf *StagingFiles) TotalEventsForUploadID(ctx context.Context, uploadID int
 }
 
 func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, uploadID int64) ([]model.EventTimeRange, error) {
+	defer sf.TimerStat("get_event_time_ranges_by_upload_id", nil)()
+
 	rows, err := sf.db.QueryContext(ctx, `
 		SELECT
 			first_event_at, last_event_at
@@ -528,6 +560,8 @@ func (sf *StagingFiles) GetEventTimeRangesByUploadID(ctx context.Context, upload
 }
 
 func (sf *StagingFiles) DestinationRevisionIDsForUploadID(ctx context.Context, uploadID int64) ([]string, error) {
+	defer sf.TimerStat("destination_revision_ids_for_upload_id", nil)()
+
 	query := `
 		SELECT DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
 		FROM ` + stagingTableName + `
@@ -560,6 +594,8 @@ func (sf *StagingFiles) DestinationRevisionIDsForUploadID(ctx context.Context, u
 }
 
 func (sf *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) error {
+	defer sf.TimerStat("set_statuses", nil)()
+
 	if len(ids) == 0 {
 		return fmt.Errorf("no staging files to update")
 	}
@@ -590,6 +626,8 @@ func (sf *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status str
 }
 
 func (sf *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
+	defer sf.TimerStat("set_error_status", nil)()
+
 	sqlStatement := `
 		UPDATE
 		` + stagingTableName + `
