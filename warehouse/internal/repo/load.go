@@ -3,7 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
-	jsonstd "encoding/json"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -208,7 +209,7 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		UseRudderStorage      bool   `json:"use_rudder_storage"`
 	}
 	var (
-		metadataRaw jsonstd.RawMessage
+		metadataRaw json.RawMessage
 		uploadID    sql.NullInt64
 	)
 	err := scan(

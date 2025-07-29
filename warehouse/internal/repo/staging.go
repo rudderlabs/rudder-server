@@ -3,7 +3,6 @@ package repo
 import (
 	"context"
 	"database/sql"
-	jsonstd "encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -326,7 +325,7 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 
 		for rows.Next() {
 			var (
-				rawSchema jsonstd.RawMessage
+				rawSchema []byte
 				schema    model.Schema
 			)
 
@@ -362,7 +361,7 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 	schemas := make([]model.Schema, 0, len(ids))
 	for rows.Next() {
 		var (
-			rawSchema      jsonstd.RawMessage
+			rawSchema      []byte
 			schemaSnapshot []byte
 			schemaPatch    []byte
 		)
