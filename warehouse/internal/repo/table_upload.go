@@ -195,7 +195,7 @@ func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
 
 // PopulateTotalEventsWithTx Update the 'total_events' field in the Table Uploads table
 // by summing the 'total_events' from load files associated with specific staging file IDs.
-func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string, stagingFileIDs []int64) error {
+func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string) error {
 	defer tu.TimerStat("populate_total_events_with_tx", nil)()
 
 	subQuery := `

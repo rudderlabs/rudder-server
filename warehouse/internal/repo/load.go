@@ -120,7 +120,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 	})
 }
 
-func (lf *LoadFiles) Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (lf *LoadFiles) Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error) {
 	defer lf.TimerStat("get", nil)()
 
 	sqlStatement := `
@@ -236,7 +236,6 @@ func (lf *LoadFiles) GetByID(ctx context.Context, id int64) (*model.LoadFile, er
 func (lf *LoadFiles) TotalExportedEvents(
 	ctx context.Context,
 	uploadID int64,
-	stagingFileIDs []int64,
 	skipTables []string,
 ) (int64, error) {
 	defer lf.TimerStat("total_exported_events", nil)()

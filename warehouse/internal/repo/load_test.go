@@ -89,7 +89,7 @@ func Test_LoadFiles_WithUploadID(t *testing.T) {
 	})
 
 	t.Run("get", func(t *testing.T) {
-		loadFiles, err := r.Get(ctx, uploadID1, []int64{})
+		loadFiles, err := r.Get(ctx, uploadID1)
 		require.Len(t, loadFiles, len(upload1LoadFiles))
 		require.NoError(t, err)
 
@@ -102,7 +102,7 @@ func Test_LoadFiles_WithUploadID(t *testing.T) {
 		err := r.Delete(ctx, uploadID2, []int64{})
 		require.NoError(t, err)
 
-		loadFiles, err := r.Get(ctx, uploadID2, []int64{})
+		loadFiles, err := r.Get(ctx, uploadID2)
 		require.Len(t, loadFiles, 0)
 		require.NoError(t, err)
 	})
@@ -217,18 +217,13 @@ func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
 	err := r.Insert(ctx, loadFiles)
 	require.NoError(t, err)
 
-	t.Run("no staging files", func(t *testing.T) {
-		exportedEvents, err := r.TotalExportedEvents(ctx, int64(-1), []int64{-1}, []string{})
-		require.NoError(t, err)
-		require.Zero(t, exportedEvents)
-	})
 	t.Run("without skip tables", func(t *testing.T) {
-		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, []int64{}, nil)
+		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, nil)
 		require.NoError(t, err)
 		require.Equal(t, int64(totalEvents), exportedEvents)
 	})
 	t.Run("with skip tables", func(t *testing.T) {
-		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, []int64{}, skipTables)
+		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, skipTables)
 		require.NoError(t, err)
 		require.Equal(t, int64(skipTablesTotalEvents), exportedEvents)
 	})
@@ -236,7 +231,7 @@ func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
 
-		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, []int64{}, nil)
+		exportedEvents, err := r.TotalExportedEvents(ctx, uploadID, nil)
 		require.ErrorIs(t, err, context.Canceled)
 		require.Zero(t, exportedEvents)
 	})

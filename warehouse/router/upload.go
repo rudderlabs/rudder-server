@@ -68,7 +68,7 @@ type UploadJobFactory struct {
 type loadFilesRepo interface {
 	Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error)
 	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
-	TotalExportedEvents(ctx context.Context, uploadID int64, stagingFileIDs []int64, skipTables []string) (int64, error)
+	TotalExportedEvents(ctx context.Context, uploadID int64, skipTables []string) (int64, error)
 	GetByID(ctx context.Context, id int64) (*model.LoadFile, error)
 	DistinctTableName(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]string, error)
 }

@@ -102,18 +102,18 @@ func (mr *MockloadFilesRepoMockRecorder) GetByID(ctx, id any) *gomock.Call {
 }
 
 // TotalExportedEvents mocks base method.
-func (m *MockloadFilesRepo) TotalExportedEvents(ctx context.Context, uploadID int64, stagingFileIDs []int64, skipTables []string) (int64, error) {
+func (m *MockloadFilesRepo) TotalExportedEvents(ctx context.Context, uploadID int64, skipTables []string) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TotalExportedEvents", ctx, uploadID, stagingFileIDs, skipTables)
+	ret := m.ctrl.Call(m, "TotalExportedEvents", ctx, uploadID, skipTables)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // TotalExportedEvents indicates an expected call of TotalExportedEvents.
-func (mr *MockloadFilesRepoMockRecorder) TotalExportedEvents(ctx, uploadID, stagingFileIDs, skipTables any) *gomock.Call {
+func (mr *MockloadFilesRepoMockRecorder) TotalExportedEvents(ctx, uploadID, skipTables any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalExportedEvents", reflect.TypeOf((*MockloadFilesRepo)(nil).TotalExportedEvents), ctx, uploadID, stagingFileIDs, skipTables)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalExportedEvents", reflect.TypeOf((*MockloadFilesRepo)(nil).TotalExportedEvents), ctx, uploadID, skipTables)
 }
 
 // MockstagingFilesRepo is a mock of stagingFilesRepo interface.

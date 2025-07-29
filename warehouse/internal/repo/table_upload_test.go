@@ -337,7 +337,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 			txErr := r.WithTx(ctx, func(tx *sqlmw.Tx) error {
 				for _, table := range tables2 {
-					populateErr := r.PopulateTotalEventsWithTx(ctx, tx, uploadId, table, []int64{})
+					populateErr := r.PopulateTotalEventsWithTx(ctx, tx, uploadId, table)
 					require.NoError(t, populateErr)
 				}
 				return nil
