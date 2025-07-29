@@ -517,10 +517,11 @@ type Handle struct {
 		maxTableSize                   config.ValueLoader[int64]
 		cacheExpiration                config.ValueLoader[time.Duration]
 		addNewDSLoopSleepDuration      config.ValueLoader[time.Duration]
+		addNewDSTimeout                config.ValueLoader[time.Duration]
 		refreshDSListLoopSleepDuration config.ValueLoader[time.Duration]
+		refreshDSTimeout               config.ValueLoader[time.Duration]
 		minDSRetentionPeriod           config.ValueLoader[time.Duration]
 		maxDSRetentionPeriod           config.ValueLoader[time.Duration]
-		refreshDSTimeout               config.ValueLoader[time.Duration]
 		jobMaxAge                      config.ValueLoader[time.Duration]
 		writeCapacity                  chan struct{}
 		readCapacity                   chan struct{}
@@ -534,7 +535,6 @@ type Handle struct {
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
 		MaxDSSize                      config.ValueLoader[int]
-		indexOptimizations             config.ValueLoader[bool] // TODO: remove this option after next release (true by default)
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
@@ -936,6 +936,7 @@ func (jd *Handle) loadConfig() {
 	jd.conf.minDSRetentionPeriod = jd.config.GetReloadableDurationVar(0, time.Minute, jd.configKeys("minDSRetention")...)
 	jd.conf.maxDSRetentionPeriod = jd.config.GetReloadableDurationVar(90, time.Minute, jd.configKeys("maxDSRetention")...)
 	jd.conf.refreshDSTimeout = jd.config.GetReloadableDurationVar(10, time.Minute, jd.configKeys("refreshDS.timeout")...)
+	jd.conf.addNewDSTimeout = jd.config.GetReloadableDurationVar(5, time.Minute, jd.configKeys("addNewDS.timeout")...)
 
 	// migrationConfig
 
@@ -962,8 +963,6 @@ func (jd *Handle) loadConfig() {
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
 	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, jd.configKeys("maxDSSize")...)
-
-	jd.conf.indexOptimizations = jd.config.GetReloadableBoolVar(true, jd.configKeys("indexOptimizations")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -1070,7 +1069,7 @@ func (jd *Handle) writerSetup(ctx context.Context, l lock.LockToken) {
 
 	// If no DS present, add one
 	if len(jd.getDSList()) == 0 {
-		jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
+		jd.addNewDS(ctx, l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
 	}
 
 	jd.backgroundGroup.Go(crash.Wrapper(func() error {
@@ -1344,18 +1343,18 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 	}
 }
 
-func (jd *Handle) addNewDS(l lock.LockToken, ds dataSetT) {
+func (jd *Handle) addNewDS(ctx context.Context, l lock.LockToken, ds dataSetT) {
 	err := jd.WithTx(func(tx *Tx) error {
 		dsList, err := jd.doRefreshDSList(l)
 		jd.assertError(err)
-		return jd.addNewDSInTx(tx, l, dsList, ds)
+		return jd.addNewDSInTx(ctx, tx, l, dsList, ds)
 	})
 	jd.assertError(err)
 	jd.assertError(jd.doRefreshDSRangeList(l))
 }
 
 // NOTE: If addNewDSInTx is directly called, make sure to explicitly call refreshDSRangeList(l) to update the DS list in cache, once transaction has completed.
-func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds dataSetT) error {
+func (jd *Handle) addNewDSInTx(ctx context.Context, tx *Tx, l lock.LockToken, dsList []dataSetT, ds dataSetT) error {
 	defer jd.getTimerStat(
 		"add_new_ds",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -1364,7 +1363,7 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 		return errors.New("nil ds list lock token provided")
 	}
 	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
-	err := jd.createDSInTx(tx, ds)
+	err := jd.createDSInTx(ctx, tx, ds)
 	if err != nil {
 		return err
 	}
@@ -1411,8 +1410,7 @@ type transactionHandler interface {
 	// Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *Handle) createDSInTx(tx *Tx, newDS dataSetT) error {
-	ctx := context.TODO()
+func (jd *Handle) createDSInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
 	// Mark the start of operation. If we crash somewhere here, we delete the
 	// DS being added
 	opPayload, err := jsonrs.Marshal(&journalOpPayloadT{To: newDS})
@@ -1465,10 +1463,6 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobTable, err)
 	}
-	jobStatusTablePrimaryKey := ""
-	if !jd.conf.indexOptimizations.Load() { // TODO: Remove this branch after next release
-		jobStatusTablePrimaryKey = `,PRIMARY KEY (job_id, job_state, id)`
-	}
 
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE TABLE %q (
 		id BIGSERIAL,
@@ -1479,7 +1473,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
 		error_code VARCHAR(32),
 		error_response JSONB DEFAULT '{}'::JSONB,
-		parameters JSONB DEFAULT '{}'::JSONB%s);`, newDS.JobStatusTable, jobStatusTablePrimaryKey)); err != nil {
+		parameters JSONB DEFAULT '{}'::JSONB);`, newDS.JobStatusTable)); err != nil {
 		return fmt.Errorf("creating %s: %w", newDS.JobStatusTable, err)
 	}
 	return nil
@@ -1497,30 +1491,12 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 			return fmt.Errorf("creating %s index: %w", param, err)
 		}
 	}
-	if _, err := tx.ExecContext(
-		ctx,
-		fmt.Sprintf(
-			`ALTER TABLE %[1]q
-			ADD CONSTRAINT "fk_%[1]s_job_id"
-			FOREIGN KEY (job_id)
-			REFERENCES %[2]q (job_id)`,
-			newDS.JobStatusTable,
-			newDS.JobTable,
-		)); err != nil {
-		return fmt.Errorf("adding foreign key constraint: %w", err)
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("adding job_id_id index: %w", err)
 	}
-	if jd.conf.indexOptimizations.Load() {
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
-			return fmt.Errorf("adding job_id_id index: %w", err)
-		}
-		// index used for maxDSRetention during migration
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
-			return fmt.Errorf("adding job_id_js index: %w", err)
-		}
-	} else { // TODO: remove this branch after next release
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
-			return fmt.Errorf("adding job_id_id index: %w", err)
-		}
+	// index used for maxDSRetention during migration
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
+		return fmt.Errorf("adding job_id_js index: %w", err)
 	}
 
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
@@ -2416,6 +2392,8 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 		var dsListLock lock.LockToken
 		var releaseDsListLock chan<- lock.LockToken
 		addNewDS := func() error {
+			ctx, cancel := context.WithTimeout(ctx, jd.conf.addNewDSTimeout.Load())
+			defer cancel()
 			defer func() {
 				if releaseDsListLock != nil && dsListLock != nil {
 					releaseDsListLock <- dsListLock
@@ -2424,8 +2402,8 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
 			// start a transaction
 			err := jd.WithTx(func(tx *Tx) error {
-				return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
-					return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
+				return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
+					return jd.withDistributedLock(ctx, tx, "add_ds", func() error { // only one add_ds can run at a time
 						var err error
 						// refresh ds list
 						var dsList []dataSetT
@@ -2446,21 +2424,21 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							// We will release the list lock after the transaction ends, that's why we need to use an async lock
 							dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
 							if err != nil {
-								return err
+								return fmt.Errorf("acquiring dsListLock: %w", err)
 							}
 							jd.logger.Infon("Acquired lock", logger.NewField("ds", latestDS), logger.NewStringField("jobsdb", jd.tablePrefix))
-							if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+							if _, err = tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
 
 							nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
 							jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-							if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+							if err = jd.addNewDSInTx(ctx, tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
 								return fmt.Errorf("error adding new DS: %w", err)
 							}
 
 							// previous DS should become read only
-							if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+							if err = setReadonlyDsInTx(ctx, tx, latestDS); err != nil {
 								return fmt.Errorf("error making dataset read only: %w", err)
 							}
 						} else {
@@ -2488,7 +2466,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
-			jd.logger.Errorw("addNewDSLoop", "error", err)
+			jd.logger.Errorw("addNewDSLoop error", "error", err)
 		}
 	}
 }
@@ -2500,14 +2478,14 @@ func (jd *Handle) getAdvisoryLockForOperation(operation string) int64 {
 	return int64(binary.BigEndian.Uint32(h.Sum(nil)))
 }
 
-func setReadonlyDsInTx(tx *Tx, latestDS dataSetT) error {
+func setReadonlyDsInTx(ctx context.Context, tx *Tx, latestDS dataSetT) error {
 	sqlStatement := fmt.Sprintf(
 		`CREATE TRIGGER readonlyTableTrg
 		BEFORE INSERT
 		ON %q
 		FOR EACH STATEMENT
 		EXECUTE PROCEDURE %s;`, latestDS.JobTable, pgReadonlyTableExceptionFuncName)
-	_, err := tx.Exec(sqlStatement)
+	_, err := tx.ExecContext(ctx, sqlStatement)
 	return err
 }
 
@@ -2524,7 +2502,7 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
-			jd.logger.Errorw("refreshDSListLoop", "error", err)
+			jd.logger.Errorw("refreshDSListLoop error", "error", err)
 		}
 		cancel()
 	}

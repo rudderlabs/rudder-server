@@ -370,7 +370,7 @@ func TestRefreshDSList(t *testing.T) {
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
 	require.NoError(t, jobsDB.WithTx(func(tx *Tx) error {
-		return jobsDB.createDSInTx(tx, newDataSet(prefix, "2"))
+		return jobsDB.createDSInTx(context.Background(), tx, newDataSet(prefix, "2"))
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {

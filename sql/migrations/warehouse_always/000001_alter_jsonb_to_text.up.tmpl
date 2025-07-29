@@ -1,0 +1,48 @@
+{{ if .config.GetBoolVar false "Warehouse.enableJsonbToText" }}
+    DO $$
+    DECLARE
+      wh_schemas_data_type text;
+      wh_staging_files_data_type text;
+      wh_uploads_data_type text;
+    BEGIN
+      -- Query information_schema once for all tables
+      SELECT data_type INTO wh_schemas_data_type
+      FROM information_schema.columns
+      WHERE table_name = 'wh_schemas' AND column_name = 'schema';
+      
+      SELECT data_type INTO wh_staging_files_data_type
+      FROM information_schema.columns
+      WHERE table_name = 'wh_staging_files' AND column_name = 'schema';
+      
+      SELECT data_type INTO wh_uploads_data_type
+      FROM information_schema.columns
+      WHERE table_name = 'wh_uploads' AND column_name = 'schema';
+      
+      -- Handle wh_schemas table
+      IF wh_schemas_data_type != 'text' THEN
+        RAISE NOTICE 'Altering column "schema" in table "wh_schemas" from % to text', wh_schemas_data_type;
+        ALTER TABLE wh_schemas ALTER COLUMN schema TYPE TEXT USING schema::TEXT;
+        RAISE NOTICE 'Column "schema" in table "wh_schemas" successfully altered to text.';
+      ELSE
+        RAISE NOTICE 'No alteration needed. Column "schema" in table "wh_schemas" is already of type text.';
+      END IF;
+      
+      -- Handle wh_staging_files table
+      IF wh_staging_files_data_type != 'text' THEN
+        RAISE NOTICE 'Altering column "schema" in table "wh_staging_files" from % to text', wh_staging_files_data_type;
+        ALTER TABLE wh_staging_files ALTER COLUMN schema TYPE TEXT USING schema::TEXT;
+        RAISE NOTICE 'Column "schema" in table "wh_staging_files" successfully altered to text.';
+      ELSE
+        RAISE NOTICE 'No alteration needed. Column "schema" in table "wh_staging_files" is already of type text.';
+      END IF;
+      
+      -- Handle wh_uploads table
+      IF wh_uploads_data_type != 'text' THEN
+        RAISE NOTICE 'Altering column "schema" in table "wh_uploads" from % to text', wh_uploads_data_type;
+        ALTER TABLE wh_uploads ALTER COLUMN schema TYPE TEXT USING schema::TEXT;
+        RAISE NOTICE 'Column "schema" in table "wh_uploads" successfully altered to text.';
+      ELSE
+        RAISE NOTICE 'No alteration needed. Column "schema" in table "wh_uploads" is already of type text.';
+      END IF;
+    END $$;
+{{ end }}

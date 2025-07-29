@@ -6,11 +6,14 @@ import (
 	jsonstd "encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
@@ -41,7 +44,10 @@ const stagingTableColumns = `
 `
 
 // StagingFiles is a repository for inserting and querying staging files.
-type StagingFiles repo
+type StagingFiles struct {
+	*repo
+	conf *config.Config
+}
 
 type metadataSchema struct {
 	UseRudderStorage              bool     `json:"use_rudder_storage"`
@@ -81,13 +87,16 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	}
 }
 
-func NewStagingFiles(db *sqlmiddleware.DB, opts ...Opt) *StagingFiles {
+func NewStagingFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
-		db:  db,
-		now: timeutil.Now,
+		repo: &repo{
+			db:  db,
+			now: timeutil.Now,
+		},
+		conf: conf,
 	}
 	for _, opt := range opts {
-		opt((*repo)(r))
+		opt(r.repo)
 	}
 	return r
 }
@@ -303,8 +312,47 @@ func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFil
 
 // GetSchemasByIDs returns staging file schemas for the given IDs.
 func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
-	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
+	enableStagingFileSchemaSnapshot := sf.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
+	if !enableStagingFileSchemaSnapshot.Load() {
+		query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
 
+		rows, err := sf.db.QueryContext(ctx, query, pq.Array(ids))
+		if err != nil {
+			return nil, fmt.Errorf("querying schemas: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+
+		schemas := make([]model.Schema, 0, len(ids))
+
+		for rows.Next() {
+			var (
+				rawSchema jsonstd.RawMessage
+				schema    model.Schema
+			)
+
+			if err := rows.Scan(&rawSchema); err != nil {
+				return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
+			}
+			if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
+				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
+			}
+			schemas = append(schemas, schema)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("cannot get schemas by ids: iterating rows: %w", err)
+		}
+		if len(schemas) != len(ids) {
+			return nil, fmt.Errorf("cannot get schemas by ids: not all schemas were found")
+		}
+		return schemas, nil
+	}
+
+	query := `
+			SELECT sf.schema AS schema, sf.schema_snapshot_patch as schema_snapshot_patch, ss.schema AS schema_snapshot
+			FROM ` + stagingTableName + ` sf
+			LEFT JOIN ` + stagingFileSchemaSnapshotTableName + ` ss ON sf.schema_snapshot_id = ss.id
+			WHERE sf.id = ANY($1);
+		`
 	rows, err := sf.db.QueryContext(ctx, query, pq.Array(ids))
 	if err != nil {
 		return nil, fmt.Errorf("querying schemas: %w", err)
@@ -312,30 +360,47 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 	defer func() { _ = rows.Close() }()
 
 	schemas := make([]model.Schema, 0, len(ids))
-
 	for rows.Next() {
 		var (
-			rawSchema jsonstd.RawMessage
-			schema    model.Schema
+			rawSchema      jsonstd.RawMessage
+			schemaSnapshot []byte
+			schemaPatch    []byte
 		)
-
-		if err := rows.Scan(&rawSchema); err != nil {
-			return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
-		}
-		if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
-			return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
+		if err := rows.Scan(&rawSchema, &schemaPatch, &schemaSnapshot); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
 		}
 
-		schemas = append(schemas, schema)
+		if len(schemaPatch) > 0 && len(schemaSnapshot) > 0 {
+			originalSchemaBytes, err := warehouseutils.ApplyPatchToJSON(schemaSnapshot, schemaPatch)
+			if err != nil {
+				return nil, fmt.Errorf("cannot get schemas by ids: applying patch: %w", err)
+			}
+			var originalSchema model.Schema
+			if err := jsonrs.Unmarshal(originalSchemaBytes, &originalSchema); err != nil {
+				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
+			}
+			var oldSchema model.Schema
+			if err := jsonrs.Unmarshal(rawSchema, &oldSchema); err != nil {
+				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
+			}
+			if !reflect.DeepEqual(originalSchema, oldSchema) {
+				return nil, fmt.Errorf("cannot get schemas by ids: schema patch does not apply to snapshot schema")
+			}
+			schemas = append(schemas, originalSchema)
+		} else {
+			var schema model.Schema
+			if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
+				return nil, fmt.Errorf("unmarshal staging schema: %w", err)
+			}
+			schemas = append(schemas, schema)
+		}
 	}
-
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("cannot get schemas by ids: iterating rows: %w", err)
+		return nil, fmt.Errorf("iterating rows: %w", err)
 	}
 	if len(schemas) != len(ids) {
 		return nil, fmt.Errorf("cannot get schemas by ids: not all schemas were found")
 	}
-
 	return schemas, nil
 }
 

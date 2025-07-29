@@ -19,7 +19,7 @@ import (
 
 func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) int64 {
 	t.Helper()
-	stagingFilesRepo := repo.NewStagingFiles(db)
+	stagingFilesRepo := repo.NewStagingFiles(db, config.New())
 	stagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{
 			ID: 1,

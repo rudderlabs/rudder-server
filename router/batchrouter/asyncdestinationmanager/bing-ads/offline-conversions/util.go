@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -509,4 +510,28 @@ func hashFields(input map[string]interface{}) (json.RawMessage, error) {
 	}
 
 	return json.RawMessage(result), nil
+}
+
+func validateAndTransformTimeFields(fields map[string]interface{}) error {
+	timeFields := []string{"conversionTime", "adjustedConversionTime"}
+
+	for _, field := range timeFields {
+		fieldValue, ok := fields[field]
+		if ok {
+			fieldValueStr, ok := fieldValue.(string)
+			if !ok {
+				return fmt.Errorf("%v field is not a string", field)
+			}
+			parsedTime, parseErr := time.Parse(time.RFC3339, fieldValueStr)
+			if parseErr != nil {
+				parsedTime, parseErr = time.Parse("1/2/2006 3:04:05 PM", fieldValueStr)
+				if parseErr != nil {
+					return fmt.Errorf("conversionTime must be in ISO 8601 (e.g. 2006-01-02T15:04:05Z07:00) or mm/dd/yyyy hh:mm:ss AM/PM (e.g. 7/2/2025 6:50:54 PM) format")
+				}
+			}
+			fields[field] = parsedTime.Format("1/2/2006 3:04:05 PM")
+		}
+
+	}
+	return nil
 }

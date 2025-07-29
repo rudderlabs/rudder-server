@@ -130,7 +130,7 @@ func TestManager_InsertJobHandler(t *testing.T) {
 	tableUploadsRepo := repo.NewTableUploads(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
-	stagingRepo := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+	stagingRepo := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 		return now
 	}))
 

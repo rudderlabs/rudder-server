@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge_v2"
+	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -45,8 +45,8 @@ var sampleEvent = types.PutEventsRequestEntry{
 
 func TestProduceHappyCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_eventbridge.NewMockEventBridgeClientV2(ctrl)
-	producer := &EventBridgeProducerV2{client: mockClient}
+	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
+	producer := &EventBridgeProducer{client: mockClient}
 	mockClient.
 		EXPECT().
 		PutEvents(gomock.Any(), &eventbridge.PutEventsInput{Entries: []types.PutEventsRequestEntry{
@@ -61,7 +61,7 @@ func TestProduceHappyCase(t *testing.T) {
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &EventBridgeProducerV2{}
+	producer := &EventBridgeProducer{}
 	sampleEventJson := []byte("Invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -71,8 +71,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidJson(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_eventbridge.NewMockEventBridgeClientV2(ctrl)
-	producer := &EventBridgeProducerV2{client: mockClient}
+	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
+	producer := &EventBridgeProducer{client: mockClient}
 	sampleEventJson := []byte("Invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -84,8 +84,8 @@ func TestProduceWithBadResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	mockClient := mock_eventbridge.NewMockEventBridgeClientV2(ctrl)
-	producer := &EventBridgeProducerV2{client: mockClient}
+	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
+	producer := &EventBridgeProducer{client: mockClient}
 	errorCode := "SomeError"
 	// Failed response
 	mockClient.

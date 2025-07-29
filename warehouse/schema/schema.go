@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"sync"
@@ -35,7 +36,7 @@ var deprecatedColumnsRegex = regexp.MustCompile(
 
 type schemaRepo interface {
 	GetForNamespace(ctx context.Context, destID, namespace string) (model.WHSchema, error)
-	Insert(ctx context.Context, whSchema *model.WHSchema) (int64, error)
+	Insert(ctx context.Context, whSchema *model.WHSchema) error
 }
 
 type stagingFileRepo interface {
@@ -62,6 +63,8 @@ type Handler interface {
 	// Computes the difference between the existing schema of a table and a newly provided schema.
 	// Returns details of added and modified columns
 	TableSchemaDiff(ctx context.Context, tableName string, tableSchema model.TableSchema) (whutils.TableSchemaDiff, error)
+	// Checks if the cached schema is outdated compared to the warehouse
+	IsSchemaOutdated(ctx context.Context) (bool, error)
 }
 
 type schema struct {
@@ -78,6 +81,7 @@ type schema struct {
 	fetchSchemaRepo                  fetchSchemaRepo
 	now                              func() time.Time
 	cachedSchema                     model.Schema
+	cachedSchemaExpiresAt            time.Time // To prevent a DB lookup for getting the current value of expiresAt
 	cachedSchemaMu                   sync.RWMutex
 }
 
@@ -123,11 +127,16 @@ func New(
 		return nil, fmt.Errorf("getting schema for namespace: %w", err)
 	}
 	if whSchema.Schema == nil {
-		sh.cachedSchema = model.Schema{}
+		// No schema found in DB, try fetching from warehouse
+		err := sh.fetchSchemaFromWarehouse(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("fetching schema from warehouse: %w", err)
+		}
 		return sh, nil
 	}
 	if whSchema.ExpiresAt.After(sh.now()) {
 		sh.cachedSchema = whSchema.Schema
+		sh.cachedSchemaExpiresAt = whSchema.ExpiresAt
 		return sh, nil
 	}
 	sh.log.Infon("Schema expired", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Namespace), logger.NewTimeField("expiresAt", whSchema.ExpiresAt))
@@ -143,11 +152,14 @@ func (sh *schema) fetchSchemaFromWarehouse(ctx context.Context) error {
 	duration := math.Round((sh.now().Sub(start).Minutes() * 1000)) / 1000
 	sh.log.Infon("Fetched schema from warehouse", obskit.DestinationID(sh.warehouse.Destination.ID), obskit.Namespace(sh.warehouse.Type), logger.NewFloatField("timeTakenInMinutes", duration))
 	removeDeprecatedColumns(warehouseSchema, sh.warehouse, sh.log)
-	err = sh.saveSchema(ctx, warehouseSchema)
+
+	expiresAt := sh.now().Add(sh.ttlInMinutes)
+	err = sh.saveSchema(ctx, warehouseSchema, expiresAt)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
 	sh.cachedSchema = warehouseSchema
+	sh.cachedSchemaExpiresAt = expiresAt
 	return nil
 }
 
@@ -166,7 +178,7 @@ func (sh *schema) GetTableSchema(ctx context.Context, tableName string) model.Ta
 func (sh *schema) UpdateSchema(ctx context.Context, updatedSchema model.Schema) error {
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
-	err := sh.saveSchema(ctx, updatedSchema)
+	err := sh.saveSchema(ctx, updatedSchema, sh.cachedSchemaExpiresAt)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -178,7 +190,7 @@ func (sh *schema) UpdateTableSchema(ctx context.Context, tableName string, table
 	sh.cachedSchemaMu.Lock()
 	defer sh.cachedSchemaMu.Unlock()
 	sh.cachedSchema[tableName] = tableSchema
-	err := sh.saveSchema(ctx, sh.cachedSchema)
+	err := sh.saveSchema(ctx, sh.cachedSchema, sh.cachedSchemaExpiresAt)
 	if err != nil {
 		return fmt.Errorf("saving schema: %w", err)
 	}
@@ -212,6 +224,28 @@ func (sh *schema) ConsolidateStagingFilesSchema(ctx context.Context, stagingFile
 	return consolidatedSchema, nil
 }
 
+func (sh *schema) IsSchemaOutdated(ctx context.Context) (bool, error) {
+	sh.cachedSchemaMu.RLock()
+	original := make(model.Schema, len(sh.cachedSchema))
+	for k, v := range sh.cachedSchema {
+		cols := make(model.TableSchema, len(v))
+		for col, typ := range v {
+			cols[col] = typ
+		}
+		original[k] = cols
+	}
+	sh.cachedSchemaMu.RUnlock()
+
+	if err := sh.fetchSchemaFromWarehouse(ctx); err != nil {
+		return false, fmt.Errorf("fetching schema from warehouse for comparison: %w", err)
+	}
+
+	sh.cachedSchemaMu.RLock()
+	outdated := !reflect.DeepEqual(original, sh.cachedSchema)
+	sh.cachedSchemaMu.RUnlock()
+	return outdated, nil
+}
+
 func (sh *schema) isIDResolutionEnabled() bool {
 	return sh.enableIDResolution && slices.Contains(whutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
@@ -222,22 +256,35 @@ func (sh *schema) TableSchemaDiff(ctx context.Context, tableName string, tableSc
 	return tableSchemaDiff(tableName, sh.cachedSchema, tableSchema), nil
 }
 
-func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema) error {
+/*
+Routine schema updates:
+
+	Always pass cachedSchemaExpiresAt for expiresAt.
+	This ensures the DB preserves the current expiresAt, so the system can eventually recover
+	from a corrupted or stale schema by re-fetching from the warehouse when the expiry is reached.
+	Note: If a new entry is being created with routine schema update, the expiresAt will have zero value.
+
+Warehouse fetch:
+
+	Only when saving a schema as a result of a successful warehouse fetch should an updated expiresAt be passed (i.e., to extend the expiry).
+*/
+func (sh *schema) saveSchema(ctx context.Context, updatedSchema model.Schema, expiresAt time.Time) error {
 	updatedSchemaInBytes, err := jsonrs.Marshal(updatedSchema)
 	if err != nil {
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
 	sh.stats.schemaSize.Observe(float64(len(updatedSchemaInBytes)))
 
-	expiresAt := sh.now().Add(sh.ttlInMinutes)
-	_, err = sh.schemaRepo.Insert(ctx, &model.WHSchema{
-		SourceID:        sh.warehouse.Source.ID,
-		Namespace:       sh.warehouse.Namespace,
-		DestinationID:   sh.warehouse.Destination.ID,
-		DestinationType: sh.warehouse.Type,
-		Schema:          updatedSchema,
-		ExpiresAt:       expiresAt,
-	})
+	err = sh.schemaRepo.Insert(ctx,
+		&model.WHSchema{
+			SourceID:        sh.warehouse.Source.ID,
+			Namespace:       sh.warehouse.Namespace,
+			DestinationID:   sh.warehouse.Destination.ID,
+			DestinationType: sh.warehouse.Type,
+			Schema:          updatedSchema,
+			ExpiresAt:       expiresAt,
+		},
+	)
 	if err != nil {
 		return fmt.Errorf("inserting schema: %w", err)
 	}

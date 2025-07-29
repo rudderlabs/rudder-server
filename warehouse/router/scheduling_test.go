@@ -386,7 +386,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
 				return now
 			}))
-			repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+			repoStaging := repo.NewStagingFiles(db, config.New(), repo.WithNow(func() time.Time {
 				return now
 			}))
 

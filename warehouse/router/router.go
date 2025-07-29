@@ -141,7 +141,7 @@ func New(
 	r.logger.Infof("WH: Warehouse Router started: %s", destType)
 
 	r.db = db
-	r.stagingRepo = repo.NewStagingFiles(db)
+	r.stagingRepo = repo.NewStagingFiles(db, conf)
 	r.uploadRepo = repo.NewUploads(db)
 
 	r.notifier = notifier

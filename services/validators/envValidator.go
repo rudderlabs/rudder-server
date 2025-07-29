@@ -61,7 +61,7 @@ func killDanglingDBConnections(db *sql.DB) error {
 
 	type danglingConnRow struct {
 		pid           int
-		queryStart    *string
+		queryStart    sql.NullString
 		waitEventType string
 		waitEvent     string
 		state         string

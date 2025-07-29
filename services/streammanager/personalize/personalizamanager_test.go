@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize_v2"
+	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
 
 	"github.com/stretchr/testify/assert"
 
@@ -23,7 +23,7 @@ import (
 )
 
 func TestNewProducer(t *testing.T) {
-	destinationConfig := map[string]interface{}{
+	destinationConfig := map[string]any{
 		"Region":     "us-east-1",
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
@@ -39,7 +39,7 @@ func TestNewProducer(t *testing.T) {
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
-	producer := &PersonalizeProducerV2{}
+	producer := &PersonalizeProducer{}
 	sampleJsonPayload := []byte("{}")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
@@ -49,8 +49,8 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
-	producer := &PersonalizeProducerV2{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	producer := &PersonalizeProducer{client: mockClient}
 
 	// Invalid Json
 	sampleJsonPayload := []byte("invalid json")
@@ -75,11 +75,11 @@ func TestProduceWithInvalidData(t *testing.T) {
 
 func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
-	producer := &PersonalizeProducerV2{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	producer := &PersonalizeProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]any{
 		"choice": "PutEvents",
 		"payload": PersonalizeEvent{
 			EventList: []Event{{
@@ -132,11 +132,11 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 
 func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
-	producer := &PersonalizeProducerV2{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	producer := &PersonalizeProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]any{
 		"choice": "PutUsers",
 		"payload": Users{
 			DatasetArn: aws.String("datasetArn"),
@@ -171,11 +171,11 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 
 func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_personalize.NewMockPersonalizeClientV2(ctrl)
-	producer := &PersonalizeProducerV2{client: mockClient}
+	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
+	producer := &PersonalizeProducer{client: mockClient}
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
-	sampleJsonPayload, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]any{
 		"choice": "PutItems",
 		"payload": Items{
 			DatasetArn: aws.String("datasetArn"),
