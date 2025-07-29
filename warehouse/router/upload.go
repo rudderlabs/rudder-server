@@ -120,7 +120,6 @@ type UploadJob struct {
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
 		skipPreviouslyFailedTables          bool
-		queryLoadFilesWithUploadID          config.ValueLoader[bool]
 		// max number of parallel delete requests to filemanager (applies to GCS only)
 		maxConcurrentObjDeleteRequests func(workspaceID string) int
 		// batch size for parallel deletion of staging and loadfiles (applies to GCS only)
@@ -221,7 +220,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
 	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
-	uj.config.queryLoadFilesWithUploadID = f.conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
 	uj.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {
 		return f.conf.GetIntVar(10, 1,
 			fmt.Sprintf("Warehouse.filemanager.%s.GCS.maxConcurrentObjDeleteRequests", workspaceID),
@@ -970,51 +968,19 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 }
 
 func (job *UploadJob) getLoadFilesMetadataQuery(tableFilterSQL, limitSQL string) string {
-	if job.config.queryLoadFilesWithUploadID.Load() {
-		return fmt.Sprintf(`
-			SELECT
-			  location,
-			  metadata
-			FROM
-			  %[1]s
-			WHERE
-			  upload_id = %[2]d
-			%[3]s
-			%[4]s;
-			`,
-			whutils.WarehouseLoadFilesTable,
-			job.upload.ID,
-			tableFilterSQL,
-			limitSQL,
-		)
-	}
 	return fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			location,
-			metadata,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v) %[3]s
-		)
 		SELECT
 		  location,
 		  metadata
 		FROM
-		  row_numbered_load_files
+		  %[1]s
 		WHERE
-		  row_number = 1
+		  upload_id = %[2]d
+		%[3]s
 		%[4]s;
 		`,
 		whutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
+		job.upload.ID,
 		tableFilterSQL,
 		limitSQL,
 	)

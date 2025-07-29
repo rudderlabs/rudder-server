@@ -752,38 +752,28 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 
 	testCases := []struct {
 		name              string
-		queryWithUploadID bool
 		tableName         string
 		limit             int64
 		expectedLoadFiles int
 	}{
 		{
 			name:              "query with upload ID",
-			queryWithUploadID: true,
 			expectedLoadFiles: 4,
 		},
 		{
 			name:              "query with upload ID and table name",
-			queryWithUploadID: true,
 			tableName:         "test_table2",
 			expectedLoadFiles: 3,
 		},
 		{
 			name:              "query with upload ID, table name and limit",
-			queryWithUploadID: true,
 			tableName:         "test_table2",
 			limit:             2,
 			expectedLoadFiles: 2,
 		},
 		{
 			name:              "query with upload ID and limit",
-			queryWithUploadID: true,
 			limit:             1,
-			expectedLoadFiles: 1,
-		},
-		{
-			name:              "query with staging file IDs",
-			queryWithUploadID: false,
 			expectedLoadFiles: 1,
 		},
 	}
@@ -794,7 +784,6 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 			db := setupDB(t)
 
 			conf := config.New()
-			conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", tc.queryWithUploadID)
 
 			job := &UploadJob{
 				ctx:            ctx,
@@ -803,7 +792,6 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 				stagingFileIDs: []int64{1, 2, 3},
 				logger:         logger.NOP,
 			}
-			job.config.queryLoadFilesWithUploadID = conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
 			var stagingFileId int64
 			stagingFileId, job.upload.ID = createUpload(t, ctx, db)
 			loadFiles := []model.LoadFile{
