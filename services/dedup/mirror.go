@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/sync"
+
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
@@ -19,7 +21,7 @@ type mirror struct {
 	Dedup
 	mirror Dedup
 
-	group         *sync.ErrGroup
+	group         *errgroup.Group
 	groupLimit    int
 	errs          chan error
 	stopPrintErrs chan struct{}
@@ -39,7 +41,7 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		groupLimit = defaultMaxRoutines
 	}
 
-	group := &sync.ErrGroup{}
+	group := &errgroup.Group{}
 	group.SetLimit(groupLimit)
 
 	dedupMirror := &mirror{
