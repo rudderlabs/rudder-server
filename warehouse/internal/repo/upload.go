@@ -155,7 +155,7 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 		return 0, err
 	}
 
-	defer (*repo)(u).DeferActionTimer("create_with_staging_files", stats.Tags{
+	defer (*repo)(u).TimerStat("create_with_staging_files", stats.Tags{
 		"sourceId":    upload.SourceID,
 		"destId":      upload.DestinationID,
 		"destType":    upload.DestinationType,
@@ -244,7 +244,7 @@ type FilterBy struct {
 }
 
 func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
-	defer (*repo)(u).DeferActionTimer("count", nil)()
+	defer (*repo)(u).TimerStat("count", nil)()
 
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
 
@@ -269,7 +269,7 @@ func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error)
 }
 
 func (u *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
-	defer (*repo)(u).DeferActionTimer("get", nil)()
+	defer (*repo)(u).TimerStat("get", nil)()
 
 	row := u.db.QueryRowContext(ctx,
 		`SELECT
@@ -294,7 +294,7 @@ func (u *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
 }
 
 func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, opts ProcessOptions) ([]model.Upload, error) {
-	defer (*repo)(u).DeferActionTimer("get_to_process", nil)()
+	defer (*repo)(u).TimerStat("get_to_process", nil)()
 
 	var skipIdentifiersSQL string
 	partitionIdentifierSQL := `destination_id, namespace`
@@ -390,7 +390,7 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 }
 
 func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts ProcessOptions) (model.UploadJobsStats, error) {
-	defer (*repo)(u).DeferActionTimer("upload_jobs_stats", stats.Tags{
+	defer (*repo)(u).TimerStat("upload_jobs_stats", stats.Tags{
 		"destType": destType,
 	})()
 
@@ -455,7 +455,7 @@ func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts Pro
 
 // UploadTimings returns the timings for an upload.
 func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
-	defer (*repo)(u).DeferActionTimer("upload_timings", nil)()
+	defer (*repo)(u).TimerStat("upload_timings", nil)()
 
 	var (
 		rawJSON json.RawMessage
@@ -486,7 +486,7 @@ func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timi
 }
 
 func (u *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
-	defer (*repo)(u).DeferActionTimer("delete_waiting", nil)()
+	defer (*repo)(u).TimerStat("delete_waiting", nil)()
 
 	_, err := u.db.ExecContext(ctx,
 		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2;`,
@@ -570,7 +570,7 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 // PendingTableUploads returns a list of pending table uploads for a given upload.
 // Filtering conditions neeeds to be in sync with GetToProcess partitioning and pickup condition.
 func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace string, priority int, firstEventAt time.Time, uploadID int64) ([]model.PendingTableUpload, error) {
-	defer (*repo)(u).DeferActionTimer("pending_table_uploads", stats.Tags{
+	defer (*repo)(u).TimerStat("pending_table_uploads", stats.Tags{
 		"destId": destID,
 	})()
 
@@ -648,7 +648,7 @@ func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace str
 }
 
 func (u *Uploads) ResetInProgress(ctx context.Context, destType string) error {
-	defer (*repo)(u).DeferActionTimer("reset_in_progress", stats.Tags{
+	defer (*repo)(u).TimerStat("reset_in_progress", stats.Tags{
 		"destType": destType,
 	})()
 
@@ -670,7 +670,7 @@ func (u *Uploads) ResetInProgress(ctx context.Context, destType string) error {
 }
 
 func (u *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID string) (time.Time, error) {
-	defer (*repo)(u).DeferActionTimer("last_created_at", stats.Tags{
+	defer (*repo)(u).TimerStat("last_created_at", stats.Tags{
 		"sourceId": sourceID,
 		"destId":   destinationID,
 	})()
@@ -705,7 +705,7 @@ func (u *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID str
 }
 
 func (u *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
-	defer (*repo)(u).DeferActionTimer("syncs_info_for_multi_tenant", stats.Tags{
+	defer (*repo)(u).TimerStat("syncs_info_for_multi_tenant", stats.Tags{
 		"destId":      opts.DestinationID,
 		"destType":    opts.DestinationType,
 		"workspaceId": opts.WorkspaceID,
@@ -729,7 +729,7 @@ func (u *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int
 }
 
 func (u *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
-	defer (*repo)(u).DeferActionTimer("syncs_info_for_non_multi_tenant", stats.Tags{
+	defer (*repo)(u).TimerStat("syncs_info_for_non_multi_tenant", stats.Tags{
 		"destId":      opts.DestinationID,
 		"destType":    opts.DestinationType,
 		"workspaceId": opts.WorkspaceID,
@@ -749,7 +749,7 @@ func (u *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset 
 }
 
 func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
-	defer (*repo)(u).DeferActionTimer("syncs_info", stats.Tags{
+	defer (*repo)(u).TimerStat("syncs_info", stats.Tags{
 		"destId":      opts.DestinationID,
 		"destType":    opts.DestinationType,
 		"workspaceId": opts.WorkspaceID,
@@ -926,7 +926,7 @@ func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []any) {
 }
 
 func (u *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) (int64, error) {
-	defer (*repo)(u).DeferActionTimer("syncs_count", stats.Tags{
+	defer (*repo)(u).TimerStat("syncs_count", stats.Tags{
 		"destId":      opts.DestinationID,
 		"destType":    opts.DestinationType,
 		"workspaceId": opts.WorkspaceID,
@@ -954,7 +954,7 @@ func (u *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) 
 }
 
 func (u *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
-	defer (*repo)(u).DeferActionTimer("trigger_upload", nil)()
+	defer (*repo)(u).TimerStat("trigger_upload", nil)()
 
 	r, err := u.db.ExecContext(ctx, `
 		UPDATE
@@ -985,7 +985,7 @@ func (u *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
 }
 
 func (u *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, error) {
-	defer (*repo)(u).DeferActionTimer("retry", stats.Tags{
+	defer (*repo)(u).TimerStat("retry", stats.Tags{
 		"destId":      opts.DestinationID,
 		"destType":    opts.DestinationType,
 		"workspaceId": opts.WorkspaceID,
@@ -1052,7 +1052,7 @@ func retryQueryArgs(ro *model.RetryOptions) (string, []any) {
 }
 
 func (u *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int64, error) {
-	defer (*repo)(u).DeferActionTimer("retry_count", stats.Tags{
+	defer (*repo)(u).TimerStat("retry_count", stats.Tags{
 		"destId":      opts.DestinationID,
 		"destType":    opts.DestinationType,
 		"workspaceId": opts.WorkspaceID,
@@ -1079,7 +1079,7 @@ func (u *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int6
 }
 
 func (u *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destinationID string) (*model.LatestUploadInfo, error) {
-	defer (*repo)(u).DeferActionTimer("get_latest_upload_info", stats.Tags{
+	defer (*repo)(u).TimerStat("get_latest_upload_info", stats.Tags{
 		"sourceId": sourceID,
 		"destId":   destinationID,
 	})()
@@ -1118,7 +1118,7 @@ func (u *Uploads) RetrieveFailedBatches(
 	ctx context.Context,
 	req model.RetrieveFailedBatchesRequest,
 ) ([]model.RetrieveFailedBatchesResponse, error) {
-	defer (*repo)(u).DeferActionTimer("retrieve_failed_batches", stats.Tags{
+	defer (*repo)(u).TimerStat("retrieve_failed_batches", stats.Tags{
 		"destId":      req.DestinationID,
 		"workspaceId": req.WorkspaceID,
 	})()
@@ -1320,7 +1320,7 @@ func (u *Uploads) RetryFailedBatches(
 	ctx context.Context,
 	req model.RetryFailedBatchesRequest,
 ) (int64, error) {
-	defer (*repo)(u).DeferActionTimer("retry_failed_batches", stats.Tags{
+	defer (*repo)(u).TimerStat("retry_failed_batches", stats.Tags{
 		"sourceId":    req.SourceID,
 		"destId":      req.DestinationID,
 		"workspaceId": req.WorkspaceID,
@@ -1393,7 +1393,7 @@ func (u *Uploads) update(
 	id int64,
 	fields []UpdateKeyValue,
 ) error {
-	defer (*repo)(u).DeferActionTimer("update", nil)()
+	defer (*repo)(u).TimerStat("update", nil)()
 
 	if len(fields) == 0 {
 		return fmt.Errorf("no fields to update")
@@ -1417,7 +1417,7 @@ func (u *Uploads) update(
 }
 
 func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx context.Context, workspaceID string, start time.Time) ([]model.FirstAbortedUploadResponse, error) {
-	defer (*repo)(u).DeferActionTimer("get_first_aborted_upload_in_continuous_aborts_by_destination", stats.Tags{
+	defer (*repo)(u).TimerStat("get_first_aborted_upload_in_continuous_aborts_by_destination", stats.Tags{
 		"workspaceId": workspaceID,
 	})()
 
@@ -1488,7 +1488,7 @@ func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx conte
 }
 
 func (u *Uploads) GetSyncLatencies(ctx context.Context, request model.SyncLatencyRequest) ([]model.LatencyTimeSeriesDataPoint, error) {
-	defer (*repo)(u).DeferActionTimer("get_sync_latencies", stats.Tags{
+	defer (*repo)(u).TimerStat("get_sync_latencies", stats.Tags{
 		"destId":      request.DestinationID,
 		"workspaceId": request.WorkspaceID,
 		"sourceId":    request.SourceID,

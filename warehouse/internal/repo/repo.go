@@ -15,11 +15,9 @@ import (
 // repo provides base repository functionality with database access and statistics tracking.
 type repo struct {
 	db           *sqlmiddleware.DB
+	now          func() time.Time
 	statsFactory stats.Stats
 	repoType     string
-
-	// now function for time mocking in tests
-	now func() time.Time
 }
 
 // WithTx executes a function within a database transaction.
@@ -42,12 +40,8 @@ func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) e
 	return nil
 }
 
-// DeferActionTimer returns a function that records the duration of a database action.
-func (r *repo) DeferActionTimer(action string, extraTags stats.Tags) func() {
-	return r.createTimer(action, extraTags)
-}
-
-func (r *repo) createTimer(action string, extraTags stats.Tags) func() {
+// TimerStat returns a function that records the duration of a database action.
+func (r *repo) TimerStat(action string, extraTags stats.Tags) func() {
 	statName := "warehouse_repo_query_duration_seconds"
 	tags := stats.Tags{"action": action, "repoType": r.getRepoType()}
 	for k, v := range extraTags {

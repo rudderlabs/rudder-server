@@ -30,6 +30,7 @@ func TestStatsEmission(t *testing.T) {
 		repoTableUploads := repo.NewTableUploads(db, config.New(), repo.WithStats(statsStore))
 		repoSources := repo.NewSource(db, repo.WithStats(statsStore))
 		repoUploads := repo.NewUploads(db, repo.WithStats(statsStore))
+		repoStagingFileSchemaSnapshots := repo.NewStagingFileSchemaSnapshots(db, repo.WithStats(statsStore))
 
 		require.NoError(t, repoLoadFiles.Insert(ctx, []model.LoadFile{
 			{
@@ -60,6 +61,16 @@ func TestStatsEmission(t *testing.T) {
 			"sourceId": "source_id",
 			"destId":   "destination_id",
 			"destType": "destination_type",
+		}).LastDuration(), time.Duration(0))
+
+		_, err = repoStagingFileSchemaSnapshots.Insert(ctx, "source_id", "destination_id", "workspace_id", json.RawMessage(`{}`))
+		require.NoError(t, err)
+		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
+			"action":      "insert",
+			"repoType":    "wh_staging_file_schema_snapshots",
+			"sourceId":    "source_id",
+			"destId":      "destination_id",
+			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
 
 		_, err = repoStagingFiles.Insert(ctx, lo.ToPtr((model.StagingFile{

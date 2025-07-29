@@ -50,7 +50,7 @@ func NewSource(db *sqlmw.DB, opts ...Opt) *Source {
 }
 
 func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]int64, error) {
-	defer (*repo)(s).DeferActionTimer("insert", stats.Tags{
+	defer (*repo)(s).TimerStat("insert", stats.Tags{
 		"sourceId":    sourceJobs[0].SourceID,
 		"destId":      sourceJobs[0].DestinationID,
 		"workspaceId": sourceJobs[0].WorkspaceID,
@@ -104,7 +104,7 @@ func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]in
 }
 
 func (s *Source) Reset(ctx context.Context) error {
-	defer (*repo)(s).DeferActionTimer("reset", nil)()
+	defer (*repo)(s).TimerStat("reset", nil)()
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE
@@ -125,7 +125,7 @@ func (s *Source) Reset(ctx context.Context) error {
 }
 
 func (s *Source) GetToProcess(ctx context.Context, limit int64) ([]model.SourceJob, error) {
-	defer (*repo)(s).DeferActionTimer("get_to_process", nil)()
+	defer (*repo)(s).TimerStat("get_to_process", nil)()
 
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
@@ -209,7 +209,7 @@ func scanSourceJob(scan scanFn, sourceJob *model.SourceJob) error {
 }
 
 func (s *Source) GetByJobRunTaskRun(ctx context.Context, jobRunID, taskRunID string) (*model.SourceJob, error) {
-	defer (*repo)(s).DeferActionTimer("get_by_job_run_task_run", nil)()
+	defer (*repo)(s).TimerStat("get_by_job_run_task_run", nil)()
 
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
@@ -237,7 +237,7 @@ func (s *Source) GetByJobRunTaskRun(ctx context.Context, jobRunID, taskRunID str
 }
 
 func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
-	defer (*repo)(s).DeferActionTimer("on_update_success", nil)()
+	defer (*repo)(s).TimerStat("on_update_success", nil)()
 
 	r, err := s.db.ExecContext(ctx, `
 		UPDATE
@@ -266,7 +266,7 @@ func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
 }
 
 func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, maxAttempt int) error {
-	defer (*repo)(s).DeferActionTimer("on_update_failure", nil)()
+	defer (*repo)(s).TimerStat("on_update_failure", nil)()
 
 	r, err := s.db.ExecContext(ctx, `
 		UPDATE
@@ -303,7 +303,7 @@ func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, max
 }
 
 func (s *Source) MarkExecuting(ctx context.Context, ids []int64) error {
-	defer (*repo)(s).DeferActionTimer("mark_executing", nil)()
+	defer (*repo)(s).TimerStat("mark_executing", nil)()
 
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE

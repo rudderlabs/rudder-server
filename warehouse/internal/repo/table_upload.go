@@ -70,7 +70,7 @@ func (tu *TableUploads) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx)
 }
 
 func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames []string) error {
-	defer tu.DeferActionTimer("insert", nil)()
+	defer tu.TimerStat("insert", nil)()
 
 	return tu.repo.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(ctx, `
@@ -100,7 +100,7 @@ func (tu *TableUploads) Insert(ctx context.Context, uploadID int64, tableNames [
 }
 
 func (tu *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]model.TableUpload, error) {
-	defer tu.DeferActionTimer("get_by_upload_id", nil)()
+	defer tu.TimerStat("get_by_upload_id", nil)()
 
 	query := `SELECT ` + tableUploadColumns + ` FROM ` + tableUploadTableName + `
 	WHERE
@@ -120,7 +120,7 @@ func (tu *TableUploads) GetByUploadID(ctx context.Context, uploadID int64) ([]mo
 }
 
 func (tu *TableUploads) GetByUploadIDAndTableName(ctx context.Context, uploadID int64, tableName string) (model.TableUpload, error) {
-	defer tu.DeferActionTimer("get_by_upload_id_and_table_name", nil)()
+	defer tu.TimerStat("get_by_upload_id_and_table_name", nil)()
 
 	query := `SELECT ` + tableUploadColumns + ` FROM ` + tableUploadTableName + `
 	WHERE
@@ -198,7 +198,7 @@ func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
 // PopulateTotalEventsWithTx Update the 'total_events' field in the Table Uploads table
 // by summing the 'total_events' from load files associated with specific staging file IDs.
 func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string, stagingFileIDs []int64) error {
-	defer tu.DeferActionTimer("populate_total_events_with_tx", nil)()
+	defer tu.TimerStat("populate_total_events_with_tx", nil)()
 
 	var subQuery string
 	var queryArgs []any
@@ -279,7 +279,7 @@ func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmi
 }
 
 func (tu *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int64, skipTables []string) (int64, error) {
-	defer tu.DeferActionTimer("total_exported_events", nil)()
+	defer tu.TimerStat("total_exported_events", nil)()
 
 	var (
 		count sql.NullInt64
@@ -315,7 +315,7 @@ func (tu *TableUploads) TotalExportedEvents(ctx context.Context, uploadId int64,
 }
 
 func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName string, options TableUploadSetOptions) error {
-	defer tu.DeferActionTimer("set", nil)()
+	defer tu.TimerStat("set", nil)()
 
 	var (
 		query     string
@@ -391,7 +391,7 @@ func (tu *TableUploads) Set(ctx context.Context, uploadId int64, tableName strin
 }
 
 func (tu *TableUploads) ExistsForUploadID(ctx context.Context, uploadId int64) (bool, error) {
-	defer tu.DeferActionTimer("exists_for_upload_id", nil)()
+	defer tu.TimerStat("exists_for_upload_id", nil)()
 
 	var (
 		count int64
@@ -415,7 +415,7 @@ func (tu *TableUploads) ExistsForUploadID(ctx context.Context, uploadId int64) (
 }
 
 func (tu *TableUploads) SyncsInfo(ctx context.Context, uploadID int64) ([]model.TableUploadInfo, error) {
-	defer tu.DeferActionTimer("syncs_info", nil)()
+	defer tu.TimerStat("syncs_info", nil)()
 
 	tableUploads, err := tu.GetByUploadID(ctx, uploadID)
 	if err != nil {
@@ -447,7 +447,7 @@ func (tu *TableUploads) GetByJobRunTaskRun(
 	jobRunID,
 	taskRunID string,
 ) ([]model.TableUpload, error) {
-	defer tu.DeferActionTimer("get_by_job_run_task_run", stats.Tags{
+	defer tu.TimerStat("get_by_job_run_task_run", stats.Tags{
 		"sourceId": sourceID,
 		"destId":   destinationID,
 	})()

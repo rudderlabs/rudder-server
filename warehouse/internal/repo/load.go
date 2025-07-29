@@ -61,7 +61,7 @@ func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *LoadF
 
 // Delete deletes load files associated with stagingFileIDs.
 func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error {
-	defer lf.DeferActionTimer("delete", nil)()
+	defer lf.TimerStat("delete", nil)()
 
 	sqlStatement := `
 		DELETE FROM
@@ -80,7 +80,7 @@ func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs 
 
 // Insert loadFiles into the database.
 func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
-	defer lf.DeferActionTimer("insert", stats.Tags{
+	defer lf.TimerStat("insert", stats.Tags{
 		"sourceId": loadFiles[0].SourceID,
 		"destId":   loadFiles[0].DestinationID,
 		"destType": loadFiles[0].DestinationType,
@@ -126,7 +126,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 func (lf *LoadFiles) Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	withUploadID := lf.queryWithUploadID.Load()
 
-	defer lf.DeferActionTimer("get", stats.Tags{
+	defer lf.TimerStat("get", stats.Tags{
 		"withUploadID": strconv.FormatBool(withUploadID),
 	})()
 
@@ -265,7 +265,7 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 
 // GetByID returns the load file matching the id.
 func (lf *LoadFiles) GetByID(ctx context.Context, id int64) (*model.LoadFile, error) {
-	defer lf.DeferActionTimer("get_by_id", nil)()
+	defer lf.TimerStat("get_by_id", nil)()
 
 	row := lf.db.QueryRowContext(ctx, `
 		SELECT
@@ -298,7 +298,7 @@ func (lf *LoadFiles) TotalExportedEvents(
 ) (int64, error) {
 	withUploadID := lf.queryWithUploadID.Load()
 
-	defer lf.DeferActionTimer("total_exported_events", stats.Tags{
+	defer lf.TimerStat("total_exported_events", stats.Tags{
 		"withUploadID": strconv.FormatBool(withUploadID),
 	})()
 
@@ -388,7 +388,7 @@ func (lf *LoadFiles) DistinctTableName(
 	startID int64,
 	endID int64,
 ) ([]string, error) {
-	defer lf.DeferActionTimer("distinct_table_name", stats.Tags{
+	defer lf.TimerStat("distinct_table_name", stats.Tags{
 		"sourceId": sourceID,
 		"destId":   destinationID,
 	})()

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"

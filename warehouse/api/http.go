@@ -166,7 +166,7 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 	enableStagingFileSchemaSnapshot := a.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
 	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
 		a.conf,
-		repo.NewStagingFileSchemaSnapshots(a.db),
+		repo.NewStagingFileSchemaSnapshots(a.db, repo.WithStats(a.statsFactory)),
 		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
 	)
 	schemaSnapshotHandler := &api.StagingFileSchemaSnapshotHandler{
