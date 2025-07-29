@@ -35,7 +35,7 @@ func createUpload(t *testing.T, ctx context.Context, db *sqlmiddleware.DB) int64
 	return uploadID
 }
 
-func Test_LoadFiles_WithUploadID(t *testing.T) {
+func Test_LoadFiles(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
@@ -166,7 +166,7 @@ func TestLoadFiles_GetByID(t *testing.T) {
 	})
 }
 
-func TestLoadFiles_TotalExportedEvents_WithUploadID(t *testing.T) {
+func TestLoadFiles_TotalExportedEvents(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)

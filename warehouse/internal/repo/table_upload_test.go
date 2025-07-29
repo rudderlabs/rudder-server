@@ -311,7 +311,7 @@ func TestTableUploadRepo(t *testing.T) {
 	})
 
 	t.Run("TotalEvents", func(t *testing.T) {
-		t.Run("PopulateTotalEventsWithTx with upload id", func(t *testing.T) {
+		t.Run("PopulateTotalEventsWithTx", func(t *testing.T) {
 			tables2 := []string{"table_name_11", "table_name_12", "table_name_13", "table_name_14", "table_name_15", "table_name_16", "table_name_17", "table_name_18", "table_name_19", "table_name_20"}
 			uploadId := createUpload(t, ctx, db)
 			conf := config.New()
