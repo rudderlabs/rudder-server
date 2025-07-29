@@ -313,7 +313,7 @@ func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFil
 func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
 	enableStagingFileSchemaSnapshot := sf.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
 	if !enableStagingFileSchemaSnapshot.Load() {
-		query := `SELECT schema::jsonb FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
+		query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
 
 		rows, err := sf.db.QueryContext(ctx, query, pq.Array(ids))
 		if err != nil {
@@ -347,7 +347,7 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 	}
 
 	query := `
-			SELECT sf.schema::jsonb AS schema, sf.schema_snapshot_patch as schema_snapshot_patch, ss.schema AS schema_snapshot
+			SELECT sf.schema AS schema, sf.schema_snapshot_patch as schema_snapshot_patch, ss.schema AS schema_snapshot
 			FROM ` + stagingTableName + ` sf
 			LEFT JOIN ` + stagingFileSchemaSnapshotTableName + ` ss ON sf.schema_snapshot_id = ss.id
 			WHERE sf.id = ANY($1);

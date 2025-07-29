@@ -26,7 +26,7 @@ const whSchemaTableColumns = `
 	namespace,
    	destination_id,
 	destination_type,
-	schema::jsonb,
+	schema,
    	created_at,
    	updated_at,
 	expires_at

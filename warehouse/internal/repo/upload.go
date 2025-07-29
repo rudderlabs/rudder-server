@@ -15,7 +15,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/lib/pq"
@@ -38,7 +37,7 @@ const (
 	uploadColumns    = `
 		id,
 		status,
-		schema::jsonb,
+		schema,
 		namespace,
 		workspace_id,
 		source_id,
