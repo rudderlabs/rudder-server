@@ -358,9 +358,11 @@ func TestTableUploadRepo(t *testing.T) {
 			t.Run("all exported tables", func(t *testing.T) {
 				status := model.TableUploadExported
 
-				for _, table := range tables {
+				for i, table := range tables {
+					totalEvents := int64(i + 1)
 					err := r.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
-						Status: &status,
+						Status:      &status,
+						TotalEvents: &totalEvents,
 					})
 					require.NoError(t, err)
 				}
