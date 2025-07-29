@@ -66,7 +66,7 @@ type UploadJobFactory struct {
 }
 
 type loadFilesRepo interface {
-	Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error)
+	Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error)
 	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
 	TotalExportedEvents(ctx context.Context, uploadID int64, skipTables []string) (int64, error)
 	GetByID(ctx context.Context, id int64) (*model.LoadFile, error)
@@ -525,7 +525,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	)
 
 	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
-		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID, job.stagingFileIDs)
+		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID)
 		if err != nil {
 			return fmt.Errorf("fetching loading files: %w", err)
 		}
