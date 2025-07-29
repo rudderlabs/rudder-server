@@ -71,8 +71,9 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 	abortReason := workerJob.drainReason
 	abort := abortReason != ""
 	abortTag := abortReason
-	errResponse := routerutils.EnhanceJSON(job.LastJobStatus.ErrorResponse, "reason", abortReason)
 	if abort { // send aborted job status to responseQ and continue
+		errResponse := routerutils.EnhanceJSON(job.LastJobStatus.ErrorResponse, "reason", abortReason)
+		errResponse = routerutils.EnhanceJSON(errResponse, "payloadStage", "router_input")
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum,
