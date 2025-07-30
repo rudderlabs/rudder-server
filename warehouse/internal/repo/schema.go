@@ -529,7 +529,6 @@ func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID s
 }
 
 // GetDestinationNamespaces returns the most recent namespace for each source for a given destination ID.
-// It uses DISTINCT ON to get only the most recent entry per source_id based on created_at.
 func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID string) ([]model.NamespaceMapping, error) {
 	defer sh.TimerStat("get_destination_namespaces", stats.Tags{"destId": destinationID})()
 
