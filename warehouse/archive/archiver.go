@@ -490,20 +490,18 @@ func (a *Archiver) getStagingFilesData(
 func (a *Archiver) deleteLoadFileRecords(
 	ctx context.Context,
 	txn *sqlmw.Tx,
-	stagingFileIDs []int64,
 	uploadID int64,
 	hasUsedRudderStorage bool,
 ) error {
 	stmt := fmt.Sprintf(`
 		DELETE FROM %s
-		WHERE staging_file_id = ANY($1)
-		OR upload_id = $2
+		WHERE upload_id = $1
 		RETURNING location;`,
 		pq.QuoteIdentifier(warehouseutils.WarehouseLoadFilesTable),
 	)
-	loadLocationRows, err := txn.QueryContext(ctx, stmt, pq.Array(stagingFileIDs), uploadID)
+	loadLocationRows, err := txn.QueryContext(ctx, stmt, uploadID)
 	if err != nil {
-		return fmt.Errorf("cannot delete load files with staging_file_id = %+v: %w", stagingFileIDs, err)
+		return fmt.Errorf("cannot delete load files with upload_id = %+v: %w", uploadID, err)
 	}
 
 	defer func() { _ = loadLocationRows.Close() }()

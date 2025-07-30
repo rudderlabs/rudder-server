@@ -216,6 +216,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 			Identifier: "",
 		},
 		Upload: model.Upload{
+			ID:               100,
 			DestinationID:    "destination_id",
 			DestinationType:  warehouseutils.SNOWFLAKE,
 			SourceID:         "source_id",
@@ -237,8 +238,8 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 
 	var tableNames []string
 	for _, loadFile := range loadFiles {
-		require.Equal(t, stagingFile.ID, loadFile.StagingFileID)
-		require.Contains(t, loadFile.Location, "s3://bucket/path/to/file/1")
+		require.Contains(t, loadFile.Location, loadFile.TableName)
+		require.Equal(t, job.Upload.ID, *loadFile.UploadID)
 		require.Equal(t, stagingFile.SourceID, loadFile.SourceID)
 		require.Equal(t, stagingFile.DestinationID, loadFile.DestinationID)
 		require.Equal(t, job.Warehouse.Destination.RevisionID, loadFile.DestinationRevisionID)
@@ -251,7 +252,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 
 	require.Equal(t,
 		controlPlane.revisions[stagingFile.DestinationRevisionID].Config,
-		notifer.requests[0].StagingDestinationConfig,
+		notifer.requestsV2[0].StagingDestinationConfig,
 	)
 
 	t.Run("invalid revision ID", func(t *testing.T) {
@@ -739,9 +740,6 @@ func TestV2CreateLoadFiles(t *testing.T) {
 		ControlPlaneClient: controlPlane,
 	}
 
-	// Enable feature flag
-	lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
-
 	ctx := context.Background()
 
 	stagingFiles := getStagingFiles()
@@ -846,9 +844,6 @@ func TestV2CreateLoadFiles_Failure(t *testing.T) {
 			ControlPlaneClient: controlPlane,
 		}
 
-		// Enable feature flag
-		lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
-
 		stagingFiles := getStagingFiles()
 		for _, file := range stagingFiles {
 			file.BytesPerTable = map[string]int64{
@@ -896,9 +891,6 @@ func TestV2CreateLoadFiles_Failure(t *testing.T) {
 
 			ControlPlaneClient: controlPlane,
 		}
-
-		// Enable feature flag
-		lf.Conf.Set("Warehouse.enableV2NotifierJob", true)
 
 		stagingFiles := getStagingFiles()
 		for _, file := range stagingFiles {
