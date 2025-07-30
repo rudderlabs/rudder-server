@@ -2,7 +2,6 @@ package loadfiles_test
 
 import (
 	"context"
-	"slices"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -27,12 +26,12 @@ func (m *mockLoadFilesRepo) Insert(_ context.Context, loadFiles []model.LoadFile
 	return nil
 }
 
-func (m *mockLoadFilesRepo) Delete(_ context.Context, uploadID int64, stagingFileIDs []int64) error {
+func (m *mockLoadFilesRepo) Delete(_ context.Context, uploadID int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	store := make([]model.LoadFile, 0)
 	for _, loadFile := range m.store {
-		if !slices.Contains(stagingFileIDs, loadFile.StagingFileID) {
+		if loadFile.UploadID != &uploadID {
 			store = append(store, loadFile)
 		}
 	}

@@ -93,20 +93,14 @@ func TestMain(m *testing.M) {
 func TestUploads(t *testing.T) {
 	t.Run("tracks loading", func(t *testing.T) {
 		testCases := []struct {
-			batchStagingFiles bool
-			maxSizeInMB       string
+			maxSizeInMB string
 		}{
-			{batchStagingFiles: false},
-			{batchStagingFiles: true, maxSizeInMB: "100"},
-			{batchStagingFiles: true, maxSizeInMB: "0.00005"}, // Very low maxSizeInMB to ensure that staging files are not batched
+			{maxSizeInMB: "100"},
+			{maxSizeInMB: "0.00005"}, // Very low maxSizeInMB to ensure that staging files are not batched
 		}
 		for _, tc := range testCases {
-			t.Run(fmt.Sprintf("batchStagingFiles: %t, maxSizeInMB: %s", tc.batchStagingFiles, tc.maxSizeInMB), func(t *testing.T) {
-				if tc.batchStagingFiles {
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
-
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.maxSizeInMB"), tc.maxSizeInMB)
-				}
+			t.Run(fmt.Sprintf("maxSizeInMB: %s", tc.maxSizeInMB), func(t *testing.T) {
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.maxSizeInMB"), tc.maxSizeInMB)
 				db, minioResource, whClient := setupServer(t, false, nil, nil)
 
 				var (

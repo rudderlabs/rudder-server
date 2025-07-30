@@ -377,7 +377,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetadata)
 
 			// delete load file records
-			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, u.uploadID, hasUsedRudderStorage); err != nil {
+			if err := a.deleteLoadFileRecords(ctx, txn, u.uploadID, hasUsedRudderStorage); err != nil {
 				a.log.Errorf("[Archiver]: Error while deleting load file records for upload %d: %v", u.uploadID, err)
 				_ = txn.Rollback()
 				continue
@@ -464,20 +464,18 @@ func (a *Archiver) getStagingFilesData(
 func (a *Archiver) deleteLoadFileRecords(
 	ctx context.Context,
 	txn *sqlmw.Tx,
-	stagingFileIDs []int64,
 	uploadID int64,
 	hasUsedRudderStorage bool,
 ) error {
 	stmt := fmt.Sprintf(`
 		DELETE FROM %s
-		WHERE staging_file_id = ANY($1)
-		OR upload_id = $2
+		WHERE upload_id = $1
 		RETURNING location;`,
 		pq.QuoteIdentifier(warehouseutils.WarehouseLoadFilesTable),
 	)
-	loadLocationRows, err := txn.QueryContext(ctx, stmt, pq.Array(stagingFileIDs), uploadID)
+	loadLocationRows, err := txn.QueryContext(ctx, stmt, uploadID)
 	if err != nil {
-		return fmt.Errorf("cannot delete load files with staging_file_id = %+v: %w", stagingFileIDs, err)
+		return fmt.Errorf("cannot delete load files with upload_id = %+v: %w", uploadID, err)
 	}
 
 	defer func() { _ = loadLocationRows.Close() }()
