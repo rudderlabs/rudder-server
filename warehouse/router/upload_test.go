@@ -849,9 +849,6 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			Location: fmt.Sprintf("test-location-%d", i+1),
 		}
 	})
-	stagingFilesIDs := lo.Map(stagingFiles, func(f *model.StagingFile, _ int) int64 {
-		return f.ID
-	})
 	loadFiles := lo.RepeatBy(4, func(i int) model.LoadFile {
 		return model.LoadFile{
 			Location: fmt.Sprintf("test-load-location-%d", i+1),
@@ -927,7 +924,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
 		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(nil).Times(1)
-		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1)).Return(loadFiles, nil).Times(1)
 
 		destConfig := createDestConfig(true, warehouseutils.S3)
 		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
@@ -961,7 +958,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
 		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(errors.New("delete error")).Times(1)
-		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1)).Return(loadFiles, nil).Times(1)
 
 		destConfig := createDestConfig(true, warehouseutils.S3)
 		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
@@ -982,7 +979,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		for _, chunk := range lo.Chunk(expectedKeys, 4) {
 			mockFileManager.EXPECT().Delete(gomock.Any(), chunk).Return(nil).Times(1)
 		}
-		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1)).Return(loadFiles, nil).Times(1)
 
 		destConfig := createDestConfig(true, warehouseutils.GCS)
 		job := createUploadJob(destConfig, warehouseutils.BQ, mockFileManager, mockLoadFilesRepo, stagingFiles)
