@@ -1914,6 +1914,53 @@ func TestGRPC(t *testing.T) {
 			})
 		})
 
+		t.Run("GetDestinationNamespaces", func(t *testing.T) {
+			schemaRepo := repo.NewWHSchemas(db, c)
+			schema := model.WHSchema{
+				SourceID:        "source_1",
+				DestinationID:   destinationID,
+				DestinationType: destinationType,
+				Namespace:       "test_namespace",
+			}
+			err := schemaRepo.Insert(ctx, &schema)
+			require.NoError(t, err)
+
+			t.Run("successful request", func(t *testing.T) {
+				request := &proto.GetDestinationNamespacesRequest{
+					DestinationId: destinationID,
+				}
+
+				response, err := grpcClient.GetDestinationNamespaces(ctx, request)
+				require.NoError(t, err)
+				require.NotNil(t, response)
+				require.Len(t, response.NamespaceMappings, 1)
+				require.Equal(t, "source_1", response.NamespaceMappings[0].SourceId)
+				require.Equal(t, "test_namespace", response.NamespaceMappings[0].Namespace)
+			})
+
+			t.Run("empty destination_id", func(t *testing.T) {
+				request := &proto.GetDestinationNamespacesRequest{
+					DestinationId: "",
+				}
+
+				response, err := grpcClient.GetDestinationNamespaces(ctx, request)
+				require.Error(t, err)
+				require.Nil(t, response)
+				require.Contains(t, err.Error(), "destination_id cannot be empty")
+			})
+
+			t.Run("non-existent destination_id", func(t *testing.T) {
+				request := &proto.GetDestinationNamespacesRequest{
+					DestinationId: "non_existent_destination",
+				}
+
+				response, err := grpcClient.GetDestinationNamespaces(ctx, request)
+				require.NoError(t, err)
+				require.NotNil(t, response)
+				require.Empty(t, response.NamespaceMappings)
+			})
+		})
+
 		t.Run("SyncWHSchema", func(t *testing.T) {
 			_, err := grpcClient.SyncWHSchema(ctx, &proto.SyncWHSchemaRequest{
 				DestinationId: destinationID,

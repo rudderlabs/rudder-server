@@ -22,6 +22,7 @@ service Warehouse {
   rpc GetFirstAbortedUploadInContinuousAbortsByDestination(FirstAbortedUploadInContinuousAbortsByDestinationRequest) returns (FirstAbortedUploadInContinuousAbortsByDestinationResponse);
   rpc GetSyncLatency(SyncLatencyRequest) returns (SyncLatencyResponse);
   rpc SyncWHSchema(SyncWHSchemaRequest) returns (google.protobuf.Empty);
+  rpc GetDestinationNamespaces(GetDestinationNamespacesRequest) returns (GetDestinationNamespacesResponse);
 }
 
 message Pagination {
@@ -196,4 +197,17 @@ message SyncLatencyResponse {
 message LatencyTimeSeriesDataPoint {
   google.protobuf.DoubleValue timestamp_millis = 1 [json_name = "bucket"];
   google.protobuf.DoubleValue latency_seconds = 2 [json_name = "latency"];
+}
+
+message GetDestinationNamespacesRequest {
+  string destination_id = 1;
+}
+
+message GetDestinationNamespacesResponse {
+  repeated NamespaceMapping namespace_mappings = 1;
+}
+
+message NamespaceMapping {
+  string source_id = 1;
+  string namespace = 2;
 }
