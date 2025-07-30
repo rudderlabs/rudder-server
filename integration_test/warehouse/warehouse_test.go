@@ -104,7 +104,7 @@ func TestUploads(t *testing.T) {
 			t.Run(fmt.Sprintf("batchStagingFiles: %t, maxSizeInMB: %s", tc.batchStagingFiles, tc.maxSizeInMB), func(t *testing.T) {
 				if tc.batchStagingFiles {
 					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.queryWithUploadID.enable"), "true")
+
 					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.maxSizeInMB"), tc.maxSizeInMB)
 				}
 				db, minioResource, whClient := setupServer(t, false, nil, nil)

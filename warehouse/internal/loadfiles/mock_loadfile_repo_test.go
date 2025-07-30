@@ -41,12 +41,12 @@ func (m *mockLoadFilesRepo) Delete(_ context.Context, uploadID int64, stagingFil
 	return nil
 }
 
-func (m *mockLoadFilesRepo) Get(_ context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (m *mockLoadFilesRepo) Get(_ context.Context, uploadID int64) ([]model.LoadFile, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var loadFiles []model.LoadFile
 	for _, loadFile := range m.store {
-		if slices.Contains(stagingFileIDs, loadFile.StagingFileID) {
+		if *loadFile.UploadID == uploadID {
 			loadFiles = append(loadFiles, loadFile)
 		}
 	}

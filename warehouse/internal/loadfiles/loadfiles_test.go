@@ -49,109 +49,6 @@ func getStagingFiles() []*model.StagingFile {
 	return stagingFiles
 }
 
-func TestCreateLoadFiles(t *testing.T) {
-	t.Parallel()
-	notifier := &mockNotifier{
-		t:      t,
-		tables: []string{"track", "indentify"},
-	}
-	stageRepo := &mockStageFilesRepo{}
-	loadRepo := &mockLoadFilesRepo{}
-	controlPlane := &mockControlPlaneClient{}
-
-	lf := loadfiles.LoadFileGenerator{
-		Logger:    logger.NOP,
-		Notifier:  notifier,
-		StageRepo: stageRepo,
-		LoadRepo:  loadRepo,
-		Conf:      config.New(),
-
-		ControlPlaneClient: controlPlane,
-	}
-
-	ctx := context.Background()
-
-	stagingFiles := getStagingFiles()
-
-	job := model.UploadJob{
-		Warehouse: model.Warehouse{
-			WorkspaceID: "",
-			Source:      backendconfig.SourceT{},
-			Destination: backendconfig.DestinationT{
-				ID:         "destination_id",
-				RevisionID: "revision_id",
-			},
-			Namespace:  "",
-			Type:       warehouseutils.SNOWFLAKE,
-			Identifier: "",
-		},
-		Upload: model.Upload{
-			DestinationID:    "destination_id",
-			DestinationType:  "RS",
-			SourceID:         "source_id",
-			UseRudderStorage: true,
-		},
-		StagingFiles: stagingFiles,
-	}
-
-	startID, endID, err := lf.CreateLoadFiles(ctx, &job)
-	require.NoError(t, err)
-	require.Equal(t, int64(1), startID)
-	require.Equal(t, int64(20), endID)
-
-	require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
-	require.Len(t, stageRepo.store, len(stagingFiles))
-
-	for _, stagingFile := range stagingFiles {
-		loadFiles, err := loadRepo.Get(ctx, job.Upload.ID, []int64{stagingFile.ID})
-		require.Equal(t, 2, len(loadFiles))
-		require.NoError(t, err)
-
-		var tableNames []string
-		for _, loadFile := range loadFiles {
-			require.Equal(t, stagingFile.ID, loadFile.StagingFileID)
-			require.Contains(t, loadFile.Location, fmt.Sprintf("s3://bucket/path/to/file/%d", stagingFile.ID))
-			require.Equal(t, stagingFile.SourceID, loadFile.SourceID)
-			require.Equal(t, stagingFile.DestinationID, loadFile.DestinationID)
-			require.Equal(t, stagingFile.DestinationRevisionID, loadFile.DestinationRevisionID)
-			require.Equal(t, stagingFile.UseRudderStorage, loadFile.UseRudderStorage)
-
-			tableNames = append(tableNames, loadFile.TableName)
-		}
-		require.ElementsMatch(t, notifier.tables, tableNames)
-		require.Equal(t, warehouseutils.StagingFileSucceededState, stageRepo.store[stagingFile.ID].Status)
-	}
-
-	t.Run("skip already processed", func(t *testing.T) {
-		t.Log("all staging file are successfully processed, except one")
-		for _, stagingFile := range stagingFiles {
-			stagingFile.Status = warehouseutils.StagingFileSucceededState
-		}
-		stagingFiles[0].Status = warehouseutils.StagingFileFailedState
-
-		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
-		require.NoError(t, err)
-		require.Equal(t, int64(21), startID)
-		require.Equal(t, int64(22), endID)
-
-		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
-	})
-
-	t.Run("force recreate", func(t *testing.T) {
-		for _, stagingFile := range stagingFiles {
-			stagingFile.Status = warehouseutils.StagingFileSucceededState
-		}
-
-		startID, endID, err := lf.ForceCreateLoadFiles(ctx, &job)
-		require.NoError(t, err)
-		require.Equal(t, int64(23), startID)
-		require.Equal(t, int64(42), endID)
-
-		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifier.tables))
-		require.Len(t, stageRepo.store, len(stagingFiles))
-	})
-}
-
 func TestCreateLoadFiles_Failure(t *testing.T) {
 	t.Parallel()
 
@@ -334,7 +231,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(2), endID)
 
-	loadFiles, err := loadRepo.Get(ctx, job.Upload.ID, []int64{stagingFile.ID})
+	loadFiles, err := loadRepo.Get(ctx, job.Upload.ID)
 	require.Equal(t, 2, len(loadFiles))
 	require.NoError(t, err)
 

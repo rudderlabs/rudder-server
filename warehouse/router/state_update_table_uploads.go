@@ -14,7 +14,6 @@ func (job *UploadJob) updateTableUploadsCounts() error {
 				tx,
 				job.upload.ID,
 				tableName,
-				job.stagingFileIDs,
 			); err != nil {
 				return fmt.Errorf("populate total events from staging file ids for table: %s, %w", tableName, err)
 			}
