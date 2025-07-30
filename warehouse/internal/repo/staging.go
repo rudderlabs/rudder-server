@@ -624,37 +624,3 @@ func (sf *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status str
 
 	return nil
 }
-
-func (sf *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
-	defer sf.TimerStat("set_error_status", nil)()
-
-	sqlStatement := `
-		UPDATE
-		` + stagingTableName + `
-		SET
-			status = $1,
-			error = $2,
-			updated_at = $3
-		WHERE
-			id = $4;`
-
-	result, err := sf.db.ExecContext(
-		ctx,
-		sqlStatement,
-		warehouseutils.StagingFileFailedState,
-		stageFileErr.Error(),
-		sf.now(),
-		stagingFileID,
-	)
-	if err != nil {
-		return fmt.Errorf("update staging file with error: %w", err)
-	}
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-	if rowsAffected == 0 {
-		return fmt.Errorf("no rows affected")
-	}
-	return nil
-}

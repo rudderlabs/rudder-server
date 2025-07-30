@@ -60,7 +60,7 @@ func Test_LoadFiles(t *testing.T) {
 				Location:              "s3://bucket/path/to/file",
 				TotalRows:             10,
 				ContentLength:         1000,
-				UploadID:              &uploads[i%2],
+				UploadID:              uploads[i%2],
 				DestinationRevisionID: "revision_id",
 				UseRudderStorage:      true,
 				SourceID:              "source_id",
@@ -130,7 +130,7 @@ func TestLoadFiles_GetByID(t *testing.T) {
 		}
 		// Not adding uploadID for first file to test NULL value
 		if i != 0 {
-			file.UploadID = &uploadID
+			file.UploadID = uploadID
 		}
 		return file
 	})
@@ -193,7 +193,7 @@ func TestLoadFiles_TotalExportedEvents(t *testing.T) {
 					Location:              "s3://bucket/path/to/file",
 					TotalRows:             rows,
 					ContentLength:         1000,
-					UploadID:              &uploadID,
+					UploadID:              uploadID,
 					DestinationRevisionID: "revision_id",
 					UseRudderStorage:      true,
 					SourceID:              "source_id",
