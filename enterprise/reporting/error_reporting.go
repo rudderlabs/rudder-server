@@ -803,7 +803,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 			err = fmt.Errorf(`received response: statusCode: %d error: %v`, resp.StatusCode, string(respBody))
 			edr.log.Errorn("received response",
 				logger.NewIntField("statusCode", int64(resp.StatusCode)),
-				logger.NewErrorField(errors.New(string(respBody))))
+				obskit.Error(errors.New(string(respBody))))
 		}
 		return err
 	}
