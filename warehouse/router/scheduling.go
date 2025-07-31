@@ -17,6 +17,7 @@ var (
 	errUploadFrequencyExceeded          = fmt.Errorf("upload frequency exceeded")
 	errCurrentTimeExistsInExcludeWindow = fmt.Errorf("current time exists in exclude window")
 	errBeforeScheduledTime              = fmt.Errorf("before scheduled time")
+	errManualSyncModeEnabled            = fmt.Errorf("manual sync mode is enabled, automatic uploads are blocked")
 )
 
 type createUploadAlwaysLoader interface {
@@ -33,6 +34,11 @@ func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	// return true if the upload was triggered
 	if _, isTriggered := r.triggerStore.Load(warehouse.Identifier); isTriggered {
 		return nil
+	}
+
+	// check if manual sync mode is enabled
+	if warehouse.GetBoolDestinationConfig(model.ManualSyncSetting) {
+		return errManualSyncModeEnabled
 	}
 
 	if r.config.warehouseSyncFreqIgnore.Load() {

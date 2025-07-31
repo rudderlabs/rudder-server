@@ -66,4 +66,5 @@ var (
 	OauthClientIDSetting             DestinationConfigSetting = destConfSetting("oauthClientID")
 	OauthClientSecretSetting         DestinationConfigSetting = destConfSetting("oauthClientSecret")
 	SkipViewsSetting                 DestinationConfigSetting = destConfSetting("skipViews")
+	ManualSyncSetting                DestinationConfigSetting = destConfSetting("manualSync")
 )
