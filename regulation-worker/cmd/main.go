@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
@@ -41,14 +42,14 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
-	pkgLogger.Info("Starting regulation-worker")
+	pkgLogger.Infon("Starting regulation-worker")
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	err := Run(ctx)
 	if ctx.Err() == nil {
 		cancel()
 	}
 	if err != nil {
-		pkgLogger.Errorf("Running regulation worker: %v", err)
+		pkgLogger.Errorn("Running regulation worker", obskit.Error(err))
 		os.Exit(1)
 	}
 }
@@ -81,7 +82,7 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("getting deployment type: %w", err)
 	}
-	pkgLogger.Infof("Running regulation worker in %s mode", deploymentType)
+	pkgLogger.Infon("Running regulation worker", logger.NewStringField("mode", string(deploymentType)))
 	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	identity := backendconfig.DefaultBackendConfig.Identity()
@@ -116,7 +117,7 @@ func Run(ctx context.Context) error {
 		MaxFailedAttempts: config.GetInt("REGULATION_DELETION_MAX_FAILED_ATTEMPTS", 4),
 	}
 
-	pkgLogger.Infof("calling looper with service: %v", svc)
+	pkgLogger.Infon("calling looper with service")
 	l := withLoop(svc)
 	err = crash.Wrapper(func() error {
 		return l.Loop(ctx)

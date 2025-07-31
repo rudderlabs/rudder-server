@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -79,7 +80,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		eventList := groupedEventsBySourceId[sourceId]
 		validationStat := proc.newValidationStat(&eventList[0].Metadata)
 		validationStat.numEvents.Count(len(eventList))
-		proc.logger.Debug("Validation input size", len(eventList))
+		proc.logger.Debugn("Validation input size", logger.NewIntField("inputSize", int64(len(eventList))))
 
 		// Checking if the tracking plan exists
 		isTpExists := eventList[0].Metadata.TrackingPlanID != ""
@@ -119,7 +120,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
 		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 		validationStat.numValidationFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
-		proc.logger.Debug("Validation output size", len(eventsToTransform))
+		proc.logger.Debugn("Validation output size", logger.NewIntField("outputSize", int64(len(eventsToTransform))))
 
 		validatedErrorJobs = append(validatedErrorJobs, nonSuccessMetrics.failedJobs...)
 
