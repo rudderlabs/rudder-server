@@ -11,6 +11,8 @@ import (
 	"github.com/tidwall/sjson"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 
@@ -37,7 +39,7 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 			w.Header().Set("Content-Type", "image/gif")
 			_, err := w.Write([]byte(response.GetPixelResponse()))
 			if err != nil {
-				gw.logger.Warnf("Error while sending pixel response: %v", err)
+				gw.logger.Warnn("Error while sending pixel response", obskit.Error(err))
 				return
 			}
 		}() // write pixel response even if there is an error
@@ -62,11 +64,11 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 				pw := newPixelWriter() // create a new writer since the pixel is going to be written to the client regardless of the next handler's response
 				next(pw, pr)
 				if pw.status != http.StatusOK {
-					gw.logger.Infow("Error while handling request",
-						"ip", kithttputil.GetRequestIP(r),
-						"path", r.URL.Path,
-						"status", pw.status,
-						"body", string(pw.body))
+					gw.logger.Infon("Error while handling request",
+						logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+						logger.NewStringField("path", r.URL.Path),
+						logger.NewIntField("status", int64(pw.status)),
+						logger.NewStringField("body", string(pw.body)))
 				}
 			}
 		} else {
@@ -78,10 +80,10 @@ func (gw *Handle) pixelInterceptor(reqType string, next http.HandlerFunc) http.H
 			}
 			stat.RequestFailed("NoWriteKeyInQueryParams")
 			stat.Report(gw.stats)
-			gw.logger.Infow("Error while handling request",
-				"ip", kithttputil.GetRequestIP(r),
-				"path", r.URL.Path,
-				"body", response.NoWriteKeyInQueryParams)
+			gw.logger.Infon("Error while handling request",
+				logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+				logger.NewStringField("path", r.URL.Path),
+				logger.NewStringField("body", response.NoWriteKeyInQueryParams))
 		}
 	})
 }

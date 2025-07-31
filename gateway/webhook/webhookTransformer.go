@@ -225,7 +225,9 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		bt.webhook.logger.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
+		bt.webhook.logger.Errorn("source Transformer returned non-success statusCode",
+			logger.NewIntField("statusCode", int64(resp.StatusCode)),
+			logger.NewStringField("error", resp.Status))
 		bt.stats.failedStat.Count(len(events))
 		err := fmt.Errorf("source Transformer returned non-success statusCode: %v, Error: %v", resp.StatusCode, resp.Status)
 		return transformerBatchResponseT{batchError: err}
@@ -290,7 +292,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceTransformer
 	if len(responses) != len(events) {
 		statusCode := response.GetErrorStatusCode(response.SourceTransformerInvalidResponseFormat)
 		err := errors.New(response.GetStatus(response.SourceTransformerInvalidResponseFormat))
-		bt.webhook.logger.Errorf("source rudder-transformer response size does not equal sent events size")
+		bt.webhook.logger.Errorn("source rudder-transformer response size does not equal sent events size")
 		return transformerBatchResponseT{batchError: err, statusCode: statusCode}
 	}
 
