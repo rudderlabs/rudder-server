@@ -8,7 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
@@ -26,8 +26,8 @@ type throttler struct {
 	maxLimit   func() int64
 	staticCost bool
 
-	everyInvalidConfig *sync.OnceEvery
-	everyGauge         *sync.OnceEvery
+	everyInvalidConfig *kitsync.OnceEvery
+	everyGauge         *kitsync.OnceEvery
 	limitFactorGauge   stats.Gauge
 	rateLimitGauge     stats.Gauge
 }

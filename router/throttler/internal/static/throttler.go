@@ -8,7 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
@@ -23,8 +23,8 @@ type throttler struct {
 	window     config.ValueLoader[time.Duration]
 	staticCost bool
 
-	onceEveryInvalidConfig *sync.OnceEvery
-	onceEveryGauge         *sync.OnceEvery
+	onceEveryInvalidConfig *kitsync.OnceEvery
+	onceEveryGauge         *kitsync.OnceEvery
 	rateLimitGauge         stats.Gauge
 }
 

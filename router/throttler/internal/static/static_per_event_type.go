@@ -6,7 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
@@ -34,8 +34,8 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter
 		// static cost for per-event-type throttler: cost was originally introduced to address rate limit differences between different event types, so not needed when using per-event-type throttler
 		staticCost: true,
 
-		onceEveryInvalidConfig: sync.NewOnceEvery(time.Minute),
-		onceEveryGauge:         sync.NewOnceEvery(time.Second),
+		onceEveryInvalidConfig: kitsync.NewOnceEvery(time.Minute),
+		onceEveryGauge:         kitsync.NewOnceEvery(time.Second),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

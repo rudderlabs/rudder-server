@@ -6,7 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/sync"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
@@ -29,8 +29,8 @@ func NewAllEventTypesThrottler(destType, destinationID string, limiter types.Lim
 		),
 		staticCost: false,
 
-		onceEveryInvalidConfig: sync.NewOnceEvery(time.Minute),
-		onceEveryGauge:         sync.NewOnceEvery(time.Second),
+		onceEveryInvalidConfig: kitsync.NewOnceEvery(time.Minute),
+		onceEveryGauge:         kitsync.NewOnceEvery(time.Second),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,
