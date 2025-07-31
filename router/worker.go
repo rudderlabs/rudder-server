@@ -790,7 +790,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
-	w.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, w.rt.destType, jobID)
+	w.logger.Debugn("[TransformerProxy] Request ended", obskit.DestinationType(w.rt.destType), logger.NewIntField("jobID", jobID))
 	if !oauth.IsOAuthDestination(destinationJob.Destination.DestinationDefinition.Config) {
 		return proxyRequestResponse
 	}
@@ -998,7 +998,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 		if respStatusCode == utilTypes.FilterEventCode {
 			status.JobState = jobsdb.Filtered.State
 		}
-		w.logger.Debugf("sending success status to response")
+		w.logger.Debugn("sending success status to response")
 		w.rt.responseQ <- workerJobStatus{
 			userID:     destinationJobMetadata.UserID,
 			worker:     w,
@@ -1051,13 +1051,16 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 				DestinationID: destinationJobMetadata.DestinationID,
 				WorkspaceID:   destinationJobMetadata.WorkspaceID,
 			}
-			w.logger.Debugf("EventOrder: [%d] job %d for key %s failed", w.id, status.JobID, orderKey)
+			w.logger.Debugn("EventOrder: Job has failed",
+				logger.NewIntField("workerId", int64(w.id)),
+				logger.NewIntField("jobId", status.JobID),
+				logger.NewStringField("orderKey", orderKey.String()))
 			if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
 				panic(err)
 			}
 		}
 	}
-	w.logger.Debugf("sending failed/aborted state as response")
+	w.logger.Debugn("sending failed/aborted state as response")
 	w.rt.responseQ <- workerJobStatus{
 		userID:     destinationJobMetadata.UserID,
 		worker:     w,
@@ -1184,7 +1187,8 @@ func (w *worker) trackStuckDelivery() chan struct{} {
 		case <-ch:
 			// do nothing
 		case <-time.After(d):
-			w.logger.Infof("[%s Router] Delivery to destination exceeded the 2 * configured timeout ", w.rt.destType)
+			w.logger.Infon("[Router] Delivery to destination exceeded the 2 * configured timeout ",
+				obskit.DestinationType(w.rt.destType))
 			stat := stats.Default.NewTaggedStat("router_delivery_exceeded_timeout", stats.CountType, stats.Tags{
 				"destType": w.rt.destType,
 			})
