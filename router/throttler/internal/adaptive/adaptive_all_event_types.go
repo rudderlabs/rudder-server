@@ -5,13 +5,14 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
 // NewAllEventTypesThrottler constructs a new adaptive throttler for all event types of a destination
-func NewAllEventTypesThrottler(destType, destinationID string, algorithm Algorithm, limiter types.Limiter, config *config.Config, stat stats.Stats) *throttler {
+func NewAllEventTypesThrottler(destType, destinationID string, algorithm Algorithm, limiter types.Limiter, config *config.Config, stat stats.Stats, log logger.Logger) *throttler {
 	return &throttler{
 		destinationID: destinationID,
 		eventType:     "all",
@@ -19,6 +20,7 @@ func NewAllEventTypesThrottler(destType, destinationID string, algorithm Algorit
 
 		limiter:   limiter,
 		algorithm: algorithm,
+		log:       log.Withn(logger.NewStringField("eventType", "all")),
 
 		window: GetAllEventsWindowConfig(config, destType, destinationID),
 		minLimit: config.GetReloadableInt64Var(1, 1,
@@ -35,7 +37,8 @@ func NewAllEventTypesThrottler(destType, destinationID string, algorithm Algorit
 		),
 		staticCost: false,
 
-		every: sync.NewEvery(time.Second),
+		everyInvalidConfig: sync.NewOnceEvery(time.Minute),
+		everyGauge:         sync.NewOnceEvery(time.Second),
 		limitFactorGauge: stat.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

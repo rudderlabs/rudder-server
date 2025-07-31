@@ -9,18 +9,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEvery(t *testing.T) {
-	t.Run("NewEvery", func(t *testing.T) {
+func TestOnceEvery(t *testing.T) {
+	t.Run("NewOnceEvery", func(t *testing.T) {
 		interval := 100 * time.Millisecond
-		every := NewEvery(interval)
+		every := NewOnceEvery(interval)
 
-		require.NotNil(t, every, "NewEvery returned nil")
+		require.NotNil(t, every, "NewOnceEvery returned nil")
 		require.Equal(t, interval, every.interval, "Expected interval %v, got %v", interval, every.interval)
 		require.True(t, every.lastRun.IsZero(), "Expected lastRun to be zero time, got %v", every.lastRun)
 	})
 
 	t.Run("Do_FirstCall", func(t *testing.T) {
-		every := NewEvery(100 * time.Millisecond)
+		every := NewOnceEvery(100 * time.Millisecond)
 		var called bool
 
 		every.Do(func() {
@@ -32,7 +32,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_WithinInterval", func(t *testing.T) {
-		every := NewEvery(100 * time.Millisecond)
+		every := NewOnceEvery(100 * time.Millisecond)
 		var callCount int
 
 		// First call should execute
@@ -49,7 +49,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_AfterInterval", func(t *testing.T) {
-		every := NewEvery(50 * time.Millisecond)
+		every := NewOnceEvery(50 * time.Millisecond)
 		var callCount int
 
 		// First call
@@ -69,7 +69,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_ConcurrentAccess", func(t *testing.T) {
-		every := NewEvery(50 * time.Millisecond)
+		every := NewOnceEvery(50 * time.Millisecond)
 		var callCount int64
 		var wg sync.WaitGroup
 
@@ -92,7 +92,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_ConcurrentAccessWithDelay", func(t *testing.T) {
-		every := NewEvery(30 * time.Millisecond)
+		every := NewOnceEvery(30 * time.Millisecond)
 		var callCount int64
 		var wg sync.WaitGroup
 
@@ -128,7 +128,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_MultipleIntervalsWithTiming", func(t *testing.T) {
-		every := NewEvery(25 * time.Millisecond)
+		every := NewOnceEvery(25 * time.Millisecond)
 		var callCount int
 		var callTimes []time.Time
 
@@ -160,7 +160,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_ZeroInterval", func(t *testing.T) {
-		every := NewEvery(0)
+		every := NewOnceEvery(0)
 		var callCount int
 
 		// Multiple calls with zero interval should all execute
@@ -174,7 +174,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_FunctionPanic", func(t *testing.T) {
-		every := NewEvery(50 * time.Millisecond)
+		every := NewOnceEvery(50 * time.Millisecond)
 		var recovered bool
 
 		func() {
@@ -202,7 +202,7 @@ func TestEvery(t *testing.T) {
 	})
 
 	t.Run("Do_LongRunningFunction", func(t *testing.T) {
-		every := NewEvery(50 * time.Millisecond)
+		every := NewOnceEvery(50 * time.Millisecond)
 		var callCount int
 
 		// First call with long-running function
@@ -230,7 +230,7 @@ func TestEvery(t *testing.T) {
 
 func BenchmarkEvery(b *testing.B) {
 	b.Run("Do", func(b *testing.B) {
-		every := NewEvery(time.Hour) // Long interval so function never executes
+		every := NewOnceEvery(time.Hour) // Long interval so function never executes
 
 		b.ResetTimer()
 		for b.Loop() {
@@ -241,7 +241,7 @@ func BenchmarkEvery(b *testing.B) {
 	})
 
 	b.Run("Do_Executing", func(b *testing.B) {
-		every := NewEvery(0) // Zero interval so function always executes
+		every := NewOnceEvery(0) // Zero interval so function always executes
 
 		b.ResetTimer()
 		for b.Loop() {

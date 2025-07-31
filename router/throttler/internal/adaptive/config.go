@@ -36,7 +36,7 @@ func maxLimitFunc(config *config.Config, destType, destinationID string, maxLimi
 		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 	)
-	defaultMaxLimit := config.GetReloadableInt64Var(DefaultMaxLimit, 1, `Router.throttler.adaptive.defaultMaxLimit`)
+	defaultMaxLimit := config.GetReloadableInt64Var(DefaultMaxThrottlingLimit, 1, `Router.throttler.adaptive.defaultMaxLimit`)
 	return func() int64 {
 		maxLimit := maxLimit.Load()
 		if maxLimit > 0 {

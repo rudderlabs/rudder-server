@@ -9,4 +9,4 @@ type Algorithm interface {
 	LimitFactor() float64
 }
 
-const DefaultMaxLimit = 1000 // 1000 requests per second
+const DefaultMaxThrottlingLimit = 1000 // 1000 requests per second

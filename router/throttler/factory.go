@@ -8,8 +8,10 @@ import (
 	"github.com/go-redis/redis/v8"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/throttling"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/adaptive"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/adaptive/algorithm"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/static"
@@ -31,12 +33,13 @@ type Factory interface {
 }
 
 // NewFactory constructs a new Throttler Factory
-func NewFactory(config *config.Config, stats stats.Stats) (Factory, error) {
+func NewFactory(config *config.Config, stats stats.Stats, log logger.Logger) (Factory, error) {
 	f := &factory{
 		config:             config,
 		Stats:              stats,
 		throttlers:         make(map[string]Throttler),
 		allEventTypesAlgos: make(map[string]adaptive.Algorithm),
+		log:                log,
 	}
 	if err := f.initThrottlerFactory(); err != nil {
 		return nil, err
@@ -46,6 +49,7 @@ func NewFactory(config *config.Config, stats stats.Stats) (Factory, error) {
 
 type factory struct {
 	config          *config.Config
+	log             logger.Logger
 	Stats           stats.Stats
 	staticLimiter   types.Limiter // limiter to use when static throttling is enabled
 	adaptiveLimiter types.Limiter // limiter to use when adaptive throttling is enabled
@@ -82,11 +86,16 @@ func (f *factory) Get(destType, destinationID, eventType string) Throttler {
 		fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destType),
 		"Router.throttler.adaptive.enabled")
 
+	log := f.log.Withn(
+		obskit.DestinationType(destType),
+		obskit.DestinationID(destinationID),
+		logger.NewStringField("eventType", eventType),
+	)
 	// switching between static and adaptive throttling
 	t := switcher.NewThrottlerSwitcher(
 		adaptiveThrottlerEnabled,
-		static.NewThrottler(destType, destinationID, eventType, f.staticLimiter, f.config, f.Stats),
-		adaptive.NewThrottler(destType, destinationID, eventType, perEventAlgorithm, allEventsAlgorithm, f.adaptiveLimiter, f.config, f.Stats),
+		static.NewThrottler(destType, destinationID, eventType, f.staticLimiter, f.config, f.Stats, log.Withn(logger.NewStringField("throttlerType", "static"))),
+		adaptive.NewThrottler(destType, destinationID, eventType, perEventAlgorithm, allEventsAlgorithm, f.adaptiveLimiter, f.config, f.Stats, log.Withn(logger.NewStringField("throttlerType", "adaptive"))),
 	)
 	f.throttlers[key] = t
 	return t

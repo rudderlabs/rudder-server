@@ -273,7 +273,7 @@ func TestConfigFunctions(t *testing.T) {
 			// No configs set, should use DefaultMaxLimit
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
-			require.Equal(t, int64(DefaultMaxLimit), limitFunc())
+			require.Equal(t, int64(DefaultMaxThrottlingLimit), limitFunc())
 		})
 
 		t.Run("UsesCustomDefaultMaxLimit", func(t *testing.T) {
@@ -302,7 +302,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
-			require.Equal(t, int64(DefaultMaxLimit), limitFunc())
+			require.Equal(t, int64(DefaultMaxThrottlingLimit), limitFunc())
 		})
 
 		t.Run("IgnoresZeroMultiplier", func(t *testing.T) {
@@ -317,7 +317,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
-			require.Equal(t, int64(DefaultMaxLimit), limitFunc())
+			require.Equal(t, int64(DefaultMaxThrottlingLimit), limitFunc())
 		})
 
 		t.Run("PrioritizesMaxLimitOverStaticLimit", func(t *testing.T) {
