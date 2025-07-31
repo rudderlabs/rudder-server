@@ -82,17 +82,22 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		return nil, fmt.Errorf("getting table uploads: %w", err)
 	}
 
-	tableNames := lo.Map(tableUploads, func(item model.TableUpload, index int) string {
-		return item.TableName
-	})
-	tableNames = lo.Filter(lo.Uniq(tableNames), func(tableName string, i int) bool {
-		switch strings.ToLower(tableName) {
-		case whutils.DiscardsTable, whutils.IdentityMappingsTable, whutils.IdentityMergeRulesTable:
-			return false
-		default:
-			return true
-		}
-	})
+	tableNames := lo.Filter(
+		lo.Uniq(lo.Map(tableUploads, func(item model.TableUpload, _ int) string {
+			return item.TableName
+		})),
+		func(tableName string, i int) bool {
+			switch strings.ToLower(tableName) {
+			case whutils.DiscardsTable, whutils.IdentityMappingsTable, whutils.IdentityMergeRulesTable:
+				return false
+			default:
+				return true
+			}
+		},
+	)
+	if len(tableNames) == 0 {
+		return nil, fmt.Errorf("no tables found for source: %s, destination: %s, job run: %s, task run: %s", payload.SourceID, payload.DestinationID, payload.JobRunID, payload.TaskRunID)
+	}
 
 	type metadata struct {
 		JobRunID  string    `json:"job_run_id"`
