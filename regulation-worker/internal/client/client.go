@@ -41,12 +41,12 @@ func (j *JobAPI) URL() string {
 // which is decoded using schema and then mapped from schema to internal model.Job struct,
 // which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
-	pkgLogger.Debugf("making http request to regulation manager to get new job")
+	pkgLogger.Debugn("making http request to regulation manager to get new job")
 	url := j.URL()
-	pkgLogger.Debugf("making GET request to URL: %v", url)
+	pkgLogger.Debugn("making GET request to URL", logger.NewStringField("url", url))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		pkgLogger.Errorf("error while create new http request: %v", err)
+		pkgLogger.Errorn("error while create new http request", obskit.Error(err))
 		return model.Job{}, err
 	}
 	req.SetBasicAuth(j.Identity.BasicAuth())
@@ -62,18 +62,18 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 	defer func() { httputil.CloseResponse(resp) }()
-	pkgLogger.Debugf("obtained response code: %v with resp body %v", resp.StatusCode, resp.Body)
+	pkgLogger.Debugn("obtained response code", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 
 	// if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if resp.StatusCode == http.StatusNoContent {
-			pkgLogger.Debugf("no runnable job found")
+			pkgLogger.Debugn("no runnable job found")
 			return model.Job{}, model.ErrNoRunnableJob
 		}
 
 		var jobSchema jobSchema
 		if err := jsonrs.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
-			pkgLogger.Errorf("error while decoding response body: %v", err)
+			pkgLogger.Errorn("error while decoding response body", obskit.Error(err))
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 

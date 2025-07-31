@@ -1530,7 +1530,7 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
-			proc.logger.Error(r)
+			proc.logger.Error(r) // nolint:forbidigo
 		}
 	}()
 	var eventType string
@@ -3234,7 +3234,7 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
 			userTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 			userTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
-			proc.logger.Debugn("Custom Transform output size", logger.NewField("size", len(eventsToTransform)))
+			proc.logger.Debugn("Custom Transform output size", logger.NewIntField("size", int64(len(eventsToTransform))))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
 			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
@@ -3326,7 +3326,7 @@ func (proc *Handle) userTransformAndFilter(
 	}
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.EVENT_FILTER)
-	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
+	proc.logger.Debugn("Supported messages filtering output size", logger.NewIntField("eventCount", int64(len(eventsToTransform))))
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
@@ -3414,7 +3414,7 @@ func (proc *Handle) destTransform(
 	if transformAt == "processor" || (transformAt == "router" && !transformAtFromFeaturesFile) {
 		trace.WithRegion(ctx, "Dest Transform", func() {
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(data.eventsToTransform))
-			proc.logger.Debug("Dest Transform input size", len(data.eventsToTransform))
+			proc.logger.Debugn("Dest Transform input size", logger.NewIntField("inputSize", int64(len(data.eventsToTransform))))
 			s := time.Now()
 			response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
 
@@ -3932,7 +3932,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 		proc.getBackendEnabledDestinationTypes(sourceId),
 	)
 	if len(enabledDestTypes) == 0 {
-		proc.logger.Debug("No enabled destination types")
+		proc.logger.Debugn("No enabled destination types")
 		return false
 	}
 
@@ -3950,7 +3950,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 	), func(dest backendconfig.DestinationT, index int) bool {
 		return len(destinationID) == 0 || dest.ID == destinationID
 	}); len(enabledDestinationsList) == 0 {
-		proc.logger.Debug("No destination to route this event to")
+		proc.logger.Debugn("No destination to route this event to")
 		return false
 	}
 

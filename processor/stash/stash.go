@@ -109,12 +109,12 @@ func (st *HandleT) Start(ctx context.Context) {
 }
 
 func (st *HandleT) sendRetryUpdateStats(attempt int) {
-	st.logger.Warnf("Timeout during update job status in stash module, attempt %d", attempt)
+	st.logger.Warnn("Timeout during update job status in stash module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func (st *HandleT) sendQueryRetryStats(attempt int) {
-	st.logger.Warnf("Timeout during query jobs in stash module, attempt %d", attempt)
+	st.logger.Warnn("Timeout during query jobs in stash module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
@@ -311,13 +311,13 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 	}, st.sendRetryUpdateStats)
 	if err != nil {
-		st.logger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
+		st.logger.Errorn("Error occurred while updating proc error jobs statuses. Panicking", obskit.Error(err))
 		panic(err)
 	}
 }
 
 func (st *HandleT) readErrJobsLoop(ctx context.Context) {
-	st.logger.Info("Processor errors stash loop started")
+	st.logger.Infon("Processor errors stash loop started")
 	var sleepTime time.Duration
 	for {
 		select {
@@ -344,7 +344,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					close(st.errProcessQ)
 					return //nolint:nilerr
 				}
-				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
+				st.logger.Errorn("Error occurred while reading proc error jobs", obskit.Error(err))
 				panic(err)
 			}
 
@@ -354,7 +354,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
-				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
+				st.logger.Debugn("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
 				sleepTime = st.calculateSleepTime(limitReached)
 				continue
 			}
@@ -404,7 +404,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				if ctx.Err() != nil { // we are shutting down
 					return //nolint:nilerr
 				}
-				st.logger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
+				st.logger.Errorn("Error occurred while marking proc error jobs statuses. Panicking", logger.NewStringField("jobState", jobState), obskit.Error(err))
 				panic(err)
 			}
 
