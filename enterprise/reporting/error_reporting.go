@@ -238,7 +238,7 @@ func shouldReport(metric types.PUReportedMetric) bool {
 }
 
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
-	edr.log.Debug("[ErrorDetailReport] Report method called\n")
+	edr.log.Debugn("[ErrorDetailReport] Report method called")
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -263,7 +263,10 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			return nil
 		}
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.DestinationID)
-		edr.log.Debugn("DestinationId & DestDetail details", obskit.DestinationID(metric.DestinationID), logger.NewField("destinationDetail", destinationDetail))
+		edr.log.Debugn("DestinationId & DestDetail details",
+			obskit.DestinationID(metric.DestinationID),
+			obskit.DestinationType(destinationDetail.destType),
+			logger.NewStringField("destinationDefinitionID", destinationDetail.destinationDefinitionID))
 
 		// extract error-message & error-code
 		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags)
@@ -425,7 +428,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 		)
 		for {
 			if ctx.Err() != nil {
-				edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+				edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
 				return ctx.Err()
 			}
 			requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
@@ -435,10 +438,10 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			getReportsStart := time.Now()
 			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
 			if ctx.Err() != nil {
-				edr.log.Errorw("getting reports", "error", ctx.Err())
+				edr.log.Errorn("getting reports", obskit.Error(ctx.Err()))
 				select {
 				case <-ctx.Done():
-					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
 					return ctx.Err()
 				case <-time.After(edr.mainLoopSleepInterval.Load()):
 				}
@@ -451,7 +454,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				lastReportedAtTime.Store(loopStart)
 				select {
 				case <-ctx.Done():
-					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
 					return ctx.Err()
 				case <-time.After(edr.sleepInterval.Load()):
 				}
@@ -475,7 +478,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				errGroup.Go(func() error {
 					err := edr.sendMetric(errCtx, c.Label, metricToSend)
 					if err != nil {
-						edr.log.Error("Error while sending to Reporting service:", err)
+						edr.log.Errorn("Error while sending to Reporting service", obskit.Error(err))
 					}
 					<-requestChan
 					return err
@@ -511,8 +514,9 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 						`SELECT pg_table_size(oid) from pg_class where relname = $1`, ErrorDetailReportsTable,
 					).Scan(&sizeEstimate); err != nil {
 						edr.log.Errorn(
-							fmt.Sprintf(`Error getting %s table size estimate`, ErrorDetailReportsTable),
-							logger.NewErrorField(err),
+							"Error getting table size estimate",
+							logger.NewStringField("table", ErrorDetailReportsTable),
+							obskit.Error(err),
 						)
 					}
 					if sizeEstimate >= vacuumThresholdBytes.Load() {
@@ -789,7 +793,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
-		edr.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
+		edr.log.Debugn("[ErrorDetailReporting]Response from ReportingAPI", logger.NewStringField("response", string(respBody)))
 		if err != nil {
 			edr.log.Errorn("Reading response failed", obskit.Error(err))
 			return err
@@ -797,7 +801,9 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 
 		if !isMetricPosted(resp.StatusCode) {
 			err = fmt.Errorf(`received response: statusCode: %d error: %v`, resp.StatusCode, string(respBody))
-			edr.log.Error(err.Error())
+			edr.log.Errorn("received response",
+				logger.NewIntField("statusCode", int64(resp.StatusCode)),
+				logger.NewErrorField(errors.New(string(respBody))))
 		}
 		return err
 	}
