@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
 	"github.com/samber/lo"
@@ -160,7 +162,7 @@ func (d *BadgerDB) init() error {
 		if err != nil {
 			// corrupted or incompatible db, clean up the directory and retry
 			d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
-				logger.NewErrorField(err),
+				obskit.Error(err),
 			)
 			if err = os.RemoveAll(d.opts.Dir); err != nil {
 				err = fmt.Errorf("removing badger db directory: %w", err)

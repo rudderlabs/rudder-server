@@ -130,7 +130,7 @@ func (a *archiver) Start() error {
 				w := &worker{
 					sourceID:         sourceID,
 					jobsDB:           a.jobsDB,
-					log:              a.log.Child("worker").With("sourceID", sourceID),
+					log:              a.log.Child("worker").Withn(obskit.SourceID(sourceID)),
 					fetchLimiter:     jobFetchLimit,
 					uploadLimiter:    uploadLimit,
 					updateLimiter:    statusUpdateLimit,

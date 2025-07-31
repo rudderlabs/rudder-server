@@ -119,7 +119,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, producer.config.FunctionUrl, bytes.NewReader(jsonData))
 	if err != nil {
-		pkgLogger.Errorf("Failed to create httpRequest for Fn: %w", err)
+		pkgLogger.Errorn("Failed to create httpRequest for Fn", obskit.Error(err))
 		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Fn: %s", err.Error())
 	}
 
@@ -128,7 +128,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	if producer.config.shouldGenerateToken() {
 		err := producer.config.generateToken(context.Background(), producer.client)
 		if err != nil {
-			pkgLogger.Errorf("failed to receive token: %w", err)
+			pkgLogger.Errorn("failed to receive token", obskit.Error(err))
 			return http.StatusUnauthorized, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
 		}
 	}
@@ -152,7 +152,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 		responseMessage = err.Error()
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage
-		pkgLogger.Errorf("error while calling the function :: %v", err)
+		pkgLogger.Errorn("error while calling the function", obskit.Error(err))
 		return http.StatusBadRequest, respStatus, responseMessage
 	}
 
@@ -162,7 +162,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	} else {
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call failed " + string(responseBody)
-		pkgLogger.Error(responseMessage)
+		pkgLogger.Errorn(responseMessage)
 	}
 	return resp.StatusCode, respStatus, responseMessage
 }

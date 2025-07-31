@@ -73,19 +73,19 @@ start:
 	}
 
 	workspaceID := jobs[0].WorkspaceId
-	log := w.log.With("workspaceID", workspaceID)
+	log := w.log.Withn(obskit.WorkspaceID(workspaceID))
 	storagePrefs, err := w.storageProvider.GetStoragePreferences(w.lifecycle.ctx, workspaceID)
 	if err != nil {
 		if errors.Is(err, fileuploader.ErrNotSubscribed) {
-			log.Debug("not subscribed to backend config")
+			log.Debugn("not subscribed to backend config")
 			return false
 		}
-		log.Errorw("failed to fetch storage preferences", "error", err)
+		log.Errorn("failed to fetch storage preferences", obskit.Error(err))
 		if err := w.markStatus(jobs, jobsdb.Aborted.State, errJSON(err)); err != nil {
 			if w.lifecycle.ctx.Err() != nil {
 				return false
 			}
-			log.Errorw("failed to mark unconfigured archive jobs' status", "error", err)
+			log.Errorn("failed to mark unconfigured archive jobs' status", obskit.Error(err))
 			panic(err)
 
 		}
@@ -99,7 +99,7 @@ start:
 			if w.lifecycle.ctx.Err() != nil {
 				return false
 			}
-			log.Errorw("failed to mark archive disabled jobs' status", "error", err)
+			log.Errorn("failed to mark archive disabled jobs' status", obskit.Error(err))
 			panic(err)
 		}
 		if !limitReached {
@@ -110,7 +110,7 @@ start:
 
 	location, err := w.uploadJobs(w.lifecycle.ctx, jobs)
 	if err != nil {
-		log.Errorw("failed to upload jobs", "error", err)
+		log.Errorn("failed to upload jobs", obskit.Error(err))
 		return false
 	}
 	w.lastUploadTime = time.Now()
@@ -119,7 +119,7 @@ start:
 		if w.lifecycle.ctx.Err() != nil {
 			return false
 		}
-		log.Errorw("failed to mark successful upload status", "error", err)
+		log.Errorn("failed to mark successful upload status", obskit.Error(err))
 		panic(err)
 	}
 	w.stats.NewTaggedStat("arc_uploaded_jobs", stats.CountType, map[string]string{"workspaceId": workspaceID, "sourceId": w.sourceID}).Count(len(jobs))
