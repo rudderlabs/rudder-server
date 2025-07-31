@@ -161,7 +161,9 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 		stats.Default.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{
 			"reason": "in out mismatch",
 		}).Increment()
-		v1.logger.Warnf("[TransformerProxy] JobIDs in out mismatch. jobIDsInMetadata: %v, jobIDsInResponse: %v", jobIDsInMetadata, jobIDsInResponse)
+		v1.logger.Warnn("[TransformerProxy] JobIDs in out mismatch",
+			logger.NewIntSliceField("jobIDsInMetadata", jobIDsInMetadata),
+			logger.NewIntSliceField("jobIDsInResponse", jobIDsInResponse))
 	}
 
 	for _, resp := range transformerResponse.Response {

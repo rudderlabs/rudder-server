@@ -122,7 +122,7 @@ func evalBody(body string, rules []map[string]interface{}) bool {
 func (handler *jsonResponseHandler) IsSuccessStatus(respCode int, respBody string) (returnCode int) {
 	defer func() {
 		if r := recover(); r != nil {
-			handler.logger.Error(r)
+			handler.logger.Error(r) // nolint:forbidigo
 			returnCode = respCode
 		}
 	}()

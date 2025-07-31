@@ -177,7 +177,7 @@ func (t *TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT
 
 	rawJSON, err := jsonrs.Marshal(uploadT)
 	if err != nil {
-		t.log.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
+		t.log.Errorn("[Transformation status uploader] Failed to marshal payload", obskit.Error(err))
 		return nil, err
 	}
 

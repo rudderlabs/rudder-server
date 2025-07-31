@@ -154,7 +154,7 @@ func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*Delive
 
 	rawJSON, err := jsonrs.Marshal(res)
 	if err != nil {
-		e.log.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
+		e.log.Errorn("[Destination live events] Failed to marshal payload", obskit.Error(err))
 		return nil, err
 	}
 

@@ -122,7 +122,7 @@ func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
 	if !slices.Contains(h.uploadEnabledWriteKeys, writeKey) {
 		err := h.eventsCache.Update(writeKey, eventBatch)
 		if err != nil {
-			h.log.Errorf("Error while updating cache: %v", err)
+			h.log.Errorn("Error while updating cache", obskit.Error(err))
 		}
 		return false
 	}
