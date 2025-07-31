@@ -6,15 +6,15 @@ import (
 	"path"
 	"time"
 
-	"github.com/samber/lo/mutable"
-
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
+	"github.com/samber/lo/mutable"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -134,13 +134,15 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 	}()
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		e.logger.Errorf("Unable to create tmp directory: %v", err)
+		e.logger.Errorn("Unable to create tmp directory", obskit.Error(err))
 		return nil, err
 	}
 	storagePath := path.Join(tmpDirPath, badgerPathName)
 	if e.cleanupOnStartup {
 		if err := os.RemoveAll(storagePath); err != nil {
-			e.logger.Warnf("Unable to cleanup badgerDB storage path %q: %v", storagePath, err)
+			e.logger.Warnn("Unable to cleanup badgerDB storage path",
+				obskit.Error(err), logger.NewStringField("path", storagePath),
+			)
 		}
 	}
 	e.path = storagePath
@@ -165,7 +167,7 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 		WithSyncWrites(e.syncWrites)
 	e.db, err = badger.Open(badgerOpts)
 	if err != nil {
-		e.logger.Errorf("Error while opening badgerDB: %v", err)
+		e.logger.Errorn("Error while opening badgerDB", obskit.Error(err))
 		return nil, err
 	}
 	rruntime.Go(func() {
@@ -194,7 +196,7 @@ func (e *Cache[E]) gcBadgerDB() {
 		}
 		lsmSize, vlogSize, totSize, err := misc.GetBadgerDBUsage(e.db.Opts().Dir)
 		if err != nil {
-			e.logger.Errorf("Error while getting badgerDB usage: %v", err)
+			e.logger.Errorn("Error while getting badgerDB usage", obskit.Error(err))
 			continue
 		}
 

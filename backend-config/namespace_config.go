@@ -164,7 +164,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 				nc.logger.Errorn(
 					"workspace was not updated but was not present in previous config",
 					obskit.WorkspaceID(workspaceID),
-					logger.NewField("req", req),
+					logger.NewStringField("requestURL", req.URL.String()),
 				)
 				return configOnError, ErrIncrementalUpdateFailed
 			}

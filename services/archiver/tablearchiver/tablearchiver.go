@@ -10,6 +10,8 @@ import (
 	"text/template"
 	"text/template/parse"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -38,13 +40,13 @@ func init() {
 func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 	err = os.MkdirAll(filepath.Dir(jsonArchiver.OutputPath), os.ModePerm)
 	if err != nil {
-		pkgLogger.Errorf(`[TableJSONArchiver]: Error in creating local directory: %v`, err)
+		pkgLogger.Errorn(`[TableJSONArchiver]: Error in creating local directory`, obskit.Error(err))
 		return location, err
 	}
 
 	gzWriter, err := misc.CreateGZ(jsonArchiver.OutputPath)
 	if err != nil {
-		pkgLogger.Errorf(`[TableJSONArchiver]: Error in creating gzWriter: %v`, err)
+		pkgLogger.Errorn(`[TableJSONArchiver]: Error in creating gzWriter`, obskit.Error(err))
 		return location, err
 	}
 
@@ -80,7 +82,7 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 		row := jsonArchiver.DbHandle.QueryRow(query)
 		err = row.Scan(&rawJSONRows)
 		if err != nil {
-			pkgLogger.Errorf(`[TableJSONArchiver]: Scanning row failed with error : %v`, err)
+			pkgLogger.Errorn(`[TableJSONArchiver]: Scanning row failed`, obskit.Error(err))
 			return location, err
 		}
 
@@ -112,14 +114,14 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 
 	file, err := os.Open(jsonArchiver.OutputPath)
 	if err != nil {
-		pkgLogger.Errorf(`[TableJSONArchiver]: Error opening local file dump: %v`, err)
+		pkgLogger.Errorn(`[TableJSONArchiver]: Error opening local file dump`, obskit.Error(err))
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	output, err := jsonArchiver.FileManager.Upload(context.TODO(), file)
 	if err != nil {
-		pkgLogger.Errorf(`[TableJSONArchiver]: Error uploading local file dump to object storage: %v`, err)
+		pkgLogger.Errorn(`[TableJSONArchiver]: Error uploading local file dump to object storage`, obskit.Error(err))
 		return
 	}
 	location = output.Location

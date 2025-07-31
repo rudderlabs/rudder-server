@@ -177,7 +177,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 	}
 
 	modeRequestKey := fmt.Sprintf(modeRequestKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex)
-	manager.logger.Infof("Mode Lookup Key: %s", modeRequestKey)
+	manager.logger.Infon("Mode Lookup Key", logger.NewStringField("key", modeRequestKey))
 	revision := int64(0)
 
 	resultChan := make(chan servermode.ChangeEvent, 1)
@@ -207,7 +207,7 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 					case <-ctx.Done():
 					}
 				default:
-					manager.logger.Warnf("unknown event type %s", event.Type)
+					manager.logger.Warnn("unknown event type", logger.NewStringField("eventType", event.Type.String()))
 				}
 			}
 		}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
@@ -26,7 +27,7 @@ func NewSwitchingProducer(name string, log logger.Logger, destination *backendco
 		if v2Enabled.Load() {
 			return nil, err
 		} else {
-			log.Error("Error creating producer v2", err)
+			log.Errorn("Error creating producer v2", obskit.Error(err))
 		}
 	}
 	return &SwitchingProducer{isV2Enabled: v2Enabled, producerV1: producerV1, producerV2: producerV2}, nil
