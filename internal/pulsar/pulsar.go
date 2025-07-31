@@ -103,11 +103,11 @@ type pulsarLogAdapter struct {
 }
 
 func (pl *pulsarLogAdapter) SubLogger(fields pulsarLog.Fields) pulsarLog.Logger {
-	farr := make([]interface{}, 0, len(fields)*2)
+	logFields := make([]logger.Field, 0, len(fields))
 	for k, v := range fields {
-		farr = append(farr, k, v)
+		logFields = append(logFields, logger.NewField(k, v)) // nolint:forbidigo
 	}
-	return &pulsarLogAdapter{logger.Logger(pl).With(farr...)}
+	return &pulsarLogAdapter{logger.Logger(pl).Withn(logFields...)}
 }
 
 func (pl *pulsarLogAdapter) WithFields(fields pulsarLog.Fields) pulsarLog.Entry {
@@ -115,7 +115,7 @@ func (pl *pulsarLogAdapter) WithFields(fields pulsarLog.Fields) pulsarLog.Entry 
 }
 
 func (pl *pulsarLogAdapter) WithField(name string, value interface{}) pulsarLog.Entry {
-	return &pulsarLogAdapter{logger.Logger(pl).With(name, value)}
+	return &pulsarLogAdapter{logger.Logger(pl).Withn(logger.NewField(name, value))} // nolint:forbidigo
 }
 
 func (pl *pulsarLogAdapter) WithError(err error) pulsarLog.Entry {

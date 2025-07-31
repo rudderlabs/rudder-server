@@ -49,6 +49,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
@@ -587,11 +588,11 @@ var dbInvalidJsonErrors = map[string]struct{}{
 func (jd *Handle) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatalw("assertError failure",
-			"error", err,
-			"tablePrefix", jd.tablePrefix,
-			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+		jd.logger.Fataln("assertError failure",
+			obskit.Error(err),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("ownerType", string(jd.ownerType)),
+			logger.NewStringField("noResultsCache", jd.noResultsCache.String()))
 		panic(err)
 	}
 }
@@ -599,11 +600,11 @@ func (jd *Handle) assertError(err error) {
 func (jd *Handle) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
-		jd.logger.Fatalw("assert condition failed",
-			"errorString", errorString,
-			"tablePrefix", jd.tablePrefix,
-			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+		jd.logger.Fataln("assert condition failed",
+			logger.NewStringField("errorString", errorString),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("ownerType", string(jd.ownerType)),
+			logger.NewStringField("noResultsCache", jd.noResultsCache.String()))
 		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
 	}
 }
@@ -1124,7 +1125,7 @@ func (jd *Handle) TearDown() {
 func (jd *Handle) Close() {
 	if !jd.sharedConnectionPool {
 		if err := jd.dbHandle.Close(); err != nil {
-			jd.logger.Errorw("error closing db connection", "error", err)
+			jd.logger.Errorn("error closing db connection", obskit.Error(err))
 		}
 	}
 }
@@ -1190,7 +1191,10 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 				if err := row.Scan(&minID, &maxID); err != nil {
 					return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
 				}
-				jd.logger.Debug(sqlStatement, minID, maxID)
+				jd.logger.Debugn("querying min max job IDs",
+					logger.NewStringField("sqlStatement", sqlStatement),
+					logger.NewIntField("minID", minID.Int64),
+					logger.NewIntField("maxID", maxID.Int64))
 				return minID, maxID, nil
 			}
 			jd.dsRangeFuncMap[ds.Index] = sync.OnceValues(func() (dsRangeMinMax, error) {
@@ -1272,9 +1276,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if tableSize >= jd.conf.maxTableSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full in size",
-			logger.NewField("ds", ds),
-			logger.NewField("rowCount", rowCount),
-			logger.NewField("tableSize", tableSize),
+			logger.NewStringField("ds", ds.Index),
+			logger.NewIntField("rowCount", int64(rowCount)),
+			logger.NewIntField("tableSize", tableSize),
 		)
 		return true, nil
 	}
@@ -1282,9 +1286,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if rowCount >= jd.conf.MaxDSSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full by rows",
-			logger.NewField("ds", ds),
-			logger.NewField("rowCount", rowCount),
-			logger.NewField("tableSize", tableSize),
+			logger.NewStringField("ds", ds.Index),
+			logger.NewIntField("rowCount", int64(rowCount)),
+			logger.NewIntField("tableSize", tableSize),
 		)
 		return true, nil
 	}
@@ -1364,7 +1368,7 @@ func (jd *Handle) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds d
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
-	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
+	jd.logger.Infon("Creating new DS", logger.NewStringField("ds", ds.Index))
 	err := jd.createDSInTx(tx, ds)
 	if err != nil {
 		return err
@@ -1599,7 +1603,9 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 		var pqError *pq.Error
 		ok := errors.As(err, &pqError)
 		if ok && pqError.Code == ("42P01") {
-			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
+			jd.logger.Infon("sql statement exec failed because table doesn't exist",
+				logger.NewStringField("tablePrefix", jd.tablePrefix),
+				logger.NewStringField("sqlStatement", sqlStatement))
 			_, err = tx.Exec(rollbackSql)
 			jd.assertError(err)
 		} else {
@@ -1726,7 +1732,7 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	for {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
-			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
+			jd.logger.Errorn("[JobsDB] :: Store failed. Retrying after refreshing DS cache", obskit.Error(errStaleDsList))
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				err = jd.doRefreshDSRangeList(l)
 				if err != nil {
@@ -2081,7 +2087,20 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	checkValidJobState(jd, stateFilters)
 
 	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters) {
-		jd.logger.Debugf("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		var paramFiltersStr strings.Builder
+		for i, pf := range parameterFilters {
+			if i > 0 {
+				paramFiltersStr.WriteString(",")
+			}
+			paramFiltersStr.WriteString(pf.Name)
+			paramFiltersStr.WriteString(":")
+			paramFiltersStr.WriteString(pf.Value)
+		}
+		jd.logger.Debugn("[getJobsDS] Empty cache hit",
+			logger.NewStringField("ds", ds.Index),
+			logger.NewStringField("stateFilters", strings.Join(stateFilters, ",")),
+			logger.NewStringField("customValFilters", strings.Join(customValFilters, ",")),
+			logger.NewStringField("parameterFilters", paramFiltersStr.String()))
 		return JobsResult{}, false, nil
 	}
 
