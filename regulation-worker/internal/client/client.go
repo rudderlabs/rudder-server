@@ -87,20 +87,23 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 		job, err := mapPayloadToJob(jobSchema)
 		if err != nil {
-			pkgLogger.Errorf("error while mapping response payload to job: %v", err)
+			pkgLogger.Errorn("error while mapping response payload to job", obskit.Error(err))
 			return model.Job{}, fmt.Errorf("error while getting job: %w", err)
 		}
 
-		pkgLogger.Debugf("obtained job: %v", job)
+		pkgLogger.Debugn("obtained job",
+			obskit.WorkspaceID(job.WorkspaceID),
+			obskit.DestinationID(job.DestinationID),
+			logger.NewIntField("jobID", int64(job.ID)))
 		return job, nil
 
 	} else {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			pkgLogger.Errorf("error while reading response body: %v", err)
+			pkgLogger.Errorn("error while reading response body", obskit.Error(err))
 			return model.Job{}, fmt.Errorf("error while reading response body: %w", err)
 		}
-		pkgLogger.Debugf("obtained response body: %v", string(body))
+		pkgLogger.Debugn("obtained response body", logger.NewStringField("body", string(body)))
 
 		return model.Job{}, fmt.Errorf("unexpected response code: %d", resp.StatusCode)
 	}
@@ -109,12 +112,14 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 // UpdateStatus marshals status into appropriate status schema, and sent as payload
 // checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %v", status)
+	pkgLogger.Debugn("sending PATCH request to update job status",
+		logger.NewIntField("jobID", int64(jobID)),
+		logger.NewStringField("status", string(status.Status)))
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	url := fmt.Sprintf("%s/%d", j.URL(), jobID)
-	pkgLogger.Debugf("sending request to URL: %v", url)
+	pkgLogger.Debugn("sending request to URL", logger.NewStringField("url", url))
 	statusSchema := statusJobSchema{
 		Status: string(status.Status),
 	}
@@ -123,7 +128,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	body, err := jsonrs.Marshal(statusSchema)
 	if err != nil {
-		pkgLogger.Errorf("error while marshalling status schema: %v", err)
+		pkgLogger.Errorn("error while marshalling status schema", obskit.Error(err))
 		return fmt.Errorf("error while marshalling status: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))

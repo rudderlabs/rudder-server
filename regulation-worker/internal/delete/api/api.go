@@ -53,7 +53,7 @@ type oauthDetail struct {
 func GetAuthErrorCategoryFromResponse(bodyBytes []byte) (string, error) {
 	var jobResp []JobRespSchema
 	if err := jsonrs.Unmarshal(bodyBytes, &jobResp); err != nil {
-		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(bodyBytes))
+		pkgLogger.Errorn("unmarshal error", obskit.Error(err), logger.NewStringField("value", string(bodyBytes)))
 		return "", fmt.Errorf("failed to parse authErrorCategory from response: %s", string(bodyBytes))
 	}
 	if oauthErrJob, oauthErrJobFound := getOAuthErrorJob(jobResp); oauthErrJobFound {
@@ -77,13 +77,17 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	if currentOauthRetryAttempt > m.MaxOAuthRefreshRetryAttempts {
 		return job.Status
 	}
-	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
+	pkgLogger.Debugn("deleting from API destination",
+		logger.NewIntField("jobID", int64(job.ID)),
+		logger.NewStringField("destinationName", destination.Name),
+		obskit.WorkspaceID(job.WorkspaceID),
+		obskit.DestinationID(destination.DestinationID))
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
 	url := fmt.Sprint(m.DestTransformURL, endpoint)
 
 	bodySchema := mapJobToPayload(job, strings.ToLower(destination.Name), destination.Config)
-	pkgLogger.Debugf("payload: %#v", bodySchema)
+	pkgLogger.Debugn("payload created", logger.NewIntField("payloadCount", int64(len(bodySchema))))
 
 	reqBody, err := jsonrs.Marshal(bodySchema)
 	if err != nil {
@@ -106,20 +110,23 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	}
 	isOAuth, err := dest.IsOAuthDestination(common.RudderFlowDelete)
 	if err != nil {
-		pkgLogger.Error(err)
+		pkgLogger.Errorn("error checking if destination is OAuth", obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	var oAuthDetail oauthDetail
 	if isOAuth && !m.IsOAuthV2Enabled {
 		oAuthDetail, err = m.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
-			pkgLogger.Error(err)
+			pkgLogger.Errorn("error getting OAuth detail", obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 		err = setOAuthHeader(oAuthDetail.secretToken, req)
 		if err != nil {
-			pkgLogger.Errorf("[%v] error occurred while setting oauth header for workspace: %v, destination: %v", destination.Name, job.WorkspaceID, destination.DestinationID)
-			pkgLogger.Error(err)
+			pkgLogger.Errorn("error occurred while setting oauth header",
+				logger.NewStringField("destinationName", destination.Name),
+				obskit.WorkspaceID(job.WorkspaceID),
+				obskit.DestinationID(destination.DestinationID),
+				obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 	}
@@ -174,7 +181,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 			respStatusCode = transportResponse.InterceptorResponse.StatusCode
 		}
 		if transportResponse.InterceptorResponse.Response != "" {
-			pkgLogger.Debugf("Actual response received: %v", respBodyBytes)
+			pkgLogger.Debugn("Actual response received", logger.NewStringField("response", string(respBodyBytes)))
 			// Update the same error response to all as the response received would be []JobRespSchema
 			respBodyBytes, err = sjson.SetRawBytes(respBodyBytes, "#.error", []byte(transportResponse.InterceptorResponse.Response))
 			if err != nil {
@@ -239,9 +246,8 @@ func getOAuthErrorJob(jobResponses []JobRespSchema) (JobRespSchema, bool) {
 func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
 	payload, marshalErr := jsonrs.Marshal(secretToken.Account)
 	if marshalErr != nil {
-		marshalFailErr := fmt.Sprintf("error while marshalling account secret information: %v", marshalErr)
-		pkgLogger.Errorf(marshalFailErr)
-		return errors.New(marshalFailErr)
+		pkgLogger.Errorn("error while marshalling account secret information", obskit.Error(marshalErr))
+		return fmt.Errorf("error while marshalling account secret information: %w", marshalErr)
 	}
 	req.Header.Set("X-Rudder-Dest-Info", string(payload))
 	return nil
@@ -323,12 +329,15 @@ type PostResponseParams struct {
 func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams) model.JobStatus {
 	var jobResp []JobRespSchema
 	if err := jsonrs.Unmarshal(params.responseBodyBytes, &jobResp); err != nil {
-		pkgLogger.Errorf("unmarshal error: %s\tvalue to unmarshal: %s\n", err.Error(), string(params.responseBodyBytes))
+		pkgLogger.Errorn("unmarshal error", obskit.Error(err), logger.NewStringField("value", string(params.responseBodyBytes)))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: %s", string(params.responseBodyBytes))}
 	}
 
 	jobStatus := getJobStatus(params.responseStatusCode, jobResp)
-	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", params.destination.Name, params.job.ID, jobStatus)
+	pkgLogger.Debugn("Job processing result",
+		logger.NewStringField("destinationName", params.destination.Name),
+		logger.NewIntField("jobID", int64(params.job.ID)),
+		logger.NewStringField("jobStatus", string(jobStatus.Status)))
 
 	var authErrorCategory string
 	if oauthErrorJob, ok := getOAuthErrorJob(jobResp); ok {
