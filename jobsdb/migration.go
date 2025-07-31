@@ -597,7 +597,7 @@ func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBef
 func (jd *Handle) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		jd.logger.Debugf("dropping dataset %s", ds.JobTable)
+		jd.logger.Debugn("dropping dataset", logger.NewStringField("jobTable", ds.JobTable))
 		if err := jd.dropDSInTx(tx, ds); err != nil {
 			return err
 		}
