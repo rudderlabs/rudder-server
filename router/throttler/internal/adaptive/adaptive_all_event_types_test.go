@@ -159,6 +159,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			mockLimiter := &MockLimiter{AllowResult: true}
 			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
@@ -166,13 +167,17 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			// Invalid configuration - minLimit > maxLimit
 			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.minLimit", 200)
 			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 100)
-			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
 
 			limited, err := throttler.CheckLimitReached(context.Background(), 5)
 
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
+
+			// Verify warning log was emitted
+			require.Len(t, mockLogger.WarningLogs, 1)
+			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("ReturnsNotLimitedWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -181,6 +186,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			mockLimiter := &MockLimiter{AllowResult: true}
 			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
@@ -189,13 +195,17 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 100)
 			config.Set("Router.throttler.adaptive.timeWindow", "10s")
 
-			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
 
 			limited, err := throttler.CheckLimitReached(context.Background(), 5)
 
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
+
+			// Verify warning log was emitted
+			require.Len(t, mockLogger.WarningLogs, 1)
+			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 	})
 
@@ -297,6 +307,151 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			require.False(t, throttler.validConfiguration())
+		})
+	})
+
+	t.Run("InvalidConfigurationWarningLogs", func(t *testing.T) {
+		t.Run("EmitsWarningForZeroMinLimit", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.minLimit", 0)
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.adaptive.timeWindow", "10s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
+
+			limited, err := throttler.CheckLimitReached(context.Background(), 5)
+
+			require.NoError(t, err)
+			require.False(t, limited)
+			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
+
+			// Verify warning log was emitted
+			require.Len(t, mockLogger.WarningLogs, 1)
+			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
+		})
+
+		t.Run("EmitsWarningForZeroMaxLimit", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			// Set zero max limit and disable fallbacks
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.minLimit", 10)
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 0)
+			config.Set("Router.throttler.adaptive.WEBHOOK.maxLimit", 0)
+			config.Set("Router.throttler.adaptive.maxLimit", 0)
+			config.Set("Router.throttler.adaptive.defaultMaxLimit", 0)
+			config.Set("Router.throttler.adaptive.timeWindow", "10s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
+
+			limited, err := throttler.CheckLimitReached(context.Background(), 5)
+
+			require.NoError(t, err)
+			require.False(t, limited)
+			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
+
+			// Verify warning log was emitted
+			require.Len(t, mockLogger.WarningLogs, 1)
+			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
+		})
+
+		t.Run("EmitsWarningForZeroWindow", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.minLimit", 10)
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.adaptive.timeWindow", "0s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
+
+			limited, err := throttler.CheckLimitReached(context.Background(), 5)
+
+			require.NoError(t, err)
+			require.False(t, limited)
+			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
+
+			// Verify warning log was emitted
+			require.Len(t, mockLogger.WarningLogs, 1)
+			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
+		})
+
+		t.Run("EmitsWarningWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.minLimit", 200)
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.adaptive.timeWindow", "10s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
+
+			limited, err := throttler.CheckLimitReached(context.Background(), 5)
+
+			require.NoError(t, err)
+			require.False(t, limited)
+			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
+
+			// Verify warning log was emitted
+			require.Len(t, mockLogger.WarningLogs, 1)
+			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
+		})
+
+		t.Run("DoesNotEmitWarningForValidConfiguration", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+			mockLogger := &MockLogger{}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.minLimit", 10)
+			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.adaptive.timeWindow", "10s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
+
+			limited, err := throttler.CheckLimitReached(context.Background(), 5)
+
+			require.NoError(t, err)
+			require.False(t, limited)
+			require.Len(t, mockLimiter.CallLog, 1) // Should call limiter for valid config
+
+			// Verify no warning log was emitted
+			require.Empty(t, mockLogger.WarningLogs)
 		})
 	})
 
@@ -618,4 +773,25 @@ func (m *MockAlgorithm) LimitFactor() float64 {
 func (m *MockAlgorithm) Reset() {
 	m.ResponseCodeReceivedLog = nil
 	m.ShutdownCalled = false
+}
+
+// MockLogger implements Logger for testing
+type MockLogger struct {
+	WarningLogs []MockLogEntry
+}
+
+type MockLogEntry struct {
+	Message string
+	Fields  []logger.Field
+}
+
+func (m *MockLogger) Warnn(msg string, fields ...logger.Field) {
+	m.WarningLogs = append(m.WarningLogs, MockLogEntry{
+		Message: msg,
+		Fields:  fields,
+	})
+}
+
+func (m *MockLogger) Reset() {
+	m.WarningLogs = nil
 }

@@ -5,21 +5,20 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
 // NewPerEventTypeThrottler constructs a new static throttler for a specific event type of a destination
-func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter types.Limiter, config *config.Config, stat stats.Stats, log logger.Logger) *throttler {
+func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter types.Limiter, config *config.Config, stat stats.Stats, log Logger) *throttler {
 	return &throttler{
 		destinationID: destinationID,
 		eventType:     eventType,
 		key:           destinationID + ":" + eventType, // key is destinationID + ":" + eventType
 
 		limiter: limiter,
-		log:     log.Withn(logger.NewStringField("eventType", eventType)),
+		log:     log,
 		limit: config.GetReloadableInt64Var(0, 1,
 			fmt.Sprintf(`Router.throttler.%s.%s.%s.limit`, destType, destinationID, eventType),
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),

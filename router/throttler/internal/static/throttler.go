@@ -18,7 +18,7 @@ type throttler struct {
 	key           string
 
 	limiter    types.Limiter
-	log        logger.Logger
+	log        Logger
 	limit      config.ValueLoader[int64]
 	window     config.ValueLoader[time.Duration]
 	staticCost bool

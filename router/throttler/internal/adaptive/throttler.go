@@ -19,7 +19,7 @@ type throttler struct {
 
 	limiter   types.Limiter
 	algorithm Algorithm
-	log       logger.Logger
+	log       Logger
 
 	window     config.ValueLoader[time.Duration]
 	minLimit   config.ValueLoader[int64]

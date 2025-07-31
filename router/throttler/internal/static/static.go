@@ -18,7 +18,7 @@ func NewThrottler(destType, destinationID, eventType string, limiter types.Limit
 			fmt.Sprintf(`Router.throttler.%s.throttlerPerEventType`, destType),
 			"Router.throttler.throttlerPerEventType",
 		),
-		NewAllEventTypesThrottler(destType, destinationID, limiter, config, stat, log),
-		NewPerEventTypeThrottler(destType, destinationID, eventType, limiter, config, stat, log),
+		NewAllEventTypesThrottler(destType, destinationID, limiter, config, stat, log.Withn(logger.NewStringField("eventType", "all"))),
+		NewPerEventTypeThrottler(destType, destinationID, eventType, limiter, config, stat, log.Withn(logger.NewStringField("eventType", eventType))),
 	)
 }
