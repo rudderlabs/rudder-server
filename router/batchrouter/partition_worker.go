@@ -96,7 +96,7 @@ func (pw *PartitionWorker) monitorDelayedJobAddition(ctx context.Context, wg *sy
 func (pw *PartitionWorker) Start() {
 	// Correct Start method implementation
 	uploadFreq := pw.brt.uploadFreq
-	pw.logger.Infof("Starting partition worker with upload frequency %s", uploadFreq.Load())
+	pw.logger.Infon("Starting partition worker", logger.NewDurationField("uploadFreq", uploadFreq.Load()))
 	processJobs := func(jobs []*JobEntry) {
 		pw.wg.Add(1)
 		done := pw.limiter.Begin("")
@@ -235,8 +235,8 @@ func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs [
 		}
 	default:
 		// Handle any other destination types
-		pw.logger.Warnf("Unsupported destination type %s for job buffer.Panicing", pw.brt.destType)
-		panic(fmt.Sprintf("Unsupported destination type %s for job buffer.Panicing", pw.brt.destType))
+		pw.logger.Warnn("Unsupported destination type for job buffer", obskit.DestinationType(pw.brt.destType))
+		panic(fmt.Sprintf("Unsupported destination type %s for job buffer", pw.brt.destType))
 	}
 }
 

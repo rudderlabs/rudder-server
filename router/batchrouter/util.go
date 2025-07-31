@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	asynccommon "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -113,7 +114,10 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 	fullPrefix := getFullPrefix(manager, prefix)
 	fileObjects, err := manager.ListFilesWithPrefix(context.TODO(), "", fullPrefix, 5).Next()
 	if err != nil {
-		log.Errorf("[BRT]: Failed to fetch fileObjects with connIdentifier: %s, prefix: %s, Err: %v", connIdentifier, fullPrefix, err)
+		log.Errorn("[BRT]: Failed to fetch fileObjects",
+			logger.NewStringField("connIdentifier", connIdentifier),
+			logger.NewStringField("prefix", fullPrefix),
+			obskit.Error(err))
 		// Returning the earlier default as we might not able to fetch the list.
 		// because "*:GetObject" and "*:ListBucket" permissions are not available.
 		dateFormat = "MM-DD-YYYY"
@@ -125,7 +129,7 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 
 	for idx := range fileObjects {
 		if fileObjects[idx] == nil {
-			log.Errorf("[BRT]: nil occurred in file objects for '%T' filemanager of destination ID : %s", manager, destination.Destination.ID)
+			log.Errorn("[BRT]: nil occurred in file objects for filemanager", obskit.DestinationID(destination.Destination.ID))
 			continue
 		}
 		key := fileObjects[idx].Key
