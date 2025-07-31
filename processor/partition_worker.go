@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -71,7 +72,7 @@ func (w *partitionWorker) Work() bool {
 
 	// Mark jobs as executing
 	if err := w.handle.markExecuting(ctx, w.partition, jobs.Jobs); err != nil {
-		w.logger.Error("Error marking jobs as executing", "error", err)
+		w.logger.Errorn("Error marking jobs as executing", obskit.Error(err))
 		panic(err)
 	}
 
@@ -83,7 +84,7 @@ func (w *partitionWorker) Work() bool {
 	// Create an errGroup to handle cancellation and manage goroutines
 	err := w.sendToPreProcess(ctx, jobsByPipeline)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		w.logger.Error("Error while processing jobs", "error", err)
+		w.logger.Errorn("Error while processing jobs", obskit.Error(err))
 		panic(err)
 	}
 

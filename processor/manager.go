@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
@@ -91,7 +92,7 @@ func (proc *LifecycleManager) Start() error {
 	go func() {
 		defer wg.Done()
 		if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
-			proc.Handle.logger.Errorf("Error counting pending events: %v", err)
+			proc.Handle.logger.Errorn("Error counting pending events", obskit.Error(err))
 		}
 	}()
 
@@ -99,7 +100,7 @@ func (proc *LifecycleManager) Start() error {
 	go func() {
 		defer wg.Done()
 		if err := proc.Handle.Start(currentCtx); err != nil {
-			proc.Handle.logger.Errorf("Error starting processor: %v", err)
+			proc.Handle.logger.Errorn("Error starting processor", obskit.Error(err))
 		}
 	}()
 	return nil
