@@ -661,7 +661,7 @@ func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 		gw.logger.Errorn(
 			"Error reading request body",
 			logger.NewStringField("Content-Length", r.Header.Get("Content-Length")),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		return payload, errors.New((response.RequestBodyReadFailed))
 	}
@@ -1035,7 +1035,19 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		marshalledParams, err = jsonrs.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
-				logger.NewField("params", jobsDBParams),
+				logger.NewStringField("messageId", messageID),
+				logger.NewStringField("sourceJobRunId", msg.Properties.SourceJobRunID),
+				logger.NewStringField("sourceTaskRunId", msg.Properties.SourceTaskRunID),
+				logger.NewStringField("userId", msg.Properties.UserID),
+				logger.NewStringField("traceParent", msg.Properties.TraceID),
+				logger.NewStringField("sourceCategory", msg.Properties.SourceType),
+				logger.NewStringField("isBot", fmt.Sprintf("%v", msg.Properties.IsBot)),
+				logger.NewStringField("botName", msg.Properties.BotName),
+				logger.NewStringField("botURL", msg.Properties.BotURL),
+				logger.NewStringField("botIsInvalidBrowser", fmt.Sprintf("%v", msg.Properties.BotIsInvalidBrowser)),
+				logger.NewStringField("botAction", msg.Properties.BotAction),
+				obskit.SourceID(msg.Properties.SourceID),
+				obskit.DestinationID(msg.Properties.DestinationID),
 				obskit.Error(err),
 			)
 			marshalledParams = []byte(

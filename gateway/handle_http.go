@@ -8,6 +8,7 @@ import (
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -105,11 +106,11 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 			span.SetStatus(stats.SpanStatusError, errorMessage)
 			status := response.GetErrorStatusCode(errorMessage)
 			responseBody := response.GetStatus(errorMessage)
-			gw.logger.Infow("response",
-				"ip", kithttputil.GetRequestIP(r),
-				"path", r.URL.Path,
-				"status", status,
-				"body", responseBody)
+			gw.logger.Infon("response",
+				logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+				logger.NewStringField("path", r.URL.Path),
+				logger.NewIntField("status", int64(status)),
+				logger.NewStringField("body", responseBody))
 			http.Error(w, responseBody, status)
 			return
 		}
@@ -126,11 +127,11 @@ func (gw *Handle) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r 
 	}
 
 	responseBody := response.GetStatus(response.Ok)
-	gw.logger.Debugw("response",
-		"ip", kithttputil.GetRequestIP(r),
-		"path", r.URL.Path,
-		"status", http.StatusOK,
-		"body", responseBody)
+	gw.logger.Debugn("response",
+		logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+		logger.NewStringField("path", r.URL.Path),
+		logger.NewIntField("status", int64(http.StatusOK)),
+		logger.NewStringField("body", responseBody))
 	_, _ = w.Write([]byte(responseBody))
 }
 

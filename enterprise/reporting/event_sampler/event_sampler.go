@@ -39,7 +39,8 @@ func NewEventSampler(
 	case InMemoryCacheTypeEventSampler:
 		es, err = NewInMemoryCacheEventSampler(ctx, module, ttl, eventSamplingCardinality, stats)
 	default:
-		log.Warnf("invalid event sampler type: %s. Using default badger event sampler", eventSamplerType.Load())
+		log.Warnn("invalid event sampler type. Using default badger event sampler",
+			logger.NewStringField("eventSamplerType", eventSamplerType.Load()))
 		es, err = NewBadgerEventSampler(ctx, module, ttl, conf, log, stats)
 	}
 

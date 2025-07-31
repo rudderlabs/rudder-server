@@ -9,6 +9,7 @@ import (
 	"github.com/samber/lo"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
 
@@ -256,11 +257,11 @@ func (gw *Handle) handleHttpError(w http.ResponseWriter, r *http.Request, errorM
 	if errorMessage != "" {
 		status := response.GetErrorStatusCode(errorMessage)
 		responseBody := response.GetStatus(errorMessage)
-		gw.logger.Infow("response",
-			"ip", kithttputil.GetRequestIP(r),
-			"path", r.URL.Path,
-			"status", status,
-			"body", responseBody)
+		gw.logger.Infon("response",
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("body", responseBody))
 		http.Error(w, responseBody, status)
 	}
 }
