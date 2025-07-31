@@ -335,7 +335,7 @@ func WithNow(now func() time.Time) OptFunc {
 func (gw *Handle) initUserWebRequestWorkers() {
 	gw.userWebRequestWorkers = make([]*userWebRequestWorkerT, gw.conf.maxUserWebRequestWorkerProcess)
 	for i := 0; i < gw.conf.maxUserWebRequestWorkerProcess; i++ {
-		gw.logger.Debug("User Web Request Worker Started", i)
+		gw.logger.Debugn("User Web Request Worker Started", logger.NewIntField("worker", int64(i)))
 		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, gw.conf.maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
@@ -437,7 +437,7 @@ func (gw *Handle) runUserWebRequestWorkers(ctx context.Context) {
 func (gw *Handle) initDBWriterWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < gw.conf.maxDBWriterProcess; i++ {
-		gw.logger.Debug("DB Writer Worker Started", i)
+		gw.logger.Debugn("DB Writer Worker Started", logger.NewIntField("worker", int64(i)))
 		g.Go(crash.Wrapper(func() error {
 			gw.dbWriterWorkerProcess()
 			return nil
