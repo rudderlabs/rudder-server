@@ -339,6 +339,44 @@ func TestJobIterator(t *testing.T) {
 		require.Equal(t, 2, count, "expected 2 jobs to be returned")
 		require.Equal(t, 2, m.count, "expected 2 calls of get jobs to be performed")
 	})
+
+	t.Run("iterate, discard job and stop queries", func(t *testing.T) {
+		m := &mockGetJobs{t: t}
+		it := New(jobsdb.GetQueryParams{JobsLimit: 5}, m.GetJobs)
+		// first batch will return 3 jobs
+		m.jobs = []*jobsdb.JobT{
+			{JobID: 1, WorkspaceId: "A"},
+			{JobID: 2, WorkspaceId: "A"},
+			{JobID: 3, WorkspaceId: "A"},
+		}
+
+		m.expectedParams = &jobsdb.GetQueryParams{JobsLimit: 5}
+		require.True(t, it.HasNext())
+
+		// Process first job and discard second job
+		job1 := it.Next()
+		require.Equal(t, int64(1), job1.JobID)
+
+		job2 := it.Next()
+		require.Equal(t, int64(2), job2.JobID)
+		it.Discard(job2)
+
+		// Stop queries - this should prevent any further database queries
+		it.StopQueries()
+
+		// Process remaining job in current batch
+		job3 := it.Next()
+		require.Equal(t, int64(3), job3.JobID)
+
+		// Should not have next since queries are stopped and no more jobs in current batch
+		require.False(t, it.HasNext(), "should not have next after stopping queries")
+
+		// Verify only one query was made (no additional query despite discarded job)
+		require.Equal(t, 1, m.count, "expected only 1 call to get jobs")
+		require.Equal(t, 1, it.Stats().QueryCount)
+		require.Equal(t, 1, it.Stats().DiscardedJobs)
+		require.Equal(t, 3, it.Stats().TotalJobs)
+	})
 }
 
 type mockGetJobs struct {

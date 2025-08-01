@@ -4,26 +4,42 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/go-redis/redis/v8"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/throttling"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/router/throttler/internal/adaptive"
+	"github.com/rudderlabs/rudder-server/router/throttler/internal/adaptive/algorithm"
+	"github.com/rudderlabs/rudder-server/router/throttler/internal/static"
+	"github.com/rudderlabs/rudder-server/router/throttler/internal/switcher"
+	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
+const (
+	throttlingAlgoTypeGCRA           = "gcra"
+	throttlingAlgoTypeRedisGCRA      = "redis-gcra"
+	throttlingAlgoTypeRedisSortedSet = "redis-sorted-set"
+)
+
+type Throttler = types.Throttler
+
 type Factory interface {
-	Get(destName, destID string) Throttler
+	Get(destType, destID, eventType string) Throttler
 	Shutdown()
 }
 
 // NewFactory constructs a new Throttler Factory
-func NewFactory(config *config.Config, stats stats.Stats) (Factory, error) {
+func NewFactory(config *config.Config, stats stats.Stats, log logger.Logger) (Factory, error) {
 	f := &factory{
-		config:     config,
-		Stats:      stats,
-		throttlers: make(map[string]Throttler),
+		config:             config,
+		Stats:              stats,
+		throttlers:         make(map[string]Throttler),
+		allEventTypesAlgos: make(map[string]adaptive.Algorithm),
+		log:                log,
 	}
 	if err := f.initThrottlerFactory(); err != nil {
 		return nil, err
@@ -33,73 +49,61 @@ func NewFactory(config *config.Config, stats stats.Stats) (Factory, error) {
 
 type factory struct {
 	config          *config.Config
+	log             logger.Logger
 	Stats           stats.Stats
-	limiter         limiter
-	adaptiveLimiter limiter
-	throttlers      map[string]Throttler // map key is the destinationID
-	throttlersMu    sync.Mutex
+	staticLimiter   types.Limiter // limiter to use when static throttling is enabled
+	adaptiveLimiter types.Limiter // limiter to use when adaptive throttling is enabled
+
+	mu                 sync.RWMutex                  // protects the two maps below
+	throttlers         map[string]Throttler          // map key is the destinationID:eventType
+	allEventTypesAlgos map[string]adaptive.Algorithm // map key is the destinationID
 }
 
-func (f *factory) Get(destName, destID string) Throttler {
-	f.throttlersMu.Lock()
-	defer f.throttlersMu.Unlock()
-	defer func() {
-		if f.Stats != nil {
-			tags := stats.Tags{
-				"destinationId": destID,
-				"destType":      destName,
-				"adaptive":      fmt.Sprintf("%t", f.throttlers[destID].(*switchingThrottler).adaptiveEnabled.Load()),
-			}
-			throttler := f.throttlers[destID]
-			if window := getWindowInSecs(throttler.getTimeWindow()); window > 0 {
-				f.Stats.NewTaggedStat("throttling_rate_limit", stats.GaugeType, tags).Gauge(throttler.getLimit() / window)
-			}
-		}
-	}()
-	if t, ok := f.throttlers[destID]; ok {
+func (f *factory) Get(destType, destinationID, eventType string) Throttler {
+	key := destinationID + ":" + eventType
+	// Use read lock first for common case
+	f.mu.RLock()
+	if t, ok := f.throttlers[key]; ok {
+		f.mu.RUnlock()
 		return t
 	}
-
-	var conf staticThrottleConfig
-	conf.readThrottlingConfig(f.config, destName, destID)
-	st := &staticThrottler{
-		limiter: f.limiter,
-		config:  conf,
+	f.mu.RUnlock()
+	// Upgrade to write lock only when needed
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Double-check after acquiring write lock
+	if t, ok := f.throttlers[key]; ok {
+		return t
 	}
-
-	var at Throttler = &noOpThrottler{}
-	if f.config.GetBool("Router.throttlerV2.enabled", true) {
-		var adaptiveConf adaptiveThrottleConfig
-		adaptiveConf.readThrottlingConfig(f.config, destName, destID)
-		var limitFactorMeasurement stats.Measurement = nil
-		if f.Stats != nil {
-			limitFactorMeasurement = f.Stats.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
-				"destinationId": destID,
-				"destType":      destName,
-			})
-		}
-		at = &adaptiveThrottler{
-			limiter:                f.adaptiveLimiter,
-			algorithm:              newAdaptiveAlgorithm(destName, f.config, adaptiveConf.window),
-			config:                 adaptiveConf,
-			limitFactorMeasurement: limitFactorMeasurement,
-		}
+	allEventsAlgorithm, ok := f.allEventTypesAlgos[destinationID]
+	if !ok {
+		allEventsAlgorithm = algorithm.NewAdaptiveAlgorithm(destType, f.config, adaptive.GetAllEventsWindowConfig(f.config, destType, destinationID))
+		f.allEventTypesAlgos[destinationID] = allEventsAlgorithm
 	}
+	perEventAlgorithm := algorithm.NewAdaptiveAlgorithm(destType, f.config, adaptive.GetPerEventWindowConfig(f.config, destType, destinationID, eventType))
+	adaptiveThrottlerEnabled := f.config.GetReloadableBoolVar(false,
+		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.enabled`, destType, destinationID),
+		fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destType),
+		"Router.throttler.adaptive.enabled")
 
-	f.throttlers[destID] = &switchingThrottler{
-		adaptiveEnabled: f.config.GetReloadableBoolVar(false,
-			fmt.Sprintf(`Router.throttler.adaptive.%s.%s.enabled`, destName, destID),
-			fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destName),
-			"Router.throttler.adaptive.enabled"),
-		static:   st,
-		adaptive: at,
-	}
-	return f.throttlers[destID]
+	log := f.log.Withn(
+		obskit.DestinationType(destType),
+		obskit.DestinationID(destinationID),
+		logger.NewStringField("eventType", eventType),
+	)
+	// switching between static and adaptive throttling
+	t := switcher.NewThrottlerSwitcher(
+		adaptiveThrottlerEnabled,
+		static.NewThrottler(destType, destinationID, eventType, f.staticLimiter, f.config, f.Stats, log.Withn(logger.NewStringField("throttlerType", "static"))),
+		adaptive.NewThrottler(destType, destinationID, eventType, perEventAlgorithm, allEventsAlgorithm, f.adaptiveLimiter, f.config, f.Stats, log.Withn(logger.NewStringField("throttlerType", "adaptive"))),
+	)
+	f.throttlers[key] = t
+	return t
 }
 
 func (f *factory) Shutdown() {
-	f.throttlersMu.Lock()
-	defer f.throttlersMu.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, t := range f.throttlers {
 		t.Shutdown()
 	}
@@ -123,20 +127,20 @@ func (f *factory) initThrottlerFactory() error {
 	}
 
 	var (
-		err  error
-		l    *throttling.Limiter
-		opts []throttling.Option
+		err           error
+		staticLimiter *throttling.Limiter
+		opts          []throttling.Option
 	)
 	if f.Stats != nil {
 		opts = append(opts, throttling.WithStatsCollector(f.Stats))
 	}
 	switch throttlingAlgorithm {
 	case throttlingAlgoTypeGCRA:
-		l, err = throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
+		staticLimiter, err = throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
 	case throttlingAlgoTypeRedisGCRA:
-		l, err = throttling.New(append(opts, throttling.WithRedisGCRA(redisClient, 0))...)
+		staticLimiter, err = throttling.New(append(opts, throttling.WithRedisGCRA(redisClient, 0))...)
 	case throttlingAlgoTypeRedisSortedSet:
-		l, err = throttling.New(append(opts, throttling.WithRedisSortedSet(redisClient))...)
+		staticLimiter, err = throttling.New(append(opts, throttling.WithRedisSortedSet(redisClient))...)
 	default:
 		return fmt.Errorf("invalid throttling algorithm: %s", throttlingAlgorithm)
 	}
@@ -144,13 +148,13 @@ func (f *factory) initThrottlerFactory() error {
 		return fmt.Errorf("create throttler: %w", err)
 	}
 
-	f.limiter = l
+	f.staticLimiter = staticLimiter
 
-	al, err := throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
+	adaptiveLimiter, err := throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
 	if err != nil {
 		return fmt.Errorf("create adaptive throttler: %w", err)
 	}
-	f.adaptiveLimiter = al
+	f.adaptiveLimiter = adaptiveLimiter
 
 	return nil
 }
@@ -161,7 +165,7 @@ func NewNoOpThrottlerFactory() Factory {
 	return &NewNoOpFactory{}
 }
 
-func (f *NewNoOpFactory) Get(destName, destID string) Throttler {
+func (f *NewNoOpFactory) Get(destName, destID, eventType string) Throttler {
 	return &noOpThrottler{}
 }
 
@@ -169,7 +173,7 @@ func (f *NewNoOpFactory) Shutdown() {}
 
 type noOpThrottler struct{}
 
-func (t *noOpThrottler) CheckLimitReached(ctx context.Context, key string, cost int64) (limited bool, retErr error) {
+func (t *noOpThrottler) CheckLimitReached(ctx context.Context, cost int64) (limited bool, retErr error) {
 	return false, nil
 }
 
@@ -177,10 +181,8 @@ func (t *noOpThrottler) ResponseCodeReceived(code int) {}
 
 func (t *noOpThrottler) Shutdown() {}
 
-func (t *noOpThrottler) getLimit() int64 {
+func (t *noOpThrottler) GetLimit() int64 {
 	return 0
 }
 
-func (t *noOpThrottler) getTimeWindow() time.Duration {
-	return 0
-}
+func (t *noOpThrottler) UpdateRateLimitGauge() {}

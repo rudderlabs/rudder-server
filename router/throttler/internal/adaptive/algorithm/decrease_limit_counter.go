@@ -1,4 +1,4 @@
-package adaptivethrottlercounter
+package algorithm
 
 import (
 	"context"

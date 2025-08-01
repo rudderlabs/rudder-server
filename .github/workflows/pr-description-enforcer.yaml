@@ -1,10 +1,6 @@
 name: 'Pull Request Description'
 on:
   pull_request:
-    types: 
-      - opened
-      - edited
-      - reopened
 
 jobs:
   enforce:
