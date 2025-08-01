@@ -31,3 +31,8 @@ type WHSchema struct {
 	UpdatedAt       time.Time
 	ExpiresAt       time.Time
 }
+
+type NamespaceMapping struct {
+	SourceID  string
+	Namespace string
+}
