@@ -204,12 +204,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
-				ID:                 1,
-				DestinationID:      destinationID,
-				SourceID:           sourceID,
-				StagingFileStartID: 1,
-				StagingFileEndID:   5,
-				Namespace:          namespace,
+				ID:            1,
+				DestinationID: destinationID,
+				SourceID:      sourceID,
+				Namespace:     namespace,
 			},
 			Warehouse: model.Warehouse{
 				Type: destinationType,
@@ -222,17 +220,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 					Name: destinationName,
 				},
 			},
-			StagingFiles: []*model.StagingFile{
-				{ID: 1},
-				{ID: 2},
-				{ID: 3},
-				{ID: 4},
-				{ID: 5},
-			},
 		}, nil)
 
 		count := job.getTotalRowsInLoadFiles(context.Background())
-		require.EqualValues(t, 5, count)
+		require.EqualValues(t, 4, count)
 	})
 
 	t.Run("Total rows in staging files", func(t *testing.T) {
@@ -244,12 +235,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
-				ID:                 1,
-				DestinationID:      destinationID,
-				SourceID:           sourceID,
-				StagingFileStartID: 1,
-				StagingFileEndID:   5,
-				Namespace:          namespace,
+				ID:            1,
+				DestinationID: destinationID,
+				SourceID:      sourceID,
+				Namespace:     namespace,
 			},
 			Warehouse: model.Warehouse{
 				Type: destinationType,
@@ -262,18 +251,11 @@ func TestUploadJob_MatchRows(t *testing.T) {
 					Name: destinationName,
 				},
 			},
-			StagingFiles: []*model.StagingFile{
-				{ID: 1},
-				{ID: 2},
-				{ID: 3},
-				{ID: 4},
-				{ID: 5},
-			},
 		}, nil)
 
 		count, err := repo.NewStagingFiles(sqlmiddleware.New(db), config.New()).TotalEventsForUploadID(context.Background(), job.upload.ID)
 		require.NoError(t, err)
-		require.EqualValues(t, 5, count)
+		require.EqualValues(t, 4, count)
 	})
 
 	t.Run("Get uploads timings", func(t *testing.T) {
@@ -331,25 +313,17 @@ func TestUploadJob_MatchRows(t *testing.T) {
 	t.Run("Staging files and load files events match", func(t *testing.T) {
 		testCases := []struct {
 			name          string
-			stagingFile   []*model.StagingFile
+			uploadID      int64
 			mismatchCount int
 		}{
 			{
-				name: "In case of no mismatch",
-				stagingFile: []*model.StagingFile{
-					{ID: 1},
-					{ID: 2},
-					{ID: 3},
-					{ID: 4},
-					{ID: 5},
-				},
+				name:          "In case of no mismatch",
+				uploadID:      1,
+				mismatchCount: 0,
 			},
 			{
-				name: "In case of mismatch",
-				stagingFile: []*model.StagingFile{
-					{ID: 1},
-					{ID: 2},
-				},
+				name:          "In case of mismatch",
+				uploadID:      2,
 				mismatchCount: 3,
 			},
 		}
@@ -367,12 +341,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 				}
 				job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 					Upload: model.Upload{
-						ID:                 1,
-						DestinationID:      destinationID,
-						SourceID:           sourceID,
-						StagingFileStartID: 1,
-						StagingFileEndID:   5,
-						Namespace:          namespace,
+						ID:            tc.uploadID,
+						DestinationID: destinationID,
+						SourceID:      sourceID,
+						Namespace:     namespace,
 					},
 					Warehouse: model.Warehouse{
 						Type: destinationType,
@@ -385,7 +357,6 @@ func TestUploadJob_MatchRows(t *testing.T) {
 							Name: destinationName,
 						},
 					},
-					StagingFiles: tc.stagingFile,
 				}, nil)
 
 				err = job.matchRowsInStagingAndLoadFiles(context.Background())

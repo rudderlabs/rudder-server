@@ -46,7 +46,7 @@ type StageFileRepo interface {
 type LoadFileRepo interface {
 	Insert(ctx context.Context, loadFiles []model.LoadFile) error
 	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
-	Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error)
+	Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error)
 }
 
 type ControlPlaneClient interface {
@@ -220,7 +220,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		if err != nil {
 			return 0, 0, fmt.Errorf("creating upload jobs: %w", err)
 		}
-		return lf.getLoadFileIDs(ctx, job, stagingFileIDs, uniqueLoadGenID)
+		return lf.getLoadFileIDs(ctx, job, uniqueLoadGenID)
 	}
 
 	v1Files := make([]*model.StagingFile, 0)
@@ -254,11 +254,11 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 	if err = g.Wait(); err != nil {
 		return 0, 0, err
 	}
-	return lf.getLoadFileIDs(ctx, job, stagingFileIDs, uniqueLoadGenID)
+	return lf.getLoadFileIDs(ctx, job, uniqueLoadGenID)
 }
 
-func (lf *LoadFileGenerator) getLoadFileIDs(ctx context.Context, job *model.UploadJob, stagingFileIDs []int64, uniqueLoadGenID string) (int64, int64, error) {
-	loadFiles, err := lf.LoadRepo.Get(ctx, job.Upload.ID, stagingFileIDs)
+func (lf *LoadFileGenerator) getLoadFileIDs(ctx context.Context, job *model.UploadJob, uniqueLoadGenID string) (int64, int64, error) {
+	loadFiles, err := lf.LoadRepo.Get(ctx, job.Upload.ID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}

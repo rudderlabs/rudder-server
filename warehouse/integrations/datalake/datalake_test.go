@@ -366,7 +366,6 @@ func TestIntegration(t *testing.T) {
 				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.schemaTTLInMinutes"), strconv.Itoa(tc.schemaTTLInMinutes))
 				if tc.batchStagingFiles {
 					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.loadFiles.queryWithUploadID.enable"), "true")
 				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
