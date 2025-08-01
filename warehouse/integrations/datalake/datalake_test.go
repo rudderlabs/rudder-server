@@ -88,7 +88,6 @@ func TestIntegration(t *testing.T) {
 			destType           string
 			conf               map[string]interface{}
 			schemaTTLInMinutes int
-			batchStagingFiles  bool
 			prerequisite       func(t testing.TB, ctx context.Context)
 			configOverride     map[string]any
 			verifySchema       func(*testing.T, filemanager.FileManager, string)
@@ -111,7 +110,6 @@ func TestIntegration(t *testing.T) {
 					"syncFrequency":    "30",
 				},
 				schemaTTLInMinutes: 0,
-				batchStagingFiles:  true,
 				prerequisite: func(t testing.TB, ctx context.Context) {
 					t.Helper()
 					createMinioBucket(t, ctx, minioEndpoint, s3AccessKeyID, s3AccessKey, s3BucketName, s3Region)
@@ -364,9 +362,6 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("localhost:%d", c.Port("gcs", 4443)))
 				t.Setenv("RSERVER_WORKLOAD_IDENTITY_TYPE", "GKE")
 				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.schemaTTLInMinutes"), strconv.Itoa(tc.schemaTTLInMinutes))
-				if tc.batchStagingFiles {
-					t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.enableV2NotifierJob"), "true")
-				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
