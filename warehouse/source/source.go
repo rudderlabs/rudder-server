@@ -82,6 +82,8 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		return nil, fmt.Errorf("getting table uploads: %w", err)
 	}
 
+	// There is no need to create source jobs for discards and identity resolution tables.
+	// Source jobs are basically used for deleting old data in case of Google Sheets for full sync and discards and identity resolution tables are de
 	tableNames := lo.Filter(
 		lo.Uniq(lo.Map(tableUploads, func(item model.TableUpload, _ int) string {
 			return item.TableName
