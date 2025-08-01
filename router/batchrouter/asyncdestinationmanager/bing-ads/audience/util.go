@@ -249,6 +249,23 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 	defer r.Close()
 
 	for _, f := range r.File {
+		// Clean the entry name to prevent directory traversal
+		cleanName := filepath.Clean(f.Name)
+		// Prevent absolute paths
+		if filepath.IsAbs(cleanName) {
+			return nil, fmt.Errorf("zip entry has absolute path: %s", cleanName)
+		}
+		// Join with targetDir
+		extractPath := filepath.Join(targetDir, cleanName)
+		// Ensure the final path is within targetDir
+		rel, err := filepath.Rel(targetDir, extractPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get relative path: %w", err)
+		}
+		if strings.HasPrefix(rel, "..") || rel == "." {
+			return nil, fmt.Errorf("illegal file path in zip: %s", cleanName)
+		}
+
 		// Open each file in the zip archive
 		rc, err := f.Open()
 		if err != nil {
@@ -256,17 +273,20 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 		}
 		defer rc.Close()
 
-		// Create the corresponding file in the target directory
-		path := filepath.Join(targetDir, f.Name)
 		if f.FileInfo().IsDir() {
 			// Create directories if the file is a directory
-			err = os.MkdirAll(path, f.Mode())
+			err = os.MkdirAll(extractPath, f.Mode())
 			if err != nil {
 				return nil, err
 			}
 		} else {
 			// Create the file and copy the contents
-			file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+			// Ensure parent directory exists
+			err = os.MkdirAll(filepath.Dir(extractPath), 0755)
+			if err != nil {
+				return nil, err
+			}
+			file, err := os.OpenFile(extractPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 			if err != nil {
 				return nil, err
 			}
@@ -278,7 +298,7 @@ func unzip(zipFile, targetDir string) ([]string, error) {
 			}
 
 			// Append the file path to the list
-			filePaths = append(filePaths, path)
+			filePaths = append(filePaths, extractPath)
 		}
 	}
 
