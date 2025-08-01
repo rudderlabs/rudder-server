@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -22,17 +21,6 @@ type workerJobStatus struct {
 	statTags   map[string]string
 	parameters routerutils.JobParameters
 }
-
-type HandleDestOAuthRespParams struct {
-	ctx            context.Context
-	destinationJob types.DestinationJobT
-	workerID       int
-	trRespStCd     int
-	trRespBody     string
-	secret         json.RawMessage
-	contentType    string
-}
-
 type Diagnostic struct {
 	diagnosisTicker    *time.Ticker
 	requestsMetricLock sync.RWMutex
@@ -81,6 +69,5 @@ type reloadableConfig struct {
 	transformerProxy                  config.ValueLoader[bool]
 	skipRtAbortAlertForTransformation config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForDelivery       config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
-	oauthV2Enabled                    config.ValueLoader[bool]
 	oauthV2ExpirationTimeDiff         config.ValueLoader[time.Duration]
 }
