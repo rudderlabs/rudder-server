@@ -260,6 +260,225 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 	}
 }
 
+func TestGetErrorMessage_NestedJSONResponse(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "nested JSON response with message field",
+			input: `{
+				"response": "{\"message\":\"There were 9 invalid conversion events. None were processed.\",\"invalid_events\":[{\"error_message\":\"event_at timestamp must be less than 168h0m0s old\"}]}",
+				"dontBatch": true,
+				"firstAttemptedAt": "2025-08-02T00:04:10.049Z",
+				"content-type": "application/json",
+				"routerSubStage": "router_dest_delivery",
+				"payloadStage": "delivery"
+			}`,
+			expected: "event_at timestamp must be less than 168h0m0s old",
+		},
+		{
+			name: "nested JSON response with error field",
+			input: `{
+				"response": "{\"error\":\"Authentication failed\",\"code\":401}",
+				"dontBatch": true
+			}`,
+			expected: "Authentication failed",
+		},
+		{
+			name: "nested JSON response with description field",
+			input: `{
+				"response": "{\"description\":\"Rate limit exceeded\",\"retry_after\":60}",
+				"dontBatch": true
+			}`,
+			expected: "Rate limit exceeded",
+		},
+		{
+			name: "nested JSON response with detail field",
+			input: `{
+				"response": "{\"detail\":\"Invalid request parameters\",\"status\":400}",
+				"dontBatch": true
+			}`,
+			expected: "Invalid request parameters",
+		},
+		{
+			name: "nested JSON response with title field",
+			input: `{
+				"response": "{\"title\":\"Service Unavailable\",\"status\":503}",
+				"dontBatch": true
+			}`,
+			expected: "Service Unavailable",
+		},
+		{
+			name: "nested JSON response with error_message field",
+			input: `{
+				"response": "{\"error_message\":\"Database connection failed\",\"code\":500}",
+				"dontBatch": true
+			}`,
+			expected: "Database connection failed",
+		},
+		{
+			name: "nested JSON response with multiple error fields",
+			input: `{
+				"response": "{\"message\":\"Primary error\",\"error\":\"Secondary error\",\"description\":\"Tertiary error\"}",
+				"dontBatch": true
+			}`,
+			expected: "Primary error", // Should return first matching key (message)
+		},
+		{
+			name: "nested JSON response with errors array",
+			input: `{
+				"response": "{\"errors\":[\"Error 1\",\"Error 2\",\"Error 3\"]}",
+				"dontBatch": true
+			}`,
+			expected: "Error 1.Error 2.Error 3",
+		},
+		{
+			name: "nested JSON response with deeply nested message",
+			input: `{
+				"response": "{\"data\":{\"error\":{\"message\":\"Deeply nested error message\"}}}",
+				"dontBatch": true
+			}`,
+			expected: "Deeply nested error message",
+		},
+		{
+			name: "nested JSON response with invalid JSON in response field",
+			input: `{
+				"response": "invalid json string",
+				"dontBatch": true
+			}`,
+			expected: "invalid json string",
+		},
+		{
+			name: "nested JSON response with empty response field",
+			input: `{
+				"response": "",
+				"dontBatch": true
+			}`,
+			expected: "",
+		},
+		{
+			name: "nested JSON response with null response field",
+			input: `{
+				"response": null,
+				"dontBatch": true
+			}`,
+			expected: "",
+		},
+		{
+			name: "nested JSON response with missing response field",
+			input: `{
+				"dontBatch": true,
+				"message": "Direct message"
+			}`,
+			expected: "Direct message",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ext.GetErrorMessage(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestGetErrorMessage_ComplexNestedStructures(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "nested JSON with array of objects containing error messages",
+			input: `{
+				"response": "{\"invalid_events\":[{\"error_message\":\"event_at timestamp must be less than 168h0m0s old\"},{\"error_message\":\"invalid event type\"}],\"message\":\"There were 2 invalid conversion events. None were processed.\"}",
+				"dontBatch": true
+			}`,
+			expected: "invalid event type",
+		},
+		{
+			name: "nested JSON with multiple levels of nesting",
+			input: `{
+				"response": "{\"result\":{\"status\":{\"error\":{\"message\":\"Multi-level nested error\"}}}}",
+				"dontBatch": true
+			}`,
+			expected: "Multi-level nested error",
+		},
+		{
+			name: "nested JSON with mixed data types",
+			input: `{
+				"response": "{\"message\":\"String message\",\"code\":123,\"active\":true,\"data\":[1,2,3]}",
+				"dontBatch": true
+			}`,
+			expected: "String message",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ext.GetErrorMessage(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestGetErrorMessage_EdgeCases(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "non-JSON input",
+			input:    "plain text error message",
+			expected: "plain text error message",
+		},
+		{
+			name:     "null input",
+			input:    "null",
+			expected: "null",
+		},
+		{
+			name:     "empty object",
+			input:    "{}",
+			expected: "",
+		},
+		{
+			name:     "object with no error fields",
+			input:    `{"status": "ok", "data": "success"}`,
+			expected: "",
+		},
+		{
+			name: "nested JSON with escaped quotes",
+			input: `{
+				"response": "{\"message\":\"Error with \\\"quotes\\\" inside\"}",
+				"dontBatch": true
+			}`,
+			expected: "Error with \"quotes\" inside",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ext.GetErrorMessage(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestExtractErrorDetails(t *testing.T) {
 	type depTcOutput struct {
 		errorMsg  string
