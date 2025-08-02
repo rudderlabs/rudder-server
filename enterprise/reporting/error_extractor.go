@@ -127,11 +127,21 @@ func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
 		return sampleResponse
 	}
 
+	// First, try the specific key handlers (response, error, etc.)
+	// This handles nested JSON responses where the error message is in a "response" field
 	for key, erRes := range jsonMap {
 		if result := ext.handleKey(key, erRes); result != "" {
 			return result
 		}
 	}
+
+	// If no specific keys were found, try to find message keys directly in the parsed JSON
+	// This handles cases where the JSON has a direct message field without a response wrapper
+	// This enhancement improves error extraction for various JSON response formats
+	if msg := getErrorMessageFromResponse(jsonMap, ext.ErrorMessageKeys); msg != "" {
+		return msg
+	}
+
 	return ""
 }
 
