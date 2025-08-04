@@ -213,6 +213,91 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			require.NoError(t, err)
 		})
 
+		t.Run("manual sync mode", func(t *testing.T) {
+			identifier := "warehouse_identifier"
+			testCases := []struct {
+				name          string
+				config        map[string]interface{}
+				setupRouter   func(*Router)
+				expectedError error
+			}{
+				{
+					name: "blocks automatic uploads when enabled",
+					config: map[string]interface{}{
+						"manualSync": true,
+					},
+					setupRouter:   func(r *Router) {},
+					expectedError: errManualSyncModeEnabled,
+				},
+				{
+					name: "allows manual triggers when enabled",
+					config: map[string]interface{}{
+						"manualSync": true,
+					},
+					setupRouter: func(r *Router) {
+						r.triggerStore.Store(identifier, struct{}{})
+					},
+					expectedError: nil,
+				},
+				{
+					name: "allows forced uploads when enabled",
+					config: map[string]interface{}{
+						"manualSync": true,
+					},
+					setupRouter: func(r *Router) {
+						createUploadAlways := &atomic.Bool{}
+						createUploadAlways.Store(true)
+						r.createUploadAlways = createUploadAlways
+					},
+					expectedError: nil,
+				},
+				{
+					name: "allows normal operation when disabled",
+					config: map[string]interface{}{
+						"manualSync": false,
+					},
+					setupRouter: func(r *Router) {
+						r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
+						r.config.uploadFreqInS = config.SingleValueLoader(int64(0))
+					},
+					expectedError: nil,
+				},
+				{
+					name:   "defaults to false when not set",
+					config: map[string]interface{}{},
+					setupRouter: func(r *Router) {
+						r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
+						r.config.uploadFreqInS = config.SingleValueLoader(int64(0))
+					},
+					expectedError: nil,
+				},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					r := &Router{}
+					r.conf = config.New()
+					r.createUploadAlways = &atomic.Bool{}
+					r.triggerStore = &sync.Map{}
+					tc.setupRouter(r)
+
+					err := r.canCreateUpload(context.Background(), model.Warehouse{
+						Identifier: identifier,
+						Destination: backendConfig.DestinationT{
+							Config: tc.config,
+						},
+					})
+
+					if tc.expectedError != nil {
+						require.Error(t, err)
+						require.ErrorIs(t, err, tc.expectedError)
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		})
+
 		t.Run("sync frequency ignore", func(t *testing.T) {
 			t.Run("first upload", func(t *testing.T) {
 				w := model.Warehouse{
