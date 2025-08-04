@@ -381,7 +381,7 @@ loop:
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil && ctx.Err() == nil {
-			r.logger.Errorn("Error getting uploads to process", logger.NewErrorField(err))
+			r.logger.Errorn("Error getting uploads to process", obskit.Error(err))
 			r.processingMu.Unlock()
 			return err
 		}

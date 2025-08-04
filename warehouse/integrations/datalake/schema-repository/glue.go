@@ -15,8 +15,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	utils "github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -122,7 +124,7 @@ func (g *GlueSchemaRepository) AlterColumn(ctx context.Context, tableName, colum
 }
 
 func (g *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName string, loadFiles []warehouseutils.LoadFile) error {
-	g.logger.Infof("Refreshing partitions for table: %s", tableName)
+	g.logger.Infon("Refreshing partitions for table", logger.NewStringField(logfield.TableName, tableName))
 
 	// Skip if time window layout is not defined
 	if layout := g.Warehouse.GetStringDestinationConfig(g.conf, model.TimeWindowLayoutSetting); layout == "" {
@@ -148,7 +150,10 @@ func (g *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName 
 		}
 
 		if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionFolderRegex, locationFolder); err != nil {
-			g.logger.Warnf("Skipping refresh partitions for table %s with location %s: %v", tableName, locationFolder, err)
+			g.logger.Warnn("Skipping refresh partitions",
+				logger.NewStringField(logfield.TableName, tableName),
+				logger.NewStringField("location", locationFolder),
+				obskit.Error(err))
 			continue
 		}
 
@@ -184,7 +189,9 @@ func (g *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName 
 
 			partitionInputs = append(partitionInputs, *locationsToPartition[location])
 		} else {
-			g.logger.Debugf("Partition %s already exists in table %s", location, tableName)
+			g.logger.Debugn("Partition already exists in table",
+				logger.NewStringField("partition", location),
+				logger.NewStringField(logfield.TableName, tableName))
 		}
 	}
 	if len(partitionInputs) == 0 {
@@ -196,7 +203,7 @@ func (g *GlueSchemaRepository) RefreshPartitions(ctx context.Context, tableName 
 		return fmt.Errorf("update table: %w", err)
 	}
 
-	g.logger.Debugf("Refreshing %d partitions", len(partitionInputs))
+	g.logger.Debugn("Refreshing partitions", logger.NewIntField("partitions", int64(len(partitionInputs))))
 
 	if _, err = g.GlueClient.BatchCreatePartition(ctx, &glue.BatchCreatePartitionInput{
 		DatabaseName:       aws.String(g.Namespace),
@@ -227,7 +234,8 @@ func (g *GlueSchemaRepository) FetchSchema(ctx context.Context, warehouse model.
 		if err != nil {
 			var entityNotFoundException *types.EntityNotFoundException
 			if errors.As(err, &entityNotFoundException) {
-				g.logger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
+				g.logger.Debugn("FetchSchema: database not found in glue. returning empty schema",
+					logger.NewStringField("database", warehouse.Namespace))
 				err = nil
 			}
 			return schema, err
