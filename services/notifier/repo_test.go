@@ -97,7 +97,7 @@ func TestRepo(t *testing.T) {
 					json.RawMessage(`{"id":"4"}`),
 					json.RawMessage(`{"id":"5"}`),
 				},
-				JobType:      JobTypeUpload,
+				JobType:      JobTypeUploadV2,
 				UploadSchema: json.RawMessage(`{"UploadSchema":"1"}`),
 				Priority:     50,
 			}
@@ -232,7 +232,7 @@ func TestRepo(t *testing.T) {
 						Payloads: []json.RawMessage{
 							json.RawMessage(`{"id":"11"}`),
 						},
-						JobType:  JobTypeUpload,
+						JobType:  JobTypeUploadV2,
 						Priority: 75,
 					}
 

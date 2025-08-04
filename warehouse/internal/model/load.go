@@ -8,7 +8,6 @@ type LoadFile struct {
 	Location              string
 	TotalRows             int
 	ContentLength         int64
-	StagingFileID         int64
 	DestinationRevisionID string
 	UseRudderStorage      bool
 	SourceID              string

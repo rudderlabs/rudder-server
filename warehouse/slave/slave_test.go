@@ -119,7 +119,7 @@ func TestSlave(t *testing.T) {
 		require.NoError(t, slave.SetupSlave(ctx))
 	}()
 
-	p := payload{
+	p := payloadV2{
 		basePayload: basePayload{
 			UploadID:                     1,
 			UploadSchema:                 schemaMap,
@@ -138,8 +138,12 @@ func TestSlave(t *testing.T) {
 			RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 			LoadFileType:                 "csv",
 		},
-		StagingFileID:       1,
-		StagingFileLocation: jobLocation,
+		StagingFiles: []stagingFileInfo{
+			{
+				ID:       1,
+				Location: jobLocation,
+			},
+		},
 	}
 
 	payloadJson, err := jsonrs.Marshal(p)
@@ -152,7 +156,7 @@ func TestSlave(t *testing.T) {
 			Payload:             payloadJson,
 			Status:              model.Waiting,
 			WorkspaceIdentifier: "test_workspace",
-			Type:                notifier.JobTypeUpload,
+			Type:                notifier.JobTypeUploadV2,
 		},
 	}
 
@@ -169,18 +173,18 @@ func TestSlave(t *testing.T) {
 
 			require.NoError(t, response.Err)
 
-			var uploadPayload payload
+			var uploadPayload payloadV2
 			err := jsonrs.Unmarshal(response.Payload, &uploadPayload)
 			require.NoError(t, err)
 			require.Equal(t, uploadPayload.BatchID, claim.Job.BatchID)
 			require.Equal(t, uploadPayload.UploadID, p.UploadID)
-			require.Equal(t, uploadPayload.StagingFileID, p.StagingFileID)
-			require.Equal(t, uploadPayload.StagingFileLocation, p.StagingFileLocation)
+			require.Equal(t, uploadPayload.StagingFiles[0].ID, p.StagingFiles[0].ID)
+			require.Equal(t, uploadPayload.StagingFiles[0].Location, p.StagingFiles[0].Location)
 
 			require.Len(t, uploadPayload.Output, 8)
 			for _, output := range uploadPayload.Output {
 				require.Equal(t, output.TotalRows, 4)
-				require.Equal(t, output.StagingFileID, p.StagingFileID)
+				require.Equal(t, output.UploadID, p.UploadID)
 				require.Equal(t, output.DestinationRevisionID, p.DestinationRevisionID)
 				require.Equal(t, output.UseRudderStorage, p.StagingUseRudderStorage)
 			}

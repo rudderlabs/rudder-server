@@ -35,7 +35,6 @@ const (
 type JobType string
 
 const (
-	JobTypeUpload   JobType = "upload"
 	JobTypeUploadV2 JobType = "upload_v2"
 	JobTypeAsync    JobType = "async_job"
 )
