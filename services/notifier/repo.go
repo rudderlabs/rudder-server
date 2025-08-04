@@ -10,6 +10,8 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 
@@ -46,15 +48,23 @@ func WithNow(now func() time.Time) Opt {
 	}
 }
 
+func WithStats(s stats.Stats) Opt {
+	return func(r *repo) {
+		r.statsFactory = s
+	}
+}
+
 type repo struct {
-	db  *sqlmw.DB
-	now func() time.Time
+	db           *sqlmw.DB
+	now          func() time.Time
+	statsFactory stats.Stats
 }
 
 func newRepo(db *sqlmw.DB, opts ...Opt) *repo {
 	r := &repo{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: stats.NOP,
 	}
 	for _, opt := range opts {
 		opt(r)
@@ -67,6 +77,10 @@ func (n *repo) resetForWorkspace(
 	ctx context.Context,
 	workspaceIdentifier string,
 ) error {
+	defer n.timerStat("reset_for_workspace", stats.Tags{
+		"workspaceIdentifier": workspaceIdentifier,
+	})()
+
 	_, err := n.db.ExecContext(ctx, `
 		DELETE FROM `+notifierTableName+`
 		WHERE workspace = $1;
@@ -86,6 +100,11 @@ func (n *repo) insert(
 	workspaceIdentifier string,
 	batchID string,
 ) error {
+	defer n.timerStat("insert", stats.Tags{
+		"workspaceIdentifier": workspaceIdentifier,
+		"jobType":             string(publishRequest.JobType),
+	})()
+
 	txn, err := n.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("inserting: begin transaction: %w", err)
@@ -143,7 +162,7 @@ func (n *repo) insert(
 			UPDATE
   			  `+notifierTableName+`
 			SET
-			  payload = payload || $1
+			  payload = payload::jsonb || $1
 			WHERE
 			  batch_id = $2;
 	`,
@@ -166,6 +185,8 @@ func (n *repo) pendingByBatchID(
 	ctx context.Context,
 	batchID string,
 ) (int64, error) {
+	defer n.timerStat("pending_by_batch_id", nil)()
+
 	var count int64
 
 	err := n.db.QueryRowContext(ctx, `
@@ -195,6 +216,8 @@ func (n *repo) getByBatchID(
 	ctx context.Context,
 	batchID string,
 ) ([]Job, error) {
+	defer n.timerStat("get_by_batch_id", nil)()
+
 	query := `
 		SELECT
 			id,
@@ -206,7 +229,7 @@ func (n *repo) getByBatchID(
 			job_type,
 			priority,
 			error,
-			payload - 'UploadSchema',
+			payload::jsonb - 'UploadSchema',
 			created_at,
 			updated_at,
 			last_exec_time
@@ -249,6 +272,7 @@ func scanJob(scan scanFn, job *Job) error {
 		errorRaw    sql.NullString
 		workerIDRaw sql.NullString
 		lasExecTime sql.NullTime
+		payloadRaw  []byte
 	)
 
 	err := scan(
@@ -261,7 +285,7 @@ func scanJob(scan scanFn, job *Job) error {
 		&jobTypeRaw,
 		&job.Priority,
 		&errorRaw,
-		&job.Payload,
+		&payloadRaw,
 		&job.CreatedAt,
 		&job.UpdatedAt,
 		&lasExecTime,
@@ -270,6 +294,7 @@ func scanJob(scan scanFn, job *Job) error {
 		return fmt.Errorf("scanning: %w", err)
 	}
 
+	job.Payload = payloadRaw
 	if workerIDRaw.Valid {
 		job.WorkerID = workerIDRaw.String
 	}
@@ -298,6 +323,8 @@ func (n *repo) deleteByBatchID(
 	ctx context.Context,
 	batchID string,
 ) error {
+	defer n.timerStat("delete_by_batch_id", nil)()
+
 	_, err := n.db.ExecContext(ctx, `
 		DELETE FROM `+notifierTableName+` WHERE batch_id = $1;
 	`,
@@ -326,6 +353,10 @@ func (n *repo) claim(
 	ctx context.Context,
 	workerID string,
 ) (*Job, error) {
+	defer n.timerStat("claim", stats.Tags{
+		"workerID": workerID,
+	})()
+
 	row := n.db.QueryRowContext(ctx, `
 		UPDATE
   		  `+notifierTableName+`
@@ -374,6 +405,12 @@ func (n *repo) onClaimFailed(
 	claimError error,
 	maxAttempt int,
 ) error {
+	defer n.timerStat("on_claim_failed", stats.Tags{
+		"workspaceIdentifier": job.WorkspaceIdentifier,
+		"jobStatus":           string(job.Status),
+		"jobType":             string(job.Type),
+	})()
+
 	query := fmt.Sprint(`
 		UPDATE
 		  ` + notifierTableName + `
@@ -413,6 +450,12 @@ func (n *repo) onClaimSuccess(
 	job *Job,
 	payload json.RawMessage,
 ) error {
+	defer n.timerStat("on_claim_success", stats.Tags{
+		"workspaceIdentifier": job.WorkspaceIdentifier,
+		"jobStatus":           string(job.Status),
+		"jobType":             string(job.Type),
+	})()
+
 	_, err := n.db.ExecContext(ctx, `
 		UPDATE
 		  `+notifierTableName+`
@@ -440,6 +483,8 @@ func (n *repo) orphanJobIDs(
 	ctx context.Context,
 	intervalInSeconds int,
 ) ([]int64, error) {
+	defer n.timerStat("orphan_job_ids", nil)()
+
 	rows, err := n.db.QueryContext(ctx, `
 		UPDATE
           `+notifierTableName+`
@@ -487,6 +532,8 @@ func (n *repo) orphanJobIDs(
 }
 
 func (n *repo) refreshClaim(ctx context.Context, jobId int64) error {
+	defer n.timerStat("refresh_claim", nil)()
+
 	_, err := n.db.ExecContext(ctx, `
 		UPDATE
 		  `+notifierTableName+`
@@ -504,4 +551,14 @@ func (n *repo) refreshClaim(ctx context.Context, jobId int64) error {
 		return fmt.Errorf("refreshing claim: %w", err)
 	}
 	return nil
+}
+
+// timerStat returns a function that records the duration of a database action.
+func (n *repo) timerStat(action string, extraTags stats.Tags) func() {
+	statName := "notifier_repo_query_duration_seconds"
+	tags := stats.Tags{"action": action, "repoType": notifierTableName}
+	for k, v := range extraTags {
+		tags[k] = v
+	}
+	return n.statsFactory.NewTaggedStat(statName, stats.TimerType, tags).RecordDuration()
 }

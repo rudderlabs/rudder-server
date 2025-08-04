@@ -8,6 +8,8 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -36,8 +38,10 @@ type Source repo
 
 func NewSource(db *sqlmw.DB, opts ...Opt) *Source {
 	r := &Source{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: stats.NOP,
+		repoType:     sourceJobTableName,
 	}
 	for _, opt := range opts {
 		opt((*repo)(r))
@@ -46,6 +50,15 @@ func NewSource(db *sqlmw.DB, opts ...Opt) *Source {
 }
 
 func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]int64, error) {
+	if len(sourceJobs) == 0 {
+		return nil, errors.New("empty sourceJobs")
+	}
+	defer (*repo)(s).TimerStat("insert", stats.Tags{
+		"sourceId":    sourceJobs[0].SourceID,
+		"destId":      sourceJobs[0].DestinationID,
+		"workspaceId": sourceJobs[0].WorkspaceID,
+	})()
+
 	var ids []int64
 
 	err := (*repo)(s).WithTx(ctx, func(tx *sqlmw.Tx) error {
@@ -94,6 +107,8 @@ func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]in
 }
 
 func (s *Source) Reset(ctx context.Context) error {
+	defer (*repo)(s).TimerStat("reset", nil)()
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
@@ -113,6 +128,8 @@ func (s *Source) Reset(ctx context.Context) error {
 }
 
 func (s *Source) GetToProcess(ctx context.Context, limit int64) ([]model.SourceJob, error) {
+	defer (*repo)(s).TimerStat("get_to_process", nil)()
+
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT
 			`+sourceJobColumns+`
@@ -195,6 +212,8 @@ func scanSourceJob(scan scanFn, sourceJob *model.SourceJob) error {
 }
 
 func (s *Source) GetByJobRunTaskRun(ctx context.Context, jobRunID, taskRunID string) (*model.SourceJob, error) {
+	defer (*repo)(s).TimerStat("get_by_job_run_task_run", nil)()
+
 	row := s.db.QueryRowContext(ctx, `
 		SELECT
 			`+sourceJobColumns+`
@@ -221,6 +240,8 @@ func (s *Source) GetByJobRunTaskRun(ctx context.Context, jobRunID, taskRunID str
 }
 
 func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
+	defer (*repo)(s).TimerStat("on_update_success", nil)()
+
 	r, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
@@ -248,6 +269,8 @@ func (s *Source) OnUpdateSuccess(ctx context.Context, id int64) error {
 }
 
 func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, maxAttempt int) error {
+	defer (*repo)(s).TimerStat("on_update_failure", nil)()
+
 	r, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`
@@ -283,6 +306,8 @@ func (s *Source) OnUpdateFailure(ctx context.Context, id int64, error error, max
 }
 
 func (s *Source) MarkExecuting(ctx context.Context, ids []int64) error {
+	defer (*repo)(s).TimerStat("mark_executing", nil)()
+
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE
 			`+sourceJobTableName+`

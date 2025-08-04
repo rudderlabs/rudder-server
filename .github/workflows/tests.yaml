@@ -34,12 +34,17 @@ jobs:
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
           ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
-
+          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
+          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
+          DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
       - name: oss
         if: matrix.FEATURES == 'oss'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
           RSERVER_ENABLE_MULTITENANCY: false
+          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
+          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
+          DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
   warehouse-integration:
     name: Warehouse Integration
     runs-on: ubuntu-latest
@@ -102,68 +107,14 @@ jobs:
           SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
+          RSERVER_FILE_MANAGER_USE_AWS_SDK_V2: "true"
+          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
+          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
+          DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.destination }}
-          path: coverage.txt
-  warehouse-integration-v2:
-    name: Warehouse Integration V2
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        destination: [ datalake, deltalake, redshift, snowflake ]
-        include:
-          - package: warehouse/integrations/datalake
-            destination: datalake
-          - package: warehouse/integrations/deltalake
-            destination: deltalake
-          - package: warehouse/integrations/redshift
-            destination: redshift
-          - package: warehouse/integrations/snowflake
-            destination: snowflake
-    steps:
-      - name: Disable IPv6 (temporary fix)
-        run: |
-          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: 'go.mod'
-      - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
-      - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
-        with:
-          username: rudderlabs
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Set Redshift Ginkgo AWS Credentials
-        if: matrix.destination == 'redshift'
-        run: |
-          echo "Setting Redshift Ginkgo AWS Credentials..."
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-      - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
-        env:
-          BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
-          DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_IAM_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_IAM_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_SERVERLESS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_SERVERLESS_INTEGRATION_TEST_CREDENTIALS }}
-          REDSHIFT_SERVERLESS_IAM_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_SERVERLESS_IAM_INTEGRATION_TEST_CREDENTIALS }}
-          SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS }}
-          SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
-          SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
-          RSERVER_FILE_MANAGER_USE_AWS_SDK_V2: "true"
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.destination }}-v2
           path: coverage.txt
   unit:
     name: Unit
@@ -183,6 +134,9 @@ jobs:
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
+          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
+          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
+          DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -251,6 +205,9 @@ jobs:
           SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
+          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
+          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
+          DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
           RACE_ENABLED: ${{ matrix.race || false }}
         run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact

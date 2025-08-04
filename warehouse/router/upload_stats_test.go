@@ -7,18 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/mock_stats"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
@@ -28,19 +24,13 @@ func TestUploadJob_Stats(t *testing.T) {
 	db := setupUploadTest(t, "testdata/sql/stats_test.sql")
 
 	t.Run("Generate upload success metrics", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		mockStats := mock_stats.NewMockStats(ctrl)
-		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
-
-		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
-		mockMeasurement.EXPECT().Count(4).Times(2)
-		mockMeasurement.EXPECT().Count(1).Times(1)
-		mockMeasurement.EXPECT().Since(gomock.Any()).Times(8)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: mockStats,
+			statsFactory: statsStore,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -62,24 +52,33 @@ func TestUploadJob_Stats(t *testing.T) {
 			},
 		}, nil)
 
-		_, err := repo.NewUploads(job.db).CreateWithStagingFiles(context.Background(), job.upload, job.stagingFiles)
+		_, err = repo.NewUploads(job.db).CreateWithStagingFiles(context.Background(), job.upload, job.stagingFiles)
 		require.NoError(t, err)
 
 		job.generateUploadSuccessMetrics()
+
+		tags := stats.Tags{
+			"module":      moduleName,
+			"workspaceId": job.warehouse.WorkspaceID,
+			"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
+			"destID":      job.warehouse.Destination.ID,
+			"destType":    job.warehouse.Destination.DestinationDefinition.Name,
+			"sourceID":    job.warehouse.Source.ID,
+			"sourceType":  job.warehouse.Source.SourceDefinition.Name,
+		}
+		require.EqualValues(t, 4, statsStore.Get("total_rows_synced", tags).LastValue())
+		require.EqualValues(t, 4, statsStore.Get("num_staged_events", tags).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("upload_success", tags).LastValue())
 	})
 
 	t.Run("Generate upload aborted metrics", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		mockStats := mock_stats.NewMockStats(ctrl)
-		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
-
-		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
-		mockMeasurement.EXPECT().Count(4).Times(2)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: mockStats,
+			statsFactory: statsStore,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -96,20 +95,28 @@ func TestUploadJob_Stats(t *testing.T) {
 		}, nil)
 
 		job.generateUploadAbortedMetrics()
+
+		tags := stats.Tags{
+			"module":      moduleName,
+			"workspaceId": job.warehouse.WorkspaceID,
+			"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
+			"destID":      job.warehouse.Destination.ID,
+			"destType":    job.warehouse.Destination.DestinationDefinition.Name,
+			"sourceID":    job.warehouse.Source.ID,
+			"sourceType":  job.warehouse.Source.SourceDefinition.Name,
+		}
+		require.EqualValues(t, 4, statsStore.Get("total_rows_synced", tags).LastValue())
+		require.EqualValues(t, 4, statsStore.Get("num_staged_events", tags).LastValue())
 	})
 
 	t.Run("Record table load", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		mockStats := mock_stats.NewMockStats(ctrl)
-		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
-
-		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
-		mockMeasurement.EXPECT().Count(4).Times(2)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: mockStats,
+			statsFactory: statsStore,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -125,20 +132,29 @@ func TestUploadJob_Stats(t *testing.T) {
 		}, nil)
 
 		job.recordTableLoad("tracks", 4)
+
+		tags := stats.Tags{
+			"module":      moduleName,
+			"workspaceId": job.warehouse.WorkspaceID,
+			"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
+			"destID":      job.warehouse.Destination.ID,
+			"destType":    job.warehouse.Destination.DestinationDefinition.Name,
+			"sourceID":    job.warehouse.Source.ID,
+			"sourceType":  job.warehouse.Source.SourceDefinition.Name,
+			"tableName":   "tracks",
+		}
+		require.EqualValues(t, 4, statsStore.Get("event_delivery", tags).LastValue())
+		require.EqualValues(t, 4, statsStore.Get("rows_synced", tags).LastValue())
 	})
 
 	t.Run("Record load files generation time", func(t *testing.T) {
-		ctrl := gomock.NewController(t)
-		mockStats := mock_stats.NewMockStats(ctrl)
-		mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
-
-		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
-		mockMeasurement.EXPECT().SendTiming(3 * time.Second).Times(1)
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
 
 		ujf := &UploadJobFactory{
 			conf:         config.New(),
 			logger:       logger.NOP,
-			statsFactory: mockStats,
+			statsFactory: statsStore,
 			db:           sqlmiddleware.New(db),
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
@@ -152,8 +168,19 @@ func TestUploadJob_Stats(t *testing.T) {
 			},
 		}, nil)
 
-		err := job.recordLoadFileGenerationTimeStat(1, 4)
+		err = job.recordLoadFileGenerationTimeStat(1, 4)
 		require.NoError(t, err)
+
+		tags := stats.Tags{
+			"module":      moduleName,
+			"workspaceId": job.warehouse.WorkspaceID,
+			"warehouseID": warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
+			"destID":      job.warehouse.Destination.ID,
+			"destType":    job.warehouse.Destination.DestinationDefinition.Name,
+			"sourceID":    job.warehouse.Source.ID,
+			"sourceType":  job.warehouse.Source.SourceDefinition.Name,
+		}
+		require.EqualValues(t, 3*time.Second, statsStore.Get("load_file_generation_time", tags).LastDuration())
 	})
 }
 
@@ -177,12 +204,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
-				ID:                 1,
-				DestinationID:      destinationID,
-				SourceID:           sourceID,
-				StagingFileStartID: 1,
-				StagingFileEndID:   5,
-				Namespace:          namespace,
+				ID:            1,
+				DestinationID: destinationID,
+				SourceID:      sourceID,
+				Namespace:     namespace,
 			},
 			Warehouse: model.Warehouse{
 				Type: destinationType,
@@ -195,17 +220,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 					Name: destinationName,
 				},
 			},
-			StagingFiles: []*model.StagingFile{
-				{ID: 1},
-				{ID: 2},
-				{ID: 3},
-				{ID: 4},
-				{ID: 5},
-			},
 		}, nil)
 
 		count := job.getTotalRowsInLoadFiles(context.Background())
-		require.EqualValues(t, 5, count)
+		require.EqualValues(t, 4, count)
 	})
 
 	t.Run("Total rows in staging files", func(t *testing.T) {
@@ -217,12 +235,10 @@ func TestUploadJob_MatchRows(t *testing.T) {
 		}
 		job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 			Upload: model.Upload{
-				ID:                 1,
-				DestinationID:      destinationID,
-				SourceID:           sourceID,
-				StagingFileStartID: 1,
-				StagingFileEndID:   5,
-				Namespace:          namespace,
+				ID:            1,
+				DestinationID: destinationID,
+				SourceID:      sourceID,
+				Namespace:     namespace,
 			},
 			Warehouse: model.Warehouse{
 				Type: destinationType,
@@ -235,18 +251,11 @@ func TestUploadJob_MatchRows(t *testing.T) {
 					Name: destinationName,
 				},
 			},
-			StagingFiles: []*model.StagingFile{
-				{ID: 1},
-				{ID: 2},
-				{ID: 3},
-				{ID: 4},
-				{ID: 5},
-			},
 		}, nil)
 
 		count, err := repo.NewStagingFiles(sqlmiddleware.New(db), config.New()).TotalEventsForUploadID(context.Background(), job.upload.ID)
 		require.NoError(t, err)
-		require.EqualValues(t, 5, count)
+		require.EqualValues(t, 4, count)
 	})
 
 	t.Run("Get uploads timings", func(t *testing.T) {
@@ -303,52 +312,39 @@ func TestUploadJob_MatchRows(t *testing.T) {
 
 	t.Run("Staging files and load files events match", func(t *testing.T) {
 		testCases := []struct {
-			name        string
-			stagingFile []*model.StagingFile
-			statsCount  int
+			name          string
+			uploadID      int64
+			mismatchCount int
 		}{
 			{
-				name: "In case of no mismatch",
-				stagingFile: []*model.StagingFile{
-					{ID: 1},
-					{ID: 2},
-					{ID: 3},
-					{ID: 4},
-					{ID: 5},
-				},
+				name:          "In case of no mismatch",
+				uploadID:      1,
+				mismatchCount: 0,
 			},
 			{
-				name: "In case of mismatch",
-				stagingFile: []*model.StagingFile{
-					{ID: 1},
-					{ID: 2},
-				},
-				statsCount: 1,
+				name:          "In case of mismatch",
+				uploadID:      2,
+				mismatchCount: 3,
 			},
 		}
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ctrl := gomock.NewController(t)
-				mockStats := mock_stats.NewMockStats(ctrl)
-				mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
-				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockMeasurement)
-				mockMeasurement.EXPECT().Gauge(gomock.Any()).Times(tc.statsCount)
+				statsStore, err := memstats.New()
+				require.NoError(t, err)
 
 				ujf := &UploadJobFactory{
 					conf:         config.New(),
 					logger:       logger.NOP,
-					statsFactory: mockStats,
+					statsFactory: statsStore,
 					db:           sqlmiddleware.New(db),
 				}
 				job := ujf.NewUploadJob(context.Background(), &model.UploadJob{
 					Upload: model.Upload{
-						ID:                 1,
-						DestinationID:      destinationID,
-						SourceID:           sourceID,
-						StagingFileStartID: 1,
-						StagingFileEndID:   5,
-						Namespace:          namespace,
+						ID:            tc.uploadID,
+						DestinationID: destinationID,
+						SourceID:      sourceID,
+						Namespace:     namespace,
 					},
 					Warehouse: model.Warehouse{
 						Type: destinationType,
@@ -361,11 +357,21 @@ func TestUploadJob_MatchRows(t *testing.T) {
 							Name: destinationName,
 						},
 					},
-					StagingFiles: tc.stagingFile,
 				}, nil)
 
-				err := job.matchRowsInStagingAndLoadFiles(context.Background())
+				err = job.matchRowsInStagingAndLoadFiles(context.Background())
 				require.NoError(t, err)
+
+				require.EqualValues(t, tc.mismatchCount, statsStore.Get("warehouse_staging_load_file_events_count_mismatched", stats.Tags{
+					"module":         moduleName,
+					"workspaceId":    job.warehouse.WorkspaceID,
+					"warehouseID":    warehouseTagName(job.warehouse.Destination.ID, job.warehouse.Source.Name, job.warehouse.Destination.Name, job.warehouse.Source.ID),
+					"destID":         job.warehouse.Destination.ID,
+					"destType":       job.warehouse.Destination.DestinationDefinition.Name,
+					"sourceID":       job.warehouse.Source.ID,
+					"sourceType":     job.warehouse.Source.SourceDefinition.Name,
+					"sourceCategory": job.warehouse.Source.SourceDefinition.Category,
+				}).LastValue())
 			})
 		}
 	})
@@ -374,25 +380,13 @@ func TestUploadJob_MatchRows(t *testing.T) {
 func setupUploadTest(t testing.TB, migrationsPath string) *sql.DB {
 	t.Helper()
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	pgResource, err := postgres.Setup(pool, t)
-	require.NoError(t, err)
-
-	t.Log("db:", pgResource.DBDsn)
-
-	err = (&migrator.Migrator{
-		Handle:          pgResource.DB,
-		MigrationsTable: "wh_schema_migrations",
-	}).Migrate("warehouse")
-	require.NoError(t, err)
-
 	sqlStatement, err := os.ReadFile(migrationsPath)
 	require.NoError(t, err)
 
-	_, err = pgResource.DB.Exec(string(sqlStatement))
+	db := setupDB(t)
+
+	_, err = db.Exec(string(sqlStatement))
 	require.NoError(t, err)
 
-	return pgResource.DB
+	return db.DB
 }

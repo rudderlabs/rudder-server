@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -44,7 +45,7 @@ func New(
 	bcm := &BackendConfigManager{
 		conf:                 c,
 		db:                   db,
-		schema:               repo.NewWHSchemas(db, c),
+		schema:               repo.NewWHSchemas(db, c, repo.WithStats(stats)),
 		tenantManager:        tenantManager,
 		logger:               log,
 		stats:                stats,

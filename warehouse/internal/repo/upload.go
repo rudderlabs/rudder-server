@@ -15,6 +15,8 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/lib/pq"
@@ -95,10 +97,11 @@ type UploadMetadata struct {
 
 func NewUploads(db *sqlmiddleware.DB, opts ...Opt) *Uploads {
 	u := &Uploads{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: stats.NOP,
+		repoType:     uploadsTableName,
 	}
-
 	for _, opt := range opts {
 		opt((*repo)(u))
 	}
@@ -151,6 +154,13 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 	if err != nil {
 		return 0, err
 	}
+
+	defer (*repo)(u).TimerStat("create_with_staging_files", stats.Tags{
+		"sourceId":    upload.SourceID,
+		"destId":      upload.DestinationID,
+		"destType":    upload.DestinationType,
+		"workspaceId": upload.WorkspaceID,
+	})()
 
 	tx, err := u.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
@@ -234,6 +244,8 @@ type FilterBy struct {
 }
 
 func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
+	defer (*repo)(u).TimerStat("count", nil)()
+
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
 
 	args := make([]any, 0)
@@ -257,6 +269,8 @@ func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error)
 }
 
 func (u *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
+	defer (*repo)(u).TimerStat("get", nil)()
+
 	row := u.db.QueryRowContext(ctx,
 		`SELECT
 		`+uploadColumns+`
@@ -280,6 +294,8 @@ func (u *Uploads) Get(ctx context.Context, id int64) (model.Upload, error) {
 }
 
 func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, opts ProcessOptions) ([]model.Upload, error) {
+	defer (*repo)(u).TimerStat("get_to_process", nil)()
+
 	var skipIdentifiersSQL string
 	partitionIdentifierSQL := `destination_id, namespace`
 
@@ -374,6 +390,10 @@ func (u *Uploads) GetToProcess(ctx context.Context, destType string, limit int, 
 }
 
 func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts ProcessOptions) (model.UploadJobsStats, error) {
+	defer (*repo)(u).TimerStat("upload_jobs_stats", stats.Tags{
+		"destType": destType,
+	})()
+
 	query := `
 		SELECT
 			COALESCE(COUNT(*), 0) AS pending_jobs,
@@ -435,6 +455,8 @@ func (u *Uploads) UploadJobsStats(ctx context.Context, destType string, opts Pro
 
 // UploadTimings returns the timings for an upload.
 func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
+	defer (*repo)(u).TimerStat("upload_timings", nil)()
+
 	var (
 		rawJSON json.RawMessage
 		timings model.Timings
@@ -464,6 +486,8 @@ func (u *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timi
 }
 
 func (u *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
+	defer (*repo)(u).TimerStat("delete_waiting", nil)()
+
 	_, err := u.db.ExecContext(ctx,
 		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2;`,
 		uploadID, model.Waiting,
@@ -546,6 +570,10 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 // PendingTableUploads returns a list of pending table uploads for a given upload.
 // Filtering conditions neeeds to be in sync with GetToProcess partitioning and pickup condition.
 func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace string, priority int, firstEventAt time.Time, uploadID int64) ([]model.PendingTableUpload, error) {
+	defer (*repo)(u).TimerStat("pending_table_uploads", stats.Tags{
+		"destId": destID,
+	})()
+
 	pendingTableUploads := make([]model.PendingTableUpload, 0)
 
 	rows, err := u.db.QueryContext(ctx, `
@@ -620,6 +648,10 @@ func (u *Uploads) PendingTableUploads(ctx context.Context, destID, namespace str
 }
 
 func (u *Uploads) ResetInProgress(ctx context.Context, destType string) error {
+	defer (*repo)(u).TimerStat("reset_in_progress", stats.Tags{
+		"destType": destType,
+	})()
+
 	_, err := u.db.ExecContext(ctx, `
 		UPDATE
 			`+uploadsTableName+`
@@ -638,6 +670,11 @@ func (u *Uploads) ResetInProgress(ctx context.Context, destType string) error {
 }
 
 func (u *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID string) (time.Time, error) {
+	defer (*repo)(u).TimerStat("last_created_at", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destinationID,
+	})()
+
 	row := u.db.QueryRowContext(ctx, `
 		SELECT
 			created_at
@@ -668,6 +705,12 @@ func (u *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID str
 }
 
 func (u *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+	defer (*repo)(u).TimerStat("syncs_info_for_multi_tenant", stats.Tags{
+		"destId":      opts.DestinationID,
+		"destType":    opts.DestinationType,
+		"workspaceId": opts.WorkspaceID,
+	})()
+
 	syncUploadInfos, totalUploads, err := u.syncsInfo(ctx, limit, offset, opts, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
@@ -686,6 +729,12 @@ func (u *Uploads) SyncsInfoForMultiTenant(ctx context.Context, limit, offset int
 }
 
 func (u *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset int, opts model.SyncUploadOptions) ([]model.UploadInfo, int64, error) {
+	defer (*repo)(u).TimerStat("syncs_info_for_non_multi_tenant", stats.Tags{
+		"destId":      opts.DestinationID,
+		"destType":    opts.DestinationType,
+		"workspaceId": opts.WorkspaceID,
+	})()
+
 	syncUploadInfos, _, err := u.syncsInfo(ctx, limit, offset, opts, false)
 	if err != nil {
 		return nil, 0, fmt.Errorf("syncs upload info for multi tenant: %w", err)
@@ -700,6 +749,12 @@ func (u *Uploads) SyncsInfoForNonMultiTenant(ctx context.Context, limit, offset 
 }
 
 func (u *Uploads) syncsInfo(ctx context.Context, limit, offset int, opts model.SyncUploadOptions, countOver bool) ([]model.UploadInfo, int64, error) {
+	defer (*repo)(u).TimerStat("syncs_info", stats.Tags{
+		"destId":      opts.DestinationID,
+		"destType":    opts.DestinationType,
+		"workspaceId": opts.WorkspaceID,
+	})()
+
 	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
 
 	countOverClause := "0 AS total_uploads"
@@ -871,6 +926,12 @@ func syncUploadQueryArgs(suo *model.SyncUploadOptions) (string, []any) {
 }
 
 func (u *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) (int64, error) {
+	defer (*repo)(u).TimerStat("syncs_count", stats.Tags{
+		"destId":      opts.DestinationID,
+		"destType":    opts.DestinationType,
+		"workspaceId": opts.WorkspaceID,
+	})()
+
 	filterQuery, filterArgs := syncUploadQueryArgs(&opts)
 
 	var totalUploads int64
@@ -893,6 +954,8 @@ func (u *Uploads) syncsCount(ctx context.Context, opts model.SyncUploadOptions) 
 }
 
 func (u *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
+	defer (*repo)(u).TimerStat("trigger_upload", nil)()
+
 	r, err := u.db.ExecContext(ctx, `
 		UPDATE
 			`+uploadsTableName+`
@@ -922,6 +985,13 @@ func (u *Uploads) TriggerUpload(ctx context.Context, uploadID int64) error {
 }
 
 func (u *Uploads) Retry(ctx context.Context, opts model.RetryOptions) (int64, error) {
+	defer (*repo)(u).TimerStat("retry", stats.Tags{
+		"destId":      opts.DestinationID,
+		"destType":    opts.DestinationType,
+		"workspaceId": opts.WorkspaceID,
+		"forceRetry":  strconv.FormatBool(opts.ForceRetry),
+	})()
+
 	filterQuery, filterArgs := retryQueryArgs(&opts)
 
 	stmt := fmt.Sprintf(`
@@ -982,6 +1052,13 @@ func retryQueryArgs(ro *model.RetryOptions) (string, []any) {
 }
 
 func (u *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int64, error) {
+	defer (*repo)(u).TimerStat("retry_count", stats.Tags{
+		"destId":      opts.DestinationID,
+		"destType":    opts.DestinationType,
+		"workspaceId": opts.WorkspaceID,
+		"forceRetry":  strconv.FormatBool(opts.ForceRetry),
+	})()
+
 	filterQuery, filterArgs := retryQueryArgs(&opts)
 
 	stmt := fmt.Sprintf(`
@@ -1002,6 +1079,11 @@ func (u *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int6
 }
 
 func (u *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destinationID string) (*model.LatestUploadInfo, error) {
+	defer (*repo)(u).TimerStat("get_latest_upload_info", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destinationID,
+	})()
+
 	var latestUploadInfo model.LatestUploadInfo
 	err := u.db.QueryRowContext(ctx, `
 		SELECT
@@ -1036,6 +1118,11 @@ func (u *Uploads) RetrieveFailedBatches(
 	ctx context.Context,
 	req model.RetrieveFailedBatchesRequest,
 ) ([]model.RetrieveFailedBatchesResponse, error) {
+	defer (*repo)(u).TimerStat("retrieve_failed_batches", stats.Tags{
+		"destId":      req.DestinationID,
+		"workspaceId": req.WorkspaceID,
+	})()
+
 	stmt := `
 		WITH table_uploads_result AS (
 		  -- Getting entries from table uploads where total_events got populated
@@ -1233,6 +1320,13 @@ func (u *Uploads) RetryFailedBatches(
 	ctx context.Context,
 	req model.RetryFailedBatchesRequest,
 ) (int64, error) {
+	defer (*repo)(u).TimerStat("retry_failed_batches", stats.Tags{
+		"sourceId":    req.SourceID,
+		"destId":      req.DestinationID,
+		"workspaceId": req.WorkspaceID,
+		"status":      req.Status,
+	})()
+
 	stmt := `
 		UPDATE
 			` + uploadsTableName + `
@@ -1299,6 +1393,8 @@ func (u *Uploads) update(
 	id int64,
 	fields []UpdateKeyValue,
 ) error {
+	defer (*repo)(u).TimerStat("update", nil)()
+
 	if len(fields) == 0 {
 		return fmt.Errorf("no fields to update")
 	}
@@ -1321,6 +1417,10 @@ func (u *Uploads) update(
 }
 
 func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx context.Context, workspaceID string, start time.Time) ([]model.FirstAbortedUploadResponse, error) {
+	defer (*repo)(u).TimerStat("get_first_aborted_upload_in_continuous_aborts_by_destination", stats.Tags{
+		"workspaceId": workspaceID,
+	})()
+
 	outputColumns := "id, source_id, destination_id, created_at, first_event_at, last_event_at"
 
 	stmt := fmt.Sprintf(`
@@ -1388,6 +1488,12 @@ func (u *Uploads) GetFirstAbortedUploadInContinuousAbortsByDestination(ctx conte
 }
 
 func (u *Uploads) GetSyncLatencies(ctx context.Context, request model.SyncLatencyRequest) ([]model.LatencyTimeSeriesDataPoint, error) {
+	defer (*repo)(u).TimerStat("get_sync_latencies", stats.Tags{
+		"destId":      request.DestinationID,
+		"workspaceId": request.WorkspaceID,
+		"sourceId":    request.SourceID,
+	})()
+
 	aggregationSQL := getLatencyAggregationSQL(request.AggregationType)
 
 	var filterSQL strings.Builder

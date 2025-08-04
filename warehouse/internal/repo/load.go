@@ -3,7 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
-	jsonstd "encoding/json"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -11,6 +11,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -36,17 +38,17 @@ const (
 
 type LoadFiles struct {
 	*repo
-	queryWithUploadID config.ValueLoader[bool]
 }
 
 func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *LoadFiles {
 	lfRepo := &repo{
-		db:  db,
-		now: timeutil.Now,
+		db:           db,
+		now:          timeutil.Now,
+		statsFactory: stats.NOP,
+		repoType:     loadTableName,
 	}
 	r := &LoadFiles{
-		repo:              lfRepo,
-		queryWithUploadID: conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable"),
+		repo: lfRepo,
 	}
 	for _, opt := range opts {
 		opt(lfRepo)
@@ -54,8 +56,10 @@ func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *LoadF
 	return r
 }
 
-// DeleteByStagingFiles deletes load files associated with stagingFileIDs.
+// Delete deletes load files associated with stagingFileIDs.
 func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error {
+	defer lf.TimerStat("delete", nil)()
+
 	sqlStatement := `
 		DELETE FROM
 		  ` + loadTableName + `
@@ -73,6 +77,12 @@ func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs 
 
 // Insert loadFiles into the database.
 func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
+	defer lf.TimerStat("insert", stats.Tags{
+		"sourceId": loadFiles[0].SourceID,
+		"destId":   loadFiles[0].DestinationID,
+		"destType": loadFiles[0].DestinationType,
+	})()
+
 	return lf.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(
 			ctx,
@@ -110,14 +120,9 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 	})
 }
 
-func (lf *LoadFiles) Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
-	if lf.queryWithUploadID.Load() {
-		return lf.getByUploadId(ctx, uploadID)
-	}
-	return lf.getByStagingFiles(ctx, stagingFileIDs)
-}
+func (lf *LoadFiles) Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error) {
+	defer lf.TimerStat("get", nil)()
 
-func (lf *LoadFiles) getByUploadId(ctx context.Context, uploadID int64) ([]model.LoadFile, error) {
 	sqlStatement := `
 		SELECT
 		` + loadTableColumns + `
@@ -130,49 +135,6 @@ func (lf *LoadFiles) getByUploadId(ctx context.Context, uploadID int64) ([]model
 	`
 
 	rows, err := lf.db.QueryContext(ctx, sqlStatement, uploadID)
-	if err != nil {
-		return nil, fmt.Errorf("query staging ids: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	loadFiles, err := scanLoadFiles(rows)
-	if err != nil {
-		return nil, fmt.Errorf("scanning load files: %w", err)
-	}
-	return loadFiles, nil
-}
-
-// GetByStagingFiles returns all load files matching the staging file ids.
-//
-//	Ordered by id ascending.
-func (lf *LoadFiles) getByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
-	sqlStatement := `
-		WITH row_numbered_load_files AS (
-		SELECT
-			` + loadTableColumns + `,
-			row_number() OVER (
-				PARTITION BY
-					staging_file_id,
-					table_name
-				ORDER BY
-					id DESC
-			) AS row_number
-		FROM
-			` + loadTableName + `
-		WHERE
-			staging_file_id = ANY($1)
-		)
-		SELECT
-		` + loadTableColumns + `
-		FROM
-			row_numbered_load_files
-		WHERE
-			row_number = 1
-		ORDER BY
-			id ASC;
-	`
-
-	rows, err := lf.db.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query staging ids: %w", err)
 	}
@@ -208,7 +170,7 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		UseRudderStorage      bool   `json:"use_rudder_storage"`
 	}
 	var (
-		metadataRaw jsonstd.RawMessage
+		metadataRaw json.RawMessage
 		uploadID    sql.NullInt64
 	)
 	err := scan(
@@ -246,6 +208,8 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 
 // GetByID returns the load file matching the id.
 func (lf *LoadFiles) GetByID(ctx context.Context, id int64) (*model.LoadFile, error) {
+	defer lf.TimerStat("get_by_id", nil)()
+
 	row := lf.db.QueryRowContext(ctx, `
 		SELECT
 		`+loadTableColumns+`
@@ -272,24 +236,14 @@ func (lf *LoadFiles) GetByID(ctx context.Context, id int64) (*model.LoadFile, er
 func (lf *LoadFiles) TotalExportedEvents(
 	ctx context.Context,
 	uploadID int64,
-	stagingFileIDs []int64,
 	skipTables []string,
 ) (int64, error) {
+	defer lf.TimerStat("total_exported_events", nil)()
+
 	if skipTables == nil {
 		skipTables = []string{}
 	}
 
-	if lf.queryWithUploadID.Load() {
-		return lf.totalExportedEventsByUploadID(ctx, uploadID, skipTables)
-	}
-	return lf.totalExportedEventsByStagingFileIDs(ctx, stagingFileIDs, skipTables)
-}
-
-func (lf *LoadFiles) totalExportedEventsByUploadID(
-	ctx context.Context,
-	uploadID int64,
-	skipTables []string,
-) (int64, error) {
 	var count sql.NullInt64
 	sqlStatement := `
 		SELECT
@@ -311,48 +265,6 @@ func (lf *LoadFiles) totalExportedEventsByUploadID(
 	return count.Int64, nil
 }
 
-func (lf *LoadFiles) totalExportedEventsByStagingFileIDs(
-	ctx context.Context,
-	stagingFileIDs []int64,
-	skipTables []string,
-) (int64, error) {
-	var count sql.NullInt64
-	sqlStatement := `
-		WITH row_numbered_load_files AS (
-		SELECT
-			total_events,
-			table_name,
-			row_number() OVER (
-				PARTITION BY
-					staging_file_id,
-					table_name
-				ORDER BY
-					id DESC
-			) AS row_number
-		FROM
-			` + loadTableName + `
-		WHERE
-			staging_file_id = ANY($1)
-		)
-		SELECT
-			COALESCE(sum(total_events), 0) AS total_events
-		FROM
-			row_numbered_load_files
-		WHERE
-			row_number = 1
-		AND
-			table_name != ALL($2);`
-
-	err := lf.db.QueryRowContext(ctx, sqlStatement, pq.Array(stagingFileIDs), pq.Array(skipTables)).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf(`counting total exported events: %w`, err)
-	}
-	if !count.Valid {
-		return 0, errors.New(`count is not valid`)
-	}
-	return count.Int64, nil
-}
-
 // DistinctTableName returns the distinct table names for the given parameters.
 func (lf *LoadFiles) DistinctTableName(
 	ctx context.Context,
@@ -361,6 +273,11 @@ func (lf *LoadFiles) DistinctTableName(
 	startID int64,
 	endID int64,
 ) ([]string, error) {
+	defer lf.TimerStat("distinct_table_name", stats.Tags{
+		"sourceId": sourceID,
+		"destId":   destinationID,
+	})()
+
 	rows, err := lf.db.QueryContext(ctx, `
 		SELECT
 		  distinct table_name

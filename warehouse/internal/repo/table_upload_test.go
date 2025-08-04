@@ -3,11 +3,11 @@ package repo_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 
 	"github.com/samber/lo"
@@ -311,64 +311,10 @@ func TestTableUploadRepo(t *testing.T) {
 	})
 
 	t.Run("TotalEvents", func(t *testing.T) {
-		t.Run("PopulateTotalEvents", func(t *testing.T) {
-			var (
-				loadFiles  []model.LoadFile
-				stagingIDs []int64
-				tableName  = tables[0]
-			)
-
-			t.Log("insert load files")
-			for i, table := range tables {
-				loadFile := model.LoadFile{
-					TableName:     table,
-					TotalRows:     i + 1,
-					StagingFileID: int64(i + 1),
-				}
-
-				stagingIDs = append(stagingIDs, loadFile.StagingFileID)
-				loadFiles = append(loadFiles, loadFile)
-			}
-			err := l.Insert(ctx, loadFiles)
-			require.NoError(t, err)
-
-			t.Log("populate total events")
-			err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
-				for _, table := range tables {
-					require.NoError(t, r.PopulateTotalEventsWithTx(ctx, tx, uploadID, table, stagingIDs))
-				}
-				return nil
-			})
-			require.NoError(t, err)
-
-			for i, table := range tables {
-				tableUpload, err := r.GetByUploadIDAndTableName(ctx, uploadID, table)
-				require.NoError(t, err)
-				require.Equal(t, uploadID, tableUpload.UploadID)
-				require.Equal(t, table, tableUpload.TableName)
-				require.Equal(t, int64(i+1), tableUpload.TotalEvents)
-			}
-
-			t.Run("cancelled context", func(t *testing.T) {
-				err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
-					return r.PopulateTotalEventsWithTx(cancelledCtx, tx, uploadID, tableName, stagingIDs)
-				})
-				require.ErrorIs(t, err, context.Canceled)
-			})
-
-			t.Run("no rows affected", func(t *testing.T) {
-				err = r.WithTx(ctx, func(tx *sqlmw.Tx) error {
-					return r.PopulateTotalEventsWithTx(ctx, tx, int64(-1), tableName, stagingIDs)
-				})
-				require.EqualError(t, err, fmt.Errorf("no rows affected").Error())
-			})
-		})
-
-		t.Run("PopulateTotalEventsWithTx with upload id", func(t *testing.T) {
+		t.Run("PopulateTotalEventsWithTx", func(t *testing.T) {
 			tables2 := []string{"table_name_11", "table_name_12", "table_name_13", "table_name_14", "table_name_15", "table_name_16", "table_name_17", "table_name_18", "table_name_19", "table_name_20"}
 			uploadId := createUpload(t, ctx, db)
 			conf := config.New()
-			conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", true)
 			r := repo.NewTableUploads(db, conf, repo.WithNow(func() time.Time {
 				return now
 			}))
@@ -391,7 +337,7 @@ func TestTableUploadRepo(t *testing.T) {
 
 			txErr := r.WithTx(ctx, func(tx *sqlmw.Tx) error {
 				for _, table := range tables2 {
-					populateErr := r.PopulateTotalEventsWithTx(ctx, tx, uploadId, table, []int64{})
+					populateErr := r.PopulateTotalEventsWithTx(ctx, tx, uploadId, table)
 					require.NoError(t, populateErr)
 				}
 				return nil
@@ -412,9 +358,11 @@ func TestTableUploadRepo(t *testing.T) {
 			t.Run("all exported tables", func(t *testing.T) {
 				status := model.TableUploadExported
 
-				for _, table := range tables {
+				for i, table := range tables {
+					totalEvents := int64(i + 1)
 					err := r.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
-						Status: &status,
+						Status:      &status,
+						TotalEvents: &totalEvents,
 					})
 					require.NoError(t, err)
 				}
