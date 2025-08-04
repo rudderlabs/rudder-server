@@ -602,12 +602,29 @@ type ParameterFilterT struct {
 	Value string
 }
 
+func (p ParameterFilterT) String() string {
+	return "Name=" + p.Name + ",Value=" + p.Value
+}
+
 func (p ParameterFilterT) GetName() string {
 	return p.Name
 }
 
 func (p ParameterFilterT) GetValue() string {
 	return p.Value
+}
+
+type ParameterFilterList []ParameterFilterT
+
+func (l ParameterFilterList) String() string {
+	sb := strings.Builder{}
+	for i, p := range l {
+		if i > 0 {
+			sb.WriteString(";")
+		}
+		sb.WriteString(p.String())
+	}
+	return sb.String()
 }
 
 var dbInvalidJsonErrors = map[string]struct{}{
@@ -1224,7 +1241,8 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 				if err := row.Scan(&minID, &maxID); err != nil {
 					return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
 				}
-				jd.logger.Debug(sqlStatement, minID, maxID)
+				jd.logger.Debugn(sqlStatement,
+					logger.NewIntField("minID", minID.Int64), logger.NewIntField("maxID", maxID.Int64))
 				return minID, maxID, nil
 			}
 			jd.dsRangeFuncMap[ds.Index] = sync.OnceValues(func() (dsRangeMinMax, error) {
@@ -1306,9 +1324,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if tableSize >= jd.conf.maxTableSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full in size",
-			logger.NewField("ds", ds),
-			logger.NewField("rowCount", rowCount),
-			logger.NewField("tableSize", tableSize),
+			logger.NewStringField("ds", ds.String()),
+			logger.NewIntField("rowCount", int64(rowCount)),
+			logger.NewIntField("tableSize", tableSize),
 		)
 		return true, nil
 	}
@@ -1316,9 +1334,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if rowCount >= jd.conf.MaxDSSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full by rows",
-			logger.NewField("ds", ds),
-			logger.NewField("rowCount", rowCount),
-			logger.NewField("tableSize", tableSize),
+			logger.NewStringField("ds", ds.String()),
+			logger.NewIntField("rowCount", int64(rowCount)),
+			logger.NewIntField("tableSize", tableSize),
 		)
 		return true, nil
 	}
@@ -1398,7 +1416,7 @@ func (jd *Handle) addNewDSInTx(ctx context.Context, tx *Tx, l lock.LockToken, ds
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
-	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
+	jd.logger.Infon("Creating new DS", logger.NewStringField("ds", ds.String()))
 	err := jd.createDSInTx(ctx, tx, ds)
 	if err != nil {
 		return err
@@ -1610,7 +1628,10 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 		var pqError *pq.Error
 		ok := errors.As(err, &pqError)
 		if ok && pqError.Code == ("42P01") {
-			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
+			jd.logger.Infon("sql statement exec failed because table doesn't exist",
+				logger.NewStringField("tablePrefix", jd.tablePrefix),
+				logger.NewStringField("sqlStatement", sqlStatement),
+			)
 			_, err = tx.Exec(rollbackSql)
 			jd.assertError(err)
 		} else {
@@ -1737,7 +1758,7 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	for {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
-			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
+			jd.logger.Errorn("[JobsDB] :: Store failed. Retrying after refreshing DS cache", obskit.Error(errStaleDsList))
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				err = jd.doRefreshDSRangeList(l)
 				if err != nil {
@@ -2087,12 +2108,17 @@ A JobsLimit less than or equal to zero indicates no limit.
 func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, params GetQueryParams) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	stateFilters := params.stateFilters
 	customValFilters := params.CustomValFilters
-	parameterFilters := params.ParameterFilters
+	var parameterFilters ParameterFilterList = params.ParameterFilters
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
 	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters) {
-		jd.logger.Debugf("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		jd.logger.Debugn("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v",
+			logger.NewStringField("ds", ds.String()),
+			logger.NewStringField("stateFilters", strings.Join(stateFilters, ",")),
+			logger.NewStringField("customValFilters", strings.Join(customValFilters, ",")),
+			logger.NewStringField("parameterFilters", parameterFilters.String()),
+		)
 		return JobsResult{}, false, nil
 	}
 
@@ -2462,13 +2488,15 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							if err != nil {
 								return fmt.Errorf("acquiring dsListLock: %w", err)
 							}
-							jd.logger.Infon("Acquired lock", logger.NewField("ds", latestDS), logger.NewStringField("jobsdb", jd.tablePrefix))
+							jd.logger.Infon("Acquired lock",
+								logger.NewStringField("ds", latestDS.String()),
+								logger.NewStringField("jobsdb", jd.tablePrefix))
 							if _, err = tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
 
 							nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-							jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+							jd.logger.Infon("[[ addNewDSLoop ]]: NewDS", logger.NewStringField("tablePrefix", jd.tablePrefix))
 							if err = jd.addNewDSInTx(ctx, tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
 								return fmt.Errorf("error adding new DS: %w", err)
 							}
@@ -2502,7 +2530,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
-			jd.logger.Errorw("addNewDSLoop error", "error", err)
+			jd.logger.Errorn("addNewDSLoop error", obskit.Error(err))
 		}
 	}
 }
@@ -2538,7 +2566,7 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
-			jd.logger.Errorw("refreshDSListLoop error", "error", err)
+			jd.logger.Errorn("refreshDSListLoop error", obskit.Error(err))
 		}
 		cancel()
 	}
@@ -2546,7 +2574,7 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 
 // refreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
 func (jd *Handle) refreshDSList(ctx context.Context) error {
-	jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
+	jd.logger.Debugn("Start", logger.NewStringField("operation", "refreshDSListLoop"))
 
 	start := time.Now()
 	var err error
@@ -2736,23 +2764,23 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case addDSOperation:
 		newDS := opPayloadJSON.To
 		undoOp = true
-		// Drop the table we were tring to create
-		jd.logger.Info("Recovering new DS operation", newDS)
+		// Drop the table we were trying to create
+		jd.logger.Infon("Recovering new DS operation", logger.NewStringField("newDS", newDS.String()))
 		jd.dropDSForRecovery(newDS)
 	case migrateCopyOperation:
 		migrateDest := opPayloadJSON.To
 		// Delete the destination of the interrupted
 		// migration. After we start, code should
 		// redo the migration
-		jd.logger.Info("Recovering migrateCopy operation", migrateDest)
+		jd.logger.Infon("Recovering migrateCopy operation", logger.NewStringField("migrateDest", migrateDest.String()))
 		jd.dropDSForRecovery(migrateDest)
 		undoOp = true
 	case postMigrateDSOperation:
-		migrateSrc := opPayloadJSON.From
+		var migrateSrc dataSetTList = opPayloadJSON.From
 		for _, ds := range migrateSrc {
 			jd.dropDSForRecovery(ds)
 		}
-		jd.logger.Info("Recovering migrateDel operation", migrateSrc)
+		jd.logger.Infon("Recovering migrateDel operation", logger.NewStringField("migrateSrc", migrateSrc.String()))
 		undoOp = false
 	}
 
