@@ -20,6 +20,9 @@ type JobStatus struct {
 }
 
 func (js JobStatus) String() string {
+	if js.Error == nil {
+		return string(js.Status)
+	}
 	return string(js.Status) + ":" + js.Error.Error()
 }
 
