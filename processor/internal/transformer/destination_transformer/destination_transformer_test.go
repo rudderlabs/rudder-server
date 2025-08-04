@@ -750,16 +750,18 @@ func TestLongRunningTransformation(t *testing.T) {
 	t.Run("log stmt", func(t *testing.T) {
 		mockLogger := mock_logger.NewMockLogger(ctrl)
 		var fired atomic.Bool
-		mockLogger.EXPECT().Errorw(gomock.Any(), gomock.Any()).Do(func(msg string, keysAndValues ...interface{}) {
-			require.Equal(t, "Long running transformation detected", msg)
-			require.Len(t, keysAndValues, 4)
-			require.Equal(t, "stage", keysAndValues[0])
-			require.Equal(t, "stage", keysAndValues[1])
-			require.Equal(t, "duration", keysAndValues[2])
-			_, err := time.ParseDuration(keysAndValues[3].(string))
-			require.NoError(t, err)
-			fired.Store(true)
-		}).MinTimes(1)
+		mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any()).Do(
+			func(msg string, fields ...logger.Field) {
+				require.Equal(t, "Long running transformation detected", msg)
+				require.Len(t, fields, 2)
+				require.Equal(t, "stage", fields[0].Name())
+				require.Equal(t, "stage", fields[0].Value())
+				require.Equal(t, "duration", fields[1].Name())
+				_, ok := fields[1].Value().(time.Duration)
+				require.True(t, ok)
+				fired.Store(true)
+			},
+		).MinTimes(1)
 		ctx, cancel := context.WithCancel(context.Background())
 		go transformerutils.TrackLongRunningTransformation(ctx, "stage", time.Millisecond, mockLogger)
 		for !fired.Load() {
