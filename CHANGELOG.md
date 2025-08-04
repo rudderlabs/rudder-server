@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.56.2](https://github.com/rudderlabs/rudder-server/compare/v1.56.1...v1.56.2) (2025-08-04)
+
+
+### Miscellaneous
+
+* revert "fix: snowpipe events getting duplicated if status API fails" ([#6211](https://github.com/rudderlabs/rudder-server/issues/6211)) ([6005630](https://github.com/rudderlabs/rudder-server/commit/6005630e666a36f15152b88379db43f394b43c4f))
+
 ## [1.56.1](https://github.com/rudderlabs/rudder-server/compare/v1.56.0...v1.56.1) (2025-08-01)
 
 
