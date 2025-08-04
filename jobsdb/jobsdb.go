@@ -452,13 +452,43 @@ type dataSetT struct {
 }
 
 func (ds dataSetT) String() string {
-	return "JobTable=" + ds.JobTable + ", JobStatusTable=" + ds.JobStatusTable + ", Index=" + ds.Index
+	return "JobTable=" + ds.JobTable + ",JobStatusTable=" + ds.JobStatusTable + ",Index=" + ds.Index
+}
+
+type dataSetTList []dataSetT
+
+func (l dataSetTList) String() string {
+	sb := strings.Builder{}
+	for i, ds := range l {
+		if i > 0 {
+			sb.WriteString(";")
+		}
+		sb.WriteString(ds.String())
+	}
+	return sb.String()
 }
 
 type dataSetRangeT struct {
 	minJobID int64
 	maxJobID int64
 	ds       dataSetT
+}
+
+func (ds dataSetRangeT) String() string {
+	return "minJobID=" + strconv.FormatInt(ds.minJobID, 10) + ",maxJobID=" + strconv.FormatInt(ds.maxJobID, 10) + ",ds=" + ds.ds.String()
+}
+
+type dataSetRangeTList []dataSetRangeT
+
+func (l dataSetRangeTList) String() string {
+	sb := strings.Builder{}
+	for i, ds := range l {
+		if i > 0 {
+			sb.WriteString(";")
+		}
+		sb.WriteString(ds.String())
+	}
+	return sb.String()
 }
 
 type dsRangeMinMax struct {
@@ -1138,12 +1168,12 @@ Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 Caller must have the dsListLock readlocked
 */
-func (jd *Handle) getDSList() []dataSetT {
+func (jd *Handle) getDSList() dataSetTList {
 	return jd.datasetList
 }
 
 // doRefreshDSList refreshes the ds list from the database
-func (jd *Handle) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
+func (jd *Handle) doRefreshDSList(l lock.LockToken) (dataSetTList, error) {
 	if l == nil {
 		return nil, fmt.Errorf("cannot refresh DS list without a valid lock token")
 	}
@@ -1167,7 +1197,7 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
 	return jd.datasetList, nil
 }
 
-func (jd *Handle) getDSRangeList() []dataSetRangeT {
+func (jd *Handle) getDSRangeList() dataSetRangeTList {
 	return jd.datasetRangeList
 }
 
@@ -1180,7 +1210,7 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 	if err != nil {
 		return fmt.Errorf("refreshDSList %w", err)
 	}
-	var datasetRangeList []dataSetRangeT
+	var datasetRangeList dataSetRangeTList
 
 	for idx := 0; idx < len(dsList)-1; idx++ {
 		ds := dsList[idx]
@@ -2771,7 +2801,10 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 	// do update
 	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, dsList, dsRangeList, statusList, tags)
 	if err != nil {
-		jd.logger.Infof("[[ %s ]]: Error occurred while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		jd.logger.Infon("Error occurred while updating job statuses",
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			obskit.Error(err),
+		)
 		return err
 	}
 
@@ -2844,9 +2877,14 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		for i = lastPos; i < len(statusList); i++ {
 			// The JobID is outside this DS's range
 			if statusList[i].JobID > maxID {
-				if i > lastPos {
-					jd.logger.Debug("Range:", ds, statusList[lastPos].JobID,
-						statusList[i-1].JobID, lastPos, i-1)
+				if i > lastPos && jd.logger.IsDebugLevel() {
+					jd.logger.Debugn("Range",
+						logger.NewStringField("ds", ds.String()),
+						logger.NewIntField("lastPosJobID", statusList[lastPos].JobID),
+						logger.NewIntField("prevJobID", statusList[i-1].JobID),
+						logger.NewIntField("lastPos", int64(lastPos)),
+						logger.NewIntField("prevPos", int64(i-1)),
+					)
 				}
 				var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
@@ -2863,7 +2901,12 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		}
 		// Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
-			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
+			jd.logger.Debugn("Range",
+				logger.NewStringField("ds", ds.String()),
+				logger.NewIntField("lastPosJobID", statusList[lastPos].JobID),
+				logger.NewIntField("prevJobID", statusList[i-1].JobID),
+				logger.NewIntField("index", int64(i)),
+			)
 			var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
@@ -2883,7 +2926,9 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		// Make sure range is missing for the last ds and migration ds (if at all present)
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
-		jd.logger.Debug("RangeEnd ", statusList[lastPos].JobID, lastPos, len(statusList))
+		jd.logger.Debugn("RangeEnd",
+			logger.NewIntField("jobID", statusList[lastPos].JobID),
+			logger.NewIntField("lenStatusList", int64(len(statusList))))
 		var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
@@ -3045,8 +3090,12 @@ the current in-memory copy of jobs and job ranges
 */
 func (jd *Handle) printLists(console bool) {
 	// This being an internal function, we don't lock
-	jd.logger.Debug("List:", jd.getDSList())
-	jd.logger.Debug("Ranges:", jd.getDSRangeList())
+	if jd.logger.IsDebugLevel() {
+		jd.logger.Debugn("printLists",
+			logger.NewStringField("list", jd.getDSList().String()),
+			logger.NewStringField("ranges", jd.getDSRangeList().String()),
+		)
+	}
 	if console {
 		fmt.Println("List:", jd.getDSList())
 		fmt.Println("Ranges:", jd.getDSRangeList())
