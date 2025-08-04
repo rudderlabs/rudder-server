@@ -1,1 +1,1 @@
-../.junie/guidelines.md
+../.ai-agent/guidelines.md
