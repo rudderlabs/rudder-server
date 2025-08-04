@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,7 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/notifier"
@@ -121,7 +122,7 @@ func New(
 	reporting types.Reporting,
 	destType string,
 	conf *config.Config,
-	logger logger.Logger,
+	log logger.Logger,
 	statsFactory stats.Stats,
 	db *sqlquerywrapper.DB,
 	notifier *notifier.Notifier,
@@ -137,8 +138,8 @@ func New(
 	r.conf = conf
 	r.statsFactory = statsFactory
 
-	r.logger = logger.Child(destType)
-	r.logger.Infof("WH: Warehouse Router started: %s", destType)
+	r.logger = log.Child(destType)
+	r.logger.Infon("WH: Warehouse Router started", logger.NewStringField(logfield.DestinationType, destType))
 
 	r.db = db
 	r.stagingRepo = repo.NewStagingFiles(db, conf, repo.WithStats(r.statsFactory))
@@ -206,7 +207,7 @@ func (r *Router) Start(ctx context.Context) error {
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (r *Router) backendConfigSubscriber(ctx context.Context) {
 	for warehouses := range r.bcManager.Subscribe(ctx) {
-		r.logger.Info(`Received updated workspace config`)
+		r.logger.Infon(`Received updated workspace config`)
 
 		warehouses = lo.Filter(warehouses, func(warehouse model.Warehouse, _ int) bool {
 			return warehouse.Destination.DestinationDefinition.Name == r.destType
@@ -270,7 +271,7 @@ func (r *Router) initWorker() chan *UploadJob {
 
 				err := uploadJob.run()
 				if err != nil {
-					r.logger.Errorf("[WH] Failed in handle Upload jobs for worker: %+v", err)
+					r.logger.Errorn("[WH] Failed in handle Upload jobs for worker: %+v", obskit.Error(err))
 				}
 
 				r.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
@@ -358,7 +359,8 @@ loop:
 		case <-ctx.Done():
 			break loop
 		case <-r.bcManager.InitialConfigFetched:
-			r.logger.Debugf("Initial config fetched in runUploadJobAllocator for %s", r.destType)
+			r.logger.Debugn("Initial config fetched in runUploadJobAllocator",
+				logger.NewStringField(logfield.DestinationType, r.destType))
 		}
 
 		availableWorkers := r.config.noOfWorkers.Load() - r.getActiveWorkerCount()
@@ -373,7 +375,9 @@ loop:
 
 		r.processingMu.Lock()
 		inProgressNamespaces := r.getInProgressNamespaces()
-		r.logger.Debugf(`Current inProgress namespace identifiers for %s: %v`, r.destType, inProgressNamespaces)
+		r.logger.Debugn("Current inProgress namespace identifiers",
+			logger.NewStringField(logfield.DestinationType, r.destType),
+			logger.NewStringField("inProgressNamespaces", strings.Join(inProgressNamespaces, ",")))
 
 		uploadJobsToProcess, err := r.uploadsToProcess(ctx, availableWorkers, inProgressNamespaces)
 		if err != nil && ctx.Err() == nil {
@@ -421,7 +425,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 			var ok bool
 			upload.WorkspaceID, ok = r.workspaceBySourceIDs[upload.SourceID]
 			if !ok {
-				r.logger.Warnf("could not find workspace id for source id: %s", upload.SourceID)
+				r.logger.Warnn("could not find workspace id", logger.NewStringField(logfield.SourceID, upload.SourceID))
 			}
 		}
 
@@ -441,7 +445,7 @@ func (r *Router) uploadsToProcess(ctx context.Context, availableWorkers int, ski
 
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
 
-			r.logger.Errorf("%v", err)
+			r.logger.Errorn("uploadsToProcess", obskit.Error(err))
 			continue
 		}
 
@@ -507,10 +511,10 @@ func (r *Router) mainLoop(ctx context.Context) {
 					<-jobCreationChan
 				}()
 
-				r.logger.Debugf("[WH] Processing Jobs for warehouse: %s", w.Identifier)
+				r.logger.Debugn("[WH] Processing Jobs for warehouse", logger.NewStringField("id", w.Identifier))
 				err := r.createJobs(ctx, w)
 				if err != nil {
-					r.logger.Errorf("[WH] Failed to process warehouse Jobs: %v", err)
+					r.logger.Errorn("[WH] Failed to process warehouse Jobs", obskit.Error(err))
 				}
 			})
 		}
@@ -537,7 +541,7 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 			"destType":      warehouse.Destination.DestinationDefinition.Name,
 		}).Count(1)
 
-		r.logger.Debugw("Skipping upload loop since upload freq not exceeded", logfield.Error, err.Error())
+		r.logger.Debugn("Skipping upload loop since upload freq not exceeded", obskit.Error(err))
 
 		return nil
 	}
@@ -561,7 +565,7 @@ func (r *Router) createJobs(ctx context.Context, warehouse model.Warehouse) (err
 	stagingFilesFetchStat.Since(stagingFilesFetchStart)
 
 	if len(stagingFilesList) == 0 {
-		r.logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
+		r.logger.Debugn("[WH]: Found no pending staging files", logger.NewStringField("id", warehouse.Identifier))
 		return nil
 	}
 

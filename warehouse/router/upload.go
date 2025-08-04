@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -527,7 +528,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	})
 	log.Infon("Found staging files to delete",
 		logger.NewIntField("stagingFileCount", int64(len(filesToDel))),
-		logger.NewField("stagingFiles", filesToDel),
+		logger.NewStringField("stagingFiles", strings.Join(filesToDel, ",")),
 	)
 
 	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
@@ -540,7 +541,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		})
 		log.Infon("Found loading files to delete",
 			logger.NewIntField("loadingFileCount", int64(len(loadingKeysToDel))),
-			logger.NewField("loadingFiles", loadingKeysToDel),
+			logger.NewStringField("loadingFiles", strings.Join(loadingKeysToDel, ",")),
 		)
 
 		filesToDel = append(filesToDel, loadingKeysToDel...)
@@ -582,7 +583,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	deletionTime := job.now().Sub(startTime)
 	log.Infon("Successfully completed file deletion",
 		logger.NewIntField("totalRows", int64(len(filesToDel))),
-		logger.NewField("deletionDuration", deletionTime),
+		logger.NewDurationField("deletionDuration", deletionTime),
 	)
 	job.stats.objectsDeletionTime.SendTiming(deletionTime)
 	return nil

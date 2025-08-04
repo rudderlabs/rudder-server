@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
@@ -809,7 +811,7 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	var err error
 	var directoryName string
 	if directoryName, err = misc.CreateTMPDIR(); err != nil {
-		pkgLogger.Errorf("Error creating SSL root TMP directory for destination %v", err)
+		pkgLogger.Errorn("Error creating SSL root TMP directory for destination", obskit.Error(err))
 		return
 	}
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)

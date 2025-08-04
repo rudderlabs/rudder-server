@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/snapshots"
 	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
