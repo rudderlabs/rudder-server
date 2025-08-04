@@ -576,12 +576,20 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 }
 
 func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
-	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
+	jd.logger.Debugn("computeNewIdxForIntraNodeMigration", logger.NewStringField("insertBeforeDS", insertBeforeDS.String()))
 	dList, err := jd.doRefreshDSList(l)
 	if err != nil {
 		return "", fmt.Errorf("refreshDSList: %w", err)
 	}
-	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	if jd.logger.IsDebugLevel() {
+		list := make([]string, len(dList))
+		for i, ds := range dList {
+			list[i] = ds.String()
+		}
+		jd.logger.Debugn("dlist in which we are trying to find dataset in list",
+			logger.NewStringField("dataset", insertBeforeDS.String()),
+			logger.NewStringField("list", strings.Join(list, ",")))
+	}
 	newDSIdx := ""
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 	for idx, ds := range dList {

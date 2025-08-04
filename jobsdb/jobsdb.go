@@ -451,6 +451,10 @@ type dataSetT struct {
 	Index          string `json:"index"`
 }
 
+func (ds dataSetT) String() string {
+	return "JobTable=" + ds.JobTable + ", JobStatusTable=" + ds.JobStatusTable + ", Index=" + ds.Index
+}
+
 type dataSetRangeT struct {
 	minJobID int64
 	maxJobID int64
