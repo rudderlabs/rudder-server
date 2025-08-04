@@ -411,7 +411,13 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 		waiting   *dsWithPendingJobCount
 	)
 
-	jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewField("dsList", dsList))
+	if jd.logger.IsDebugLevel() {
+		list := make([]string, len(dsList))
+		for i, ds := range dsList {
+			list[i] = ds.String()
+		}
+		jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewField("dsList", strings.Join(list, ",")))
+	}
 
 	for idx, ds := range dsList {
 		var idxCheck bool
