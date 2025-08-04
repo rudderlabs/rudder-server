@@ -37,6 +37,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
@@ -586,11 +588,11 @@ var dbInvalidJsonErrors = map[string]struct{}{
 func (jd *Handle) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatalw("assertError failure",
-			"error", err,
-			"tablePrefix", jd.tablePrefix,
-			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+		jd.logger.Fataln("assertError failure",
+			obskit.Error(err),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("ownerType", jd.ownerType.Identifier()),
+			logger.NewStringField("noResultsCache", jd.noResultsCache.String()))
 		panic(err)
 	}
 }
@@ -598,11 +600,11 @@ func (jd *Handle) assertError(err error) {
 func (jd *Handle) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
-		jd.logger.Fatalw("assert condition failed",
-			"errorString", errorString,
-			"tablePrefix", jd.tablePrefix,
-			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+		jd.logger.Fataln("assert condition failed",
+			obskit.Error(errors.New(errorString)),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("ownerType", jd.ownerType.Identifier()),
+			logger.NewStringField("noResultsCache", jd.noResultsCache.String()))
 		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
 	}
 }
@@ -1122,7 +1124,7 @@ func (jd *Handle) TearDown() {
 func (jd *Handle) Close() {
 	if !jd.sharedConnectionPool {
 		if err := jd.dbHandle.Close(); err != nil {
-			jd.logger.Errorw("error closing db connection", "error", err)
+			jd.logger.Errorn("error closing db connection", obskit.Error(err))
 		}
 	}
 }

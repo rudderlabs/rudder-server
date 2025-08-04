@@ -19,6 +19,10 @@ type JobStatus struct {
 	Error  error
 }
 
+func (js JobStatus) String() string {
+	return string(js.Status) + ":" + js.Error.Error()
+}
+
 const (
 	JobStatusPending  Status = "pending"
 	JobStatusRunning  Status = "running"
