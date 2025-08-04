@@ -94,8 +94,8 @@ linters:
       - builtin$
       - examples$
 issues:
-  max-issues-per-linter: 5000
-  max-same-issues: 5000
+  max-issues-per-linter: 50
+  max-same-issues: 10
   new: false
 formatters:
   exclusions:
