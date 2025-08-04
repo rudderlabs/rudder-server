@@ -78,7 +78,7 @@ func (g *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
 	})
 	var alreadyExistsException *types.AlreadyExistsException
 	if errors.As(err, &alreadyExistsException) {
-		g.logger.Infof("Skipping database creation : database %s already exists", g.Namespace)
+		g.logger.Infon("Skipping database creation: database already exists", logger.NewStringField("database", g.Namespace))
 		err = nil
 	}
 	return

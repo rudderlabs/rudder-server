@@ -325,7 +325,9 @@ func (a *App) migrateAlways() error {
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		a.logger.Warnf("retrying warehouse database run always migration in %s: %v", t, err)
+		a.logger.Warnn("retrying warehouse database run always migration",
+			logger.NewDurationField("backoffDelay", t),
+			obskit.Error(err))
 	})
 	if err != nil {
 		return fmt.Errorf("could not migrate always: %w", err)

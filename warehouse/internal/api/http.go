@@ -171,7 +171,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if api.Multitenant.DegradedWorkspace(stagingFile.WorkspaceID) {
-		api.Logger.Infow("workspace is degraded for processing staging file", lf.WorkspaceID, stagingFile.WorkspaceID)
+		api.Logger.Infon("workspace is degraded for processing staging file", logger.NewStringField(lf.WorkspaceID, stagingFile.WorkspaceID))
 		http.Error(w, ierrors.ErrWorkspaceDegraded.Error(), http.StatusServiceUnavailable)
 		return
 	}
