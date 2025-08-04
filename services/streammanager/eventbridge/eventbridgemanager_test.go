@@ -130,7 +130,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 			Message: errorCode,
 			Fault:   smithy.FaultClient,
 		})
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 

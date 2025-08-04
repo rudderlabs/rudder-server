@@ -273,7 +273,7 @@ func TestV1Adapter(t *testing.T) {
 		r, err := jsonrs.Marshal(resp)
 		require.Nil(t, err)
 
-		mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any()).Times(1)
+		mockLogger.EXPECT().Warnn(gomock.Any(), gomock.Any()).Times(1)
 
 		response, err := v1Adapter.getResponse(r, 200, metadata)
 		require.Nil(t, err)
