@@ -508,8 +508,8 @@ type Handle struct {
 	logger               logger.Logger
 	stats                stats.Stats
 
-	datasetList         []dataSetT
-	datasetRangeList    []dataSetRangeT
+	datasetList         dataSetTList
+	datasetRangeList    dataSetRangeTList
 	dsRangeFuncMap      map[string]func() (dsRangeMinMax, error)
 	distinctValuesCache *distinctValuesCache
 	dsListLock          *lock.Locker
