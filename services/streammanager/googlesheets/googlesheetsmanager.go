@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -86,7 +87,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	service, err := generateService(opts...)
 	// If err is not nil then retrun
 	if err != nil {
-		pkgLogger.Errorf("[Googlesheets] error  :: %w", err)
+		pkgLogger.Errorn("[Googlesheets] error", obskit.Error(err))
 		return nil, err
 	}
 
@@ -124,7 +125,7 @@ func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interf
 	if parseErr != nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error :: Failed to parse transformed data ::" + parseErr.Error()
-		pkgLogger.Errorf("[Googlesheets] error while parsing transformed data :: %v", parseErr)
+		pkgLogger.Errorn("[Googlesheets] error while parsing transformed data", obskit.Error(parseErr))
 		return 400, respStatus, responseMessage
 
 	}
@@ -134,7 +135,7 @@ func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interf
 		statCode, serviceMessage := handleServiceError(err)
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error :: Failed to insert Payload :: " + serviceMessage
-		pkgLogger.Errorf("[Googlesheets] error while inserting data to sheet :: %v", err)
+		pkgLogger.Errorn("[Googlesheets] error while inserting data to sheet", obskit.Error(err))
 		return statCode, respStatus, responseMessage
 	}
 
@@ -314,7 +315,7 @@ func clientOptions(config *Config) ([]option.ClientOption, error) {
 	}
 	client, err := generateOAuthClient(jwtconfig)
 	if err != nil {
-		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
+		pkgLogger.Errorn("[Googlesheets] error", obskit.Error(err))
 		return nil, err
 	}
 	return []option.ClientOption{option.WithHTTPClient(client)}, nil

@@ -4,11 +4,14 @@ import (
 	"context"
 	"net/http"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -29,7 +32,7 @@ func (gw *Handle) ProcessTransformedWebhookRequest(w *http.ResponseWriter, r *ht
 func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error {
 	jobs := make([]*jobsdb.JobT, 0, len(reqs))
 	for _, req := range reqs {
-		params := map[string]interface{}{
+		params := map[string]any{
 			"source_id":   req.RequestContext.SourceID,
 			"stage":       "webhook",
 			"source_type": req.SourceType,
@@ -37,7 +40,13 @@ func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error 
 		}
 		marshalledParams, err := jsonrs.Marshal(params)
 		if err != nil {
-			gw.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
+			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
+				obskit.SourceID(req.RequestContext.SourceID),
+				obskit.SourceType(req.SourceType),
+				logger.NewStringField("stage", "webhook"),
+				logger.NewStringField("reason", req.Reason),
+				obskit.Error(err),
+			)
 			marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
 		}
 

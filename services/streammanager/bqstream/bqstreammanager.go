@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -156,6 +157,6 @@ func (producer *BQStreamProducer) Close() error {
 
 func createErr(err error, msg string) error {
 	fmtMsg := fmt.Errorf("[BQStream] error :: %v:: %w", msg, err).Error()
-	pkgLogger.Errorf(fmtMsg)
+	pkgLogger.Errorn("[BQStream] error", logger.NewStringField("message", msg), obskit.Error(err))
 	return errors.New(fmtMsg)
 }

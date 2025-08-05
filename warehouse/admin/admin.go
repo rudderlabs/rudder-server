@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -107,7 +108,7 @@ func (a *Admin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 	}
 	defer client.Close()
 
-	a.logger.Infof(`[WH Admin]: Querying warehouse: %s:%s`, warehouse.Type, warehouse.Destination.ID)
+	a.logger.Infon("[WH Admin]: Querying warehouse", logger.NewStringField("warehouseType", warehouse.Type), logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID))
 	*reply, err = client.Query(s.SQLStatement)
 	return err
 }
@@ -129,7 +130,9 @@ func (a *Admin) ConfigurationTest(s ConfigurationTestInput, reply *Configuration
 		break
 	}
 
-	a.logger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
+	a.logger.Infon("[WH Admin]: Validating warehouse destination",
+		logger.NewStringField("warehouseType", warehouse.Type),
+		logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID))
 
 	destinationValidator := validations.NewDestinationValidator()
 	res := destinationValidator.Validate(context.TODO(), &warehouse.Destination)

@@ -84,7 +84,8 @@ func (k *KlaviyoAPIServiceImpl) UploadProfiles(profiles Payload) (*UploadResp, e
 		return &uploadResp, fmt.Errorf("upload failed with errors: %+v", uploadResp.Errors)
 	}
 	if uploadResp.Data.Id == "" {
-		k.logger.Error("[klaviyo bulk upload] upload failed with empty importId", string(uploadBodyBytes))
+		k.logger.Errorn("[klaviyo bulk upload] upload failed with empty importId",
+			logger.NewStringField("uploadBodyBytes", string(uploadBodyBytes)))
 		return &uploadResp, fmt.Errorf("upload failed with empty importId")
 	}
 	uploadTimeStat := k.statsFactory.NewTaggedStat("async_upload_time", stats.TimerType, k.statLabels)

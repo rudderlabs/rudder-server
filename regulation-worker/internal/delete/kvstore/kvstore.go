@@ -6,6 +6,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 )
@@ -25,7 +26,10 @@ func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail mode
 	destConfig := destDetail.Config
 	destName := destDetail.Name
 
-	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
+	pkgLogger.Debugn("deleting from kvstore",
+		logger.NewIntField("jobID", int64(job.ID)),
+		obskit.WorkspaceID(job.WorkspaceID),
+		obskit.DestinationID(job.DestinationID))
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
 	fileCleaningTime := stats.Default.NewTaggedStat(
@@ -41,11 +45,13 @@ func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail mode
 		key := fmt.Sprintf("user:%s", user.ID)
 		err = kvm.DeleteKey(key)
 		if err != nil {
-			pkgLogger.Errorf("failed to delete user: %s with error: %v", user.ID, err)
+			pkgLogger.Errorn("failed to delete user",
+				logger.NewStringField("userID", user.ID),
+				obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 	}
 
-	pkgLogger.Debugf("deletion successful")
+	pkgLogger.Debugn("deletion successful")
 	return model.JobStatus{Status: model.JobStatusComplete}
 }

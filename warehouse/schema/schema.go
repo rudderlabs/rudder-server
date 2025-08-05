@@ -422,14 +422,14 @@ func removeDeprecatedColumns(schema model.Schema, warehouse model.Warehouse, log
 	for tableName, columnMap := range schema {
 		for columnName := range columnMap {
 			if deprecatedColumnsRegex.MatchString(columnName) {
-				log.Debugw("skipping deprecated column",
-					logfield.SourceID, warehouse.Source.ID,
-					logfield.DestinationID, warehouse.Destination.ID,
-					logfield.DestinationType, warehouse.Destination.DestinationDefinition.Name,
-					logfield.WorkspaceID, warehouse.WorkspaceID,
-					logfield.Namespace, warehouse.Namespace,
-					logfield.TableName, tableName,
-					logfield.ColumnName, columnName,
+				log.Debugn("skipping deprecated column",
+					logger.NewStringField(logfield.SourceID, warehouse.Source.ID),
+					logger.NewStringField(logfield.DestinationID, warehouse.Destination.ID),
+					logger.NewStringField(logfield.DestinationType, warehouse.Destination.DestinationDefinition.Name),
+					logger.NewStringField(logfield.WorkspaceID, warehouse.WorkspaceID),
+					logger.NewStringField(logfield.Namespace, warehouse.Namespace),
+					logger.NewStringField(logfield.TableName, tableName),
+					logger.NewStringField(logfield.ColumnName, columnName),
 				)
 				delete(schema[tableName], columnName)
 			}

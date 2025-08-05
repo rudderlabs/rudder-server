@@ -77,13 +77,13 @@ func run(ctx context.Context) error {
 	startTime := timeutil.Now()
 
 	l.Infon("Starting transformer")
-	l.Infof("Started At: %s", startTime.Format(time.RFC3339))
-	l.Infof("Sample Event: %s", sampleEvent)
-	l.Infof("Events in Batch: %d", eventsInBatch)
-	l.Infof("Batch size: %d", batchSize)
-	l.Infof("Iterations: %d", iterations)
-	l.Infof("Mode: %s", mode)
-	l.Infof("RunID: %s", runID)
+	l.Infon("Started At", logger.NewStringField("startTime", startTime.Format(time.RFC3339)))
+	l.Infon("Sample Event", logger.NewStringField("sampleEvent", sampleEvent))
+	l.Infon("Events in Batch", logger.NewIntField("eventsInBatch", int64(eventsInBatch)))
+	l.Infon("Batch size", logger.NewIntField("batchSize", int64(batchSize)))
+	l.Infon("Iterations", logger.NewIntField("iterations", int64(iterations)))
+	l.Infon("Mode", logger.NewStringField("mode", mode))
+	l.Infon("RunID", logger.NewStringField("runID", runID))
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -94,18 +94,16 @@ func run(ctx context.Context) error {
 	})
 	g.Go(func() error {
 		for i := 0; i < iterations; i++ {
-			l.Infof("Running iteration: %d", i+1)
+			l.Infon("Running iteration", logger.NewIntField("iteration", int64(i+1)))
 			t.Transform(gCtx, clientEvents)
 		}
 
 		endTime := timeutil.Now().Sub(startTime).Seconds()
 
-		l.Infof("Total events transformer: %d", len(clientEvents)*iterations)
-		l.Infof("Total time for transformations: %v", endTime)
-		l.Infof("Transformation rate (msg/s): %v",
-			float64(len(clientEvents)*iterations)/endTime,
-		)
-		l.Infof("Finished transformer: %v", endTime)
+		l.Infon("Total events transformer", logger.NewIntField("totalEvents", int64(len(clientEvents)*iterations)))
+		l.Infon("Total time for transformations", logger.NewFloatField("totalTime", endTime))
+		l.Infon("Transformation rate (msg/s)", logger.NewFloatField("transformationRate", float64(len(clientEvents)*iterations)/endTime))
+		l.Infon("Finished transformer", logger.NewFloatField("duration", endTime))
 
 		cancel()
 		return nil

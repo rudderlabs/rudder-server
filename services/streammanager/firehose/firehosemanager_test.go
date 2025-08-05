@@ -133,7 +133,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 		EXPECT().
 		PutRecord(gomock.Any(), &sampleRecord, gomock.Any()).
 		Return(nil, errors.New(errorCode))
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 500, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
@@ -148,7 +148,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 			Message: errorCode,
 			Fault:   smithy.FaultClient,
 		})
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
@@ -222,17 +223,18 @@ func (customManager *CustomManagerT) close(destID string) {
 
 func (customManager *CustomManagerT) refreshClient(destID string) error {
 	startTime := time.Now()
+	log := pkgLogger.Withn(
+		obskit.DestinationType(customManager.destType),
+		obskit.DestinationID(destID),
+	)
 	defer func() {
-		pkgLogger.Infon("[CDM]", logger.NewStringField("destType", customManager.destType),
-			logger.NewStringField("destID", destID),
-			logger.NewDurationField("refreshTime", time.Since(startTime)),
-		)
+		log.Infon("[CDM]", logger.NewDurationField("refreshTime", time.Since(startTime)))
 	}()
 
 	customDestination, ok := customManager.client[destID]
 
 	if ok {
-		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
+		log.Infon("[CDM] [Token Expired] Closing Existing client")
 		switch customManager.managerType {
 		case STREAM:
 			streamProducer, _ := customDestination.client.(common.StreamProducer)
@@ -244,10 +246,10 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 	}
 	err := customManager.newClient(destID)
 	if err != nil {
-		pkgLogger.Errorf("[CDM %s] [Token Expired] Error while creating new client for destination id: %s", customManager.destType, destID)
+		log.Errorn("[CDM] [Token Expired] Error while creating new client", obskit.Error(err))
 		return err
 	}
-	pkgLogger.Infof("[CDM %s] [Token Expired] Created new client for destination id: %s", customManager.destType, destID)
+	log.Infon("[CDM] [Token Expired] Created new client")
 	return nil
 }
 
@@ -268,6 +270,11 @@ func (customManager *CustomManagerT) onNewDestination(destination backendconfig.
 }
 
 func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig map[string]interface{}) error {
+	log := pkgLogger.Withn(
+		obskit.DestinationType(customManager.destType),
+		obskit.DestinationID(destID),
+	)
+
 	_, hasOpenClient := customManager.client[destID]
 	breaker, hasCircuitBreaker := customManager.breaker[destID]
 	if hasCircuitBreaker {
@@ -280,7 +287,7 @@ func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig
 			return nil
 		}
 		if hasOpenClient {
-			pkgLogger.Infof("[CDM %s] Config changed. Closing Existing client for destination: %s", customManager.destType, destID)
+			log.Infon("[CDM] Config changed. Closing Existing client")
 			customManager.close(destID)
 		}
 	}
@@ -292,10 +299,10 @@ func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig
 		}),
 	}
 	if err := customManager.newClient(destID); err != nil {
-		pkgLogger.Errorf("[CDM %s] DestID: %s, Error while creating new customer client: %v", customManager.destType, destID, err)
+		log.Errorn("[CDM] Error while creating new customer client", obskit.Error(err))
 		return err
 	}
-	pkgLogger.Infof("[CDM %s] DestID: %s, Created new client", customManager.destType, destID)
+	log.Infon("[CDM] Created new client")
 	return nil
 }
 
@@ -352,9 +359,10 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 					if destination.DestinationDefinition.Name == customManager.destType && destination.Enabled {
 						err := customManager.onNewDestination(destination)
 						if err != nil {
-							pkgLogger.Errorf(
-								"[CDM %s] Error while subscribing to BackendConfig for destination id: %s",
-								customManager.destType, destination.ID,
+							pkgLogger.Errorn("[CDM] Error while subscribing to BackendConfig for destination id",
+								obskit.DestinationType(customManager.destType),
+								obskit.DestinationID(destination.ID),
+								obskit.Error(err),
 							)
 						}
 					}
@@ -367,12 +375,14 @@ func (customManager *CustomManagerT) backendConfigSubscriber() {
 	}
 }
 
-func (customManager *CustomManagerT) genComparisonConfig(config interface{}) map[string]interface{} {
-	relevantConfigs := make(map[string]interface{})
-	configMap, ok := config.(map[string]interface{})
+func (customManager *CustomManagerT) genComparisonConfig(config any) map[string]any {
+	relevantConfigs := make(map[string]any)
+	configMap, ok := config.(map[string]any)
 	if !ok {
-		pkgLogger.Errorf("[CDM] DestType: %s. Destination config is not of expected type (map). Returning empty map", customManager.destType)
-		return map[string]interface{}{}
+		pkgLogger.Errorn("[CDM] Destination config is not of expected type (map). Returning empty map",
+			obskit.DestinationType(customManager.destType),
+		)
+		return map[string]any{}
 	}
 
 	for k, v := range configMap {

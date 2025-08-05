@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
@@ -121,7 +122,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 		resource := path.Base(url)
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
-			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
+			pkgLogger.Errorn("[Uploader] Failed to create new http request", obskit.Error(err))
 			return
 		}
 		if uploader.region != "" {
@@ -134,12 +135,12 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 
 		resp, err = uploader.Client.Do(req)
 		if err != nil {
-			pkgLogger.Error("Config Backend connection error", err)
+			pkgLogger.Errorn("Config Backend connection error", obskit.Error(err))
 			stats.Default.NewTaggedStat("debugger_http_errors", stats.CountType, map[string]string{
 				"resource": resource,
 			}).Increment()
 			if retryCount >= uploader.maxRetry.Load() {
-				pkgLogger.Errorf("Max retries exceeded trying to connect to config backend")
+				pkgLogger.Errorn("Max retries exceeded trying to connect to config backend")
 				return
 			}
 			retryCount++
@@ -155,7 +156,8 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 
 		func() { httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
-			pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+			pkgLogger.Errorn("[Uploader] Response Error from Config Backend",
+				logger.NewIntField("statusCode", int64(resp.StatusCode)))
 		}
 		break
 	}

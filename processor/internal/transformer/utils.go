@@ -57,9 +57,10 @@ func TrackLongRunningTransformation(ctx context.Context, stage string, timeout t
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			log.Errorw("Long running transformation detected",
-				"stage", stage,
-				"duration", time.Since(start).String())
+			log.Errorn("Long running transformation detected",
+				logger.NewStringField("stage", stage),
+				logger.NewDurationField("duration", time.Since(start)),
+			)
 		}
 	}
 }

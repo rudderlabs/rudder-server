@@ -6,20 +6,20 @@ import (
 	"sync"
 	"time"
 
-	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type TransformationStatusT struct {
@@ -177,7 +177,7 @@ func (t *TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT
 
 	rawJSON, err := jsonrs.Marshal(uploadT)
 	if err != nil {
-		t.log.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
+		t.log.Errorn("[Transformation status uploader] Failed to marshal payload", obskit.Error(err))
 		return nil, err
 	}
 
@@ -258,8 +258,8 @@ func (ts *TransformationStatusT) Limit(
 func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool {
 	defer func() {
 		if r := recover(); r != nil {
-			h.log.Error("Error occurred while uploading transformation statuses to config backend")
-			h.log.Error(r)
+			h.log.Errorn("Error occurred while uploading transformation statuses to config backend")
+			h.log.Error(r) // nolint:forbidigo
 		}
 	}()
 
@@ -278,7 +278,7 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 				*(tStatus.Limit(h.limitEventsInMemory.Load()+1, transformation)),
 			)
 			if err != nil {
-				h.log.Errorf("Error while updating transformation cache: %v", err)
+				h.log.Errorn("Error while updating transformation cache", obskit.Error(err))
 				return false
 			}
 		}
