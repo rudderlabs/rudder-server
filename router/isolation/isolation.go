@@ -3,13 +3,13 @@ package isolation
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	throttlerconfig "github.com/rudderlabs/rudder-server/router/throttler/config"
 	"github.com/rudderlabs/rudder-server/router/types"
 )
 
@@ -136,10 +136,7 @@ func (ds *destinationStrategy) hasDestinationThrottlerPerEventType(destinationID
 		ds.throttlerPerEventTypeConfigMu.Lock()
 		throttlerPerEventTypeConfig, ok = ds.throttlerPerEventTypeConfig[destinationID]
 		if !ok {
-			throttlerPerEventTypeConfig = ds.config.GetReloadableBoolVar(false,
-				fmt.Sprintf(`Router.throttler.%s.%s.throttlerPerEventType`, ds.destType, destinationID),
-				fmt.Sprintf(`Router.throttler.%s.throttlerPerEventType`, ds.destType),
-				"Router.throttler.throttlerPerEventType")
+			throttlerPerEventTypeConfig = throttlerconfig.ThrottlerPerEventTypeEnabled(ds.config, ds.destType, destinationID)
 			ds.throttlerPerEventTypeConfig[destinationID] = throttlerPerEventTypeConfig
 		}
 		ds.throttlerPerEventTypeConfigMu.Unlock()

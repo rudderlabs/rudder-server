@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -260,7 +260,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		}
 		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters, blockedOrderKeys)
 		if err == nil {
-			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
+			traceParent := jsonparser.GetStringOrEmpty(job.Parameters, "traceparent")
 			if traceParent != "" {
 				if _, ok := traces[traceParent]; !ok {
 					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
@@ -366,8 +366,8 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		// Update metrics maps
 		// REPORTING - ROUTER - START
 		workspaceID := workerJobStatus.status.WorkspaceId
-		eventName := gjson.GetBytes(workerJobStatus.job.Parameters, "event_name").String()
-		eventType := gjson.GetBytes(workerJobStatus.job.Parameters, "event_type").String()
+		eventName := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_name")
+		eventType := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_type")
 		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
@@ -521,7 +521,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			if status != jobsdb.Failed.State {
 				orderKey := eventorder.BarrierKey{
 					UserID:        userID,
-					DestinationID: gjson.GetBytes(resp.job.Parameters, "destination_id").String(),
+					DestinationID: jsonparser.GetStringOrEmpty(resp.job.Parameters, "destination_id"),
 					WorkspaceID:   resp.job.WorkspaceId,
 				}
 				rt.logger.Debugn("EventOrder", logger.NewIntField("workerID", int64(worker.id)), logger.NewIntField("jobID", resp.status.JobID), logger.NewStringField("key", orderKey.String()), logger.NewStringField("jobState", status))
@@ -676,7 +676,7 @@ func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 	}
 
 	firstAttemptedAtTime := time.Now()
-	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
+	if firstAttemptedAt := jsonparser.GetStringOrEmpty(status.ErrorResponse, "firstAttemptedAt"); firstAttemptedAt != "" {
 		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
@@ -684,7 +684,7 @@ func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 
 	maxFailedCountForJob := rt.reloadableConfig.maxFailedCountForJob.Load()
 	retryTimeWindow := rt.reloadableConfig.retryTimeWindow.Load()
-	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
+	if jsonparser.GetStringOrEmpty(status.JobParameters, "source_job_run_id") != "" {
 		maxFailedCountForJob = rt.reloadableConfig.maxFailedCountForSourcesJob.Load()
 		retryTimeWindow = rt.reloadableConfig.sourcesRetryTimeWindow.Load()
 	}
@@ -751,7 +751,7 @@ func (rt *Handle) handleOAuthDestResponse(params *HandleDestOAuthRespParams, aut
 	switch authErrorCategory {
 	case oauth.AUTH_STATUS_INACTIVE:
 		authStatusStCd := rt.updateAuthStatusToInactive(&destinationJob.Destination, workspaceID, rudderAccountID)
-		authStatusMsg := gjson.Get(trRespBody, "message").Raw
+		authStatusMsg := string(jsonparser.GetValueOrEmpty([]byte(trRespBody), "message"))
 		return authStatusStCd, authStatusMsg, "text/plain; charset=utf-8"
 	case oauth.REFRESH_TOKEN:
 		refTokenParams := &oauth.RefreshTokenParams{
