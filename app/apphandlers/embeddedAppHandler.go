@@ -297,12 +297,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory)
+	routerLogger := logger.NewLogger().Child("router")
+	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory, routerLogger.Child("throttler"))
 	if err != nil {
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:        logger.NewLogger().Child("router"),
+		Logger:        routerLogger,
 		Reporting:     reporting,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple routers can share the same cache and not hit the DB every time
