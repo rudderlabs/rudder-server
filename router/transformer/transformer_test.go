@@ -2068,26 +2068,15 @@ func TestTransformerMetrics(t *testing.T) {
 }
 
 func TestTransformerCompactionFlags(t *testing.T) {
-	t.Run("compaction not supported and not enabled", func(t *testing.T) {
+	t.Run("compaction not supported", func(t *testing.T) {
 		h := &handle{
-			compactionEnabled:   config.SingleValueLoader(false),
 			compactionSupported: false,
 		}
-
 		require.False(t, h.compactRequestPayloads())
 	})
 
-	t.Run("compaction supported but not enabled", func(t *testing.T) {
+	t.Run("compaction supported", func(t *testing.T) {
 		h := &handle{
-			compactionEnabled:   config.SingleValueLoader(false),
-			compactionSupported: true,
-		}
-		require.False(t, h.compactRequestPayloads())
-	})
-
-	t.Run("compaction supported and enabled", func(t *testing.T) {
-		h := &handle{
-			compactionEnabled:   config.SingleValueLoader(true),
 			compactionSupported: true,
 		}
 		require.True(t, h.compactRequestPayloads())
