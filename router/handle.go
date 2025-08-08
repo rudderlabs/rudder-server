@@ -589,6 +589,10 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		}).Increment()
 	}
 	abortedJob, abortReason := rt.drainOrRetryLimitReached(job.CreatedAt, destinationID, sourceJobRunID, &job.LastJobStatus) // if job's aborted, then send it to its worker right away
+	if destinationID == "1tPLIo5XziNPXbrwrnOrPLa8w9C" && strings.HasSuffix(job.UserID, "env_12zjmjPHvCssHpb6gV16q5") {
+		abortedJob = true
+		abortReason = routerutils.DrainReasonJobExpired
+	}
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
