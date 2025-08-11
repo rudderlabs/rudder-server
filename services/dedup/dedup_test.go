@@ -17,7 +17,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	keydbcache "github.com/rudderlabs/keydb/cache"
 	keydbclient "github.com/rudderlabs/keydb/client"
 	keydb "github.com/rudderlabs/keydb/node"
 	keydbproto "github.com/rudderlabs/keydb/proto"
@@ -395,12 +394,8 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		SnapshotInterval: time.Minute,
 		Addresses:        []string{address},
 	}
-	cf := func(hashRange uint32) (keydb.Cache, error) {
-		conf.Set("BadgerDB.Dedup.Path", t.TempDir())
-		return keydbcache.BadgerFactory(conf, logger.NOP)(hashRange)
-	}
 	require.NoError(t, err)
-	service, err = keydb.NewService(ctx, nodeConfig, cf, &mockedCloudStorage{}, logger.NOP)
+	service, err = keydb.NewService(ctx, nodeConfig, &mockedCloudStorage{}, conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 
 	// Create a gRPC server
@@ -444,7 +439,10 @@ func (m *mockedFilemanagerSession) Next() (fileObjects []*filemanager.FileInfo, 
 
 type mockedCloudStorage struct{}
 
-func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string) error { return nil }
+func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string, options ...filemanager.DownloadOption) error {
+	return nil
+}
+
 func (m *mockedCloudStorage) UploadReader(_ context.Context, _ string, _ io.Reader) (filemanager.UploadedFile, error) {
 	return filemanager.UploadedFile{}, nil
 }
