@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -181,7 +180,7 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 	}
 	destination := batchDestination.Destination
 	connection := conn.Connection
-  
+
 	if w.rt.enableBatching || parameters.TransformAt == "router" {
 		// add the job to the batch
 		return &types.RouterJobT{
