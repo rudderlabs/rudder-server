@@ -34,8 +34,7 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter
 		// static cost for per-event-type throttler: cost was originally introduced to address rate limit differences between different event types, so not needed when using per-event-type throttler
 		staticCost: true,
 
-		onceEveryInvalidConfig: kitsync.NewOnceEvery(time.Minute),
-		onceEveryGauge:         kitsync.NewOnceEvery(time.Second),
+		onceEveryGauge: kitsync.NewOnceEvery(time.Second),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

@@ -165,9 +165,6 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("ReturnsNotLimitedForZeroLimit", func(t *testing.T) {
@@ -192,9 +189,6 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("ReturnsNotLimitedForZeroWindow", func(t *testing.T) {
@@ -219,9 +213,6 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("IgnoresCostParameterAndUsesConstantCost", func(t *testing.T) {
@@ -248,7 +239,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 		})
 	})
 
-	t.Run("validConfiguration", func(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
 		t.Run("ReturnsTrueForValidConfig", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -264,7 +255,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.True(t, throttler.validConfiguration())
+			require.True(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroLimit", func(t *testing.T) {
@@ -282,7 +273,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroWindow", func(t *testing.T) {
@@ -300,7 +291,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 	})
 

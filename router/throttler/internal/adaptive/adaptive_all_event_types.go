@@ -36,8 +36,7 @@ func NewAllEventTypesThrottler(destType, destinationID string, algorithm Algorit
 		),
 		staticCost: false,
 
-		everyInvalidConfig: kitsync.NewOnceEvery(time.Minute),
-		everyGauge:         kitsync.NewOnceEvery(time.Second),
+		everyGauge: kitsync.NewOnceEvery(time.Second),
 		limitFactorGauge: stat.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

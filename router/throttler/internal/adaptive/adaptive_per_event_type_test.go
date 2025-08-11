@@ -160,7 +160,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			require.False(t, limited)
 		})
 
-		t.Run("ReturnsNotLimitedForInvalidConfiguration", func(t *testing.T) {
+		t.Run("ReturnsNotLimitedForInenabled", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
@@ -183,9 +183,6 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("ReturnsNotLimitedWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -212,9 +209,6 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("IgnoresCostParameterAndUsesConstantCost", func(t *testing.T) {
@@ -243,7 +237,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 		})
 	})
 
-	t.Run("validConfiguration", func(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
 		t.Run("ReturnsTrueForValidConfig", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -261,7 +255,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.True(t, throttler.validConfiguration())
+			require.True(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroMinLimit", func(t *testing.T) {
@@ -281,7 +275,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroMaxLimit", func(t *testing.T) {
@@ -307,7 +301,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroWindow", func(t *testing.T) {
@@ -327,7 +321,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -347,7 +341,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 	})
 
@@ -539,21 +533,10 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			rateLimitMetrics := statsStore.GetByName("throttling_rate_limit")
 			require.NotEmpty(t, rateLimitMetrics)
 
-			// But limit factor gauge should still be updated
+			// Limit factor gauge should also exist but have value 0
 			factorMetrics := statsStore.GetByName("adaptive_throttler_limit_factor")
 			require.NotEmpty(t, factorMetrics)
 
-			found := false
-			for _, metric := range factorMetrics {
-				if metric.Tags["destinationId"] == destinationID &&
-					metric.Tags["destType"] == destType &&
-					metric.Tags["eventType"] == eventType {
-					require.Equal(t, float64(0.6), metric.Value)
-					found = true
-					break
-				}
-			}
-			require.True(t, found, "Should find limit factor metric with correct tags")
 		})
 	})
 

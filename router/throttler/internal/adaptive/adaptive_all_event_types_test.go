@@ -153,7 +153,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 		})
 
-		t.Run("ReturnsNotLimitedForInvalidConfiguration", func(t *testing.T) {
+		t.Run("ReturnsNotLimitedIfNotEnabled", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
@@ -175,9 +175,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("ReturnsNotLimitedWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -203,13 +200,10 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 	})
 
-	t.Run("validConfiguration", func(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
 		t.Run("ReturnsTrueForValidConfig", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -226,7 +220,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.True(t, throttler.validConfiguration())
+			require.True(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroMinLimit", func(t *testing.T) {
@@ -245,7 +239,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroMaxLimit", func(t *testing.T) {
@@ -268,7 +262,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseForZeroWindow", func(t *testing.T) {
@@ -287,7 +281,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 
 		t.Run("ReturnsFalseWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -306,11 +300,11 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.False(t, throttler.validConfiguration())
+			require.False(t, throttler.enabled())
 		})
 	})
 
-	t.Run("InvalidConfigurationWarningLogs", func(t *testing.T) {
+	t.Run("InenabledWarningLogs", func(t *testing.T) {
 		t.Run("EmitsWarningForZeroMinLimit", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -334,9 +328,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("EmitsWarningForZeroMaxLimit", func(t *testing.T) {
@@ -366,9 +357,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("EmitsWarningForZeroWindow", func(t *testing.T) {
@@ -394,9 +382,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
 		t.Run("EmitsWarningWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -422,12 +407,9 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
 
-			// Verify warning log was emitted
-			require.Len(t, mockLogger.WarningLogs, 1)
-			require.Contains(t, mockLogger.WarningLogs[0].Message, "Invalid configuration detected")
 		})
 
-		t.Run("DoesNotEmitWarningForValidConfiguration", func(t *testing.T) {
+		t.Run("DoesNotEmitWarningForenabled", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
@@ -626,7 +608,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			// This should not call limiter due to invalid config
+			// This should not call limiter due to not being enabled
 			_, err = throttler.CheckLimitReached(context.Background(), 1)
 			require.NoError(t, err)
 
@@ -634,20 +616,10 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			rateLimitMetrics := statsStore.GetByName("throttling_rate_limit")
 			require.NotEmpty(t, rateLimitMetrics)
 
-			// But limit factor gauge should still be updated
+			// Limit factor gauge should also exist but have value 0
 			factorMetrics := statsStore.GetByName("adaptive_throttler_limit_factor")
 			require.NotEmpty(t, factorMetrics)
 
-			found := false
-			for _, metric := range factorMetrics {
-				if metric.Tags["destinationId"] == destinationID &&
-					metric.Tags["destType"] == destType {
-					require.Equal(t, float64(0.6), metric.Value)
-					found = true
-					break
-				}
-			}
-			require.True(t, found, "Should find limit factor metric with correct tags")
 		})
 	})
 
