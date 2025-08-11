@@ -44,6 +44,7 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -63,11 +64,12 @@ var (
 )
 
 func Init() {
-	instance = &Admin{
-		rpcServer: rpc.NewServer(),
-	}
-	_ = instance.rpcServer.Register(instance) // @TODO fix ignored error
 	pkgLogger = logger.NewLogger().Child("admin")
+	instance = &Admin{rpcServer: rpc.NewServer()}
+	err := instance.rpcServer.Register(instance)
+	if err != nil {
+		pkgLogger.Errorn("Error registering admin handler", obskit.Error(err))
+	}
 }
 
 type LogLevel struct {
@@ -78,7 +80,7 @@ type LogLevel struct {
 func (*Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error(r)
+			pkgLogger.Error(r) //nolint:forbidigo
 			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
@@ -93,7 +95,7 @@ func (*Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 func (*Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error(r)
+			pkgLogger.Error(r) //nolint:forbidigo
 			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
@@ -111,27 +113,29 @@ func StartServer(ctx context.Context) error {
 	}
 	sockAddr := filepath.Join(tmpDirPath, "rudder-server.sock")
 	if err := os.RemoveAll(sockAddr); err != nil {
-		pkgLogger.Fatal(err) // @TODO return?
+		pkgLogger.Fataln("Cannot remove socket file", obskit.Error(err))
+		return err
 	}
 	defer func() {
 		if err := os.RemoveAll(sockAddr); err != nil {
-			pkgLogger.Warn(err)
+			pkgLogger.Warnn("Cannot remove socket file", obskit.Error(err))
 		}
 	}()
 
-	l, e := net.Listen("unix", sockAddr)
-	if e != nil {
-		pkgLogger.Fatal("listen error:", e) // @TODO return?
+	l, err := net.Listen("unix", sockAddr)
+	if err != nil {
+		pkgLogger.Fataln("Listen error", obskit.Error(err))
+		return err
 	}
 	defer func() {
 		if l != nil {
 			if err := l.Close(); err != nil {
-				pkgLogger.Warn(err)
+				pkgLogger.Warnn("Cannot close listener", obskit.Error(err))
 			}
 		}
 	}()
 
-	pkgLogger.Info("Serving on admin interface @ ", sockAddr)
+	pkgLogger.Infon("Serving on admin interface", logger.NewStringField("socket", sockAddr))
 	srvMux := http.NewServeMux()
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 

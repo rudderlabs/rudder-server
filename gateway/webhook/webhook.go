@@ -15,25 +15,20 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type webhookT struct {
@@ -115,7 +110,11 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	if code != 0 {
 		statusCode = code
 	}
-	webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kithttputil.GetRequestIP(r), r.URL.Path, code, reason)
+	webhook.logger.Infon("IP -- Response",
+		logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+		logger.NewStringField("path", r.URL.Path),
+		logger.NewIntField("code", int64(code)),
+		logger.NewStringField("reason", reason))
 	http.Error(w, reason, statusCode)
 }
 
@@ -241,7 +240,11 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		if resp.StatusCode != 0 {
 			code = resp.StatusCode
 		}
-		webhook.logger.Infof("IP: %s -- %s -- Response: %d, %s", kithttputil.GetRequestIP(r), r.URL.Path, code, resp.Err)
+		webhook.logger.Infon("IP -- Response",
+			logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+			logger.NewStringField("path", r.URL.Path),
+			logger.NewIntField("code", int64(code)),
+			logger.NewStringField("error", resp.Err))
 		http.Error(w, resp.Err, code)
 		if resp.StatusCode == http.StatusTooManyRequests {
 			ss.RequestDropped()
@@ -258,7 +261,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		payload = resp.OutputToSource.Body
 		w.Header().Set("Content-Type", resp.OutputToSource.ContentType)
 	}
-	webhook.logger.Debugf("IP: %s -- %s -- Response: 200, %s", kithttputil.GetRequestIP(r), r.URL.Path, response.GetStatus(response.Ok))
+	webhook.logger.Debugn("IP -- Response: 200",
+		logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+		logger.NewStringField("path", r.URL.Path),
+		logger.NewStringField("status", response.GetStatus(response.Ok)))
 	_, _ = w.Write(payload)
 	ss.RequestSucceeded()
 	ss.Report(webhook.stats)
@@ -313,13 +319,14 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
-
 		// If unable to fetch features from transformer, send GatewayTimeout to all requests
 		// TODO: Remove timeout from here after timeout handler is added in gateway
 		ctx, cancel := context.WithTimeout(context.Background(), config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"))
 		sourceTransformAdapter, err := bt.sourceTransformAdapter(ctx)
 		if err != nil {
-			bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, err.Error())
+			bt.webhook.logger.Errorn("webhook source transformation failed",
+				obskit.SourceType(breq.sourceType),
+				obskit.Error(err))
 			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(err.Error()))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.GatewayTimeout), Err: response.GetStatus(response.GatewayTimeout)}
@@ -331,7 +338,9 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 		transformerURL, err := sourceTransformAdapter.getTransformerURL(breq.sourceType)
 		if err != nil {
-			bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, err.Error())
+			bt.webhook.logger.Errorn("webhook source transformation failed",
+				obskit.SourceType(breq.sourceType),
+				obskit.Error(err))
 			bt.webhook.recordWebhookErrors(breq.sourceType, err.Error(), breq.batchRequest, response.GetErrorStatusCode(response.ServiceUnavailable))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.ServiceUnavailable), Err: response.GetStatus(response.ServiceUnavailable)}
@@ -370,7 +379,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			}
 
 			if err != nil {
-				bt.webhook.logger.Errorf("webhook %s source transformation failed for sourceID %s: %s", req.sourceType, req.sourceID, err.Error())
+				bt.webhook.logger.Errorn("webhook source transformation failed for sourceID",
+					obskit.SourceType(req.sourceType),
+					obskit.SourceID(req.sourceID),
+					obskit.Error(err))
 				bt.webhook.countWebhookErrors(breq.sourceType, req.authContext, err.Error(), response.GetErrorStatusCode(err.Error()), 1)
 				req.done <- transformerResponse{Err: response.GetStatus(err.Error()), StatusCode: response.GetErrorStatusCode(err.Error())}
 				continue
@@ -402,7 +414,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
 			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
 			reason = "in out mismatch"
-			bt.webhook.logger.Errorf("%w", batchResponse.batchError)
+			bt.webhook.logger.Errorn("webhook batch transform response events size does not equal sent events size",
+				obskit.Error(batchResponse.batchError))
 		}
 		if batchResponse.batchError != nil {
 			if reason == "" {
@@ -412,7 +425,10 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if batchResponse.statusCode != 0 {
 				statusCode = batchResponse.statusCode
 			}
-			bt.webhook.logger.Errorf("webhook %s source transformation failed with error: %w and status code: %s", breq.sourceType, batchResponse.batchError, statusCode)
+			bt.webhook.logger.Errorn("webhook source transformation failed with error and status code",
+				obskit.SourceType(breq.sourceType),
+				logger.NewIntField("statusCode", int64(statusCode)),
+				obskit.Error(batchResponse.batchError))
 			bt.webhook.recordWebhookErrors(breq.sourceType, reason, webRequests, statusCode)
 
 			for _, req := range breq.batchRequest {
@@ -430,7 +446,9 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 			}
 			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
-				bt.webhook.logger.Errorf("Saving webhook failures of sourceType: %s, failed. Error: %s", breq.sourceType, err.Error())
+				bt.webhook.logger.Errorn("Saving webhook failures of sourceType failed",
+					obskit.SourceType(breq.sourceType),
+					obskit.Error(err))
 			}
 
 			continue
@@ -452,7 +470,9 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					reason = "enqueueInGateway failed"
 				}
 				if errMessage != "" {
-					bt.webhook.logger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
+					bt.webhook.logger.Errorn("webhook source transformation failed",
+						obskit.SourceType(breq.sourceType),
+						logger.NewStringField("errorMessage", errMessage))
 					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, bt.getWebhookFailureReason(errMessage, reason), response.GetErrorStatusCode(errMessage), 1)
 					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)

@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/netutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -193,7 +194,11 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 
 		req, err := http.NewRequestWithContext(ctx, requestMethod, postInfo.URL, payload)
 		if err != nil {
-			network.logger.Error(fmt.Sprintf(`400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL))
+			network.logger.Errorn("400 Unable to construct request",
+				logger.NewStringField("requestMethod", requestMethod),
+				logger.NewStringField("url", postInfo.URL),
+				obskit.Error(err),
+			)
 			return &utils.SendPostResponse{
 				StatusCode:   400,
 				ResponseBody: []byte(fmt.Sprintf(`400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL)),
@@ -243,7 +248,13 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %v`, postInfo.URL, err)),
 			}
 		}
-		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
+		network.logger.Debugn("SendPost",
+			logger.NewStringField("url", postInfo.URL),
+			logger.NewStringField("reqProto", req.Proto),
+			logger.NewStringField("respProto", resp.Proto),
+			logger.NewIntField("respProtoMajor", int64(resp.ProtoMajor)),
+			logger.NewIntField("respProtoMinor", int64(resp.ProtoMinor)),
+		)
 
 		var contentTypeHeader string
 		if resp.Header != nil {
@@ -280,16 +291,16 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 
 // Setup initializes the module
 func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) error {
-	network.logger.Info("Network Handler Startup")
+	network.logger.Infon("Network Handler Startup")
 
 	network.blockPrivateIPsDryRun = getRouterConfigBool("dryRunMode", network.destType, false)
 	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
-	network.logger.Info("blockPrivateIPsDryRun: ", network.blockPrivateIPsDryRun)
-	network.logger.Info("blockPrivateIPs: ", network.blockPrivateIPs)
+	network.logger.Infon("blockPrivateIPsDryRun", logger.NewBoolField("blockPrivateIPsDryRun", network.blockPrivateIPsDryRun))
+	network.logger.Infon("blockPrivateIPs", logger.NewBoolField("blockPrivateIPs", network.blockPrivateIPs))
 
 	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetString("privateIPRanges", netutil.DefaultPrivateIPRanges), ","))
 	if err != nil {
-		network.logger.Error("Error loading private IP ranges", logger.NewErrorField(err))
+		network.logger.Errorn("Error loading private IP ranges", obskit.Error(err))
 		return err
 	}
 	network.blockPrivateIPsCIDRs = privateIPRanges
@@ -336,9 +347,9 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	defaultTransportCopy.DialContext = dialContext
 
 	forceHTTP1 := getRouterConfigBool("forceHTTP1", network.destType, false)
-	network.logger.Info("forceHTTP1: ", forceHTTP1)
+	network.logger.Infon("forceHTTP1", logger.NewBoolField("forceHTTP1", forceHTTP1))
 	if forceHTTP1 {
-		network.logger.Info("Forcing HTTP1 connection for ", network.destType)
+		network.logger.Infon("Forcing HTTP1 connection", logger.NewStringField("destType", network.destType))
 		defaultTransportCopy.ForceAttemptHTTP2 = false
 		var tlsClientConfig tls.Config
 		if defaultTransportCopy.TLSClientConfig != nil {
@@ -346,14 +357,18 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 		}
 		tlsClientConfig.NextProtos = []string{"http/1.1"}
 		defaultTransportCopy.TLSClientConfig = &tlsClientConfig
-		network.logger.Info(network.destType, defaultTransportCopy.TLSClientConfig.NextProtos)
+		network.logger.Infon(network.destType+" protos",
+			logger.NewStringField("tlsNextProtos", strings.Join(tlsClientConfig.NextProtos, ",")),
+		)
 	}
 
 	defaultTransportCopy.MaxIdleConns = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConns", "noOfWorkers")
 	defaultTransportCopy.MaxIdleConnsPerHost = getHierarchicalRouterConfigInt(network.destType, 64, "httpMaxIdleConnsPerHost", "noOfWorkers")
-	network.logger.Info(network.destType, ":   defaultTransportCopy.MaxIdleConns: ", defaultTransportCopy.MaxIdleConns)
-	network.logger.Info("defaultTransportCopy.MaxIdleConnsPerHost: ", defaultTransportCopy.MaxIdleConnsPerHost)
-	network.logger.Info("netClientTimeout: ", netClientTimeout)
+	network.logger.Infon(network.destType,
+		logger.NewIntField("maxIdleConns", int64(defaultTransportCopy.MaxIdleConns)),
+		logger.NewIntField("maxIdleConnsPerHost", int64(defaultTransportCopy.MaxIdleConnsPerHost)),
+		logger.NewDurationField("timeout", netClientTimeout),
+	)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 	return nil
 }

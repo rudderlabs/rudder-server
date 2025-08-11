@@ -9,9 +9,9 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
@@ -123,7 +123,7 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	if !h.HasUploadEnabled(destinationID) {
 		err := h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		if err != nil {
-			h.log.Errorf("DestinationDebugger: Error while updating cache: %v", err)
+			h.log.Errorn("DestinationDebugger: Error while updating cache", obskit.Error(err))
 		}
 		return false
 	}
@@ -154,7 +154,7 @@ func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*Delive
 
 	rawJSON, err := jsonrs.Marshal(res)
 	if err != nil {
-		e.log.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
+		e.log.Errorn("[Destination live events] Failed to marshal payload", obskit.Error(err))
 		return nil, err
 	}
 

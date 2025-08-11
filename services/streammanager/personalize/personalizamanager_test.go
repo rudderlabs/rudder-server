@@ -5,20 +5,17 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/personalizeevents"
 	"github.com/aws/smithy-go"
+	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
-
-	"github.com/stretchr/testify/assert"
-
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 
@@ -123,7 +120,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 		Message: errorCode,
 		Fault:   smithy.FaultClient,
 	})
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
@@ -162,7 +159,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 		Message: errorCode,
 		Fault:   smithy.FaultClient,
 	})
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
@@ -201,7 +198,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 		Message: errorCode,
 		Fault:   smithy.FaultClient,
 	})
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 	statusCode, statusMsg, respMsg = producer.Produce(sampleJsonPayload, map[string]string{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)

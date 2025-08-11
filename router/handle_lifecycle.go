@@ -9,16 +9,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
-
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -62,7 +61,7 @@ func (rt *Handle) Setup(
 
 	destType := destinationDefinition.Name
 	rt.logger = log.Child(destType)
-	rt.logger.Info("router setup: ", destType)
+	rt.logger.Infon("router setup", obskit.DestinationType(rt.destType))
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
@@ -165,7 +164,7 @@ func (rt *Handle) Setup(
 		defer rt.destinationsMapMu.RUnlock()
 		_, ok := rt.destinationsMap[destinationID]
 		return ok
-	}); err != nil {
+	}, config); err != nil {
 		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
 	}
 
@@ -348,7 +347,7 @@ func (rt *Handle) setupReloadableVars() {
 }
 
 func (rt *Handle) Start() {
-	rt.logger.Infof("Starting router: %s", rt.destType)
+	rt.logger.Infon("Starting router", obskit.DestinationType(rt.destType))
 	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
 
@@ -356,21 +355,21 @@ func (rt *Handle) Start() {
 		defer close(rt.startEnded) // always close the channel
 		select {
 		case <-ctx.Done():
-			rt.logger.Infof("Router : %s start goroutine exited", rt.destType)
+			rt.logger.Infon("Router : start goroutine exited", obskit.DestinationType(rt.destType))
 			return nil
 		case <-rt.backendConfigInitialized:
 			// no-op, just wait
 		}
 
 		// waiting for transformer features
-		rt.logger.Info("Router: Waiting for transformer features")
+		rt.logger.Infon("Router: Waiting for transformer features")
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-rt.transformerFeaturesService.Wait():
 			// proceed
 		}
-		rt.logger.Info("Router: Transformer features received")
+		rt.logger.Infon("Router: Transformer features received")
 
 		if rt.customDestinationManager != nil {
 			select {
@@ -404,7 +403,7 @@ func (rt *Handle) Shutdown() {
 		// router is not started
 		return
 	}
-	rt.logger.Infof("Shutting down router: %s", rt.destType)
+	rt.logger.Infon("Shutting down router", obskit.DestinationType(rt.destType))
 	rt.backgroundCancel()
 
 	<-rt.startEnded // wait for all workers to stop first
@@ -432,7 +431,7 @@ func (rt *Handle) statusInsertLoop() {
 			statusStat.Since(start)
 		}
 		if !isResponseQOpen {
-			rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destType)
+			rt.logger.Debugn("[Router] :: statusInsertLoop exiting", obskit.DestinationType(rt.destType))
 			return
 		}
 	}

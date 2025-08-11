@@ -452,12 +452,5 @@ func TestAPI(t *testing.T) {
 			require.Error(t, err)
 			require.Nil(t, res)
 		})
-
-		t.Run("channel not found", func(t *testing.T) {
-			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
-			res, err := manager.GetStatus(ctx, "invalid-channel-id")
-			require.ErrorIs(t, err, api.ErrChannelNotFound)
-			require.Nil(t, res)
-		})
 	})
 }

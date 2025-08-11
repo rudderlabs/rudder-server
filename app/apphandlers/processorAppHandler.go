@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -95,7 +94,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	if !a.setupDone {
 		return fmt.Errorf("processor service cannot start, database is not setup")
 	}
-	a.log.Info("Processor starting")
+	a.log.Infon("Processor starting")
 
 	g, ctx := errgroup.WithContext(ctx)
 	terminalErrFn := terminalErrorFunction(ctx, g)
@@ -104,7 +103,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
-	a.log.Infof("Configured deployment type: %q", deploymentType)
+	a.log.Infon("Configured deployment type", logger.NewStringField("deploymentType", string(deploymentType)))
 
 	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
 	if err != nil {
@@ -123,7 +122,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return nil
 	}))
 
-	a.log.Info("Clearing DB ", options.ClearDB)
+	a.log.Infon("Clearing DB", logger.NewBoolField("clearDB", options.ClearDB))
 
 	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
@@ -294,12 +293,13 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		pendingEventsRegistry,
 		proc.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := throttler.NewFactory(config, statsFactory)
+	routerLogger := logger.NewLogger().Child("router")
+	throttlerFactory, err := throttler.NewFactory(config, statsFactory, routerLogger.Child("throttler"))
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:        logger.NewLogger().Child("router"),
+		Logger:        routerLogger,
 		Reporting:     reporting,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple routers can share the same cache and not hit the DB every time
@@ -379,7 +379,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Handle) error {
 	// Port where Processor health handler is running
-	a.log.Infof("Starting in %d", a.config.http.webPort)
+	a.log.Infon("Starting in", logger.NewIntField("webPort", int64(a.config.http.webPort)))
 	srvMux := chi.NewMux()
 	srvMux.HandleFunc("/health", app.LivenessHandler(db))
 	srvMux.HandleFunc("/", app.LivenessHandler(db))

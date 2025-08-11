@@ -15,12 +15,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/profiler"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/apphandlers"
@@ -79,21 +80,24 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// Start stats
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
-		r.logger.Errorf("failed to get deployment type: %v", err)
+		r.logger.Errorn("failed to get deployment type", obskit.Error(err))
 		return 1
 	}
 
 	path, err := config.Default.ConfigFileUsed()
 	if err != nil {
-		r.logger.Warnf("Config: Failed to parse config file from path %q, using default values: %v", path, err)
+		r.logger.Warnn("Config: Failed to parse config file from path, using default values",
+			logger.NewStringField("path", path),
+			obskit.Error(err))
 	} else {
-		r.logger.Infof("Config: Using config file: %s", path)
+		r.logger.Infon("Config: Using config file",
+			logger.NewStringField("path", path))
 	}
 
 	if err := config.Default.DotEnvLoaded(); err != nil {
-		r.logger.Infof("Config: No .env file loaded: %v", err)
+		r.logger.Infon("Config: No .env file loaded", obskit.Error(err))
 	} else {
-		r.logger.Infof("Config: Loaded .env file")
+		r.logger.Infon("Config: Loaded .env file")
 	}
 
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
@@ -121,7 +125,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	}
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance, statsOptions...)
 	if err := stats.Default.Start(ctx, rruntime.GoRoutineFactory); err != nil {
-		r.logger.Errorf("Failed to start stats: %v", err)
+		r.logger.Errorn("Failed to start stats", obskit.Error(err))
 		return 1
 	}
 
@@ -142,7 +146,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)
 	if err != nil {
-		r.logger.Errorf("Failed to get app handler: %v", err)
+		r.logger.Errorn("Failed to get app handler", obskit.Error(err))
 		return 1
 	}
 
@@ -165,7 +169,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
 
 	if err := backendconfig.Setup(configEnvHandler); err != nil {
-		r.logger.Errorf("Unable to setup backend config: %s", err)
+		r.logger.Errorn("Unable to setup backend config", obskit.Error(err))
 		return 1
 	}
 	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
@@ -173,7 +177,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
 	if r.canStartServer() {
 		if err := r.appHandler.Setup(); err != nil {
-			r.logger.Errorf("Unable to prepare rudder-core database: %s", err)
+			r.logger.Errorn("Unable to prepare rudder-core database", obskit.Error(err))
 			return 1
 		}
 	}
@@ -188,7 +192,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		)
 
 		if err := r.warehouseApp.Setup(ctx); err != nil {
-			r.logger.Errorf("Unable to prepare warehouse database: %s", err)
+			r.logger.Errorn("Unable to prepare warehouse database", obskit.Error(err))
 			return 1
 		}
 	}
@@ -228,7 +232,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 			err := c.SendFeatures(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
 			if err != nil {
-				r.logger.Errorf("error sending server features: %v", err)
+				r.logger.Errorn("error sending server features", obskit.Error(err))
 			}
 
 			// we don't want to exit if we can't send server features
@@ -251,10 +255,10 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	go func() {
 		err := g.Wait()
 		if err != nil {
-			r.logger.Errorf("Terminal error: %v", err)
+			r.logger.Errorn("Terminal error", obskit.Error(err))
 		}
 
-		r.logger.Info("Attempting to shutdown gracefully")
+		r.logger.Infon("Attempting to shutdown gracefully")
 		backendconfig.DefaultBackendConfig.Stop()
 		close(shutdownDone)
 	}()
@@ -265,19 +269,17 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	select {
 	case <-shutdownDone:
 		r.application.Stop()
-		r.logger.Infof(
-			"Graceful termination after %s, with %d go-routines",
-			time.Since(ctxDoneTime),
-			runtime.NumGoroutine(),
+		r.logger.Infon("Graceful termination after, with go-routines",
+			logger.NewDurationField("duration", time.Since(ctxDoneTime)),
+			logger.NewIntField("goroutines", int64(runtime.NumGoroutine())),
 		)
 		// clearing zap Log buffer to std output
 		logger.Sync()
 		stats.Default.Stop()
 	case <-time.After(r.gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
-		r.logger.Errorf(
-			"Graceful termination failed after %s, goroutine dump:\n",
-			time.Since(ctxDoneTime),
+		r.logger.Errorn("Graceful termination failed after, goroutine dump:",
+			logger.NewDurationField("duration", time.Since(ctxDoneTime)),
 		)
 
 		fmt.Print("\n\n")
@@ -330,7 +332,8 @@ func (r *Runner) printVersion() {
 }
 
 func (r *Runner) canStartServer() bool {
-	r.logger.Info("warehousemode ", r.warehouseMode)
+	r.logger.Infon("warehousemode",
+		logger.NewStringField("mode", r.warehouseMode))
 	return r.warehouseMode == config.EmbeddedMode || r.warehouseMode == config.OffMode || r.warehouseMode == config.EmbeddedMasterMode
 }
 

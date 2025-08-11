@@ -182,6 +182,12 @@ func (ji *Iterator) Stop() int {
 	return discardedJobs
 }
 
+// StopQueries forces the iterator to stop fetching more jobs from jobsDB by setting the maximum number of queries to the current query count.
+func (ji *Iterator) StopQueries() {
+	ji.maxQueries = ji.state.stats.QueryCount
+}
+
+// Stats returns the statistics of the iterator, including the number of queries made, total jobs fetched, discarded jobs, and whether limits were reached.
 func (ji *Iterator) Stats() IteratorStats {
 	return ji.state.stats
 }

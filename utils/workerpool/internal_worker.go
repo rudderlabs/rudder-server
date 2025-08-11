@@ -6,15 +6,16 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func newInternalWorker(partition string, logger logger.Logger, delegate Worker) *internalWorker {
+func newInternalWorker(partition string, log logger.Logger, delegate Worker) *internalWorker {
 	w := &internalWorker{
 		partition: partition,
 		delegate:  delegate,
-		logger:    logger,
+		logger:    log.Withn(logger.NewStringField("partition", partition)),
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(context.Background())
 	w.ping = make(chan struct{}, 1)
@@ -50,24 +51,24 @@ func (w *internalWorker) start() {
 		defer func() {
 			close(w.ping)
 		}()
-		defer w.logger.Debugf("ping loop stopped for worker: %s", w.partition)
+		defer w.logger.Debugn("ping loop stopped for worker")
 		for {
-			w.logger.Debugf("worker %q listening for ping", w.partition)
+			w.logger.Debugn("worker listening for ping")
 			select {
 			case <-w.lifecycle.ctx.Done():
 				return
 			case <-w.ping:
-				w.logger.Debugf("worker %q received ping", w.partition)
+				w.logger.Debugn("worker received ping")
 			}
 
 			w.setIdleSince(time.Time{})
 			if w.delegate.Work() {
-				w.logger.Debugf("worker %q produced work", w.partition)
+				w.logger.Debugn("worker produced work")
 				exponentialSleep.Reset()
 			} else {
-				w.logger.Debugf("worker %q didn't produce any work", w.partition)
+				w.logger.Debugn("worker didn't produce any work")
 				if err := misc.SleepCtx(w.lifecycle.ctx, exponentialSleep.Next(w.delegate.SleepDurations())); err != nil {
-					w.logger.Debugf("worker %q sleep interrupted: %v", w.partition, err)
+					w.logger.Debugn("worker sleep interrupted", obskit.Error(err))
 					return
 				}
 				w.setIdleSince(time.Now())
@@ -86,7 +87,7 @@ func (w *internalWorker) setIdleSince(t time.Time) {
 
 // Ping triggers the worker to pick more jobs
 func (w *internalWorker) Ping() {
-	w.logger.Debugf("worker %q pinged", w.partition)
+	w.logger.Debugn("worker pinged")
 	w.lifecycle.stoppedMu.Lock()
 	defer w.lifecycle.stoppedMu.Unlock()
 	if w.lifecycle.stopped {
@@ -118,9 +119,13 @@ func (w *internalWorker) Stop() {
 	start := time.Now()
 	w.lifecycle.cancel()
 	w.lifecycle.wg.Wait()
-	w.logger.Debugf("worker %q ping loop stopped in : %s", w.partition, time.Since(start))
+	w.logger.Debugn("worker ping loop stopped in",
+		logger.NewDurationField("duration", time.Since(start)),
+	)
 
 	start = time.Now()
 	w.delegate.Stop()
-	w.logger.Debugf("worker %q delegate stopped in : %s", w.partition, time.Since(start))
+	w.logger.Debugn("worker delegate stopped",
+		logger.NewDurationField("duration", time.Since(start)),
+	)
 }

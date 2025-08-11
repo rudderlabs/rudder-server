@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 type MarketoAPIServiceInterface interface {
@@ -97,7 +98,9 @@ func (m *MarketoAPIService) ImportLeads(csvFilePath, deduplicationField string) 
 		if apiError.Category == "RefreshToken" {
 			time.Sleep(time.Duration((retryCount+1)*5) * time.Second)
 
-			m.logger.Info(fmt.Sprintf("Retrying import after token expiry (attempt %d of %d)", retryCount+1, m.maxRetries))
+			m.logger.Infon("Retrying import after token expiry",
+				logger.NewIntField("attempt", int64(retryCount+1)),
+				logger.NewIntField("maxRetries", int64(m.maxRetries)))
 			importID, apiError = m.attemptImport(uploadURL, csvFilePath, deduplicationField, uploadTimeStat)
 
 			if apiError == nil {
@@ -154,7 +157,8 @@ func (m *MarketoAPIService) PollImportStatus(importId string) (*MarketoResponse,
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in parsing response body"}
 	}
 
-	m.logger.Debugf("[Async Destination Manager] Marketo Poll Response: %v", marketoResponse)
+	m.logger.Debugn("[Async Destination Manager] Marketo Poll Response",
+		logger.NewStringField("marketoResponse", string(body)))
 
 	statusCode, category, errorMessage := parseMarketoResponse(marketoResponse)
 	if category == "Success" {
@@ -189,7 +193,8 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 		return nil, &APIError{StatusCode: 500, Category: "Retryable", Message: "Error in reading response body"}
 	}
 
-	m.logger.Debugf("[Async Destination Manager] Marketo Get Lead Status Response: %v", string(body))
+	m.logger.Debugn("[Async Destination Manager] Marketo Get Lead Status Response",
+		logger.NewStringField("response", string(body)))
 
 	if !m.checkForCSVLikeResponse(resp) {
 		var marketoResponse MarketoResponse
@@ -216,7 +221,7 @@ func (m *MarketoAPIService) GetLeadStatus(url string) ([]map[string]string, *API
 			break
 		}
 		if err != nil {
-			m.logger.Error("Error in parsing csv response", err.Error())
+			m.logger.Errorn("Error in parsing csv response", obskit.Error(err))
 			m.statsFactory.NewStat("async_destination_manager.marketo_bulk_upload.csv_parse_error", stats.CountType).Increment()
 			continue
 		}

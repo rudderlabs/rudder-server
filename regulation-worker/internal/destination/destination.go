@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -25,7 +26,7 @@ type DestinationConfig struct {
 }
 
 func (d *DestinationConfig) GetDestDetails(destID string) (model.Destination, error) {
-	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
+	pkgLogger.Debugn("getting destination details", obskit.DestinationID(destID))
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	destination, ok := d.destinations[destID]

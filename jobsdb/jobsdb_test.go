@@ -251,7 +251,7 @@ var d2 = dataSetT{
 	JobStatusTable: "tt_job_status_2",
 }
 
-var dsListInMemory = []dataSetT{
+var dsListInMemory = dataSetTList{
 	d1,
 	d2,
 }

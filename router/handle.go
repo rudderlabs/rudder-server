@@ -13,14 +13,15 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -189,7 +190,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 
 	if !iterator.HasNext() {
 		rt.pipelineDelayStats(partition, nil, nil)
-		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destType)
+		rt.logger.Debugn("RT: DB Read Complete. No RT Jobs to process for destination", obskit.DestinationType(rt.destType))
 		limiterEnd() // exit the limiter before sleeping
 		_ = misc.SleepCtx(ctx, rt.reloadableConfig.readSleep.Load())
 		return 0, false
@@ -217,11 +218,11 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
 		}, rt.sendRetryUpdateStats)
 		if err != nil {
-			rt.logger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destType, err)
+			rt.logger.Errorn("Error occurred while marking jobs statuses as executing. Panicking", obskit.DestinationType(rt.destType), obskit.Error(err))
 			panic(err)
 		}
 
-		rt.logger.Debugf("[DRAIN DEBUG] counts  %v final jobs length being processed %v", rt.destType, len(reservedJobs))
+		rt.logger.Debugn("[DRAIN DEBUG] counts final jobs length being processed", obskit.DestinationType(rt.destType), logger.NewIntField("jobsLength", int64(len(reservedJobs))))
 		assignedTime := time.Now()
 		for _, reservedJob := range reservedJobs {
 			reservedJob.slot.Use(workerJob{job: reservedJob.job, assignedAt: assignedTime, drainReason: reservedJob.drainReason, parameters: &reservedJob.parameters})
@@ -252,12 +253,12 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		lastJob = job
 		var parameters routerutils.JobParameters
 		if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-			rt.logger.Errorf("Error occurred while unmarshalling job parameters. Panicking. Err: %v", err)
+			rt.logger.Errorn("Error occurred while unmarshalling job parameters. Panicking", obskit.Error(err))
 			panic(err)
 		}
-		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters.DestinationID, parameters.SourceJobRunID, blockedOrderKeys)
+		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters, blockedOrderKeys)
 		if err == nil {
-			traceParent := gjson.GetBytes(job.Parameters, "traceparent").String()
+			traceParent := jsonparser.GetStringOrEmpty(job.Parameters, "traceparent")
 			if traceParent != "" {
 				if _, ok := traces[traceParent]; !ok {
 					ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
@@ -295,11 +296,14 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			discardedJobCountStat.Increment()
 			iterator.Discard(job)
 			discardedCount++
-			if rt.stopIteration(err) {
+			if rt.stopIteration(err, parameters.DestinationID) {
 				discarded := iterator.Stop() // stop the iterator and count all additional jobs discarded by operator by using the same reason as the last job that was discarded
 				discardedJobCountStat.Count(discarded)
 				iterationInterrupted = true
 				break
+			}
+			if rt.isolationStrategy.StopQueries(err, parameters.DestinationID) {
+				iterator.StopQueries()
 			}
 		}
 	}
@@ -329,7 +333,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	return
 }
 
-func (rt *Handle) stopIteration(err error) bool {
+func (rt *Handle) stopIteration(err error, destinationID string) bool {
 	// if the context is cancelled, we can stop iteration
 	if errors.Is(err, types.ErrContextCancelled) {
 		return true
@@ -339,7 +343,7 @@ func (rt *Handle) stopIteration(err error) bool {
 		return true
 	}
 	// delegate to the isolation strategy for the final decision
-	return rt.isolationStrategy.StopIteration(err)
+	return rt.isolationStrategy.StopIteration(err, destinationID)
 }
 
 // commitStatusList commits the status of the jobs to the jobsDB
@@ -356,12 +360,12 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	for _, workerJobStatus := range *workerJobStatuses {
 		parameters := workerJobStatus.parameters
 		errorCode, _ := strconv.Atoi(workerJobStatus.status.ErrorCode)
-		rt.throttlerFactory.Get(rt.destType, parameters.DestinationID).ResponseCodeReceived(errorCode) // send response code to throttler
+		rt.throttlerFactory.Get(rt.destType, parameters.DestinationID, workerJobStatus.parameters.EventType).ResponseCodeReceived(errorCode) // send response code to throttler
 		// Update metrics maps
 		// REPORTING - ROUTER - START
 		workspaceID := workerJobStatus.status.WorkspaceId
-		eventName := gjson.GetBytes(workerJobStatus.job.Parameters, "event_name").String()
-		eventType := gjson.GetBytes(workerJobStatus.job.Parameters, "event_type").String()
+		eventName := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_name")
+		eventType := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_type")
 		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
 			SourceID:      parameters.SourceID,
 			DestinationID: parameters.DestinationID,
@@ -464,7 +468,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	// REPORTING - ROUTER - END
 
 	if len(statusList) > 0 {
-		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destType, rt.reloadableConfig.updateStatusBatchSize)
+		rt.logger.Debugn("[Router] :: flushing batch of status", obskit.DestinationType(rt.destType), logger.NewIntField("batchSize", int64(rt.reloadableConfig.updateStatusBatchSize.Load())))
 
 		sort.Slice(statusList, func(i, j int) bool {
 			return statusList[i].JobID < statusList[j].JobID
@@ -515,16 +519,10 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			if status != jobsdb.Failed.State {
 				orderKey := eventorder.BarrierKey{
 					UserID:        userID,
-					DestinationID: gjson.GetBytes(resp.job.Parameters, "destination_id").String(),
+					DestinationID: jsonparser.GetStringOrEmpty(resp.job.Parameters, "destination_id"),
 					WorkspaceID:   resp.job.WorkspaceId,
 				}
-				rt.logger.Debugw(
-					"EventOrder",
-					"worker#", worker.id,
-					"jobID", resp.status.JobID,
-					"key", orderKey.String(),
-					"jobState", status,
-				)
+				rt.logger.Debugn("EventOrder", logger.NewIntField("workerID", int64(worker.id)), logger.NewIntField("jobID", resp.status.JobID), logger.NewStringField("key", orderKey.String()), logger.NewStringField("jobState", status))
 				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
 					panic(err)
 				}
@@ -565,28 +563,28 @@ type workerJobSlot struct {
 	drainReason string
 }
 
-func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, destinationID, sourceJobRunID string, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
+func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, parameters routerutils.JobParameters, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
 	}
 	orderKey := eventorder.BarrierKey{
 		UserID:        job.UserID,
-		DestinationID: destinationID,
+		DestinationID: parameters.DestinationID,
 		WorkspaceID:   job.WorkspaceId,
 	}
 
 	eventOrderingDisabled := !rt.guaranteeUserEventOrder
 	if (rt.guaranteeUserEventOrder && rt.barrier.Disabled(orderKey)) ||
 		(rt.eventOrderingDisabledForWorkspace(job.WorkspaceId) ||
-			rt.eventOrderingDisabledForDestination(destinationID)) {
+			rt.eventOrderingDisabledForDestination(parameters.DestinationID)) {
 		eventOrderingDisabled = true
 		stats.Default.NewTaggedStat("router_eventorder_key_disabled", stats.CountType, stats.Tags{
 			"destType":      rt.destType,
-			"destinationId": destinationID,
+			"destinationId": parameters.DestinationID,
 			"workspaceID":   job.WorkspaceId,
 		}).Increment()
 	}
-	abortedJob, abortReason := rt.drainOrRetryLimitReached(job.CreatedAt, destinationID, sourceJobRunID, &job.LastJobStatus) // if job's aborted, then send it to its worker right away
+	abortedJob, abortReason := rt.drainOrRetryLimitReached(job.CreatedAt, parameters.DestinationID, parameters.SourceJobRunID, &job.LastJobStatus) // if job's aborted, then send it to its worker right away
 	if eventOrderingDisabled {
 		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
 		if len(availableWorkers) == 0 {
@@ -603,7 +601,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 			slot.Release()
 			return nil, types.ErrJobBackoff
 		}
-		if rt.shouldThrottle(ctx, job, destinationID) {
+		if rt.shouldThrottle(ctx, job, parameters.DestinationID, parameters.EventType) {
 			slot.Release()
 			return nil, types.ErrDestinationThrottled
 		}
@@ -614,7 +612,7 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 	// checking if the orderKey is in blockedOrderKeys. If yes, returning nil.
 	// this check is done to maintain order.
 	if _, ok := blockedOrderKeys[orderKey]; ok {
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destType, job.JobID, orderKey)
+		rt.logger.Debugn("[Router] :: Skipping processing of job as orderKey has earlier jobs in throttled map", obskit.DestinationType(rt.destType), logger.NewIntField("jobID", job.JobID), logger.NewStringField("orderKey", orderKey.String()))
 		return nil, types.ErrJobOrderBlocked
 	}
 
@@ -635,13 +633,13 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 		if previousFailedJobID != nil {
 			previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 		}
-		rt.logger.Debugf("EventOrder: job %d of orderKey %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
+		rt.logger.Debugn("EventOrder: job is blocked", logger.NewIntField("jobID", job.JobID), logger.NewStringField("orderKey", orderKey.String()), logger.NewStringField("previousFailedJobID", previousFailedJobIDStr))
 		slot.Release()
 		blockedOrderKeys[orderKey] = struct{}{}
 		return nil, types.ErrBarrierExists
 	}
-	rt.logger.Debugf("EventOrder: job %d of orderKey %s is allowed to be processed", job.JobID, orderKey)
-	if !abortedJob && rt.shouldThrottle(ctx, job, destinationID) {
+	rt.logger.Debugn("EventOrder: job is allowed to be processed", logger.NewIntField("jobID", job.JobID), logger.NewStringField("orderKey", orderKey.String()))
+	if !abortedJob && rt.shouldThrottle(ctx, job, parameters.DestinationID, parameters.EventType) {
 		blockedOrderKeys[orderKey] = struct{}{}
 		worker.barrier.Leave(orderKey, job.JobID)
 		slot.Release()
@@ -676,7 +674,7 @@ func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 	}
 
 	firstAttemptedAtTime := time.Now()
-	if firstAttemptedAt := gjson.GetBytes(status.ErrorResponse, "firstAttemptedAt").Str; firstAttemptedAt != "" {
+	if firstAttemptedAt := jsonparser.GetStringOrEmpty(status.ErrorResponse, "firstAttemptedAt"); firstAttemptedAt != "" {
 		if t, err := time.Parse(misc.RFC3339Milli, firstAttemptedAt); err == nil {
 			firstAttemptedAtTime = t
 		}
@@ -684,7 +682,7 @@ func (rt *Handle) retryLimitReached(status *jobsdb.JobStatusT) bool {
 
 	maxFailedCountForJob := rt.reloadableConfig.maxFailedCountForJob.Load()
 	retryTimeWindow := rt.reloadableConfig.retryTimeWindow.Load()
-	if gjson.GetBytes(status.JobParameters, "source_job_run_id").Str != "" {
+	if jsonparser.GetStringOrEmpty(status.JobParameters, "source_job_run_id") != "" {
 		maxFailedCountForJob = rt.reloadableConfig.maxFailedCountForSourcesJob.Load()
 		retryTimeWindow = rt.reloadableConfig.sourcesRetryTimeWindow.Load()
 	}
@@ -697,41 +695,35 @@ func (*Handle) shouldBackoff(job *jobsdb.JobT) bool {
 	return job.LastJobStatus.JobState == jobsdb.Failed.State && job.LastJobStatus.AttemptNum > 0 && time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
-func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, destinationID string) (limited bool) {
+func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, destinationID, eventType string) (limited bool) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
-		rt.logger.Debugf(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
-			rt.destType, destinationID,
-		)
+		rt.logger.Debugn("[Router] :: ThrottlerFactory is nil. Not throttling destination", obskit.DestinationType(rt.destType), obskit.DestinationID(destinationID))
 		return false
 	}
 
-	throttler := rt.throttlerFactory.Get(rt.destType, destinationID)
-	throttlingCost := rt.getThrottlingCost(job)
+	throttler := rt.throttlerFactory.Get(rt.destType, destinationID, eventType)
+	throttlingCost := rt.getThrottlingCost(job, eventType)
 
-	limited, err := throttler.CheckLimitReached(ctx, destinationID, throttlingCost)
+	limited, err := throttler.CheckLimitReached(ctx, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		rt.throttlingErrorStat.Count(1)
-		rt.logger.Errorf(`[%v Router] :: Throttler error: %v`, rt.destType, err)
+		rt.logger.Errorn("[Router] :: Throttler error", obskit.DestinationType(rt.destType), obskit.Error(err))
 		return false
 	}
 	if limited {
 		rt.throttledStat.Count(1)
-		rt.logger.Debugf(
-			"[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded",
-			rt.destType, job.JobID, job.UserID,
-		)
+		rt.logger.Debugn("[Router] :: Skipping processing of job as throttled limits exceeded", obskit.DestinationType(rt.destType), logger.NewIntField("jobID", job.JobID), logger.NewStringField("userID", job.UserID))
 	}
 
 	return limited
 }
 
-func (rt *Handle) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
+func (rt *Handle) getThrottlingCost(job *jobsdb.JobT, eventType string) (cost int64) {
 	cost = 1
 	if tc := rt.throttlingCosts.Load(); tc != nil {
-		eventType := gjson.GetBytes(job.Parameters, "event_type").String()
 		cost = tc.Cost(eventType)
 	}
 

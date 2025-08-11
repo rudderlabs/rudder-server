@@ -50,6 +50,9 @@ func NewSource(db *sqlmw.DB, opts ...Opt) *Source {
 }
 
 func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]int64, error) {
+	if len(sourceJobs) == 0 {
+		return nil, errors.New("empty sourceJobs")
+	}
 	defer (*repo)(s).TimerStat("insert", stats.Tags{
 		"sourceId":    sourceJobs[0].SourceID,
 		"destId":      sourceJobs[0].DestinationID,

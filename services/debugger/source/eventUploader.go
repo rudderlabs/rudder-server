@@ -9,15 +9,13 @@ import (
 	"sync"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/grafana/jsonparser"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
@@ -124,7 +122,7 @@ func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
 	if !slices.Contains(h.uploadEnabledWriteKeys, writeKey) {
 		err := h.eventsCache.Update(writeKey, eventBatch)
 		if err != nil {
-			h.log.Errorf("Error while updating cache: %v", err)
+			h.log.Errorn("Error while updating cache", obskit.Error(err))
 		}
 		return false
 	}
@@ -196,7 +194,7 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 		var batchedEvent EventUploadBatchT
 		err := jsonrs.Unmarshal(event.EventBatch, &batchedEvent)
 		if err != nil {
-			e.log.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)
+			e.log.Errorn("[Source live events] Failed to unmarshal", obskit.Error(err))
 			continue
 		}
 
@@ -229,7 +227,7 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 
 	rawJSON, err := jsonrs.Marshal(res)
 	if err != nil {
-		e.log.Errorf("[Source live events] Failed to marshal payload. Err: %v", err)
+		e.log.Errorn("[Source live events] Failed to marshal payload", obskit.Error(err))
 		return nil, err
 	}
 
