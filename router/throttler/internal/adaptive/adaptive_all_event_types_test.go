@@ -174,7 +174,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("ReturnsNotLimitedWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -199,7 +198,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
-
 		})
 	})
 
@@ -327,7 +325,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("EmitsWarningForZeroMaxLimit", func(t *testing.T) {
@@ -356,7 +353,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("EmitsWarningForZeroWindow", func(t *testing.T) {
@@ -381,7 +377,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("EmitsWarningWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -406,7 +401,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("DoesNotEmitWarningForenabled", func(t *testing.T) {
@@ -619,7 +613,6 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			// Limit factor gauge should also exist but have value 0
 			factorMetrics := statsStore.GetByName("adaptive_throttler_limit_factor")
 			require.NotEmpty(t, factorMetrics)
-
 		})
 	})
 

@@ -164,7 +164,6 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("ReturnsNotLimitedForZeroLimit", func(t *testing.T) {
@@ -188,7 +187,6 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
-
 		})
 
 		t.Run("ReturnsNotLimitedForZeroWindow", func(t *testing.T) {
@@ -212,7 +210,6 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
-
 		})
 
 		t.Run("IgnoresCostParameterAndUsesConstantCost", func(t *testing.T) {

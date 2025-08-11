@@ -182,7 +182,6 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog) // Should not call limiter
-
 		})
 
 		t.Run("ReturnsNotLimitedWhenMinLimitGreaterThanMaxLimit", func(t *testing.T) {
@@ -208,7 +207,6 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Empty(t, mockLimiter.CallLog)
-
 		})
 
 		t.Run("IgnoresCostParameterAndUsesConstantCost", func(t *testing.T) {
@@ -536,7 +534,6 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			// Limit factor gauge should also exist but have value 0
 			factorMetrics := statsStore.GetByName("adaptive_throttler_limit_factor")
 			require.NotEmpty(t, factorMetrics)
-
 		})
 	})
 
