@@ -176,9 +176,14 @@ type mockThrottlerFactory struct {
 	count *atomic.Int64
 }
 
-func (m *mockThrottlerFactory) Get(destName, destID, eventType string) throttler.Throttler {
+func (m *mockThrottlerFactory) GetPickupThrottler(destName, destID, eventType string) throttler.PickupThrottler {
 	m.count.Add(1)
-	return throttler.NewNoOpThrottlerFactory().Get(destName, destID, eventType)
+	return throttler.NewNoOpThrottlerFactory().GetPickupThrottler(destName, destID, eventType)
+}
+
+func (m *mockThrottlerFactory) GetDeliveryThrottler(destName, destID, endpointLabel string) throttler.DeliveryThrottler {
+	m.count.Add(1)
+	return throttler.NewNoOpThrottlerFactory().GetDeliveryThrottler(destName, destID, endpointLabel)
 }
 
 func (m *mockThrottlerFactory) Shutdown() {}

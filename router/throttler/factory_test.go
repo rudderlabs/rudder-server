@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/adaptive"
+	"github.com/rudderlabs/rudder-server/router/throttler/internal/pickup/adaptive"
 )
 
 func TestFactory(t *testing.T) {
@@ -28,7 +28,7 @@ func TestFactory(t *testing.T) {
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
 		defer f.Shutdown()
-		ta := f.Get("destName", "destID", "eventType")
+		ta := f.GetPickupThrottler("destName", "destID", "eventType")
 
 		t.Run("when there is a 429s in the last decrease limit counter window", func(t *testing.T) {
 			ta.ResponseCodeReceived(429)
@@ -77,7 +77,7 @@ func TestFactory(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 
-		_, _ = f.Get("destName", "destID", "eventType").CheckLimitReached(context.Background(), 1)
+		_, _ = f.GetPickupThrottler("destName", "destID", "eventType").CheckLimitReached(context.Background(), 1)
 
 		require.EqualValues(t, maxLimit/int64(window.Seconds()), statsStore.Get("throttling_rate_limit", stats.Tags{
 			"destinationId": "destID",
@@ -96,7 +96,7 @@ func TestFactory(t *testing.T) {
 		f, err := NewFactory(conf, stats.NOP, logger.NOP)
 		require.NoError(t, err)
 		defer f.Shutdown()
-		ta := f.Get("destName", "destID", "eventType")
+		ta := f.GetPickupThrottler("destName", "destID", "eventType")
 		require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimit())
 	})
 
@@ -110,7 +110,7 @@ func TestFactory(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 
-		ta := f.Get("destName", "destID", "eventType")
+		ta := f.GetPickupThrottler("destName", "destID", "eventType")
 
 		t.Run("should use static throttler", func(t *testing.T) {
 			// Static throttler should return configured limit
@@ -134,24 +134,24 @@ func TestFactory(t *testing.T) {
 		defer f.Shutdown()
 
 		t.Run("should cache throttlers by destination and event type", func(t *testing.T) {
-			ta1 := f.Get("destName", "destID", "eventType")
-			ta2 := f.Get("destName", "destID", "eventType")
+			ta1 := f.GetPickupThrottler("destName", "destID", "eventType")
+			ta2 := f.GetPickupThrottler("destName", "destID", "eventType")
 
 			// Should return the same instance (cached by destinationID:eventType)
 			require.Same(t, ta1, ta2)
 		})
 
 		t.Run("should create different throttlers for different destinations", func(t *testing.T) {
-			ta1 := f.Get("destName", "destID1", "eventType")
-			ta2 := f.Get("destName", "destID2", "eventType")
+			ta1 := f.GetPickupThrottler("destName", "destID1", "eventType")
+			ta2 := f.GetPickupThrottler("destName", "destID2", "eventType")
 
 			// Should return different instances
 			require.NotSame(t, ta1, ta2)
 		})
 
 		t.Run("should create different throttlers for different event types", func(t *testing.T) {
-			ta1 := f.Get("destName", "destID", "eventType1")
-			ta2 := f.Get("destName", "destID", "eventType2")
+			ta1 := f.GetPickupThrottler("destName", "destID", "eventType1")
+			ta2 := f.GetPickupThrottler("destName", "destID", "eventType2")
 
 			// Should return different instances
 			require.NotSame(t, ta1, ta2)
@@ -166,8 +166,8 @@ func TestFactory(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create some throttlers
-		ta1 := f.Get("destName", "destID1", "eventType")
-		ta2 := f.Get("destName", "destID2", "eventType")
+		ta1 := f.GetPickupThrottler("destName", "destID1", "eventType")
+		ta2 := f.GetPickupThrottler("destName", "destID2", "eventType")
 
 		require.NotNil(t, ta1)
 		require.NotNil(t, ta2)
@@ -188,7 +188,7 @@ func TestFactory(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 
-		ta := f.Get("destName", "destID", "track")
+		ta := f.GetPickupThrottler("destName", "destID", "track")
 
 		t.Run("should use per-event configuration", func(t *testing.T) {
 			// Should use the configured max limit as starting point
@@ -208,7 +208,7 @@ func TestFactory(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			// Should still use adaptive because destination-specific config takes precedence
 			require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimit())
 		})
@@ -221,7 +221,7 @@ func TestFactory(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			// Should use adaptive because destination-type config takes precedence
 			require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimit())
 		})
@@ -239,7 +239,7 @@ func TestFactory(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 			require.EqualValues(t, 100, ta.GetLimit())
 		})
@@ -259,7 +259,7 @@ func TestFactory(t *testing.T) {
 		require.NotNil(t, f)
 
 		t.Run("should return NoOp throttler", func(t *testing.T) {
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 
 			// NoOp throttler should never limit
@@ -293,13 +293,13 @@ func TestFactory(t *testing.T) {
 
 		t.Run("should handle concurrent Get calls", func(t *testing.T) {
 			const numGoroutines = 10
-			throttlers := make([]Throttler, numGoroutines)
+			throttlers := make([]PickupThrottler, numGoroutines)
 
 			// Launch multiple goroutines to get the same throttler
 			done := make(chan struct{}, numGoroutines)
 			for i := 0; i < numGoroutines; i++ {
 				go func(index int) {
-					throttlers[index] = f.Get("destName", "destID", "eventType")
+					throttlers[index] = f.GetPickupThrottler("destName", "destID", "eventType")
 					done <- struct{}{}
 				}(i)
 			}
@@ -331,7 +331,7 @@ func TestFactory(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			_, _ = ta.CheckLimitReached(context.Background(), 1)
 
 			// Should have static throttler stats
@@ -354,7 +354,7 @@ func TestFactory(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "track")
+			ta := f.GetPickupThrottler("destName", "destID", "track")
 			_, _ = ta.CheckLimitReached(context.Background(), 1)
 
 			// Should have per-event type stats
@@ -390,7 +390,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 
 			t.Run("should respect rate limiting", func(t *testing.T) {
@@ -422,7 +422,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 			require.EqualValues(t, 50, ta.GetLimit())
 		})
@@ -441,8 +441,8 @@ func TestFactoryWithRedis(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta1 := f.Get("destName", "destID1", "eventType")
-			ta2 := f.Get("destName", "destID2", "eventType")
+			ta1 := f.GetPickupThrottler("destName", "destID1", "eventType")
+			ta2 := f.GetPickupThrottler("destName", "destID2", "eventType")
 
 			require.EqualValues(t, 30, ta1.GetLimit())
 			require.EqualValues(t, 60, ta2.GetLimit())
@@ -472,7 +472,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 
 			t.Run("should respect rate limiting", func(t *testing.T) {
@@ -513,7 +513,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 			require.EqualValues(t, 75, ta.GetLimit())
 		})
@@ -557,7 +557,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Shutdown()
 
-			ta := f.Get("destName", "destID", "eventType")
+			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
 
 			limited, err := ta.CheckLimitReached(context.Background(), 1)
@@ -582,7 +582,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 
-		ta := f.Get("destName", "destID", "eventType")
+		ta := f.GetPickupThrottler("destName", "destID", "eventType")
 		_, _ = ta.CheckLimitReached(context.Background(), 1)
 
 		// Should have adaptive throttler stats
@@ -610,7 +610,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 
-		ta := f.Get("destName", "destID", "eventType")
+		ta := f.GetPickupThrottler("destName", "destID", "eventType")
 
 		// Send multiple requests rapidly
 		const numRequests = 50
@@ -638,8 +638,8 @@ func TestFactoryWithRedis(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 
-		trackThrottler := f.Get("destName", "destID", "track")
-		identifyThrottler := f.Get("destName", "destID", "identify")
+		trackThrottler := f.GetPickupThrottler("destName", "destID", "track")
+		identifyThrottler := f.GetPickupThrottler("destName", "destID", "identify")
 
 		// Different event types should have different limits
 		require.EqualValues(t, 80, trackThrottler.GetLimit())

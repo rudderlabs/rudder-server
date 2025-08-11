@@ -10,8 +10,8 @@ import (
 // NewThrottlerSwitcher constructs a new throttler that can switch between two throttlers based on a configuration value.
 func NewThrottlerSwitcher(
 	useAlternative config.ValueLoader[bool],
-	main, alternative types.Throttler,
-) types.Throttler {
+	main, alternative types.PickupThrottler,
+) types.PickupThrottler {
 	return &throttlerSwitcher{
 		useAlternative: useAlternative,
 		main:           main,
@@ -21,8 +21,8 @@ func NewThrottlerSwitcher(
 
 type throttlerSwitcher struct {
 	useAlternative config.ValueLoader[bool]
-	main           types.Throttler
-	alternative    types.Throttler
+	main           types.PickupThrottler
+	alternative    types.PickupThrottler
 }
 
 // CheckLimitReached checks the limit using the currently active throttler.
@@ -48,7 +48,7 @@ func (t *throttlerSwitcher) GetLimit() int64 {
 }
 
 // throttler returns the currently active throttler based on the useAlternative config.
-func (t *throttlerSwitcher) throttler() types.Throttler {
+func (t *throttlerSwitcher) throttler() types.PickupThrottler {
 	if t.useAlternative.Load() {
 		return t.alternative
 	}
