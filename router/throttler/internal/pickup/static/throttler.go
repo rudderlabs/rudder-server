@@ -8,7 +8,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
 type throttler struct {
@@ -16,7 +15,7 @@ type throttler struct {
 	eventType     string
 	key           string
 
-	limiter    types.Limiter
+	limiter    Limiter
 	log        Logger
 	limit      config.ValueLoader[int64]
 	window     config.ValueLoader[time.Duration]

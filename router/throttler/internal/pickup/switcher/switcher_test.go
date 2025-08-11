@@ -21,7 +21,7 @@ func TestThrottlerSwitcher(t *testing.T) {
 		require.NotNil(t, switcher)
 
 		// Verify it implements the Throttler interface
-		var _ types.Throttler = switcher // nolint: staticcheck
+		var _ types.PickupThrottler = switcher // nolint: staticcheck
 	})
 
 	t.Run("CheckLimitReached_UsesMainThrottler", func(t *testing.T) {

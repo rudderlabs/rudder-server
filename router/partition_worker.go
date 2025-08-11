@@ -25,10 +25,13 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 	pw.g, _ = errgroup.WithContext(context.Background())
 	pw.workers = make([]*worker, rt.noOfWorkers)
 	for i := 0; i < rt.noOfWorkers; i++ {
+		ctx, cancelFunc := context.WithCancel(context.Background())
 		worker := &worker{
 			logger:                    pw.logger.Child("w-" + strconv.Itoa(i)),
 			partition:                 partition,
 			id:                        i,
+			ctx:                       ctx,
+			cancelFunc:                cancelFunc,
 			inputCh:                   make(chan workerJob, rt.workerInputBufferSize),
 			barrier:                   rt.barrier,
 			rt:                        rt,
@@ -89,6 +92,7 @@ func (pw *partitionWorker) SleepDurations() (min, max time.Duration) {
 // Stop stops the partitioned worker by closing the input channel of all its internal workers and waiting for them to finish
 func (pw *partitionWorker) Stop() {
 	for _, worker := range pw.workers {
+		worker.cancelFunc()
 		close(worker.inputCh)
 	}
 	_ = pw.g.Wait()
