@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/dedup/keydb"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -41,6 +43,10 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		groupLimit = defaultMaxRoutines
 	}
 
+	dedupMirrorMode := "keydb"
+	if _, ok := d.(*keydb.Dedup); ok {
+		dedupMirrorMode = "badgerdb"
+	}
 	group := &errgroup.Group{}
 	group.SetLimit(groupLimit)
 
@@ -54,15 +60,15 @@ func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger
 		logger:        log,
 	}
 	dedupMirror.metrics.allowedErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": "keydb",
+		"mode": dedupMirrorMode,
 		"type": "allowed",
 	})
 	dedupMirror.metrics.commitErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": "keydb",
+		"mode": dedupMirrorMode,
 		"type": "commit",
 	})
 	dedupMirror.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_mirroring_max_routines_count", stats.CountType, stats.Tags{
-		"mode": "keydb",
+		"mode": dedupMirrorMode,
 	})
 
 	group.Go(func() error {

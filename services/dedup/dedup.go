@@ -3,6 +3,8 @@
 package dedup
 
 import (
+	"fmt"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -14,6 +16,13 @@ import (
 
 type BatchKey = types.BatchKey
 
+type mirrorMode string
+
+const (
+	mirrorBadger mirrorMode = "mirrorBadger"
+	mirrorKeyDB  mirrorMode = "mirrorKeyDB"
+)
+
 // SingleKey creates a BatchKey with index 0
 func SingleKey(key string) BatchKey {
 	return types.BatchKey{Key: key}
@@ -23,12 +32,22 @@ func SingleKey(key string) BatchKey {
 func New(conf *config.Config, stats stats.Stats, log logger.Logger) (Dedup, error) {
 	badgerDedup := badger.NewBadgerDB(conf, stats, badger.DefaultPath())
 
-	if conf.GetBool("KeyDB.Dedup.Mirror.Enabled", false) {
-		keydbDedup, err := keydb.NewKeyDB(conf, stats, log)
+	mode := conf.GetString("Dedup.Mirror.Mode", string(mirrorBadger))
+
+	if mode == string(mirrorBadger) {
+		keyDBDedup, err := keydb.NewKeyDB(conf, stats, log)
 		if err == nil {
-			return newMirror(badgerDedup, keydbDedup, conf, stats, log), nil
+			return newMirror(badgerDedup, keyDBDedup, conf, stats, log), nil
 		}
 		log.Errorn("Failed to create keydb dedup", obskit.Error(err))
+	}
+
+	if mode == string(mirrorKeyDB) {
+		keyDBDedup, err := keydb.NewKeyDB(conf, stats, log)
+		if err != nil {
+			return nil, fmt.Errorf("intializing keydb dedup: %w", err)
+		}
+		return newMirror(keyDBDedup, badgerDedup, conf, stats, log), nil
 	}
 
 	return badgerDedup, nil

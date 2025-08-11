@@ -295,6 +295,185 @@ func Test_Dedup_Race(t *testing.T) {
 	}
 }
 
+func Test_Dedup_MirrorMode_Badger(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Test mirrorBadger mode (default)
+	conf.Set("Dedup.Mirror.Mode", "mirrorBadger")
+
+	// Mock KeyDB to simulate failure, should fall back to badger only
+	conf.Set("KeyDB.Dedup.Addresses", "localhost:12345")
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	// Should work with badger only since KeyDB is not available
+	key := dedup.SingleKey("test_mirror_badger")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_mirror_badger"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+}
+
+func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Test mirrorKeyDB mode with KeyDB error
+	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
+	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+
+	key := dedup.SingleKey("test_mirror_keydb_error")
+	_, err = d.Allowed(key)
+	require.Error(t, err)
+}
+
+func Test_Dedup_NoMirror(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Test with no mirroring (default behavior when KeyDB fails)
+	conf.Set("Dedup.Mirror.Mode", "invalid_mode")
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	key := dedup.SingleKey("test_no_mirror")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_no_mirror"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+}
+
+func Test_Dedup_MirrorMode_KeyDB_Success(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Start a KeyDB instance
+	startKeydb(t, conf)
+
+	// Test mirrorKeyDB mode with working KeyDB
+	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	// Test basic functionality with mirroring
+	key := dedup.SingleKey("test_mirror_keydb")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_mirror_keydb"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+
+	// Test with multiple keys
+	kvs := []types.BatchKey{
+		{Index: 0, Key: "multi_key_1"},
+		{Index: 1, Key: "multi_key_2"},
+		{Index: 2, Key: "multi_key_3"},
+	}
+	found, err = d.Allowed(kvs...)
+	require.NoError(t, err)
+	for _, kv := range kvs {
+		require.True(t, found[kv], "key %s should be allowed", kv.Key)
+	}
+
+	err = d.Commit([]string{"multi_key_1", "multi_key_2", "multi_key_3"})
+	require.NoError(t, err)
+}
+
+func Test_Dedup_MirrorMode_Badger_Success(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Start a KeyDB instance
+	startKeydb(t, conf)
+
+	// Test mirrorBadger mode (default) with working KeyDB
+	// Not setting the mode explicitly to test the default behavior
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	// Test basic functionality with mirroring
+	key := dedup.SingleKey("test_mirror_badger_success")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_mirror_badger_success"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+
+	// Test with multiple keys
+	kvs := []types.BatchKey{
+		{Index: 0, Key: "multi_key_a"},
+		{Index: 1, Key: "multi_key_b"},
+		{Index: 2, Key: "multi_key_c"},
+	}
+	found, err = d.Allowed(kvs...)
+	require.NoError(t, err)
+	for _, kv := range kvs {
+		require.True(t, found[kv], "key %s should be allowed", kv.Key)
+	}
+
+	err = d.Commit([]string{"multi_key_a", "multi_key_b", "multi_key_c"})
+	require.NoError(t, err)
+}
+
 func Benchmark_Dedup(b *testing.B) {
 	config.Reset()
 	logger.Reset()
