@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	dkdb "github.com/rudderlabs/rudder-server/services/dedup/keydb"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -122,11 +121,14 @@ func Test_KeyDB(t *testing.T) {
 	conf := config.New()
 	startKeydb(t, conf)
 
+	// Configure to use KeyDB only mode
+	conf.Set("Dedup.Mirror.Mode", "keydb")
+
 	var (
-		d   dedup.Dedup
+		d   types.DedupInterface
 		err error
 	)
-	d, err = dkdb.NewKeyDB(conf, stats.NOP, logger.NOP)
+	d, err = dedup.New(conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -136,26 +138,27 @@ func Test_KeyDB(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found[key])
 
-		// Checking it again should give us the same result since we're not using any cache for keydb due to mirroring
+		// Checking it again should give us the different result since we're using cache for keydb as well
 		found, err = d.Allowed(key)
 		require.NoError(t, err)
-		require.True(t, found[key])
+		require.False(t, found[key])
 	})
 
 	t.Run("key a gets committed", func(t *testing.T) {
-		keyB := dedup.SingleKey("b")
+		keyB := dedup.SingleKey("b" + uuid.New().String())
 		found, err := d.Allowed(keyB)
 		require.NoError(t, err)
 		require.True(t, found[keyB])
 
-		err = d.Commit([]string{"a"})
-		require.NoError(t, err)
+		keyA := dedup.SingleKey("a" + uuid.New().String())
 
-		keyA := dedup.SingleKey("a")
+		err = d.Commit([]string{keyA.Key})
+		require.Error(t, err)
+
 		found, err = d.Allowed(keyA, keyB)
 		require.Nil(t, err)
-		require.False(t, found[keyA])
-		require.True(t, found[keyB])
+		require.True(t, found[keyA])
+		require.False(t, found[keyB])
 	})
 
 	t.Run("unique keys", func(t *testing.T) {

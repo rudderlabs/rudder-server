@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/dedup/keydb"
+	"github.com/rudderlabs/rudder-server/services/dedup/types"
 
 	"golang.org/x/sync/errgroup"
 
@@ -15,14 +15,12 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
-const (
-	defaultMaxRoutines = 3000
-)
+const defaultMaxRoutines = 3000
 
-type mirror struct {
-	Dedup
-	mirror Dedup
-
+type MirrorDB struct {
+	primary       types.DB
+	mirror        types.DB
+	mode          Mode
 	group         *errgroup.Group
 	groupLimit    int
 	errs          chan error
@@ -31,104 +29,127 @@ type mirror struct {
 	logger logger.Logger
 
 	metrics struct {
-		allowedErrorsCount stats.Counter
-		commitErrorsCount  stats.Counter
-		maxRoutinesCount   stats.Counter
+		getErrorsCount   stats.Counter
+		setErrorsCount   stats.Counter
+		maxRoutinesCount stats.Counter
 	}
 }
 
-func newMirror(d, m Dedup, conf *config.Config, s stats.Stats, log logger.Logger) *mirror {
+func NewMirrorDB(primary, mirror types.DB, mode Mode, conf *config.Config, s stats.Stats, log logger.Logger) *MirrorDB {
 	groupLimit := conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", defaultMaxRoutines)
 	if groupLimit < 1 {
 		groupLimit = defaultMaxRoutines
 	}
 
-	dedupMirrorMode := "keydb"
-	if _, ok := d.(*keydb.Dedup); ok {
-		dedupMirrorMode = "badgerdb"
-	}
 	group := &errgroup.Group{}
 	group.SetLimit(groupLimit)
 
-	dedupMirror := &mirror{
-		Dedup:         d,
-		mirror:        m,
+	mirrorDB := &MirrorDB{
+		primary:       primary,
+		mirror:        mirror,
+		mode:          mode,
 		group:         group,
-		groupLimit:    groupLimit, // storing limit for enriching error
+		groupLimit:    groupLimit,
 		errs:          make(chan error, 1),
 		stopPrintErrs: make(chan struct{}),
 		logger:        log,
 	}
-	dedupMirror.metrics.allowedErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": dedupMirrorMode,
-		"type": "allowed",
+
+	// Set up metrics
+	mirrorModeStr := "keydb"
+	if mode == mirrorBadgerMode {
+		mirrorModeStr = "badgerdb"
+	}
+
+	mirrorDB.metrics.getErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
+		"mode": mirrorModeStr,
+		"type": "get",
 	})
-	dedupMirror.metrics.commitErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": dedupMirrorMode,
-		"type": "commit",
+	mirrorDB.metrics.setErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
+		"mode": mirrorModeStr,
+		"type": "set",
 	})
-	dedupMirror.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_mirroring_max_routines_count", stats.CountType, stats.Tags{
-		"mode": dedupMirrorMode,
+	mirrorDB.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_mirroring_max_routines_count", stats.CountType, stats.Tags{
+		"mode": mirrorModeStr,
 	})
 
 	group.Go(func() error {
-		dedupMirror.printErrs(conf.GetDuration("KeyDB.Dedup.Mirror.PrintErrorsInterval", 10, time.Second))
+		mirrorDB.printErrs(conf.GetDuration("KeyDB.Dedup.Mirror.PrintErrorsInterval", 10, time.Second))
 		return nil
 	})
 
-	return dedupMirror
+	return mirrorDB
 }
 
-func (m *mirror) Allowed(keys ...BatchKey) (map[BatchKey]bool, error) {
+func (m *MirrorDB) Get(keys []string) (map[string]bool, error) {
+	// Execute on primary and return results
+	result, err := m.primary.Get(keys)
+	if err != nil {
+		return nil, err
+	}
+
+	// Asynchronously execute on mirror
 	fired := m.group.TryGo(func() error {
-		_, err := m.mirror.Allowed(keys...)
-		if err == nil {
-			return nil
+		_, err := m.mirror.Get(keys)
+		if err != nil {
+			m.metrics.getErrorsCount.Increment()
+			m.logLeakyErr(fmt.Errorf("mirror Get failed: %w", err))
 		}
-
-		m.metrics.allowedErrorsCount.Increment()
-		m.logLeakyErr(fmt.Errorf("call to Allowed failed: %w", err))
-
 		return nil
 	})
 
 	if !fired {
 		m.metrics.maxRoutinesCount.Increment()
-		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", m.groupLimit))
+		m.logLeakyErr(fmt.Errorf("max routines limit reached during Get: current limit %d", m.groupLimit))
 	}
 
-	return m.Dedup.Allowed(keys...)
+	return result, nil
 }
 
-func (m *mirror) Commit(keys []string) error {
+func (m *MirrorDB) Set(keys []string) error {
+	// Execute on primary and return results
+	err := m.primary.Set(keys)
+	if err != nil {
+		return err
+	}
+
+	// Asynchronously execute on mirror
 	fired := m.group.TryGo(func() error {
-		err := m.mirror.Commit(keys)
-		if err == nil {
-			return nil
+		err := m.mirror.Set(keys)
+		if err != nil {
+			m.metrics.setErrorsCount.Increment()
+			m.logLeakyErr(fmt.Errorf("mirror Set failed: %w", err))
 		}
-
-		m.metrics.commitErrorsCount.Increment()
-		m.logLeakyErr(fmt.Errorf("call to Commit failed: %w", err))
-
 		return nil
 	})
 
 	if !fired {
 		m.metrics.maxRoutinesCount.Increment()
-		m.logLeakyErr(fmt.Errorf("max routines limit reached: current limit %d", m.groupLimit))
+		m.logLeakyErr(fmt.Errorf("max routines limit reached during Set: current limit %d", m.groupLimit))
 	}
 
-	return m.Dedup.Commit(keys)
+	return nil
 }
 
-func (m *mirror) logLeakyErr(err error) {
+func (m *MirrorDB) Close() {
+	// First we need to stop all mirroring goroutines
+	close(m.stopPrintErrs)
+	_ = m.group.Wait()
+	close(m.errs)
+
+	// Then close both primary and mirror DBs
+	m.primary.Close()
+	m.mirror.Close()
+}
+
+func (m *MirrorDB) logLeakyErr(err error) {
 	select {
 	case m.errs <- err:
 	default: // leaky bucket to avoid filling the logs if the system fails badly
 	}
 }
 
-func (m *mirror) printErrs(interval time.Duration) {
+func (m *MirrorDB) printErrs(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	for {
 		select {
@@ -145,12 +166,32 @@ func (m *mirror) printErrs(interval time.Duration) {
 	}
 }
 
-func (m *mirror) Close() {
-	// first we need to stop all mirroring goroutines
-	close(m.stopPrintErrs)
-	_ = m.group.Wait()
-	close(m.errs)
-	// then can close both mirror and primary dedup services
-	m.mirror.Close()
-	m.Dedup.Close()
+// Implement the DedupInterface methods for MirrorDB
+
+func (m *MirrorDB) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
+	// Convert BatchKey to string keys for the Get operation
+	stringKeys := make([]string, len(batchKeys))
+	for i, key := range batchKeys {
+		stringKeys[i] = key.Key
+	}
+
+	// Use Get method to check which keys exist
+	existingKeys, err := m.Get(stringKeys)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build result map with keys that don't exist
+	result := make(map[types.BatchKey]bool)
+	for _, key := range batchKeys {
+		if !existingKeys[key.Key] {
+			result[key] = true
+		}
+	}
+
+	return result, nil
+}
+
+func (m *MirrorDB) Commit(keys []string) error {
+	return m.Set(keys)
 }

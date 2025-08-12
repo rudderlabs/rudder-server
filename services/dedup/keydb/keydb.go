@@ -6,8 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/keydb/client"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -26,7 +24,7 @@ type KeyDB struct {
 	}
 }
 
-func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (*Dedup, error) {
+func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.DB, error) {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "KeyDB.Dedup.dedupWindow", "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 	nodeAddresses := conf.GetString("KeyDB.Dedup.Addresses", "")
 	if len(nodeAddresses) == 0 {
@@ -51,7 +49,7 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (*Dedup,
 	db.stats.getTimer = stat.NewTaggedStat("dedup_get_duration_seconds", stats.TimerType, stats.Tags{"mode": "keydb"})
 	db.stats.setTimer = stat.NewTaggedStat("dedup_set_duration_seconds", stats.TimerType, stats.Tags{"mode": "keydb"})
 
-	return &Dedup{keyDB: db}, nil
+	return db, nil
 }
 
 func (d *KeyDB) Get(keys []string) (map[string]bool, error) {
@@ -79,47 +77,3 @@ func (d *KeyDB) Close() {
 		_ = d.client.Close()
 	}
 }
-
-type Dedup struct {
-	keyDB *KeyDB
-}
-
-func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
-	result := make(map[types.BatchKey]bool, len(batchKeys))
-	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
-
-	// figure out which keys need to be checked against the DB
-	batchKeysToCheck := make([]types.BatchKey, 0, len(batchKeys)) // keys to check in the DB
-	for _, batchKey := range batchKeys {
-		// if the key is already seen in the batch, skip it
-		if _, seen := seenInBatch[batchKey.Key]; seen {
-			continue
-		}
-
-		seenInBatch[batchKey.Key] = struct{}{}
-		batchKeysToCheck = append(batchKeysToCheck, batchKey)
-	}
-
-	if len(batchKeysToCheck) > 0 {
-		seenInDB, err := d.keyDB.Get(lo.Map(batchKeysToCheck, func(bk types.BatchKey, _ int) string { return bk.Key }))
-		if err != nil {
-			return nil, fmt.Errorf("getting keys from keydb: %w", err)
-		}
-		for _, batchKey := range batchKeysToCheck {
-			if !seenInDB[batchKey.Key] {
-				result[batchKey] = true
-			}
-		}
-	}
-
-	return result, nil
-}
-
-func (d *Dedup) Commit(keys []string) error {
-	if err := d.keyDB.Set(keys); err != nil {
-		return fmt.Errorf("setting keys in keydb: %w", err)
-	}
-	return nil
-}
-
-func (d *Dedup) Close() { d.keyDB.Close() }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -55,7 +54,7 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
+func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) (types.DB, error) {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 	log := logger.NewLogger().Child("Dedup")
 	badgerOpts := badger.
@@ -96,10 +95,11 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 	db.stats.vlogSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "vlog"})
 	db.stats.totSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "total"})
 
-	return &Dedup{
-		badgerDB:    db,
-		uncommitted: make(map[string]struct{}),
+	err := db.init()
+	if err != nil {
+		return nil, fmt.Errorf("initializing badger db: %w", err)
 	}
+	return db, nil
 }
 
 func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
@@ -211,87 +211,6 @@ func (d *BadgerDB) gcLoop() {
 		d.stats.vlogSize.Gauge(vlogSize)
 		d.stats.totSize.Gauge(totSize)
 	}
-}
-
-type Dedup struct {
-	badgerDB      *BadgerDB
-	uncommittedMu sync.RWMutex
-	uncommitted   map[string]struct{}
-}
-
-func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
-	if err := d.badgerDB.init(); err != nil {
-		return nil, fmt.Errorf("initializing badger db: %w", err)
-	}
-	result := make(map[types.BatchKey]bool, len(batchKeys))  // keys encountered for the first time
-	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
-
-	// figure out which keys need to be checked against the DB
-	batchKeysToCheck := make([]types.BatchKey, 0, len(batchKeys)) // keys to check in the DB
-	d.uncommittedMu.RLock()
-	for _, batchKey := range batchKeys {
-		// if the key is already seen in the batch, skip it
-		if _, seen := seenInBatch[batchKey.Key]; seen {
-			continue
-		}
-		// if the key is already in the uncommitted list , skip it
-		if _, uncommitted := d.uncommitted[batchKey.Key]; uncommitted {
-			seenInBatch[batchKey.Key] = struct{}{}
-			continue
-		}
-		seenInBatch[batchKey.Key] = struct{}{}
-		batchKeysToCheck = append(batchKeysToCheck, batchKey)
-	}
-	d.uncommittedMu.RUnlock()
-
-	if len(batchKeysToCheck) > 0 {
-		seenInDB, err := d.badgerDB.Get(lo.Map(batchKeysToCheck, func(bk types.BatchKey, _ int) string { return bk.Key }))
-		if err != nil {
-			return nil, fmt.Errorf("getting keys from badger db: %w", err)
-		}
-		d.uncommittedMu.Lock()
-		defer d.uncommittedMu.Unlock()
-		for _, batchKey := range batchKeysToCheck {
-			if !seenInDB[batchKey.Key] {
-				if _, race := d.uncommitted[batchKey.Key]; !race { // if another goroutine managed to set this key, we should skip it
-					result[batchKey] = true
-					d.uncommitted[batchKey.Key] = struct{}{} // mark this key as uncommitted
-				}
-			}
-		}
-	}
-	return result, nil
-}
-
-func (d *Dedup) Commit(keys []string) error {
-	if err := d.badgerDB.init(); err != nil {
-		return fmt.Errorf("initializing badger db: %w", err)
-	}
-	kvs := make([]types.BatchKey, len(keys))
-	d.uncommittedMu.RLock()
-	for i, key := range keys {
-		if _, ok := d.uncommitted[key]; !ok {
-			d.uncommittedMu.RUnlock()
-			return fmt.Errorf("key %v has not been previously set", key)
-		}
-		kvs[i] = types.BatchKey{Key: key}
-	}
-	d.uncommittedMu.RUnlock()
-
-	if err := d.badgerDB.Set(keys); err != nil {
-		return fmt.Errorf("setting keys in badger db: %w", err)
-	}
-
-	d.uncommittedMu.Lock()
-	defer d.uncommittedMu.Unlock()
-	for _, kv := range kvs {
-		delete(d.uncommitted, kv.Key)
-	}
-	return nil
-}
-
-func (d *Dedup) Close() {
-	d.badgerDB.Close()
 }
 
 type loggerForBadger struct {
