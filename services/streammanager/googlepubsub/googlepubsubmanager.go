@@ -88,14 +88,15 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	topicMap := make(map[string]*pubsub.Topic, len(pubsubConfig.EventToTopicMap))
 	for _, s := range pubsubConfig.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
-		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
-		topic.PublishSettings.ByteThreshold = config.GetIntVar(int(10*bytesize.MB), 1, "StreamManager.GooglePubSub.ByteThreshold")
+		topic.PublishSettings.NumGoroutines = config.GetIntVar(25, 1, "Router.GOOGLEPUBSUB.Client.NumGoroutines")
+		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "Router.GOOGLEPUBSUB.Client.DelayThreshold")
+		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "Router.GOOGLEPUBSUB.Client.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
+		topic.PublishSettings.ByteThreshold = config.GetIntVar(int(10*bytesize.MB), 1, "Router.GOOGLEPUBSUB.Client.ByteThreshold")
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = config.GetIntVar(1000, 1, "StreamManager.GooglePubSub.MaxOutstandingMessages")
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = config.GetIntVar(-1, 1, "StreamManager.GooglePubSub.MaxOutstandingBytes")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = config.GetIntVar(1000, 1, "Router.GOOGLEPUBSUB.Client.MaxOutstandingMessages")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = config.GetIntVar(-1, 1, "Router.GOOGLEPUBSUB.Client.MaxOutstandingBytes")
 		topicMap[s["to"]] = topic
 	}
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: config.Default}, nil
