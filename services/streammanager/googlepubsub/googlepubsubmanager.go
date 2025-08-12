@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/cenkalti/backoff"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -40,10 +41,14 @@ type PubsubClient struct {
 	opts     common.Opts
 }
 
-var pkgLogger logger.Logger
+var (
+	pkgLogger   logger.Logger
+	enableRetry *config.Reloadable[bool]
+)
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("googlepubsub")
+	enableRetry = config.GetReloadableBoolVar(false, "StreamManager.GooglePubSub.EnableRetry")
 }
 
 type GooglePubSubProducer struct {
@@ -102,6 +107,58 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: config.Default}, nil
 }
 
+func (producer *GooglePubSubProducer) publish(ctx context.Context, topic *pubsub.Topic, message *pubsub.Message) (string, error) {
+	result := topic.Publish(ctx, message)
+	serverID, err := result.Get(ctx)
+	if err != nil {
+		return "", err
+	}
+	return serverID, nil
+}
+
+// publishWithRetry publishes a message with retry logic for intermittent authentication errors
+func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topic *pubsub.Topic, message *pubsub.Message) (string, error) {
+	pkgLogger.Infof("[GooglePubSub] Publishing with retry enabled")
+	var serverID string
+
+	operation := func() error {
+		var err error
+		serverID, err = producer.publish(ctx, topic, message)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on authentication errors
+		st, ok := status.FromError(err)
+		if ok && st.Code() == codes.Unauthenticated {
+			pkgLogger.Warnf("[GooglePubSub] Authentication error, retrying: %v", err)
+			return err // Return error to trigger retry
+		}
+
+		// For non-authentication errors, mark as permanent to avoid retry
+		return backoff.Permanent(err)
+	}
+
+	// Use exponential backoff with exactly 3 attempts
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 100 * time.Millisecond
+	bo.MaxInterval = 1 * time.Second
+	bo.MaxElapsedTime = 1 * time.Second
+	bo.Multiplier = 2
+
+	// Limit to exactly 3 attempts
+	boWithMaxRetries := backoff.WithMaxRetries(bo, 3)
+
+	err := backoff.RetryNotify(operation, backoff.WithContext(boWithMaxRetries, ctx), func(err error, t time.Duration) {
+		pkgLogger.Warnf("[GooglePubSub] Retrying after %v due to authentication error", t)
+	})
+	if err != nil {
+		return "", fmt.Errorf("publish failed after retries: %w", err)
+	}
+
+	return serverID, nil
+}
+
 func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	pbs := producer.client
@@ -157,30 +214,29 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 	}
 
 	attributes := parsedJSON.Get("attributes").Map()
-	var result *pubsub.PublishResult
+	var message *pubsub.Message
 
 	if len(attributes) != 0 {
 		attributesMap := make(map[string]string)
 		for k, v := range attributes {
 			attributesMap[k] = v.Str
 		}
-		result = topic.Publish(
-			ctx,
-			&pubsub.Message{
-				Data:       value,
-				Attributes: attributesMap,
-			},
-		)
+		message = &pubsub.Message{
+			Data:       value,
+			Attributes: attributesMap,
+		}
 	} else {
-		result = topic.Publish(
-			ctx,
-			&pubsub.Message{
-				Data: value,
-			},
-		)
+		message = &pubsub.Message{
+			Data: value,
+		}
 	}
 
-	serverID, err := result.Get(ctx)
+	var serverID string
+	if enableRetry.Load() {
+		serverID, err = producer.publishWithRetry(ctx, topic, message)
+	} else {
+		serverID, err = producer.publish(ctx, topic, message)
+	}
 
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
