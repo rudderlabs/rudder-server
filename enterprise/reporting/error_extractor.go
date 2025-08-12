@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -391,10 +392,16 @@ func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool 
 	return false
 }
 
-func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {
+func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string, destType string) string {
 	if errorCode := getErrorCodeFromStatTags(statTags); errorCode != "" {
 		return errorCode
 	}
+
+	// Skip deprecation error detection for warehouse destinations
+	if slices.Contains(warehouseutils.WarehouseDestinations, destType) {
+		return ""
+	}
+
 	if ext.isVersionDeprecationError(errorMessage) {
 		return "deprecation"
 	}

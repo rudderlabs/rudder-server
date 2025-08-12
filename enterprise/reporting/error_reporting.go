@@ -269,7 +269,7 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			logger.NewStringField("destinationDefinitionID", destinationDetail.destinationDefinitionID))
 
 		// extract error-message & error-code
-		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags)
+		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags, destinationDetail.destType)
 
 		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
 			"errorCode":     metric.StatusDetail.ErrorDetails.Code,
@@ -347,10 +347,10 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 	return dbHandle, nil
 }
 
-func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string, statTags map[string]string) types.ErrorDetails {
+func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string, statTags map[string]string, destType string) types.ErrorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
-	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg, statTags)
+	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg, statTags, destType)
 	return types.ErrorDetails{
 		Message: cleanedErrMsg,
 		Code:    errorCode,

@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -382,7 +383,7 @@ func TestExtractErrorDetails(t *testing.T) {
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
-			errorDetails := edr.extractErrorDetails(tc.inputErrMsg, tc.statTags)
+			errorDetails := edr.extractErrorDetails(tc.inputErrMsg, tc.statTags, "TEST_DESTINATION")
 
 			require.Equal(t, tc.output.errorMsg, errorDetails.Message)
 			require.Equal(t, tc.output.errorCode, errorDetails.Code)
@@ -771,4 +772,170 @@ func TestAggregationLogic(t *testing.T) {
 	}
 
 	require.Equal(t, reportResults, reportingMetrics)
+}
+
+func TestExtractorHandle_GetErrorCode_WarehouseDestinations(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name         string
+		errorMessage string
+		statTags     map[string]string
+		destType     string
+		expectedCode string
+		description  string
+	}{
+		{
+			name:         "warehouse destination should not return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "DELTALAKE",
+			expectedCode: "",
+			description:  "DELTALAKE warehouse destination should be skipped for deprecation detection",
+		},
+		{
+			name:         "warehouse destination should not return deprecation error for SNOWFLAKE",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "SNOWFLAKE",
+			expectedCode: "",
+			description:  "SNOWFLAKE warehouse destination should be skipped for deprecation detection",
+		},
+		{
+			name:         "warehouse destination should not return deprecation error for BQ",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "BQ",
+			expectedCode: "",
+			description:  "BQ warehouse destination should be skipped for deprecation detection",
+		},
+		{
+			name:         "non-warehouse destination should return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "deprecation",
+			description:  "Non-warehouse destination should still detect deprecation errors",
+		},
+		{
+			name:         "non-warehouse destination should return deprecation error for GOOGLE_ANALYTICS",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "GOOGLE_ANALYTICS",
+			expectedCode: "deprecation",
+			description:  "Non-warehouse destination should still detect deprecation errors",
+		},
+		{
+			name:         "warehouse destination should return error code from stat tags",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{"errorCategory": "network", "errorType": "aborted"},
+			destType:     "DELTALAKE",
+			expectedCode: "network:aborted",
+			description:  "Warehouse destination should still return error codes from stat tags",
+		},
+		{
+			name:         "non-warehouse destination should return error code from stat tags",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{"errorCategory": "network", "errorType": "aborted"},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "network:aborted",
+			description:  "Non-warehouse destination should still return error codes from stat tags",
+		},
+		{
+			name:         "empty destination type should not return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "",
+			expectedCode: "deprecation",
+			description:  "Empty destination type should be treated as non-warehouse",
+		},
+		{
+			name:         "unknown destination type should return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "UNKNOWN_DESTINATION",
+			expectedCode: "deprecation",
+			description:  "Unknown destination type should be treated as non-warehouse",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := ext.GetErrorCode(tc.errorMessage, tc.statTags, tc.destType)
+			require.Equal(t, tc.expectedCode, result, tc.description)
+		})
+	}
+}
+
+func TestExtractorHandle_GetErrorCode_AllWarehouseDestinations(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+	errorMessage := "API version deprecated and no longer supported"
+	statTags := map[string]string{}
+
+	// Test all warehouse destinations
+	for _, destType := range warehouseutils.WarehouseDestinations {
+		t.Run("warehouse_destination_"+destType, func(t *testing.T) {
+			t.Parallel()
+
+			result := ext.GetErrorCode(errorMessage, statTags, destType)
+			require.Equal(t, "", result, "Warehouse destination %s should not return deprecation error", destType)
+		})
+	}
+}
+
+func TestExtractorHandle_GetErrorCode_EdgeCases(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name         string
+		errorMessage string
+		statTags     map[string]string
+		destType     string
+		expectedCode string
+		description  string
+	}{
+		{
+			name:         "warehouse destination with non-deprecation error",
+			errorMessage: "Connection timeout",
+			statTags:     map[string]string{},
+			destType:     "DELTALAKE",
+			expectedCode: "",
+			description:  "Warehouse destination should return empty for non-deprecation errors",
+		},
+		{
+			name:         "non-warehouse destination with non-deprecation error",
+			errorMessage: "Connection timeout",
+			statTags:     map[string]string{},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "",
+			description:  "Non-warehouse destination should return empty for non-deprecation errors",
+		},
+		{
+			name:         "warehouse destination with empty error message",
+			errorMessage: "",
+			statTags:     map[string]string{},
+			destType:     "DELTALAKE",
+			expectedCode: "",
+			description:  "Warehouse destination should return empty for empty error messages",
+		},
+		{
+			name:         "non-warehouse destination with empty error message",
+			errorMessage: "",
+			statTags:     map[string]string{},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "",
+			description:  "Non-warehouse destination should return empty for empty error messages",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := ext.GetErrorCode(tc.errorMessage, tc.statTags, tc.destType)
+			require.Equal(t, tc.expectedCode, result, tc.description)
+		})
+	}
 }
