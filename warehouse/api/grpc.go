@@ -1206,7 +1206,7 @@ func (g *GRPC) GetDestinationNamespaces(ctx context.Context, request *proto.GetD
 		}
 	}
 
-	log.Infon(fmt.Sprintf("Successfully retrieved %d destination namespaces", len(protoMappings)))
+	log.Infon("Successfully retrieved destination namespaces", logger.NewIntField("mappingCount", int64(len(protoMappings))))
 	return &proto.GetDestinationNamespacesResponse{
 		NamespaceMappings: protoMappings,
 	}, nil
