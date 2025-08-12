@@ -811,6 +811,9 @@ func TestUniqueUsersReporter(t *testing.T) {
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
 				collector := &UniqueUsersReporter{log: logger.NOP, hllSettings: &hllSettings}
+				collector.now = func() time.Time {
+					return time.Date(2025, 8, 15, 0, 0, 0, 0, time.UTC)
+				}
 				// legacy mode
 				collector.enabledV2Metrics = config.SingleValueLoader(false)
 				collector.shadowV2Metrics = config.SingleValueLoader(false)
@@ -839,6 +842,24 @@ func TestUniqueUsersReporter(t *testing.T) {
 					})
 				}
 				require.ElementsMatch(t, trackedUsersWithShadowMetrics, reports)
+			})
+
+			t.Run("force new metrics-exactly on 1st of September", func(t *testing.T) {
+				collector := &UniqueUsersReporter{log: logger.NOP, hllSettings: &hllSettings}
+				collector.now = func() time.Time {
+					return time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
+				}
+				reports := collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
+				require.ElementsMatch(t, tc.trackedUsers, reports)
+			})
+
+			t.Run("force new metrics-after 1st of September", func(t *testing.T) {
+				collector := &UniqueUsersReporter{log: logger.NOP, hllSettings: &hllSettings}
+				collector.now = func() time.Time {
+					return time.Date(2025, 9, 2, 0, 0, 0, 0, time.UTC)
+				}
+				reports := collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
+				require.ElementsMatch(t, tc.trackedUsers, reports)
 			})
 		}
 	})
