@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"fmt"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )
@@ -48,7 +49,7 @@ func (jd *Handle) runAlwaysChangesets(templateData map[string]interface{}) {
 }
 
 func (jd *Handle) dropDatabaseTables(l lock.LockToken) {
-	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
+	jd.logger.Infon("[JobsDB] Dropping all database tables", logger.NewStringField("tablePrefix", jd.tablePrefix))
 	jd.dropSchemaMigrationTables()
 	jd.assertError(jd.dropAllDS(l))
 	jd.dropJournal()

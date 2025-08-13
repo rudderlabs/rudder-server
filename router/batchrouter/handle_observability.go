@@ -267,17 +267,17 @@ func (brt *Handle) recordUploadStats(destination Connection, output UploadResult
 }
 
 func (brt *Handle) sendRetryStoreStats(attempt int) {
-	brt.logger.Warnf("Timeout during store jobs in batch router module, attempt %d", attempt)
+	brt.logger.Warnn("Timeout during store jobs in batch router module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
 func (brt *Handle) sendRetryUpdateStats(attempt int) {
-	brt.logger.Warnf("Timeout during update job status in batch router module, attempt %d", attempt)
+	brt.logger.Warnn("Timeout during update job status in batch router module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
 func (brt *Handle) sendQueryRetryStats(attempt int) {
-	brt.logger.Warnf("Timeout during query jobs in batch router module, attempt %d", attempt)
+	brt.logger.Warnn("Timeout during query jobs in batch router module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 

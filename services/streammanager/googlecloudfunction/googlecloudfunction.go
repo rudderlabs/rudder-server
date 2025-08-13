@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -79,7 +80,7 @@ type GoogleCloudFunctionClientImpl struct{}
 func (c *GoogleCloudFunctionClientImpl) GetToken(ctx context.Context, functionUrl string, opts ...option.ClientOption) (*oauth2.Token, error) {
 	ts, err := idtoken.NewTokenSource(ctx, functionUrl, opts...)
 	if err != nil {
-		pkgLogger.Errorf("failed to create NewTokenSource: %w", err)
+		pkgLogger.Errorn("failed to create NewTokenSource", obskit.Error(err))
 		return nil, err
 	}
 
@@ -118,7 +119,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, producer.config.FunctionUrl, bytes.NewReader(jsonData))
 	if err != nil {
-		pkgLogger.Errorf("Failed to create httpRequest for Fn: %w", err)
+		pkgLogger.Errorn("Failed to create httpRequest for Fn", obskit.Error(err))
 		return http.StatusBadRequest, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to create httpRequest for Fn: %s", err.Error())
 	}
 
@@ -127,7 +128,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	if producer.config.shouldGenerateToken() {
 		err := producer.config.generateToken(context.Background(), producer.client)
 		if err != nil {
-			pkgLogger.Errorf("failed to receive token: %w", err)
+			pkgLogger.Errorn("failed to receive token", obskit.Error(err))
 			return http.StatusUnauthorized, "Failure", fmt.Sprintf("[GoogleCloudFunction] Failed to receive token: %s", err.Error())
 		}
 	}
@@ -151,7 +152,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 		responseMessage = err.Error()
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call was not executed " + responseMessage
-		pkgLogger.Errorf("error while calling the function :: %v", err)
+		pkgLogger.Errorn("error while calling the function", obskit.Error(err))
 		return http.StatusBadRequest, respStatus, responseMessage
 	}
 
@@ -161,7 +162,7 @@ func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _
 	} else {
 		respStatus = "Failure"
 		responseMessage = "[GOOGLE_CLOUD_FUNCTION] error :: Function call failed " + string(responseBody)
-		pkgLogger.Error(responseMessage)
+		pkgLogger.Errorn(responseMessage)
 	}
 	return resp.StatusCode, respStatus, responseMessage
 }

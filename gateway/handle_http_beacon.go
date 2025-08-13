@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
@@ -35,11 +36,11 @@ func (gw *Handle) beaconInterceptor(delegate http.HandlerFunc) http.HandlerFunc 
 			}
 			stat.RequestFailed("invalidWriteKey")
 			stat.Report(gw.stats)
-			gw.logger.Infow("response",
-				"ip", kithttputil.GetRequestIP(r),
-				"path", r.URL.Path,
-				"status", status,
-				"body", responseBody)
+			gw.logger.Infon("response",
+				logger.NewStringField("ip", kithttputil.GetRequestIP(r)),
+				logger.NewStringField("path", r.URL.Path),
+				logger.NewIntField("status", int64(status)),
+				logger.NewStringField("body", responseBody))
 			http.Error(w, responseBody, status)
 		}
 	}

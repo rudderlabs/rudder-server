@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -175,7 +176,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 	rawJSON, err := trans.getRequestPayload(transformMessageCopy, compactRequestPayloads)
 	if err != nil {
-		trans.logger.Errorw("problematic input for marshalling", "error", err)
+		trans.logger.Errorn("problematic input for marshalling", obskit.Error(err))
 		panic(err)
 	}
 
@@ -255,7 +256,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			reqFailed = true
 			trans.logger.Errorn(
 				"JS HTTP connection error",
-				logger.NewErrorField(err),
+				obskit.Error(err),
 				logger.NewStringField("URL", url),
 			)
 			if retryCount > config.GetInt("Processor.maxRetry", 30) {
@@ -281,7 +282,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+		trans.logger.Errorn("[Router Transfomrer] :: Transformer returned status code and reason",
+			logger.NewIntField("statusCode", int64(resp.StatusCode)),
+			logger.NewStringField("reason", resp.Status))
 	}
 
 	var transResp oauthv2.TransportResponse
@@ -300,7 +303,10 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			transformerAPIVersion = 0
 		}
 		if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
-			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url)
+			trans.logger.Errorn("Incompatible transformer version",
+				logger.NewIntField("expectedVersion", int64(utilTypes.SupportedTransformerApiVersion)),
+				logger.NewIntField("receivedVersion", int64(transformerAPIVersion)),
+				logger.NewStringField("url", url))
 			panic(fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
@@ -406,7 +412,8 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	routerJobDontBatchDirectives := make(map[int64]bool)
 
 	if len(proxyReqParams.ResponseData.Metadata) == 0 {
-		trans.logger.Warnf(`[TransformerProxy] (Dest-%[1]v) Input metadata is empty`, proxyReqParams.DestName)
+		trans.logger.Warnn("[TransformerProxy] Input metadata is empty",
+			logger.NewStringField("destination", proxyReqParams.DestName))
 		return ProxyRequestResponse{
 			ProxyRequestStatusCode:   http.StatusBadRequest,
 			ProxyRequestResponseBody: "Input metadata is empty",
@@ -421,7 +428,8 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 		routerJobDontBatchDirectives[m.JobID] = m.DontBatch
 	}
 
-	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) Proxy Request starts - %[1]v`, proxyReqParams.DestName)
+	trans.logger.Debugn("[TransformerProxy] Proxy Request starts",
+		logger.NewStringField("destination", proxyReqParams.DestName))
 
 	payload, err := proxyReqParams.Adapter.getPayload(proxyReqParams)
 	if err != nil {
@@ -645,7 +653,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	destName := proxyReqParams.DestName
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
 	if err != nil {
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, err.Error())
+		trans.logger.Errorn("[TransformerProxy] NewRequestWithContext Failed",
+			logger.NewStringField("destination", destName),
+			obskit.Error(err))
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
@@ -653,7 +663,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 		}
 	}
 	req.Header.Set("Content-Type", "application/json")
-	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt((trans.destinationTimeout+trans.transformTimeout).Milliseconds(), 10))
+	trans.logger.Debugn("[TransformerProxy] Timeout for destination",
+		logger.NewStringField("destination", destName),
+		logger.NewIntField("timeoutMs", (trans.destinationTimeout+trans.transformTimeout).Milliseconds()))
 	// Make use of this header to set timeout in the transfomer's http client
 	// The header name may be worked out ?
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
@@ -676,7 +688,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 
 	if os.IsTimeout(err) {
 		// A timeout error occurred
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Client.Do Failure for %[1]v, with %[2]v`, destName, err.Error())
+		trans.logger.Errorn("[TransformerProxy] Client.Do Failure",
+			logger.NewStringField("destination", destName),
+			obskit.Error(err))
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusGatewayTimeout,
@@ -684,7 +698,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 		}
 	} else if err != nil {
 		// This was an error, but not a timeout
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Client.Do Failure for %[1]v, with %[2]v`, destName, err.Error())
+		trans.logger.Errorn("[TransformerProxy] Client.Do Failure",
+			logger.NewStringField("destination", destName),
+			obskit.Error(err))
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
@@ -694,7 +710,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 		// Actually Router wouldn't send any destination to proxy unless it already exists
 		// But if accidentally such a request is sent, failing instead of aborting
 		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
-		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Client.Do Failure for %[1]v, with %[2]v`, destName, notFoundErr)
+		trans.logger.Errorn("[TransformerProxy] Client.Do Failure",
+			logger.NewStringField("destination", destName),
+			obskit.Error(notFoundErr))
 		return httpProxyResponse{
 			respData:   []byte{},
 			statusCode: http.StatusInternalServerError,
@@ -717,7 +735,9 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	defer func() { httputil.CloseResponse(resp) }()
 	// error handling while reading from resp.Body
 	if err != nil {
-		trans.logger.Errorn(`[TransformerProxy] Failure`, logger.NewIntField("statusCode", http.StatusBadRequest), logger.NewErrorField(err))
+		trans.logger.Errorn("[TransformerProxy] Failure",
+			logger.NewIntField("statusCode", http.StatusBadRequest),
+			obskit.Error(err))
 		return httpProxyResponse{
 			respData:   []byte{}, // sending this as it is not getting sent at all
 			statusCode: http.StatusInternalServerError,

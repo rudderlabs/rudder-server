@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/googleutil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -123,9 +124,9 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 	value, err := jsonrs.Marshal(data)
 	if err != nil {
 		respStatus = "Failure"
-		responseMessage = "[GooglePubSub] error  :: " + err.Error()
-		pkgLogger.Errorf("[GooglePubSub] error  :: %v", err)
+		pkgLogger.Errorn("[GooglePubSub] error", obskit.Error(err))
 		statusCode := 400
+		responseMessage = "[GooglePubSub] error  :: " + err.Error()
 		return statusCode, respStatus, responseMessage
 	}
 
@@ -138,7 +139,7 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 	if !ok {
 		respStatus = "Failure"
 		responseMessage = "[GooglePubSub] error :: Could not parse topic id to string"
-		pkgLogger.Error(responseMessage)
+		pkgLogger.Errorn("[GooglePubSub] response error", logger.NewStringField("responseMessage", responseMessage))
 		statusCode := 400
 		return statusCode, respStatus, responseMessage
 	}
@@ -207,7 +208,7 @@ func (producer *GooglePubSubProducer) Close() error {
 		}
 		err := client.pbs.Close()
 		if err != nil {
-			pkgLogger.Errorf("error in closing Google Pub/Sub producer: %s", err.Error())
+			pkgLogger.Errorn("error in closing Google Pub/Sub producer", obskit.Error(err))
 		}
 	}
 	return err

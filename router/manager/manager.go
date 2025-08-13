@@ -90,11 +90,11 @@ loop:
 	for {
 		select {
 		case <-ctx.Done():
-			r.logger.Infof("Router monitor stopped Context Cancelled")
+			r.logger.Infon("Router monitor stopped Context Cancelled")
 			break loop
 		case data, open := <-ch:
 			if !open {
-				r.logger.Infof("Router monitor stopped, Config Channel Closed")
+				r.logger.Infon("Router monitor stopped, Config Channel Closed")
 				break loop
 			}
 			config := data.Data.(map[string]backendconfig.ConfigT)
@@ -107,7 +107,8 @@ loop:
 						if batchrouter.IsBatchRouterDestination(destination.DestinationDefinition.Name) {
 							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								r.logger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
+								r.logger.Infon("Starting a new Batch Destination Router",
+									logger.NewStringField("destinationName", destination.DestinationDefinition.Name))
 								brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
 								brt.Start()
 								cleanup = append(cleanup, brt.Shutdown)
@@ -116,7 +117,8 @@ loop:
 						} else {
 							_, ok := dstToRouter[destination.DestinationDefinition.Name]
 							if !ok {
-								r.logger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
+								r.logger.Infon("Starting a new Destination",
+									logger.NewStringField("destinationName", destination.DestinationDefinition.Name))
 								rt := routerFactory.New(destination)
 								rt.Start()
 								cleanup = append(cleanup, rt.Shutdown)

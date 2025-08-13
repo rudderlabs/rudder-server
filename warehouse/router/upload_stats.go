@@ -7,7 +7,6 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -61,7 +60,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		[]string{},
 	)
 	if err != nil {
-		job.logger.Warnw("sum of total exported events for upload", logfield.Error, err.Error())
+		job.logger.Warnn("sum of total exported events for upload", obskit.Error(err))
 		return
 	}
 
@@ -70,7 +69,7 @@ func (job *UploadJob) generateUploadSuccessMetrics() {
 		job.upload.ID,
 	)
 	if err != nil {
-		job.logger.Warnw("total events for upload", logfield.Error, err.Error())
+		job.logger.Warnn("total events for upload", obskit.Error(err))
 		return
 	}
 
@@ -102,7 +101,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		[]string{},
 	)
 	if err != nil {
-		job.logger.Warnw("sum of total exported events for upload", logfield.Error, err.Error())
+		job.logger.Warnn("sum of total exported events for upload", obskit.Error(err))
 		return
 	}
 
@@ -111,7 +110,7 @@ func (job *UploadJob) generateUploadAbortedMetrics() {
 		job.upload.ID,
 	)
 	if err != nil {
-		job.logger.Warnw("total events for upload", logfield.Error, err.Error())
+		job.logger.Warnn("total events for upload", obskit.Error(err))
 		return
 	}
 

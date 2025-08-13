@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/backend-config/internal/cache"
@@ -146,7 +147,10 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	for _, source := range config.Sources {
 		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
-			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
+			pkgLogger.Debugn("destination processor status",
+				logger.NewStringField("destinationName", destination.Name),
+				logger.NewBoolField("isProcessorEnabled", destination.IsProcessorEnabled),
+			)
 			if destination.IsProcessorEnabled {
 				destinations = append(destinations, destination)
 			}
@@ -177,7 +181,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	sourceJSON, err = bc.Get(ctx)
 	if err != nil {
 		statConfigBackendError.Increment()
-		pkgLogger.Warnf("Error fetching config from backend: %v", err)
+		pkgLogger.Warnn("Error fetching config from backend", obskit.Error(err))
 
 		bc.initializedLock.RLock()
 		if bc.initialized {
@@ -189,12 +193,12 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 		// try to get config from cache
 		sourceJSONBytes, cacheErr := bc.cache.Get(ctx)
 		if cacheErr != nil {
-			pkgLogger.Warnf("Error fetching config from cache: %v", cacheErr)
+			pkgLogger.Warnn("Error fetching config from cache", obskit.Error(cacheErr))
 			return
 		}
 		err = jsonrs.Unmarshal(sourceJSONBytes, &sourceJSON)
 		if err != nil {
-			pkgLogger.Warnf("Error unmarshalling cached config: %v", cacheErr)
+			pkgLogger.Warnn("Error unmarshalling cached config", obskit.Error(cacheErr))
 			return
 		}
 		bc.usingCache = true
@@ -213,9 +217,9 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context) {
 	bc.curSourceJSONLock.Lock()
 	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
 
-		pkgLogger.Infow("Workspace Config changed",
-			"workspaces", len(sourceJSON),
-			"sources", lo.Sum(lo.Map(lo.Values(sourceJSON), func(c ConfigT, _ int) int { return len(c.Sources) })),
+		pkgLogger.Infon("Workspace Config changed",
+			logger.NewIntField("workspaces", int64(len(sourceJSON))),
+			logger.NewIntField("sources", int64(lo.Sum(lo.Map(lo.Values(sourceJSON), func(c ConfigT, _ int) int { return len(c.Sources) })))),
 		)
 
 		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
@@ -347,7 +351,7 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, _ string) {
 			if config.IsSet("DB.host") {
 				panic(fmt.Errorf("error starting backend config cache: %w", err))
 			} else {
-				pkgLogger.Warnf("Failed to start backend config cache, no cache will be used: %w", err)
+				pkgLogger.Warnn("Failed to start backend config cache, no cache will be used", obskit.Error(err))
 				bc.cache = &noCache{}
 			}
 		}
@@ -379,7 +383,7 @@ func (bc *backendConfigImpl) WaitForConfig(ctx context.Context) {
 		}
 		bc.initializedLock.RUnlock()
 
-		pkgLogger.Info("Waiting for backend config")
+		pkgLogger.Infon("Waiting for backend config")
 		select {
 		case <-ctx.Done():
 			return

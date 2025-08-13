@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -98,7 +99,7 @@ func NewBadgerEventSampler(
 		// corrupted or incompatible db, clean up the directory and retry
 		log.Errorn("Error while opening event sampler badger db, cleaning up the directory",
 			logger.NewStringField("module", module),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		if err := os.RemoveAll(opts.Dir); err != nil {
 			return nil, fmt.Errorf("removing badger db directory: %w", err)

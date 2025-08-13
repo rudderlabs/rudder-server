@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 )
 
@@ -23,10 +24,11 @@ type handler struct {
 }
 
 func (h *handler) GetSuppressedUser(workspaceID, userID, sourceID string) *model.Metadata {
-	h.log.Debugf("GetSuppressedUser called for workspace: %s, user %s, source %s", workspaceID, userID, sourceID)
+	log := h.log.Withn(obskit.WorkspaceID(workspaceID), obskit.SourceID(sourceID), logger.NewStringField("userID", userID))
+	log.Debugn("GetSuppressedUser called for workspace")
 	metadata, err := h.r.Suppressed(workspaceID, userID, sourceID)
 	if err != nil && !errors.Is(err, model.ErrRestoring) && !errors.Is(err, model.ErrKeyNotFound) {
-		h.log.Errorf("Suppression check failed for workspace: %s, user: %s, source: %s: %w", workspaceID, userID, sourceID, err)
+		log.Errorn("Suppression check failed for workspace", obskit.Error(err))
 	}
 	return metadata
 }

@@ -614,7 +614,7 @@ func (proc *Handle) setupReloadableVars() {
 func (proc *Handle) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	var err error
-	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
+	proc.logger.Infon("Starting processor in isolation mode", logger.NewStringField("isolationMode", string(proc.config.isolationMode)))
 	if proc.isolationStrategy, err = isolation.GetStrategy(proc.config.isolationMode); err != nil {
 		return fmt.Errorf("resolving isolation strategy for mode %q: %w", proc.config.isolationMode, err)
 	}
@@ -653,29 +653,29 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 	// pinger loop
 	g.Go(crash.Wrapper(func() error {
-		proc.logger.Info("Starting pinger loop")
+		proc.logger.Infon("Starting pinger loop")
 		proc.backendConfig.WaitForConfig(ctx)
-		proc.logger.Info("Backend config received")
+		proc.logger.Infon("Backend config received")
 
 		// waiting for init group
-		proc.logger.Info("Waiting for async init group")
+		proc.logger.Infon("Waiting for async init group")
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-proc.config.asyncInit.Wait():
 			// proceed
 		}
-		proc.logger.Info("Async init group done")
+		proc.logger.Infon("Async init group done")
 
 		// waiting for transformer features
-		proc.logger.Info("Waiting for transformer features")
+		proc.logger.Infon("Waiting for transformer features")
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-proc.transformerFeaturesService.Wait():
 			// proceed
 		}
-		proc.logger.Info("Transformer features received")
+		proc.logger.Infon("Transformer features received")
 
 		h := &workerHandleAdapter{proc}
 		pool := workerpool.New(ctx, func(partition string) workerpool.Worker {
@@ -820,7 +820,7 @@ func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 						var err error
 						genericConsentManagementMap[SourceID(source.ID)][DestinationID(destination.ID)], err = getGenericConsentManagementData(destination)
 						if err != nil {
-							proc.logger.Error(err)
+							proc.logger.Errorn("Error in pinger loop", obskit.Error(err))
 						}
 					}
 				}
@@ -877,7 +877,7 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 	source, ok := proc.config.sourceIdSourceMap[sourceId]
 	if !ok {
 		err = errors.New("source not found for sourceId")
-		proc.logger.Errorf(`Processor : source not found for sourceId: %s`, sourceId)
+		proc.logger.Errorn("Processor : source not found for sourceId", obskit.SourceID(sourceId))
 	}
 	return &source, err
 }
@@ -1023,7 +1023,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			var params map[string]interface{}
 			err := jsonrs.Unmarshal(job.Parameters, &params)
 			if err != nil {
-				proc.logger.Errorf("Error while UnMarshaling live event parameters: %v", err)
+				proc.logger.Errorn("Error while UnMarshaling live event parameters", obskit.Error(err))
 				continue
 			}
 
@@ -1036,14 +1036,14 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			events := make([]map[string]interface{}, 0)
 			err = jsonrs.Unmarshal(job.EventPayload, &events)
 			if err != nil {
-				proc.logger.Errorf("Error while UnMarshaling live event payload: %v", err)
+				proc.logger.Errorn("Error while UnMarshaling live event payload", obskit.Error(err))
 				continue
 			}
 			for i := range events {
 				event := &events[i]
 				eventPayload, err := jsonrs.Marshal(*event)
 				if err != nil {
-					proc.logger.Errorf("Error while Marshaling live event payload: %v", err)
+					proc.logger.Errorn("Error while Marshaling live event payload", obskit.Error(err))
 					continue
 				}
 
@@ -1124,7 +1124,7 @@ func (proc *Handle) getTransformerEvents(
 
 				sampleEvent, err := jsonrs.Marshal(message)
 				if err != nil {
-					proc.logger.Errorf(`[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events: %v`, err)
+					proc.logger.Errorn("[Processor: getDestTransformerEvents] Failed to unmarshal first element in transformed events", obskit.Error(err))
 					sampleEvent = nil
 				}
 				return sampleEvent
@@ -1425,7 +1425,7 @@ func (proc *Handle) getTransformationMetrics(
 		)
 		payload, err := jsonrs.Marshal(messages)
 		if err != nil {
-			proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal list of failed events: %v`, err)
+			proc.logger.Errorn("[Processor: getTransformationMetrics] Failed to unmarshal list of failed events", obskit.Error(err))
 			continue
 		}
 
@@ -1453,7 +1453,7 @@ func (proc *Handle) getTransformationMetrics(
 					}
 					sampleEvent, err := jsonrs.Marshal(message)
 					if err != nil {
-						proc.logger.Errorf(`[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events: %v`, err)
+						proc.logger.Errorn("[Processor: getTransformationMetrics] Failed to unmarshal first element in failed events", obskit.Error(err))
 						sampleEvent = nil
 					}
 					return sampleEvent
@@ -1463,9 +1463,12 @@ func (proc *Handle) getTransformationMetrics(
 
 		failedEvent.Metadata.MessageIDs = messageIds
 
-		proc.logger.Debugf(
-			"[Processor: getTransformationMetrics] Error [%d] for source %q and destination %q: %s",
-			failedEvent.StatusCode, commonMetaData.SourceID, commonMetaData.DestinationID, failedEvent.Error,
+		proc.logger.Debugn(
+			"[Processor: getTransformationMetrics] Error for source and destination",
+			logger.NewIntField("statusCode", int64(failedEvent.StatusCode)),
+			obskit.SourceID(commonMetaData.SourceID),
+			obskit.DestinationID(commonMetaData.DestinationID),
+			logger.NewStringField("error", failedEvent.Error),
 		)
 
 		id := misc.FastUUID()
@@ -1485,7 +1488,7 @@ func (proc *Handle) getTransformationMetrics(
 		}
 		marshalledParams, err := jsonrs.Marshal(params)
 		if err != nil {
-			proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
+			proc.logger.Errorn("[Processor] Failed to marshal parameters", logger.NewStringField("parameters", stringify.Any(params)))
 			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
 		}
 
@@ -1531,14 +1534,14 @@ func (proc *Handle) updateSourceEventStatsDetailed(event types.SingularEventT, s
 	// Any panics in this function are captured and ignore sending the stat
 	defer func() {
 		if r := recover(); r != nil {
-			proc.logger.Error(r)
+			proc.logger.Error(r) // nolint:forbidigo
 		}
 	}()
 	var eventType string
 	var eventName string
 	source, err := proc.getSourceBySourceID(sourceId)
 	if err != nil {
-		proc.logger.Errorf("[Processor] Failed to get source by source id: %s", sourceId)
+		proc.logger.Errorn("[Processor] Failed to get source by source id", obskit.SourceID(sourceId))
 		return
 	}
 	if val, ok := event["type"]; ok {
@@ -1731,7 +1734,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	// Event count for performance stat monitoring
 	totalEvents := 0
 
-	proc.logger.Debug("[Processor] Total jobs picked up : ", len(jobList))
+	proc.logger.Debugn("[Processor] Total jobs picked up", logger.NewIntField("jobCount", int64(len(jobList))))
 
 	marshalStart := time.Now()
 	dedupKeys := make(map[string]struct{})
@@ -1822,7 +1825,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			if span != nil {
 				span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
 			}
-			proc.logger.Warnw("json parsing of event payload", "jobID", batchEvent.JobID, "error", err)
+			proc.logger.Warnn("json parsing of event payload", logger.NewIntField("jobID", batchEvent.JobID), obskit.Error(err))
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 			continue
 		}
@@ -1844,7 +1847,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 
 		for _, e := range proc.enrichers {
 			if err := e.Enrich(source, &gatewayBatchEvent, &eventParams); err != nil {
-				proc.logger.Errorf("unable to enrich the gateway batch event: %v", err.Error())
+				proc.logger.Errorn("unable to enrich the gateway batch event", obskit.Error(err))
 			}
 		}
 
@@ -2181,7 +2184,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		if err != nil {
 			return fmt.Errorf("store into event schema table failed with error: %v", err)
 		}
-		proc.logger.Debug("[Processor] Total jobs written to event_schema: ", len(preTrans.eventSchemaJobs))
+		proc.logger.Debugn("[Processor] Total jobs written to event_schema", logger.NewIntField("jobCount", int64(len(preTrans.eventSchemaJobs))))
 		return nil
 	})
 
@@ -2204,7 +2207,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		if err != nil {
 			return fmt.Errorf("store into archival table failed with error: %v", err)
 		}
-		proc.logger.Debug("[Processor] Total jobs written to archiver: ", len(preTrans.archivalJobs))
+		proc.logger.Debugn("[Processor] Total jobs written to archiver", logger.NewIntField("jobCount", int64(len(preTrans.archivalJobs))))
 		return nil
 	})
 
@@ -2673,17 +2676,17 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 }
 
 func (proc *Handle) sendRetryStoreStats(attempt int) {
-	proc.logger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
+	proc.logger.Warnn("Timeout during store jobs in processor module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *Handle) sendRetryUpdateStats(attempt int) {
-	proc.logger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
+	proc.logger.Warnn("Timeout during update job status in processor module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *Handle) sendQueryRetryStats(attempt int) {
-	proc.logger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
+	proc.logger.Warnn("Timeout during query jobs in processor module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
@@ -2803,7 +2806,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			if err != nil {
 				return err
 			}
-			proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
+			proc.logger.Debugn("[Processor] Total jobs written to batch router", logger.NewIntField("jobCount", int64(len(batchDestJobs))))
 			proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
 			proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
 			proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
@@ -2845,7 +2848,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			if err != nil {
 				return err
 			}
-			proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
+			proc.logger.Debugn("[Processor] Total jobs written to router", logger.NewIntField("jobCount", int64(len(destJobs))))
 			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
 			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
 			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
@@ -2864,11 +2867,11 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
 			}, proc.sendRetryStoreStats)
 			if err != nil {
-				proc.logger.Errorf("Store into proc error table failed with error: %v", err)
-				proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
+				proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
+				proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
 				return err
 			}
-			proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
+			proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
 			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 			return nil
 		})
@@ -2925,7 +2928,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		}
 	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
-	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
+	proc.logger.Debugn("Processor GW DB Write Complete", logger.NewIntField("totalProcessed", int64(len(statusList))))
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
 }
 
@@ -3102,7 +3105,7 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationMirroringStat = proc.newUserTransformationStat(sourceID, workspaceID, destination, true)
 			userTransformationMirroringStat.numEvents.Count(noOfEvents)
 		}
-		proc.logger.Debug("Custom Transform input size", noOfEvents)
+		proc.logger.Debugn("Custom Transform input size", logger.NewIntField("eventCount", int64(noOfEvents)))
 
 		trace.WithRegion(ctx, "UserTransform", func() {
 			startedAt := time.Now()
@@ -3231,7 +3234,7 @@ func (proc *Handle) userTransformAndFilter(
 			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
 			userTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 			userTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
-			proc.logger.Debugn("Custom Transform output size", logger.NewField("size", len(eventsToTransform)))
+			proc.logger.Debugn("Custom Transform output size", logger.NewIntField("size", int64(len(eventsToTransform))))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
 			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
@@ -3293,7 +3296,7 @@ func (proc *Handle) userTransformAndFilter(
 	// Filtering events based on the supported message types - START
 	s := time.Now()
 	eventFilterInCount := len(eventsToTransform)
-	proc.logger.Debug("Supported messages filtering input size", eventFilterInCount)
+	proc.logger.Debugn("Supported messages filtering input size", logger.NewIntField("eventCount", int64(eventFilterInCount)))
 	response = ConvertToFilteredTransformerResponse(
 		eventsToTransform,
 		transformAt != "none",
@@ -3303,9 +3306,9 @@ func (proc *Handle) userTransformAndFilter(
 					proc.drainConfig.jobRunIDs.Load(),
 					event.Metadata.SourceJobRunID,
 				) {
-				proc.logger.Debugf(
-					"cancelled jobRunID: %s",
-					event.Metadata.SourceJobRunID,
+				proc.logger.Debugn(
+					"cancelled jobRunID",
+					logger.NewStringField("jobRunID", event.Metadata.SourceJobRunID),
 				)
 				return true, "cancelled jobRunId"
 			}
@@ -3322,7 +3325,7 @@ func (proc *Handle) userTransformAndFilter(
 	}
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.EVENT_FILTER)
-	proc.logger.Debug("Supported messages filtering output size", len(eventsToTransform))
+	proc.logger.Debugn("Supported messages filtering output size", logger.NewIntField("eventCount", int64(len(eventsToTransform))))
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
@@ -3409,7 +3412,7 @@ func (proc *Handle) destTransform(
 	if transformAt == "processor" || (transformAt == "router" && !transformAtFromFeaturesFile) {
 		trace.WithRegion(ctx, "Dest Transform", func() {
 			trace.Logf(ctx, "Dest Transform", "input size %d", len(data.eventsToTransform))
-			proc.logger.Debug("Dest Transform input size", len(data.eventsToTransform))
+			proc.logger.Debugn("Dest Transform input size", logger.NewIntField("inputSize", int64(len(data.eventsToTransform))))
 			s := time.Now()
 			response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
 
@@ -3417,7 +3420,7 @@ func (proc *Handle) destTransform(
 			destTransformationStat.transformTime.Since(s)
 			transformAt = "processor"
 
-			proc.logger.Debugf("Dest Transform output size %d", len(response.Events))
+			proc.logger.Debugn("Dest Transform output size", logger.NewIntField("outputSize", int64(len(response.Events))))
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
@@ -3540,7 +3543,7 @@ func (proc *Handle) destTransform(
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
-				proc.logger.Errorf("[Processor] Failed to marshal parameters object. Parameters: %v", params)
+				proc.logger.Errorn("[Processor] Failed to marshal parameters object", logger.NewStringField("parameters", stringify.Any(params)))
 				panic(err)
 			}
 
@@ -3733,7 +3736,7 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
 	}
 
-	proc.logger.Debugf("Processor DB Read size: %d", proc.config.maxEventsToProcess)
+	proc.logger.Debugn("Processor DB Read size", logger.NewIntField("maxEventsToProcess", int64(proc.config.maxEventsToProcess.Load())))
 
 	queryParams := jobsdb.GetQueryParams{
 		CustomValFilters: []string{proc.config.GWCustomVal},
@@ -3747,7 +3750,7 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 		return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
 	}, proc.sendQueryRetryStats)
 	if err != nil {
-		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
+		proc.logger.Errorn("Failed to get unprocessed jobs from DB", obskit.Error(err))
 		panic(err)
 	}
 
@@ -3764,11 +3767,13 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 
 	// check if there is work to be done
 	if len(unprocessedList.Jobs) == 0 {
-		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
+		proc.logger.Debugn("Processor DB Read Complete. No GW Jobs to process.")
 		return unprocessedList
 	}
 
-	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
+	proc.logger.Debugn("Processor DB Read Complete",
+		logger.NewIntField("unprocessedJobs", int64(len(unprocessedList.Jobs))),
+		logger.NewIntField("totalEvents", int64(unprocessedList.EventsCount)))
 	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
 	proc.stats.statReadStageCount(partition).Count(len(unprocessedList.Jobs))
 
@@ -3920,7 +3925,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 		proc.getBackendEnabledDestinationTypes(sourceId),
 	)
 	if len(enabledDestTypes) == 0 {
-		proc.logger.Debug("No enabled destination types")
+		proc.logger.Debugn("No enabled destination types")
 		return false
 	}
 
@@ -3938,7 +3943,7 @@ func (proc *Handle) isDestinationAvailable(event types.SingularEventT, sourceId,
 	), func(dest backendconfig.DestinationT, index int) bool {
 		return len(destinationID) == 0 || dest.ID == destinationID
 	}); len(enabledDestinationsList) == 0 {
-		proc.logger.Debug("No destination to route this event to")
+		proc.logger.Debugn("No destination to route this event to")
 		return false
 	}
 
@@ -3994,7 +3999,8 @@ func (proc *Handle) countPendingEvents(ctx context.Context) error {
 			}
 			return g.Wait()
 		}, func(attempt int) {
-			proc.logger.Warnf("Timeout during GetPileUpCounts, attempt %d", attempt)
+			proc.logger.Warnn("Timeout during GetPileUpCounts",
+				logger.NewIntField("attempt", int64(attempt)))
 			stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": strconv.Itoa(attempt), "module": "pileup"}).Increment()
 		})
 	if err != nil && ctx.Err() == nil { // ignore context cancellation

@@ -2861,7 +2861,7 @@ func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, sec
 	conf.Set("Gateway.leakyUploader.Storage.DisableSsl", true)
 	conf.Set("Gateway.leakyUploader.Storage.UseGlue", true)
 	conf.Set("Gateway.leakyUploader.Storage.S3ForcePathStyle", true)
-	err := gw.Setup(context.Background(), conf, logger.NewLogger().With("component", "test"), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockErrJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockErrJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		select {

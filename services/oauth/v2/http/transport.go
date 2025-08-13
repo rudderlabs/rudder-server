@@ -115,7 +115,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
 				obskit.DestinationType(rts.destination.DefinitionName),
 				logger.NewStringField("flow", string(t.flow)),
-				logger.NewErrorField(err))
+				obskit.Error(err))
 			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("augmenting the secret pre roundTrip: %w", err).Error()))
 		}
 		return nil
@@ -140,7 +140,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		// Create a new response with a 500 status code
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[postRoundTrip]Error reading response body: %v", err)))
@@ -163,7 +163,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)),
-			logger.NewErrorField(errors.New(string(respData))),
+			obskit.Error(errors.New(string(respData))),
 		)
 		// Instead of returning an error, set a 500 status code in the interceptor response
 		// This will make the error retryable instead of causing a panic
@@ -271,7 +271,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationType(destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[OAuthPlatformError]checking if destination is oauth destination: %v", err.Error()))), nil
 	}
@@ -287,7 +287,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		return httpResponseCreator(http.StatusInternalServerError, []byte(err.Error())), nil
 	}
@@ -312,7 +312,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
 			obskit.DestinationType(rts.destination.DefinitionName),
 			logger.NewStringField("flow", string(t.flow)),
-			logger.NewErrorField(err))
+			obskit.Error(err))
 		// Return a 500 error response instead of propagating the error
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("Transport round trip error: %v", err))), nil
 	}

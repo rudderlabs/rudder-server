@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type (
 	SchemaType  = string
@@ -30,4 +33,24 @@ type WHSchema struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	ExpiresAt       time.Time
+}
+
+type NamespaceMapping struct {
+	SourceID  string
+	Namespace string
+}
+
+func (t TableSchema) String() string {
+	first := true
+	sb := strings.Builder{}
+	for k, v := range t {
+		if !first {
+			sb.WriteString(",")
+		}
+		sb.WriteString(k)
+		sb.WriteString(":")
+		sb.WriteString(v)
+		first = false
+	}
+	return sb.String()
 }

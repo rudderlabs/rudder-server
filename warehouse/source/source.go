@@ -82,17 +82,24 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		return nil, fmt.Errorf("getting table uploads: %w", err)
 	}
 
-	tableNames := lo.Map(tableUploads, func(item model.TableUpload, index int) string {
-		return item.TableName
-	})
-	tableNames = lo.Filter(lo.Uniq(tableNames), func(tableName string, i int) bool {
-		switch strings.ToLower(tableName) {
-		case whutils.DiscardsTable, whutils.IdentityMappingsTable, whutils.IdentityMergeRulesTable:
-			return false
-		default:
-			return true
-		}
-	})
+	// There is no need to create source jobs for discards and identity resolution tables.
+	// Source jobs are basically used for deleting old data in case of Google Sheets for full sync and discards and identity resolution tables are de
+	tableNames := lo.Filter(
+		lo.Uniq(lo.Map(tableUploads, func(item model.TableUpload, _ int) string {
+			return item.TableName
+		})),
+		func(tableName string, i int) bool {
+			switch strings.ToLower(tableName) {
+			case whutils.DiscardsTable, whutils.IdentityMappingsTable, whutils.IdentityMergeRulesTable:
+				return false
+			default:
+				return true
+			}
+		},
+	)
+	if len(tableNames) == 0 {
+		return nil, fmt.Errorf("no tables found for source: %s, destination: %s, job run: %s, task run: %s", payload.SourceID, payload.DestinationID, payload.JobRunID, payload.TaskRunID)
+	}
 
 	type metadata struct {
 		JobRunID  string    `json:"job_run_id"`
@@ -100,7 +107,7 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 		JobType   string    `json:"jobtype"`
 		StartTime time.Time `json:"start_time"`
 	}
-	metadataJson, err := jsonrs.Marshal(metadata{
+	metadataJSON, err := jsonrs.Marshal(metadata{
 		JobRunID:  payload.JobRunID,
 		TaskRunID: payload.TaskRunID,
 		StartTime: payload.StartTime.Time,
@@ -109,20 +116,20 @@ func (m *Manager) InsertJobs(ctx context.Context, payload insertJobRequest) ([]i
 	if err != nil {
 		return nil, fmt.Errorf("marshalling metadata: %w", err)
 	}
-	jobIds, err := m.sourceRepo.Insert(ctx, lo.Map(tableNames, func(tableName string, _ int) model.SourceJob {
+	jobIDs, err := m.sourceRepo.Insert(ctx, lo.Map(tableNames, func(tableName string, _ int) model.SourceJob {
 		return model.SourceJob{
 			SourceID:      payload.SourceID,
 			DestinationID: payload.DestinationID,
 			WorkspaceID:   payload.WorkspaceID,
 			TableName:     tableName,
 			JobType:       jobType,
-			Metadata:      metadataJson,
+			Metadata:      metadataJSON,
 		}
 	}))
 	if err != nil {
 		return nil, fmt.Errorf("inserting source jobs: %w", err)
 	}
-	return jobIds, nil
+	return jobIDs, nil
 }
 
 func (m *Manager) Run(ctx context.Context) error {
@@ -144,7 +151,7 @@ func (m *Manager) Run(ctx context.Context) error {
 }
 
 func (m *Manager) process(ctx context.Context) error {
-	m.logger.Infow("starting source jobs processing")
+	m.logger.Infon("starting source jobs processing")
 
 	for {
 		pendingJobs, err := m.sourceRepo.GetToProcess(ctx, m.config.maxBatchSizeToProcess)
@@ -160,7 +167,7 @@ func (m *Manager) process(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			m.logger.Infow("source jobs processing stopped due to context cancelled")
+			m.logger.Infon("source jobs processing stopped due to context cancelled")
 			return nil
 		case <-m.trigger.processingSleepInterval():
 		}
@@ -212,7 +219,7 @@ func (m *Manager) processPendingJobs(ctx context.Context, pendingJobs []model.So
 
 	select {
 	case <-ctx.Done():
-		m.logger.Infow("pending jobs process stopped due to context cancelled", "ids", pendingJobIDs)
+		m.logger.Infon("pending jobs process stopped due to context cancelled", logger.NewStringField("ids", fmt.Sprintf("%v", pendingJobIDs)))
 		return nil
 	case responses, ok := <-ch:
 		if !ok {

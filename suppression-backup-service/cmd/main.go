@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -30,14 +31,14 @@ import (
 var pkgLogger = logger.NewLogger().Child("suppression-backup-service")
 
 func main() {
-	pkgLogger.Info("Starting suppression backup service")
+	pkgLogger.Infon("Starting suppression backup service")
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	err := Run(ctx)
 	if ctx.Err() == nil {
 		cancel()
 	}
 	if err != nil {
-		pkgLogger.Error(err)
+		pkgLogger.Errorn("Could not run suppression backup service", obskit.Error(err))
 		os.Exit(1)
 	}
 }
@@ -94,11 +95,11 @@ func Run(ctx context.Context) error {
 		}
 		return httpServer.ListenAndServe()
 	})
-	pkgLogger.Info("http server setup done")
+	pkgLogger.Infon("http server setup done")
 
 	g.Go(func() error {
 		<-gCtx.Done()
-		pkgLogger.Info("context.Done triggered... shutting down httpserver")
+		pkgLogger.Infon("context.Done triggered... shutting down httpserver")
 		return httpServer.Shutdown(context.Background())
 	})
 

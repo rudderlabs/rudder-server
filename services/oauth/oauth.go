@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -276,7 +277,11 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 			!bytes.Equal(refVal.Account.Secret, refTokenParams.Secret)
 		if isInvalidAccountSecretForRefresh {
 			accountMutex.RUnlock()
-			authErrHandler.logger.Debugf("[%s request] [Cache] :: (Read) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, refVal.Account.Secret)
+			authErrHandler.logger.Debugn("[Cache] :: (Read) response received",
+				logger.NewStringField("requestType", loggerNm),
+				logger.NewStringField("logTypeName", logTypeName),
+				logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+			)
 			return http.StatusOK, refVal
 		}
 	}
@@ -286,8 +291,11 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	if isRefreshActive, isPresent := authErrHandler.refreshActiveMap[refTokenParams.AccountId]; isPresent && isRefreshActive {
 		accountMutex.Unlock()
 		if refVal != nil {
-			secret := refVal.Account.Secret
-			authErrHandler.logger.Debugf("[%s request] [Active] :: (Read) %s response received from cache(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, string(secret))
+			authErrHandler.logger.Debugn("[Active] :: (Read) response received from cache",
+				logger.NewStringField("requestType", loggerNm),
+				logger.NewStringField("logTypeName", logTypeName),
+				logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+			)
 			return http.StatusOK, refVal
 		}
 		// Empty Response(valid while many GetToken calls are happening)
@@ -300,17 +308,29 @@ func (authErrHandler *OAuthErrResHandler) GetTokenInfo(refTokenParams *RefreshTo
 	}
 	// Refresh will start
 	authErrHandler.refreshActiveMap[refTokenParams.AccountId] = true
-	authErrHandler.logger.Debugf("[%s request] [rt-worker-%v] :: %v request is active!", loggerNm, logTypeName, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugn("Request is active",
+		logger.NewStringField("requestType", loggerNm),
+		logger.NewStringField("logTypeName", logTypeName),
+		logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+	)
 	accountMutex.Unlock()
 
 	defer func() {
 		accountMutex.Lock()
 		authErrHandler.refreshActiveMap[refTokenParams.AccountId] = false
-		authErrHandler.logger.Debugf("[%s request] [rt-worker-%v]:: %v request is inactive!", loggerNm, logTypeName, refTokenParams.WorkerId)
+		authErrHandler.logger.Debugn("Request is inactive",
+			logger.NewStringField("requestType", loggerNm),
+			logger.NewStringField("logTypeName", logTypeName),
+			logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+		)
 		accountMutex.Unlock()
 	}()
 
-	authErrHandler.logger.Debugf("[%s] [%v request] Lock Acquired by rt-worker-%d\n", loggerNm, logTypeName, refTokenParams.WorkerId)
+	authErrHandler.logger.Debugn("Lock Acquired",
+		logger.NewStringField("requestType", loggerNm),
+		logger.NewStringField("logTypeName", logTypeName),
+		logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+	)
 
 	statusCode := authErrHandler.fetchAccountInfoFromCp(refTokenParams, refTokenBody, authStats, logTypeName)
 	return statusCode, authErrHandler.destAuthInfoMap[refTokenParams.AccountId]
@@ -346,7 +366,11 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.statName = getOAuthActionStatName(`request_latency`)
 	authStats.SendTimerStats(cpiCallStartTime)
 
-	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
+	authErrHandler.logger.Debugn("Got the response from Control-Plane",
+		logger.NewStringField("requestType", loggerNm),
+		logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+		logger.NewIntField("statusCode", int64(statusCode)),
+	)
 
 	// Empty Refresh token response
 	if !router_utils.IsNotEmptyString(response) {
@@ -360,7 +384,12 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 			},
 			Err: "Empty secret",
 		}
-		authErrHandler.logger.Debugf("[%s request] :: Empty %s response received(rt-worker-%d) : %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
+		authErrHandler.logger.Debugn("Empty response received",
+			logger.NewStringField("requestType", loggerNm),
+			logger.NewStringField("logTypeName", logTypeName),
+			logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+			logger.NewStringField("response", response),
+		)
 		return http.StatusInternalServerError
 	}
 
@@ -391,7 +420,12 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.statName = getOAuthActionStatName("success")
 	authStats.errorMessage = ""
 	authStats.SendCountStat()
-	authErrHandler.logger.Debugf("[%s request] :: (Write) %s response received(rt-worker-%d): %s\n", loggerNm, logTypeName, refTokenParams.WorkerId, response)
+	authErrHandler.logger.Debugn("(Write) response received",
+		logger.NewStringField("requestType", loggerNm),
+		logger.NewStringField("logTypeName", logTypeName),
+		logger.NewIntField("workerId", int64(refTokenParams.WorkerId)),
+		logger.NewStringField("response", response),
+	)
 	return http.StatusOK
 }
 
@@ -405,7 +439,9 @@ func (authErrHandler *OAuthErrResHandler) getRefreshTokenErrResp(response string
 		bodyMsg := gjson.Get(response, "body.message").String()
 		if bodyMsg == "" {
 			// Default message
-			authErrHandler.logger.Debugf("Failed with error response: %v\n", response)
+			authErrHandler.logger.Debugn("Failed with error response",
+				logger.NewStringField("response", response),
+			)
 			message = ErrPermissionOrTokenRevoked.Error()
 		} else {
 			message = bodyMsg
@@ -475,7 +511,10 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 	authStatusUpdateActiveReq := strconv.FormatBool(isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive)
 	if isAuthStatusUpdateReqPresent && isAuthStatusUpdateActive {
 		authStatusToggleMutex.Unlock()
-		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request Active : %s\n", loggerNm, authStatusUpdateActiveReq)
+		authErrHandler.logger.Debugn("AuthStatusInactive request Active",
+			logger.NewStringField("requestType", loggerNm),
+			logger.NewStringField("authStatusUpdateActiveReq", authStatusUpdateActiveReq),
+		)
 		return http.StatusConflict, ErrPermissionOrTokenRevoked.Error()
 	}
 
@@ -485,7 +524,9 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 	defer func() {
 		authStatusToggleMutex.Lock()
 		authErrHandler.authStatusUpdateActiveMap[destinationId] = false
-		authErrHandler.logger.Debugf("[%s request] :: AuthStatusInactive request is inactive!", loggerNm)
+		authErrHandler.logger.Debugn("AuthStatusInactive request is inactive",
+			logger.NewStringField("requestType", loggerNm),
+		)
 		authStatusToggleMutex.Unlock()
 		// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
 		// This is being done to obtain new token after an update such as re-authorisation is done
@@ -514,7 +555,10 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 	statusCode, respBody = authErrHandler.cpApiCall(authStatusInactiveCpReq)
 	authStatusToggleStats.statName = getOAuthActionStatName("request_latency")
 	defer authStatusToggleStats.SendTimerStats(cpiCallStartTime)
-	authErrHandler.logger.Errorf(`Response from CP(stCd: %v) for auth status inactive req: %v`, statusCode, respBody)
+	authErrHandler.logger.Errorn("Response from CP for auth status inactive req",
+		logger.NewIntField("statusCode", int64(statusCode)),
+		logger.NewStringField("respBody", respBody),
+	)
 
 	var authStatusToggleRes *AuthStatusToggleResponse
 	unmarshalErr := jsonrs.Unmarshal([]byte(respBody), &authStatusToggleRes)
@@ -531,7 +575,10 @@ func (authErrHandler *OAuthErrResHandler) AuthStatusToggle(params *AuthStatusTog
 		return http.StatusBadRequest, ErrPermissionOrTokenRevoked.Error()
 	}
 
-	authErrHandler.logger.Errorf("[%s request] :: (Write) auth status inactive Response received : %s\n", loggerNm, respBody)
+	authErrHandler.logger.Errorn("(Write) auth status inactive Response received",
+		logger.NewStringField("requestType", loggerNm),
+		logger.NewStringField("respBody", respBody),
+	)
 	authStatusToggleStats.statName = getOAuthActionStatName("success")
 	authStatusToggleStats.errorMessage = ""
 	authStatusToggleStats.SendCountStat()
@@ -580,7 +627,10 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		req, err = http.NewRequest(cpReq.Method, cpReq.Url, http.NoBody)
 	}
 	if err != nil {
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, err)
+		authErrHandler.logger.Errorn("Destination request failed",
+			logger.NewStringField("requestType", loggerNm),
+			obskit.Error(err),
+		)
 		// Abort on receiving an error in request formation
 		return http.StatusBadRequest, err.Error()
 	}
@@ -595,10 +645,15 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 	cpApiDoTimeStart := time.Now()
 	res, doErr := authErrHandler.client.Do(req)
 	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
-	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
+	authErrHandler.logger.Debugn("Destination request sent",
+		logger.NewStringField("requestType", loggerNm),
+	)
 	if doErr != nil {
 		// Abort on receiving an error
-		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
+		authErrHandler.logger.Errorn("Destination request failed",
+			logger.NewStringField("requestType", loggerNm),
+			obskit.Error(doErr),
+		)
 		if os.IsTimeout(doErr) {
 			stats.Default.NewTaggedStat("cp_request_timeout", stats.CountType, cpStatTags)
 		}
@@ -614,7 +669,10 @@ func (resHandler *OAuthErrResHandler) getKeyMutex(mutexMap map[string]*sync.RWMu
 	defer resHandler.lockMapWMutex.Unlock()
 	// mutexMap will not be nil
 	if _, ok := mutexMap[id]; !ok {
-		resHandler.logger.Debugf("[%s request] :: Creating new mutex for %s\n", loggerNm, id)
+		resHandler.logger.Debugn("Creating new mutex",
+			logger.NewStringField("requestType", loggerNm),
+			logger.NewStringField("id", id),
+		)
 		mutexMap[id] = &sync.RWMutex{}
 	}
 	return mutexMap[id]

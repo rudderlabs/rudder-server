@@ -215,18 +215,15 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var res model.StatusResponse
-		if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
-			return nil, fmt.Errorf("decoding status response: %w", err)
-		}
-		return &res, nil
-	case http.StatusNotFound:
-		return nil, ErrChannelNotFound
-	default:
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("invalid status code for status: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
 	}
+
+	var res model.StatusResponse
+	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, fmt.Errorf("decoding status response: %w", err)
+	}
+	return &res, nil
 }
 
 func gzippedReader(reqJSON []byte) (io.Reader, int, error) {
