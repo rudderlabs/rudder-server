@@ -417,6 +417,26 @@ func TestWHSchemasRepo(t *testing.T) {
 						{TableName: "table_name_2", Schema: schemaModel["table_name_2"]},
 					}, tableLevelSchemasResult)
 				})
+
+				t.Run("Empty schema", func(t *testing.T) {
+					emptySchema := model.WHSchema{
+						SourceID:        "empty_source_id_1",
+						Namespace:       "empty_namespace_1",
+						DestinationID:   "empty_destination_id_1",
+						DestinationType: destinationType,
+						Schema:          map[string]model.TableSchema{},
+						CreatedAt:       now,
+						UpdatedAt:       now,
+						ExpiresAt:       now.Add(time.Hour),
+					}
+
+					err := r.Insert(ctx, &emptySchema)
+					require.NoError(t, err)
+
+					expectedSchema, err := r.GetForNamespace(ctx, "empty_destination_id_1", "empty_namespace_1")
+					require.NoError(t, err)
+					require.Empty(t, expectedSchema.Schema)
+				})
 			})
 		})
 	}
