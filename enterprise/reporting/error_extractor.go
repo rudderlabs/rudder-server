@@ -34,7 +34,7 @@ var (
 	spaceRegex       = regexp.MustCompile(`\s+`)
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
-	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
+	defaultErrorMessageKeys = []string{"error_message", "message", "description", "detail", errorKey, "title"}
 	deprecationKeywordSets  = map[string][][]string{
 		"version": {
 			{"action required", "api"},
@@ -128,11 +128,21 @@ func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
 		return sampleResponse
 	}
 
+	// First, try the specific key handlers (response, error, etc.)
+	// This handles nested JSON responses where the error message is in a "response" field
 	for key, erRes := range jsonMap {
 		if result := ext.handleKey(key, erRes); result != "" {
 			return result
 		}
 	}
+
+	// If no specific keys were found, try to find message keys directly in the parsed JSON
+	// This handles cases where the JSON has a direct message field without a response wrapper
+	// This enhancement improves error extraction for various JSON response formats
+	if msg := getErrorMessageFromResponse(jsonMap, ext.ErrorMessageKeys); msg != "" {
+		return msg
+	}
+
 	return ""
 }
 
