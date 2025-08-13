@@ -110,6 +110,12 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 }
 
 func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool) []*UsersReport {
+	// force new metrics from 1st September 2025 onwards
+	v2MetricsActivationDate := time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
+	if !u.now().UTC().Before(v2MetricsActivationDate) {
+		return u.generateReportsFromJobs(jobs, sourceIDtoFilter, false)
+	}
+
 	if !u.enabledV2Metrics.Load() {
 		return u.generateReportsFromJobsLegacy(jobs, sourceIDtoFilter)
 	}
