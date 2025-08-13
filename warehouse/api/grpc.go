@@ -1175,3 +1175,39 @@ func (g *GRPC) getLatencyAggregationType(
 	}
 	return aggregationType, nil
 }
+
+// GetDestinationNamespaces returns the most recent namespace for each source for a given destination ID.
+func (g *GRPC) GetDestinationNamespaces(ctx context.Context, request *proto.GetDestinationNamespacesRequest) (*proto.GetDestinationNamespacesResponse, error) {
+	log := g.logger.Withn(
+		obskit.DestinationID(request.GetDestinationId()),
+	)
+	log.Infon("Getting destination namespaces")
+
+	// Validate input
+	if request.GetDestinationId() == "" {
+		return &proto.GetDestinationNamespacesResponse{},
+			status.Error(codes.Code(code.Code_INVALID_ARGUMENT), "destination_id cannot be empty")
+	}
+
+	// Get namespace mappings from repository
+	mappings, err := g.schemaRepo.GetDestinationNamespaces(ctx, request.GetDestinationId())
+	if err != nil {
+		log.Errorn("unable to get destination namespaces", obskit.Error(err))
+		return &proto.GetDestinationNamespacesResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get destination namespaces: %v", err)
+	}
+
+	// Convert to proto response
+	protoMappings := make([]*proto.NamespaceMapping, len(mappings))
+	for i, mapping := range mappings {
+		protoMappings[i] = &proto.NamespaceMapping{
+			SourceId:  mapping.SourceID,
+			Namespace: mapping.Namespace,
+		}
+	}
+
+	log.Infon("Successfully retrieved destination namespaces", logger.NewIntField("mappingCount", int64(len(protoMappings))))
+	return &proto.GetDestinationNamespacesResponse{
+		NamespaceMappings: protoMappings,
+	}, nil
+}
