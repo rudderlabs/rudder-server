@@ -33,6 +33,15 @@ var (
 			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
 			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB),
 		},
+		"schema_snapshot_patch_size": {
+			float64(10 * bytesize.B), float64(100 * bytesize.B),
+			float64(1 * bytesize.KB), float64(5 * bytesize.KB), float64(10 * bytesize.KB), float64(50 * bytesize.KB), float64(100 * bytesize.KB), float64(500 * bytesize.KB),
+			float64(1 * bytesize.MB), float64(3 * bytesize.MB), float64(5 * bytesize.MB), float64(10 * bytesize.MB),
+			float64(25 * bytesize.MB), float64(50 * bytesize.MB), float64(100 * bytesize.MB),
+		},
+		"schema_snapshot_compression_ratio": {
+			0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 2, 5, 10,
+		},
 		"warehouse_consolidated_schema_size": {
 			float64(10 * bytesize.B), float64(100 * bytesize.B),
 			float64(1 * bytesize.KB), float64(5 * bytesize.KB), float64(10 * bytesize.KB), float64(50 * bytesize.KB), float64(100 * bytesize.KB), float64(500 * bytesize.KB),
