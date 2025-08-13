@@ -1109,6 +1109,10 @@ func (proc *Handle) getTransformerEvents(
 		}
 		userTransformedEvent.Metadata.EventType = updatedEventType
 
+		// Warning: This loop overcounts metrics when there are multiple messages
+		// because we pass the same userTransformedEvent to each updateMetricMaps call
+		// updateMetricMaps counts events based on len(MessageIDs), so each message
+		// gets counted len(messages) times instead of once
 		for _, message := range messages {
 			proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, pu, func() json.RawMessage {
 				if pu != reportingtypes.TRACKINGPLAN_VALIDATOR {
@@ -1425,6 +1429,15 @@ func (proc *Handle) getTransformationMetrics(
 			continue
 		}
 
+		// Store original messageIDs to restore later
+		messageIds := failedEvent.Metadata.MessageIDs
+
+		// Clear messageIDs to prevent metric overcounting
+		// We pass the same failedEvent to each updateMetricMaps call
+		// updateMetricMaps counts events based on len(MessageIDs)
+		// Without clearing, each loop iteration would count all messages instead of one
+		failedEvent.Metadata.MessageIDs = []string{}
+
 		for _, message := range messages {
 			proc.updateMetricMaps(
 				nil,
@@ -1447,6 +1460,8 @@ func (proc *Handle) getTransformationMetrics(
 				},
 				eventsByMessageID)
 		}
+
+		failedEvent.Metadata.MessageIDs = messageIds
 
 		proc.logger.Debugf(
 			"[Processor: getTransformationMetrics] Error [%d] for source %q and destination %q: %s",
