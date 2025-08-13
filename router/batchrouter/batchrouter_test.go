@@ -416,13 +416,8 @@ var _ = Describe("BatchRouter", func() {
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
 					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
-				}).Return(nil)
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func(ctx context.Context, _ []*jobsdb.JobT) error {
 					cancel()
-					return nil
-				},
-			)
+				}).Return(nil)
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -49,7 +48,6 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	webhookModel "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -1661,59 +1659,6 @@ var _ = Describe("Gateway", func() {
 
 		AfterEach(func() {
 			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-
-		It("should save failures to error db", func() {
-			c.mockErrJobsDB.
-				EXPECT().Store(
-				gomock.Any(),
-				gomock.Any(),
-			).
-				DoAndReturn(
-					func(
-						ctx context.Context,
-						jobs []*jobsdb.JobT,
-					) error {
-						for idx, job := range jobs {
-							Expect(misc.IsValidUUID(job.UUID.String())).To(BeTrue())
-							Expect(job.CustomVal).To(Equal("WEBHOOK"))
-
-							var paramsMap, expectedParamsMap map[string]interface{}
-							var expectedStr []byte
-
-							switch idx {
-							case 0:
-								Expect(job.EventPayload).To(Equal(json.RawMessage(`{"a1": "b1"}`)))
-								expectedStr = []byte(fmt.Sprintf(`{"source_id": "%v", "stage": "webhook", "source_type": "cio", "reason": "err1"}`, SourceIDEnabled))
-							case 1:
-								Expect(job.EventPayload).To(Equal(json.RawMessage(`{"a2": "b2"}`)))
-								expectedStr = []byte(fmt.Sprintf(`{"source_id": "%v", "stage": "webhook", "source_type": "af", "reason": "err2"}`, SourceIDEnabled))
-							}
-
-							_ = jsonrs.Unmarshal(job.Parameters, &paramsMap)
-							_ = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
-							equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-							Expect(equals).To(BeTrue())
-						}
-						return nil
-					}).
-				Times(1)
-
-			reqs := make([]*webhookModel.FailedWebhookPayload, 2)
-			reqs[0] = &webhookModel.FailedWebhookPayload{
-				RequestContext: rCtxEnabled,
-				Payload:        []byte(`{"a1": "b1"}`),
-				SourceType:     "cio",
-				Reason:         "err1",
-			}
-			reqs[1] = &webhookModel.FailedWebhookPayload{
-				RequestContext: rCtxEnabled,
-				Payload:        []byte(`{"a2": "b2"}`),
-				SourceType:     "af",
-				Reason:         "err2",
-			}
-			err := gateway.SaveWebhookFailures(reqs)
 			Expect(err).To(BeNil())
 		})
 	})
