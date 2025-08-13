@@ -550,12 +550,12 @@ func TestBatchRouter(t *testing.T) {
 	require.NoError(t, routerDB.Start())
 	defer routerDB.TearDown()
 
-	errDB := jobsdb.NewForReadWrite(
+	errorDB := jobsdb.NewForReadWrite(
 		"err",
 		jobsdb.WithDBHandle(p.DB),
 	)
-	require.NoError(t, errDB.Start())
-	defer errDB.TearDown()
+	require.NoError(t, errorDB.Start())
+	defer errorDB.TearDown()
 
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
@@ -637,7 +637,7 @@ func TestBatchRouter(t *testing.T) {
 		"MINIO",
 		backendconfigtest.NewStaticLibrary(bcs),
 		routerDB,
-		errDB,
+		errorDB,
 		nil,
 		transientsource.NewEmptyService(),
 		rsources.NewNoOpService(),

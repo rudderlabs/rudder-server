@@ -99,6 +99,7 @@ type Handle struct {
 	transformerURL               string
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
+	errorDBEnabled               config.ValueLoader[bool]
 
 	drainer routerutils.Drainer
 
@@ -765,7 +766,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	}
 
 	// Store the aborted jobs to errorDB
-	if abortedEvents != nil {
+	if len(abortedEvents) > 0 && brt.errorDBEnabled.Load() {
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.errorDB.Store(ctx, abortedEvents)
 		}, brt.sendRetryStoreStats)

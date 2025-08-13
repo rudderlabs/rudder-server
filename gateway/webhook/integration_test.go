@@ -99,13 +99,13 @@ func TestIntegrationWebhook(t *testing.T) {
 	require.NoError(t, gatewayDB.Start())
 	defer gatewayDB.TearDown()
 
-	errDB := jobsdb.NewForReadWrite(
+	errorDB := jobsdb.NewForReadWrite(
 		"err",
 		jobsdb.WithDBHandle(p.DB),
 		jobsdb.WithStats(stats.NOP),
 	)
-	require.NoError(t, errDB.Start())
-	defer errDB.TearDown()
+	require.NoError(t, errorDB.Start())
+	defer errorDB.TearDown()
 
 	var (
 		rateLimiter        throttler.Throttler
@@ -167,7 +167,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		conf, logger, stat,
 		application,
 		backendconfigtest.NewStaticLibrary(bcs),
-		gatewayDB, errDB,
+		gatewayDB, errorDB,
 		rateLimiter, versionHandler, rsources.NewNoOpService(), transformerFeaturesService, sourcedebugger.NewNoOpService(),
 		streamMsgValidator,
 		gateway.WithNow(func() time.Time {
@@ -315,7 +315,7 @@ func TestIntegrationWebhook(t *testing.T) {
 			}
 
 			require.Eventually(t, func() bool {
-				r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
+				r, err = errorDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
 					WorkspaceID: workspaceID,
 					ParameterFilters: []jobsdb.ParameterFilterT{{
 						Name:  "source_id",

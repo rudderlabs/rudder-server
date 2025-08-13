@@ -200,7 +200,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	defer batchRouterDB.Close()
 
 	// We need two errorDBs, one in read & one in write mode to support separate gateway to store failures
-	errDBForRead := jobsdb.NewForRead(
+	errorDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.procErrorDSLimit),
@@ -208,19 +208,19 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer errDBForRead.Close()
-	errDBForWrite := jobsdb.NewForWrite(
+	defer errorDBForRead.Close()
+	errorDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer errDBForWrite.Close()
-	if err = errDBForWrite.Start(); err != nil {
-		return fmt.Errorf("could not start errDBForWrite: %w", err)
+	defer errorDBForWrite.Close()
+	if err = errorDBForWrite.Start(); err != nil {
+		return fmt.Errorf("could not start errorDBForWrite: %w", err)
 	}
-	defer errDBForWrite.Stop()
+	defer errorDBForWrite.Stop()
 
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
@@ -281,8 +281,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		gwDBForProcessor,
 		routerDB,
 		batchRouterDB,
-		errDBForRead,
-		errDBForWrite,
+		errorDBForRead,
+		errorDBForWrite,
 		schemaDB,
 		archivalDB,
 		reporting,
@@ -310,7 +310,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			routerDB,
 		),
-		ProcErrorDB:                errDBForWrite,
+		ProcErrorDB:                errorDBForWrite,
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
 		TransformerFeaturesService: transformerFeaturesService,
@@ -326,7 +326,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			batchRouterDB,
 		),
-		ProcErrorDB:           errDBForWrite,
+		ProcErrorDB:           errorDBForWrite,
 		TransientSources:      transientSources,
 		RsourcesService:       rsourcesService,
 		Debugger:              destinationHandle,
@@ -340,7 +340,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		GatewayDB:       gwDBForProcessor,
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
-		ErrorDB:         errDBForRead,
+		ErrorDB:         errorDBForRead,
 		EventSchemaDB:   schemaDB,
 		ArchivalDB:      archivalDB,
 		Processor:       proc,
@@ -373,7 +373,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, errDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gatewayDB, errorDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),
