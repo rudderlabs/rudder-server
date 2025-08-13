@@ -849,7 +849,23 @@ func TestUniqueUsersReporter(t *testing.T) {
 				collector.now = func() time.Time {
 					return time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
 				}
+
+				// legacy mode
+				collector.enabledV2Metrics = config.SingleValueLoader(false)
+				collector.shadowV2Metrics = config.SingleValueLoader(false)
 				reports := collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
+				require.ElementsMatch(t, tc.trackedUsers, reports)
+
+				// v2 metrics without shadowing
+				collector.enabledV2Metrics = config.SingleValueLoader(true)
+				collector.shadowV2Metrics = config.SingleValueLoader(false)
+				reports = collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
+				require.ElementsMatch(t, tc.trackedUsers, reports)
+
+				// v2 metrics with shadowing
+				collector.enabledV2Metrics = config.SingleValueLoader(true)
+				collector.shadowV2Metrics = config.SingleValueLoader(true)
+				reports = collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
 				require.ElementsMatch(t, tc.trackedUsers, reports)
 			})
 
@@ -858,7 +874,23 @@ func TestUniqueUsersReporter(t *testing.T) {
 				collector.now = func() time.Time {
 					return time.Date(2025, 9, 2, 0, 0, 0, 0, time.UTC)
 				}
+
+				// legacy mode
+				collector.enabledV2Metrics = config.SingleValueLoader(false)
+				collector.shadowV2Metrics = config.SingleValueLoader(false)
 				reports := collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
+				require.ElementsMatch(t, tc.trackedUsers, reports)
+
+				// v2 metrics without shadowing
+				collector.enabledV2Metrics = config.SingleValueLoader(true)
+				collector.shadowV2Metrics = config.SingleValueLoader(false)
+				reports = collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
+				require.ElementsMatch(t, tc.trackedUsers, reports)
+
+				// v2 metrics with shadowing
+				collector.enabledV2Metrics = config.SingleValueLoader(true)
+				collector.shadowV2Metrics = config.SingleValueLoader(true)
+				reports = collector.GenerateReportsFromJobs(tc.jobs, tc.sourceIDtoFilter)
 				require.ElementsMatch(t, tc.trackedUsers, reports)
 			})
 		}
