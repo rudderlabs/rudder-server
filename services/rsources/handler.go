@@ -484,14 +484,14 @@ func (sh *sourcesHandler) init() error {
 	const lockID = 100020001
 
 	if err := withAdvisoryLock(ctx, sh.localDB, lockID, func(tx *sql.Tx) error {
-		sh.log.Debugf("setting up rsources tables in %s", sh.config.LocalHostname)
+		sh.log.Debugn("setting up rsources tables", logger.NewStringField("hostname", sh.config.LocalHostname))
 		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
 			return err
 		}
 		if err := migrateFailedKeysTable(ctx, tx); err != nil {
 			return fmt.Errorf("migrating rsources_failed_keys table: %w", err)
 		}
-		sh.log.Debugf("rsources tables setup successfully in %s", sh.config.LocalHostname)
+		sh.log.Debugn("rsources tables setup successfully", logger.NewStringField("hostname", sh.config.LocalHostname))
 		return nil
 	}); err != nil {
 		return err
@@ -499,17 +499,17 @@ func (sh *sourcesHandler) init() error {
 
 	if sh.config.ShouldSetupSharedDB && sh.sharedDB != nil {
 		if err := withAdvisoryLock(ctx, sh.sharedDB, lockID, func(_ *sql.Tx) error {
-			sh.log.Debugf("setting up rsources tables for shared db %s", sh.config.SharedConn)
+			sh.log.Debugn("setting up rsources tables for shared db", logger.NewStringField("sharedConn", sh.config.SharedConn))
 			if err := setupTables(ctx, sh.sharedDB, "shared", sh.log); err != nil {
 				return err
 			}
-			sh.log.Debugf("rsources tables for shared db %s setup successfully", sh.config.SharedConn)
+			sh.log.Debugn("rsources tables for shared db setup successfully", logger.NewStringField("sharedConn", sh.config.SharedConn))
 
-			sh.log.Debugf("setting up rsources logical replication in %s", sh.config.LocalHostname)
+			sh.log.Debugn("setting up rsources logical replication", logger.NewStringField("hostname", sh.config.LocalHostname))
 			if err := sh.setupLogicalReplication(ctx); err != nil {
 				return fmt.Errorf("logical replication in %q: %w", sh.config.LocalHostname, err)
 			}
-			sh.log.Debugf("rsources logical replication setup successfully in %s", sh.config.LocalHostname)
+			sh.log.Debugn("rsources logical replication setup successfully", logger.NewStringField("hostname", sh.config.LocalHostname))
 			return nil
 		}); err != nil {
 			return err
@@ -629,7 +629,7 @@ func setupFailedKeysTableV0(ctx context.Context, db *sql.DB, defaultDbName strin
 	_, err := db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugf("table rsources_failed_keys already exists in %s", defaultDbName)
+			log.Debugn("table rsources_failed_keys already exists", logger.NewStringField("dbName", defaultDbName))
 		} else {
 			return err
 		}
@@ -652,7 +652,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 		unique (job_run_id, task_run_id, source_id, destination_id, db_name)
 	)`, defaultDbName)); err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugf("table rsources_failed_keys_v2 already exists in %s", defaultDbName)
+			log.Debugn("table rsources_failed_keys_v2 already exists", logger.NewStringField("dbName", defaultDbName))
 		} else {
 			return err
 		}
@@ -665,7 +665,7 @@ func setupFailedKeysTable(ctx context.Context, db *sql.DB, defaultDbName string,
 		primary key (id, record_id)
 	)`); err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugf("table rsources_failed_keys_v2_records already exists in %s", defaultDbName)
+			log.Debugn("table rsources_failed_keys_v2_records already exists", logger.NewStringField("dbName", defaultDbName))
 		} else {
 			return err
 		}
@@ -696,7 +696,7 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log 
 	_, err := db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugf("table rsources_stats already exists in db %s", defaultDbName)
+			log.Debugn("table rsources_stats already exists in db", logger.NewStringField("dbName", defaultDbName))
 		} else {
 			return err
 		}
@@ -777,7 +777,7 @@ func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []in
 
 func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlotGauge Gauger) {
 	if sh.sharedDB == nil {
-		sh.log.Warn("shared database is not configured, skipping logical replication monitoring")
+		sh.log.Warnn("shared database is not configured, skipping logical replication monitoring")
 		return
 	}
 	logicalReplicationTrigger := func() <-chan time.Time {
@@ -800,7 +800,7 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 				// Indicates that shared db is unavailable
 				lagGauge.Gauge(-1.0)
 			default:
-				sh.log.Warnf("failed to get replication lag: %v", err)
+				sh.log.Warnn("failed to get replication lag", obskit.Error(err))
 			}
 
 			var replicationSlotCount int64
@@ -809,7 +809,7 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 				`select count(*) from pg_replication_slots;`).
 				Scan(&replicationSlotCount)
 			if err != nil {
-				sh.log.Warnf("failed to get replication slot count: %v", err)
+				sh.log.Warnn("failed to get replication slot count", obskit.Error(err))
 			} else {
 				replicationSlotGauge.Gauge(replicationSlotCount)
 			}

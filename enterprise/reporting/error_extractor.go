@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -140,7 +141,10 @@ func (ext *ExtractorHandle) handleKey(key string, value interface{}) string {
 	case "reason", "Error", responseKey, errorKey:
 		valueStr, ok := value.(string)
 		if !ok {
-			ext.log.Debugn("Handling key", logger.NewStringField("key", key), logger.NewField("value", value))
+			ext.log.Debugn("Handling key",
+				logger.NewStringField("key", key),
+				logger.NewStringField("valueType", fmt.Sprintf("%T", value)), // nolint:forbidigo
+			)
 			return ""
 		}
 
@@ -191,7 +195,10 @@ func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
 func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) string {
 	valAsMap, isMap := value.(map[string]interface{})
 	if !isMap {
-		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key", logger.NewStringField("key", key), logger.NewField("value", value))
+		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key",
+			logger.NewStringField("key", key),
+			logger.NewStringField("valueType", fmt.Sprintf("%T", value)), // nolint:forbidigo
+		)
 		return ""
 	}
 	return getErrorFromWarehouse(valAsMap)
@@ -385,10 +392,16 @@ func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool 
 	return false
 }
 
-func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {
+func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string, destType string) string {
 	if errorCode := getErrorCodeFromStatTags(statTags); errorCode != "" {
 		return errorCode
 	}
+
+	// Skip deprecation error detection for warehouse destinations
+	if slices.Contains(warehouseutils.WarehouseDestinations, destType) {
+		return ""
+	}
+
 	if ext.isVersionDeprecationError(errorMessage) {
 		return "deprecation"
 	}

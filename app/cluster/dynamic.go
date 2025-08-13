@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -80,7 +81,7 @@ func (d *Dynamic) Run(ctx context.Context) error {
 	}
 
 	if len(serverModeChan) == 0 {
-		d.logger.Info("No server mode change event received. Starting server in normal mode")
+		d.logger.Infon("No server mode change event received. Starting server in normal mode")
 		if err := d.handleModeChange(servermode.NormalMode); err != nil {
 			return err
 		}
@@ -97,17 +98,19 @@ func (d *Dynamic) Run(ctx context.Context) error {
 				return req.Err()
 			}
 
-			d.logger.Infof("Got trigger to change the mode, new mode: %s, old mode: %s", req.Mode(), d.currentMode)
+			d.logger.Infon("Got trigger to change the mode",
+				logger.NewStringField("newMode", string(req.Mode())),
+				logger.NewStringField("oldMode", string(d.currentMode)))
 			if d.GatewayComponent {
-				d.logger.Infof("Gateway component, not changing the mode")
+				d.logger.Infon("Gateway component, not changing the mode")
 				continue
 			}
 			err := d.handleModeChange(req.Mode())
 			if err != nil {
-				d.logger.Error(err)
+				d.logger.Errorn("Mode change failed", obskit.Error(err))
 				return err
 			}
-			d.logger.Debugf("Acknowledging the mode change")
+			d.logger.Debugn("Acknowledging the mode change")
 
 			if err := req.Ack(ctx); err != nil {
 				return fmt.Errorf("ack mode change: %w", err)
@@ -120,7 +123,7 @@ func (d *Dynamic) start() error {
 	if d.GatewayComponent {
 		return nil
 	}
-	d.logger.Info("Starting the server")
+	d.logger.Infon("Starting the server")
 	start := time.Now()
 	if err := d.ErrorDB.Start(); err != nil {
 		return fmt.Errorf("error db start: %w", err)
@@ -159,39 +162,39 @@ func (d *Dynamic) start() error {
 
 func (d *Dynamic) stop() {
 	if d.GatewayComponent {
-		d.logger.Info("Stopping the gateway")
+		d.logger.Infon("Stopping the gateway")
 		return
 	}
-	d.logger.Info("Stopping the server")
+	d.logger.Infon("Stopping the server")
 	start := time.Now()
 	d.Router.Stop()
-	d.logger.Debug("Router stopped")
+	d.logger.Debugn("Router stopped")
 	d.SchemaForwarder.Stop()
-	d.logger.Debug("JobsForwarder stopped")
+	d.logger.Debugn("JobsForwarder stopped")
 	d.Archiver.Stop()
-	d.logger.Debug("Archiver stopped")
+	d.logger.Debugn("Archiver stopped")
 	d.Processor.Stop()
-	d.logger.Debug("Processor stopped")
+	d.logger.Debugn("Processor stopped")
 
 	d.BatchRouterDB.Stop()
-	d.logger.Debug("BatchRouterDB stopped")
+	d.logger.Debugn("BatchRouterDB stopped")
 	d.RouterDB.Stop()
-	d.logger.Debug("RouterDB stopped")
+	d.logger.Debugn("RouterDB stopped")
 	d.EventSchemaDB.Stop()
-	d.logger.Debug("EventSchemasDB stopped")
+	d.logger.Debugn("EventSchemasDB stopped")
 	d.ArchivalDB.Stop()
-	d.logger.Debug("ArchivalDB stopped")
+	d.logger.Debugn("ArchivalDB stopped")
 	d.GatewayDB.Stop()
-	d.logger.Debug("GatewayDB stopped")
+	d.logger.Debugn("GatewayDB stopped")
 	d.ErrorDB.Stop()
-	d.logger.Debug("ErrorDB stopped")
+	d.logger.Debugn("ErrorDB stopped")
 	d.serverStopTimeStat.Since(start)
 	d.serverStopCountStat.Increment()
 }
 
 func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	if d.GatewayComponent {
-		d.logger.Info("Not transiting the server because this is only Gateway App")
+		d.logger.Infon("Not transiting the server because this is only Gateway App")
 		return nil
 	}
 	if !newMode.Valid() {
@@ -199,29 +202,32 @@ func (d *Dynamic) handleModeChange(newMode servermode.Mode) error {
 	}
 
 	if d.currentMode == newMode {
-		d.logger.Info("New mode is same as old mode: %s, not switching the mode.", string(newMode))
+		d.logger.Infon("New mode is same as old mode, not switching the mode",
+			logger.NewStringField("mode", string(newMode)))
 		return nil
 	}
 	switch d.currentMode {
 	case servermode.NormalMode:
 		switch newMode {
 		case servermode.DegradedMode:
-			d.logger.Info("Transiting the server from NormalMode to DegradedMode")
+			d.logger.Infon("Transiting the server from NormalMode to DegradedMode")
 			d.stop()
 		default:
-			d.logger.Errorf("Unsupported transition from NormalMode to %s", newMode)
+			d.logger.Errorn("Unsupported transition from NormalMode",
+				logger.NewStringField("newMode", string(newMode)))
 			return fmt.Errorf("unsupported transition from NormalMode to %s", newMode)
 		}
 	case servermode.DegradedMode:
 		switch newMode {
 		case servermode.NormalMode:
-			d.logger.Info("Transiting the server from DegradedMode to NormalMode")
+			d.logger.Infon("Transiting the server from DegradedMode to NormalMode")
 			if err := d.start(); err != nil {
-				d.logger.Errorf("Failed to start the server: %v", err)
+				d.logger.Errorn("Failed to start the server", obskit.Error(err))
 				return fmt.Errorf("failed to start the server: %w", err)
 			}
 		default:
-			d.logger.Errorf("Unsupported transition from DegradedMode to %s", newMode)
+			d.logger.Errorn("Unsupported transition from DegradedMode",
+				logger.NewStringField("newMode", string(newMode)))
 			return fmt.Errorf("unsupported transition from DegradedMode to %s", newMode)
 		}
 	}

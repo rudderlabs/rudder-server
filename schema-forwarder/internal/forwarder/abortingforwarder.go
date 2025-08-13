@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -46,7 +48,7 @@ func (nf *AbortingForwarder) Start() error {
 					nf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}
-				nf.log.Debugf("NoopForwarder: Got %d jobs", len(jobList))
+				nf.log.Debugn("NoopForwarder: Got jobs", logger.NewIntField("noOfJobs", int64(len(jobList))))
 				var statusList []*jobsdb.JobStatusT
 				for _, job := range jobList {
 					statusList = append(statusList, &jobsdb.JobStatusT{
@@ -67,7 +69,7 @@ func (nf *AbortingForwarder) Start() error {
 					if ctx.Err() != nil { // we are shutting down
 						return nil //nolint:nilerr
 					}
-					nf.log.Errorf("Error while updating job status: %v", err)
+					nf.log.Errorn("Error while updating job status", obskit.Error(err))
 					nf.terminalErrFn(err) // we are signaling to shutdown the app
 					return err
 				}

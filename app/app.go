@@ -53,9 +53,9 @@ func (a *app) Setup() {
 	}
 
 	if a.options.EnterpriseToken == "" {
-		a.log.Info("Open source version of rudder-server")
+		a.log.Infon("Open source version of rudder-server")
 	} else {
-		a.log.Info("Enterprise version of rudder-server")
+		a.log.Infon("Enterprise version of rudder-server")
 	}
 
 	a.initFeatures()
@@ -108,7 +108,7 @@ func (a *app) Features() *Features {
 // Stop stops application
 func (a *app) Stop() {
 	if a.options.Cpuprofile != "" {
-		a.log.Info("Stopping CPU profile")
+		a.log.Infon("Stopping CPU profile")
 		pprof.StopCPUProfile()
 		_ = a.cpuprofileOutput.Close()
 	}

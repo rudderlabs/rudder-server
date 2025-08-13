@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -159,7 +160,7 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		}
 		urlResp, err := b.service.GetBulkUploadUrl()
 		if err != nil {
-			b.logger.Error("Error in getting bulk upload url: %w", err)
+			b.logger.Errorn("Error in getting bulk upload url", obskit.Error(err))
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
 			errors = append(errors, fmt.Sprintf("%s:error in getting bulk upload url: %s", actionFile.Action, err.Error()))
 			continue
@@ -175,14 +176,14 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		uploadTimeStat.Since(startTime)
 
 		if errorDuringUpload != nil {
-			b.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
+			b.logger.Errorn("error in uploading the bulk file", obskit.Error(errorDuringUpload))
 			failedJobs = append(append(failedJobs, actionFile.SuccessfulJobIDs...), actionFile.FailedJobIDs...)
 			errors = append(errors, fmt.Sprintf("%s:error in uploading the bulk file: %v", actionFile.Action, errorDuringUpload))
 
 			// remove the file that could not be uploaded
 			err = os.Remove(actionFile.ZipFilePath)
 			if err != nil {
-				b.logger.Error("Error in removing zip file: %v", err)
+				b.logger.Errorn("Error in removing zip file", obskit.Error(err))
 			}
 			continue
 		}
@@ -196,19 +197,19 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	parameters.ImportId = strings.Join(importIds, commaSeparator)
 	importParameters, err := jsonrs.Marshal(parameters)
 	if err != nil {
-		b.logger.Error("Errored in Marshalling parameters" + err.Error())
+		b.logger.Errorn("Errored in Marshalling parameters", obskit.Error(err))
 	}
 	errorMap := map[string]string{
 		"error": strings.Join(errors, commaSeparator),
 	}
 	allErrors, err := jsonrs.Marshal(errorMap)
 	if err != nil {
-		b.logger.Error("Error while marshalling error")
+		b.logger.Errorn("Error while marshalling error")
 	}
 	for _, actionFile := range actionFiles {
 		err = os.Remove(actionFile.ZipFilePath)
 		if err != nil {
-			b.logger.Error("Error in removing zip file: %v", err)
+			b.logger.Errorn("Error in removing zip file", obskit.Error(err))
 		}
 	}
 
@@ -347,7 +348,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 	for _, fileURL := range fileURLs {
 		filePaths, err := b.downloadAndGetUploadStatusFile(fileURL)
 		if err != nil {
-			b.logger.Error("Error in downloading and unzipping the file: %v", err)
+			b.logger.Errorn("Error in downloading and unzipping the file", obskit.Error(err))
 			return common.GetUploadStatsResponse{
 				StatusCode: 500,
 				Error:      fmt.Sprint(err),
@@ -355,7 +356,7 @@ func (b *BingAdsBulkUploader) GetUploadStats(uploadStatsInput common.GetUploadSt
 		}
 		response, err := b.getUploadStatsOfSingleImport(filePaths[0]) // only one file should be there
 		if err != nil {
-			b.logger.Error("Error in getting upload stats of single import: %v", err)
+			b.logger.Errorn("Error in getting upload stats of single import", obskit.Error(err))
 			return common.GetUploadStatsResponse{
 				StatusCode: 500,
 			}

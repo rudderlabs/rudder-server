@@ -20,10 +20,10 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
@@ -337,7 +337,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	eventsSuccessStat := ym.statsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	payloadSizeStat.Observe(float64(len(ympayload)))
-	ym.logger.Debugf("[Async Destination Manager] File Upload Started for Dest Type %v\n", destType)
+	ym.logger.Debugn("[Async Destination Manager] File Upload Started", obskit.DestinationType(destType))
 
 	resp, err := ym.uploadFileToDestination(uploadURL, csvFilePath, userIdType)
 	if err != nil {
@@ -358,7 +358,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	if err == nil && transResp.OriginalResponse != "" {
 		bodyBytes = []byte(transResp.OriginalResponse) // re-assign originalResponse
 	}
-	ym.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v\n", destType)
+	ym.logger.Debugn("[Async Destination Manager] File Upload Finished", obskit.DestinationType(destType))
 	uploadTimeStat.Since(startTime)
 
 	if resp.StatusCode != http.StatusOK { // error scenario

@@ -203,11 +203,10 @@ func (*GRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, 
 }
 
 func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
-	g.logger.Infow(
-		"Getting warehouse uploads",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.SourceID, request.SourceId,
-		lf.DestinationID, request.DestinationId,
+	g.logger.Infon("Getting warehouse uploads",
+		logger.NewStringField(lf.WorkspaceID, request.WorkspaceId),
+		logger.NewStringField(lf.SourceID, request.SourceId),
+		logger.NewStringField(lf.DestinationID, request.DestinationId),
 	)
 
 	limit, offset := request.Limit, request.Offset
@@ -296,9 +295,9 @@ func (g *GRPC) GetWHUploads(ctx context.Context, request *proto.WHUploadsRequest
 }
 
 func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
-	g.logger.Infow("Getting warehouse upload",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.UploadJobID, request.UploadId,
+	g.logger.Infon("Getting warehouse upload",
+		logger.NewStringField(lf.WorkspaceID, request.WorkspaceId),
+		logger.NewIntField(lf.UploadJobID, request.UploadId),
 	)
 
 	if request.UploadId < 1 {
@@ -380,10 +379,10 @@ func (g *GRPC) GetWHUpload(ctx context.Context, request *proto.WHUploadRequest) 
 }
 
 func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
-	g.logger.Infow("Triggering warehouse uploads",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.SourceID, request.SourceId,
-		lf.DestinationID, request.DestinationId,
+	g.logger.Infon("Triggering warehouse uploads",
+		logger.NewStringField(lf.WorkspaceID, request.WorkspaceId),
+		logger.NewStringField(lf.SourceID, request.SourceId),
+		logger.NewStringField(lf.DestinationID, request.DestinationId),
 	)
 
 	if request.DestinationId == "" {
@@ -453,9 +452,9 @@ func (g *GRPC) TriggerWHUploads(ctx context.Context, request *proto.WHUploadsReq
 }
 
 func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
-	g.logger.Infow("Triggering warehouse upload",
-		lf.WorkspaceID, request.WorkspaceId,
-		lf.UploadJobID, request.UploadId,
+	g.logger.Infon("Triggering warehouse upload",
+		logger.NewStringField(lf.WorkspaceID, request.WorkspaceId),
+		logger.NewIntField(lf.UploadJobID, request.UploadId),
 	)
 
 	sourceIDs := g.bcManager.SourceIDsByWorkspace()[request.WorkspaceId]
@@ -503,12 +502,12 @@ func (g *GRPC) TriggerWHUpload(ctx context.Context, request *proto.WHUploadReque
 }
 
 func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
-	g.logger.Infow("Retrying warehouse syncs",
-		lf.WorkspaceID, req.WorkspaceId,
-		lf.SourceID, req.SourceId,
-		lf.DestinationID, req.DestinationId,
-		lf.DestinationType, req.DestinationType,
-		lf.IntervalInHours, req.IntervalInHours,
+	g.logger.Infon("Retrying warehouse syncs",
+		logger.NewStringField(lf.WorkspaceID, req.WorkspaceId),
+		logger.NewStringField(lf.SourceID, req.SourceId),
+		logger.NewStringField(lf.DestinationID, req.DestinationId),
+		logger.NewStringField(lf.DestinationType, req.DestinationType),
+		logger.NewIntField(lf.IntervalInHours, req.IntervalInHours),
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -557,12 +556,12 @@ func (g *GRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequ
 }
 
 func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
-	g.logger.Infow("Count syncs to retry",
-		lf.WorkspaceID, req.WorkspaceId,
-		lf.SourceID, req.SourceId,
-		lf.DestinationID, req.DestinationId,
-		lf.DestinationType, req.DestinationType,
-		lf.IntervalInHours, req.IntervalInHours,
+	g.logger.Infon("Count syncs to retry",
+		logger.NewStringField(lf.WorkspaceID, req.WorkspaceId),
+		logger.NewStringField(lf.SourceID, req.SourceId),
+		logger.NewStringField(lf.DestinationID, req.DestinationId),
+		logger.NewStringField(lf.DestinationType, req.DestinationType),
+		logger.NewIntField(lf.IntervalInHours, req.IntervalInHours),
 	)
 
 	if req.SourceId == "" && req.DestinationId == "" && req.WorkspaceId == "" {
@@ -608,7 +607,7 @@ func (g *GRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUplo
 }
 
 func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	g.logger.Infow("Validating destination", "Role", req.Role, "Path", req.Path, "Step", req.Step)
+	g.logger.Infon("Validating destination", logger.NewStringField("Role", req.Role), logger.NewStringField("Path", req.Path), logger.NewStringField("Step", req.Step))
 
 	var (
 		err      error
@@ -693,7 +692,7 @@ func (err invalidDestinationCredErr) Error() string {
 }
 
 func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
-	g.logger.Infow("validating object storage", "ObjectStorageType", request.Type)
+	g.logger.Infon("validating object storage", logger.NewStringField("ObjectStorageType", request.Type))
 
 	byt, err := jsonrs.Marshal(request)
 	if err != nil {
@@ -854,13 +853,13 @@ func (g *GRPC) RetrieveFailedBatches(
 	ctx context.Context,
 	req *proto.RetrieveFailedBatchesRequest,
 ) (*proto.RetrieveFailedBatchesResponse, error) {
-	log := g.logger.With(
-		lf.WorkspaceID, req.GetWorkspaceID(),
-		lf.DestinationID, req.GetDestinationID(),
-		lf.StartTime, req.GetStart(),
-		lf.EndTime, req.GetEnd(),
+	log := g.logger.Withn(
+		logger.NewStringField(lf.WorkspaceID, req.GetWorkspaceID()),
+		logger.NewStringField(lf.DestinationID, req.GetDestinationID()),
+		logger.NewStringField(lf.StartTime, req.GetStart()),
+		logger.NewStringField(lf.EndTime, req.GetEnd()),
 	)
-	log.Infow("Retrieving failed batches")
+	log.Infon("Retrieving failed batches")
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
 		return &proto.RetrieveFailedBatchesResponse{},
@@ -900,7 +899,7 @@ func (g *GRPC) RetrieveFailedBatches(
 		End:           endTime,
 	})
 	if err != nil {
-		log.Warnw("unable to get failed batches", lf.Error, err.Error())
+		log.Warnn("unable to get failed batches", obskit.Error(err))
 
 		return &proto.RetrieveFailedBatchesResponse{},
 			status.Error(codes.Code(code.Code_INTERNAL), "unable to get failed batches")
@@ -925,16 +924,16 @@ func (g *GRPC) RetryFailedBatches(
 	ctx context.Context,
 	req *proto.RetryFailedBatchesRequest,
 ) (*proto.RetryFailedBatchesResponse, error) {
-	log := g.logger.With(
-		lf.WorkspaceID, req.GetWorkspaceID(),
-		lf.DestinationID, req.GetDestinationID(),
-		lf.StartTime, req.GetStart(),
-		lf.EndTime, req.GetEnd(),
-		lf.ErrorCategory, req.GetErrorCategory(),
-		lf.SourceID, req.GetSourceID(),
-		lf.Status, req.GetStatus(),
+	log := g.logger.Withn(
+		logger.NewStringField(lf.WorkspaceID, req.GetWorkspaceID()),
+		logger.NewStringField(lf.DestinationID, req.GetDestinationID()),
+		logger.NewStringField(lf.StartTime, req.GetStart()),
+		logger.NewStringField(lf.EndTime, req.GetEnd()),
+		logger.NewStringField(lf.ErrorCategory, req.GetErrorCategory()),
+		logger.NewStringField(lf.SourceID, req.GetSourceID()),
+		logger.NewStringField(lf.Status, req.GetStatus()),
 	)
-	log.Infow("Retrying failed batches")
+	log.Infon("Retrying failed batches")
 
 	if req.GetWorkspaceID() == "" || req.GetDestinationID() == "" {
 		return &proto.RetryFailedBatchesResponse{},
@@ -981,7 +980,7 @@ func (g *GRPC) RetryFailedBatches(
 		Status:        req.GetStatus(),
 	})
 	if err != nil {
-		log.Warnw("unable to retry failed batches", lf.Error, err.Error())
+		log.Warnn("unable to retry failed batches", obskit.Error(err))
 
 		return &proto.RetryFailedBatchesResponse{},
 			status.Error(codes.Code(code.Code_INTERNAL), "unable to retry failed batches")
@@ -994,17 +993,17 @@ func (g *GRPC) RetryFailedBatches(
 }
 
 func (g *GRPC) SyncWHSchema(ctx context.Context, req *proto.SyncWHSchemaRequest) (*emptypb.Empty, error) {
-	log := g.logger.With(
-		lf.DestinationID, req.GetDestinationId(),
+	log := g.logger.Withn(
+		logger.NewStringField(lf.DestinationID, req.GetDestinationId()),
 	)
-	log.Infow("Syncing warehouse schema")
+	log.Infon("Syncing warehouse schema")
 	if req.DestinationId == "" {
 		return &emptypb.Empty{},
 			status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), "destinationId cannot be empty")
 	}
 	err := g.schemaRepo.SetExpiryForDestination(ctx, req.DestinationId, g.now())
 	if err != nil {
-		log.Errorw("unable to set expiry for destination", obskit.Error(err))
+		log.Errorn("unable to set expiry for destination", obskit.Error(err))
 		return &emptypb.Empty{},
 			status.Error(codes.Code(code.Code_INTERNAL), "unable to set expiry for destination")
 	}
@@ -1137,7 +1136,7 @@ func (g *GRPC) GetSyncLatency(ctx context.Context, request *proto.SyncLatencyReq
 		AggregationType:    aggregationType,
 	})
 	if err != nil {
-		log.Warnw("unable to get sync latencies", lf.Error, err.Error())
+		log.Warnn("unable to get sync latencies", obskit.Error(err))
 		return &proto.SyncLatencyResponse{},
 			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to get sync latencies: %v", err)
 	}

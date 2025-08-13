@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -77,7 +79,8 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	})
 	csvFilePath, headerRowOrder, insertedJobIDs, overflowedJobIDs, err := createCSVFile(destinationID, b.destinationConfig, input, b.dataHashToJobId)
 
-	b.logger.Infof("Number of jobs in the batch: %d", len(insertedJobIDs))
+	b.logger.Infon("Number of jobs in the batch",
+		logger.NewIntField("jobCount", int64(len(insertedJobIDs))))
 
 	if err != nil {
 		return common.AsyncUploadOutput{
@@ -107,7 +110,8 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 	importID, apiError := b.apiService.ImportLeads(csvFilePath, b.destinationConfig.DeduplicationField)
 
-	b.logger.Debugf("[Async Destination Manager] File Upload Finished for Dest Type %v", destType)
+	b.logger.Debugn("[Async Destination Manager] File Upload Finished for Dest Type",
+		obskit.DestinationType(destType))
 
 	if apiError != nil {
 
@@ -155,7 +159,10 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 
 	marketoResponse, apiError := b.apiService.PollImportStatus(importId)
 
-	b.logger.Debugf("[Async Destination Manager] Marketo Poll Response: %v", marketoResponse)
+	if b.logger.IsDebugLevel() { // reflection on marketoResponse might not be a cheap operation
+		b.logger.Debugn("[Async Destination Manager] Marketo Poll Response",
+			logger.NewStringField("marketoResponse", fmt.Sprintf("%+v", marketoResponse))) // nolint:forbidigo
+	}
 
 	if apiError != nil {
 		if apiError.Category == "RefreshToken" {
@@ -169,7 +176,6 @@ func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatus
 		case 429:
 			return common.PollStatusResponse{StatusCode: apiError.StatusCode, Error: apiError.Message, Complete: false}
 		}
-
 	}
 
 	// Check if the response is empty

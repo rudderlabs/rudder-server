@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -85,7 +86,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if !a.setupDone {
 		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
 	}
-	a.log.Info("Embedded mode: Starting Rudder Core")
+	a.log.Infon("Embedded mode: Starting Rudder Core")
 	g, ctx := errgroup.WithContext(ctx)
 	terminalErrFn := terminalErrorFunction(ctx, g)
 
@@ -93,7 +94,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
-	a.log.Infof("Configured deployment type: %q", deploymentType)
+	a.log.Infon("Configured deployment type", logger.NewStringField("deploymentType", string(deploymentType)))
 
 	trackedUsersReporter, err := a.app.Features().TrackedUsers.Setup(config)
 	if err != nil {
@@ -111,7 +112,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return nil
 	})
 
-	a.log.Info("Clearing DB ", options.ClearDB)
+	a.log.Infon("Clearing DB", logger.NewBoolField("clearDB", options.ClearDB))
 
 	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
@@ -296,12 +297,13 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
-	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory)
+	routerLogger := logger.NewLogger().Child("router")
+	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory, routerLogger.Child("throttler"))
 	if err != nil {
 		return fmt.Errorf("failed to create rt throttler factory: %w", err)
 	}
 	rtFactory := &router.Factory{
-		Logger:        logger.NewLogger().Child("router"),
+		Logger:        routerLogger,
 		Reporting:     reporting,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple routers can share the same cache and not hit the DB every time
@@ -382,7 +384,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer func() {
 		if err := gw.Shutdown(); err != nil {
-			a.log.Warnf("Gateway shutdown error: %v", err)
+			a.log.Warnn("Gateway shutdown error", obskit.Error(err))
 		}
 	}()
 

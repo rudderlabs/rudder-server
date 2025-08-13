@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -44,7 +45,7 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 	// setup db connection
 	dbConn, err = setupDBConn()
 	if err != nil {
-		pkgLogger.Errorf("failed to setup db: %v", err)
+		pkgLogger.Errorn("failed to setup db", obskit.Error(err))
 		return nil, err
 	}
 	dbStore := cacheStore{
@@ -56,14 +57,14 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 	// apply migrations
 	err = migrate(dbConn)
 	if err != nil {
-		pkgLogger.Errorf("failed to apply db migrations: %v", err)
+		pkgLogger.Errorn("failed to apply db migrations", obskit.Error(err))
 		return nil, err
 	}
 
 	// clear config for other keys
 	err = dbStore.clear(ctx)
 	if err != nil {
-		pkgLogger.Errorf("failed to clear previous config: %v", err)
+		pkgLogger.Errorn("failed to clear previous config", obskit.Error(err))
 		return nil, err
 	}
 
@@ -73,7 +74,7 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 			// persist to database
 			err = dbStore.set(ctx, config.Data)
 			if err != nil {
-				pkgLogger.Errorf("failed writing config to database: %v", err)
+				pkgLogger.Errorn("failed writing config to database", obskit.Error(err))
 			}
 		}
 		dbStore.Close()
@@ -135,12 +136,12 @@ func setupDBConn() (*sql.DB, error) {
 	psqlInfo := misc.GetConnectionString(config.Default, "backend-config")
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		pkgLogger.Errorf("failed to open db: %v", err)
+		pkgLogger.Errorn("failed to open db", obskit.Error(err))
 		return nil, err
 	}
 	err = db.Ping()
 	if err != nil {
-		pkgLogger.Errorf("failed to ping db: %v", err)
+		pkgLogger.Errorn("failed to ping db", obskit.Error(err))
 		return nil, err
 	}
 	return db, nil

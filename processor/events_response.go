@@ -3,6 +3,9 @@ package processor
 import (
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -49,7 +52,13 @@ func (proc *Handle) getDroppedJobs(response types.Response, eventsToTransform []
 			}
 			marshalledParams, err := jsonrs.Marshal(params)
 			if err != nil {
-				proc.logger.Errorf("[Processor] Failed to marshal parameters. Parameters: %v", params)
+				proc.logger.Errorn("[Processor] Failed to marshal parameters",
+					logger.NewStringField("sourceJobRunID", e.Metadata.SourceJobRunID),
+					logger.NewStringField("sourceTaskRunID", e.Metadata.SourceTaskRunID),
+					obskit.SourceID(e.Metadata.SourceID),
+					obskit.DestinationID(e.Metadata.DestinationID),
+					logger.NewStringField("error", err.Error()),
+				)
 				marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
 			}
 

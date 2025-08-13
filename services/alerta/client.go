@@ -146,7 +146,7 @@ func NewClient(baseURL string, fns ...OptFn) AlertSender {
 	}
 
 	if !c.isEnabled() {
-		pkgLogger.Info("Alerta client is disabled")
+		pkgLogger.Infon("Alerta client is disabled")
 		return &NOOP{}
 	}
 

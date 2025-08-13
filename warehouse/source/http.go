@@ -8,10 +8,10 @@ import (
 	"regexp"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
-	lf "github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 
 // emptyRegex matches empty strings
@@ -23,13 +23,13 @@ func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	var payload insertJobRequest
 	if err := jsonrs.NewDecoder(r.Body).Decode(&payload); err != nil {
-		m.logger.Warnw("invalid JSON in request body for inserting source jobs", lf.Error, err.Error())
+		m.logger.Warnn("invalid JSON in request body for inserting source jobs", obskit.Error(err))
 		http.Error(w, ierrors.ErrInvalidJSONRequestBody.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if err := validatePayload(&payload); err != nil {
-		m.logger.Warnw("invalid payload for inserting source job", lf.Error, err.Error())
+		m.logger.Warnn("invalid payload for inserting source job", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -40,7 +40,7 @@ func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, ierrors.ErrRequestCancelled.Error(), http.StatusBadRequest)
 			return
 		}
-		m.logger.Errorw("inserting source jobs", lf.Error, err.Error())
+		m.logger.Errorn("inserting source jobs", obskit.Error(err))
 		http.Error(w, "can't insert source jobs", http.StatusInternalServerError)
 		return
 	}
@@ -50,7 +50,7 @@ func (m *Manager) InsertJobHandler(w http.ResponseWriter, r *http.Request) {
 		Err:    nil,
 	})
 	if err != nil {
-		m.logger.Errorw("marshalling response for inserting source job", lf.Error, err.Error())
+		m.logger.Errorn("marshalling response for inserting source job", obskit.Error(err))
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -71,7 +71,7 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID:   queryParams.Get("workspace_id"),
 	}
 	if err := validatePayload(&payload); err != nil {
-		m.logger.Warnw("invalid payload for source job status", lf.Error, err.Error())
+		m.logger.Warnn("invalid payload for source job status", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("invalid request: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -86,7 +86,7 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, model.ErrSourcesJobNotFound.Error(), http.StatusNotFound)
 			return
 		}
-		m.logger.Warnw("unable to get source job status", lf.Error, err.Error())
+		m.logger.Warnn("unable to get source job status", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("can't get source job status: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
@@ -106,7 +106,7 @@ func (m *Manager) StatusJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	resBody, err := jsonrs.Marshal(statusResponse)
 	if err != nil {
-		m.logger.Errorw("marshalling response for source job status", lf.Error, err.Error())
+		m.logger.Errorn("marshalling response for source job status", obskit.Error(err))
 		http.Error(w, ierrors.ErrMarshallResponse.Error(), http.StatusInternalServerError)
 		return
 	}

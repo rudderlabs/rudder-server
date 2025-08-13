@@ -300,7 +300,7 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			retryCount++
 			t.log.Warnn(
 				"JS HTTP connection error",
-				logger.NewErrorField(err),
+				obskit.Error(err),
 				logger.NewIntField("attempts", int64(retryCount)),
 			)
 		},

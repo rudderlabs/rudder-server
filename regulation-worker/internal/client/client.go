@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -40,12 +41,12 @@ func (j *JobAPI) URL() string {
 // which is decoded using schema and then mapped from schema to internal model.Job struct,
 // which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
-	pkgLogger.Debugf("making http request to regulation manager to get new job")
+	pkgLogger.Debugn("making http request to regulation manager to get new job")
 	url := j.URL()
-	pkgLogger.Debugf("making GET request to URL: %v", url)
+	pkgLogger.Debugn("making GET request to URL", logger.NewStringField("url", url))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		pkgLogger.Errorf("error while create new http request: %v", err)
+		pkgLogger.Errorn("error while create new http request", obskit.Error(err))
 		return model.Job{}, err
 	}
 	req.SetBasicAuth(j.Identity.BasicAuth())
@@ -61,18 +62,18 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, err
 	}
 	defer func() { httputil.CloseResponse(resp) }()
-	pkgLogger.Debugf("obtained response code: %v with resp body %v", resp.StatusCode, resp.Body)
+	pkgLogger.Debugn("obtained response code", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 
 	// if successful
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if resp.StatusCode == http.StatusNoContent {
-			pkgLogger.Debugf("no runnable job found")
+			pkgLogger.Debugn("no runnable job found")
 			return model.Job{}, model.ErrNoRunnableJob
 		}
 
 		var jobSchema jobSchema
 		if err := jsonrs.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
-			pkgLogger.Errorf("error while decoding response body: %v", err)
+			pkgLogger.Errorn("error while decoding response body", obskit.Error(err))
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
@@ -86,20 +87,23 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 		job, err := mapPayloadToJob(jobSchema)
 		if err != nil {
-			pkgLogger.Errorf("error while mapping response payload to job: %v", err)
+			pkgLogger.Errorn("error while mapping response payload to job", obskit.Error(err))
 			return model.Job{}, fmt.Errorf("error while getting job: %w", err)
 		}
 
-		pkgLogger.Debugf("obtained job: %v", job)
+		pkgLogger.Debugn("obtained job",
+			obskit.WorkspaceID(job.WorkspaceID),
+			obskit.DestinationID(job.DestinationID),
+			logger.NewIntField("jobID", int64(job.ID)))
 		return job, nil
 
 	} else {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			pkgLogger.Errorf("error while reading response body: %v", err)
+			pkgLogger.Errorn("error while reading response body", obskit.Error(err))
 			return model.Job{}, fmt.Errorf("error while reading response body: %w", err)
 		}
-		pkgLogger.Debugf("obtained response body: %v", string(body))
+		pkgLogger.Debugn("obtained response body", logger.NewStringField("body", string(body)))
 
 		return model.Job{}, fmt.Errorf("unexpected response code: %d", resp.StatusCode)
 	}
@@ -108,12 +112,14 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 // UpdateStatus marshals status into appropriate status schema, and sent as payload
 // checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-	pkgLogger.Debugf("sending PATCH request to update job status for jobId: ", jobID, "with status: %v", status)
+	pkgLogger.Debugn("sending PATCH request to update job status",
+		logger.NewIntField("jobID", int64(jobID)),
+		logger.NewStringField("status", string(status.Status)))
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
 	url := fmt.Sprintf("%s/%d", j.URL(), jobID)
-	pkgLogger.Debugf("sending request to URL: %v", url)
+	pkgLogger.Debugn("sending request to URL", logger.NewStringField("url", url))
 	statusSchema := statusJobSchema{
 		Status: string(status.Status),
 	}
@@ -122,7 +128,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	body, err := jsonrs.Marshal(statusSchema)
 	if err != nil {
-		pkgLogger.Errorf("error while marshalling status schema: %v", err)
+		pkgLogger.Errorn("error while marshalling status schema", obskit.Error(err))
 		return fmt.Errorf("error while marshalling status: %w", err)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
@@ -143,11 +149,11 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
-	pkgLogger.Debugf("response code: %v", resp.StatusCode, "response body: %v", resp.Body)
+	pkgLogger.Debugn("response code and body", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	} else {
-		pkgLogger.Errorf("update status failed with status code: %v", resp.StatusCode)
+		pkgLogger.Errorn("update status failed", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 		return fmt.Errorf("update status failed with status code: %d", resp.StatusCode)
 	}
 }
@@ -166,7 +172,7 @@ func mapPayloadToJob(wjs jobSchema) (model.Job, error) {
 	}
 	jobID, err := strconv.Atoi(wjs.JobID)
 	if err != nil {
-		pkgLogger.Errorf("error while getting jobId: %v", err)
+		pkgLogger.Errorn("error while getting jobId", obskit.Error(err))
 		return model.Job{}, fmt.Errorf("error while get JobID:%w", err)
 	}
 

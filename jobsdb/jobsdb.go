@@ -37,6 +37,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
@@ -449,10 +451,44 @@ type dataSetT struct {
 	Index          string `json:"index"`
 }
 
+func (ds dataSetT) String() string {
+	return "JobTable=" + ds.JobTable + ",JobStatusTable=" + ds.JobStatusTable + ",Index=" + ds.Index
+}
+
+type dataSetTList []dataSetT
+
+func (l dataSetTList) String() string {
+	sb := strings.Builder{}
+	for i, ds := range l {
+		if i > 0 {
+			sb.WriteString(";")
+		}
+		sb.WriteString(ds.String())
+	}
+	return sb.String()
+}
+
 type dataSetRangeT struct {
 	minJobID int64
 	maxJobID int64
 	ds       dataSetT
+}
+
+func (ds dataSetRangeT) String() string {
+	return "minJobID=" + strconv.FormatInt(ds.minJobID, 10) + ",maxJobID=" + strconv.FormatInt(ds.maxJobID, 10) + ",ds=" + ds.ds.String()
+}
+
+type dataSetRangeTList []dataSetRangeT
+
+func (l dataSetRangeTList) String() string {
+	sb := strings.Builder{}
+	for i, ds := range l {
+		if i > 0 {
+			sb.WriteString(";")
+		}
+		sb.WriteString(ds.String())
+	}
+	return sb.String()
 }
 
 type dsRangeMinMax struct {
@@ -472,8 +508,8 @@ type Handle struct {
 	logger               logger.Logger
 	stats                stats.Stats
 
-	datasetList         []dataSetT
-	datasetRangeList    []dataSetRangeT
+	datasetList         dataSetTList
+	datasetRangeList    dataSetRangeTList
 	dsRangeFuncMap      map[string]func() (dsRangeMinMax, error)
 	distinctValuesCache *distinctValuesCache
 	dsListLock          *lock.Locker
@@ -566,12 +602,29 @@ type ParameterFilterT struct {
 	Value string
 }
 
+func (p ParameterFilterT) String() string {
+	return "Name=" + p.Name + ",Value=" + p.Value
+}
+
 func (p ParameterFilterT) GetName() string {
 	return p.Name
 }
 
 func (p ParameterFilterT) GetValue() string {
 	return p.Value
+}
+
+type ParameterFilterList []ParameterFilterT
+
+func (l ParameterFilterList) String() string {
+	sb := strings.Builder{}
+	for i, p := range l {
+		if i > 0 {
+			sb.WriteString(";")
+		}
+		sb.WriteString(p.String())
+	}
+	return sb.String()
 }
 
 var dbInvalidJsonErrors = map[string]struct{}{
@@ -586,11 +639,11 @@ var dbInvalidJsonErrors = map[string]struct{}{
 func (jd *Handle) assertError(err error) {
 	if err != nil {
 		jd.printLists(true)
-		jd.logger.Fatalw("assertError failure",
-			"error", err,
-			"tablePrefix", jd.tablePrefix,
-			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+		jd.logger.Fataln("assertError failure",
+			obskit.Error(err),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("ownerType", jd.ownerType.Identifier()),
+			logger.NewStringField("noResultsCache", jd.noResultsCache.String()))
 		panic(err)
 	}
 }
@@ -598,11 +651,11 @@ func (jd *Handle) assertError(err error) {
 func (jd *Handle) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
-		jd.logger.Fatalw("assert condition failed",
-			"errorString", errorString,
-			"tablePrefix", jd.tablePrefix,
-			"ownerType", jd.ownerType,
-			"noResultsCache", jd.noResultsCache.String())
+		jd.logger.Fataln("assert condition failed",
+			obskit.Error(errors.New(errorString)),
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			logger.NewStringField("ownerType", jd.ownerType.Identifier()),
+			logger.NewStringField("noResultsCache", jd.noResultsCache.String()))
 		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
 	}
 }
@@ -1122,7 +1175,7 @@ func (jd *Handle) TearDown() {
 func (jd *Handle) Close() {
 	if !jd.sharedConnectionPool {
 		if err := jd.dbHandle.Close(); err != nil {
-			jd.logger.Errorw("error closing db connection", "error", err)
+			jd.logger.Errorn("error closing db connection", obskit.Error(err))
 		}
 	}
 }
@@ -1132,12 +1185,12 @@ Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 Caller must have the dsListLock readlocked
 */
-func (jd *Handle) getDSList() []dataSetT {
+func (jd *Handle) getDSList() dataSetTList {
 	return jd.datasetList
 }
 
 // doRefreshDSList refreshes the ds list from the database
-func (jd *Handle) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
+func (jd *Handle) doRefreshDSList(l lock.LockToken) (dataSetTList, error) {
 	if l == nil {
 		return nil, fmt.Errorf("cannot refresh DS list without a valid lock token")
 	}
@@ -1161,7 +1214,7 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken) ([]dataSetT, error) {
 	return jd.datasetList, nil
 }
 
-func (jd *Handle) getDSRangeList() []dataSetRangeT {
+func (jd *Handle) getDSRangeList() dataSetRangeTList {
 	return jd.datasetRangeList
 }
 
@@ -1174,7 +1227,7 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 	if err != nil {
 		return fmt.Errorf("refreshDSList %w", err)
 	}
-	var datasetRangeList []dataSetRangeT
+	var datasetRangeList dataSetRangeTList
 
 	for idx := 0; idx < len(dsList)-1; idx++ {
 		ds := dsList[idx]
@@ -1188,7 +1241,8 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 				if err := row.Scan(&minID, &maxID); err != nil {
 					return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
 				}
-				jd.logger.Debug(sqlStatement, minID, maxID)
+				jd.logger.Debugn(sqlStatement,
+					logger.NewIntField("minID", minID.Int64), logger.NewIntField("maxID", maxID.Int64))
 				return minID, maxID, nil
 			}
 			jd.dsRangeFuncMap[ds.Index] = sync.OnceValues(func() (dsRangeMinMax, error) {
@@ -1270,9 +1324,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if tableSize >= jd.conf.maxTableSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full in size",
-			logger.NewField("ds", ds),
-			logger.NewField("rowCount", rowCount),
-			logger.NewField("tableSize", tableSize),
+			logger.NewStringField("ds", ds.String()),
+			logger.NewIntField("rowCount", int64(rowCount)),
+			logger.NewIntField("tableSize", tableSize),
 		)
 		return true, nil
 	}
@@ -1280,9 +1334,9 @@ func (jd *Handle) checkIfFullDSInTx(tx *Tx, ds dataSetT) (bool, error) {
 	if rowCount >= jd.conf.MaxDSSize.Load() {
 		jd.logger.Infon(
 			"[JobsDB] DS full by rows",
-			logger.NewField("ds", ds),
-			logger.NewField("rowCount", rowCount),
-			logger.NewField("tableSize", tableSize),
+			logger.NewStringField("ds", ds.String()),
+			logger.NewIntField("rowCount", int64(rowCount)),
+			logger.NewIntField("tableSize", tableSize),
 		)
 		return true, nil
 	}
@@ -1362,7 +1416,7 @@ func (jd *Handle) addNewDSInTx(ctx context.Context, tx *Tx, l lock.LockToken, ds
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
-	jd.logger.Infon("Creating new DS", logger.NewField("ds", ds))
+	jd.logger.Infon("Creating new DS", logger.NewStringField("ds", ds.String()))
 	err := jd.createDSInTx(ctx, tx, ds)
 	if err != nil {
 		return err
@@ -1574,7 +1628,10 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 		var pqError *pq.Error
 		ok := errors.As(err, &pqError)
 		if ok && pqError.Code == ("42P01") {
-			jd.logger.Infof("[%s] sql statement(%s) exec failed because table doesn't exist", jd.tablePrefix, sqlStatement)
+			jd.logger.Infon("sql statement exec failed because table doesn't exist",
+				logger.NewStringField("tablePrefix", jd.tablePrefix),
+				logger.NewStringField("sqlStatement", sqlStatement),
+			)
 			_, err = tx.Exec(rollbackSql)
 			jd.assertError(err)
 		} else {
@@ -1701,7 +1758,7 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	for {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
-			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
+			jd.logger.Errorn("[JobsDB] :: Store failed. Retrying after refreshing DS cache", obskit.Error(errStaleDsList))
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				err = jd.doRefreshDSRangeList(l)
 				if err != nil {
@@ -2051,12 +2108,17 @@ A JobsLimit less than or equal to zero indicates no limit.
 func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, params GetQueryParams) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	stateFilters := params.stateFilters
 	customValFilters := params.CustomValFilters
-	parameterFilters := params.ParameterFilters
+	var parameterFilters ParameterFilterList = params.ParameterFilters
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
 	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters) {
-		jd.logger.Debugf("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+		jd.logger.Debugn("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v",
+			logger.NewStringField("ds", ds.String()),
+			logger.NewStringField("stateFilters", strings.Join(stateFilters, ",")),
+			logger.NewStringField("customValFilters", strings.Join(customValFilters, ",")),
+			logger.NewStringField("parameterFilters", parameterFilters.String()),
+		)
 		return JobsResult{}, false, nil
 	}
 
@@ -2426,13 +2488,15 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							if err != nil {
 								return fmt.Errorf("acquiring dsListLock: %w", err)
 							}
-							jd.logger.Infon("Acquired lock", logger.NewField("ds", latestDS), logger.NewStringField("jobsdb", jd.tablePrefix))
+							jd.logger.Infon("Acquired lock",
+								logger.NewStringField("ds", latestDS.String()),
+								logger.NewStringField("jobsdb", jd.tablePrefix))
 							if _, err = tx.ExecContext(ctx, fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
 								return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
 							}
 
 							nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-							jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+							jd.logger.Infon("[[ addNewDSLoop ]]: NewDS", logger.NewStringField("tablePrefix", jd.tablePrefix))
 							if err = jd.addNewDSInTx(ctx, tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
 								return fmt.Errorf("error adding new DS: %w", err)
 							}
@@ -2466,7 +2530,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
-			jd.logger.Errorw("addNewDSLoop error", "error", err)
+			jd.logger.Errorn("addNewDSLoop error", obskit.Error(err))
 		}
 	}
 }
@@ -2502,7 +2566,7 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
 			}
-			jd.logger.Errorw("refreshDSListLoop error", "error", err)
+			jd.logger.Errorn("refreshDSListLoop error", obskit.Error(err))
 		}
 		cancel()
 	}
@@ -2510,7 +2574,7 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 
 // refreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
 func (jd *Handle) refreshDSList(ctx context.Context) error {
-	jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
+	jd.logger.Debugn("Start", logger.NewStringField("operation", "refreshDSListLoop"))
 
 	start := time.Now()
 	var err error
@@ -2700,23 +2764,23 @@ func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
 	case addDSOperation:
 		newDS := opPayloadJSON.To
 		undoOp = true
-		// Drop the table we were tring to create
-		jd.logger.Info("Recovering new DS operation", newDS)
+		// Drop the table we were trying to create
+		jd.logger.Infon("Recovering new DS operation", logger.NewStringField("newDS", newDS.String()))
 		jd.dropDSForRecovery(newDS)
 	case migrateCopyOperation:
 		migrateDest := opPayloadJSON.To
 		// Delete the destination of the interrupted
 		// migration. After we start, code should
 		// redo the migration
-		jd.logger.Info("Recovering migrateCopy operation", migrateDest)
+		jd.logger.Infon("Recovering migrateCopy operation", logger.NewStringField("migrateDest", migrateDest.String()))
 		jd.dropDSForRecovery(migrateDest)
 		undoOp = true
 	case postMigrateDSOperation:
-		migrateSrc := opPayloadJSON.From
+		var migrateSrc dataSetTList = opPayloadJSON.From
 		for _, ds := range migrateSrc {
 			jd.dropDSForRecovery(ds)
 		}
-		jd.logger.Info("Recovering migrateDel operation", migrateSrc)
+		jd.logger.Infon("Recovering migrateDel operation", logger.NewStringField("migrateSrc", migrateSrc.String()))
 		undoOp = false
 	}
 
@@ -2765,7 +2829,10 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 	// do update
 	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, dsList, dsRangeList, statusList, tags)
 	if err != nil {
-		jd.logger.Infof("[[ %s ]]: Error occurred while updating job statuses. Returning err, %v", jd.tablePrefix, err)
+		jd.logger.Infon("Error occurred while updating job statuses",
+			logger.NewStringField("tablePrefix", jd.tablePrefix),
+			obskit.Error(err),
+		)
 		return err
 	}
 
@@ -2838,9 +2905,14 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		for i = lastPos; i < len(statusList); i++ {
 			// The JobID is outside this DS's range
 			if statusList[i].JobID > maxID {
-				if i > lastPos {
-					jd.logger.Debug("Range:", ds, statusList[lastPos].JobID,
-						statusList[i-1].JobID, lastPos, i-1)
+				if i > lastPos && jd.logger.IsDebugLevel() {
+					jd.logger.Debugn("Range",
+						logger.NewStringField("ds", ds.String()),
+						logger.NewIntField("lastPosJobID", statusList[lastPos].JobID),
+						logger.NewIntField("prevJobID", statusList[i-1].JobID),
+						logger.NewIntField("lastPos", int64(lastPos)),
+						logger.NewIntField("prevPos", int64(i-1)),
+					)
 				}
 				var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
@@ -2857,7 +2929,12 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		}
 		// Reached the end. Need to process this range
 		if i == len(statusList) && lastPos < i {
-			jd.logger.Debug("Range:", ds, statusList[lastPos].JobID, statusList[i-1].JobID, lastPos, i)
+			jd.logger.Debugn("Range",
+				logger.NewStringField("ds", ds.String()),
+				logger.NewIntField("lastPosJobID", statusList[lastPos].JobID),
+				logger.NewIntField("prevJobID", statusList[i-1].JobID),
+				logger.NewIntField("index", int64(i)),
+			)
 			var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
@@ -2877,7 +2954,9 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		// Make sure range is missing for the last ds and migration ds (if at all present)
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
-		jd.logger.Debug("RangeEnd ", statusList[lastPos].JobID, lastPos, len(statusList))
+		jd.logger.Debugn("RangeEnd",
+			logger.NewIntField("jobID", statusList[lastPos].JobID),
+			logger.NewIntField("lenStatusList", int64(len(statusList))))
 		var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
@@ -3039,8 +3118,12 @@ the current in-memory copy of jobs and job ranges
 */
 func (jd *Handle) printLists(console bool) {
 	// This being an internal function, we don't lock
-	jd.logger.Debug("List:", jd.getDSList())
-	jd.logger.Debug("Ranges:", jd.getDSRangeList())
+	if jd.logger.IsDebugLevel() {
+		jd.logger.Debugn("printLists",
+			logger.NewStringField("list", jd.getDSList().String()),
+			logger.NewStringField("ranges", jd.getDSRangeList().String()),
+		)
+	}
 	if console {
 		fmt.Println("List:", jd.getDSList())
 		fmt.Println("Ranges:", jd.getDSRangeList())

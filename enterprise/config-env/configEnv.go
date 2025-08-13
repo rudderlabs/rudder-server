@@ -1,7 +1,6 @@
 package configenv
 
 import (
-	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 type HandleT struct {
@@ -30,13 +30,18 @@ func (h *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updated
 
 	err := jsonrs.Unmarshal(workspaceConfig, &configMap)
 	if err != nil {
-		h.Log.Error("[ConfigEnv] Error while parsing request", err, string(workspaceConfig))
+		h.Log.Errorn("[ConfigEnv] Error while parsing request",
+			obskit.Error(err),
+			logger.NewStringField("workspaceConfig", string(workspaceConfig)),
+		)
 		return workspaceConfig
 	}
 
 	flattenedConfig, err := flatten.Flatten(configMap, "", flatten.DotStyle)
 	if err != nil {
-		h.Log.Errorf("[ConfigEnv] Failed to flatten workspace config: %v", err)
+		h.Log.Errorn("[ConfigEnv] Failed to flatten workspace config",
+			obskit.Error(err),
+		)
 		return workspaceConfig
 	}
 
@@ -49,13 +54,18 @@ func (h *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updated
 				envVariable := valString[len(configEnvReplacer):]
 				envVarValue := os.Getenv(envVariable)
 				if envVarValue == "" {
-					errorMessage := fmt.Sprintf("[ConfigEnv] Missing envVariable: %s. Either set it as envVariable or remove %s from the destination config.", envVariable, configEnvReplacer)
-					h.Log.Errorf(errorMessage)
+					h.Log.Errorn("[ConfigEnv] Missing envVariable. Either set it as envVariable or remove configEnvReplacer from the destination config.",
+						logger.NewStringField("envVariable", envVariable),
+						logger.NewStringField("configEnvReplacer", configEnvReplacer),
+					)
 					continue
 				}
 				workspaceConfig, err = sjson.SetBytes(workspaceConfig, configKey, envVarValue)
 				if err != nil {
-					h.Log.Error("[ConfigEnv] Failed to set config for %s", configKey)
+					h.Log.Errorn("[ConfigEnv] Failed to set config",
+						logger.NewStringField("configKey", configKey),
+						obskit.Error(err),
+					)
 				}
 			}
 		}

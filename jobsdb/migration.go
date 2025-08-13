@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -44,7 +45,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 		}
 		migrate := func() error {
 			start := time.Now()
-			jd.logger.Debugw("Start", "operation", "migrateDSLoop")
+			jd.logger.Debugn("Start", logger.NewStringField("operation", "migrateDSLoop"))
 			timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.migration.migrateDSTimeout.Load())
 			defer cancel()
 			err := jd.doMigrateDS(timeoutCtx)
@@ -58,7 +59,7 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			if !jd.conf.skipMaintenanceError {
 				panic(err)
 			}
-			jd.logger.Errorw("migrateDSLoop error", "error", err)
+			jd.logger.Errorn("migrateDSLoop error", obskit.Error(err))
 		}
 	}
 }
@@ -174,7 +175,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
 					return fmt.Errorf("mark journal done: %w", err)
 				}
-				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
+				jd.logger.Infon("[[ migrateDSLoop ]]: Jobs migrated", logger.NewIntField("count", int64(totalJobsMigrated)))
 			}
 
 			opPayload, err := jsonrs.Marshal(&journalOpPayloadT{From: migrateFromDatasets})
@@ -358,14 +359,14 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 	}
 	// vacuum full
 	for _, table := range toVacuumFull {
-		jd.logger.Infof("vacuuming full %q", table)
+		jd.logger.Infon("vacuuming full", logger.NewStringField("table", table))
 		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 			return err
 		}
 	}
 	// vacuum analyze
 	for _, table := range toVacuum {
-		jd.logger.Infof("vacuuming %q", table)
+		jd.logger.Infon("vacuuming", logger.NewStringField("table", table))
 		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
 			return err
 		}
@@ -411,7 +412,13 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 		waiting   *dsWithPendingJobCount
 	)
 
-	jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewField("dsList", dsList))
+	if jd.logger.IsDebugLevel() {
+		list := make([]string, len(dsList))
+		for i, ds := range dsList {
+			list[i] = ds.String()
+		}
+		jd.logger.Debugn("[[ migrateDSLoop ]]: DS list", logger.NewStringField("dsList", strings.Join(list, ",")))
+	}
 
 	for idx, ds := range dsList {
 		var idxCheck bool
@@ -576,12 +583,20 @@ func (jd *Handle) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dat
 }
 
 func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) (string, error) { // Within the node
-	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
+	jd.logger.Debugn("computeNewIdxForIntraNodeMigration", logger.NewStringField("insertBeforeDS", insertBeforeDS.String()))
 	dList, err := jd.doRefreshDSList(l)
 	if err != nil {
 		return "", fmt.Errorf("refreshDSList: %w", err)
 	}
-	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
+	if jd.logger.IsDebugLevel() {
+		list := make([]string, len(dList))
+		for i, ds := range dList {
+			list[i] = ds.String()
+		}
+		jd.logger.Debugn("dlist in which we are trying to find dataset in list",
+			logger.NewStringField("dataset", insertBeforeDS.String()),
+			logger.NewStringField("list", strings.Join(list, ",")))
+	}
 	newDSIdx := ""
 	jd.assert(len(dList) > 0, fmt.Sprintf("len(dList): %d <= 0", len(dList)))
 	for idx, ds := range dList {
@@ -597,7 +612,7 @@ func (jd *Handle) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBef
 func (jd *Handle) postMigrateHandleDS(tx *Tx, migrateFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		jd.logger.Debugf("dropping dataset %s", ds.JobTable)
+		jd.logger.Debugn("dropping dataset", logger.NewStringField("jobTable", ds.JobTable))
 		if err := jd.dropDSInTx(tx, ds); err != nil {
 			return err
 		}

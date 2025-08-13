@@ -197,7 +197,7 @@ func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
 		jd.logger.Infon("aborting old jobs",
 			logger.NewIntField("rowsAffected", rowsAffected),
 			logger.NewDurationField("maxAge", maxAge),
-			logger.NewField("dataSet", ds),
+			logger.NewStringField("dataSet", ds.Index),
 		)
 		if rowsAffected == 0 {
 			break

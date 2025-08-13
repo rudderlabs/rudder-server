@@ -207,7 +207,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
 	}, brt.sendQueryRetryStats)
 	if err != nil {
-		brt.logger.Errorf("BRT: %s: Error while reading from DB: %v", brt.destType, err)
+		brt.logger.Errorn("BRT: Error while reading from DB", obskit.DestinationType(brt.destType), obskit.Error(err))
 		panic(err)
 	}
 	jobs = toProcess.Jobs
@@ -228,7 +228,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		if batchDest, ok := destinationsMap[destID]; ok {
 			workerJobs = append(workerJobs, &DestinationJobs{destWithSources: *batchDest, jobs: destJobs})
 		} else {
-			brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
+			brt.logger.Errorn("BRT: Destination not found in destinationsMap", obskit.DestinationType(brt.destType), obskit.DestinationID(destID))
 		}
 	}
 
@@ -249,7 +249,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 
 	uuid := uuid.New()
-	brt.logger.Debugf("BRT: Starting logging to %s", provider)
+	brt.logger.Debugn("BRT: Starting logging to", logger.NewStringField("provider", provider))
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -331,7 +331,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 	_ = gzWriter.CloseGZ()
 	if !eventsFound {
-		brt.logger.Infof("BRT: No events in this batch for upload to %s. Events are either de-deuplicated or skipped", provider)
+		brt.logger.Infon("BRT: No events in this batch for upload. Events are either de-deuplicated or skipped", logger.NewStringField("provider", provider))
 		return UploadResult{
 			LocalFilePaths: []string{gzipFilePath},
 		}
@@ -347,11 +347,11 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		// convert it to UTC before saving to wh_staging_files
 		firstEventAtWithTimeZone, err := time.Parse(misc.RFC3339Milli, firstEventAtStr)
 		if err != nil {
-			brt.logger.Errorf(`BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload: %v. Error: %v`, firstEventAtStr, err)
+			brt.logger.Errorn("BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload", logger.NewStringField("firstEventAt", firstEventAtStr), obskit.Error(err))
 		}
 		lastEventAtWithTimeZone, err := time.Parse(misc.RFC3339Milli, lastEventAtStr)
 		if err != nil {
-			brt.logger.Errorf(`BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload: %v. Error: %v`, lastEventAtStr, err)
+			brt.logger.Errorn("BRT: Unable to parse receivedAt in RFC3339Milli format from eventPayload", logger.NewStringField("lastEventAt", lastEventAtStr), obskit.Error(err))
 		}
 
 		firstEventAt = firstEventAtWithTimeZone.UTC().Format(time.RFC3339)
@@ -361,7 +361,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		lastEventAt = gjson.GetBytes(batchJobs.Jobs[len(batchJobs.Jobs)-1].EventPayload, "receivedAt").String()
 	}
 
-	brt.logger.Debugf("BRT: Logged to local file: %v", gzipFilePath)
+	brt.logger.Debugn("BRT: Logged to local file", logger.NewStringField("gzipFilePath", gzipFilePath))
 	useRudderStorage := isWarehouse && misc.IsConfiguredToUseRudderObjectStorage(batchJobs.Connection.Destination.Config)
 	uploader, err := brt.fileManagerFactory(&filemanager.Settings{
 		Provider: provider,
@@ -385,7 +385,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		panic(err)
 	}
 
-	brt.logger.Debugf("BRT: Starting upload to %s", provider)
+	brt.logger.Debugn("BRT: Starting upload to", logger.NewStringField("provider", provider))
 	var folderName string
 	if isWarehouse {
 		folderName = config.GetString("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
@@ -418,7 +418,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		now = now.In(loc)
 	}
 
-	brt.logger.Debugf("BRT: Date prefix layout is %s", datePrefixLayout)
+	brt.logger.Debugn("BRT: Date prefix layout", logger.NewStringField("datePrefixLayout", datePrefixLayout))
 	switch datePrefixLayout {
 	case "MM-DD-YYYY": // used to be earlier default
 		datePrefixLayout = now.Format("01-02-2006")
@@ -458,7 +458,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	brtUploadTimeStat.Since(startTime)
 
 	if err != nil {
-		brt.logger.Errorf("BRT: Error uploading to %s: Error: %v", provider, err)
+		brt.logger.Errorn("BRT: Error uploading to", logger.NewStringField("provider", provider), obskit.Error(err))
 		return UploadResult{
 			Error:          err,
 			JournalOpID:    opID,
@@ -487,7 +487,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	var sampleParameters routerutils.JobParameters
 	err = jsonrs.Unmarshal(batchJobs.Jobs[0].Parameters, &sampleParameters)
 	if err != nil {
-		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
+		brt.logger.Errorn("Unmarshal of job parameters failed in postToWarehouse function", logger.NewStringField("parameters", string(batchJobs.Jobs[0].Parameters)))
 	}
 
 	payload := client.StagingFile{
@@ -515,10 +515,10 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 
 	err = brt.warehouseClient.Process(context.TODO(), payload)
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to route staging file: %v", err)
+		brt.logger.Errorn("BRT: Failed to route staging file", obskit.Error(err))
 		return
 	}
-	brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service")
+	brt.logger.Infon("BRT: Routed successfully staging file URL to warehouse service")
 	return
 }
 
@@ -579,18 +579,15 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	if errOccurred != nil {
 		switch {
 		case errors.Is(errOccurred, rterror.ErrDisabledEgress):
-			brt.logger.Debugf("BRT: Outgoing traffic disabled : %v at %v", batchJobs.Connection.Source.ID,
-				time.Now().Format("01-02-2006"))
+			brt.logger.Debugn("BRT: Outgoing traffic disabled", obskit.SourceID(batchJobs.Connection.Source.ID), logger.NewStringField("date", time.Now().Format("01-02-2006")))
 			batchJobState = jobsdb.Succeeded.State
 			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
 		case errors.Is(errOccurred, filemanager.ErrInvalidServiceProvider):
-			brt.logger.Warnf("BRT: Destination %s : %s for destination ID : %v at %v",
-				batchJobs.Connection.Destination.DestinationDefinition.DisplayName, errOccurred.Error(),
-				batchJobs.Connection.Destination.ID, time.Now().Format("01-02-2006"))
+			brt.logger.Warnn("BRT: Destination error", logger.NewStringField("destinationDisplayName", batchJobs.Connection.Destination.DestinationDefinition.DisplayName), obskit.Error(errOccurred), obskit.DestinationID(batchJobs.Connection.Destination.ID), logger.NewStringField("date", time.Now().Format("01-02-2006")))
 			batchJobState = jobsdb.Aborted.State
 			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
 		default:
-			brt.logger.Errorf("BRT: Error uploading to object storage: %v %v", errOccurred, batchJobs.Connection.Source.ID)
+			brt.logger.Errorn("BRT: Error uploading to object storage", obskit.Error(errOccurred), obskit.SourceID(batchJobs.Connection.Source.ID))
 			if batchJobs.JobState != "" {
 				batchJobState = batchJobs.JobState
 			} else {
@@ -601,7 +598,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			// We keep track of number of failed attempts in case of failure and number of events uploaded in case of success in stats
 		}
 	} else {
-		brt.logger.Debugf("BRT: Uploaded to object storage : %v at %v", batchJobs.Connection.Source.ID, time.Now().Format("01-02-2006"))
+		brt.logger.Debugn("BRT: Uploaded to object storage", obskit.SourceID(batchJobs.Connection.Source.ID), logger.NewStringField("date", time.Now().Format("01-02-2006")))
 		batchJobState = jobsdb.Succeeded.State
 		errorResp = []byte(`{"success":"OK"}`)
 		batchReqMetric.batchRequestSuccess = 1
@@ -640,7 +637,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		var parameters routerutils.JobParameters
 		err = jsonrs.Unmarshal(job.Parameters, &parameters)
 		if err != nil {
-			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
+			brt.logger.Errorn("Unmarshal of job parameters failed", logger.NewStringField("parameters", string(job.Parameters)))
 		}
 
 		var failedMessage *types.FailedMessage
@@ -773,8 +770,12 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			return brt.errorDB.Store(ctx, abortedEvents)
 		}, brt.sendRetryStoreStats)
 		if err != nil {
-			brt.logger.Errorf("[Batch Router] Store into proc error table failed with error: %v", err)
-			brt.logger.Errorf("abortedEvents: %v", abortedEvents)
+			abortedEventsIDs := make([]int64, len(abortedEvents))
+			for i, job := range abortedEvents {
+				abortedEventsIDs[i] = job.JobID
+			}
+			brt.logger.Errorn("[Batch Router] Store into proc error table failed", obskit.Error(err))
+			brt.logger.Errorn("abortedEvents", logger.NewIntSliceField("count", abortedEventsIDs))
 			panic(err)
 		}
 	}
@@ -810,7 +811,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err = brt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{brt.destType}, parameterFilters)
 			if err != nil {
-				brt.logger.Errorf("[Batch Router] Error occurred while updating %s jobs statuses. Panicking. Err: %v", brt.destType, err)
+				brt.logger.Errorn("[Batch Router] Error occurred while updating jobs statuses. Panicking", obskit.DestinationType(brt.destType), obskit.Error(err))
 				return err
 			}
 
@@ -839,17 +840,17 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time.Duration {
 	uploadInterval, ok := destinationConfig["uploadInterval"]
 	if !ok {
-		brt.logger.Debugf("BRT: uploadInterval not found in destination config, falling back to default: %s", brt.asyncUploadTimeout)
+		brt.logger.Debugn("BRT: uploadInterval not found in destination config, falling back to default", logger.NewDurationField("asyncUploadTimeout", brt.asyncUploadTimeout.Load()))
 		return brt.asyncUploadTimeout.Load()
 	}
 	dur, ok := uploadInterval.(string)
 	if !ok {
-		brt.logger.Warnf("BRT: not found string type uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+		brt.logger.Warnn("BRT: not found string type uploadInterval, falling back to default", logger.NewDurationField("asyncUploadTimeout", brt.asyncUploadTimeout.Load()))
 		return brt.asyncUploadTimeout.Load()
 	}
 	parsedTime, err := strconv.ParseInt(dur, 10, 64)
 	if err != nil {
-		brt.logger.Warnf("BRT: Couldn't parseint uploadInterval, falling back to default: %s", brt.asyncUploadTimeout)
+		brt.logger.Warnn("BRT: Couldn't parseint uploadInterval, falling back to default", logger.NewDurationField("asyncUploadTimeout", brt.asyncUploadTimeout.Load()))
 		return brt.asyncUploadTimeout.Load()
 	}
 	return time.Duration(parsedTime * int64(time.Minute))
@@ -868,7 +869,7 @@ func (brt *Handle) skipFetchingJobs(partition string) bool {
 			return brt.jobsDB.GetImporting(ctx, queryParams)
 		}, brt.sendQueryRetryStats)
 		if err != nil {
-			brt.logger.Errorf("BRT: Failed to get importing jobs for %s with error: %v", brt.destType, err)
+			brt.logger.Errorn("BRT: Failed to get importing jobs", obskit.DestinationType(brt.destType), obskit.Error(err))
 			panic(err)
 		}
 		return len(importingList.Jobs) != 0
@@ -891,7 +892,7 @@ func (brt *Handle) splitBatchJobsOnTimeWindow(batchJobs BatchedJobs) map[time.Ti
 		receivedAtStr := gjson.Get(string(job.EventPayload), "metadata.receivedAt").String()
 		receivedAt, err := time.Parse(time.RFC3339, receivedAtStr)
 		if err != nil {
-			brt.logger.Errorf("Invalid value '%s' for receivedAt : %v ", receivedAtStr, err)
+			brt.logger.Errorn("Invalid value for receivedAt", logger.NewStringField("receivedAt", receivedAtStr), obskit.Error(err))
 			panic(err)
 		}
 		timeWindow := warehouseutils.GetTimeWindow(receivedAt)

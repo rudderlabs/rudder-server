@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
@@ -50,15 +51,15 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	if !a.setupDone {
 		return fmt.Errorf("gateway cannot start, database is not setup")
 	}
-	a.log.Info("Gateway starting")
+	a.log.Infon("Gateway starting")
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %v", err)
 	}
 
-	a.log.Infof("Configured deployment type: %q", deploymentType)
-	a.log.Info("Clearing DB ", options.ClearDB)
+	a.log.Infon("Configured deployment type", logger.NewStringField("deploymentType", string(deploymentType)))
+	a.log.Infon("Clearing DB", logger.NewBoolField("clearDB", options.ClearDB))
 
 	sourceHandle, err := sourcedebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
@@ -134,7 +135,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	})
 	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)
 	if err != nil {
-		a.log.Errorw("drain config manager setup failed while starting gateway", "error", err)
+		a.log.Errorn("drain config manager setup failed while starting gateway", obskit.Error(err))
 	}
 
 	drainConfigHttpHandler := drain_config.ErrorResponder("unable to start drain config http handler")
@@ -155,7 +156,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	defer func() {
 		if err := gw.Shutdown(); err != nil {
-			a.log.Warnf("Gateway shutdown error: %v", err)
+			a.log.Warnn("Gateway shutdown error", obskit.Error(err))
 		}
 	}()
 

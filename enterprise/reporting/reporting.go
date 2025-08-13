@@ -109,7 +109,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
-		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
+		log.Infon("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
 
 	if eventSamplingEnabled.Load() {
@@ -195,7 +195,7 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	}
 	if config.GetBool("Reporting.syncer.vacuumAtStartup", false) {
 		if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
-			r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, logger.NewErrorField(err))
+			r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, obskit.Error(err))
 			panic(err)
 		}
 	}
@@ -457,7 +457,9 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 		)
 		for {
 			if ctx.Err() != nil {
-				r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+				r.log.Infon("stopping mainLoop for syncer",
+					logger.NewStringField("label", c.Label),
+					obskit.Error(ctx.Err()))
 				return ctx.Err()
 			}
 			requestChan := make(chan struct{}, r.maxConcurrentRequests.Load())
@@ -468,10 +470,12 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
 			reports, reportedAt, err := r.getReports(currentMin, aggregationIntervalMin, c.ConnInfo)
 			if err != nil {
-				r.log.Errorw("getting reports", "error", err)
+				r.log.Errorn("getting reports", obskit.Error(err))
 				select {
 				case <-ctx.Done():
-					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					r.log.Infon("stopping mainLoop for syncer",
+						logger.NewStringField("label", c.Label),
+						obskit.Error(ctx.Err()))
 					return ctx.Err()
 				case <-time.After(r.mainLoopSleepInterval.Load()):
 				}
@@ -484,7 +488,9 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				lastReportedAtTime.Store(loopStart)
 				select {
 				case <-ctx.Done():
-					r.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					r.log.Infon("stopping mainLoop for syncer",
+						logger.NewStringField("label", c.Label),
+						obskit.Error(ctx.Err()))
 					return ctx.Err()
 				case <-time.After(r.sleepInterval.Load()):
 				}
@@ -519,7 +525,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 
 			err = errGroup.Wait()
 			if err != nil {
-				r.log.Errorf(`[ Reporting ]: Error sending metrics to service: %v`, err)
+				r.log.Errorn(`[ Reporting ]: Error sending metrics to service`, obskit.Error(err))
 			} else {
 				dbHandle, err := r.getDBHandle(c.ConnInfo)
 				if err != nil {
@@ -529,7 +535,9 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 				bucketStart, bucketEnd := GetAggregationBucketMinute(reportedAt, aggregationIntervalMin)
 				_, err = dbHandle.Exec(`DELETE FROM `+ReportsTable+` WHERE reported_at >= $1 and reported_at < $2`, bucketStart, bucketEnd)
 				if err != nil {
-					r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
+					r.log.Errorn(`[ Reporting ]: Error deleting local reports from table`,
+						logger.NewStringField("table", ReportsTable),
+						obskit.Error(err))
 				} else {
 					deletedRows += len(reports)
 				}
@@ -548,7 +556,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 					).Scan(&sizeEstimate); err != nil {
 						r.log.Errorn(
 							`[ Reporting ]: Error getting table size estimate`,
-							logger.NewErrorField(err),
+							obskit.Error(err),
 						)
 					}
 					if sizeEstimate >= vacuumThresholdBytes.Load() {
@@ -623,7 +631,7 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 		httpRequestStart := time.Now()
 		resp, err := netClient.Do(req)
 		if err != nil {
-			r.log.Error(err.Error())
+			r.log.Errorn("HTTP request failed", obskit.Error(err))
 			return err
 		}
 
@@ -635,7 +643,7 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			r.log.Error(err.Error())
+			r.log.Errorn("Reading response body failed", obskit.Error(err))
 			return err
 		}
 
@@ -647,10 +655,10 @@ func (r *DefaultReporter) sendMetric(ctx context.Context, netClient *http.Client
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		r.log.Errorn(`[ Reporting ]: Error reporting to service`, obskit.Error(err))
 	})
 	if err != nil {
-		r.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
+		r.log.Errorn(`[ Reporting ]: Error making request to reporting service`, obskit.Error(err))
 	}
 	return err
 }
