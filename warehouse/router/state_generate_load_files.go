@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -13,15 +12,7 @@ import (
 )
 
 func (job *UploadJob) generateLoadFiles() error {
-	generateAll := slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
-		job.config.alwaysRegenerateAllLoadFiles
-	var startLoadFileID, endLoadFileID int64
-	var err error
-	if generateAll {
-		startLoadFileID, endLoadFileID, err = job.loadfile.ForceCreateLoadFiles(job.ctx, job.DTO())
-	} else {
-		startLoadFileID, endLoadFileID, err = job.loadfile.CreateLoadFiles(job.ctx, job.DTO())
-	}
+	startLoadFileID, endLoadFileID, err := job.loadfile.CreateLoadFiles(job.ctx, job.DTO())
 	if err != nil {
 		return err
 	}

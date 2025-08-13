@@ -125,26 +125,8 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 	}
 }
 
-// CreateLoadFiles for the staging files that have not been successfully processed.
 func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
-	return lf.createFromStaging(
-		ctx,
-		job,
-		lo.Filter(
-			job.StagingFiles,
-			func(stagingFile *model.StagingFile, _ int) bool {
-				return stagingFile.Status != warehouseutils.StagingFileSucceededState
-			},
-		),
-	)
-}
-
-// ForceCreateLoadFiles creates load files for the staging files, regardless if they are already successfully processed.
-func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
-	return lf.createFromStaging(ctx, job, job.StagingFiles)
-}
-
-func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.UploadJob, toProcessStagingFiles []*model.StagingFile) (int64, int64, error) {
+	toProcessStagingFiles := job.StagingFiles
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
 	var err error
