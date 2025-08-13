@@ -226,7 +226,7 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 	}
 	job.BatchID = claimedJob.Job.BatchID
 	w.log.Infon("Starting processing staging-files from claim",
-		logger.NewField("jobId", claimedJob.Job.ID),
+		logger.NewIntField("jobId", claimedJob.Job.ID),
 	)
 	job.Output, err = w.processMultiStagingFiles(ctx, &job)
 	if err != nil {
@@ -294,7 +294,9 @@ func (w *worker) processSingleStagingFile(
 		ok := bufScanner.Scan()
 		if !ok {
 			if scanErr := bufScanner.Err(); scanErr != nil {
-				jr.logger.Errorf("WH: Error in scanner reading line from staging file: %v", scanErr)
+				jr.logger.Errorn("WH: Error in scanner reading line from staging file",
+					obskit.Error(scanErr),
+				)
 			}
 			break
 		}
