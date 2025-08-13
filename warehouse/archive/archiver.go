@@ -394,7 +394,7 @@ func (a *Archiver) archiveUploads(ctx context.Context, maxArchiveLimit int) erro
 			hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetadata)
 
 			// delete load file records
-			if err := a.deleteLoadFileRecords(ctx, txn, stagingFileIDs, u.uploadID, hasUsedRudderStorage); err != nil {
+			if err := a.deleteLoadFileRecords(ctx, txn, u.uploadID, hasUsedRudderStorage); err != nil {
 				a.log.Errorn("[Archiver]: Error while deleting load file records for upload",
 					obskit.UploadID(u.uploadID),
 					obskit.Error(err),
