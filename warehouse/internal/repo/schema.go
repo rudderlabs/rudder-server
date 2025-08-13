@@ -214,6 +214,9 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	if err != nil {
 		return model.WHSchema{}, err
 	}
+	if len(originalSchema.Schema) == 0 {
+		return originalSchema, nil
+	}
 
 	var tableLevelSchemas model.Schema
 	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
@@ -231,7 +234,7 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	if err != nil {
 		return model.WHSchema{}, err
 	}
-	if len(originalSchema.Schema) > 0 && !reflect.DeepEqual(originalSchema.Schema, tableLevelSchemas) {
+	if !reflect.DeepEqual(originalSchema.Schema, tableLevelSchemas) {
 		return model.WHSchema{}, errors.New("parent schema does not match parent schema")
 	}
 	return originalSchema, nil
