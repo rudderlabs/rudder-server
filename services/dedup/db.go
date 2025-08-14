@@ -21,11 +21,7 @@ const (
 )
 
 func (m mode) MirrorLabel() string {
-	mirrorModeStr := "keydb"
-	if m == mirrorBadgerMode {
-		mirrorModeStr = "badgerdb"
-	}
-	return mirrorModeStr
+	return string(m)
 }
 
 // getMode determines which mode to use based on configuration
