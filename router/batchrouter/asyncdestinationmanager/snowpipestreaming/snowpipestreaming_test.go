@@ -1123,10 +1123,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = &mockAPI{
 			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
 				"test-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0"}, nil
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
 				},
 				"test-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0"}, nil
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1004"}, nil
 				},
 			},
 		}
@@ -1316,11 +1316,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-channel-3": func() (*model.StatusResponse, error) {
 					statusCalls += 1
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "0"}, nil
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "3"}, nil
 				},
 				"test-channel-4": func() (*model.StatusResponse, error) {
 					statusCalls += 1
-					return &model.StatusResponse{Valid: true, Success: true, Offset: "4"}, nil
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "4", LatestInsertedOffset: "4"}, nil
 				},
 			},
 		}
@@ -1620,7 +1620,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 						return &model.StatusResponse{
 							Valid:                true,
 							Success:              true,
-							Offset:               "50", // Less than expected "100"
+							Offset:               "50",  // Less than expected "100"
 							LatestInsertedOffset: "100", // Greater than committed - flushing in progress
 						}, nil
 					},
@@ -1963,7 +1963,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 						return &model.StatusResponse{
 							Valid:                true,
 							Success:              true,
-							Offset:               "", // Empty offset
+							Offset:               "",   // Empty offset
 							LatestInsertedOffset: "75", // Less than expected
 						}, nil
 					},
