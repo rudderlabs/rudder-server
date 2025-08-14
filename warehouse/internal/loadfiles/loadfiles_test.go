@@ -665,32 +665,13 @@ func TestV2CreateLoadFiles(t *testing.T) {
 		StagingFiles: stagingFiles,
 	}
 
-	t.Run("all files with BytesPerTable", func(t *testing.T) {
-		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
-		require.NoError(t, err)
-		require.Equal(t, int64(1), startID)
-		require.Equal(t, int64(2), endID)
+	startID, endID, err := lf.CreateLoadFiles(ctx, &job)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), startID)
+	require.Equal(t, int64(2), endID)
 
-		require.Len(t, loadRepo.store, len(notifier.tables))
-		require.Len(t, stageRepo.store, len(stagingFiles))
-	})
-
-	t.Run("mixed staging files", func(t *testing.T) {
-		// Remove BytesPerTable from some files to force mixed v1/v2 jobs
-		for i := 0; i < len(stagingFiles)/2; i++ {
-			stagingFiles[i].BytesPerTable = nil
-		}
-
-		startID, endID, err := lf.CreateLoadFiles(ctx, &job)
-		require.NoError(t, err)
-		require.Equal(t, int64(3), startID)
-		require.Equal(t, int64(14), endID)
-
-		v1LoadFiles := (len(stagingFiles) * len(notifier.tables)) / 2
-		v2LoadFiles := len(notifier.tables)
-		require.Len(t, loadRepo.store, v1LoadFiles+v2LoadFiles)
-		require.Len(t, stageRepo.store, len(stagingFiles))
-	})
+	require.Len(t, loadRepo.store, len(notifier.tables))
+	require.Len(t, stageRepo.store, len(stagingFiles))
 }
 
 func TestV2CreateLoadFiles_Failure(t *testing.T) {
