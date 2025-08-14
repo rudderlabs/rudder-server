@@ -3,6 +3,8 @@ package dedup
 import (
 	"fmt"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -52,8 +54,8 @@ func NewDB(conf *config.Config, stats stats.Stats, log logger.Logger) (types.DB,
 		// try to create keydb mirror
 		mirror, err := kdb.NewKeyDB(conf, stats, log)
 		if err != nil {
-			primary.Close()
-			return nil, fmt.Errorf("create keydb mirror: %w", err)
+			log.Errorn("failed to create keydb mirror, falling back to badger only", obskit.Error(err))
+			return primary, nil
 		}
 
 		return NewMirrorDB(primary, mirror, mirrorBadgerMode, conf, stats, log), nil
