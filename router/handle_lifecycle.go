@@ -30,7 +30,8 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/services/oauth"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
@@ -138,18 +139,27 @@ func (rt *Handle) Setup(
 	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
 	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.transformerTimeout,
-		backendConfig, rt.reloadableConfig.oauthV2Enabled,
+		backendConfig,
 		rt.reloadableConfig.oauthV2ExpirationTimeDiff,
 		rt.transformerFeaturesService,
 	)
-	rt.isOAuthDestination = oauth.IsOAuthDestination(destinationDefinition.Config)
-	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
+
+	destinationInfo := oauthv2.DestinationInfo{
+		DefinitionConfig: destinationDefinition.Config,
+		DefinitionName:   destinationDefinition.Name,
+	}
+
+	var err error
+
+	rt.isOAuthDestination, err = destinationInfo.IsOAuthDestination(common.RudderFlowDelivery)
+	if err != nil {
+		panic(fmt.Errorf("checking if destination is OAuth destination: %w", err))
+	}
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
 
 	isolationMode := isolationMode(destType, config)
-	var err error
 	if rt.isolationStrategy, err = isolation.GetStrategy(isolationMode, rt.destType, func(destinationID string) bool {
 		rt.destinationsMapMu.RLock()
 		defer rt.destinationsMapMu.RUnlock()
@@ -328,7 +338,6 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.pickupFlushInterval = config.GetReloadableDurationVar(2, time.Second, getRouterConfigKeys("pickupFlushInterval", rt.destType)...)
 	rt.reloadableConfig.failingJobsPenaltySleep = config.GetReloadableDurationVar(2000, time.Millisecond, getRouterConfigKeys("failingJobsPenaltySleep", rt.destType)...)
 	rt.reloadableConfig.failingJobsPenaltyThreshold = config.GetReloadableFloat64Var(0.6, getRouterConfigKeys("failingJobsPenaltyThreshold", rt.destType)...)
-	rt.reloadableConfig.oauthV2Enabled = config.GetReloadableBoolVar(false, getRouterConfigKeys("oauthV2Enabled", rt.destType)...)
 	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("oauth.expirationTimeDiff", rt.destType)...)
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,

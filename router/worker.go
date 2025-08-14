@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -28,7 +27,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/services/oauth"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -182,31 +180,7 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 	}
 	destination := batchDestination.Destination
 	connection := conn.Connection
-	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
-	if w.rt.isOAuthDestination && !oauthV2Enabled {
-		rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
-		if routerutils.IsNotEmptyString(rudderAccountID) {
-			w.logger.Debugn("[FetchToken] Token Fetch Method to be called", obskit.DestinationType(destination.DestinationDefinition.Name))
-			// Get Access Token Information to send it as part of the event
-			tokenStatusCode, accountSecretInfo := w.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
-				AccountId:   rudderAccountID,
-				WorkspaceId: jobMetadata.WorkspaceID,
-				DestDefName: destination.DestinationDefinition.Name,
-			})
-			w.logger.Debugn("[FetchToken] Token Fetch Method finished",
-				obskit.DestinationType(destination.DestinationDefinition.Name),
-				logger.NewIntField("statusCode", int64(tokenStatusCode)))
-			if tokenStatusCode == http.StatusOK {
-				jobMetadata.Secret = accountSecretInfo.Account.Secret
-			} else {
-				w.logger.Errorn("[FetchToken] Token Fetch Method error (statusCode, error): (%d, %s)",
-					obskit.DestinationType(destination.DestinationDefinition.Name),
-					logger.NewIntField("statusCode", int64(tokenStatusCode)),
-					obskit.Error(errors.New(accountSecretInfo.Err)))
-			}
-		}
-	}
 	if w.rt.enableBatching || parameters.TransformAt == "router" {
 		// add the job to the batch
 		return &types.RouterJobT{
@@ -294,7 +268,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 		}
 	}
 	var destinationJobs []types.DestinationJobT
-	if w.rt.isOAuthDestination && w.rt.reloadableConfig.oauthV2Enabled.Load() {
+	if w.rt.isOAuthDestination {
 		destinationJobs = w.transformJobsPerDestination(routerJobs)
 	} else {
 		destinationJobs = w.transformJobs(routerJobs)
@@ -800,29 +774,10 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
-	oauthV2Enabled := w.rt.reloadableConfig.oauthV2Enabled.Load()
+
 	proxyRequestResponse := w.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 	w.routerProxyStat.SendTiming(time.Since(rtlTime))
-	w.logger.Debugn("[TransformerProxy] Request ended", obskit.DestinationType(w.rt.destType), logger.NewIntField("jobID", jobID))
-	if !oauth.IsOAuthDestination(destinationJob.Destination.DestinationDefinition.Config) {
-		return proxyRequestResponse
-	}
-	if proxyRequestResponse.ProxyRequestStatusCode != http.StatusOK && !oauthV2Enabled {
-		w.logger.Debugn(`Sending for OAuth destination`)
-		// Token from header of the request
-		respStatusCode, respBodyTemp, contentType := w.rt.handleOAuthDestResponse(&HandleDestOAuthRespParams{
-			ctx:            ctx,
-			destinationJob: destinationJob,
-			workerID:       w.id,
-			trRespStCd:     proxyRequestResponse.ProxyRequestStatusCode,
-			trRespBody:     proxyRequestResponse.ProxyRequestResponseBody,
-			secret:         m[0].Secret,
-			contentType:    proxyRequestResponse.RespContentType,
-		}, proxyRequestResponse.OAuthErrorCategory)
 
-		proxyRequestResponse.RespStatusCodes, proxyRequestResponse.RespBodys = w.prepareResponsesForJobs(&destinationJob, respStatusCode, respBodyTemp)
-		proxyRequestResponse.RespContentType = contentType
-	}
 	return proxyRequestResponse
 }
 
