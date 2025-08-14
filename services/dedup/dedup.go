@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/services/dedup/mock_dedup.go -package mock_dedup github.com/rudderlabs/rudder-server/services/dedup/types DedupInterface
+//go:generate mockgen -destination=../../mocks/services/dedup/mock_dedup.go -package mock_dedup github.com/rudderlabs/rudder-server/services/dedup/types Dedup
 
 package dedup
 
@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
-type Dedup struct {
+type dedup struct {
 	db            types.DB
 	uncommittedMu sync.RWMutex
 	uncommitted   map[string]struct{}
@@ -28,18 +28,18 @@ func SingleKey(key string) BatchKey {
 }
 
 // New creates a new deduplication service. The service needs to be closed after use.
-func New(conf *config.Config, stats stats.Stats, log logger.Logger) (types.DedupInterface, error) {
+func New(conf *config.Config, stats stats.Stats, log logger.Logger) (types.Dedup, error) {
 	db, err := NewDB(conf, stats, log)
 	if err != nil {
 		return nil, fmt.Errorf("create dedup DB: %w", err)
 	}
-	return &Dedup{
+	return &dedup{
 		db:          db,
 		uncommitted: make(map[string]struct{}),
 	}, nil
 }
 
-func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
+func (d *dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
 	result := make(map[types.BatchKey]bool, len(batchKeys))  // keys encountered for the first time
 	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
 
@@ -80,7 +80,7 @@ func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, e
 	return result, nil
 }
 
-func (d *Dedup) Commit(keys []string) error {
+func (d *dedup) Commit(keys []string) error {
 	kvs := make([]types.BatchKey, len(keys))
 	d.uncommittedMu.RLock()
 	for i, key := range keys {
@@ -104,6 +104,6 @@ func (d *Dedup) Commit(keys []string) error {
 	return nil
 }
 
-func (d *Dedup) Close() {
+func (d *dedup) Close() {
 	d.db.Close()
 }

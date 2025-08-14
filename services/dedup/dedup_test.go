@@ -125,7 +125,7 @@ func Test_KeyDB(t *testing.T) {
 	conf.Set("Dedup.Mirror.Mode", "keydb")
 
 	var (
-		d   types.DedupInterface
+		d   types.Dedup
 		err error
 	)
 	d, err = dedup.New(conf, stats.NOP, logger.NOP)

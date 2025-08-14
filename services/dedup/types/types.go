@@ -22,8 +22,8 @@ type DB interface {
 	Close()
 }
 
-// DedupInterface is the interface for deduplication service
-type DedupInterface interface {
+// Dedup is the interface for deduplication service
+type Dedup interface {
 	// Allowed returns a map containing all keys which are being encountered for the first time, i.e. not present in the deduplication database.
 	// Keys that are not allowed are not present in the map.
 	Allowed(keys ...BatchKey) (map[BatchKey]bool, error)

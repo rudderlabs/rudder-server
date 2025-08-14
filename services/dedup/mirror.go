@@ -17,10 +17,10 @@ import (
 
 const defaultMaxRoutines = 3000
 
-type MirrorDB struct {
+type mirrorDB struct {
 	primary       types.DB
 	mirror        types.DB
-	mode          Mode
+	mode          mode
 	group         *errgroup.Group
 	groupLimit    int
 	errs          chan error
@@ -35,7 +35,7 @@ type MirrorDB struct {
 	}
 }
 
-func NewMirrorDB(primary, mirror types.DB, mode Mode, conf *config.Config, s stats.Stats, log logger.Logger) *MirrorDB {
+func NewMirrorDB(primary, mirror types.DB, mode mode, conf *config.Config, s stats.Stats, log logger.Logger) *mirrorDB {
 	groupLimit := conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", defaultMaxRoutines)
 	if groupLimit < 1 {
 		groupLimit = defaultMaxRoutines
@@ -44,7 +44,7 @@ func NewMirrorDB(primary, mirror types.DB, mode Mode, conf *config.Config, s sta
 	group := &errgroup.Group{}
 	group.SetLimit(groupLimit)
 
-	mirrorDB := &MirrorDB{
+	mirrorDB := &mirrorDB{
 		primary:       primary,
 		mirror:        mirror,
 		mode:          mode,
@@ -55,22 +55,16 @@ func NewMirrorDB(primary, mirror types.DB, mode Mode, conf *config.Config, s sta
 		logger:        log,
 	}
 
-	// Set up metrics
-	mirrorModeStr := "keydb"
-	if mode == mirrorBadgerMode {
-		mirrorModeStr = "badgerdb"
-	}
-
 	mirrorDB.metrics.getErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": mirrorModeStr,
+		"mode": mode.MirrorLabel(),
 		"type": "get",
 	})
 	mirrorDB.metrics.setErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": mirrorModeStr,
+		"mode": mode.MirrorLabel(),
 		"type": "set",
 	})
 	mirrorDB.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_mirroring_max_routines_count", stats.CountType, stats.Tags{
-		"mode": mirrorModeStr,
+		"mode": mode.MirrorLabel(),
 	})
 
 	group.Go(func() error {
@@ -81,7 +75,7 @@ func NewMirrorDB(primary, mirror types.DB, mode Mode, conf *config.Config, s sta
 	return mirrorDB
 }
 
-func (m *MirrorDB) Get(keys []string) (map[string]bool, error) {
+func (m *mirrorDB) Get(keys []string) (map[string]bool, error) {
 	// Execute on primary and return results
 	result, err := m.primary.Get(keys)
 	if err != nil {
@@ -106,7 +100,7 @@ func (m *MirrorDB) Get(keys []string) (map[string]bool, error) {
 	return result, nil
 }
 
-func (m *MirrorDB) Set(keys []string) error {
+func (m *mirrorDB) Set(keys []string) error {
 	// Execute on primary and return results
 	err := m.primary.Set(keys)
 	if err != nil {
@@ -131,7 +125,7 @@ func (m *MirrorDB) Set(keys []string) error {
 	return nil
 }
 
-func (m *MirrorDB) Close() {
+func (m *mirrorDB) Close() {
 	// First we need to stop all mirroring goroutines
 	close(m.stopPrintErrs)
 	_ = m.group.Wait()
@@ -142,14 +136,14 @@ func (m *MirrorDB) Close() {
 	m.mirror.Close()
 }
 
-func (m *MirrorDB) logLeakyErr(err error) {
+func (m *mirrorDB) logLeakyErr(err error) {
 	select {
 	case m.errs <- err:
 	default: // leaky bucket to avoid filling the logs if the system fails badly
 	}
 }
 
-func (m *MirrorDB) printErrs(interval time.Duration) {
+func (m *mirrorDB) printErrs(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	for {
 		select {

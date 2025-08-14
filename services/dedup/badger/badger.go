@@ -9,6 +9,7 @@ import (
 	"time"
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/rruntime"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
@@ -18,19 +19,17 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type BadgerDB struct {
+type badgerDB struct {
 	logger           loggerForBadger
 	badgerDB         *badger.DB
 	window           config.ValueLoader[time.Duration]
 	path             string
 	opts             badger.Options
 	cleanupOnStartup bool
-	once             sync.Once
 
 	wg     sync.WaitGroup
 	bgCtx  context.Context
@@ -80,7 +79,7 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) (types.DB, 
 		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.Dedup.detectConflicts", "BadgerDB.detectConflicts"))
 
 	bgCtx, cancel := context.WithCancel(context.Background())
-	db := &BadgerDB{
+	db := &badgerDB{
 		logger:           loggerForBadger{log},
 		path:             path,
 		window:           dedupWindow,
@@ -102,7 +101,7 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) (types.DB, 
 	return db, nil
 }
 
-func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
+func (d *badgerDB) Get(keys []string) (map[string]bool, error) {
 	defer d.stats.getTimer.RecordDuration()()
 	results := make(map[string]bool, len(keys))
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
@@ -120,7 +119,7 @@ func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
 	return results, err
 }
 
-func (d *BadgerDB) Set(keys []string) error {
+func (d *badgerDB) Set(keys []string) error {
 	defer d.stats.setTimer.RecordDuration()()
 	wb := d.badgerDB.NewWriteBatch()
 	defer wb.Cancel()
@@ -133,7 +132,7 @@ func (d *BadgerDB) Set(keys []string) error {
 	return wb.Flush()
 }
 
-func (d *BadgerDB) Close() {
+func (d *badgerDB) Close() {
 	d.cancel()
 	d.wg.Wait()
 	if d.badgerDB != nil {
@@ -141,49 +140,47 @@ func (d *BadgerDB) Close() {
 	}
 }
 
-func (d *BadgerDB) init() error {
+func (d *badgerDB) init() error {
 	var err error
-	d.once.Do(func() {
-		if d.cleanupOnStartup {
-			if err = os.RemoveAll(d.path); err != nil {
-				err = fmt.Errorf("removing badger db directory: %w", err)
-				return
-			}
+	if d.cleanupOnStartup {
+		if err = os.RemoveAll(d.path); err != nil {
+			err = fmt.Errorf("removing badger db directory: %w", err)
+			return err
 		}
-		openDB := func() (dbase *badger.DB, err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("panic during badgerdb open: %v", r)
-				}
-			}()
-			return badger.Open(d.opts)
+	}
+	openDB := func() (dbase *badger.DB, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic during badgerdb open: %v", r)
+			}
+		}()
+		return badger.Open(d.opts)
+	}
+	d.badgerDB, err = openDB()
+	if err != nil {
+		// corrupted or incompatible db, clean up the directory and retry
+		d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
+			obskit.Error(err),
+		)
+		if err = os.RemoveAll(d.opts.Dir); err != nil {
+			err = fmt.Errorf("removing badger db directory: %w", err)
+			return err
 		}
 		d.badgerDB, err = openDB()
 		if err != nil {
-			// corrupted or incompatible db, clean up the directory and retry
-			d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
-				obskit.Error(err),
-			)
-			if err = os.RemoveAll(d.opts.Dir); err != nil {
-				err = fmt.Errorf("removing badger db directory: %w", err)
-				return
-			}
-			d.badgerDB, err = openDB()
-			if err != nil {
-				err = fmt.Errorf("opening badger db: %w", err)
-				return
-			}
+			err = fmt.Errorf("opening badger db: %w", err)
+			return err
 		}
-		d.wg.Add(1)
-		rruntime.Go(func() {
-			defer d.wg.Done()
-			d.gcLoop()
-		})
+	}
+	d.wg.Add(1)
+	rruntime.Go(func() {
+		defer d.wg.Done()
+		d.gcLoop()
 	})
 	return err
 }
 
-func (d *BadgerDB) gcLoop() {
+func (d *badgerDB) gcLoop() {
 	for {
 		select {
 		case <-d.bgCtx.Done():

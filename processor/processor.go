@@ -48,7 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-	dedupTypes "github.com/rudderlabs/rudder-server/services/dedup/types"
+	deduptypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -115,7 +115,7 @@ type Handle struct {
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
-	dedup                      dedupTypes.DedupInterface
+	dedup                      deduptypes.Dedup
 	reporting                  reportingtypes.Reporting
 	reportingEnabled           bool
 	backgroundWait             func() error

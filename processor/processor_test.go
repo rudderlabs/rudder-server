@@ -109,7 +109,7 @@ type testContext struct {
 	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
 	mockArchivalDB           *mocksJobsDB.MockJobsDB
 	MockReportingI           *mockreportingtypes.MockReporting
-	MockDedup                *mockDedup.MockDedupInterface
+	MockDedup                *mockDedup.MockDedup
 	MockObserver             *mockObserver
 	MockRsourcesService      *rsources.MockJobService
 	mockTrackedUsersReporter *mockTrackedUsersReporter
@@ -146,7 +146,7 @@ func (c *testContext) Setup(testReporters ...gomock.TestReporter) {
 			return ch
 		})
 	c.MockReportingI = mockreportingtypes.NewMockReporting(c.mockCtrl)
-	c.MockDedup = mockDedup.NewMockDedupInterface(c.mockCtrl)
+	c.MockDedup = mockDedup.NewMockDedup(c.mockCtrl)
 	c.MockObserver = &mockObserver{}
 	c.mockTrackedUsersReporter = &mockTrackedUsersReporter{}
 }

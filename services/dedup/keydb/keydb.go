@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
-type KeyDB struct {
+type keyDB struct {
 	client *client.Client
 	window config.ValueLoader[time.Duration]
 	logger logger.Logger
@@ -41,7 +41,7 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 		return nil, err
 	}
 
-	db := &KeyDB{
+	db := &keyDB{
 		client: c,
 		window: dedupWindow,
 		logger: log,
@@ -52,7 +52,7 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 	return db, nil
 }
 
-func (d *KeyDB) Get(keys []string) (map[string]bool, error) {
+func (d *keyDB) Get(keys []string) (map[string]bool, error) {
 	defer d.stats.getTimer.RecordDuration()()
 	results := make(map[string]bool, len(keys))
 	exist, err := d.client.Get(context.TODO(), keys)
@@ -67,12 +67,12 @@ func (d *KeyDB) Get(keys []string) (map[string]bool, error) {
 	return results, err
 }
 
-func (d *KeyDB) Set(keys []string) error {
+func (d *keyDB) Set(keys []string) error {
 	defer d.stats.setTimer.RecordDuration()()
 	return d.client.Put(context.TODO(), keys, d.window.Load())
 }
 
-func (d *KeyDB) Close() {
+func (d *keyDB) Close() {
 	if d.client != nil {
 		_ = d.client.Close()
 	}
