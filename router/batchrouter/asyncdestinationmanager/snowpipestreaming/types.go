@@ -110,13 +110,16 @@ type (
 	}
 
 	importInfo struct {
-		ChannelID    string        `json:"channelId"`
-		Offset       string        `json:"offset"`
-		Table        string        `json:"table"`
-		Failed       bool          `json:"failed"`
-		Reason       string        `json:"reason"`
-		Count        int           `json:"count"`
-		FailedJobIds *failedJobIds `json:"failedJobIds"`
+		ChannelID string `json:"channelId"`
+		Offset    string `json:"offset"`
+		Table     string `json:"table"`
+		// Is set to true if all/some jobs have failed.
+		Failed bool   `json:"failed"`
+		Reason string `json:"reason"`
+		Count  int    `json:"count"`
+		// Marks a specific range of failed job IDs (partial failure).
+		// If all jobs have failed, this field may be nil.
+		FailedJobIds *failedJobIds `json:"failedJobIds,omitempty"`
 	}
 
 	discardInfo struct {
