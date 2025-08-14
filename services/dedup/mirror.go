@@ -165,33 +165,3 @@ func (m *MirrorDB) printErrs(interval time.Duration) {
 		}
 	}
 }
-
-// Implement the DedupInterface methods for MirrorDB
-
-func (m *MirrorDB) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
-	// Convert BatchKey to string keys for the Get operation
-	stringKeys := make([]string, len(batchKeys))
-	for i, key := range batchKeys {
-		stringKeys[i] = key.Key
-	}
-
-	// Use Get method to check which keys exist
-	existingKeys, err := m.Get(stringKeys)
-	if err != nil {
-		return nil, err
-	}
-
-	// Build result map with keys that don't exist
-	result := make(map[types.BatchKey]bool)
-	for _, key := range batchKeys {
-		if !existingKeys[key.Key] {
-			result[key] = true
-		}
-	}
-
-	return result, nil
-}
-
-func (m *MirrorDB) Commit(keys []string) error {
-	return m.Set(keys)
-}
