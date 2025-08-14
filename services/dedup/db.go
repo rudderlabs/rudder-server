@@ -22,10 +22,6 @@ const (
 	mirrorKeyDBMode  mode = "mirrorKeyDB"
 )
 
-func (m mode) MirrorLabel() string {
-	return string(m)
-}
-
 // getMode determines which mode to use based on configuration
 func getMode(conf *config.Config) mode {
 	mirrorMode := conf.GetString("Dedup.Mirror.Mode", string(badgerOnlyMode))

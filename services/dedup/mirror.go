@@ -56,15 +56,15 @@ func NewMirrorDB(primary, mirror types.DB, mode mode, conf *config.Config, s sta
 	}
 
 	mirrorDB.metrics.getErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": mode.MirrorLabel(),
+		"mode": string(mode),
 		"type": "get",
 	})
 	mirrorDB.metrics.setErrorsCount = s.NewTaggedStat("dedup_mirroring_err_count", stats.CountType, stats.Tags{
-		"mode": mode.MirrorLabel(),
+		"mode": string(mode),
 		"type": "set",
 	})
 	mirrorDB.metrics.maxRoutinesCount = s.NewTaggedStat("dedup_mirroring_max_routines_count", stats.CountType, stats.Tags{
-		"mode": mode.MirrorLabel(),
+		"mode": string(mode),
 	})
 
 	group.Go(func() error {
