@@ -30,6 +30,10 @@ func (gw *Handle) ProcessTransformedWebhookRequest(w *http.ResponseWriter, r *ht
 
 // SaveWebhookFailures saves errors to the error db
 func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error {
+	if !gw.conf.errorDBEnabled.Load() {
+		return nil
+	}
+
 	jobs := make([]*jobsdb.JobT, 0, len(reqs))
 	for _, req := range reqs {
 		params := map[string]any{
@@ -63,5 +67,5 @@ func (gw *Handle) SaveWebhookFailures(reqs []*model.FailedWebhookPayload) error 
 
 	ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 	defer cancel()
-	return gw.errDB.Store(ctx, jobs)
+	return gw.errorDB.Store(ctx, jobs)
 }

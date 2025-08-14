@@ -78,6 +78,7 @@ type Handle struct {
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
+	errorDBEnabled                     config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
 
@@ -476,7 +477,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			return statusList[i].JobID < statusList[j].JobID
 		})
 		// Store the aborted jobs to errorDB
-		if routerAbortedJobs != nil {
+		if len(routerAbortedJobs) > 0 && rt.errorDBEnabled.Load() {
 			err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 				return rt.errorDB.Store(ctx, routerAbortedJobs)
 			}, rt.sendRetryStoreStats)

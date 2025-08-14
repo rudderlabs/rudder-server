@@ -179,17 +179,19 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 
 	// Mark the drainList jobs as Aborted
 	if len(drainList) > 0 {
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.errorDB.Store(ctx, drainJobList)
-		}, brt.sendRetryStoreStats)
-		if err != nil {
-			panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
+		if w.brt.errorDBEnabled.Load() {
+			err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+				return brt.errorDB.Store(ctx, drainJobList)
+			}, brt.sendRetryStoreStats)
+			if err != nil {
+				panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
+			}
 		}
 		reportMetrics := brt.getReportMetrics(getReportMetricsParams{
 			StatusList:    drainList,
 			ParametersMap: brt.getParamertsFromJobs(drainJobList),
 		})
-		err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
