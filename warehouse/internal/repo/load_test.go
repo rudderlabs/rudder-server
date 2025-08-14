@@ -47,7 +47,6 @@ func Test_LoadFiles(t *testing.T) {
 	}))
 
 	var upload1LoadFiles []model.LoadFile
-	var stagingIDs []int64
 
 	uploadID1 := createUpload(t, ctx, db)
 	uploadID2 := createUpload(t, ctx, db)
@@ -69,7 +68,6 @@ func Test_LoadFiles(t *testing.T) {
 				DestinationType:       "RS",
 			}
 
-			stagingIDs = append(stagingIDs, loadFile.StagingFileID)
 			loadFiles = append(loadFiles, loadFile)
 			if i%2 == 0 {
 				upload1LoadFiles = append(upload1LoadFiles, loadFile)
@@ -99,7 +97,7 @@ func Test_LoadFiles(t *testing.T) {
 	})
 
 	t.Run("delete", func(t *testing.T) {
-		err := r.Delete(ctx, uploadID2, []int64{})
+		err := r.Delete(ctx, uploadID2)
 		require.NoError(t, err)
 
 		loadFiles, err := r.Get(ctx, uploadID2)
@@ -124,7 +122,6 @@ func TestLoadFiles_GetByID(t *testing.T) {
 			Location:              "s3://bucket/path/to/file",
 			TotalRows:             10,
 			ContentLength:         1000,
-			StagingFileID:         int64(i + 1),
 			DestinationRevisionID: "revision_id",
 			UseRudderStorage:      true,
 			SourceID:              "source_id",
@@ -261,7 +258,6 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 				Location:              "s3://bucket/path/to/file",
 				TotalRows:             (i + 1) + (j + 1),
 				ContentLength:         1000,
-				StagingFileID:         int64(i + 1),
 				DestinationRevisionID: "revision_id",
 				UseRudderStorage:      true,
 				SourceID:              sourceID,
