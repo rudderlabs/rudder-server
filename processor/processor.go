@@ -974,6 +974,49 @@ func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.Sing
 	return &commonMetadata
 }
 
+// makeMetadataFromTransformerResponse creates a Metadata object from a TransformerResponse
+// copies most primitive fields from the TransformerResponse metadata, excluding sensitive data (oauthAccessToken)
+// non-primitive types (maps, slices, interfaces) are not copied
+func (proc *Handle) makeMetadataFromTransformerResponse(transformerResponse *types.TransformerResponse) *types.Metadata {
+	metadata := types.Metadata{}
+	metadata.SourceID = transformerResponse.Metadata.SourceID
+	metadata.SourceName = transformerResponse.Metadata.SourceName
+	metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID
+	metadata.WorkspaceID = transformerResponse.Metadata.WorkspaceID
+	metadata.Namespace = proc.namespace
+	metadata.InstanceID = proc.instanceID
+	metadata.RudderID = transformerResponse.Metadata.RudderID
+	metadata.JobID = transformerResponse.Metadata.JobID
+	metadata.MessageID = transformerResponse.Metadata.MessageID
+	metadata.ReceivedAt = transformerResponse.Metadata.ReceivedAt
+	metadata.SourceType = transformerResponse.Metadata.SourceType
+	metadata.SourceCategory = transformerResponse.Metadata.SourceCategory
+
+	metadata.TrackingPlanID = transformerResponse.Metadata.TrackingPlanID
+	metadata.TrackingPlanVersion = transformerResponse.Metadata.TrackingPlanVersion
+
+	metadata.TransformationID = transformerResponse.Metadata.TransformationID
+	metadata.TransformationVersionID = transformerResponse.Metadata.TransformationVersionID
+
+	metadata.DestinationID = transformerResponse.Metadata.DestinationID
+	metadata.DestinationType = transformerResponse.Metadata.DestinationType
+	metadata.DestinationName = transformerResponse.Metadata.DestinationName
+	metadata.DestinationDefinitionID = transformerResponse.Metadata.DestinationDefinitionID
+
+	metadata.SourceJobRunID = transformerResponse.Metadata.SourceJobRunID
+	metadata.SourceJobID = transformerResponse.Metadata.SourceJobID
+	metadata.SourceTaskRunID = transformerResponse.Metadata.SourceTaskRunID
+
+	metadata.EventName = transformerResponse.Metadata.EventName
+	metadata.EventType = transformerResponse.Metadata.EventType
+	metadata.SourceDefinitionID = transformerResponse.Metadata.SourceDefinitionID
+	metadata.SourceDefinitionType = transformerResponse.Metadata.SourceDefinitionType
+
+	metadata.TraceParent = transformerResponse.Metadata.TraceParent
+
+	return &metadata
+}
+
 // add metadata to each singularEvent which will be returned by transformer in response
 func enhanceWithMetadata(commonMetadata *types.Metadata, event *types.TransformerEvent, destination *backendconfig.DestinationT) {
 	metadata := types.Metadata{}
@@ -1429,14 +1472,14 @@ func (proc *Handle) getTransformationMetrics(
 			continue
 		}
 
-		// Store original messageIDs to restore later
-		messageIds := failedEvent.Metadata.MessageIDs
+		metricsTemplate := &types.TransformerResponse{}
+		metricsTemplate.Metadata = *proc.makeMetadataFromTransformerResponse(failedEvent)
 
 		// Clear messageIDs to prevent metric overcounting
-		// We pass the same failedEvent to each updateMetricMaps call
+		// We pass the same metricsTemplate to each updateMetricMaps call
 		// updateMetricMaps counts events based on len(MessageIDs)
 		// Without clearing, each loop iteration would count all messages instead of one
-		failedEvent.Metadata.MessageIDs = []string{}
+		metricsTemplate.Metadata.MessageIDs = []string{}
 
 		for _, message := range messages {
 			proc.updateMetricMaps(
@@ -1444,7 +1487,7 @@ func (proc *Handle) getTransformationMetrics(
 				countMap,
 				connectionDetailsMap,
 				statusDetailsMap,
-				failedEvent,
+				metricsTemplate,
 				state,
 				pu,
 				func() json.RawMessage {
@@ -1460,8 +1503,6 @@ func (proc *Handle) getTransformationMetrics(
 				},
 				eventsByMessageID)
 		}
-
-		failedEvent.Metadata.MessageIDs = messageIds
 
 		proc.logger.Debugn(
 			"[Processor: getTransformationMetrics] Error for source and destination",
