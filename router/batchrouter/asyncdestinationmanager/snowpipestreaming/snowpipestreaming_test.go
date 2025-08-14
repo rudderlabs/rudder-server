@@ -1621,7 +1621,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 							Valid:                true,
 							Success:              true,
 							Offset:               "50", // Less than expected "100"
-							LatestInsertedOffset: "75", // Greater than committed - flushing in progress
+							LatestInsertedOffset: "100", // Greater than committed - flushing in progress
 						}, nil
 					},
 				},
@@ -1729,7 +1729,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 							Valid:                true,
 							Success:              true,
 							Offset:               "250",
-							LatestInsertedOffset: "280", // In progress
+							LatestInsertedOffset: "300", // In progress
 						}, nil
 					},
 					"test-channel-4": func() (*model.StatusResponse, error) {
@@ -1768,7 +1768,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 							Valid:                true,
 							Success:              true,
 							Offset:               "50",
-							LatestInsertedOffset: "75", // In progress
+							LatestInsertedOffset: "100", // In progress
 						}, nil
 					},
 					"test-channel-2": func() (*model.StatusResponse, error) {
@@ -1776,7 +1776,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 							Valid:                true,
 							Success:              true,
 							Offset:               "150",
-							LatestInsertedOffset: "175", // In progress
+							LatestInsertedOffset: "200", // In progress
 						}, nil
 					},
 				},
@@ -1893,6 +1893,90 @@ func TestSnowpipeStreaming(t *testing.T) {
 				expectedInProgress:     false,
 				expectedCacheSize:      1,
 				expectedFailedChannels: []string{"test-channel-1"},
+			},
+			{
+				name: "empty Offset - treated as in progress",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "", // Empty offset
+							LatestInsertedOffset: "100",
+						}, nil
+					},
+				},
+				expectedInProgress: true,
+				expectedCacheSize:  0,
+				expectedResetInfos: []string{"test-channel-1"},
+			},
+			{
+				name: "both Offset and LatestInsertedOffset empty - events lost",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "", // Empty offset
+							LatestInsertedOffset: "", // Empty LatestInsertedOffset
+						}, nil
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      1,
+				expectedFailedChannels: []string{"test-channel-1"},
+				expectedFailedJobIds: map[string]*failedJobIds{
+					"test-channel-1": {
+						Start: 1,
+						End:   100,
+					},
+				},
+			},
+			{
+				name: "empty Offset with LatestInsertedOffset less than expected - events lost",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "", // Empty offset
+							LatestInsertedOffset: "75", // Less than expected
+						}, nil
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      1,
+				expectedFailedChannels: []string{"test-channel-1"},
+				expectedFailedJobIds: map[string]*failedJobIds{
+					"test-channel-1": {
+						Start: 1,
+						End:   100,
+					},
+				},
 			},
 		}
 

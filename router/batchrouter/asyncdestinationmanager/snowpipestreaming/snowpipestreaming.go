@@ -6,6 +6,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -579,9 +580,18 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 		return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
 	}
 
-	latestCommittedOffset := statusRes.Offset
-	latestInsertedOffset := statusRes.LatestInsertedOffset
-	expectedOffset := info.Offset
+	latestCommittedOffset, err := convertToInt(statusRes.Offset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert latestCommittedOffset to int: %w", err)
+	}
+	latestInsertedOffset, err := convertToInt(statusRes.LatestInsertedOffset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert latestInsertedOffset to int: %w", err)
+	}
+	expectedOffset, err := convertToInt(info.Offset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert expectedOffset to int: %w", err)
+	}
 
 	// Case 1: All events have been flushed - proceed to next batch
 	if latestCommittedOffset == expectedOffset {
@@ -589,34 +599,43 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 		return false, nil
 	}
 
-	// Case 2: Flushing in progress - continue polling
+	// Case 2: Events lost - restart/error scenario
+	if latestInsertedOffset < expectedOffset {
+		log.Infon("Events lost due to Snowpipe restart or error")
+		var start int64
+		if statusRes.Offset == "" {
+			start = 1
+		} else {
+			start = latestCommittedOffset + 1
+		}
+		info.FailedJobIds = &failedJobIds{
+			Start: start,
+			End:   expectedOffset,
+		}
+		return false, fmt.Errorf("events lost: latestCommittedOffset=%d, latestInsertedOffset=%d, expectedOffset=%d",
+			latestCommittedOffset, latestInsertedOffset, expectedOffset)
+	}
+
+	// Case 3: Flushing in progress - continue polling
 	if latestInsertedOffset > latestCommittedOffset {
 		log.Infon("Flushing in progress, continuing to poll")
 		return true, nil
 	}
 
-	// Case 3: Events lost - restart/error scenario
-	if latestInsertedOffset == latestCommittedOffset {
-		log.Infon("Events lost due to Snowpipe restart or error")
-		start, err := strconv.ParseInt(latestCommittedOffset, 10, 64)
-		if err != nil {
-			return false, fmt.Errorf("failed to convert latestCommittedOffset to int: %w", err)
-		}
-		end, err := strconv.ParseInt(expectedOffset, 10, 64)
-		if err != nil {
-			return false, fmt.Errorf("failed to convert expectedOffset to int: %w", err)
-		}
-		info.FailedJobIds = &failedJobIds{
-			Start: start + 1,
-			End:   end,
-		}
-		return false, fmt.Errorf("events lost: latestCommittedOffset=%s, latestInsertedOffset=%s, expectedOffset=%s",
-			latestCommittedOffset, latestInsertedOffset, expectedOffset)
-	}
-
 	// Unexpected case - should not reach here based on the logic
 	log.Warnn("Unexpected polling state encountered")
 	return true, nil
+}
+
+func convertToInt(a string) (int64, error) {
+	if a == "" {
+		return math.MinInt64, nil
+	}
+	ai, err := strconv.ParseInt(a, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert a to int: %w", err)
+	}
+	return ai, nil
 }
 
 func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
