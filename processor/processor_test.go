@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -2776,34 +2775,6 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			assertErrStoreJob := func(job *jobsdb.JobT, i int) {
-				Expect(job.UUID.String()).To(testutils.BeValidUUID())
-				Expect(job.JobID).To(Equal(int64(0)))
-				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.CustomVal).To(Equal("enabled-destination-a-definition-name"))
-				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-
-				var paramsMap, expectedParamsMap map[string]interface{}
-				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
-				Expect(err).To(BeNil())
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-a", "source_job_run_id": "", "error": "error-%v", "status_code": 400, "stage": "dest_transformer", "source_task_run_id": "", "record_id": null,"connection_id":"enabled-source:enabled-destination-a"}`, SourceIDEnabled, i+1))
-				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
-				Expect(err).To(BeNil())
-				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-				Expect(equals).To(Equal(true))
-
-				// compare payloads
-				var payload []map[string]interface{}
-				err = jsonrs.Unmarshal(job.EventPayload, &payload)
-				Expect(err).To(BeNil())
-				Expect(len(payload)).To(Equal(1))
-				message := messages[fmt.Sprintf(`message-%v`, i+1)]
-				Expect(fmt.Sprintf(`message-%s`, message.id)).To(Equal(payload[0]["messageId"]))
-				Expect(payload[0]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message.id)))
-				Expect(message.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
-			}
-
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			mockTransformerClients := transformer.NewSimpleClients()
@@ -2837,15 +2808,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockArchivalDB.EXPECT().
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
-
-			// One Store call is expected for all events
-			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
-					for i, job := range jobs {
-						assertErrStoreJob(job, i)
-					}
-				})
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -2905,38 +2867,6 @@ var _ = Describe("Processor", Ordered, func() {
 				},
 			}
 
-			assertErrStoreJob := func(job *jobsdb.JobT) {
-				Expect(job.UUID.String()).To(testutils.BeValidUUID())
-				Expect(job.JobID).To(Equal(int64(0)))
-				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-				Expect(job.CustomVal).To(Equal("MINIO"))
-				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-
-				var paramsMap, expectedParamsMap map[string]interface{}
-				err := jsonrs.Unmarshal(job.Parameters, &paramsMap)
-				Expect(err).To(BeNil())
-				expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "destination_id": "enabled-destination-b", "source_job_run_id": "", "error": "error-combined", "status_code": 400, "stage": "user_transformer", "source_task_run_id":"", "record_id": null,"connection_id":"enabled-source:enabled-destination-b"}`, SourceIDEnabled))
-				err = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
-				Expect(err).To(BeNil())
-				equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
-				Expect(equals).To(Equal(true))
-
-				// compare payloads
-				var payload []map[string]interface{}
-				err = jsonrs.Unmarshal(job.EventPayload, &payload)
-				Expect(err).To(BeNil())
-				Expect(len(payload)).To(Equal(2))
-				message1 := messages[fmt.Sprintf(`message-%v`, 1)]
-				Expect(fmt.Sprintf(`message-%s`, message1.id)).To(Equal(payload[0]["messageId"]))
-				Expect(payload[0]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message1.id)))
-				Expect(message1.expectedOriginalTimestamp).To(Equal(payload[0]["originalTimestamp"]))
-				message2 := messages[fmt.Sprintf(`message-%v`, 2)]
-				Expect(fmt.Sprintf(`message-%s`, message2.id)).To(Equal(payload[1]["messageId"]))
-				Expect(payload[1]["some-property"]).To(Equal(fmt.Sprintf(`property-%s`, message2.id)))
-				Expect(message2.expectedOriginalTimestamp).To(Equal(payload[1]["originalTimestamp"]))
-			}
-
 			var toRetryJobsList []*jobsdb.JobT
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
@@ -2971,15 +2901,6 @@ var _ = Describe("Processor", Ordered, func() {
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
-				})
-
-			// One Store call is expected for all events
-			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(1))
-					for _, job := range jobs {
-						assertErrStoreJob(job)
-					}
 				})
 
 			processorSetupAndAssertJobHandling(processor, c)
@@ -3051,14 +2972,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockArchivalDB.EXPECT().
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				AnyTimes()
-
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *Tx) error) {
-				_ = f(&Tx{})
-			}).Return(nil).Times(0)
-
-			// One Store call is expected for all events
-			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
-				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -3154,14 +3067,6 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockArchivalDB.EXPECT().
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(0)
-
-			c.mockWriteProcErrorsDB.EXPECT().WithTx(gomock.Any()).Return(nil).Times(0)
-
-			// One Store call is expected for all events
-			c.mockWriteProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(1))
-				})
 
 			config.Set("drain.jobRunIDs", "job_run_id_1")
 			defer config.Reset()

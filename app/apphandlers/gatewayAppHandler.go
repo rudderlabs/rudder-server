@@ -90,19 +90,19 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	defer gatewayDB.Stop()
 
-	errDB := jobsdb.NewForWrite(
+	errorDB := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer errDB.Close()
+	defer errorDB.Close()
 
-	if err := errDB.Start(); err != nil {
-		return fmt.Errorf("could not start errDB: %w", err)
+	if err := errorDB.Start(); err != nil {
+		return fmt.Errorf("could not start errorDB: %w", err)
 	}
-	defer errDB.Stop()
+	defer errorDB.Stop()
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -145,7 +145,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	streamMsgValidator := stream.NewMessageValidator()
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, errDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gatewayDB, errorDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigHttpHandler,

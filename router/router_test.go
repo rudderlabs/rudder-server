@@ -19,7 +19,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -700,20 +699,6 @@ var _ = Describe("router", func() {
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
 
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(parameters["stage"]).To(Equal("router"))
-					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
-					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
-					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
-				})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -793,24 +778,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
-					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
-					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -828,7 +797,7 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
-			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+			Eventually(func() bool { return routerAborted }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts jobs that bear a abort configured jobRunId", func() {
@@ -884,24 +853,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
-					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
-					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -919,7 +872,7 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
-			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+			Eventually(func() bool { return routerAborted }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts events that have reached max retries", func() {
@@ -982,24 +935,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(jobs[0].JobID))
-					Expect(job.CustomVal).To(Equal(jobs[0].CustomVal))
-					Expect(job.UserID).To(Equal(jobs[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1029,9 +966,9 @@ var _ = Describe("router", func() {
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(jobs)))
 			Eventually(func() bool {
-				return routerAborted && procErrorStored
+				return routerAborted
 			}, 60*time.Second, 10*time.Millisecond).
-				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
+				Should(Equal(true), fmt.Sprintf("Router should abort (actual: %t)", routerAborted))
 		})
 
 		It("aborts sources events that have reached max retries - different limits", func() {
@@ -1103,24 +1040,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(jobs[0].JobID))
-					Expect(job.CustomVal).To(Equal(jobs[0].CustomVal))
-					Expect(job.UserID).To(Equal(jobs[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1150,9 +1071,9 @@ var _ = Describe("router", func() {
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(jobs)))
 			Eventually(func() bool {
-				return routerAborted && procErrorStored
+				return routerAborted
 			}, 60*time.Second, 10*time.Millisecond).
-				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
+				Should(Equal(true), fmt.Sprintf("Router should abort (actual: %t)", routerAborted))
 		})
 		It("aborts jobs if destination is not found in config", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
@@ -1216,8 +1137,6 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 3)
 				}).Return(nil).After(callAllJobs)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Len(1)).Times(1)
 
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().
