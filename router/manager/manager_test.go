@@ -128,16 +128,16 @@ func TestRouterManager(t *testing.T) {
 	rtDB := jobsdb.NewForReadWrite("rt")
 	mockRtDB := &mockJobsDB{JobsDB: rtDB}
 	brtDB := jobsdb.NewForReadWrite("batch_rt")
-	errDB := jobsdb.NewForReadWrite("proc_error")
+	errorDB := jobsdb.NewForReadWrite("proc_error")
 	defer rtDB.Close()
 	defer brtDB.Close()
-	defer errDB.Close()
+	defer errorDB.Close()
 	rtFactory := &router.Factory{
 		Logger:                     logger.NOP,
 		Reporting:                  &reporting.NOOP{},
 		BackendConfig:              mockBackendConfig,
 		RouterDB:                   mockRtDB,
-		ProcErrorDB:                errDB,
+		ProcErrorDB:                errorDB,
 		TransientSources:           transientsource.NewEmptyService(),
 		RsourcesService:            mockRsourcesService,
 		ThrottlerFactory:           throttler.NewNoOpThrottlerFactory(),
@@ -147,7 +147,7 @@ func TestRouterManager(t *testing.T) {
 		Reporting:        &reporting.NOOP{},
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         brtDB,
-		ProcErrorDB:      errDB,
+		ProcErrorDB:      errorDB,
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
@@ -156,7 +156,7 @@ func TestRouterManager(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		require.NoError(t, rtDB.Start())
 		require.NoError(t, brtDB.Start())
-		require.NoError(t, errDB.Start())
+		require.NoError(t, errorDB.Start())
 		require.NoError(t, r.Start())
 		require.Eventually(t, func() bool {
 			return mockRtDB.called.Load()
@@ -164,7 +164,7 @@ func TestRouterManager(t *testing.T) {
 		r.Stop()
 		rtDB.Stop()
 		brtDB.Stop()
-		errDB.Stop()
+		errorDB.Stop()
 		mockRtDB.called.Store(false)
 	}
 }

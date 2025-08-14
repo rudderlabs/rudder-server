@@ -3,7 +3,6 @@ package loadfiles
 import (
 	"context"
 	stdjson "encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -43,7 +42,7 @@ type StageFileRepo interface {
 
 type LoadFileRepo interface {
 	Insert(ctx context.Context, loadFiles []model.LoadFile) error
-	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
+	Delete(ctx context.Context, uploadID int64) error
 	Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error)
 }
 
@@ -65,11 +64,6 @@ type LoadFileGenerator struct {
 	publishBatchSizePerWorkspace map[string]int
 }
 
-type WorkerJobResponse struct {
-	StagingFileID int64            `json:"staging_file_id"`
-	Output        []LoadFileUpload `json:"output"`
-}
-
 type WorkerJobResponseV2 struct {
 	Output []LoadFileUpload `json:"output"`
 }
@@ -79,7 +73,6 @@ type LoadFileUpload struct {
 	Location              string
 	TotalRows             int
 	ContentLength         int64
-	StagingFileID         int64
 	DestinationRevisionID string
 	UseRudderStorage      bool
 }
@@ -107,12 +100,6 @@ type baseWorkerJobRequest struct {
 	LoadFileType                 string                 `json:"load_file_type"`
 }
 
-type WorkerJobRequest struct {
-	baseWorkerJobRequest
-	StagingFileID       int64  `json:"staging_file_id"`
-	StagingFileLocation string `json:"staging_file_location"`
-}
-
 type StagingFileInfo struct {
 	ID       int64  `json:"id"`
 	Location string `json:"location"`
@@ -138,30 +125,8 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 	}
 }
 
-// CreateLoadFiles for the staging files that have not been successfully processed.
 func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
-	return lf.createFromStaging(
-		ctx,
-		job,
-		lo.Filter(
-			job.StagingFiles,
-			func(stagingFile *model.StagingFile, _ int) bool {
-				return stagingFile.Status != warehouseutils.StagingFileSucceededState
-			},
-		),
-	)
-}
-
-// ForceCreateLoadFiles creates load files for the staging files, regardless if they are already successfully processed.
-func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job *model.UploadJob) (int64, int64, error) {
-	return lf.createFromStaging(ctx, job, job.StagingFiles)
-}
-
-func (lf *LoadFileGenerator) AllowUploadV2JobCreation(job *model.UploadJob) bool {
-	return lf.Conf.GetBool(fmt.Sprintf("Warehouse.%s.enableV2NotifierJob", job.Upload.DestinationType), false) || lf.Conf.GetBool("Warehouse.enableV2NotifierJob", false)
-}
-
-func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.UploadJob, toProcessStagingFiles []*model.StagingFile) (int64, int64, error) {
+	toProcessStagingFiles := job.StagingFiles
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
 	var err error
@@ -183,13 +148,13 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 
 	job.LoadFileGenStartTime = timeutil.Now()
 
-	// Delete previous load files for the staging files
-	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
-	if err := lf.LoadRepo.Delete(ctx, job.Upload.ID, stagingFileIDs); err != nil {
+	// Delete previous load files for the upload
+	if err := lf.LoadRepo.Delete(ctx, job.Upload.ID); err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
 
 	// Set staging file status to executing
+	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
 	if err = lf.StageRepo.SetStatuses(
 		ctx,
 		stagingFileIDs,
@@ -211,47 +176,15 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job *model.U
 		}
 	}()
 
-	if !lf.AllowUploadV2JobCreation(job) {
-		lf.Logger.Infon("V2 job creation disabled. Processing staging files",
-			logger.NewIntField("count", int64(len(toProcessStagingFiles))))
-		err = lf.createUploadJobs(ctx, job, toProcessStagingFiles, publishBatchSize, uniqueLoadGenID)
-		if err != nil {
-			return 0, 0, fmt.Errorf("creating upload jobs: %w", err)
-		}
-		return lf.getLoadFileIDs(ctx, job, uniqueLoadGenID)
+	// Always use V2 job creation (no more V1 vs V2 branching)
+	lf.Logger.Infon("Processing staging files with V2 jobs",
+		logger.NewIntField("count", int64(len(toProcessStagingFiles))))
+
+	err = lf.createUploadV2Jobs(ctx, job, toProcessStagingFiles, publishBatchSize, uniqueLoadGenID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("creating upload V2 jobs: %w", err)
 	}
 
-	v1Files := make([]*model.StagingFile, 0)
-	v2Files := make([]*model.StagingFile, 0)
-	for _, file := range toProcessStagingFiles {
-		if len(file.BytesPerTable) > 0 {
-			v2Files = append(v2Files, file)
-		} else {
-			v1Files = append(v1Files, file)
-		}
-	}
-
-	// Process both groups in parallel. This might violate the publishBatchSize constraint
-	// but that should be fine since we don't expect too many such instances where the batch will have both v1 and v2 files
-	// Usually a batch will have only v1 or v2 files
-	g, gCtx := errgroup.WithContext(ctx)
-	lf.Logger.Infon("V2 job creation enabled. Processing staging files",
-		logger.NewIntField("v1Files", int64(len(v1Files))),
-		logger.NewIntField("v2Files", int64(len(v2Files))))
-	if len(v1Files) > 0 {
-		g.Go(func() error {
-			return lf.createUploadJobs(gCtx, job, v1Files, publishBatchSize, uniqueLoadGenID)
-		})
-	}
-	if len(v2Files) > 0 {
-		g.Go(func() error {
-			return lf.createUploadV2Jobs(gCtx, job, v2Files, publishBatchSize, uniqueLoadGenID)
-		})
-	}
-
-	if err = g.Wait(); err != nil {
-		return 0, 0, err
-	}
 	return lf.getLoadFileIDs(ctx, job, uniqueLoadGenID)
 }
 
@@ -283,12 +216,12 @@ func (lf *LoadFileGenerator) getLoadFileIDs(ctx context.Context, job *model.Uplo
 	return loadFiles[0].ID, loadFiles[len(loadFiles)-1].ID, nil
 }
 
-func (lf *LoadFileGenerator) prepareBaseJobRequest(
+func (lf *LoadFileGenerator) prepareJobRequestV2(
 	job *model.UploadJob,
 	uniqueLoadGenID string,
-	stagingFile *model.StagingFile,
+	stagingFiles []*model.StagingFile,
 	destinationRevisionIDMap map[string]backendconfig.DestinationT,
-) baseWorkerJobRequest {
+) *WorkerJobRequestV2 {
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
 	baseReq := baseWorkerJobRequest{
@@ -305,17 +238,27 @@ func (lf *LoadFileGenerator) prepareBaseJobRequest(
 		UniqueLoadGenID:              uniqueLoadGenID,
 		RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 		UseRudderStorage:             job.Upload.UseRudderStorage,
-		StagingUseRudderStorage:      stagingFile.UseRudderStorage,
+		StagingUseRudderStorage:      stagingFiles[0].UseRudderStorage,
 		DestinationRevisionID:        job.Warehouse.Destination.RevisionID,
-		StagingDestinationRevisionID: stagingFile.DestinationRevisionID,
+		StagingDestinationRevisionID: stagingFiles[0].DestinationRevisionID,
 	}
-	if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
+	if revisionConfig, ok := destinationRevisionIDMap[stagingFiles[0].DestinationRevisionID]; ok {
 		baseReq.StagingDestinationConfig = revisionConfig.Config
 	}
 	if slices.Contains(warehouseutils.TimeWindowDestinations, job.Warehouse.Type) {
-		baseReq.LoadFilePrefix = lf.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
+		baseReq.LoadFilePrefix = lf.GetLoadFilePrefix(stagingFiles[0].TimeWindow, job.Warehouse)
 	}
-	return baseReq
+	stagingFileInfos := make([]StagingFileInfo, len(stagingFiles))
+	for i, sf := range stagingFiles {
+		stagingFileInfos[i] = StagingFileInfo{
+			ID:       sf.ID,
+			Location: sf.Location,
+		}
+	}
+	return &WorkerJobRequestV2{
+		baseWorkerJobRequest: baseReq,
+		StagingFiles:         stagingFileInfos,
+	}
 }
 
 func (lf *LoadFileGenerator) publishToNotifier(
@@ -352,71 +295,21 @@ func (lf *LoadFileGenerator) publishToNotifier(
 	return ch, nil
 }
 
-func (lf *LoadFileGenerator) processNotifierResponse(ctx context.Context, ch <-chan *notifier.PublishResponse, job *model.UploadJob, chunk []*model.StagingFile) error {
-	responses, ok := <-ch
-	if !ok {
-		return fmt.Errorf("receiving notifier channel closed")
-	}
-
-	logNotifierResponse(lf.Logger, job, chunk)
-	if responses.Err != nil {
-		return fmt.Errorf("receiving responses from notifier: %w", responses.Err)
-	}
-
-	var loadFiles []model.LoadFile
-	var successfulStagingFileIDs []int64
-	for _, resp := range responses.Jobs {
-		// Error handling during generating_load_files step:
-		// 1. any error returned by notifier is set on corresponding staging_file
-		// 2. any error effecting a batch/all the staging files like saving load file records to wh db
-		//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
-		var jobResponse WorkerJobResponse
-		if err := jsonrs.Unmarshal(resp.Payload, &jobResponse); err != nil {
-			return fmt.Errorf("unmarshalling response from notifier: %w", err)
-		}
-
-		if resp.Status == notifier.Aborted && resp.Error != nil {
-			lf.Logger.Errorn("[WH]: Error in generating load files",
-				obskit.Error(resp.Error))
-			sampleError := errors.New(resp.Error.Error())
-			err := lf.StageRepo.SetErrorStatus(ctx, jobResponse.StagingFileID, sampleError)
-			if err != nil {
-				return fmt.Errorf("set staging file error status: %w", err)
-			}
-			continue
-		}
-		if len(jobResponse.Output) == 0 {
-			lf.Logger.Errorn("[WH]: No LoadFiles returned by worker")
-			continue
-		}
-		for _, output := range jobResponse.Output {
-			loadFile := toLoadFile(output, job)
-			loadFile.StagingFileID = jobResponse.StagingFileID
-			loadFiles = append(loadFiles, loadFile)
-		}
-
-		successfulStagingFileIDs = append(successfulStagingFileIDs, jobResponse.StagingFileID)
-	}
-
-	if len(loadFiles) == 0 {
-		return nil
-	}
-
-	if err := lf.LoadRepo.Insert(ctx, loadFiles); err != nil {
-		return fmt.Errorf("inserting load files: %w", err)
-	}
-	if err := lf.StageRepo.SetStatuses(ctx, successfulStagingFileIDs, warehouseutils.StagingFileSucceededState); err != nil {
-		return fmt.Errorf("setting staging file status to succeeded: %w", err)
-	}
-	return nil
-}
-
 func (lf *LoadFileGenerator) processNotifierResponseV2(ctx context.Context, ch <-chan *notifier.PublishResponse, job *model.UploadJob, chunk []*model.StagingFile) error {
 	responses, ok := <-ch
 	if !ok {
 		return fmt.Errorf("receiving notifier channel closed")
 	}
-	logNotifierResponse(lf.Logger, job, chunk)
+	destID := job.Upload.DestinationID
+	destType := job.Upload.DestinationType
+	startId := chunk[0].ID
+	endId := chunk[len(chunk)-1].ID
+	lf.Logger.Infon("Received responses for staging files from notifier",
+		logger.NewIntField("startId", startId),
+		logger.NewIntField("endID", endId),
+		obskit.DestinationID(destID),
+		obskit.DestinationType(destType),
+	)
 	if responses.Err != nil {
 		return fmt.Errorf("receiving responses from notifier: %w", responses.Err)
 	}
@@ -454,38 +347,6 @@ func (lf *LoadFileGenerator) processNotifierResponseV2(ctx context.Context, ch <
 	return nil
 }
 
-func (lf *LoadFileGenerator) createUploadJobs(ctx context.Context, job *model.UploadJob, stagingFiles []*model.StagingFile, publishBatchSize int, uniqueLoadGenID string) error {
-	destinationRevisionIDMap, err := lf.destinationRevisionIDMap(ctx, job)
-	if err != nil {
-		return fmt.Errorf("populating destination revision ID: %w", err)
-	}
-	g, gCtx := errgroup.WithContext(ctx)
-	for _, chunk := range lo.Chunk(stagingFiles, publishBatchSize) {
-		var messages []stdjson.RawMessage
-		for _, stagingFile := range chunk {
-			baseReq := lf.prepareBaseJobRequest(job, uniqueLoadGenID, stagingFile, destinationRevisionIDMap)
-			rawPayload, err := jsonrs.Marshal(WorkerJobRequest{
-				baseWorkerJobRequest: baseReq,
-				StagingFileID:        stagingFile.ID,
-				StagingFileLocation:  stagingFile.Location,
-			})
-			if err != nil {
-				return fmt.Errorf("marshalling job request: %w", err)
-			}
-			messages = append(messages, rawPayload)
-		}
-		ch, err := lf.publishToNotifier(ctx, job, messages, notifier.JobTypeUpload)
-		if err != nil {
-			return fmt.Errorf("publishing to notifier: %w", err)
-		}
-		_chunk := chunk
-		g.Go(func() error {
-			return lf.processNotifierResponse(gCtx, ch, job, _chunk)
-		})
-	}
-	return g.Wait()
-}
-
 func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.UploadJob, stagingFiles []*model.StagingFile, publishBatchSize int, uniqueLoadGenID string) error {
 	destinationRevisionIDMap, err := lf.destinationRevisionIDMap(ctx, job)
 	if err != nil {
@@ -499,20 +360,8 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 				logger.NewIntField("chunk", int64(i)),
 				logger.NewIntField("group", int64(j)),
 				logger.NewIntField("size", int64(len(group))))
-			baseReq := lf.prepareBaseJobRequest(job, uniqueLoadGenID, group[0], destinationRevisionIDMap)
-
-			stagingFileInfos := make([]StagingFileInfo, len(group))
-			for i, sf := range group {
-				stagingFileInfos[i] = StagingFileInfo{
-					ID:       sf.ID,
-					Location: sf.Location,
-				}
-			}
-
-			rawPayload, err := jsonrs.Marshal(WorkerJobRequestV2{
-				baseWorkerJobRequest: baseReq,
-				StagingFiles:         stagingFileInfos,
-			})
+			jobRequest := lf.prepareJobRequestV2(job, uniqueLoadGenID, group, destinationRevisionIDMap)
+			rawPayload, err := jsonrs.Marshal(jobRequest)
 			if err != nil {
 				return fmt.Errorf("marshalling job request: %w", err)
 			}
@@ -576,19 +425,6 @@ func (lf *LoadFileGenerator) GetLoadFilePrefix(timeWindow time.Time, warehouse m
 		}
 	}
 	return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
-}
-
-func logNotifierResponse(lfLogger logger.Logger, job *model.UploadJob, chunk []*model.StagingFile) {
-	destID := job.Upload.DestinationID
-	destType := job.Upload.DestinationType
-	startId := chunk[0].ID
-	endId := chunk[len(chunk)-1].ID
-	lfLogger.Infon("Received responses for staging files from notifier",
-		logger.NewIntField("startId", startId),
-		logger.NewIntField("endID", endId),
-		obskit.DestinationID(destID),
-		obskit.DestinationType(destType),
-	)
 }
 
 func toLoadFile(output LoadFileUpload, job *model.UploadJob) model.LoadFile {

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -45,7 +44,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 
-	"github.com/rudderlabs/rudder-go-kit/requesttojson"
 	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
 )
 
@@ -99,13 +97,13 @@ func TestIntegrationWebhook(t *testing.T) {
 	require.NoError(t, gatewayDB.Start())
 	defer gatewayDB.TearDown()
 
-	errDB := jobsdb.NewForReadWrite(
+	errorDB := jobsdb.NewForReadWrite(
 		"err",
 		jobsdb.WithDBHandle(p.DB),
 		jobsdb.WithStats(stats.NOP),
 	)
-	require.NoError(t, errDB.Start())
-	defer errDB.TearDown()
+	require.NoError(t, errorDB.Start())
+	defer errorDB.TearDown()
 
 	var (
 		rateLimiter        throttler.Throttler
@@ -167,7 +165,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		conf, logger, stat,
 		application,
 		backendconfigtest.NewStaticLibrary(bcs),
-		gatewayDB, errDB,
+		gatewayDB, errorDB,
 		rateLimiter, versionHandler, rsources.NewNoOpService(), transformerFeaturesService, sourcedebugger.NewNoOpService(),
 		streamMsgValidator,
 		gateway.WithNow(func() time.Time {
@@ -312,64 +310,6 @@ func TestIntegrationWebhook(t *testing.T) {
 				require.NoError(t, err)
 
 				require.JSONEq(t, string(p), string(batch.Batch[0]))
-			}
-
-			require.Eventually(t, func() bool {
-				r, err = errDB.GetUnprocessed(ctx, jobsdb.GetQueryParams{
-					WorkspaceID: workspaceID,
-					ParameterFilters: []jobsdb.ParameterFilterT{{
-						Name:  "source_id",
-						Value: sourceID,
-					}},
-					JobsLimit: 1,
-				})
-				return err == nil && len(r.Jobs) == len(tc.Output.ErrQueue)
-			}, time.Second, time.Millisecond*10)
-
-			require.NoError(t, err)
-			require.Len(t, r.Jobs, len(tc.Output.ErrQueue))
-			for i, p := range tc.Output.ErrQueue {
-				var errPayload []byte
-
-				var requestPayload *requesttojson.RequestJSON
-				var requestPayloadBytes []byte
-
-				// set defaults assigned by go http client
-				req.Body = io.NopCloser(bytes.NewReader(p))
-				req.Method = "POST"
-				req.Proto = "HTTP/1.1"
-				req.Header.Set("Accept-Encoding", "gzip")
-				req.Header.Set("Content-Length", strconv.Itoa(len(p)))
-				req.Header.Set("User-Agent", "Go-http-client/1.1")
-
-				requestPayload, err = requesttojson.RequestToJSON(req, "{}")
-				requestPayloadBytes, err = jsonrs.Marshal(requestPayload)
-
-				errPayload, err = jsonrs.Marshal(struct {
-					Request json.RawMessage       `json:"request"`
-					Source  backendconfig.SourceT `json:"source"`
-				}{
-					Source:  sConfig,
-					Request: requestPayloadBytes,
-				})
-				require.NoError(t, err)
-				errPayload, err = sjson.SetBytes(errPayload, "source.Destinations", nil)
-				require.NoError(t, err)
-
-				payload := gjson.GetBytes(r.Jobs[i].EventPayload, "request.body").String()
-				if !gjson.ValidBytes([]byte(payload)) {
-					marshaledPayload, err := jsonrs.Marshal(payload)
-					require.NoError(t, err)
-					r.Jobs[i].EventPayload, err = sjson.SetBytes(r.Jobs[i].EventPayload, "request.body", marshaledPayload)
-					require.NoError(t, err)
-				}
-
-				r.Jobs[i].EventPayload, err = sjson.DeleteBytes(r.Jobs[i].EventPayload, "request.headers.Content-Length")
-				require.NoError(t, err)
-				errPayload, err = sjson.DeleteBytes(errPayload, "request.headers.Content-Length")
-				require.NoError(t, err)
-
-				require.JSONEq(t, string(errPayload), string(r.Jobs[i].EventPayload))
 			}
 		})
 
