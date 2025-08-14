@@ -1377,48 +1377,577 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, 5, statusCalls) // 4 channels + 1 for polling in progress
 	})
 
-	t.Run("GetUploadStats with invalid importInfo", func(t *testing.T) {
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
+	t.Run("GetUploadStats", func(t *testing.T) {
+		tests := []struct {
+			name                  string
+			failedJobParameters   string
+			importingList         []*jobsdb.JobT
+			expectedStatusCode    int
+			expectedError         bool
+			expectedFailedKeys    []int64
+			expectedFailedReasons map[int64]string
+			expectedSucceededKeys []int64
+		}{
+			{
+				name:                "invalid importInfo",
+				failedJobParameters: "invalid",
+				expectedStatusCode:  http.StatusBadRequest,
+				expectedError:       true,
+			},
+			{
+				name:                "success and failed events",
+				failedJobParameters: `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"users polling failed","count":2}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:        1001,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1002,
+						EventPayload: []byte(`{"metadata":{"table":"PRODUCTS"}}`),
+					},
+					{
+						JobID:        1003,
+						EventPayload: []byte(`{"metadata":{"table":"PRODUCTS"}}`),
+					},
+					{
+						JobID:        1004,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1001, 1004},
+				expectedFailedReasons: map[int64]string{1001: "users polling failed", 1004: "users polling failed"},
+				expectedSucceededKeys: []int64{1002, 1003},
+			},
+			{
+				name:                "failed events with specific job ID range",
+				failedJobParameters: `[{"channelId":"test-users-channel","offset":"1010","table":"USERS","failed":true,"reason":"partial failure","count":5,"failedJobIds":{"start":1008,"end":1009}}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:        1006,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1008,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1009,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1010,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1008, 1009},
+				expectedFailedReasons: map[int64]string{1008: "partial failure", 1009: "partial failure"},
+				expectedSucceededKeys: []int64{1006, 1010},
+			},
+			{
+				name:                "failed events with job ID range - all jobs outside range",
+				failedJobParameters: `[{"channelId":"test-users-channel","offset":"1010","table":"USERS","failed":true,"reason":"range failure","count":3,"failedJobIds":{"start":2000,"end":2005}}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:        1001,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1002,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    nil,
+				expectedFailedReasons: map[int64]string{},
+				expectedSucceededKeys: []int64{1001, 1002},
+			},
+			{
+				name:                "failed events with job ID range - all jobs inside range",
+				failedJobParameters: `[{"channelId":"test-users-channel","offset":"1010","table":"USERS","failed":true,"reason":"complete range failure","count":3,"failedJobIds":{"start":1001,"end":1003}}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:        1001,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1002,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        1003,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1001, 1002, 1003},
+				expectedFailedReasons: map[int64]string{1001: "complete range failure", 1002: "complete range failure", 1003: "complete range failure"},
+				expectedSucceededKeys: nil,
+			},
+			{
+				name:                "mixed success, failed without range, and failed with range",
+				failedJobParameters: `[{"channelId":"test-products-channel","offset":"1005","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1010","table":"USERS","failed":true,"reason":"all users failed","count":2},{"channelId":"test-orders-channel","offset":"1015","table":"ORDERS","failed":true,"reason":"partial orders failure","count":3,"failedJobIds":{"start":2008,"end":2009}}]`,
+				importingList: []*jobsdb.JobT{
+					{
+						JobID:        1001,
+						EventPayload: []byte(`{"metadata":{"table":"PRODUCTS"}}`),
+					},
+					{
+						JobID:        1002,
+						EventPayload: []byte(`{"metadata":{"table":"USERS"}}`),
+					},
+					{
+						JobID:        2007,
+						EventPayload: []byte(`{"metadata":{"table":"ORDERS"}}`),
+					},
+					{
+						JobID:        2008,
+						EventPayload: []byte(`{"metadata":{"table":"ORDERS"}}`),
+					},
+					{
+						JobID:        2009,
+						EventPayload: []byte(`{"metadata":{"table":"ORDERS"}}`),
+					},
+					{
+						JobID:        2010,
+						EventPayload: []byte(`{"metadata":{"table":"ORDERS"}}`),
+					},
+				},
+				expectedStatusCode:    http.StatusOK,
+				expectedFailedKeys:    []int64{1002, 2008, 2009},
+				expectedFailedReasons: map[int64]string{1002: "all users failed", 2008: "partial orders failure", 2009: "partial orders failure"},
+				expectedSucceededKeys: []int64{1001, 2007, 2010},
+			},
+		}
 
-		sm := New(config.New(), logger.NOP, statsStore, destination)
-		output := sm.GetUploadStats(common.GetUploadStatsInput{
-			FailedJobParameters: "invalid",
-		})
-		require.Equal(t, http.StatusBadRequest, output.StatusCode)
-		require.NotEmpty(t, output.Error)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				statsStore, err := memstats.New()
+				require.NoError(t, err)
+
+				sm := New(config.New(), logger.NOP, statsStore, destination)
+				output := sm.GetUploadStats(common.GetUploadStatsInput{
+					FailedJobParameters: tt.failedJobParameters,
+					ImportingList:       tt.importingList,
+				})
+
+				require.Equal(t, tt.expectedStatusCode, output.StatusCode)
+
+				if tt.expectedError {
+					require.NotEmpty(t, output.Error)
+				} else {
+					require.Equal(t, tt.expectedFailedKeys, output.Metadata.FailedKeys)
+					require.Equal(t, tt.expectedFailedReasons, output.Metadata.FailedReasons)
+					require.Equal(t, tt.expectedSucceededKeys, output.Metadata.SucceededKeys)
+				}
+			})
+		}
 	})
-	t.Run("GetUploadStats success and failed events", func(t *testing.T) {
-		failedParameters := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"users polling failed","count":2}]`
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
 
-		sm := New(config.New(), logger.NOP, statsStore, destination)
-		output := sm.GetUploadStats(common.GetUploadStatsInput{
-			FailedJobParameters: failedParameters,
-			ImportingList: []*jobsdb.JobT{
-				{
-					JobID:        1001,
-					EventPayload: []byte(`{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"Alice","AGE":30,"RECEIVED_AT":"2023-05-12T04:36:50.199Z"}}`),
+	t.Run("processPollImportInfos", func(t *testing.T) {
+		tests := []struct {
+			name                   string
+			infos                  []*importInfo
+			prePopulatedCache      map[string]*importInfo
+			mockGetStatusResponses map[string]func() (*model.StatusResponse, error)
+			expectedInProgress     bool
+			expectedCacheSize      int
+			expectedFailedChannels []string
+			expectedResetInfos     []string                 // ChannelIDs that should have Failed=false and FailedJobIds=nil
+			expectedFailedJobIds   map[string]*failedJobIds // ChannelID -> expected FailedJobIds for failed channels
+		}{
+			{
+				name:               "empty infos slice",
+				infos:              []*importInfo{},
+				expectedInProgress: false,
+				expectedCacheSize:  0,
+			},
+			{
+				name: "single info already processed (cached)",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
 				},
-				{
-					JobID:        1002,
-					EventPayload: []byte(`{"metadata":{"table":"PRODUCTS","columns":{"ID":"int","PRODUCT_ID":"string","PRICE":"float","IN_STOCK":"boolean","RECEIVED_AT":"datetime"}},"data":{"ID":2,"PRODUCT_ID":"PROD456","PRICE":20.99,"IN_STOCK":true,"RECEIVED_AT":"2023-05-12T04:36:50.199Z"}}`),
+				prePopulatedCache: map[string]*importInfo{
+					"test-channel-1": {
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+						Failed:    false,
+					},
 				},
-				{
-					JobID:        1003,
-					EventPayload: []byte(`{"metadata":{"table":"PRODUCTS","columns":{"ID":"int","PRODUCT_ID":"string","PRICE":"float","IN_STOCK":"boolean","RECEIVED_AT":"datetime"}},"data":{"ID":2,"PRODUCT_ID":"PROD456","PRICE":20.99,"IN_STOCK":true,"RECEIVED_AT":"2023-05-12T04:36:50.199Z"}}`),
+				expectedInProgress: false,
+				expectedCacheSize:  1,
+			},
+			{
+				name: "single info - getImportStatus returns error",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
 				},
-				{
-					JobID:        1004,
-					EventPayload: []byte(`{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"Alice","AGE":30,"RECEIVED_AT":"2023-05-12T04:36:50.199Z"}}`),
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return nil, fmt.Errorf("API error")
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      1,
+				expectedFailedChannels: []string{"test-channel-1"},
+			},
+			{
+				name: "single info - in progress (flushing)",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "50", // Less than expected "100"
+							LatestInsertedOffset: "75", // Greater than committed - flushing in progress
+						}, nil
+					},
+				},
+				expectedInProgress: true,
+				expectedCacheSize:  0, // In progress items not cached
+				expectedResetInfos: []string{"test-channel-1"},
+			},
+			{
+				name: "single info - completed successfully",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "100", // Equal to expected
+							LatestInsertedOffset: "100",
+						}, nil
+					},
+				},
+				expectedInProgress: false,
+				expectedCacheSize:  1,
+				expectedResetInfos: []string{"test-channel-1"},
+			},
+			{
+				name: "single info - events lost scenario",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "50", // Less than expected
+							LatestInsertedOffset: "50", // Equal to committed - events lost
+						}, nil
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      1,
+				expectedFailedChannels: []string{"test-channel-1"},
+				expectedFailedJobIds: map[string]*failedJobIds{
+					"test-channel-1": {
+						Start: 51,
+						End:   100,
+					},
 				},
 			},
-		})
-		require.Equal(t, http.StatusOK, output.StatusCode)
-		require.Equal(t, []int64{1001, 1004}, output.Metadata.FailedKeys)
-		require.Equal(t, map[int64]string{1001: "users polling failed", 1004: "users polling failed"}, output.Metadata.FailedReasons)
-		require.Equal(t, []int64{1002, 1003}, output.Metadata.SucceededKeys)
+			{
+				name: "multiple infos - mixed scenarios",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+					{
+						ChannelID: "test-channel-2", // Pre-cached
+						Offset:    "200",
+						Table:     "PRODUCTS",
+						Count:     3,
+					},
+					{
+						ChannelID: "test-channel-3",
+						Offset:    "300",
+						Table:     "ORDERS",
+						Count:     7,
+					},
+					{
+						ChannelID: "test-channel-4",
+						Offset:    "400",
+						Table:     "INVENTORY",
+						Count:     2,
+					},
+				},
+				prePopulatedCache: map[string]*importInfo{
+					"test-channel-2": {
+						ChannelID: "test-channel-2",
+						Offset:    "200",
+						Table:     "PRODUCTS",
+						Count:     3,
+						Failed:    false,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return nil, fmt.Errorf("network error")
+					},
+					"test-channel-3": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "250",
+							LatestInsertedOffset: "280", // In progress
+						}, nil
+					},
+					"test-channel-4": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "400", // Completed
+							LatestInsertedOffset: "400",
+						}, nil
+					},
+				},
+				expectedInProgress:     true, // Because channel-3 is in progress
+				expectedCacheSize:      3,    // channel-1 (failed) + channel-2 (pre-existing) + channel-4 (completed)
+				expectedFailedChannels: []string{"test-channel-1"},
+				expectedResetInfos:     []string{"test-channel-3", "test-channel-4"},
+			},
+			{
+				name: "all infos in progress",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+					{
+						ChannelID: "test-channel-2",
+						Offset:    "200",
+						Table:     "PRODUCTS",
+						Count:     3,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "50",
+							LatestInsertedOffset: "75", // In progress
+						}, nil
+					},
+					"test-channel-2": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "150",
+							LatestInsertedOffset: "175", // In progress
+						}, nil
+					},
+				},
+				expectedInProgress: true,
+				expectedCacheSize:  0, // None cached when in progress
+				expectedResetInfos: []string{"test-channel-1", "test-channel-2"},
+			},
+			{
+				name: "all infos completed or failed",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+					{
+						ChannelID: "test-channel-2",
+						Offset:    "200",
+						Table:     "PRODUCTS",
+						Count:     3,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "100", // Completed
+							LatestInsertedOffset: "100",
+						}, nil
+					},
+					"test-channel-2": func() (*model.StatusResponse, error) {
+						return nil, fmt.Errorf("failed to get status")
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      2,
+				expectedFailedChannels: []string{"test-channel-2"},
+				expectedResetInfos:     []string{"test-channel-1"},
+			},
+			{
+				name: "info state reset - failed info becomes successful",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+						Failed:    true,
+						Reason:    "previous error",
+						FailedJobIds: &failedJobIds{
+							Start: 1,
+							End:   10,
+						},
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:                true,
+							Success:              true,
+							Offset:               "100",
+							LatestInsertedOffset: "100",
+						}, nil
+					},
+				},
+				expectedInProgress: false,
+				expectedCacheSize:  1,
+				expectedResetInfos: []string{"test-channel-1"},
+			},
+			{
+				name: "invalid status response - valid=false",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:   false,
+							Success: true,
+							Offset:  "100",
+						}, nil
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      1,
+				expectedFailedChannels: []string{"test-channel-1"},
+			},
+			{
+				name: "invalid status response - success=false",
+				infos: []*importInfo{
+					{
+						ChannelID: "test-channel-1",
+						Offset:    "100",
+						Table:     "USERS",
+						Count:     5,
+					},
+				},
+				mockGetStatusResponses: map[string]func() (*model.StatusResponse, error){
+					"test-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:   true,
+							Success: false,
+							Offset:  "100",
+						}, nil
+					},
+				},
+				expectedInProgress:     false,
+				expectedCacheSize:      1,
+				expectedFailedChannels: []string{"test-channel-1"},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				statsStore, err := memstats.New()
+				require.NoError(t, err)
+				sm := New(config.New(), logger.NOP, statsStore, destination)
+
+				// Pre-populate cache if needed
+				if tt.prePopulatedCache != nil {
+					for channelID, info := range tt.prePopulatedCache {
+						sm.polledImportInfoMap[channelID] = info
+					}
+				}
+
+				// Set up mock API if needed
+				if tt.mockGetStatusResponses != nil {
+					sm.api = &mockAPI{
+						getStatusOutputMap: tt.mockGetStatusResponses,
+					}
+				}
+
+				anyInProgress := sm.processPollImportInfos(context.Background(), tt.infos)
+
+				// Assert expected in progress state
+				assert.Equal(t, tt.expectedInProgress, anyInProgress, "Expected inProgress state mismatch")
+
+				// Assert expected cache size
+				assert.Len(t, sm.polledImportInfoMap, tt.expectedCacheSize, "Expected cache size mismatch")
+
+				// Assert expected failed channels are marked as failed in cache
+				for _, channelID := range tt.expectedFailedChannels {
+					cachedInfo, exists := sm.polledImportInfoMap[channelID]
+					assert.True(t, exists, "Expected failed channel %s to be in cache", channelID)
+					assert.True(t, cachedInfo.Failed, "Expected channel %s to be marked as failed", channelID)
+					assert.NotEmpty(t, cachedInfo.Reason, "Expected channel %s to have failure reason", channelID)
+					assert.Equal(t, tt.expectedFailedJobIds[channelID], cachedInfo.FailedJobIds, "Expected failed job ids mismatch")
+				}
+
+				// Assert expected reset infos have Failed=false and FailedJobIds=nil
+				for _, channelID := range tt.expectedResetInfos {
+					var targetInfo *importInfo
+					for _, info := range tt.infos {
+						if info.ChannelID == channelID {
+							targetInfo = info
+							break
+						}
+					}
+					assert.NotNil(t, targetInfo, "Could not find info with channelID %s", channelID)
+					assert.False(t, targetInfo.Failed, "Expected info %s to have Failed=false", channelID)
+					assert.Nil(t, targetInfo.FailedJobIds, "Expected info %s to have FailedJobIds=nil", channelID)
+				}
+			})
+		}
 	})
 }
 

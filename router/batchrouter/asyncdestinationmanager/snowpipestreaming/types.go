@@ -104,13 +104,19 @@ type (
 		EnableIceberg        bool   `mapstructure:"enableIceberg"`
 	}
 
+	failedJobIds struct {
+		Start int64 `json:"start"`
+		End   int64 `json:"end"`
+	}
+
 	importInfo struct {
-		ChannelID string `json:"channelId"`
-		Offset    string `json:"offset"`
-		Table     string `json:"table"`
-		Failed    bool   `json:"failed"`
-		Reason    string `json:"reason"`
-		Count     int    `json:"count"`
+		ChannelID    string        `json:"channelId"`
+		Offset       string        `json:"offset"`
+		Table        string        `json:"table"`
+		Failed       bool          `json:"failed"`
+		Reason       string        `json:"reason"`
+		Count        int           `json:"count"`
+		FailedJobIds *failedJobIds `json:"failedJobIds"`
 	}
 
 	discardInfo struct {
