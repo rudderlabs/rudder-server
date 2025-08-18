@@ -246,6 +246,7 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 	loadFilesCount := 25
 
 	loadFiles := make([]model.LoadFile, 0, stagingFilesCount*loadFilesCount)
+	uploadID := createUpload(t, ctx, db)
 
 	for i := 0; i < stagingFilesCount; i++ {
 		for j := 0; j < loadFilesCount; j++ {
@@ -259,6 +260,7 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
 				DestinationType:       "RS",
+				UploadID:              uploadID,
 			})
 		}
 	}
