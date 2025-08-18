@@ -300,13 +300,13 @@ func scanJob(scan scanFn, job *Job) error {
 	}
 	if jobTypeRaw.Valid {
 		switch jobTypeRaw.String {
-		case string(JobTypeUpload), string(JobTypeAsync), string(JobTypeUploadV2):
+		case string(JobTypeAsync), string(JobTypeUploadV2):
 			job.Type = JobType(jobTypeRaw.String)
 		default:
 			return fmt.Errorf("scanning: unknown job type: %s", jobTypeRaw.String)
 		}
 	} else {
-		job.Type = JobTypeUpload
+		job.Type = JobTypeUploadV2
 	}
 	if errorRaw.Valid {
 		job.Error = errors.New(errorRaw.String)

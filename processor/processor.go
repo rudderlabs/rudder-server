@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/dedup"
+
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -46,7 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-	"github.com/rudderlabs/rudder-server/services/dedup"
+	deduptypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -113,7 +115,7 @@ type Handle struct {
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	logger                     logger.Logger
 	enrichers                  []enricher.PipelineEnricher
-	dedup                      dedup.Dedup
+	dedup                      deduptypes.Dedup
 	reporting                  reportingtypes.Reporting
 	reportingEnabled           bool
 	backgroundWait             func() error
@@ -178,6 +180,7 @@ type Handle struct {
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		enableOptimizedConnectionDetailsKey       config.ValueLoader[bool]
+		errorDBEnabled                            config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -779,6 +782,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.enableOptimizedConnectionDetailsKey = proc.conf.GetReloadableBoolVar(false, "Processor.enableOptimizedConnectionDetailsKey")
+	proc.config.errorDBEnabled = proc.conf.GetReloadableBoolVar(false, "ErrorDB.enabled")
 }
 
 type connection struct {
@@ -2848,15 +2852,17 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	}
 	if len(in.procErrorJobs) > 0 {
 		g.Go(func() error {
-			err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-				return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
-			}, proc.sendRetryStoreStats)
-			if err != nil {
-				proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
-				proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-				return err
+			if proc.config.errorDBEnabled.Load() {
+				err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+					return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
+				}, proc.sendRetryStoreStats)
+				if err != nil {
+					proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
+					proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
+					return err
+				}
+				proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
 			}
-			proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
 			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 			return nil
 		})

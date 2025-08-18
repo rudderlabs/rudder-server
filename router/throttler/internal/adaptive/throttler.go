@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
@@ -26,22 +25,20 @@ type throttler struct {
 	maxLimit   func() int64
 	staticCost bool
 
-	everyInvalidConfig *kitsync.OnceEvery
-	everyGauge         *kitsync.OnceEvery
-	limitFactorGauge   stats.Gauge
-	rateLimitGauge     stats.Gauge
+	everyGauge       *kitsync.OnceEvery
+	limitFactorGauge stats.Gauge
+	rateLimitGauge   stats.Gauge
 }
 
-func (t *throttler) validConfiguration() bool {
+func (t *throttler) enabled() bool {
 	return t.minLimit.Load() > 0 && t.maxLimit() > 0 && t.window.Load() > 0 && t.minLimit.Load() <= t.maxLimit()
 }
 
 func (t *throttler) CheckLimitReached(ctx context.Context, cost int64) (limited bool, retErr error) {
-	t.updateGauges()
-	if !t.validConfiguration() {
-		t.logInvalidConfigWarning()
+	if !t.enabled() {
 		return false, nil
 	}
+	t.updateGauges()
 
 	allowed, _, err := t.limiter.Allow(ctx, t.costFn(cost), t.GetLimit(), t.getTimeWindowInSeconds(), t.key)
 	if err != nil {
@@ -85,15 +82,6 @@ func (t *throttler) updateGauges() {
 			t.rateLimitGauge.Gauge(t.GetLimit() / window)
 		}
 		t.limitFactorGauge.Gauge(t.getLimitFactor())
-	})
-}
-
-func (t *throttler) logInvalidConfigWarning() {
-	t.everyInvalidConfig.Do(func() {
-		t.log.Warnn("Invalid configuration detected",
-			logger.NewIntField("limit", t.GetLimit()),
-			logger.NewDurationField("window", t.window.Load()),
-		)
 	})
 }
 

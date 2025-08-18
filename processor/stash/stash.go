@@ -52,7 +52,7 @@ type HandleT struct {
 		jobdDBQueryRequestTimeout config.ValueLoader[time.Duration]
 		jobdDBMaxRetries          config.ValueLoader[int]
 		errorStashEnabled         config.ValueLoader[bool]
-		errDBReadBatchSize        config.ValueLoader[int]
+		errorDBReadBatchSize      config.ValueLoader[int]
 		noOfErrStashWorkers       config.ValueLoader[int]
 		maxFailedCountForErrJob   config.ValueLoader[int]
 		pkgLogger                 logger.Logger
@@ -71,7 +71,7 @@ func (st *HandleT) Setup(
 	adaptiveLimitFunc func(int64) int64,
 ) {
 	st.config.errorStashEnabled = config.GetReloadableBoolVar(true, "Processor.errorStashEnabled")
-	st.config.errDBReadBatchSize = config.GetReloadableIntVar(1000, 1, "Processor.errDBReadBatchSize")
+	st.config.errorDBReadBatchSize = config.GetReloadableIntVar(1000, 1, "Processor.errDBReadBatchSize")
 	st.config.noOfErrStashWorkers = config.GetReloadableIntVar(2, 1, "Processor.noOfErrStashWorkers")
 	st.config.maxFailedCountForErrJob = config.GetReloadableIntVar(3, 1, "Processor.maxFailedCountForErrJob")
 	st.config.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Processor.stashPayloadLimit")
@@ -332,7 +332,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			queryParams := jobsdb.GetQueryParams{
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,
-				JobsLimit:                     st.config.errDBReadBatchSize.Load(),
+				JobsLimit:                     st.config.errorDBReadBatchSize.Load(),
 				PayloadSizeLimit:              st.adaptiveLimit(st.config.payloadLimit.Load()),
 			}
 

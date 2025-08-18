@@ -186,7 +186,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDBHandle(dbPool),
 	)
 	defer batchRouterDB.Close()
-	errDBForRead := jobsdb.NewForRead(
+	errorDBForRead := jobsdb.NewForRead(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.procErrorDSLimit),
@@ -194,19 +194,19 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer errDBForRead.Close()
-	errDBForWrite := jobsdb.NewForWrite(
+	defer errorDBForRead.Close()
+	errorDBForWrite := jobsdb.NewForWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	errDBForWrite.Close()
-	if err = errDBForWrite.Start(); err != nil {
-		return fmt.Errorf("could not start errDBForWrite: %w", err)
+	errorDBForWrite.Close()
+	if err = errorDBForWrite.Start(); err != nil {
+		return fmt.Errorf("could not start errorDBForWrite: %w", err)
 	}
-	defer errDBForWrite.Stop()
+	defer errorDBForWrite.Stop()
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -277,8 +277,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		gwDBForProcessor,
 		routerDB,
 		batchRouterDB,
-		errDBForRead,
-		errDBForWrite,
+		errorDBForRead,
+		errorDBForWrite,
 		schemaDB,
 		archivalDB,
 		reporting,
@@ -306,7 +306,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			routerDB,
 		),
-		ProcErrorDB:                errDBForWrite,
+		ProcErrorDB:                errorDBForWrite,
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
 		TransformerFeaturesService: transformerFeaturesService,
@@ -322,7 +322,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			batchRouterDB,
 		),
-		ProcErrorDB:           errDBForWrite,
+		ProcErrorDB:           errorDBForWrite,
 		TransientSources:      transientSources,
 		RsourcesService:       rsourcesService,
 		Debugger:              destinationHandle,
@@ -337,7 +337,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		GatewayDB:        gwDBForProcessor,
 		RouterDB:         routerDB,
 		BatchRouterDB:    batchRouterDB,
-		ErrorDB:          errDBForRead,
+		ErrorDB:          errorDBForRead,
 		SchemaForwarder:  schemaForwarder,
 		EventSchemaDB:    schemaDB,
 		ArchivalDB:       archivalDB,

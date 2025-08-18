@@ -13,11 +13,12 @@ import (
 //	It is located in a cloud storage bucket.
 //	The model includes ownership, file location, and other metadata.
 type StagingFile struct {
-	ID                    int64
-	WorkspaceID           string
-	Location              string
-	SourceID              string
-	DestinationID         string
+	ID            int64
+	WorkspaceID   string
+	Location      string
+	SourceID      string
+	DestinationID string
+	// TODO: Status field is not used anywhere except in tests. Get rid of it.
 	Status                string // enum
 	Error                 error
 	FirstEventAt          time.Time

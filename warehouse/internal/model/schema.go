@@ -35,6 +35,11 @@ type WHSchema struct {
 	ExpiresAt       time.Time
 }
 
+type NamespaceMapping struct {
+	SourceID  string
+	Namespace string
+}
+
 func (t TableSchema) String() string {
 	first := true
 	sb := strings.Builder{}

@@ -43,17 +43,17 @@ func (m *MockloadFilesRepo) EXPECT() *MockloadFilesRepoMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *MockloadFilesRepo) Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error {
+func (m *MockloadFilesRepo) Delete(ctx context.Context, uploadID int64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, uploadID, stagingFileIDs)
+	ret := m.ctrl.Call(m, "Delete", ctx, uploadID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockloadFilesRepoMockRecorder) Delete(ctx, uploadID, stagingFileIDs any) *gomock.Call {
+func (mr *MockloadFilesRepoMockRecorder) Delete(ctx, uploadID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockloadFilesRepo)(nil).Delete), ctx, uploadID, stagingFileIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockloadFilesRepo)(nil).Delete), ctx, uploadID)
 }
 
 // DistinctTableName mocks base method.

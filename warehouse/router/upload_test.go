@@ -792,13 +792,11 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 				stagingFileIDs: []int64{1, 2, 3},
 				logger:         logger.NOP,
 			}
-			var stagingFileId int64
-			stagingFileId, job.upload.ID = createUpload(t, ctx, db)
+			job.upload.ID = createUpload(t, ctx, db)
 			loadFiles := []model.LoadFile{
 				{
-					UploadID:      &job.upload.ID,
-					StagingFileID: stagingFileId,
-					TableName:     "test_table",
+					UploadID:  &job.upload.ID,
+					TableName: "test_table",
 				},
 				{
 					UploadID:  &job.upload.ID,
@@ -825,7 +823,7 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 	}
 }
 
-func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
+func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) int64 {
 	t.Helper()
 	stagingFilesRepo := repo.NewStagingFiles(db, config.New())
 	stagingFile := model.StagingFileWithSchema{
@@ -839,7 +837,7 @@ func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int6
 	upload := model.Upload{}
 	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, upload, stagingFiles)
 	require.NoError(t, err)
-	return stagingFile.ID, uploadID
+	return uploadID
 }
 
 func TestCleanupObjectStorageFiles(t *testing.T) {
@@ -1036,7 +1034,7 @@ func TestUploadJob_SchemaResetState(t *testing.T) {
 		conf:         config.New(),
 	}
 	manager := snowflake.New(config.New(), logger.NOP, stats.NOP)
-	_, uploadId := createUpload(t, context.Background(), db)
+	uploadId := createUpload(t, context.Background(), db)
 	testCases := []struct {
 		name             string
 		isSchemaOutdated bool

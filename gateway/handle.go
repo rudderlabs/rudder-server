@@ -62,7 +62,7 @@ type Handle struct {
 	application     app.App
 	backendConfig   backendconfig.BackendConfig
 	jobsDB          jobsdb.JobsDB
-	errDB           jobsdb.JobsDB
+	errorDB         jobsdb.JobsDB
 	rateLimiter     throttler.Throttler
 	versionHandler  func(w http.ResponseWriter, r *http.Request)
 	rsourcesService rsources.JobService
@@ -132,6 +132,7 @@ type Handle struct {
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
 		enableEventBlocking                  config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
+		errorDBEnabled                       config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers

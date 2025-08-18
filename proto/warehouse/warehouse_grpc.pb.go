@@ -35,6 +35,7 @@ const (
 	Warehouse_GetFirstAbortedUploadInContinuousAbortsByDestination_FullMethodName = "/proto.Warehouse/GetFirstAbortedUploadInContinuousAbortsByDestination"
 	Warehouse_GetSyncLatency_FullMethodName                                       = "/proto.Warehouse/GetSyncLatency"
 	Warehouse_SyncWHSchema_FullMethodName                                         = "/proto.Warehouse/SyncWHSchema"
+	Warehouse_GetDestinationNamespaces_FullMethodName                             = "/proto.Warehouse/GetDestinationNamespaces"
 )
 
 // WarehouseClient is the client API for Warehouse service.
@@ -55,6 +56,7 @@ type WarehouseClient interface {
 	GetFirstAbortedUploadInContinuousAbortsByDestination(ctx context.Context, in *FirstAbortedUploadInContinuousAbortsByDestinationRequest, opts ...grpc.CallOption) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error)
 	GetSyncLatency(ctx context.Context, in *SyncLatencyRequest, opts ...grpc.CallOption) (*SyncLatencyResponse, error)
 	SyncWHSchema(ctx context.Context, in *SyncWHSchemaRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GetDestinationNamespaces(ctx context.Context, in *GetDestinationNamespacesRequest, opts ...grpc.CallOption) (*GetDestinationNamespacesResponse, error)
 }
 
 type warehouseClient struct {
@@ -191,6 +193,15 @@ func (c *warehouseClient) SyncWHSchema(ctx context.Context, in *SyncWHSchemaRequ
 	return out, nil
 }
 
+func (c *warehouseClient) GetDestinationNamespaces(ctx context.Context, in *GetDestinationNamespacesRequest, opts ...grpc.CallOption) (*GetDestinationNamespacesResponse, error) {
+	out := new(GetDestinationNamespacesResponse)
+	err := c.cc.Invoke(ctx, Warehouse_GetDestinationNamespaces_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WarehouseServer is the server API for Warehouse service.
 // All implementations must embed UnimplementedWarehouseServer
 // for forward compatibility
@@ -209,6 +220,7 @@ type WarehouseServer interface {
 	GetFirstAbortedUploadInContinuousAbortsByDestination(context.Context, *FirstAbortedUploadInContinuousAbortsByDestinationRequest) (*FirstAbortedUploadInContinuousAbortsByDestinationResponse, error)
 	GetSyncLatency(context.Context, *SyncLatencyRequest) (*SyncLatencyResponse, error)
 	SyncWHSchema(context.Context, *SyncWHSchemaRequest) (*emptypb.Empty, error)
+	GetDestinationNamespaces(context.Context, *GetDestinationNamespacesRequest) (*GetDestinationNamespacesResponse, error)
 	mustEmbedUnimplementedWarehouseServer()
 }
 
@@ -257,6 +269,9 @@ func (UnimplementedWarehouseServer) GetSyncLatency(context.Context, *SyncLatency
 }
 func (UnimplementedWarehouseServer) SyncWHSchema(context.Context, *SyncWHSchemaRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SyncWHSchema not implemented")
+}
+func (UnimplementedWarehouseServer) GetDestinationNamespaces(context.Context, *GetDestinationNamespacesRequest) (*GetDestinationNamespacesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetDestinationNamespaces not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -523,6 +538,24 @@ func _Warehouse_SyncWHSchema_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Warehouse_GetDestinationNamespaces_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDestinationNamespacesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WarehouseServer).GetDestinationNamespaces(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Warehouse_GetDestinationNamespaces_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WarehouseServer).GetDestinationNamespaces(ctx, req.(*GetDestinationNamespacesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Warehouse_ServiceDesc is the grpc.ServiceDesc for Warehouse service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -585,6 +618,10 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SyncWHSchema",
 			Handler:    _Warehouse_SyncWHSchema_Handler,
+		},
+		{
+			MethodName: "GetDestinationNamespaces",
+			Handler:    _Warehouse_GetDestinationNamespaces_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
