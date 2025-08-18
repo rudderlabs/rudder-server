@@ -795,19 +795,19 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 			job.upload.ID = createUpload(t, ctx, db)
 			loadFiles := []model.LoadFile{
 				{
-					UploadID:  &job.upload.ID,
+					UploadID:  job.upload.ID,
 					TableName: "test_table",
 				},
 				{
-					UploadID:  &job.upload.ID,
+					UploadID:  job.upload.ID,
 					TableName: "test_table2",
 				},
 				{
-					UploadID:  &job.upload.ID,
+					UploadID:  job.upload.ID,
 					TableName: "test_table2",
 				},
 				{
-					UploadID:  &job.upload.ID,
+					UploadID:  job.upload.ID,
 					TableName: "test_table2",
 				},
 			}

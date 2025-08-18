@@ -117,7 +117,7 @@ func TestLoadFiles_GetByID(t *testing.T) {
 
 	uploadID := createUpload(t, ctx, db)
 	loadFiles := lo.RepeatBy(10, func(i int) model.LoadFile {
-		file := model.LoadFile{
+		return model.LoadFile{
 			TableName:             "table_name",
 			Location:              "s3://bucket/path/to/file",
 			TotalRows:             10,
@@ -127,12 +127,8 @@ func TestLoadFiles_GetByID(t *testing.T) {
 			SourceID:              "source_id",
 			DestinationID:         "destination_id",
 			DestinationType:       "RS",
+			UploadID:              uploadID,
 		}
-		// Not adding uploadID for first file to test NULL value
-		if i != 0 {
-			file.UploadID = uploadID
-		}
-		return file
 	})
 	require.NoError(t, r.Insert(ctx, loadFiles))
 
