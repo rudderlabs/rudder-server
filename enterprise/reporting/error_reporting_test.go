@@ -63,7 +63,7 @@ func TestShouldReport(t *testing.T) {
 }
 
 func TestCleanUpErrorMessage(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	ext := NewErrorDetailExtractor(logger.NOP, config.New())
 	type testCase struct {
 		inputStr string
 		expected string
@@ -250,7 +250,9 @@ func TestErrorDetailsReport(t *testing.T) {
 }
 
 func TestGetErrorMessageFromResponse(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	conf := config.New()
+	conf.Set("Reporting.errorReporting.maxErrorMessageLength", 10000) // Set high enough to avoid truncation
+	ext := NewErrorDetailExtractor(logger.NOP, conf)
 
 	for i, tc := range tcs {
 		t.Run(fmt.Sprintf("payload-%v", i), func(t *testing.T) {
@@ -261,7 +263,9 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 }
 
 func TestGetErrorMessage_NestedJSONResponse(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	conf := config.New()
+	conf.Set("Reporting.errorReporting.maxErrorMessageLength", 10000) // Set high enough to avoid truncation
+	ext := NewErrorDetailExtractor(logger.NOP, conf)
 
 	testCases := []struct {
 		name     string
@@ -387,7 +391,9 @@ func TestGetErrorMessage_NestedJSONResponse(t *testing.T) {
 }
 
 func TestGetErrorMessage_ComplexNestedStructures(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	conf := config.New()
+	conf.Set("Reporting.errorReporting.maxErrorMessageLength", 10000) // Set high enough to avoid truncation
+	ext := NewErrorDetailExtractor(logger.NOP, conf)
 
 	testCases := []struct {
 		name     string
@@ -429,7 +435,9 @@ func TestGetErrorMessage_ComplexNestedStructures(t *testing.T) {
 }
 
 func TestGetErrorMessage_EdgeCases(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	conf := config.New()
+	conf.Set("Reporting.errorReporting.maxErrorMessageLength", 10000) // Set high enough to avoid truncation
+	ext := NewErrorDetailExtractor(logger.NOP, conf)
 
 	testCases := []struct {
 		name     string
@@ -697,7 +705,7 @@ var tcs = []getValTc{
 		expected: `You're creating a duplicate record. We recommend you use an existing record instead.`,
 	},
 	{
-		inputStr: `{"response":"\u003c!--\n  ~ Copyright (C) 2010-2021 Evergage, Inc.\n  ~ All rights reserved.\n  --\u003e\n\n\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"en\"\u003e\n\u003chead\u003e\n    \u003cmeta charset=\"UTF-8\"\u003e\n    \u003ctitle\u003eSalesforce Personalization\u003c/title\u003e\n    \u003clink rel=\"icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003clink rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003cstyle\u003e\n        body { font-family: Salesforce Sans,Arial,sans-serif; text-align: center; padding: 50px; background-color:#fff; }\n        h1 { font-size: 1.25rem; color: #080707; text-align: center; margin-top: -0.5rem; }\n        p { font-size: 0.8125rem; color: #3E3E3C; text-align:center; }\n    \u003c/style\u003e\n\u003c/head\u003e\n\u003cbody\u003e\n    \u003cdiv align=”center”\u003e\n        \u003cimg src=\"/PageNotAvailable.svg\" /\u003e\n    \u003c/div\u003e\n    \u003cdiv align=”center”\u003e\n        \u003ch1\u003eThe page you want isn't available.\u003c/h1\u003e\n        \u003cp\u003eTo find the page you want, use the main navigation.\u003c/p\u003e\n    \u003c/div\u003e\n\u003c/body\u003e\n\u003c/html\u003e","firstAttemptedAt":"2024-09-02T06:57:13.829Z","content-type":"text/html"}`,
+		inputStr: `{"response":"\u003c!--\n  ~ Copyright (C) 2010-2021 Evergage, Inc.\n  ~ All rights reserved.\n  --\u003e\n\n\u003c!DOCTYPE html\u003e\n\u003chtml lang=\"en\"\u003e\n\u003chead\u003e\n    \u003cmeta charset=\"UTF-8\"\u003e\n    \u003ctitle\u003eSalesforce Personalization\u003c/title\u003e\n    \u003clink rel=\"icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003clink rel=\"shortcut icon\" type=\"image/x-icon\" href=\"https://www.salesforce.com/etc/designs/sfdc-www/en_us/favicon.ico\"/\u003e\n    \u003cstyle\u003e\n        body { font-family: Salesforce Sans,Arial,sans-serif; text-align: center; padding: 50px; background-color:#fff; }\n        h1 { font-size: 1.25rem; color: #080707; text-align: center; margin-top: -0.5rem; }\n        p { font-size: 0.8125rem; color: #3E3E3C; text-align:center; }\n    \u003c/style\u003e\n\u003c/head\u003e\n\u003cbody\u003e\n    \u003cdiv align=center\u003e\n        \u003cimg src=\"/PageNotAvailable.svg\" /\u003e\n    \u003c/div\u003e\n    \u003cdiv align=center\u003e\n        \u003ch1\u003eThe page you want isn't available.\u003c/h1\u003e\n        \u003cp\u003eTo find the page you want, use the main navigation.\u003c/p\u003e\n    \u003c/div\u003e\n\u003c/body\u003e\n\u003c/html\u003e","firstAttemptedAt":"2024-09-02T06:57:13.829Z","content-type":"text/html"}`,
 		expected: "The page you want isn't available.\r\n\r\n To find the page you want, use the main navigation.\r\n\r\n ",
 	},
 	{
@@ -739,7 +747,9 @@ var tcs = []getValTc{
 }
 
 func BenchmarkJsonNestedSearch(b *testing.B) {
-	extractor := NewErrorDetailExtractor(logger.NOP)
+	conf := config.New()
+	conf.Set("Reporting.errorReporting.maxErrorMessageLength", 10000) // Set high enough to avoid truncation
+	extractor := NewErrorDetailExtractor(logger.NOP, conf)
 
 	b.Run("JsonNested used fn", func(b *testing.B) {
 		for i := 0; i < len(tcs); i++ {
@@ -994,7 +1004,7 @@ func TestAggregationLogic(t *testing.T) {
 }
 
 func TestExtractorHandle_GetErrorCode_WarehouseDestinations(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	ext := NewErrorDetailExtractor(logger.NOP, config.New())
 
 	testCases := []struct {
 		name         string
@@ -1089,7 +1099,7 @@ func TestExtractorHandle_GetErrorCode_WarehouseDestinations(t *testing.T) {
 }
 
 func TestExtractorHandle_GetErrorCode_AllWarehouseDestinations(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	ext := NewErrorDetailExtractor(logger.NOP, config.New())
 	errorMessage := "API version deprecated and no longer supported"
 	statTags := map[string]string{}
 
@@ -1105,7 +1115,7 @@ func TestExtractorHandle_GetErrorCode_AllWarehouseDestinations(t *testing.T) {
 }
 
 func TestExtractorHandle_GetErrorCode_EdgeCases(t *testing.T) {
-	ext := NewErrorDetailExtractor(logger.NOP)
+	ext := NewErrorDetailExtractor(logger.NOP, config.New())
 
 	testCases := []struct {
 		name         string

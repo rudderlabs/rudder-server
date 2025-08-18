@@ -85,6 +85,7 @@ type ErrorDetailReporter struct {
 	httpClient *http.Client
 
 	errorDetailExtractor *ExtractorHandle
+	errorRateLimiter     *ErrorRateLimiter
 
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
@@ -123,7 +124,8 @@ func NewErrorDetailReporter(
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
-	extractor := NewErrorDetailExtractor(log)
+	extractor := NewErrorDetailExtractor(log, conf)
+	errorRateLimiter := NewErrorRateLimiter(log, conf)
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -160,6 +162,7 @@ func NewErrorDetailReporter(
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
+		errorRateLimiter:     errorRateLimiter,
 		maxOpenConnections:   maxOpenConnections,
 		stats:                stats,
 		config:               conf,
@@ -199,6 +202,9 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 
 	return func() {
+		// Start error rate limiter cleanup routine
+		edr.errorRateLimiter.StartCleanup(edr.ctx)
+
 		edr.g.Go(func() error {
 			edr.mainLoop(edr.ctx, c)
 			return nil
@@ -268,8 +274,30 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			obskit.DestinationType(destinationDetail.destType),
 			logger.NewStringField("destinationDefinitionID", destinationDetail.destinationDefinitionID))
 
+		// Early check: if bucket is full, skip error extraction entirely
+		if edr.errorRateLimiter.IsBucketFull(ctx, metric.SourceID, metric.DestinationID, metric.StatusDetail.EventType, metric.PU) {
+			edr.log.Debugn("Error rate limit bucket full, skipping error extraction",
+				obskit.SourceID(metric.SourceID),
+				obskit.DestinationID(metric.DestinationID),
+				logger.NewStringField("eventType", metric.StatusDetail.EventType),
+				logger.NewStringField("reportedBy", metric.PU),
+			)
+			continue
+		}
+
 		// extract error-message & error-code
 		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags, destinationDetail.destType)
+
+		// Check if error should be reported based on rate limiting
+		if !edr.errorRateLimiter.ShouldReport(ctx, metric.SourceID, metric.DestinationID, metric.StatusDetail.EventType, metric.PU, metric.StatusDetail.ErrorDetails.Message) {
+			edr.log.Debugn("Error rate limited, skipping report",
+				obskit.SourceID(metric.SourceID),
+				obskit.DestinationID(metric.DestinationID),
+				logger.NewStringField("eventType", metric.StatusDetail.EventType),
+				logger.NewStringField("reportedBy", metric.PU),
+			)
+			continue
+		}
 
 		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
 			"errorCode":     metric.StatusDetail.ErrorDetails.Code,
