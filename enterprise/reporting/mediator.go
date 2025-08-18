@@ -81,6 +81,7 @@ func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.L
 func (rm *Mediator) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	for _, reporter := range rm.reporters {
 		if err := reporter.Report(ctx, metrics, txn); err != nil {
+			rm.log.Errorn("error occurred while reporting metrics", obskit.Error(err))
 			return err
 		}
 	}

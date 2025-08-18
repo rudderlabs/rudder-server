@@ -93,9 +93,10 @@ var (
 type ExtractorHandle struct {
 	log              logger.Logger
 	ErrorMessageKeys []string // the keys where in we may have error message
+	maxMessageLength config.ValueLoader[int]
 }
 
-func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
+func NewErrorDetailExtractor(log logger.Logger, conf *config.Config) *ExtractorHandle {
 	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
@@ -103,6 +104,7 @@ func NewErrorDetailExtractor(log logger.Logger) *ExtractorHandle {
 	extractor := &ExtractorHandle{
 		ErrorMessageKeys: defaultErrorMessageKeys,
 		log:              log.Child("ErrorDetailExtractor"),
+		maxMessageLength: conf.GetReloadableIntVar(100, 10, "Reporting.errorReporting.maxErrorMessageLength"),
 	}
 	return extractor
 }
@@ -218,8 +220,23 @@ func getHTMLErrorMessage(erResStr string) string {
 	return html2text.HTML2Text(erResStr)
 }
 
+// truncateMessage truncates error message to the configured maximum length
+func (ext *ExtractorHandle) truncateMessage(message string) string {
+	maxLength := ext.maxMessageLength.Load()
+	if len(message) <= maxLength {
+		return message
+	}
+	ext.log.Debugn("Truncating message",
+		logger.NewStringField("message", message),
+		logger.NewIntField("messageLength", int64(len(message))),
+		logger.NewIntField("maxLength", int64(maxLength)))
+	return message[:maxLength] + "..."
+}
+
 func (ext *ExtractorHandle) GetErrorMessage(sampleResponse string) string {
-	return ext.getSimpleMessage(sampleResponse)
+	message := ext.getSimpleMessage(sampleResponse)
+	message = ext.CleanUpErrorMessage(message)
+	return ext.truncateMessage(message)
 }
 
 func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
@@ -286,7 +303,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 	getMessage := func(msgKeys []string, response interface{}) string {
 		if result := findFirstExistingKey(msgKeys, response); result != nil {
 			if s, ok := result.(string); ok {
-				return strings.TrimSpace(s)
+				return s
 			}
 		}
 		return ""
@@ -308,7 +325,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 		}
 	}
 	msg = getMessage(messageKeys, resp)
-	if len(strings.TrimSpace(msg)) != 0 {
+	if len(msg) != 0 {
 		return msg
 	}
 
@@ -359,6 +376,9 @@ func (ext *ExtractorHandle) CleanUpErrorMessage(errMsg string) string {
 	regexdMsg = notWordRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
 	regexdMsg = idRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
 	regexdMsg = spaceRegex.ReplaceAllLiteralString(regexdMsg, spaceStr)
+
+	// Trim whitespace only
+	regexdMsg = strings.TrimSpace(regexdMsg)
 
 	return regexdMsg
 }
