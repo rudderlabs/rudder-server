@@ -332,7 +332,6 @@ func (s *eventDropScenario) runRudderServer(ctx context.Context, t *testing.T, p
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.maxLoopSleep"), "10ms")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "AdminServer.enabled"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "BotEnrichment.enabled"), "true")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "enableEventBlocking"), "true")
 
 	defer func() {
 		if r := recover(); r != nil {
