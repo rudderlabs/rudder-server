@@ -85,6 +85,7 @@ type ErrorDetailReporter struct {
 	httpClient *http.Client
 
 	errorDetailExtractor *ExtractorHandle
+	errorRateLimiter     ErrorRateLimiter
 
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
@@ -92,6 +93,7 @@ type ErrorDetailReporter struct {
 	eventSamplingEnabled        config.ValueLoader[bool]
 	eventSamplingDuration       config.ValueLoader[time.Duration]
 	eventSampler                event_sampler.EventSampler
+	groupingThreshold           config.ValueLoader[float64]
 
 	stats  stats.Stats
 	config *config.Config
@@ -123,7 +125,13 @@ func NewErrorDetailReporter(
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
-	extractor := NewErrorDetailExtractor(log)
+	extractor := NewErrorDetailExtractor(log, conf)
+	var errorRateLimiter ErrorRateLimiter
+	if conf.GetBool("Reporting.errorReporting.rateLimit.enabled", false) {
+		log.Infon("error rate limiter is enabled, initializing")
+		errorRateLimiter = NewErrorRateLimiter(log, conf)
+	}
+	groupingThreshold := conf.GetReloadableFloat64Var(0.75, "Reporting.errorReporting.grouping.similarityThreshold")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -152,6 +160,7 @@ func NewErrorDetailReporter(
 		eventSamplingEnabled:  eventSamplingEnabled,
 		eventSamplingDuration: eventSamplingDuration,
 		eventSampler:          eventSampler,
+		groupingThreshold:     groupingThreshold,
 
 		namespace:  config.GetKubeNamespace(),
 		instanceID: conf.GetString("INSTANCE_ID", "1"),
@@ -160,6 +169,7 @@ func NewErrorDetailReporter(
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
+		errorRateLimiter:     errorRateLimiter,
 		maxOpenConnections:   maxOpenConnections,
 		stats:                stats,
 		config:               conf,
@@ -238,85 +248,126 @@ func shouldReport(metric types.PUReportedMetric) bool {
 }
 
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
-	edr.log.Debugn("[ErrorDetailReport] Report method called")
-	if len(metrics) == 0 {
+	// Extract error details and filter metrics that should be reported
+	reportableMetrics := edr.extractErrorDetailsAndFilterMetrics(metrics)
+
+	// Early exit if no metrics to report
+	if len(reportableMetrics) == 0 {
 		return nil
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
-	if err != nil {
-		edr.log.Errorn("Failed during statement preparation", obskit.Error(err))
-		return fmt.Errorf("preparing statement: %v", err)
-	}
-	defer func() { _ = stmt.Close() }()
+	// Group errors by connection details
+	connectionGroups := edr.groupByConnection(reportableMetrics)
 
-	reportedAt := time.Now().UTC().Unix() / 60
+	// Apply rate limiting after grouping (modifies connectionGroups in place)
+	if edr.errorRateLimiter != nil {
+		connectionGroups = edr.applyRateLimiting(ctx, connectionGroups)
+	}
+
+	// Merge metrics by LCS similarity within the same connection group
+	mergedMetricGroups := edr.mergeMetricGroupsByErrorMessage(connectionGroups)
+
+	// Write grouped errors to database
+	return edr.writeGroupedErrors(ctx, mergedMetricGroups, txn)
+}
+
+func (edr *ErrorDetailReporter) extractErrorDetailsAndFilterMetrics(metrics []*types.PUReportedMetric) []*types.PUReportedMetric {
+	var reportableMetrics []*types.PUReportedMetric
+
 	for _, metric := range metrics {
-		metric := *metric
-		if !shouldReport(metric) {
+		if !shouldReport(*metric) {
 			continue
 		}
 
 		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 		if edr.IsPIIReportingDisabled(workspaceID) {
-			edr.log.Debugn("PII setting is disabled for workspaceId:", obskit.WorkspaceID(workspaceID))
-			return nil
+			continue
 		}
-		destinationDetail := edr.configSubscriber.GetDestDetail(metric.DestinationID)
-		edr.log.Debugn("DestinationId & DestDetail details",
-			obskit.DestinationID(metric.DestinationID),
-			obskit.DestinationType(destinationDetail.destType),
-			logger.NewStringField("destinationDefinitionID", destinationDetail.destinationDefinitionID))
 
-		// extract error-message & error-code
+		// EXTRACT ERROR DETAILS - This is where error messages are created from SampleResponse
+		destinationDetail := edr.configSubscriber.GetDestDetail(metric.DestinationID)
 		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags, destinationDetail.destType)
 
+		if metric.StatusDetail.ErrorDetails.Message == "" {
+			continue
+		}
+
+		reportableMetrics = append(reportableMetrics, metric.DeepCopy())
+	}
+
+	return reportableMetrics
+}
+
+func (edr *ErrorDetailReporter) applyRateLimiting(ctx context.Context, connectionGroups map[string][]*types.PUReportedMetric) map[string][]*types.PUReportedMetric {
+	for groupKey, groupMetrics := range connectionGroups {
+		// Update all metrics in the group with the canonical error message
+		for _, metric := range groupMetrics {
+			metric.StatusDetail.ErrorDetails.Message = edr.errorRateLimiter.CanonicalizeError(ctx, groupKey, metric.StatusDetail.ErrorDetails.Message)
+		}
+	}
+	return connectionGroups
+}
+
+func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups map[string][]*types.PUReportedMetric, txn *Tx) error {
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
+	if err != nil {
+		return fmt.Errorf("preparing statement: %v", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, groupMetrics := range groups {
+		// Use first metric as representative for the group
+		representativeMetric := groupMetrics[0]
+
+		// Get workspace ID and destination details
+		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(representativeMetric.SourceID)
+		destinationDetail := edr.configSubscriber.GetDestDetail(representativeMetric.DestinationID)
+		// Calculate total count for the group
+		var totalCount int64
+		// Record stats
+		for _, metric := range groupMetrics {
+			totalCount += metric.StatusDetail.Count
+
+			sampleEvent, sampleResponse, err := getSampleWithEventSampling(*metric, time.Now().UTC().Unix()/60, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
+			if err != nil {
+				return fmt.Errorf("event sampling error: %v", err)
+			}
+
+			_, err = stmt.Exec(
+				workspaceID,
+				edr.namespace,
+				edr.instanceID,
+				metric.SourceDefinitionID,
+				metric.SourceID,
+				destinationDetail.destinationDefinitionID,
+				metric.DestinationID,
+				destinationDetail.destType,
+				metric.PU,
+				time.Now().UTC().Unix()/60, // ReportedAt
+				totalCount,
+				metric.StatusDetail.StatusCode,
+				metric.StatusDetail.EventType,
+				metric.StatusDetail.ErrorDetails.Code,
+				metric.StatusDetail.ErrorDetails.Message,
+				sampleResponse,
+				getStringifiedSampleEvent(sampleEvent),
+				metric.StatusDetail.EventName,
+			)
+			if err != nil {
+				return fmt.Errorf("executing statement: %v", err)
+			}
+		}
 		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
-			"errorCode":     metric.StatusDetail.ErrorDetails.Code,
+			"errorCode":     representativeMetric.StatusDetail.ErrorDetails.Code,
 			"workspaceId":   workspaceID,
 			"destType":      destinationDetail.destType,
-			"sourceId":      metric.SourceID,
-			"destinationId": metric.DestinationID,
-		}).Count(int(metric.StatusDetail.Count))
-
-		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
-		if err != nil {
-			return err
-		}
-
-		_, err = stmt.Exec(
-			workspaceID,
-			edr.namespace,
-			edr.instanceID,
-			metric.SourceDefinitionID,
-			metric.SourceID,
-			destinationDetail.destinationDefinitionID,
-			metric.DestinationID,
-			destinationDetail.destType,
-			metric.PU,
-			reportedAt,
-			metric.StatusDetail.Count,
-			metric.StatusDetail.StatusCode,
-			metric.StatusDetail.EventType,
-			metric.StatusDetail.ErrorDetails.Code,
-			metric.StatusDetail.ErrorDetails.Message,
-			sampleResponse,
-			getStringifiedSampleEvent(sampleEvent),
-			metric.StatusDetail.EventName,
-		)
-		if err != nil {
-			edr.log.Errorn("Failed during statement execution(each metric)", obskit.Error(err))
-			return fmt.Errorf("executing statement: %v", err)
-		}
+			"sourceId":      representativeMetric.SourceID,
+			"destinationId": representativeMetric.DestinationID,
+		}).Count(int(totalCount))
 	}
 
 	_, err = stmt.ExecContext(ctx)
-	if err != nil {
-		edr.log.Errorn("Failed during statement execution", obskit.Error(err))
-		return fmt.Errorf("executing final statement: %v", err)
-	}
-
-	return nil
+	return err
 }
 
 func (ed *ErrorDetailReporter) IsPIIReportingDisabled(workspaceID string) bool {
@@ -395,6 +446,13 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	lastReportedAtTime.Store(time.Now())
 
 	g, ctx := errgroup.WithContext(ctx)
+
+	if edr.errorRateLimiter != nil {
+		edr.log.Infon("error rate limiter is enabled, starting cleanup worker")
+		g.Go(func() error {
+			return edr.errorRateLimiter.StartCleanup(edr.ctx)
+		})
+	}
 
 	g.Go(func() error {
 		return edr.emitLagMetric(ctx, c, &lastReportedAtTime)

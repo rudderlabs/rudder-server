@@ -11,6 +11,7 @@ replace (
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
+	github.com/rudderlabs/rudder-go-kit => github.com/rudderlabs/rudder-go-kit v0.61.0
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.3
 	golang.org/x/image => golang.org/x/image v0.24.0
@@ -88,7 +89,7 @@ require (
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
 	github.com/rudderlabs/keydb v0.2.1-alpha
-	github.com/rudderlabs/rudder-go-kit v0.60.0
+	github.com/rudderlabs/rudder-go-kit v0.61.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.4
 	github.com/rudderlabs/rudder-schemas v0.7.0
 	github.com/rudderlabs/rudder-transformer/go v0.0.0-20250707171833-9cd525669b1b
@@ -369,7 +370,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gotest.tools/gotestsum v1.12.0 // indirect
+	gotest.tools/gotestsum v1.12.3 // indirect
 	k8s.io/apimachinery v0.32.3 // indirect
 	k8s.io/client-go v0.32.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect

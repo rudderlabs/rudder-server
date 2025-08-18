@@ -190,6 +190,62 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
+// DeepCopy creates a deep copy of PUReportedMetric
+func (p *PUReportedMetric) DeepCopy() *PUReportedMetric {
+	if p == nil {
+		return nil
+	}
+
+	result := &PUReportedMetric{
+		ConnectionDetails: p.ConnectionDetails,
+		PUDetails:         p.PUDetails,
+	}
+
+	// Deep copy StatusDetail if it exists
+	if p.StatusDetail != nil {
+		result.StatusDetail = &StatusDetail{
+			Status:         p.StatusDetail.Status,
+			Count:          p.StatusDetail.Count,
+			StatusCode:     p.StatusDetail.StatusCode,
+			SampleResponse: p.StatusDetail.SampleResponse,
+			EventName:      p.StatusDetail.EventName,
+			EventType:      p.StatusDetail.EventType,
+			ErrorType:      p.StatusDetail.ErrorType,
+			ViolationCount: p.StatusDetail.ViolationCount,
+			ErrorDetails:   p.StatusDetail.ErrorDetails,
+		}
+
+		// Deep copy SampleEvent (json.RawMessage)
+		if p.StatusDetail.SampleEvent != nil {
+			result.StatusDetail.SampleEvent = make(json.RawMessage, len(p.StatusDetail.SampleEvent))
+			copy(result.StatusDetail.SampleEvent, p.StatusDetail.SampleEvent)
+		}
+
+		// Deep copy StatTags map
+		if p.StatusDetail.StatTags != nil {
+			result.StatusDetail.StatTags = make(map[string]string, len(p.StatusDetail.StatTags))
+			for k, v := range p.StatusDetail.StatTags {
+				result.StatusDetail.StatTags[k] = v
+			}
+		}
+
+		// Deep copy FailedMessages slice
+		if p.StatusDetail.FailedMessages != nil {
+			result.StatusDetail.FailedMessages = make([]*FailedMessage, len(p.StatusDetail.FailedMessages))
+			for i, msg := range p.StatusDetail.FailedMessages {
+				if msg != nil {
+					result.StatusDetail.FailedMessages[i] = &FailedMessage{
+						MessageID:  msg.MessageID,
+						ReceivedAt: msg.ReceivedAt,
+					}
+				}
+			}
+		}
+	}
+
+	return result
+}
+
 func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 	return &PUDetails{
 		InPU:       inPU,
