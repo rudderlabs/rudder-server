@@ -19,7 +19,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -177,15 +176,19 @@ type mockThrottlerFactory struct {
 	count *atomic.Int64
 }
 
-func (m *mockThrottlerFactory) Get(destName, destID string) throttler.Throttler {
+func (m *mockThrottlerFactory) Get(destName, destID, eventType string) throttler.Throttler {
 	m.count.Add(1)
-	return throttler.NewNoOpThrottlerFactory().Get(destName, destID)
+	return throttler.NewNoOpThrottlerFactory().Get(destName, destID, eventType)
 }
 
 func (m *mockThrottlerFactory) Shutdown() {}
 
 func TestBackoff(t *testing.T) {
 	destinationID := "destination"
+	parameters := routerutils.JobParameters{
+		DestinationID: destinationID,
+		EventType:     "track",
+	}
 	t.Run("nextAttemptAfter", func(t *testing.T) {
 		minBackoff := 10 * time.Second
 		maxBackoff := 300 * time.Second
@@ -276,27 +279,27 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = false
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobBackoff)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(2), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.NotNil(t, slot)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
@@ -309,29 +312,29 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobBackoff)
 			require.Equal(t, int64(0), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(1), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob2, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(2), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob3, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
 			slotToRelease := slot
 			defer func() { slotToRelease.slot.Release() }()
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob4, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 			require.Equal(t, int64(3), r.throttlerFactory.(*mockThrottlerFactory).count.Load())
@@ -345,7 +348,7 @@ func TestBackoff(t *testing.T) {
 			r.guaranteeUserEventOrder = true
 			workers[0].inputReservations = 0
 
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err, "drain job should be accepted even if it's to be backed off")
 			require.Equal(
@@ -355,7 +358,7 @@ func TestBackoff(t *testing.T) {
 				"throttle check shouldn't even happen for drain job",
 			)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(
@@ -365,7 +368,7 @@ func TestBackoff(t *testing.T) {
 				"throttle check shouldn't even happen for drain job",
 			)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
 			require.NoError(t, err)
 			require.Equal(
@@ -375,7 +378,7 @@ func TestBackoff(t *testing.T) {
 				"throttle check shouldn't even happen for drain job",
 			)
 
-			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err = r.findWorkerSlot(context.Background(), workers, noBackoffJob1, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrWorkerNoSlot)
 			require.Equal(
@@ -390,7 +393,7 @@ func TestBackoff(t *testing.T) {
 			defer func() { r.backgroundCtx = context.Background() }()
 			r.backgroundCtx, r.backgroundCancel = context.WithCancel(context.Background())
 			r.backgroundCancel()
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrContextCancelled)
 		})
@@ -405,7 +408,7 @@ func TestBackoff(t *testing.T) {
 					RetryTime:  time.Now().Add(1 * time.Hour),
 				},
 			}
-			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, destinationID, "", map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID}: {}})
+			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID}: {}})
 			require.Nil(t, slot)
 			require.ErrorIs(t, err, types.ErrJobOrderBlocked)
 		})
@@ -428,8 +431,7 @@ func TestBackoff(t *testing.T) {
 				context.Background(),
 				workers,
 				job,
-				destinationID,
-				"",
+				parameters,
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.NoError(t, err)
@@ -440,8 +442,7 @@ func TestBackoff(t *testing.T) {
 				context.Background(),
 				workers,
 				job,
-				destinationID,
-				"",
+				parameters,
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.Nil(t, slot)
@@ -466,8 +467,7 @@ func TestBackoff(t *testing.T) {
 				context.Background(),
 				workers,
 				job,
-				destinationID,
-				"",
+				parameters,
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.NoError(t, err)
@@ -478,8 +478,7 @@ func TestBackoff(t *testing.T) {
 				context.Background(),
 				workers,
 				job,
-				destinationID,
-				"",
+				parameters,
 				map[eventorder.BarrierKey]struct{}{{UserID: job.UserID, DestinationID: destinationID, WorkspaceID: job.WorkspaceId}: {}},
 			)
 			require.Nil(t, slot)
@@ -700,20 +699,6 @@ var _ = Describe("router", func() {
 
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(1).Return(&routerutils.SendPostResponse{StatusCode: 400, ResponseBody: []byte("")})
 
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(parameters["stage"]).To(Equal("router"))
-					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
-					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
-					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
-				})
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -793,24 +778,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
-					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
-					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -828,7 +797,7 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
-			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+			Eventually(func() bool { return routerAborted }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts jobs that bear a abort configured jobRunId", func() {
@@ -884,24 +853,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
-					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
-					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -919,7 +872,7 @@ var _ = Describe("router", func() {
 			defer worker.Stop()
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(unprocessedJobsList)))
-			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
+			Eventually(func() bool { return routerAborted }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("aborts events that have reached max retries", func() {
@@ -982,24 +935,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(jobs[0].JobID))
-					Expect(job.CustomVal).To(Equal(jobs[0].CustomVal))
-					Expect(job.UserID).To(Equal(jobs[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1029,9 +966,9 @@ var _ = Describe("router", func() {
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(jobs)))
 			Eventually(func() bool {
-				return routerAborted && procErrorStored
+				return routerAborted
 			}, 60*time.Second, 10*time.Millisecond).
-				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
+				Should(Equal(true), fmt.Sprintf("Router should abort (actual: %t)", routerAborted))
 		})
 
 		It("aborts sources events that have reached max retries - different limits", func() {
@@ -1103,24 +1040,8 @@ var _ = Describe("router", func() {
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobs}}, nil)
 
 			var routerAborted bool
-			var procErrorStored bool
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-					job := jobList[0]
-					var parameters map[string]interface{}
-					err := jsonrs.Unmarshal(job.Parameters, &parameters)
-					if err != nil {
-						panic(err)
-					}
-
-					Expect(job.JobID).To(Equal(jobs[0].JobID))
-					Expect(job.CustomVal).To(Equal(jobs[0].CustomVal))
-					Expect(job.UserID).To(Equal(jobs[0].UserID))
-					procErrorStored = true
-				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
@@ -1150,9 +1071,9 @@ var _ = Describe("router", func() {
 			Expect(worker.Work()).To(BeTrue())
 			Expect(worker.pickupCount).To(Equal(len(jobs)))
 			Eventually(func() bool {
-				return routerAborted && procErrorStored
+				return routerAborted
 			}, 60*time.Second, 10*time.Millisecond).
-				Should(Equal(true), fmt.Sprintf("Router should both abort (actual: %t) and store to proc error (actual: %t)", routerAborted, procErrorStored))
+				Should(Equal(true), fmt.Sprintf("Router should abort (actual: %t)", routerAborted))
 		})
 		It("aborts jobs if destination is not found in config", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandle(c.mockCtrl)
@@ -1216,8 +1137,6 @@ var _ = Describe("router", func() {
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 3)
 				}).Return(nil).After(callAllJobs)
-
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Len(1)).Times(1)
 
 			done := make(chan struct{})
 			c.mockRouterJobsDB.EXPECT().

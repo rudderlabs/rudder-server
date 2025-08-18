@@ -52,7 +52,7 @@ type HandleT struct {
 		jobdDBQueryRequestTimeout config.ValueLoader[time.Duration]
 		jobdDBMaxRetries          config.ValueLoader[int]
 		errorStashEnabled         config.ValueLoader[bool]
-		errDBReadBatchSize        config.ValueLoader[int]
+		errorDBReadBatchSize      config.ValueLoader[int]
 		noOfErrStashWorkers       config.ValueLoader[int]
 		maxFailedCountForErrJob   config.ValueLoader[int]
 		pkgLogger                 logger.Logger
@@ -71,7 +71,7 @@ func (st *HandleT) Setup(
 	adaptiveLimitFunc func(int64) int64,
 ) {
 	st.config.errorStashEnabled = config.GetReloadableBoolVar(true, "Processor.errorStashEnabled")
-	st.config.errDBReadBatchSize = config.GetReloadableIntVar(1000, 1, "Processor.errDBReadBatchSize")
+	st.config.errorDBReadBatchSize = config.GetReloadableIntVar(1000, 1, "Processor.errDBReadBatchSize")
 	st.config.noOfErrStashWorkers = config.GetReloadableIntVar(2, 1, "Processor.noOfErrStashWorkers")
 	st.config.maxFailedCountForErrJob = config.GetReloadableIntVar(3, 1, "Processor.maxFailedCountForErrJob")
 	st.config.payloadLimit = config.GetReloadableInt64Var(100*bytesize.MB, 1, "Processor.stashPayloadLimit")
@@ -109,12 +109,12 @@ func (st *HandleT) Start(ctx context.Context) {
 }
 
 func (st *HandleT) sendRetryUpdateStats(attempt int) {
-	st.logger.Warnf("Timeout during update job status in stash module, attempt %d", attempt)
+	st.logger.Warnn("Timeout during update job status in stash module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func (st *HandleT) sendQueryRetryStats(attempt int) {
-	st.logger.Warnf("Timeout during query jobs in stash module, attempt %d", attempt)
+	st.logger.Warnn("Timeout during query jobs in stash module", logger.NewIntField("attempt", int64(attempt)))
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
@@ -311,13 +311,13 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 	}, st.sendRetryUpdateStats)
 	if err != nil {
-		st.logger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
+		st.logger.Errorn("Error occurred while updating proc error jobs statuses. Panicking", obskit.Error(err))
 		panic(err)
 	}
 }
 
 func (st *HandleT) readErrJobsLoop(ctx context.Context) {
-	st.logger.Info("Processor errors stash loop started")
+	st.logger.Infon("Processor errors stash loop started")
 	var sleepTime time.Duration
 	for {
 		select {
@@ -332,7 +332,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			queryParams := jobsdb.GetQueryParams{
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,
-				JobsLimit:                     st.config.errDBReadBatchSize.Load(),
+				JobsLimit:                     st.config.errorDBReadBatchSize.Load(),
 				PayloadSizeLimit:              st.adaptiveLimit(st.config.payloadLimit.Load()),
 			}
 
@@ -344,7 +344,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 					close(st.errProcessQ)
 					return //nolint:nilerr
 				}
-				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
+				st.logger.Errorn("Error occurred while reading proc error jobs", obskit.Error(err))
 				panic(err)
 			}
 
@@ -354,7 +354,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
-				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
+				st.logger.Debugn("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")
 				sleepTime = st.calculateSleepTime(limitReached)
 				continue
 			}
@@ -404,7 +404,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				if ctx.Err() != nil { // we are shutting down
 					return //nolint:nilerr
 				}
-				st.logger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
+				st.logger.Errorn("Error occurred while marking proc error jobs statuses. Panicking", logger.NewStringField("jobState", jobState), obskit.Error(err))
 				panic(err)
 			}
 

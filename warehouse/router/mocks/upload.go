@@ -43,17 +43,17 @@ func (m *MockloadFilesRepo) EXPECT() *MockloadFilesRepoMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *MockloadFilesRepo) Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error {
+func (m *MockloadFilesRepo) Delete(ctx context.Context, uploadID int64) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, uploadID, stagingFileIDs)
+	ret := m.ctrl.Call(m, "Delete", ctx, uploadID)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockloadFilesRepoMockRecorder) Delete(ctx, uploadID, stagingFileIDs any) *gomock.Call {
+func (mr *MockloadFilesRepoMockRecorder) Delete(ctx, uploadID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockloadFilesRepo)(nil).Delete), ctx, uploadID, stagingFileIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockloadFilesRepo)(nil).Delete), ctx, uploadID)
 }
 
 // DistinctTableName mocks base method.
@@ -72,18 +72,18 @@ func (mr *MockloadFilesRepoMockRecorder) DistinctTableName(ctx, sourceID, destin
 }
 
 // Get mocks base method.
-func (m *MockloadFilesRepo) Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (m *MockloadFilesRepo) Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", ctx, uploadID, stagingFileIDs)
+	ret := m.ctrl.Call(m, "Get", ctx, uploadID)
 	ret0, _ := ret[0].([]model.LoadFile)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockloadFilesRepoMockRecorder) Get(ctx, uploadID, stagingFileIDs any) *gomock.Call {
+func (mr *MockloadFilesRepoMockRecorder) Get(ctx, uploadID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockloadFilesRepo)(nil).Get), ctx, uploadID, stagingFileIDs)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockloadFilesRepo)(nil).Get), ctx, uploadID)
 }
 
 // GetByID mocks base method.
@@ -102,18 +102,18 @@ func (mr *MockloadFilesRepoMockRecorder) GetByID(ctx, id any) *gomock.Call {
 }
 
 // TotalExportedEvents mocks base method.
-func (m *MockloadFilesRepo) TotalExportedEvents(ctx context.Context, uploadID int64, stagingFileIDs []int64, skipTables []string) (int64, error) {
+func (m *MockloadFilesRepo) TotalExportedEvents(ctx context.Context, uploadID int64, skipTables []string) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "TotalExportedEvents", ctx, uploadID, stagingFileIDs, skipTables)
+	ret := m.ctrl.Call(m, "TotalExportedEvents", ctx, uploadID, skipTables)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // TotalExportedEvents indicates an expected call of TotalExportedEvents.
-func (mr *MockloadFilesRepoMockRecorder) TotalExportedEvents(ctx, uploadID, stagingFileIDs, skipTables any) *gomock.Call {
+func (mr *MockloadFilesRepoMockRecorder) TotalExportedEvents(ctx, uploadID, skipTables any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalExportedEvents", reflect.TypeOf((*MockloadFilesRepo)(nil).TotalExportedEvents), ctx, uploadID, stagingFileIDs, skipTables)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TotalExportedEvents", reflect.TypeOf((*MockloadFilesRepo)(nil).TotalExportedEvents), ctx, uploadID, skipTables)
 }
 
 // MockstagingFilesRepo is a mock of stagingFilesRepo interface.

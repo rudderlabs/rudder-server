@@ -10,6 +10,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -131,7 +132,7 @@ func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	uploadTimeStat.Since(startTime)
 
 	if errorDuringUpload != nil {
-		u.logger.Error("error in uploading the bulk file: %v", errorDuringUpload)
+		u.logger.Errorn("error in uploading the bulk file", obskit.Error(errorDuringUpload))
 		failedJobs = append(append(failedJobs, actionFiles.SuccessfulJobIDs...), actionFiles.FailedJobIDs...)
 		// remove the file that could not be uploaded
 		err = os.Remove(actionFiles.CSVFilePath)
@@ -157,7 +158,7 @@ func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 
 	err = os.Remove(actionFiles.CSVFilePath)
 	if err != nil {
-		u.logger.Error("Error in removing zip file: %v", err)
+		u.logger.Errorn("Error in removing zip file", obskit.Error(err))
 	}
 
 	return common.AsyncUploadOutput{

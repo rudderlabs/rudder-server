@@ -62,7 +62,7 @@ type Handle struct {
 	application     app.App
 	backendConfig   backendconfig.BackendConfig
 	jobsDB          jobsdb.JobsDB
-	errDB           jobsdb.JobsDB
+	errorDB         jobsdb.JobsDB
 	rateLimiter     throttler.Throttler
 	versionHandler  func(w http.ResponseWriter, r *http.Request)
 	rsourcesService rsources.JobService
@@ -132,6 +132,7 @@ type Handle struct {
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
 		enableEventBlocking                  config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
+		errorDBEnabled                       config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
@@ -433,7 +434,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			var tcOk bool
 			ipAddr, tcOk = toSet["request_ip"].(string)
 			if !tcOk {
-				gw.logger.Warnf("request_ip is not a string: %v", toSet["request_ip"])
+				gw.logger.Warnn("request_ip is not a string")
 			}
 
 		} else {
@@ -456,7 +457,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId, int64(len(eventsBatch)))
 		if errCheck != nil {
 			gw.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
-			gw.logger.Errorf("Rate limiter error: %v Allowing the request", errCheck)
+			gw.logger.Errorn("Rate limiter error: Allowing the request", obskit.Error(errCheck))
 		}
 		if ok {
 			return jobData, errRequestDropped
@@ -485,9 +486,14 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 	marshalledParams, err = jsonrs.Marshal(params)
 	if err != nil {
-		gw.logger.Errorf(
-			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
-			params,
+		gw.logger.Errorn(
+			"[Gateway] Failed to marshal parameters map",
+			obskit.SourceID(sourceID),
+			obskit.DestinationID(destinationID),
+			logger.NewStringField("source_job_run_id", sourcesJobRunID),
+			logger.NewStringField("source_task_run_id", sourcesTaskRunID),
+			logger.NewStringField("traceparent", traceParent),
+			logger.NewStringField("source_category", sourceCategory),
 		)
 		marshalledParams = []byte(
 			`{"error": "rudder-server gateway failed to marshal params"}`,
@@ -656,7 +662,7 @@ func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 		gw.logger.Errorn(
 			"Error reading request body",
 			logger.NewStringField("Content-Length", r.Header.Get("Content-Length")),
-			logger.NewErrorField(err),
+			obskit.Error(err),
 		)
 		return payload, errors.New((response.RequestBodyReadFailed))
 	}
@@ -680,7 +686,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 
 	traceParent := stats.GetTraceParentFromContext(req.Context())
 	if traceParent == "" {
-		gw.logger.Debugw("traceParent not found in request")
+		gw.logger.Debugn("traceParent not found in request")
 	}
 
 	webReq := webRequestT{
@@ -1030,7 +1036,19 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		marshalledParams, err = jsonrs.Marshal(jobsDBParams)
 		if err != nil {
 			gw.logger.Errorn("[Gateway] Failed to marshal parameters map",
-				logger.NewField("params", jobsDBParams),
+				logger.NewStringField("messageId", messageID),
+				logger.NewStringField("sourceJobRunId", msg.Properties.SourceJobRunID),
+				logger.NewStringField("sourceTaskRunId", msg.Properties.SourceTaskRunID),
+				logger.NewStringField("userId", msg.Properties.UserID),
+				logger.NewStringField("traceParent", msg.Properties.TraceID),
+				logger.NewStringField("sourceCategory", msg.Properties.SourceType),
+				logger.NewStringField("isBot", fmt.Sprintf("%v", msg.Properties.IsBot)),
+				logger.NewStringField("botName", msg.Properties.BotName),
+				logger.NewStringField("botURL", msg.Properties.BotURL),
+				logger.NewStringField("botIsInvalidBrowser", fmt.Sprintf("%v", msg.Properties.BotIsInvalidBrowser)),
+				logger.NewStringField("botAction", msg.Properties.BotAction),
+				obskit.SourceID(msg.Properties.SourceID),
+				obskit.DestinationID(msg.Properties.DestinationID),
 				obskit.Error(err),
 			)
 			marshalledParams = []byte(

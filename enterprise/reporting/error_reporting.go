@@ -238,14 +238,14 @@ func shouldReport(metric types.PUReportedMetric) bool {
 }
 
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
-	edr.log.Debug("[ErrorDetailReport] Report method called\n")
+	edr.log.Debugn("[ErrorDetailReport] Report method called")
 	if len(metrics) == 0 {
 		return nil
 	}
 
 	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
-		edr.log.Errorf("Failed during statement preparation: %v", err)
+		edr.log.Errorn("Failed during statement preparation", obskit.Error(err))
 		return fmt.Errorf("preparing statement: %v", err)
 	}
 	defer func() { _ = stmt.Close() }()
@@ -263,10 +263,13 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			return nil
 		}
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.DestinationID)
-		edr.log.Debugn("DestinationId & DestDetail details", obskit.DestinationID(metric.DestinationID), logger.NewField("destinationDetail", destinationDetail))
+		edr.log.Debugn("DestinationId & DestDetail details",
+			obskit.DestinationID(metric.DestinationID),
+			obskit.DestinationType(destinationDetail.destType),
+			logger.NewStringField("destinationDefinitionID", destinationDetail.destinationDefinitionID))
 
 		// extract error-message & error-code
-		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags)
+		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags, destinationDetail.destType)
 
 		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
 			"errorCode":     metric.StatusDetail.ErrorDetails.Code,
@@ -302,14 +305,14 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 			metric.StatusDetail.EventName,
 		)
 		if err != nil {
-			edr.log.Errorf("Failed during statement execution(each metric): %v", err)
+			edr.log.Errorn("Failed during statement execution(each metric)", obskit.Error(err))
 			return fmt.Errorf("executing statement: %v", err)
 		}
 	}
 
 	_, err = stmt.ExecContext(ctx)
 	if err != nil {
-		edr.log.Errorf("Failed during statement execution: %v", err)
+		edr.log.Errorn("Failed during statement execution", obskit.Error(err))
 		return fmt.Errorf("executing final statement: %v", err)
 	}
 
@@ -344,10 +347,10 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 	return dbHandle, nil
 }
 
-func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string, statTags map[string]string) types.ErrorDetails {
+func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string, statTags map[string]string, destType string) types.ErrorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
 	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
-	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg, statTags)
+	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg, statTags, destType)
 	return types.ErrorDetails{
 		Message: cleanedErrMsg,
 		Code:    errorCode,
@@ -425,7 +428,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 		)
 		for {
 			if ctx.Err() != nil {
-				edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+				edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
 				return ctx.Err()
 			}
 			requestChan := make(chan struct{}, edr.maxConcurrentRequests.Load())
@@ -435,10 +438,10 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			getReportsStart := time.Now()
 			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
 			if ctx.Err() != nil {
-				edr.log.Errorw("getting reports", "error", ctx.Err())
+				edr.log.Errorn("getting reports", obskit.Error(ctx.Err()))
 				select {
 				case <-ctx.Done():
-					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
 					return ctx.Err()
 				case <-time.After(edr.mainLoopSleepInterval.Load()):
 				}
@@ -451,7 +454,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				lastReportedAtTime.Store(loopStart)
 				select {
 				case <-ctx.Done():
-					edr.log.Infof("stopping mainLoop for syncer %s : %s", c.Label, ctx.Err())
+					edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
 					return ctx.Err()
 				case <-time.After(edr.sleepInterval.Load()):
 				}
@@ -475,7 +478,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				errGroup.Go(func() error {
 					err := edr.sendMetric(errCtx, c.Label, metricToSend)
 					if err != nil {
-						edr.log.Error("Error while sending to Reporting service:", err)
+						edr.log.Errorn("Error while sending to Reporting service", obskit.Error(err))
 					}
 					<-requestChan
 					return err
@@ -487,14 +490,14 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
 				dbHandle, err := edr.getDBHandle(c.ConnInfo)
 				if err != nil {
-					edr.log.Errorf("error reports deletion getDbhandle failed: %v", err)
+					edr.log.Errorn("error reports deletion getDbhandle failed", obskit.Error(err))
 					continue
 				}
 				deleteReportsStart := time.Now()
 				_, err = dbHandle.ExecContext(ctx, `DELETE FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, reportedAt)
 				errorDetailReportsDeleteQueryTimer.Since(deleteReportsStart)
 				if err != nil {
-					edr.log.Errorf("[ Error Detail Reporting ]: Error deleting local reports from %s: %v", ErrorDetailReportsTable, err)
+					edr.log.Errorn("[ Error Detail Reporting ]: Error deleting local reports from table", logger.NewStringField("table", ErrorDetailReportsTable), obskit.Error(err))
 				} else {
 					deletedRows += len(reports)
 				}
@@ -511,8 +514,9 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 						`SELECT pg_table_size(oid) from pg_class where relname = $1`, ErrorDetailReportsTable,
 					).Scan(&sizeEstimate); err != nil {
 						edr.log.Errorn(
-							fmt.Sprintf(`Error getting %s table size estimate`, ErrorDetailReportsTable),
-							logger.NewErrorField(err),
+							"Error getting table size estimate",
+							logger.NewStringField("table", ErrorDetailReportsTable),
+							obskit.Error(err),
 						)
 					}
 					if sizeEstimate >= vacuumThresholdBytes.Load() {
@@ -566,14 +570,14 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	var queryMin sql.NullInt64
 	dbHandle, err := edr.getDBHandle(syncerKey)
 	if err != nil {
-		edr.log.Errorf("Failed while getting DbHandle: %v", err)
+		edr.log.Errorn("Failed while getting DbHandle", obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
 	queryStart := time.Now()
 	err = dbHandle.QueryRowContext(ctx, "SELECT reported_at FROM "+ErrorDetailReportsTable+" WHERE reported_at < $1 ORDER BY reported_at ASC LIMIT 1", currentMs).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
-		edr.log.Errorf("Failed while getting reported_at: %v", err)
+		edr.log.Errorn("Failed while getting reported_at", obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	edr.minReportedAtQueryTime.Since(queryStart)
@@ -604,7 +608,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
 	if err != nil {
-		edr.log.Errorf("Failed while getting reports(reported_at=%v): %v", queryMin.Int64, err)
+		edr.log.Errorn("Failed while getting reports", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 
@@ -658,14 +662,14 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 			&dbEdMetric.EventName,
 		)
 		if err != nil {
-			edr.log.Errorf("Failed while scanning rows(reported_at=%v): %v", queryMin.Int64, err)
+			edr.log.Errorn("Failed while scanning rows", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
 			return []*types.EDReportsDB{}, queryMin.Int64
 		}
 		dbEdMetric.SampleEvent = []byte(sampleEvent)
 		metrics = append(metrics, dbEdMetric)
 	}
 	if rows.Err() != nil {
-		edr.log.Errorf("Rows error while querying: %v", rows.Err())
+		edr.log.Errorn("Rows error while querying", obskit.Error(rows.Err()))
 		return []*types.EDReportsDB{}, queryMin.Int64
 	}
 	return metrics, queryMin.Int64
@@ -778,7 +782,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 		httpRequestStart := time.Now()
 		resp, err := edr.httpClient.Do(req)
 		if err != nil {
-			edr.log.Errorf("Sending request failed: %v", err)
+			edr.log.Errorn("Sending request failed", obskit.Error(err))
 			return err
 		}
 
@@ -789,25 +793,27 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
-		edr.log.Debugf("[ErrorDetailReporting]Response from ReportingAPI: %v\n", string(respBody))
+		edr.log.Debugn("[ErrorDetailReporting]Response from ReportingAPI", logger.NewStringField("response", string(respBody)))
 		if err != nil {
-			edr.log.Errorf("Reading response failed: %w", err)
+			edr.log.Errorn("Reading response failed", obskit.Error(err))
 			return err
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
 			err = fmt.Errorf(`received response: statusCode: %d error: %v`, resp.StatusCode, string(respBody))
-			edr.log.Error(err.Error())
+			edr.log.Errorn("received response",
+				logger.NewIntField("statusCode", int64(resp.StatusCode)),
+				obskit.Error(errors.New(string(respBody))))
 		}
 		return err
 	}
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		edr.log.Errorf(`[ Error Detail Reporting ]: Error reporting to service: %v`, err)
+		edr.log.Errorn("[ Error Detail Reporting ]: Error reporting to service", obskit.Error(err))
 	})
 	if err != nil {
-		edr.log.Errorf(`[ Error Detail Reporting ]: Error making request to reporting service: %v`, err)
+		edr.log.Errorn("[ Error Detail Reporting ]: Error making request to reporting service", obskit.Error(err))
 	}
 	return err
 }

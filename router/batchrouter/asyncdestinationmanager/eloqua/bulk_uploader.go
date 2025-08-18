@@ -9,9 +9,9 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -238,7 +238,7 @@ func (b *EloquaBulkUploader) GetUploadStats(UploadStatsInput common.GetUploadSta
 		}
 		eventStatMetaWithRejectedSucceededJobs, err := parseRejectedData(&checkRejectedData, UploadStatsInput.ImportingList, b)
 		if err != nil {
-			b.logger.Error("Error while parsing rejected data", err)
+			b.logger.Errorn("Error while parsing rejected data", obskit.Error(err))
 			return common.GetUploadStatsResponse{
 				StatusCode: 500,
 			}
@@ -263,7 +263,7 @@ func (b *EloquaBulkUploader) deleteImportDef(importDefId string) {
 	}
 	err := b.service.DeleteImportDefinition(&deleteImportDefinitionData)
 	if err != nil {
-		b.logger.Error("Error while deleting import definition", err)
+		b.logger.Errorn("Error while deleting import definition", obskit.Error(err))
 	}
 }
 

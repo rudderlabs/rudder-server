@@ -255,7 +255,16 @@ func (m *mockWorkerHandle) getJobsStage(_ context.Context, partition string) job
 	s.queried += m.loopEvents
 	m.partitionStats[partition] = s
 
-	m.log.Infof("getJobs partition: %s stats: %+v", partition, s)
+	m.log.Infon("getJobs partition",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("queried", int64(s.queried)),
+		logger.NewIntField("marked", int64(s.marked)),
+		logger.NewIntField("processed", int64(s.processed)),
+		logger.NewIntField("userTransform", int64(s.userTransform)),
+		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
+		logger.NewIntField("stored", int64(s.stored)),
+		logger.NewIntField("subBatches", int64(s.subBatches)),
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	var jobs []*jobsdb.JobT
 	for i := 0; i < m.loopEvents; i++ {
@@ -276,7 +285,16 @@ func (m *mockWorkerHandle) markExecuting(_ context.Context, partition string, jo
 	s := m.partitionStats[partition]
 	s.marked += len(jobs)
 	m.partitionStats[partition] = s
-	m.log.Infof("markExecuting partition: %s stats: %+v", partition, s)
+	m.log.Infon("markExecuting partition",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("queried", int64(s.queried)),
+		logger.NewIntField("marked", int64(s.marked)),
+		logger.NewIntField("processed", int64(s.processed)),
+		logger.NewIntField("userTransform", int64(s.userTransform)),
+		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
+		logger.NewIntField("stored", int64(s.stored)),
+		logger.NewIntField("subBatches", int64(s.subBatches)),
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	return nil
 }
@@ -324,7 +342,16 @@ func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob) (*p
 	s.processed += len(subJobs.subJobs)
 	s.subBatches += 1
 	m.partitionStats[partition] = s
-	m.log.Infof("processJobsForDest partition: %s stats: %+v", partition, s)
+	m.log.Infon("processJobsForDest partition",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("queried", int64(s.queried)),
+		logger.NewIntField("marked", int64(s.marked)),
+		logger.NewIntField("processed", int64(s.processed)),
+		logger.NewIntField("userTransform", int64(s.userTransform)),
+		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
+		logger.NewIntField("stored", int64(s.stored)),
+		logger.NewIntField("subBatches", int64(s.subBatches)),
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	return &preTransformationMessage{
 		totalEvents: len(subJobs.subJobs),
@@ -352,7 +379,16 @@ func (m *mockWorkerHandle) userTransformStage(partition string, in *transformati
 	s := m.partitionStats[partition]
 	s.userTransform += in.totalEvents
 	m.partitionStats[partition] = s
-	m.log.Infof("usertransformations partition: %s stats: %+v", partition, s)
+	m.log.Infon("usertransformations partition",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("queried", int64(s.queried)),
+		logger.NewIntField("marked", int64(s.marked)),
+		logger.NewIntField("processed", int64(s.processed)),
+		logger.NewIntField("userTransform", int64(s.userTransform)),
+		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
+		logger.NewIntField("stored", int64(s.stored)),
+		logger.NewIntField("subBatches", int64(s.subBatches)),
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	return &userTransformData{
 		ctx:                 in.ctx,
@@ -371,7 +407,16 @@ func (m *mockWorkerHandle) destinationTransformStage(partition string, in *userT
 	s := m.partitionStats[partition]
 	s.destinationTransform += in.totalEvents
 	m.partitionStats[partition] = s
-	m.log.Infof("destinationtransformations partition: %s stats: %+v", partition, s)
+	m.log.Infon("destinationtransformations partition",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("queried", int64(s.queried)),
+		logger.NewIntField("marked", int64(s.marked)),
+		logger.NewIntField("processed", int64(s.processed)),
+		logger.NewIntField("userTransform", int64(s.userTransform)),
+		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
+		logger.NewIntField("stored", int64(s.stored)),
+		logger.NewIntField("subBatches", int64(s.subBatches)),
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 
 	return &storeMessage{
 		ctx:                 context.Background(),
@@ -391,5 +436,14 @@ func (m *mockWorkerHandle) storeStage(partition string, _ int, in *storeMessage)
 	s.stored += in.totalEvents
 	s.trackedUsers += len(in.trackedUsersReports)
 	m.partitionStats[partition] = s
-	m.log.Infof("Store partition: %s stats: %+v", partition, s)
+	m.log.Infon("Store partition",
+		logger.NewStringField("partition", partition),
+		logger.NewIntField("queried", int64(s.queried)),
+		logger.NewIntField("marked", int64(s.marked)),
+		logger.NewIntField("processed", int64(s.processed)),
+		logger.NewIntField("userTransform", int64(s.userTransform)),
+		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
+		logger.NewIntField("stored", int64(s.stored)),
+		logger.NewIntField("subBatches", int64(s.subBatches)),
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
 }

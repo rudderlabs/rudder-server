@@ -8,28 +8,28 @@ import (
 	"sync"
 	"time"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/rruntime"
+
 	"github.com/dgraph-io/badger/v4"
 	"github.com/dgraph-io/badger/v4/options"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type BadgerDB struct {
+type badgerDB struct {
 	logger           loggerForBadger
 	badgerDB         *badger.DB
 	window           config.ValueLoader[time.Duration]
 	path             string
 	opts             badger.Options
 	cleanupOnStartup bool
-	once             sync.Once
 
 	wg     sync.WaitGroup
 	bgCtx  context.Context
@@ -53,7 +53,7 @@ func DefaultPath() string {
 	return fmt.Sprintf(`%v%v`, tmpDirPath, badgerPathName)
 }
 
-func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
+func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) (types.DB, error) {
 	dedupWindow := conf.GetReloadableDurationVar(3600, time.Second, "Dedup.dedupWindow", "Dedup.dedupWindowInS")
 	log := logger.NewLogger().Child("Dedup")
 	badgerOpts := badger.
@@ -79,7 +79,7 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 		WithDetectConflicts(conf.GetBoolVar(false, "BadgerDB.Dedup.detectConflicts", "BadgerDB.detectConflicts"))
 
 	bgCtx, cancel := context.WithCancel(context.Background())
-	db := &BadgerDB{
+	db := &badgerDB{
 		logger:           loggerForBadger{log},
 		path:             path,
 		window:           dedupWindow,
@@ -94,13 +94,14 @@ func NewBadgerDB(conf *config.Config, stat stats.Stats, path string) *Dedup {
 	db.stats.vlogSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "vlog"})
 	db.stats.totSize = stat.NewTaggedStat("badger_db_size", stats.GaugeType, stats.Tags{"name": "dedup", "type": "total"})
 
-	return &Dedup{
-		badgerDB:    db,
-		uncommitted: make(map[string]struct{}),
+	err := db.init()
+	if err != nil {
+		return nil, fmt.Errorf("initializing badger db: %w", err)
 	}
+	return db, nil
 }
 
-func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
+func (d *badgerDB) Get(keys []string) (map[string]bool, error) {
 	defer d.stats.getTimer.RecordDuration()()
 	results := make(map[string]bool, len(keys))
 	err := d.badgerDB.View(func(txn *badger.Txn) error {
@@ -118,7 +119,7 @@ func (d *BadgerDB) Get(keys []string) (map[string]bool, error) {
 	return results, err
 }
 
-func (d *BadgerDB) Set(keys []string) error {
+func (d *badgerDB) Set(keys []string) error {
 	defer d.stats.setTimer.RecordDuration()()
 	wb := d.badgerDB.NewWriteBatch()
 	defer wb.Cancel()
@@ -131,7 +132,7 @@ func (d *BadgerDB) Set(keys []string) error {
 	return wb.Flush()
 }
 
-func (d *BadgerDB) Close() {
+func (d *badgerDB) Close() {
 	d.cancel()
 	d.wg.Wait()
 	if d.badgerDB != nil {
@@ -139,49 +140,47 @@ func (d *BadgerDB) Close() {
 	}
 }
 
-func (d *BadgerDB) init() error {
+func (d *badgerDB) init() error {
 	var err error
-	d.once.Do(func() {
-		if d.cleanupOnStartup {
-			if err = os.RemoveAll(d.path); err != nil {
-				err = fmt.Errorf("removing badger db directory: %w", err)
-				return
-			}
+	if d.cleanupOnStartup {
+		if err = os.RemoveAll(d.path); err != nil {
+			err = fmt.Errorf("removing badger db directory: %w", err)
+			return err
 		}
-		openDB := func() (dbase *badger.DB, err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("panic during badgerdb open: %v", r)
-				}
-			}()
-			return badger.Open(d.opts)
+	}
+	openDB := func() (dbase *badger.DB, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("panic during badgerdb open: %v", r)
+			}
+		}()
+		return badger.Open(d.opts)
+	}
+	d.badgerDB, err = openDB()
+	if err != nil {
+		// corrupted or incompatible db, clean up the directory and retry
+		d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
+			obskit.Error(err),
+		)
+		if err = os.RemoveAll(d.opts.Dir); err != nil {
+			err = fmt.Errorf("removing badger db directory: %w", err)
+			return err
 		}
 		d.badgerDB, err = openDB()
 		if err != nil {
-			// corrupted or incompatible db, clean up the directory and retry
-			d.logger.Errorn("Error while opening dedup badger db, cleaning up the directory",
-				logger.NewErrorField(err),
-			)
-			if err = os.RemoveAll(d.opts.Dir); err != nil {
-				err = fmt.Errorf("removing badger db directory: %w", err)
-				return
-			}
-			d.badgerDB, err = openDB()
-			if err != nil {
-				err = fmt.Errorf("opening badger db: %w", err)
-				return
-			}
+			err = fmt.Errorf("opening badger db: %w", err)
+			return err
 		}
-		d.wg.Add(1)
-		rruntime.Go(func() {
-			defer d.wg.Done()
-			d.gcLoop()
-		})
+	}
+	d.wg.Add(1)
+	rruntime.Go(func() {
+		defer d.wg.Done()
+		d.gcLoop()
 	})
 	return err
 }
 
-func (d *BadgerDB) gcLoop() {
+func (d *badgerDB) gcLoop() {
 	for {
 		select {
 		case <-d.bgCtx.Done():
@@ -209,87 +208,6 @@ func (d *BadgerDB) gcLoop() {
 		d.stats.vlogSize.Gauge(vlogSize)
 		d.stats.totSize.Gauge(totSize)
 	}
-}
-
-type Dedup struct {
-	badgerDB      *BadgerDB
-	uncommittedMu sync.RWMutex
-	uncommitted   map[string]struct{}
-}
-
-func (d *Dedup) Allowed(batchKeys ...types.BatchKey) (map[types.BatchKey]bool, error) {
-	if err := d.badgerDB.init(); err != nil {
-		return nil, fmt.Errorf("initializing badger db: %w", err)
-	}
-	result := make(map[types.BatchKey]bool, len(batchKeys))  // keys encountered for the first time
-	seenInBatch := make(map[string]struct{}, len(batchKeys)) // keys already seen in the batch while iterating
-
-	// figure out which keys need to be checked against the DB
-	batchKeysToCheck := make([]types.BatchKey, 0, len(batchKeys)) // keys to check in the DB
-	d.uncommittedMu.RLock()
-	for _, batchKey := range batchKeys {
-		// if the key is already seen in the batch, skip it
-		if _, seen := seenInBatch[batchKey.Key]; seen {
-			continue
-		}
-		// if the key is already in the uncommitted list , skip it
-		if _, uncommitted := d.uncommitted[batchKey.Key]; uncommitted {
-			seenInBatch[batchKey.Key] = struct{}{}
-			continue
-		}
-		seenInBatch[batchKey.Key] = struct{}{}
-		batchKeysToCheck = append(batchKeysToCheck, batchKey)
-	}
-	d.uncommittedMu.RUnlock()
-
-	if len(batchKeysToCheck) > 0 {
-		seenInDB, err := d.badgerDB.Get(lo.Map(batchKeysToCheck, func(bk types.BatchKey, _ int) string { return bk.Key }))
-		if err != nil {
-			return nil, fmt.Errorf("getting keys from badger db: %w", err)
-		}
-		d.uncommittedMu.Lock()
-		defer d.uncommittedMu.Unlock()
-		for _, batchKey := range batchKeysToCheck {
-			if !seenInDB[batchKey.Key] {
-				if _, race := d.uncommitted[batchKey.Key]; !race { // if another goroutine managed to set this key, we should skip it
-					result[batchKey] = true
-					d.uncommitted[batchKey.Key] = struct{}{} // mark this key as uncommitted
-				}
-			}
-		}
-	}
-	return result, nil
-}
-
-func (d *Dedup) Commit(keys []string) error {
-	if err := d.badgerDB.init(); err != nil {
-		return fmt.Errorf("initializing badger db: %w", err)
-	}
-	kvs := make([]types.BatchKey, len(keys))
-	d.uncommittedMu.RLock()
-	for i, key := range keys {
-		if _, ok := d.uncommitted[key]; !ok {
-			d.uncommittedMu.RUnlock()
-			return fmt.Errorf("key %v has not been previously set", key)
-		}
-		kvs[i] = types.BatchKey{Key: key}
-	}
-	d.uncommittedMu.RUnlock()
-
-	if err := d.badgerDB.Set(keys); err != nil {
-		return fmt.Errorf("setting keys in badger db: %w", err)
-	}
-
-	d.uncommittedMu.Lock()
-	defer d.uncommittedMu.Unlock()
-	for _, kv := range kvs {
-		delete(d.uncommitted, kv.Key)
-	}
-	return nil
-}
-
-func (d *Dedup) Close() {
-	d.badgerDB.Close()
 }
 
 type loggerForBadger struct {

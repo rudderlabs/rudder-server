@@ -42,7 +42,7 @@ func (cs *configSubscriber) Subscribe(
 	ctx context.Context,
 	bcConfig backendconfig.BackendConfig,
 ) {
-	cs.log.Infow("Subscribing to backend config changes")
+	cs.log.Infon("Subscribing to backend config changes")
 
 	defer cs.onceInit.Do(func() {
 		close(cs.init)

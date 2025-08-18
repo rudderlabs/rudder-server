@@ -70,7 +70,7 @@ This function will block until backend config is initially received.
 func (gw *Handle) Setup(
 	ctx context.Context,
 	config *config.Config, logger logger.Logger, stat stats.Stats,
-	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errDB jobsdb.JobsDB,
+	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService,
 	sourcehandle sourcedebugger.SourceDebugger, streamMsgValidator func(message *stream.Message) error,
@@ -83,7 +83,7 @@ func (gw *Handle) Setup(
 	gw.application = application
 	gw.backendConfig = backendConfig
 	gw.jobsDB = jobsDB
-	gw.errDB = errDB
+	gw.errorDB = errorDB
 	gw.rateLimiter = rateLimiter
 	gw.versionHandler = versionHandler
 	gw.rsourcesService = rsourcesService
@@ -129,6 +129,7 @@ func (gw *Handle) Setup(
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
+	gw.conf.errorDBEnabled = config.GetReloadableBoolVar(false, "ErrorDB.enabled")
 	// enable event blocking. false by default
 	gw.conf.enableEventBlocking = config.GetReloadableBoolVar(false, "enableEventBlocking")
 	// Registering stats
@@ -335,7 +336,7 @@ func WithNow(now func() time.Time) OptFunc {
 func (gw *Handle) initUserWebRequestWorkers() {
 	gw.userWebRequestWorkers = make([]*userWebRequestWorkerT, gw.conf.maxUserWebRequestWorkerProcess)
 	for i := 0; i < gw.conf.maxUserWebRequestWorkerProcess; i++ {
-		gw.logger.Debug("User Web Request Worker Started", i)
+		gw.logger.Debugn("User Web Request Worker Started", logger.NewIntField("worker", int64(i)))
 		userWebRequestWorker := &userWebRequestWorkerT{
 			webRequestQ:    make(chan *webRequestT, gw.conf.maxUserWebRequestBatchSize),
 			batchRequestQ:  make(chan *batchWebRequestT),
@@ -396,7 +397,7 @@ func (gw *Handle) processBackendConfig(configData map[string]backendconfig.Confi
 func (gw *Handle) backendConfigSubscriber(ctx context.Context) {
 	closeConfigChan := func(sources int) {
 		if !gw.backendConfigInitialised {
-			gw.logger.Infow("BackendConfig initialised", "sources", sources)
+			gw.logger.Infon("BackendConfig initialised", logger.NewIntField("sources", int64(sources)))
 			gw.backendConfigInitialised = true
 			close(gw.backendConfigInitialisedChan)
 		}
@@ -437,7 +438,7 @@ func (gw *Handle) runUserWebRequestWorkers(ctx context.Context) {
 func (gw *Handle) initDBWriterWorkers(ctx context.Context) {
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < gw.conf.maxDBWriterProcess; i++ {
-		gw.logger.Debug("DB Writer Worker Started", i)
+		gw.logger.Debugn("DB Writer Worker Started", logger.NewIntField("worker", int64(i)))
 		g.Go(crash.Wrapper(func() error {
 			gw.dbWriterWorkerProcess()
 			return nil
@@ -510,8 +511,8 @@ func (gw *Handle) dbWriterWorkerProcess() {
 			} else {
 				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
 				if err != nil {
-					gw.logger.Errorf("Store into gateway db failed with error: %v", err)
-					gw.logger.Errorf("JobList: %+v", jobBatches)
+					gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
+					gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
 					return err
 				}
 			}
@@ -550,22 +551,22 @@ Supports CORS from all origins. This function will block.
 func (gw *Handle) StartWebHandler(ctx context.Context) error {
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		gw.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", gw.conf.webPort)
+		gw.logger.Infon("WebHandler waiting for BackendConfig before starting", logger.NewIntField("webPort", int64(gw.conf.webPort)))
 		<-gw.backendConfigInitialisedChan
-		gw.logger.Infof("backendConfig initialised")
+		gw.logger.Infon("backendConfig initialised")
 		return nil
 	})
 	g.Go(func() error {
-		gw.logger.Infof("WebHandler waiting for transformer feature before starting on %d", gw.conf.webPort)
+		gw.logger.Infon("WebHandler waiting for transformer feature before starting", logger.NewIntField("webPort", int64(gw.conf.webPort)))
 		<-gw.transformerFeaturesInitialised
-		gw.logger.Infof("transformer feature initialised")
+		gw.logger.Infon("transformer feature initialised")
 		return nil
 	})
 	err := g.Wait()
 	if err != nil {
 		return err
 	}
-	gw.logger.Infof("WebHandler Starting on %d", gw.conf.webPort)
+	gw.logger.Infon("WebHandler Starting", logger.NewIntField("webPort", int64(gw.conf.webPort)))
 	component := "gateway"
 	srvMux := chi.NewRouter()
 	// rudder-sources new APIs

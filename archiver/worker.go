@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -59,7 +60,7 @@ start:
 		if w.lifecycle.ctx.Err() != nil {
 			return false
 		}
-		w.log.Errorw("failed to fetch jobs for archiving", "error", err)
+		w.log.Errorn("failed to fetch jobs for archiving", obskit.Error(err))
 		panic(err)
 	}
 
@@ -72,19 +73,19 @@ start:
 	}
 
 	workspaceID := jobs[0].WorkspaceId
-	log := w.log.With("workspaceID", workspaceID)
+	log := w.log.Withn(obskit.WorkspaceID(workspaceID))
 	storagePrefs, err := w.storageProvider.GetStoragePreferences(w.lifecycle.ctx, workspaceID)
 	if err != nil {
 		if errors.Is(err, fileuploader.ErrNotSubscribed) {
-			log.Debug("not subscribed to backend config")
+			log.Debugn("not subscribed to backend config")
 			return false
 		}
-		log.Errorw("failed to fetch storage preferences", "error", err)
+		log.Errorn("failed to fetch storage preferences", obskit.Error(err))
 		if err := w.markStatus(jobs, jobsdb.Aborted.State, errJSON(err)); err != nil {
 			if w.lifecycle.ctx.Err() != nil {
 				return false
 			}
-			log.Errorw("failed to mark unconfigured archive jobs' status", "error", err)
+			log.Errorn("failed to mark unconfigured archive jobs' status", obskit.Error(err))
 			panic(err)
 
 		}
@@ -98,7 +99,7 @@ start:
 			if w.lifecycle.ctx.Err() != nil {
 				return false
 			}
-			log.Errorw("failed to mark archive disabled jobs' status", "error", err)
+			log.Errorn("failed to mark archive disabled jobs' status", obskit.Error(err))
 			panic(err)
 		}
 		if !limitReached {
@@ -109,7 +110,7 @@ start:
 
 	location, err := w.uploadJobs(w.lifecycle.ctx, jobs)
 	if err != nil {
-		log.Errorw("failed to upload jobs", "error", err)
+		log.Errorn("failed to upload jobs", obskit.Error(err))
 		return false
 	}
 	w.lastUploadTime = time.Now()
@@ -118,7 +119,7 @@ start:
 		if w.lifecycle.ctx.Err() != nil {
 			return false
 		}
-		log.Errorw("failed to mark successful upload status", "error", err)
+		log.Errorn("failed to mark successful upload status", obskit.Error(err))
 		panic(err)
 	}
 	w.stats.NewTaggedStat("arc_uploaded_jobs", stats.CountType, map[string]string{"workspaceId": workspaceID, "sourceId": w.sourceID}).Count(len(jobs))
@@ -208,7 +209,7 @@ func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
 	params.JobsLimit = w.config.eventsLimit()
 	unProcessed, err := w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
 	if err != nil {
-		w.log.Errorw("failed to fetch unprocessed jobs for backup", "error", err)
+		w.log.Errorn("failed to fetch unprocessed jobs for backup", obskit.Error(err))
 		return nil, false, err
 	}
 	return unProcessed.Jobs, unProcessed.LimitsReached, nil
@@ -256,7 +257,7 @@ func (w *worker) markStatus(jobs []*jobsdb.JobT, state string, response []byte) 
 			)
 		},
 		func(attempt int) {
-			w.log.Warnw("failed to mark jobs' status", "attempt", attempt)
+			w.log.Warnn("failed to mark jobs' status", logger.NewIntField("attempt", int64(attempt)))
 		},
 	); err != nil {
 		return err

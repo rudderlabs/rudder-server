@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -24,21 +27,21 @@ func (ops *VictorOps) Alert(message string) {
 	resp, err := client.Post(victorOpsUrl, "application/json", bytes.NewBuffer(eventJSON))
 	// Not handling errors when sending alert to victorops
 	if err != nil {
-		pkgLogger.Errorf("Alert: Failed to alert service: %s", err.Error())
+		pkgLogger.Errorn("Alert: Failed to alert service", obskit.Error(err))
 		return
 	}
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
-		pkgLogger.Errorf("Alert: Got error response %d", resp.StatusCode)
+		pkgLogger.Errorn("Alert: Got error response", logger.NewIntField("statusCode", int64(resp.StatusCode)))
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	defer func() { kithttputil.CloseResponse(resp) }()
 	if err != nil {
-		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())
+		pkgLogger.Errorn("Alert: Failed to read response body", obskit.Error(err))
 		return
 	}
-	pkgLogger.Infof("Alert: Successful %s", string(body))
+	pkgLogger.Infon("Alert: Successful", logger.NewStringField("body", string(body)))
 }
 
 type VictorOps struct {

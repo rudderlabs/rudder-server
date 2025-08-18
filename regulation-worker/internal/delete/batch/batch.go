@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -44,7 +45,9 @@ type Batch struct {
 // listFiles fetches the files from filemanager under prefix mentioned and for a
 // specified limit.
 func (b *Batch) listFiles(ctx context.Context, prefix string, limit int) (fileObjects []*filemanager.FileInfo, err error) {
-	pkgLogger.Debugf("getting a list of files from destination under prefix: %s with limit: %d", prefix, limit)
+	pkgLogger.Debugn("getting a list of files from destination under prefix",
+		logger.NewStringField("prefix", prefix),
+		logger.NewIntField("limit", int64(limit)))
 	if b.session == nil {
 		b.session = b.FM.ListFilesWithPrefix(ctx, "", prefix, int64(limit))
 	}
@@ -58,7 +61,7 @@ func (b *Batch) listFiles(ctx context.Context, prefix string, limit int) (fileOb
 
 // two pointer algorithm implementation to remove all the files from which users are already deleted.
 func removeCleanedFiles(files []*filemanager.FileInfo, cleanedFiles []string) []*filemanager.FileInfo {
-	pkgLogger.Debugf("removing already cleaned files")
+	pkgLogger.Debugn("removing already cleaned files")
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Key < files[j].Key
 	})
@@ -117,7 +120,7 @@ func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string)
 }
 
 func (*Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]string, error) {
-	pkgLogger.Debugf("fetching already cleaned files based on contents of the status tracker file")
+	pkgLogger.Debugn("fetching already cleaned files based on contents of the status tracker file")
 
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
 	if err != nil {
@@ -183,7 +186,7 @@ func (*Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]st
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
 func (b *Batch) download(ctx context.Context, completeFileName string) (string, error) {
-	pkgLogger.Infof("downloading file: %s locally", completeFileName)
+	pkgLogger.Infon("downloading file locally", logger.NewStringField("fileName", completeFileName))
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
 	if err != nil {
@@ -208,7 +211,7 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 	err = b.FM.Download(ctx, tmpFilePtr, completeFileName)
 	if err != nil {
 		if err == filemanager.ErrKeyNotFound {
-			pkgLogger.Debugf("file not found")
+			pkgLogger.Debugn("file not found")
 			return absPath, nil
 		}
 		return "", fmt.Errorf("downloading object: %s using file manager: %w", completeFileName, err)
@@ -222,7 +225,7 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 }
 
 func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string) (string, error), fileName string) (string, error) {
-	pkgLogger.Debugf("downloading file: %s with exponential backoff", fileName)
+	pkgLogger.Debugn("downloading file with exponential backoff", logger.NewStringField("fileName", fileName))
 
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
@@ -249,7 +252,7 @@ func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string
 }
 
 func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
-	pkgLogger.Debugf("uploading cleaned file with exponential backoff")
+	pkgLogger.Debugn("uploading cleaned file with exponential backoff")
 
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
@@ -272,7 +275,7 @@ func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uplo
 // replace old json.gz & statusTrackerFile with the new during upload.
 // Note: upload happens concurrently in 5 go routine by default
 func (b *Batch) upload(_ context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
-	pkgLogger.Debugf("uploading file")
+	pkgLogger.Debugn("uploading file")
 	fileNamePrefixes := strings.Split(actualFileName, "/")
 
 	uploadFilePtr, err := os.OpenFile(uploadFileAbsPath, os.O_RDONLY, 0o644)
@@ -327,18 +330,24 @@ func (bm *BatchManager) Delete(
 	destConfig := destDetail.Config
 	destName := destDetail.Name
 
-	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
+	pkgLogger.Debugn("deleting from batch destination",
+		logger.NewIntField("jobID", int64(job.ID)),
+		obskit.WorkspaceID(job.WorkspaceID),
+		obskit.DestinationID(job.DestinationID),
+		logger.NewStringField("destinationName", destName))
 
 	fm, err := bm.FMFactory(&filemanager.Settings{Provider: destName, Config: destConfig, Conf: config.Default})
 	if err != nil {
-		pkgLogger.Errorf("fetching file manager for destination: %s,  %w", destName, err)
+		pkgLogger.Errorn("fetching file manager for destination",
+			logger.NewStringField("destinationName", destName),
+			obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusAborted, Error: err}
 	}
 
 	// parent directory of all the temporary files created/downloaded in the process of deletion.
 	baseDIR, err := os.MkdirTemp("", "")
 	if err != nil {
-		pkgLogger.Errorf("error while creating temporary directory to store all temporary files during deletion: %v", err)
+		pkgLogger.Errorn("error while creating temporary directory to store all temporary files during deletion", obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
@@ -358,12 +367,12 @@ func (bm *BatchManager) Delete(
 	for {
 		files, err := batch.listFiles(ctx, prefix, bm.FilesLimit)
 		if err != nil {
-			pkgLogger.Errorf("error while getting files list: %v", err)
+			pkgLogger.Errorn("error while getting files list", obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
 		if len(files) == 0 {
-			pkgLogger.Info("no new files found, breaking")
+			pkgLogger.Infon("no new files found, breaking")
 			break
 		}
 
@@ -374,7 +383,7 @@ func (bm *BatchManager) Delete(
 
 		cleanedFiles, err := batch.cleanedFiles(ctx, fName, &job)
 		if err != nil {
-			pkgLogger.Errorf("error while getting status tracker file: %v", err)
+			pkgLogger.Errorn("error while getting status tracker file", obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
@@ -399,7 +408,9 @@ func (bm *BatchManager) Delete(
 				// Get filehandler from a factory on every iteration, to not share the data.
 				filehandler := LocalFileHandlerFactory(destName, files[_i].Key)
 				if filehandler == nil {
-					pkgLogger.Warnf("unable to locate filehandler for file: %s under destination: %s", files[_i].Key, destName)
+					pkgLogger.Warnn("unable to locate filehandler for file under destination",
+						logger.NewStringField("fileName", files[_i].Key),
+						logger.NewStringField("destinationName", destName))
 					return nil
 				}
 
@@ -437,11 +448,11 @@ func (bm *BatchManager) Delete(
 		}
 		err = g.Wait()
 		if err != nil {
-			pkgLogger.Errorf("user identity deletion job failed with error: %v", err)
+			pkgLogger.Errorn("user identity deletion job failed with error", obskit.Error(err))
 			return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 		}
 
-		pkgLogger.Infof("successfully completed loop of ")
+		pkgLogger.Infon("successfully completed loop of ")
 	}
 
 	return model.JobStatus{Status: model.JobStatusComplete}
@@ -475,7 +486,9 @@ func handleIdentityRemoval(
 	attributes []model.User,
 	sourceFile, targetFile string,
 ) error {
-	pkgLogger.Debugf("Handling identity removal for source: %s, destination: %s", sourceFile, targetFile)
+	pkgLogger.Debugn("Handling identity removal for source and destination",
+		logger.NewStringField("sourceFile", sourceFile),
+		logger.NewStringField("targetFile", targetFile))
 
 	if err := handler.Read(ctx, sourceFile); err != nil {
 		return fmt.Errorf("parsing contents of local file: %s, err: %w", sourceFile, err)
@@ -505,18 +518,22 @@ func getFileSize(fileAbsPath string) int {
 }
 
 func (b *Batch) cleanup(ctx context.Context, prefix string) {
-	pkgLogger.Debugf("cleaning up temp files created during the operation")
+	pkgLogger.Debugn("cleaning up temp files created during the operation")
 
 	err := b.FM.Delete(
 		ctx,
 		[]string{filepath.Join(prefix, StatusTrackerFileName)},
 	)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
+		pkgLogger.Errorn("error while deleting delete status tracker file from destination",
+			obskit.Error(err),
+		)
 	}
 
 	err = os.RemoveAll(b.TmpDirPath)
 	if err != nil {
-		pkgLogger.Errorf("error while deleting temporary directory locally: %v", err)
+		pkgLogger.Errorn("error while deleting temporary directory locally",
+			obskit.Error(err),
+		)
 	}
 }

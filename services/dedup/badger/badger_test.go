@@ -11,7 +11,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -23,57 +22,51 @@ func Test_Badger(t *testing.T) {
 	dbPath := t.TempDir()
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	badger := NewBadgerDB(conf, stats.NOP, DefaultPath())
-	require.NotNil(t, badger)
-	defer badger.Close()
-	t.Run("Same messageID should be deduped from badger", func(t *testing.T) {
-		key := types.BatchKey{Key: "a"}
-		notAvailable, err := badger.Allowed(key)
+
+	// Create BadgerDB directly
+	db, err := NewBadgerDB(conf, stats.NOP, DefaultPath())
+	require.NoError(t, err)
+	require.NotNil(t, db)
+	defer db.Close()
+
+	t.Run("Set and Get keys", func(t *testing.T) {
+		keys := []string{"a", "b", "c"}
+
+		// Initially keys should not exist
+		result, err := db.Get(keys)
 		require.NoError(t, err)
-		require.True(t, notAvailable[key])
-		err = badger.Commit([]string{key.Key})
+		require.Empty(t, result)
+
+		// Set keys
+		err = db.Set(keys)
 		require.NoError(t, err)
-		notAvailable, err = badger.Allowed(key)
+
+		// Keys should now exist
+		result, err = db.Get(keys)
 		require.NoError(t, err)
-		require.False(t, notAvailable[key])
+		require.Len(t, result, 3)
+		require.True(t, result["a"])
+		require.True(t, result["b"])
+		require.True(t, result["c"])
 	})
-	t.Run("Same messageID should be deduped from cache", func(t *testing.T) {
-		key := types.BatchKey{Key: "b"}
-		found, err := badger.Allowed(key)
+
+	t.Run("Mixed existing and non-existing keys", func(t *testing.T) {
+		existingKeys := []string{"d", "e"}
+		newKeys := []string{"f"}
+		allKeys := append(existingKeys, newKeys...)
+
+		// Set only some keys
+		err := db.Set(existingKeys)
 		require.NoError(t, err)
-		require.True(t, found[key])
-		found, err = badger.Allowed(key)
+
+		// Get all keys
+		result, err := db.Get(allKeys)
 		require.NoError(t, err)
-		require.False(t, found[key])
-	})
-	t.Run("different messageID should not be deduped for batch", func(t *testing.T) {
-		keys := []types.BatchKey{
-			{Index: 0, Key: "c"},
-			{Index: 1, Key: "d"},
-			{Index: 2, Key: "e"},
-		}
-		found, err := badger.Allowed(keys...)
-		require.NoError(t, err)
-		for _, key := range keys {
-			require.True(t, found[key])
-		}
-	})
-	t.Run("same messageID should be deduped for batch", func(t *testing.T) {
-		keys := []types.BatchKey{
-			{Index: 0, Key: "f"},
-			{Index: 1, Key: "f"},
-			{Index: 2, Key: "g"},
-		}
-		expected := map[types.BatchKey]bool{
-			keys[0]: true,
-			keys[1]: false,
-			keys[2]: true,
-		}
-		found, err := badger.Allowed(keys...)
-		require.NoError(t, err)
-		for _, key := range keys {
-			require.Equal(t, expected[key], found[key])
-		}
+		require.Len(t, result, 2)
+		require.True(t, result["d"])
+		require.True(t, result["e"])
+		_, exists := result["f"]
+		require.False(t, exists)
 	})
 }
 
@@ -86,49 +79,63 @@ func TestBadgerDirCleanup(t *testing.T) {
 	conf := config.New()
 	conf.Set("BadgerDB.memTableSize", 1*bytesize.MB)
 	t.Setenv("RUDDER_TMPDIR", dbPath)
-	badger := NewBadgerDB(conf, stats.NOP, DefaultPath())
-	allowed, err := badger.Allowed(types.BatchKey{Key: "a"})
+
+	// Create BadgerDB directly
+	db, err := NewBadgerDB(conf, stats.NOP, DefaultPath())
 	require.NoError(t, err)
-	require.True(t, allowed[types.BatchKey{Key: "a"}])
-	err = badger.Commit([]string{"a"})
+
+	// Test setting and getting a key
+	err = db.Set([]string{"a"})
 	require.NoError(t, err)
-	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+
+	result, err := db.Get([]string{"a"})
 	require.NoError(t, err)
-	require.False(t, allowed[types.BatchKey{Key: "a"}])
-	badger.Close()
+	require.True(t, result["a"])
+	db.Close()
 
 	// reopen
-	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
-	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	db, err = NewBadgerDB(conf, stats.NOP, DefaultPath())
 	require.NoError(t, err)
-	require.False(t, allowed[types.BatchKey{Key: "a"}], "since the directory wasn't cleaned up, the key should be present")
-	badger.Close()
+
+	result, err = db.Get([]string{"a"})
+	require.NoError(t, err)
+	require.True(t, result["a"], "since the directory wasn't cleaned up, the key should be present")
+	db.Close()
 
 	// corrupt KEYREGISTRY file
 	require.NoError(t, os.WriteFile(path.Join(dbPath, "badgerdbv4", "KEYREGISTRY"), []byte("corrupted"), 0o644))
-	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
-	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	db, err = NewBadgerDB(conf, stats.NOP, DefaultPath())
 	require.NoError(t, err)
-	require.True(t, allowed[types.BatchKey{Key: "a"}], "since the directory was cleaned up, the key should not be present")
-	err = badger.Commit([]string{"a"})
+
+	// After corruption and cleanup, key should not be present
+	result, err = db.Get([]string{"a"})
 	require.NoError(t, err)
-	badger.Close()
+	require.False(t, result["a"], "since the directory was cleaned up, the key should not be present")
+
+	err = db.Set([]string{"a"})
+	require.NoError(t, err)
+	db.Close()
 
 	// cleanup on startup
 	conf.Set("BadgerDB.cleanupOnStartup", true)
-	badger = NewBadgerDB(conf, stats.NOP, DefaultPath())
-	allowed, err = badger.Allowed(types.BatchKey{Key: "a"})
+	db, err = NewBadgerDB(conf, stats.NOP, DefaultPath())
 	require.NoError(t, err)
-	require.True(t, allowed[types.BatchKey{Key: "a"}], "since the directory was cleaned up, the key should not be present")
-	err = badger.Commit([]string{"a"})
+
+	result, err = db.Get([]string{"a"})
 	require.NoError(t, err)
-	badger.Close()
+	require.False(t, result["a"], "since the directory was cleaned up, the key should not be present")
+
+	err = db.Set([]string{"a"})
+	require.NoError(t, err)
+	db.Close()
 }
 
 func TestBadgerClose(t *testing.T) {
-	badger := NewBadgerDB(config.New(), stats.NOP, t.TempDir())
-	require.NotNil(t, badger)
+	conf := config.New()
+	db, err := NewBadgerDB(conf, stats.NOP, t.TempDir())
+	require.NoError(t, err)
+	require.NotNil(t, db)
 
 	t.Log("close badger without any other operation")
-	badger.Close()
+	db.Close()
 }

@@ -38,7 +38,7 @@ func Test_Timeout(t *testing.T) {
 
 	mockCtrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLogger(mockCtrl)
-	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
+	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
 	config := map[string]interface{}{

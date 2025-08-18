@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -35,7 +35,6 @@ const (
 type JobType string
 
 const (
-	JobTypeUpload   JobType = "upload"
 	JobTypeUploadV2 JobType = "upload_v2"
 	JobTypeAsync    JobType = "async_job"
 )
@@ -164,7 +163,7 @@ func New(
 		now:                 time.Now,
 	}
 
-	n.logger.Infof("Initializing Notifier...")
+	n.logger.Infon("Initializing Notifier...")
 
 	n.config.host = n.conf.GetString("PGNOTIFIER_DB_HOST", "localhost")
 	n.config.user = n.conf.GetString("PGNOTIFIER_DB_USER", "ubuntu")
@@ -313,7 +312,9 @@ func (n *Notifier) migrate() error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		n.logger.Warnf("retrying warehouse database migration in %s: %v", t, err)
+		n.logger.Warnn("retrying warehouse database migration",
+			logger.NewDurationField("backoffDelay", t),
+			obskit.Error(err))
 	})
 	if err != nil {
 		return fmt.Errorf("could not migrate pg_notifier_queue: %w", err)
@@ -338,7 +339,9 @@ func (n *Notifier) migrateAlways() error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
 
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		n.logger.Warnf("retrying warehouse database run always migration in %s: %v", t, err)
+		n.logger.Warnn("retrying warehouse database run always migration",
+			logger.NewDurationField("backoffDelay", t),
+			obskit.Error(err))
 	})
 	if err != nil {
 		return fmt.Errorf("could not migrate pg_notifier_queue always: %w", err)
@@ -352,7 +355,7 @@ func (n *Notifier) ClearJobs(ctx context.Context) error {
 		return nil
 	}
 
-	n.logger.Infof("Deleting all jobs for workspace: %s", n.workspaceIdentifier)
+	n.logger.Infon("Deleting all jobs for workspace", obskit.WorkspaceID(n.workspaceIdentifier))
 
 	err := n.repo.resetForWorkspace(ctx, n.workspaceIdentifier)
 	if err != nil {
@@ -386,7 +389,10 @@ func (n *Notifier) Publish(
 		return nil, fmt.Errorf("inserting jobs: %w", err)
 	}
 
-	n.logger.Infof("Inserted %d records into %s for batch: %s", len(publishRequest.Payloads), queueName, batchID)
+	n.logger.Infon("Inserted records",
+		logger.NewIntField("noOfRecords", int64(len(publishRequest.Payloads))),
+		logger.NewStringField("target", queueName),
+		logger.NewStringField("batch", batchID))
 
 	n.stats.insertRecords.Count(len(publishRequest.Payloads))
 
@@ -453,7 +459,7 @@ func (n *Notifier) trackBatch(
 				return nil
 			}
 
-			n.logger.Infof("Completed processing all files in batch: %s", batchID)
+			n.logger.Infon("Completed processing all files in batch", logger.NewStringField("batch", batchID))
 
 			onUpdate(&PublishResponse{
 				Jobs: jobs,
@@ -498,7 +504,7 @@ func (n *Notifier) Subscribe(
 					errors.Is(err, context.DeadlineExceeded),
 					errors.As(err, &pqErr) && pqErr.Code == "57014":
 				default:
-					n.logger.Warnf("claiming job: %v", err)
+					n.logger.Warnn("claiming job", obskit.Error(err))
 				}
 
 				pollSleep = nextPollInterval(pollSleep)
@@ -559,7 +565,7 @@ func (n *Notifier) UpdateClaim(
 	if response.Err != nil {
 		if err := n.repo.onClaimFailed(ctx, claimedJob.Job, response.Err, n.config.maxAttempt); err != nil {
 			n.stats.claimUpdateFailed.Increment()
-			n.logger.Errorf("update claimed: on claimed failed: %v", err)
+			n.logger.Errorn("update claimed: on claimed failed", obskit.Error(err))
 		}
 
 		if claimedJob.Job.Attempt > n.config.maxAttempt {
@@ -570,7 +576,7 @@ func (n *Notifier) UpdateClaim(
 
 	if err := n.repo.onClaimSuccess(ctx, claimedJob.Job, response.Payload); err != nil {
 		n.stats.claimUpdateFailed.Increment()
-		n.logger.Errorf("update claimed: on claimed success: %v", err)
+		n.logger.Errorn("update claimed: on claimed success", obskit.Error(err))
 	}
 }
 
@@ -597,18 +603,18 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 	defer func() {
 		if locked {
 			if err := maintenanceWorkerLock.Unlock(ctx); err != nil {
-				n.logger.Warnf("unlocking maintenance worker lock: %v", err)
+				n.logger.Warnn("unlocking maintenance worker lock", obskit.Error(err))
 			}
 		}
 		err := maintenanceWorkerLock.Close()
 		if err != nil {
-			n.logger.Warnf("closing maintenance worker lock: %v", err)
+			n.logger.Warnn("closing maintenance worker lock", obskit.Error(err))
 		}
 	}()
 
 	for {
 		if locked, err = maintenanceWorkerLock.Lock(ctx); err != nil {
-			n.logger.Warnf("acquiring maintenance worker lock: %v", err)
+			n.logger.Warnn("acquiring maintenance worker lock", obskit.Error(err))
 		} else if locked {
 			break
 		}
@@ -636,7 +642,7 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 		}
 
 		if len(orphanJobIDs) > 0 {
-			n.logger.Infof("Re-triggered job ids: %v", orphanJobIDs)
+			n.logger.Infon("Re-triggered job ids", logger.NewIntSliceField("jobIds", orphanJobIDs))
 		}
 
 		select {
@@ -649,7 +655,7 @@ func (n *Notifier) RunMaintenance(ctx context.Context) error {
 
 // Shutdown waits for all the background jobs to be drained off.
 func (n *Notifier) Shutdown() error {
-	n.logger.Infof("Shutting down notifier")
+	n.logger.Infon("Shutting down notifier")
 
 	n.background.groupCancel()
 	return n.background.group.Wait()

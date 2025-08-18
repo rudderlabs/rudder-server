@@ -752,38 +752,28 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 
 	testCases := []struct {
 		name              string
-		queryWithUploadID bool
 		tableName         string
 		limit             int64
 		expectedLoadFiles int
 	}{
 		{
 			name:              "query with upload ID",
-			queryWithUploadID: true,
 			expectedLoadFiles: 4,
 		},
 		{
 			name:              "query with upload ID and table name",
-			queryWithUploadID: true,
 			tableName:         "test_table2",
 			expectedLoadFiles: 3,
 		},
 		{
 			name:              "query with upload ID, table name and limit",
-			queryWithUploadID: true,
 			tableName:         "test_table2",
 			limit:             2,
 			expectedLoadFiles: 2,
 		},
 		{
 			name:              "query with upload ID and limit",
-			queryWithUploadID: true,
 			limit:             1,
-			expectedLoadFiles: 1,
-		},
-		{
-			name:              "query with staging file IDs",
-			queryWithUploadID: false,
 			expectedLoadFiles: 1,
 		},
 	}
@@ -794,7 +784,6 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 			db := setupDB(t)
 
 			conf := config.New()
-			conf.Set("Warehouse.loadFiles.queryWithUploadID.enable", tc.queryWithUploadID)
 
 			job := &UploadJob{
 				ctx:            ctx,
@@ -803,14 +792,11 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 				stagingFileIDs: []int64{1, 2, 3},
 				logger:         logger.NOP,
 			}
-			job.config.queryLoadFilesWithUploadID = conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
-			var stagingFileId int64
-			stagingFileId, job.upload.ID = createUpload(t, ctx, db)
+			job.upload.ID = createUpload(t, ctx, db)
 			loadFiles := []model.LoadFile{
 				{
-					UploadID:      &job.upload.ID,
-					StagingFileID: stagingFileId,
-					TableName:     "test_table",
+					UploadID:  &job.upload.ID,
+					TableName: "test_table",
 				},
 				{
 					UploadID:  &job.upload.ID,
@@ -837,7 +823,7 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 	}
 }
 
-func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int64, int64) {
+func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) int64 {
 	t.Helper()
 	stagingFilesRepo := repo.NewStagingFiles(db, config.New())
 	stagingFile := model.StagingFileWithSchema{
@@ -851,7 +837,7 @@ func createUpload(t testing.TB, ctx context.Context, db *sqlmiddleware.DB) (int6
 	upload := model.Upload{}
 	uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, upload, stagingFiles)
 	require.NoError(t, err)
-	return stagingFile.ID, uploadID
+	return uploadID
 }
 
 func TestCleanupObjectStorageFiles(t *testing.T) {
@@ -860,9 +846,6 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			ID:       int64(i + 1),
 			Location: fmt.Sprintf("test-location-%d", i+1),
 		}
-	})
-	stagingFilesIDs := lo.Map(stagingFiles, func(f *model.StagingFile, _ int) int64 {
-		return f.ID
 	})
 	loadFiles := lo.RepeatBy(4, func(i int) model.LoadFile {
 		return model.LoadFile{
@@ -939,7 +922,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
 		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(nil).Times(1)
-		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1)).Return(loadFiles, nil).Times(1)
 
 		destConfig := createDestConfig(true, warehouseutils.S3)
 		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
@@ -973,7 +956,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			lo.Map(loadFiles, func(f model.LoadFile, _ int) string { return f.Location })...,
 		)
 		mockFileManager.EXPECT().Delete(gomock.Any(), expectedKeys).Return(errors.New("delete error")).Times(1)
-		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1)).Return(loadFiles, nil).Times(1)
 
 		destConfig := createDestConfig(true, warehouseutils.S3)
 		job := createUploadJob(destConfig, warehouseutils.SNOWFLAKE, mockFileManager, mockLoadFilesRepo, stagingFiles)
@@ -994,7 +977,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 		for _, chunk := range lo.Chunk(expectedKeys, 4) {
 			mockFileManager.EXPECT().Delete(gomock.Any(), chunk).Return(nil).Times(1)
 		}
-		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1), stagingFilesIDs).Return(loadFiles, nil).Times(1)
+		mockLoadFilesRepo.EXPECT().Get(context.Background(), int64(1)).Return(loadFiles, nil).Times(1)
 
 		destConfig := createDestConfig(true, warehouseutils.GCS)
 		job := createUploadJob(destConfig, warehouseutils.BQ, mockFileManager, mockLoadFilesRepo, stagingFiles)
@@ -1051,7 +1034,7 @@ func TestUploadJob_SchemaResetState(t *testing.T) {
 		conf:         config.New(),
 	}
 	manager := snowflake.New(config.New(), logger.NOP, stats.NOP)
-	_, uploadId := createUpload(t, context.Background(), db)
+	uploadId := createUpload(t, context.Background(), db)
 	testCases := []struct {
 		name             string
 		isSchemaOutdated bool

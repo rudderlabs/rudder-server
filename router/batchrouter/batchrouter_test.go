@@ -416,13 +416,8 @@ var _ = Describe("BatchRouter", func() {
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
 					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
-				}).Return(nil)
-			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
-				func(ctx context.Context, _ []*jobsdb.JobT) error {
 					cancel()
-					return nil
-				},
-			)
+				}).Return(nil)
 
 			<-batchrouter.backendConfigInitialized
 			batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)
@@ -550,12 +545,12 @@ func TestBatchRouter(t *testing.T) {
 	require.NoError(t, routerDB.Start())
 	defer routerDB.TearDown()
 
-	errDB := jobsdb.NewForReadWrite(
+	errorDB := jobsdb.NewForReadWrite(
 		"err",
 		jobsdb.WithDBHandle(p.DB),
 	)
-	require.NoError(t, errDB.Start())
-	defer errDB.TearDown()
+	require.NoError(t, errorDB.Start())
+	defer errorDB.TearDown()
 
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
@@ -637,7 +632,7 @@ func TestBatchRouter(t *testing.T) {
 		"MINIO",
 		backendconfigtest.NewStaticLibrary(bcs),
 		routerDB,
-		errDB,
+		errorDB,
 		nil,
 		transientsource.NewEmptyService(),
 		rsources.NewNoOpService(),

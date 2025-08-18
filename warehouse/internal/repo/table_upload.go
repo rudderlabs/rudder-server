@@ -43,7 +43,6 @@ const (
 // TableUploads is a repository for table uploads
 type TableUploads struct {
 	*repo
-	queryLoadFilesWithUploadID config.ValueLoader[bool]
 }
 
 type TableUploadSetOptions struct {
@@ -56,8 +55,7 @@ type TableUploadSetOptions struct {
 
 func NewTableUploads(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *TableUploads {
 	r := &TableUploads{
-		repo:                       &repo{db: db, now: timeutil.Now, statsFactory: stats.NOP, repoType: tableUploadTableName},
-		queryLoadFilesWithUploadID: conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable"),
+		repo: &repo{db: db, now: timeutil.Now, statsFactory: stats.NOP, repoType: tableUploadTableName},
 	}
 	for _, opt := range opts {
 		opt(r.repo)
@@ -197,13 +195,10 @@ func scanTableUpload(scan scanFn, tableUpload *model.TableUpload) error {
 
 // PopulateTotalEventsWithTx Update the 'total_events' field in the Table Uploads table
 // by summing the 'total_events' from load files associated with specific staging file IDs.
-func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string, stagingFileIDs []int64) error {
+func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmiddleware.Tx, uploadId int64, tableName string) error {
 	defer tu.TimerStat("populate_total_events_with_tx", nil)()
 
-	var subQuery string
-	var queryArgs []any
-	if tu.queryLoadFilesWithUploadID.Load() {
-		subQuery = `
+	subQuery := `
 		SELECT
 		  sum(total_events) as total
 		FROM
@@ -212,39 +207,9 @@ func (tu *TableUploads) PopulateTotalEventsWithTx(ctx context.Context, tx *sqlmi
 		  upload_id = $1
 		AND table_name = $2
 `
-		queryArgs = []any{
-			uploadId,
-			tableName,
-		}
-	} else {
-		subQuery = `
-		WITH row_numbered_load_files as (
-		  SELECT
-			total_events,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			` + loadTableName + `
-		  WHERE
-			staging_file_id = ANY($3)
-			AND table_name = $2
-		)
-		SELECT
-		  sum(total_events) as total
-		FROM
-		  row_numbered_load_files
-		WHERE
-		  row_number = 1
-`
-		queryArgs = []any{
-			uploadId,
-			tableName,
-			pq.Array(stagingFileIDs),
-		}
+	queryArgs := []any{
+		uploadId,
+		tableName,
 	}
 
 	query := `

@@ -12,19 +12,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-
 	"github.com/samber/lo"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -79,7 +78,7 @@ func newWorker(
 	w := &worker{
 		sourceID:         sourceID,
 		workspaceID:      workspaceID,
-		log:              log.Child("worker").With("workspaceID", workspaceID).With("sourceID", sourceID),
+		log:              log.Child("worker").Withn(obskit.WorkspaceID(workspaceID), obskit.SourceID(sourceID)),
 		statsFactory:     statsFactory,
 		jobsDB:           jobsDB,
 		configSubscriber: configFetcher,
@@ -130,7 +129,7 @@ func (w *worker) Work() bool {
 
 		statusList, err := w.uploadJobs(w.lifecycle.ctx, jobResult.Jobs)
 		if err != nil {
-			w.log.Warnw("failed to upload jobs", "error", err)
+			w.log.Warnn("failed to upload jobs", obskit.Error(err))
 			return false
 		}
 		w.lastUploadTime = w.now()
@@ -296,7 +295,7 @@ func (w *worker) markJobsStatus(statusList []*jobsdb.JobStatusT) error {
 			return w.jobsDB.UpdateJobStatus(ctx, statusList, nil, nil)
 		},
 		func(attempt int) {
-			w.log.Warnw("failed to mark job's status", "attempt", attempt)
+			w.log.Warnn("failed to mark job's status", logger.NewIntField("attempt", int64(attempt)))
 		},
 	)
 	if err != nil {

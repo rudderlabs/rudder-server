@@ -530,3 +530,39 @@ func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID s
 	_, err := sh.db.ExecContext(ctx, query, expiresAt, sh.now(), destinationID)
 	return err
 }
+
+// GetDestinationNamespaces returns the most recent namespace for each source for a given destination ID.
+func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID string) ([]model.NamespaceMapping, error) {
+	defer sh.TimerStat("get_destination_namespaces", stats.Tags{"destId": destinationID})()
+
+	query := `
+		SELECT DISTINCT ON (source_id)
+			source_id,
+			namespace
+		FROM ` + whSchemaTableName + `
+		WHERE destination_id = $1
+		ORDER BY source_id, updated_at DESC;
+	`
+
+	rows, err := sh.db.QueryContext(ctx, query, destinationID)
+	if err != nil {
+		return nil, fmt.Errorf("querying destination namespaces: %w", err)
+	}
+	defer rows.Close()
+
+	var mappings []model.NamespaceMapping
+	for rows.Next() {
+		var mapping model.NamespaceMapping
+		err := rows.Scan(&mapping.SourceID, &mapping.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("scanning namespace mapping: %w", err)
+		}
+		mappings = append(mappings, mapping)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over namespace mappings: %w", err)
+	}
+
+	return mappings, nil
+}

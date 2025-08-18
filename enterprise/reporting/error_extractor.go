@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -33,7 +34,7 @@ var (
 	spaceRegex       = regexp.MustCompile(`\s+`)
 	whitespacesRegex = regexp.MustCompile("[ \t\n\r]*") // used in checking if string is a valid json to remove extra-spaces
 
-	defaultErrorMessageKeys = []string{"message", "description", "detail", errorKey, "title", "error_message"}
+	defaultErrorMessageKeys = []string{"error_message", "message", "description", "detail", errorKey, "title"}
 	deprecationKeywordSets  = map[string][][]string{
 		"version": {
 			{"action required", "api"},
@@ -127,11 +128,21 @@ func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
 		return sampleResponse
 	}
 
+	// First, try the specific key handlers (response, error, etc.)
+	// This handles nested JSON responses where the error message is in a "response" field
 	for key, erRes := range jsonMap {
 		if result := ext.handleKey(key, erRes); result != "" {
 			return result
 		}
 	}
+
+	// If no specific keys were found, try to find message keys directly in the parsed JSON
+	// This handles cases where the JSON has a direct message field without a response wrapper
+	// This enhancement improves error extraction for various JSON response formats
+	if msg := getErrorMessageFromResponse(jsonMap, ext.ErrorMessageKeys); msg != "" {
+		return msg
+	}
+
 	return ""
 }
 
@@ -140,7 +151,10 @@ func (ext *ExtractorHandle) handleKey(key string, value interface{}) string {
 	case "reason", "Error", responseKey, errorKey:
 		valueStr, ok := value.(string)
 		if !ok {
-			ext.log.Debugn("Handling key", logger.NewStringField("key", key), logger.NewField("value", value))
+			ext.log.Debugn("Handling key",
+				logger.NewStringField("key", key),
+				logger.NewStringField("valueType", fmt.Sprintf("%T", value)), // nolint:forbidigo
+			)
 			return ""
 		}
 
@@ -191,7 +205,10 @@ func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
 func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) string {
 	valAsMap, isMap := value.(map[string]interface{})
 	if !isMap {
-		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key", logger.NewStringField("key", key), logger.NewField("value", value))
+		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key",
+			logger.NewStringField("key", key),
+			logger.NewStringField("valueType", fmt.Sprintf("%T", value)), // nolint:forbidigo
+		)
 		return ""
 	}
 	return getErrorFromWarehouse(valAsMap)
@@ -385,10 +402,16 @@ func (ext *ExtractorHandle) isVersionDeprecationError(errorMessage string) bool 
 	return false
 }
 
-func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string) string {
+func (ext *ExtractorHandle) GetErrorCode(errorMessage string, statTags map[string]string, destType string) string {
 	if errorCode := getErrorCodeFromStatTags(statTags); errorCode != "" {
 		return errorCode
 	}
+
+	// Skip deprecation error detection for warehouse destinations
+	if slices.Contains(warehouseutils.WarehouseDestinations, destType) {
+		return ""
+	}
+
 	if ext.isVersionDeprecationError(errorMessage) {
 		return "deprecation"
 	}

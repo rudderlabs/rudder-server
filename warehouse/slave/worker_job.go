@@ -16,13 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -30,11 +24,15 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 type basePayload struct {
@@ -59,13 +57,6 @@ type basePayload struct {
 	Output                       []uploadResult         `json:"output"`
 	LoadFilePrefix               string                 `json:"load_file_prefix"`
 	LoadFileType                 string                 `json:"load_file_type"`
-}
-
-// payload represents the job payload for upload type jobs
-type payload struct {
-	basePayload
-	StagingFileID       int64  `json:"staging_file_id"`
-	StagingFileLocation string `json:"staging_file_location"`
 }
 
 // payloadV2 represents the job payload for upload_v2 type jobs
@@ -244,10 +235,10 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 			}
 
 			jr.logger.Infon("[WH]: Starting processing staging file with revision config",
-				logger.NewField("stagingFileID", stagingFileInfo.ID),
-				logger.NewField("destinationRevisionID", jr.job.DestinationRevisionID),
-				logger.NewField("stagingDestinationRevisionID", jr.job.StagingDestinationRevisionID),
-				logger.NewField("identifier", jr.identifier),
+				logger.NewIntField("stagingFileID", stagingFileInfo.ID),
+				logger.NewStringField("destinationRevisionID", jr.job.DestinationRevisionID),
+				logger.NewStringField("stagingDestinationRevisionID", jr.job.StagingDestinationRevisionID),
+				logger.NewStringField("identifier", jr.identifier),
 			)
 
 			if err := doTask(jr.job.StagingDestinationConfig, jr.job.StagingUseRudderStorage); err != nil {
@@ -402,8 +393,8 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 			// but this is acceptable for datalake destinations as file is not downloaded further in the process
 			if errors.Is(err, filemanager.ErrPreConditionFailed) {
 				jr.logger.Warnn("Precondition failed while uploading load file",
-					logger.NewField("loadFileName", file.Name()),
-					logger.NewField("tableName", tableName),
+					logger.NewStringField("loadFileName", file.Name()),
+					logger.NewStringField(logfield.TableName, tableName),
 				)
 				return uploadOutput, nil
 			}
@@ -579,7 +570,9 @@ func (jr *jobRun) cleanup() {
 func (jr *jobRun) closeLoadFiles() {
 	for _, writer := range jr.outputFileWritersMap {
 		if err := writer.Close(); err != nil {
-			jr.logger.Errorf("Error while closing load file %s : %v", writer.GetLoadFile().Name(), err)
+			jr.logger.Errorn("Error while closing load file",
+				logger.NewStringField("loadFileName", writer.GetLoadFile().Name()),
+				obskit.Error(err))
 		}
 	}
 }

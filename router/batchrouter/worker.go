@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/circuitbreaker"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -178,17 +179,19 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 
 	// Mark the drainList jobs as Aborted
 	if len(drainList) > 0 {
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.errorDB.Store(ctx, drainJobList)
-		}, brt.sendRetryStoreStats)
-		if err != nil {
-			panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
+		if w.brt.errorDBEnabled.Load() {
+			err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+				return brt.errorDB.Store(ctx, drainJobList)
+			}, brt.sendRetryStoreStats)
+			if err != nil {
+				panic(fmt.Errorf("storing %s jobs into ErrorDB: %w", brt.destType, err))
+			}
 		}
 		reportMetrics := brt.getReportMetrics(getReportMetricsParams{
 			StatusList:    drainList,
 			ParametersMap: brt.getParamertsFromJobs(drainJobList),
 		})
-		err = misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
 				if err != nil {
@@ -220,14 +223,14 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 
 	// Mark jobs as executing in a single batch operation
 	if len(statusList) > 0 {
-		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+		brt.logger.Debugn("BRT: DB Status update complete for parameter Filters", obskit.DestinationType(brt.destType), logger.NewIntField("parameterFiltersCount", int64(len(parameterFilters))))
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
 		}, brt.sendRetryUpdateStats)
 		if err != nil {
 			panic(fmt.Errorf("updating %s job statuses: %w", brt.destType, err))
 		}
-		brt.logger.Debugf("BRT: %s: DB Status update complete for parameter Filters: %v", brt.destType, parameterFilters)
+		brt.logger.Debugn("BRT: DB Status update complete for parameter Filters", obskit.DestinationType(brt.destType), logger.NewIntField("parameterFiltersCount", int64(len(parameterFilters))))
 
 		// Now that all statuses are updated, we can safely send jobs to channels
 		for _, entry := range jobsToBuffer {

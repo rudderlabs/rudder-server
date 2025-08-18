@@ -306,7 +306,10 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
 			failedJobs = append(failedJobs, importingJobIDs[idx])
-			kbu.Logger.Error("Error while uploading profiles", err, uploadResp.Errors, destinationID)
+			kbu.Logger.Errorn("Error while uploading profiles",
+				obskit.Error(err),
+				obskit.DestinationID(destinationID),
+				logger.NewStringField("uploadErrors", uploadResp.Errors.String()))
 			continue
 		}
 

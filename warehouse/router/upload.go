@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,9 +67,9 @@ type UploadJobFactory struct {
 }
 
 type loadFilesRepo interface {
-	Get(ctx context.Context, uploadID int64, stagingFileIDs []int64) ([]model.LoadFile, error)
-	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
-	TotalExportedEvents(ctx context.Context, uploadID int64, stagingFileIDs []int64, skipTables []string) (int64, error)
+	Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error)
+	Delete(ctx context.Context, uploadID int64) error
+	TotalExportedEvents(ctx context.Context, uploadID int64, skipTables []string) (int64, error)
 	GetByID(ctx context.Context, id int64) (*model.LoadFile, error)
 	DistinctTableName(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]string, error)
 }
@@ -114,13 +115,11 @@ type UploadJob struct {
 		disableAlter                        bool
 		minUploadBackoff                    time.Duration
 		maxUploadBackoff                    time.Duration
-		alwaysRegenerateAllLoadFiles        bool
 		reportingEnabled                    bool
 		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
 		skipPreviouslyFailedTables          bool
-		queryLoadFilesWithUploadID          config.ValueLoader[bool]
 		// max number of parallel delete requests to filemanager (applies to GCS only)
 		maxConcurrentObjDeleteRequests func(workspaceID string) int
 		// batch size for parallel deletion of staging and loadfiles (applies to GCS only)
@@ -154,9 +153,8 @@ type pendingTableUploadsRepo interface {
 }
 
 var (
-	alwaysMarkExported                               = []string{whutils.DiscardsTable}
-	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{whutils.SNOWFLAKE, whutils.BQ}
-	mergeSourceCategoryMap                           = map[string]struct{}{
+	alwaysMarkExported     = []string{whutils.DiscardsTable}
+	mergeSourceCategoryMap = map[string]struct{}{
 		"cloud":           {},
 		"singer-protocol": {},
 	}
@@ -165,15 +163,15 @@ var (
 func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJob, whManager manager.Manager) *UploadJob {
 	ujCtx := whutils.CtxWithUploadID(ctx, dto.Upload.ID)
 
-	log := f.logger.With(
-		logfield.UploadJobID, dto.Upload.ID,
-		logfield.Namespace, dto.Warehouse.Namespace,
-		logfield.SourceID, dto.Warehouse.Source.ID,
-		logfield.SourceType, dto.Warehouse.Source.SourceDefinition.Name,
-		logfield.DestinationID, dto.Warehouse.Destination.ID,
-		logfield.DestinationType, dto.Warehouse.Destination.DestinationDefinition.Name,
-		logfield.WorkspaceID, dto.Upload.WorkspaceID,
-		logfield.UseRudderStorage, dto.Upload.UseRudderStorage,
+	log := f.logger.Withn(
+		logger.NewStringField(logfield.UploadJobID, strconv.FormatInt(dto.Upload.ID, 10)),
+		logger.NewStringField(logfield.Namespace, dto.Warehouse.Namespace),
+		logger.NewStringField(logfield.SourceID, dto.Warehouse.Source.ID),
+		logger.NewStringField(logfield.SourceType, dto.Warehouse.Source.SourceDefinition.Name),
+		logger.NewStringField(logfield.DestinationID, dto.Warehouse.Destination.ID),
+		logger.NewStringField(logfield.DestinationType, dto.Warehouse.Destination.DestinationDefinition.Name),
+		logger.NewStringField(logfield.WorkspaceID, dto.Upload.WorkspaceID),
+		logger.NewBoolField(logfield.UseRudderStorage, dto.Upload.UseRudderStorage),
 	)
 
 	uj := &UploadJob{
@@ -212,7 +210,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
 	uj.config.minRetryAttempts = f.conf.GetInt("Warehouse.minRetryAttempts", 3)
 	uj.config.disableAlter = f.conf.GetBool("Warehouse.disableAlter", false)
-	uj.config.alwaysRegenerateAllLoadFiles = f.conf.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 	uj.config.reportingEnabled = f.conf.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]), 100)
 	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]), nil)
@@ -221,7 +218,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
 	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
-	uj.config.queryLoadFilesWithUploadID = f.conf.GetReloadableBoolVar(false, "Warehouse.loadFiles.queryWithUploadID.enable")
 	uj.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {
 		return f.conf.GetIntVar(10, 1,
 			fmt.Sprintf("Warehouse.filemanager.%s.GCS.maxConcurrentObjDeleteRequests", workspaceID),
@@ -272,7 +268,9 @@ func (job *UploadJob) trackLongRunningUpload() chan struct{} {
 		case <-ch:
 			// do nothing
 		case <-time.After(job.config.longRunningUploadStatThresholdInMin):
-			job.logger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
+			job.logger.Infon("[WH]: Registering stat for long running upload",
+				logger.NewStringField(logfield.UploadJobID, strconv.FormatInt(job.upload.ID, 10)),
+				logger.NewStringField(logfield.DestinationType, job.warehouse.Identifier))
 
 			job.statsFactory.NewTaggedStat(
 				"warehouse.long_running_upload",
@@ -362,7 +360,9 @@ func (job *UploadJob) run() (err error) {
 		err = nil
 
 		_ = job.setUploadStatus(UploadStatusOpts{Status: nextUploadState.inProgress})
-		job.logger.Debugf("[WH] Upload: %d, Current state: %s", job.upload.ID, nextUploadState.inProgress)
+		job.logger.Debugn("[WH] Upload: Current state",
+			logger.NewStringField(logfield.UploadJobID, strconv.FormatInt(job.upload.ID, 10)),
+			logger.NewStringField("currentState", nextUploadState.inProgress))
 
 		targetStatus := nextUploadState.completed
 
@@ -444,7 +444,9 @@ func (job *UploadJob) run() (err error) {
 			break
 		}
 
-		job.logger.Debugf("[WH] Upload: %d, Next state: %s", job.upload.ID, newStatus)
+		job.logger.Debugn("[WH] Upload: Next state",
+			logger.NewStringField(logfield.UploadJobID, strconv.FormatInt(job.upload.ID, 10)),
+			logger.NewStringField("nextState", newStatus))
 
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
@@ -479,7 +481,7 @@ func (job *UploadJob) run() (err error) {
 		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == model.ExportedData {
-			_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID, job.stagingFileIDs)
+			_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID)
 			break
 		}
 
@@ -523,11 +525,11 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	})
 	log.Infon("Found staging files to delete",
 		logger.NewIntField("stagingFileCount", int64(len(filesToDel))),
-		logger.NewField("stagingFiles", filesToDel),
+		logger.NewStringField("stagingFiles", strings.Join(filesToDel, ",")),
 	)
 
 	if !whutils.IsDatalakeDestination(destination.DestinationDefinition.Name) {
-		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID, job.stagingFileIDs)
+		loadingFiles, err := job.loadFilesRepo.Get(job.ctx, job.upload.ID)
 		if err != nil {
 			return fmt.Errorf("fetching loading files: %w", err)
 		}
@@ -536,7 +538,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		})
 		log.Infon("Found loading files to delete",
 			logger.NewIntField("loadingFileCount", int64(len(loadingKeysToDel))),
-			logger.NewField("loadingFiles", loadingKeysToDel),
+			logger.NewStringField("loadingFiles", strings.Join(loadingKeysToDel, ",")),
 		)
 
 		filesToDel = append(filesToDel, loadingKeysToDel...)
@@ -578,7 +580,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	deletionTime := job.now().Sub(startTime)
 	log.Infon("Successfully completed file deletion",
 		logger.NewIntField("totalRows", int64(len(filesToDel))),
-		logger.NewField("deletionDuration", deletionTime),
+		logger.NewDurationField("deletionDuration", deletionTime),
 	)
 	job.stats.objectsDeletionTime.SendTiming(deletionTime)
 	return nil
@@ -648,10 +650,12 @@ type UploadStatusOpts struct {
 }
 
 func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
-	job.logger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	job.logger.Debugn("[WH]: Setting status for wh_upload",
+		logger.NewStringField("status", statusOpts.Status),
+		logger.NewStringField(logfield.UploadJobID, strconv.FormatInt(job.upload.ID, 10)))
 	defer func() {
 		if err != nil {
-			job.logger.Warnw("error setting upload status", logfield.Error, err.Error())
+			job.logger.Warnn("error setting upload status", obskit.Error(err))
 		}
 	}()
 
@@ -746,15 +750,15 @@ func (job *UploadJob) setUploadError(statusError error, state string) (string, e
 	)
 
 	defer func() {
-		job.logger.Warnw("upload error",
-			logfield.UploadStatus, state,
-			logfield.Error, statusError,
-			logfield.Priority, job.upload.Priority,
-			logfield.Retried, job.upload.Retried,
-			logfield.Attempt, job.upload.Attempts,
-			logfield.LoadFileType, job.upload.LoadFileType,
-			logfield.ErrorMapping, jobErrorType,
-			logfield.DestinationCredsValid, destCredentialsValidations,
+		job.logger.Warnn("upload error",
+			obskit.Error(statusError),
+			logger.NewStringField(logfield.UploadStatus, state),
+			logger.NewIntField(logfield.Priority, int64(job.upload.Priority)),
+			logger.NewBoolField(logfield.Retried, job.upload.Retried),
+			logger.NewIntField(logfield.Attempt, job.upload.Attempts),
+			logger.NewStringField(logfield.LoadFileType, job.upload.LoadFileType),
+			logger.NewStringField(logfield.ErrorMapping, jobErrorType),
+			logger.NewBoolField(logfield.DestinationCredsValid, destCredentialsValidations != nil && *destCredentialsValidations),
 		)
 	}()
 
@@ -970,51 +974,19 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 }
 
 func (job *UploadJob) getLoadFilesMetadataQuery(tableFilterSQL, limitSQL string) string {
-	if job.config.queryLoadFilesWithUploadID.Load() {
-		return fmt.Sprintf(`
-			SELECT
-			  location,
-			  metadata
-			FROM
-			  %[1]s
-			WHERE
-			  upload_id = %[2]d
-			%[3]s
-			%[4]s;
-			`,
-			whutils.WarehouseLoadFilesTable,
-			job.upload.ID,
-			tableFilterSQL,
-			limitSQL,
-		)
-	}
 	return fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			location,
-			metadata,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v) %[3]s
-		)
 		SELECT
 		  location,
 		  metadata
 		FROM
-		  row_numbered_load_files
+		  %[1]s
 		WHERE
-		  row_number = 1
+		  upload_id = %[2]d
+		%[3]s
 		%[4]s;
 		`,
 		whutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
+		job.upload.ID,
 		tableFilterSQL,
 		limitSQL,
 	)
