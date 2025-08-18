@@ -3,6 +3,7 @@ package snowpipestreaming
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -1829,7 +1830,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 						Failed:    true,
 						Reason:    "previous error",
 						FailedJobIds: &failedJobIds{
-							Start: 1,
+							Start: math.MinInt64 + 1,
 							End:   10,
 						},
 					},
@@ -1943,7 +1944,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				expectedFailedChannels: []string{"test-channel-1"},
 				expectedFailedJobIds: map[string]*failedJobIds{
 					"test-channel-1": {
-						Start: 1,
+						Start: math.MinInt64 + 1,
 						End:   100,
 					},
 				},
@@ -1973,7 +1974,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				expectedFailedChannels: []string{"test-channel-1"},
 				expectedFailedJobIds: map[string]*failedJobIds{
 					"test-channel-1": {
-						Start: 1,
+						Start: math.MinInt64 + 1,
 						End:   100,
 					},
 				},

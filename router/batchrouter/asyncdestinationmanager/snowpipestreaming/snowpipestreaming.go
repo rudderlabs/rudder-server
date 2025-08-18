@@ -537,6 +537,8 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 		if _, alreadyProcessed := m.polledImportInfoMap[info.ChannelID]; alreadyProcessed {
 			continue
 		}
+		info.FailedJobIds = nil
+		info.Failed = false
 
 		inProgress, err := m.getImportStatus(ctx, info)
 		if err != nil {
@@ -545,8 +547,6 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 			m.polledImportInfoMap[info.ChannelID] = info
 			continue
 		}
-		info.FailedJobIds = nil
-		info.Failed = false
 		if !inProgress {
 			m.polledImportInfoMap[info.ChannelID] = info
 		}
@@ -602,14 +602,8 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 	// Case 2: Events lost - restart/error scenario
 	if latestInsertedOffset < expectedOffset {
 		log.Infon("Events lost due to Snowpipe restart or error")
-		var start int64
-		if statusRes.Offset == "" {
-			start = 1
-		} else {
-			start = latestCommittedOffset + 1
-		}
 		info.FailedJobIds = &failedJobIds{
-			Start: start,
+			Start: latestCommittedOffset + 1,
 			End:   expectedOffset,
 		}
 		return false, fmt.Errorf("events lost: latestCommittedOffset=%d, latestInsertedOffset=%d, expectedOffset=%d",
@@ -629,6 +623,8 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 
 func convertToInt(a string) (int64, error) {
 	if a == "" {
+		// Using math.MinInt64 instead of 0 to avoid skipping events
+		// with negative job ids in case of downscaling of nodes
 		return math.MinInt64, nil
 	}
 	ai, err := strconv.ParseInt(a, 10, 64)
