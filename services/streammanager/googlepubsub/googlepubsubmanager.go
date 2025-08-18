@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -139,7 +140,7 @@ func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topi
 
 		// Only retry on specific authentication error
 		if strings.Contains(err.Error(), "Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential") {
-			pkgLogger.Warnf("[GooglePubSub] Authentication error, retrying: %v", err)
+			pkgLogger.Warnn("[GooglePubSub] Authentication error, retrying", obskit.Error(err))
 			return err // Return error to trigger retry
 		}
 
@@ -158,7 +159,7 @@ func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topi
 	boWithMaxRetries := backoff.WithMaxRetries(bo, uint64(producer.retryMaxRetries.Load()))
 
 	err := backoff.RetryNotify(operation, backoff.WithContext(boWithMaxRetries, ctx), func(err error, t time.Duration) {
-		pkgLogger.Warnf("[GooglePubSub] Retrying after %v due to authentication error: %v", t, err)
+		pkgLogger.Warnn("[GooglePubSub] Retrying due to authentication error", logger.NewDurationField("retryAfter", t), obskit.Error(err))
 	})
 
 	return serverID, err
