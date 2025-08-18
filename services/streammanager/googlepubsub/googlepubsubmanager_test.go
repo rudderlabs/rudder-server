@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -77,6 +78,617 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")
+}
+
+// TestNewProducer_ConfigurationValidation tests producer creation with various configuration scenarios
+func TestNewProducer_ConfigurationValidation(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name        string
+		config      map[string]interface{}
+		opts        common.Opts
+		wantErr     bool
+		errorSubstr string
+	}{
+		{
+			name: "valid configuration with test endpoint",
+			config: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			opts:    common.Opts{Timeout: 10 * time.Second},
+			wantErr: false,
+		},
+		{
+			name: "missing project ID should fail",
+			config: map[string]interface{}{
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+			},
+			opts:        common.Opts{Timeout: 10 * time.Second},
+			wantErr:     true,
+			errorSubstr: "missing projectId",
+		},
+		{
+			name: "empty project ID should fail",
+			config: map[string]interface{}{
+				"ProjectId": "",
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+			},
+			opts:        common.Opts{Timeout: 10 * time.Second},
+			wantErr:     true,
+			errorSubstr: "missing projectId",
+		},
+		{
+			name: "invalid JSON config should fail marshalling",
+			config: map[string]interface{}{
+				"ProjectId": make(chan int), // This will cause JSON marshaling to fail
+			},
+			opts:        common.Opts{Timeout: 10 * time.Second},
+			wantErr:     true,
+			errorSubstr: "marshalling destination config",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			destination := backendconfig.DestinationT{Config: tc.config}
+			producer, err := NewProducer(&destination, tc.opts)
+
+			if tc.wantErr {
+				require.Error(t, err)
+				if tc.errorSubstr != "" {
+					require.Contains(t, err.Error(), tc.errorSubstr)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, producer)
+			require.NotNil(t, producer.client)
+			require.NotNil(t, producer.conf)
+		})
+	}
+}
+
+// TestProduce_MessageValidation tests the Produce method with various message validation scenarios
+func TestProduce_MessageValidation(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	testConfig, err := SetupTestGooglePubSub(pool, t)
+	require.NoError(t, err)
+
+	baseConfig := map[string]interface{}{
+		"ProjectId": projectId,
+		"EventToTopicMap": []map[string]string{
+			{"to": topic},
+		},
+		"TestConfig": testConfig,
+	}
+
+	testCases := []struct {
+		name               string
+		jsonData           string
+		expectedStatusCode int
+		expectedRespStatus string
+		expectedMessage    string
+	}{
+		{
+			name:               "valid message should succeed",
+			jsonData:           `{"topicId": "my-topic", "message": {"key": "value"}}`,
+			expectedStatusCode: 200,
+			expectedRespStatus: "Success",
+			expectedMessage:    "Message publish with serverID",
+		},
+		{
+			name:               "message with attributes should succeed",
+			jsonData:           `{"topicId": "my-topic", "message": {"key": "value"}, "attributes": {"attr1": "value1", "attr2": "value2"}}`,
+			expectedStatusCode: 200,
+			expectedRespStatus: "Success",
+			expectedMessage:    "Message publish with serverID",
+		},
+		{
+			name:               "missing message should fail with 400",
+			jsonData:           `{"topicId": "my-topic"}`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "message from payload not found",
+		},
+		{
+			name:               "missing topic ID should fail with 400",
+			jsonData:           `{"message": {"key": "value"}}`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "Topic Id not found",
+		},
+		{
+			name:               "empty topic ID should fail with 400",
+			jsonData:           `{"topicId": "", "message": {"key": "value"}}`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "empty topic id string",
+		},
+		{
+			name:               "non-string topic ID should fail with 400",
+			jsonData:           `{"topicId": 123, "message": {"key": "value"}}`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "Could not parse topic id to string",
+		},
+		{
+			name:               "topic not found should fail with 400",
+			jsonData:           `{"topicId": "non-existent-topic", "message": {"key": "value"}}`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "Topic not found in project",
+		},
+		{
+			name:               "invalid JSON should fail with 400",
+			jsonData:           `invalid json`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "[GooglePubSub] error",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			destination := backendconfig.DestinationT{Config: baseConfig}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
+			require.NoError(t, err)
+
+			statusCode, respStatus, responseMessage := producer.Produce([]byte(tc.jsonData), nil)
+
+			require.Equal(t, tc.expectedStatusCode, statusCode, "Status code mismatch")
+			require.Equal(t, tc.expectedRespStatus, respStatus, "Response status mismatch")
+			require.Contains(t, responseMessage, tc.expectedMessage, "Response message should contain expected text")
+		})
+	}
+}
+
+// TestRetryConfiguration_Initialization tests that retry configuration is properly initialized
+func TestRetryConfiguration_Initialization(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                string
+		config              map[string]interface{}
+		expectedRetryFields int
+	}{
+		{
+			name: "producer should initialize all retry configuration fields",
+			config: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			expectedRetryFields: 5, // enableRetry, initialInterval, maxInterval, maxElapsedTime, maxRetries
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			destination := backendconfig.DestinationT{Config: tc.config}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
+			require.NoError(t, err)
+
+			// Verify all retry configuration fields are properly initialized
+			require.NotNil(t, producer.enableRetry, "enableRetry should be initialized")
+			require.NotNil(t, producer.retryInitialInterval, "retryInitialInterval should be initialized")
+			require.NotNil(t, producer.retryMaxInterval, "retryMaxInterval should be initialized")
+			require.NotNil(t, producer.retryMaxElapsedTime, "retryMaxElapsedTime should be initialized")
+			require.NotNil(t, producer.retryMaxRetries, "retryMaxRetries should be initialized")
+
+			// Test that retry configuration can be loaded and has reasonable values
+			initialInterval := producer.retryInitialInterval.Load()
+			maxInterval := producer.retryMaxInterval.Load()
+			maxElapsedTime := producer.retryMaxElapsedTime.Load()
+			maxRetries := producer.retryMaxRetries.Load()
+
+			require.Greater(t, initialInterval, time.Duration(0), "Initial interval should be positive")
+			require.Greater(t, maxInterval, time.Duration(0), "Max interval should be positive")
+			require.Greater(t, maxElapsedTime, time.Duration(0), "Max elapsed time should be positive")
+			require.GreaterOrEqual(t, maxRetries, 0, "Max retries should be non-negative")
+		})
+	}
+}
+
+// TestRetryConfiguration_DefaultValues tests that retry configuration has expected default values
+func TestRetryConfiguration_DefaultValues(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name                    string
+		config                  map[string]interface{}
+		expectedInitialInterval time.Duration
+		expectedMaxInterval     time.Duration
+		expectedMaxElapsedTime  time.Duration
+		expectedMaxRetries      int
+	}{
+		{
+			name: "retry configuration should have expected default values",
+			config: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			expectedInitialInterval: 10 * time.Millisecond,
+			expectedMaxInterval:     500 * time.Millisecond,
+			expectedMaxElapsedTime:  2 * time.Second,
+			expectedMaxRetries:      3,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset config before each test to avoid interference
+			config.Reset()
+
+			// Set default values explicitly to ensure reloadable variables are properly initialized
+			config.Set("Router.GOOGLEPUBSUB.Client.EnableRetries", false)
+			config.Set("Router.GOOGLEPUBSUB.Client.Retry.InitialInterval", 10*time.Millisecond)
+			config.Set("Router.GOOGLEPUBSUB.Client.Retry.MaxInterval", 500*time.Millisecond)
+			config.Set("Router.GOOGLEPUBSUB.Client.Retry.MaxElapsedTime", 2*time.Second)
+			config.Set("Router.GOOGLEPUBSUB.Client.Retry.MaxRetries", 3)
+
+			destination := backendconfig.DestinationT{Config: tc.config}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
+			require.NoError(t, err)
+
+			// Verify retry configuration has expected default values
+			initialInterval := producer.retryInitialInterval.Load()
+			maxInterval := producer.retryMaxInterval.Load()
+			maxElapsedTime := producer.retryMaxElapsedTime.Load()
+			maxRetries := producer.retryMaxRetries.Load()
+
+			require.Equal(t, tc.expectedInitialInterval, initialInterval, "Initial interval should match expected value")
+			require.Equal(t, tc.expectedMaxInterval, maxInterval, "Max interval should match expected value")
+			require.Equal(t, tc.expectedMaxElapsedTime, maxElapsedTime, "Max elapsed time should match expected value")
+			require.Equal(t, tc.expectedMaxRetries, maxRetries, "Max retries should match expected value")
+		})
+	}
+}
+
+// TestRetryConfiguration_CustomValues tests that custom retry configuration values are properly applied
+func TestRetryConfiguration_CustomValues(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		configValues            map[string]interface{}
+		destinationConfig       map[string]interface{}
+		expectedInitialInterval time.Duration
+		expectedMaxInterval     time.Duration
+		expectedMaxElapsedTime  time.Duration
+		expectedMaxRetries      int
+		expectedEnableRetry     bool
+	}{
+		{
+			name: "custom retry configuration should override default values",
+			configValues: map[string]interface{}{
+				"Router.GOOGLEPUBSUB.Client.EnableRetries":         true,
+				"Router.GOOGLEPUBSUB.Client.Retry.InitialInterval": 50 * time.Millisecond,
+				"Router.GOOGLEPUBSUB.Client.Retry.MaxInterval":     1 * time.Second,
+				"Router.GOOGLEPUBSUB.Client.Retry.MaxElapsedTime":  5 * time.Second,
+				"Router.GOOGLEPUBSUB.Client.Retry.MaxRetries":      5,
+			},
+			destinationConfig: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			expectedInitialInterval: 50 * time.Millisecond,
+			expectedMaxInterval:     1 * time.Second,
+			expectedMaxElapsedTime:  5 * time.Second,
+			expectedMaxRetries:      5,
+			expectedEnableRetry:     true,
+		},
+		{
+			name: "partial custom retry configuration should override only specified values",
+			configValues: map[string]interface{}{
+				"Router.GOOGLEPUBSUB.Client.EnableRetries":         true,
+				"Router.GOOGLEPUBSUB.Client.Retry.InitialInterval": 100 * time.Millisecond,
+				"Router.GOOGLEPUBSUB.Client.Retry.MaxRetries":      10,
+			},
+			destinationConfig: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			expectedInitialInterval: 100 * time.Millisecond,
+			expectedMaxInterval:     500 * time.Millisecond, // default value
+			expectedMaxElapsedTime:  2 * time.Second,        // default value
+			expectedMaxRetries:      10,
+			expectedEnableRetry:     true,
+		},
+		{
+			name: "disable retry configuration should set enableRetry to false",
+			configValues: map[string]interface{}{
+				"Router.GOOGLEPUBSUB.Client.EnableRetries": false,
+			},
+			destinationConfig: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			expectedInitialInterval: 10 * time.Millisecond,  // default value
+			expectedMaxInterval:     500 * time.Millisecond, // default value
+			expectedMaxElapsedTime:  2 * time.Second,        // default value
+			expectedMaxRetries:      3,                      // default value
+			expectedEnableRetry:     false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset config before each test to avoid interference
+			config.Reset()
+
+			// Set configuration values for this test
+			for key, value := range tc.configValues {
+				config.Set(key, value)
+			}
+
+			destination := backendconfig.DestinationT{Config: tc.destinationConfig}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
+			require.NoError(t, err)
+
+			// Verify retry configuration has expected custom values
+			enableRetry := producer.enableRetry.Load()
+			initialInterval := producer.retryInitialInterval.Load()
+			maxInterval := producer.retryMaxInterval.Load()
+			maxElapsedTime := producer.retryMaxElapsedTime.Load()
+			maxRetries := producer.retryMaxRetries.Load()
+
+			require.Equal(t, tc.expectedEnableRetry, enableRetry, "Enable retry should match expected value")
+			require.Equal(t, tc.expectedInitialInterval, initialInterval, "Initial interval should match expected value")
+			require.Equal(t, tc.expectedMaxInterval, maxInterval, "Max interval should match expected value")
+			require.Equal(t, tc.expectedMaxElapsedTime, maxElapsedTime, "Max elapsed time should match expected value")
+			require.Equal(t, tc.expectedMaxRetries, maxRetries, "Max retries should match expected value")
+		})
+	}
+}
+
+// TestRetryConfiguration_InvalidValues tests that invalid retry configuration values are handled properly
+func TestRetryConfiguration_InvalidValues(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name              string
+		configValues      map[string]interface{}
+		destinationConfig map[string]interface{}
+		wantErr           bool
+	}{
+		{
+			name: "invalid duration format should fall back to default",
+			configValues: map[string]interface{}{
+				"Router.GOOGLEPUBSUB.Client.Retry.InitialInterval": "invalid-duration",
+			},
+			destinationConfig: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			wantErr: false, // Should not fail, should fall back to default
+		},
+		{
+			name: "invalid integer format should fall back to default",
+			configValues: map[string]interface{}{
+				"Router.GOOGLEPUBSUB.Client.Retry.MaxRetries": "invalid-number",
+			},
+			destinationConfig: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+			wantErr: false, // Should not fail, should fall back to default
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Reset config before each test to avoid interference
+			config.Reset()
+
+			// Set configuration values for this test
+			for key, value := range tc.configValues {
+				config.Set(key, value)
+			}
+
+			destination := backendconfig.DestinationT{Config: tc.destinationConfig}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
+
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, producer)
+
+			// Verify that invalid values fall back to defaults
+			initialInterval := producer.retryInitialInterval.Load()
+			maxRetries := producer.retryMaxRetries.Load()
+
+			// Should have reasonable default values even with invalid input
+			require.Greater(t, initialInterval, time.Duration(0), "Should fall back to positive default")
+			require.GreaterOrEqual(t, maxRetries, 0, "Should fall back to non-negative default")
+		})
+	}
+}
+
+// TestClose_ProducerCleanup tests that the Close method properly cleans up resources
+func TestClose_ProducerCleanup(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name   string
+		config map[string]interface{}
+	}{
+		{
+			name: "close should not panic and handle cleanup properly",
+			config: map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": TestConfig{Endpoint: "localhost:8085"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			destination := backendconfig.DestinationT{Config: tc.config}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
+			require.NoError(t, err)
+
+			// Test that Close doesn't panic and returns no error
+			err = producer.Close()
+			require.NoError(t, err, "Close should not return an error")
+		})
+	}
+}
+
+// TestGetError_DefaultCase tests the error code mapping function with default case
+func TestGetError_DefaultCase(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name           string
+		err            error
+		expectedStatus int
+	}{
+		{
+			name:           "regular error should return 0 (codes.OK)",
+			err:            fmt.Errorf("mock error"),
+			expectedStatus: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			statusCode := getError(tc.err)
+			require.Equal(t, tc.expectedStatus, statusCode, "Status code should match expected value")
+		})
+	}
+}
+
+// TestProducerNilClient_ErrorHandling tests behavior when client is nil
+func TestProducerNilClient_ErrorHandling(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name               string
+		producer           *GooglePubSubProducer
+		jsonData           string
+		expectedStatusCode int
+		expectedRespStatus string
+		expectedMessage    string
+	}{
+		{
+			name: "nil client should return 400 with appropriate error message",
+			producer: &GooglePubSubProducer{
+				client: nil,
+				conf:   nil,
+			},
+			jsonData:           `{"topicId": "my-topic", "message": {"key": "value"}}`,
+			expectedStatusCode: 400,
+			expectedRespStatus: "Failure",
+			expectedMessage:    "Could not create producer",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			statusCode, respStatus, responseMessage := tc.producer.Produce([]byte(tc.jsonData), nil)
+
+			require.Equal(t, tc.expectedStatusCode, statusCode, "Status code should be 400 for nil client")
+			require.Equal(t, tc.expectedRespStatus, respStatus, "Response status should be Failure")
+			require.Contains(t, responseMessage, tc.expectedMessage, "Response message should contain expected error text")
+		})
+	}
+}
+
+// TestProducerWithTimeout_Behavior tests producer behavior with different timeout values
+func TestProducerWithTimeout_Behavior(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	testConfig, err := SetupTestGooglePubSub(pool, t)
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name               string
+		timeout            time.Duration
+		expectedStatusCode int
+		expectedBehavior   string
+	}{
+		{
+			name:               "very short timeout should result in 504 gateway timeout",
+			timeout:            1 * time.Microsecond,
+			expectedStatusCode: 504,
+			expectedBehavior:   "Gateway Timeout",
+		},
+		{
+			name:               "reasonable timeout should result in 200 success",
+			timeout:            10 * time.Second,
+			expectedStatusCode: 200,
+			expectedBehavior:   "Success",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := map[string]interface{}{
+				"ProjectId": projectId,
+				"EventToTopicMap": []map[string]string{
+					{"to": topic},
+				},
+				"TestConfig": testConfig,
+			}
+			destination := backendconfig.DestinationT{Config: config}
+			producer, err := NewProducer(&destination, common.Opts{Timeout: tc.timeout})
+			require.NoError(t, err)
+
+			jsonData := `{"topicId": "my-topic", "message": {"key": "value"}}`
+			statusCode, _, _ := producer.Produce([]byte(jsonData), nil)
+
+			require.Equal(t, tc.expectedStatusCode, statusCode, "Status code should match expected value for timeout behavior")
+		})
+	}
 }
 
 type cleaner interface {

@@ -152,7 +152,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 						table_name = $7;
 	`,
 					tableSchemaPayload,
-					sh.now().UTC(),
+					now.UTC(),
 					whSchema.ExpiresAt,
 					whSchema.DestinationID,
 					whSchema.Namespace,
@@ -185,8 +185,8 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 					whSchema.DestinationID,
 					whSchema.DestinationType,
 					tableSchemaPayload,
-					whSchema.CreatedAt.UTC(),
-					whSchema.UpdatedAt.UTC(),
+					now.UTC(),
+					now.UTC(),
 					whSchema.ExpiresAt,
 					tableName,
 				)
@@ -213,6 +213,9 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	originalSchema, err := sh.getForNamespace(ctx, destID, namespace)
 	if err != nil {
 		return model.WHSchema{}, err
+	}
+	if len(originalSchema.Schema) == 0 {
+		return originalSchema, nil
 	}
 
 	var tableLevelSchemas model.Schema

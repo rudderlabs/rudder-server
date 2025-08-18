@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -21,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -35,6 +38,7 @@ type PubSubConfig struct {
 type TestConfig struct {
 	Endpoint string `json:"endpoint"`
 }
+
 type PubsubClient struct {
 	pbs      *pubsub.Client
 	topicMap map[string]*pubsub.Topic
@@ -50,6 +54,12 @@ func init() {
 type GooglePubSubProducer struct {
 	client *PubsubClient
 	conf   *config.Config
+	// Retry configuration
+	enableRetry          *config.Reloadable[bool]
+	retryInitialInterval *config.Reloadable[time.Duration]
+	retryMaxInterval     *config.Reloadable[time.Duration]
+	retryMaxElapsedTime  *config.Reloadable[time.Duration]
+	retryMaxRetries      *config.Reloadable[int]
 }
 
 // NewProducer creates a producer based on destination config
@@ -89,17 +99,70 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	topicMap := make(map[string]*pubsub.Topic, len(pubsubConfig.EventToTopicMap))
 	for _, s := range pubsubConfig.EventToTopicMap {
 		topic := client.Topic(s["to"])
-		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "StreamManager.GooglePubSub.DelayThreshold")
-		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "StreamManager.GooglePubSub.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
-		topic.PublishSettings.ByteThreshold = config.GetIntVar(int(10*bytesize.MB), 1, "StreamManager.GooglePubSub.ByteThreshold")
+		topic.PublishSettings.NumGoroutines = config.GetIntVar(25, 1, "Router.GOOGLEPUBSUB.Client.NumGoroutines")
+		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "Router.GOOGLEPUBSUB.Client.DelayThreshold")
+		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "Router.GOOGLEPUBSUB.Client.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
+		topic.PublishSettings.ByteThreshold = config.GetIntVar(int(10*bytesize.MB), 1, "Router.GOOGLEPUBSUB.Client.ByteThreshold")
 		topic.PublishSettings.FlowControlSettings = pubsub.FlowControlSettings{
 			LimitExceededBehavior: pubsub.FlowControlBlock,
 		}
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = config.GetIntVar(1000, 1, "StreamManager.GooglePubSub.MaxOutstandingMessages")
-		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = config.GetIntVar(-1, 1, "StreamManager.GooglePubSub.MaxOutstandingBytes")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingMessages = config.GetIntVar(1000, 1, "Router.GOOGLEPUBSUB.Client.MaxOutstandingMessages")
+		topic.PublishSettings.FlowControlSettings.MaxOutstandingBytes = config.GetIntVar(-1, 1, "Router.GOOGLEPUBSUB.Client.MaxOutstandingBytes")
 		topicMap[s["to"]] = topic
 	}
-	return &GooglePubSubProducer{client: &PubsubClient{client, topicMap, o}, conf: config.Default}, nil
+
+	return &GooglePubSubProducer{
+		client: &PubsubClient{client, topicMap, o},
+		conf:   config.Default,
+		// Initialize retry configuration
+		enableRetry:          config.GetReloadableBoolVar(false, "Router.GOOGLEPUBSUB.Client.EnableRetries"),
+		retryInitialInterval: config.GetReloadableDurationVar(10, time.Millisecond, "Router.GOOGLEPUBSUB.Client.Retry.InitialInterval"),
+		retryMaxInterval:     config.GetReloadableDurationVar(500, time.Millisecond, "Router.GOOGLEPUBSUB.Client.Retry.MaxInterval"),
+		retryMaxElapsedTime:  config.GetReloadableDurationVar(2, time.Second, "Router.GOOGLEPUBSUB.Client.Retry.MaxElapsedTime"),
+		retryMaxRetries:      config.GetReloadableIntVar(3, 1, "Router.GOOGLEPUBSUB.Client.Retry.MaxRetries"),
+	}, nil
+}
+
+func (producer *GooglePubSubProducer) publish(ctx context.Context, topic *pubsub.Topic, message *pubsub.Message) (string, error) {
+	return topic.Publish(ctx, message).Get(ctx)
+}
+
+// publishWithRetry publishes a message with retry logic for intermittent authentication errors
+func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topic *pubsub.Topic, message *pubsub.Message) (string, error) {
+	var serverID string
+
+	operation := func() error {
+		var err error
+		serverID, err = producer.publish(ctx, topic, message)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on specific authentication error
+		if strings.Contains(err.Error(), "Request had invalid authentication credentials. Expected OAuth 2 access token, login cookie or other valid authentication credential") {
+			pkgLogger.Warnn("[GooglePubSub] Authentication error, retrying", obskit.Error(err))
+			return err // Return error to trigger retry
+		}
+
+		// For non-authentication errors, mark as permanent to avoid retry
+		return backoff.Permanent(err)
+	}
+
+	// Use configurable exponential backoff
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = producer.retryInitialInterval.Load()
+	bo.MaxInterval = producer.retryMaxInterval.Load()
+	bo.MaxElapsedTime = producer.retryMaxElapsedTime.Load()
+	bo.Multiplier = 2
+
+	// Limit to configured max retries
+	boWithMaxRetries := backoff.WithMaxRetries(bo, uint64(producer.retryMaxRetries.Load()))
+
+	err := backoff.RetryNotify(operation, backoff.WithContext(boWithMaxRetries, ctx), func(err error, t time.Duration) {
+		pkgLogger.Warnn("[GooglePubSub] Retrying due to authentication error", logger.NewDurationField("retryAfter", t), obskit.Error(err))
+	})
+
+	return serverID, err
 }
 
 func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
@@ -157,30 +220,29 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 	}
 
 	attributes := parsedJSON.Get("attributes").Map()
-	var result *pubsub.PublishResult
+	var message *pubsub.Message
 
 	if len(attributes) != 0 {
 		attributesMap := make(map[string]string)
 		for k, v := range attributes {
 			attributesMap[k] = v.Str
 		}
-		result = topic.Publish(
-			ctx,
-			&pubsub.Message{
-				Data:       value,
-				Attributes: attributesMap,
-			},
-		)
+		message = &pubsub.Message{
+			Data:       value,
+			Attributes: attributesMap,
+		}
 	} else {
-		result = topic.Publish(
-			ctx,
-			&pubsub.Message{
-				Data: value,
-			},
-		)
+		message = &pubsub.Message{
+			Data: value,
+		}
 	}
 
-	serverID, err := result.Get(ctx)
+	var serverID string
+	if producer.enableRetry.Load() {
+		serverID, err = producer.publishWithRetry(ctx, topic, message)
+	} else {
+		serverID, err = producer.publish(ctx, topic, message)
+	}
 
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
