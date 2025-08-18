@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.56.3](https://github.com/rudderlabs/rudder-server/compare/v1.56.2...v1.56.3) (2025-08-14)
+
+
+### Bug Fixes
+
+* getting occasional unauthenticated errors from googlepubsub ([#6228](https://github.com/rudderlabs/rudder-server/issues/6228)) ([5aaadfb](https://github.com/rudderlabs/rudder-server/commit/5aaadfb1a9cee2cdd02cea7ddd6a02f7e3e324c7))
+* handling empty schema for table level schemas ([#6233](https://github.com/rudderlabs/rudder-server/issues/6233)) ([41b531b](https://github.com/rudderlabs/rudder-server/commit/41b531b5cad9a28c3ab4ec9668e1418c91823ee0))
+* histogram buckets for schema snapshots ([#6234](https://github.com/rudderlabs/rudder-server/issues/6234)) ([e0aafda](https://github.com/rudderlabs/rudder-server/commit/e0aafdaaa4d50172e3006f157840556d5b137886))
+
+
+### Miscellaneous
+
+* refactor Google Pub/Sub to add retry logic for auth errors ([#6229](https://github.com/rudderlabs/rudder-server/issues/6229)) ([5bb6589](https://github.com/rudderlabs/rudder-server/commit/5bb6589dfdabb5339054c6166f064008a5cf06c4))
+
 ## [1.56.2](https://github.com/rudderlabs/rudder-server/compare/v1.56.1...v1.56.2) (2025-08-04)
 
 
