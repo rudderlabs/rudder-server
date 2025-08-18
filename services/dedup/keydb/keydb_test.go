@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
-	keydbcache "github.com/rudderlabs/keydb/cache"
 	keydbclient "github.com/rudderlabs/keydb/client"
 	keydbnode "github.com/rudderlabs/keydb/node"
 	keydbproto "github.com/rudderlabs/keydb/proto"
@@ -93,11 +92,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		SnapshotInterval: time.Minute,
 		Addresses:        []string{address},
 	}
-	cf := func(hashRange uint32) (keydbnode.Cache, error) {
-		return keydbcache.BadgerFactory(conf, logger.NOP)(hashRange)
-	}
+
 	require.NoError(t, err)
-	service, err = keydbnode.NewService(ctx, nodeConfig, cf, &mockedCloudStorage{}, logger.NOP)
+	service, err = keydbnode.NewService(ctx, nodeConfig, &mockedCloudStorage{}, conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 
 	// Create a gRPC server
@@ -125,9 +122,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		RetryDelay:      time.Second,
 	}, logger.NOP)
 	require.NoError(t, err)
-	resp, err := c.GetNodeInfo(context.Background(), 0)
+	size := c.ClusterSize()
 	require.NoError(t, err)
-	require.EqualValues(t, 1, resp.ClusterSize)
+	require.EqualValues(t, 1, size)
 	require.NoError(t, c.Close())
 
 	t.Logf("keydb address: %s", address)
@@ -141,7 +138,14 @@ func (m *mockedFilemanagerSession) Next() (fileObjects []*filemanager.FileInfo, 
 
 type mockedCloudStorage struct{}
 
-func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string) error { return nil }
+func (m *mockedCloudStorage) Download(ctx context.Context, output io.WriterAt, key string, opts ...filemanager.DownloadOption) error {
+	return nil
+}
+
+func (m *mockedCloudStorage) Delete(ctx context.Context, keys []string) error {
+	return nil
+}
+
 func (m *mockedCloudStorage) UploadReader(_ context.Context, _ string, _ io.Reader) (filemanager.UploadedFile, error) {
 	return filemanager.UploadedFile{}, nil
 }
