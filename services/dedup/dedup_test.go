@@ -605,9 +605,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		RetryDelay:      time.Second,
 	}, logger.NOP)
 	require.NoError(t, err)
-	resp, err := c.GetNodeInfo(context.Background(), 0)
+	size := c.ClusterSize()
 	require.NoError(t, err)
-	require.EqualValues(t, 1, resp.ClusterSize)
+	require.EqualValues(t, 1, size)
 	require.NoError(t, c.Close())
 
 	t.Logf("keydb address: %s", address)
@@ -620,6 +620,10 @@ func (m *mockedFilemanagerSession) Next() (fileObjects []*filemanager.FileInfo, 
 }
 
 type mockedCloudStorage struct{}
+
+func (m *mockedCloudStorage) Delete(ctx context.Context, keys []string) error {
+	return nil
+}
 
 func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string, options ...filemanager.DownloadOption) error {
 	return nil
