@@ -6,6 +6,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -536,6 +537,8 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 		if _, alreadyProcessed := m.polledImportInfoMap[info.ChannelID]; alreadyProcessed {
 			continue
 		}
+		info.FailedJobIds = nil
+		info.Failed = false
 
 		inProgress, err := m.getImportStatus(ctx, info)
 		if err != nil {
@@ -556,7 +559,7 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, error) {
 	log := m.logger.Withn(
 		logger.NewStringField("channelId", info.ChannelID),
-		logger.NewStringField("offset", info.Offset),
+		logger.NewStringField("expectedOffset", info.Offset),
 		logger.NewStringField("table", info.Table),
 	)
 	log.Infon("Polling for import info")
@@ -565,16 +568,70 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 	if err != nil {
 		return false, fmt.Errorf("getting status: %w", err)
 	}
+
 	log.Infon("Polled import info",
 		logger.NewBoolField("success", statusRes.Success),
-		logger.NewStringField("polledOffset", statusRes.Offset),
+		logger.NewStringField("latestCommittedOffset", statusRes.Offset),
+		logger.NewStringField("latestInsertedOffset", statusRes.LatestInsertedOffset),
 		logger.NewBoolField("valid", statusRes.Valid),
-		logger.NewBoolField("completed", statusRes.Offset == info.Offset),
 	)
+
 	if !statusRes.Valid || !statusRes.Success {
 		return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
 	}
-	return statusRes.Offset != info.Offset, nil
+
+	latestCommittedOffset, err := convertToInt(statusRes.Offset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert latestCommittedOffset to int: %w", err)
+	}
+	latestInsertedOffset, err := convertToInt(statusRes.LatestInsertedOffset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert latestInsertedOffset to int: %w", err)
+	}
+	expectedOffset, err := convertToInt(info.Offset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert expectedOffset to int: %w", err)
+	}
+
+	// Case 1: All events have been flushed - proceed to next batch
+	if latestCommittedOffset == expectedOffset {
+		log.Infon("All events have been flushed successfully")
+		return false, nil
+	}
+
+	// Case 2: Events lost - restart/error scenario
+	if latestInsertedOffset < expectedOffset {
+		log.Infon("Events lost due to Snowpipe restart or error")
+		info.FailedJobIds = &failedJobIds{
+			Start: latestCommittedOffset + 1,
+			End:   expectedOffset,
+		}
+		return false, fmt.Errorf("events lost: latestCommittedOffset=%d, latestInsertedOffset=%d, expectedOffset=%d",
+			latestCommittedOffset, latestInsertedOffset, expectedOffset)
+	}
+
+	// Case 3: Flushing in progress - continue polling
+	if latestInsertedOffset > latestCommittedOffset {
+		log.Infon("Flushing in progress, continuing to poll")
+		return true, nil
+	}
+
+	// Unexpected case - should not reach here based on the logic
+	log.Warnn("Unexpected polling state encountered")
+	return true, nil
+}
+
+func convertToInt(a string) (int64, error) {
+	if a == "" {
+		// Using math.MinInt64 instead of 0 to avoid skipping events
+		// with negative job ids in case of downscaling of nodes
+		return math.MinInt64, nil
+	}
+	ai, err := strconv.ParseInt(a, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert a to int: %w", err)
+	}
+	return ai, nil
 }
 
 func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
@@ -662,9 +719,14 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 			succeededJobIDs = append(succeededJobIDs, job.JobID)
 		}
 		if info, ok := failedTables[tableName]; ok {
-			failedJobIDs = append(failedJobIDs, job.JobID)
-			failedJobReasons[job.JobID] = info.Reason
+			if info.FailedJobIds == nil || (job.JobID >= info.FailedJobIds.Start && job.JobID <= info.FailedJobIds.End) {
+				failedJobIDs = append(failedJobIDs, job.JobID)
+				failedJobReasons[job.JobID] = info.Reason
+			} else {
+				succeededJobIDs = append(succeededJobIDs, job.JobID)
+			}
 		}
+
 	}
 	return common.GetUploadStatsResponse{
 		StatusCode: http.StatusOK,
