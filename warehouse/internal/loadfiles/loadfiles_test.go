@@ -133,7 +133,7 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	var tableNames []string
 	for _, loadFile := range loadFiles {
 		require.Contains(t, loadFile.Location, loadFile.TableName)
-		require.Equal(t, job.Upload.ID, *loadFile.UploadID)
+		require.Equal(t, job.Upload.ID, loadFile.UploadID)
 		require.Equal(t, stagingFile.SourceID, loadFile.SourceID)
 		require.Equal(t, stagingFile.DestinationID, loadFile.DestinationID)
 		require.Equal(t, job.Warehouse.Destination.RevisionID, loadFile.DestinationRevisionID)
@@ -664,12 +664,10 @@ func TestV2CreateLoadFiles(t *testing.T) {
 		},
 		StagingFiles: stagingFiles,
 	}
-
 	startID, endID, err := lf.CreateLoadFiles(ctx, &job)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(2), endID)
-
 	require.Len(t, loadRepo.store, len(notifier.tables))
 	require.Len(t, stageRepo.store, len(stagingFiles))
 }
@@ -784,5 +782,6 @@ func TestV2CreateLoadFiles_Failure(t *testing.T) {
 		require.EqualError(t, err, "no load files generated")
 		require.Zero(t, startID)
 		require.Zero(t, endID)
+		require.Equal(t, warehouseutils.StagingFileFailedState, stageRepo.store[stagingFiles[0].ID].Status)
 	})
 }

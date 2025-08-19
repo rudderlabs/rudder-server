@@ -166,10 +166,8 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		ContentLength         int64  `json:"content_length"`
 		UseRudderStorage      bool   `json:"use_rudder_storage"`
 	}
-	var (
-		metadataRaw json.RawMessage
-		uploadID    sql.NullInt64
-	)
+
+	var metadataRaw json.RawMessage
 	err := scan(
 		&loadFile.ID,
 		&loadFile.Location,
@@ -180,13 +178,10 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		&loadFile.TotalRows,
 		&metadataRaw,
 		&loadFile.CreatedAt,
-		&uploadID,
+		&loadFile.UploadID,
 	)
 	if err != nil {
 		return fmt.Errorf(`scanning row: %w`, err)
-	}
-	if uploadID.Valid {
-		loadFile.UploadID = &uploadID.Int64
 	}
 
 	var metadata metadataSchema

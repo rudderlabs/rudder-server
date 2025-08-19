@@ -32,12 +32,31 @@ func TestStatsEmission(t *testing.T) {
 		repoUploads := repo.NewUploads(db, repo.WithStats(statsStore))
 		repoStagingFileSchemaSnapshots := repo.NewStagingFileSchemaSnapshots(db, repo.WithStats(statsStore))
 
+		stagingFile := &model.StagingFileWithSchema{
+			StagingFile: model.StagingFile{
+				ID:            1,
+				SourceID:      "source_id",
+				DestinationID: "destination_id",
+			},
+		}
+		_, err = repoStagingFiles.Insert(ctx, stagingFile)
+		require.NoError(t, err)
+		stagingFiles := []*model.StagingFile{&stagingFile.StagingFile}
+		uploadID, err := repoUploads.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:        "source_id",
+			DestinationID:   "destination_id",
+			DestinationType: "destination_type",
+			WorkspaceID:     "workspace_id",
+		}, stagingFiles)
+		require.NoError(t, err)
+
 		require.NoError(t, repoLoadFiles.Insert(ctx, []model.LoadFile{
 			{
 				ID:              1,
 				SourceID:        "source_id",
 				DestinationID:   "destination_id",
 				DestinationType: "destination_type",
+				UploadID:        uploadID,
 			},
 		}))
 		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
@@ -113,22 +132,6 @@ func TestStatsEmission(t *testing.T) {
 			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
 
-		_, err = repoUploads.CreateWithStagingFiles(ctx, model.Upload{
-			ID:              1,
-			SourceID:        "source_id",
-			DestinationID:   "destination_id",
-			DestinationType: "destination_type",
-			WorkspaceID:     "workspace_id",
-		},
-			[]*model.StagingFile{
-				{
-					ID:            1,
-					SourceID:      "source_id",
-					DestinationID: "destination_id",
-				},
-			},
-		)
-		require.NoError(t, err)
 		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
 			"action":      "create_with_staging_files",
 			"repoType":    "wh_uploads",

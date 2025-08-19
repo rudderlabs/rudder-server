@@ -648,29 +648,6 @@ func TestStagingFilesRepo(t *testing.T) {
 						[]int64{}, warehouseutils.StagingFileExecutingState)
 					require.EqualError(t, err, "no staging files to update")
 				})
-
-				t.Run("SetErrorStatus", func(t *testing.T) {
-					now = now.Add(time.Second)
-
-					err := r.SetErrorStatus(ctx,
-						4,
-						fmt.Errorf("the error"),
-					)
-					require.NoError(t, err)
-
-					file, err := r.GetByID(ctx, 4)
-					require.NoError(t, err)
-
-					require.Equal(t, warehouseutils.StagingFileFailedState, file.Status)
-					require.Equal(t, "the error", file.Error.Error())
-					require.Equal(t, now, file.UpdatedAt)
-
-					err = r.SetErrorStatus(ctx,
-						-1,
-						fmt.Errorf("the error"),
-					)
-					require.EqualError(t, err, "no rows affected")
-				})
 			})
 		})
 	}
