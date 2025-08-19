@@ -62,7 +62,7 @@ type Handle struct {
 	application     app.App
 	backendConfig   backendconfig.BackendConfig
 	jobsDB          jobsdb.JobsDB
-	errDB           jobsdb.JobsDB
+	errorDB         jobsdb.JobsDB
 	rateLimiter     throttler.Throttler
 	versionHandler  func(w http.ResponseWriter, r *http.Request)
 	rsourcesService rsources.JobService
@@ -130,8 +130,8 @@ type Handle struct {
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
-		enableEventBlocking                  config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
+		errorDBEnabled                       config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
@@ -608,10 +608,6 @@ func (gw *Handle) memoizedIsEventBlocked() func(workspaceID, sourceID, eventType
 
 // isEventBlocked checks if an event should be blocked based on workspace settings
 func (gw *Handle) isEventBlocked(workspaceID, sourceID, eventType, eventName string) bool {
-	if !gw.conf.enableEventBlocking.Load() {
-		return false
-	}
-
 	// Event blocking is only supported for track events
 	if eventName == "" || eventType != "track" {
 		return false

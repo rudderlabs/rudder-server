@@ -20,7 +20,7 @@ import (
 )
 
 // createTestGateway creates a minimal Handle instance for testing event blocking
-func createTestGateway(t *testing.T, enableEventBlocking bool, eventBlockingSettings backendconfig.EventBlocking) *Handle {
+func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBlocking) *Handle {
 	statsStore, err := memstats.New()
 	require.NoError(t, err)
 
@@ -90,10 +90,9 @@ func createTestGateway(t *testing.T, enableEventBlocking bool, eventBlockingSett
 			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
 			enableInternalBatchValidator                                                      config.ValueLoader[bool]
 			enableInternalBatchEnrichment                                                     config.ValueLoader[bool]
-			enableEventBlocking                                                               config.ValueLoader[bool]
 			webhookV2HandlerEnabled                                                           bool
+			errorDBEnabled                                                                    config.ValueLoader[bool]
 		}{
-			enableEventBlocking:           config.SingleValueLoader(enableEventBlocking),
 			enableInternalBatchValidator:  config.SingleValueLoader(false),
 			enableInternalBatchEnrichment: config.SingleValueLoader(false),
 			webhookV2HandlerEnabled:       false,
@@ -111,7 +110,6 @@ func createTestGateway(t *testing.T, enableEventBlocking bool, eventBlockingSett
 func TestIsEventBlocked(t *testing.T) {
 	tests := []struct {
 		name                  string
-		enableEventBlocking   bool
 		workspaceID           string
 		sourceID              string
 		eventType             string
@@ -121,27 +119,11 @@ func TestIsEventBlocked(t *testing.T) {
 		description           string
 	}{
 		{
-			name:                "event blocking disabled",
-			enableEventBlocking: false,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
-			eventBlockingSettings: backendconfig.EventBlocking{
-				Events: map[string][]string{
-					"track": {"Purchase"},
-				},
-			},
-			expected:    false,
-			description: "When event blocking is disabled, no events should be blocked",
-		},
-		{
-			name:                "empty event name",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "",
+			name:        "empty event name",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -151,12 +133,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Empty event names should not be blocked",
 		},
 		{
-			name:                "non-track event type",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "identify",
-			eventName:           "Purchase",
+			name:        "non-track event type",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "identify",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -166,12 +147,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Non-track events should not be blocked",
 		},
 		{
-			name:                "blocked event",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "blocked event",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -181,12 +161,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Event should be blocked when it matches the blocked events list",
 		},
 		{
-			name:                "non-blocked event",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "PageView",
+			name:        "non-blocked event",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "PageView",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -196,12 +175,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Event should not be blocked when it's not in the blocked events list",
 		},
 		{
-			name:                "case sensitive event matching",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "purchase", // lowercase
+			name:        "case sensitive event matching",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "purchase", // lowercase
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"}, // uppercase
@@ -211,12 +189,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Event matching should be case sensitive",
 		},
 		{
-			name:                "events map is nil",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "events map is nil",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: nil,
 			},
@@ -224,12 +201,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "When Events map is nil, no events should be blocked",
 		},
 		{
-			name:                "workspace not found",
-			enableEventBlocking: true,
-			workspaceID:         "nonexistent",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "workspace not found",
+			workspaceID: "nonexistent",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -239,12 +215,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "When workspace is not found, events should not be blocked",
 		},
 		{
-			name:                "non-event stream source",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "warehouse-source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "non-event stream source",
+			workspaceID: "workspace1",
+			sourceID:    "warehouse-source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -254,12 +229,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Events from non-event stream sources should not be blocked",
 		},
 		{
-			name:                "event stream source - blocked event",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "event stream source - blocked event",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase"},
@@ -269,12 +243,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Events from event stream sources should be blocked when they match the blocked events list",
 		},
 		{
-			name:                "empty track event list",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "empty track event list",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {},
@@ -284,12 +257,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "track event list is empty",
 		},
 		{
-			name:                "empty events map",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "empty events map",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{},
 			},
@@ -297,12 +269,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "events map is empty",
 		},
 		{
-			name:                "track event with large blocked events list",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "AddToCart",
+			name:        "track event with large blocked events list",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "AddToCart",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase", "AddToCart", "RemoveFromCart", "Checkout", "PaymentInfo", "OrderComplete"},
@@ -312,12 +283,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Event should be blocked when present in a large list of blocked track events",
 		},
 		{
-			name:                "track event not in large blocked events list",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "ProductView",
+			name:        "track event not in large blocked events list",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "ProductView",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Purchase", "AddToCart", "RemoveFromCart", "Checkout", "PaymentInfo", "OrderComplete"},
@@ -327,12 +297,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Event should not be blocked when not present in a large list of blocked track events",
 		},
 		{
-			name:                "track event with special characters - blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Product Purchased - $100",
+			name:        "track event with special characters - blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Product Purchased - $100",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Product Purchased - $100", "Cart Abandoned!", "Sign-Up Complete"},
@@ -342,12 +311,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names with special characters should be blocked when they match exactly",
 		},
 		{
-			name:                "track event with special characters - not blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Product Purchased - $200",
+			name:        "track event with special characters - not blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Product Purchased - $200",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"Product Purchased - $100", "Cart Abandoned!", "Sign-Up Complete"},
@@ -357,12 +325,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names with special characters should not be blocked when they don't match exactly",
 		},
 		{
-			name:                "track event with unicode characters - blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "购买商品",
+			name:        "track event with unicode characters - blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "购买商品",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"购买商品", "添加到购物车", "查看产品"},
@@ -372,12 +339,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names with unicode characters should be blocked when they match exactly",
 		},
 		{
-			name:                "track event with whitespace - blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "  Purchase  ",
+			name:        "track event with whitespace - blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "  Purchase  ",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"  Purchase  ", "AddToCart", " Checkout "},
@@ -387,12 +353,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names with whitespace should be blocked when they match exactly including whitespace",
 		},
 		{
-			name:                "track event with whitespace - not blocked due to trim difference",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "Purchase",
+			name:        "track event with whitespace - not blocked due to trim difference",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "Purchase",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"  Purchase  ", "AddToCart", " Checkout "},
@@ -402,12 +367,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names should not be blocked when whitespace doesn't match exactly",
 		},
 		{
-			name:                "track event - empty string in blocked events list",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "",
+			name:        "track event - empty string in blocked events list",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"", "Purchase", "AddToCart"},
@@ -417,12 +381,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Empty track event names should not be blocked even if empty string is in the blocked list",
 		},
 		{
-			name:                "track event with very long name - blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "User_Completed_Very_Detailed_Product_Configuration_With_Multiple_Options_And_Customizations_Before_Adding_To_Cart",
+			name:        "track event with very long name - blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "User_Completed_Very_Detailed_Product_Configuration_With_Multiple_Options_And_Customizations_Before_Adding_To_Cart",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"User_Completed_Very_Detailed_Product_Configuration_With_Multiple_Options_And_Customizations_Before_Adding_To_Cart", "Purchase"},
@@ -432,12 +395,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Very long track event names should be blocked when they match exactly",
 		},
 		{
-			name:                "track event with numeric name - blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "12345",
+			name:        "track event with numeric name - blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "12345",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"12345", "67890", "Purchase"},
@@ -447,12 +409,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names that are purely numeric should be blocked when they match exactly",
 		},
 		{
-			name:                "track event with mixed case in blocked list - exact match",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "PuRcHaSe",
+			name:        "track event with mixed case in blocked list - exact match",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "PuRcHaSe",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"PuRcHaSe", "AddToCart", "checkout"},
@@ -462,12 +423,11 @@ func TestIsEventBlocked(t *testing.T) {
 			description: "Track event names with mixed case should be blocked when they match exactly",
 		},
 		{
-			name:                "track event with single character name - blocked",
-			enableEventBlocking: true,
-			workspaceID:         "workspace1",
-			sourceID:            "source-id-1",
-			eventType:           "track",
-			eventName:           "A",
+			name:        "track event with single character name - blocked",
+			workspaceID: "workspace1",
+			sourceID:    "source-id-1",
+			eventType:   "track",
+			eventName:   "A",
 			eventBlockingSettings: backendconfig.EventBlocking{
 				Events: map[string][]string{
 					"track": {"A", "B", "Purchase"},
@@ -480,7 +440,7 @@ func TestIsEventBlocked(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gw := createTestGateway(t, tt.enableEventBlocking, tt.eventBlockingSettings)
+			gw := createTestGateway(t, tt.eventBlockingSettings)
 
 			result := gw.isEventBlocked(tt.workspaceID, tt.sourceID, tt.eventType, tt.eventName)
 			require.Equal(t, tt.expected, result, tt.description)
@@ -496,7 +456,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 		shouldBeDropped        bool
 	}
 
-	gw := createTestGateway(t, true, backendconfig.EventBlocking{
+	gw := createTestGateway(t, backendconfig.EventBlocking{
 		Events: map[string][]string{
 			"track": {"Purchase"},
 		},
@@ -950,7 +910,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gw := createTestGateway(t, true, tt.eventBlockingSettings)
+			gw := createTestGateway(t, tt.eventBlockingSettings)
 
 			payloadBytes, err := jsonrs.Marshal(tt.messages)
 			require.NoError(t, err, "Failed to marshal test messages")

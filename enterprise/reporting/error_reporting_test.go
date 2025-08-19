@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -259,6 +260,225 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 	}
 }
 
+func TestGetErrorMessage_NestedJSONResponse(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "nested JSON response with message field",
+			input: `{
+				"response": "{\"message\":\"There were 9 invalid conversion events. None were processed.\",\"invalid_events\":[{\"error_message\":\"event_at timestamp must be less than 168h0m0s old\"}]}",
+				"dontBatch": true,
+				"firstAttemptedAt": "2025-08-02T00:04:10.049Z",
+				"content-type": "application/json",
+				"routerSubStage": "router_dest_delivery",
+				"payloadStage": "delivery"
+			}`,
+			expected: "event_at timestamp must be less than 168h0m0s old",
+		},
+		{
+			name: "nested JSON response with error field",
+			input: `{
+				"response": "{\"error\":\"Authentication failed\",\"code\":401}",
+				"dontBatch": true
+			}`,
+			expected: "Authentication failed",
+		},
+		{
+			name: "nested JSON response with description field",
+			input: `{
+				"response": "{\"description\":\"Rate limit exceeded\",\"retry_after\":60}",
+				"dontBatch": true
+			}`,
+			expected: "Rate limit exceeded",
+		},
+		{
+			name: "nested JSON response with detail field",
+			input: `{
+				"response": "{\"detail\":\"Invalid request parameters\",\"status\":400}",
+				"dontBatch": true
+			}`,
+			expected: "Invalid request parameters",
+		},
+		{
+			name: "nested JSON response with title field",
+			input: `{
+				"response": "{\"title\":\"Service Unavailable\",\"status\":503}",
+				"dontBatch": true
+			}`,
+			expected: "Service Unavailable",
+		},
+		{
+			name: "nested JSON response with error_message field",
+			input: `{
+				"response": "{\"error_message\":\"Database connection failed\",\"code\":500}",
+				"dontBatch": true
+			}`,
+			expected: "Database connection failed",
+		},
+		{
+			name: "nested JSON response with multiple error fields",
+			input: `{
+				"response": "{\"message\":\"Primary error\",\"error\":\"Secondary error\",\"description\":\"Tertiary error\"}",
+				"dontBatch": true
+			}`,
+			expected: "Primary error", // Should return first matching key (message)
+		},
+		{
+			name: "nested JSON response with errors array",
+			input: `{
+				"response": "{\"errors\":[\"Error 1\",\"Error 2\",\"Error 3\"]}",
+				"dontBatch": true
+			}`,
+			expected: "Error 1.Error 2.Error 3",
+		},
+		{
+			name: "nested JSON response with deeply nested message",
+			input: `{
+				"response": "{\"data\":{\"error\":{\"message\":\"Deeply nested error message\"}}}",
+				"dontBatch": true
+			}`,
+			expected: "Deeply nested error message",
+		},
+		{
+			name: "nested JSON response with invalid JSON in response field",
+			input: `{
+				"response": "invalid json string",
+				"dontBatch": true
+			}`,
+			expected: "invalid json string",
+		},
+		{
+			name: "nested JSON response with empty response field",
+			input: `{
+				"response": "",
+				"dontBatch": true
+			}`,
+			expected: "",
+		},
+		{
+			name: "nested JSON response with null response field",
+			input: `{
+				"response": null,
+				"dontBatch": true
+			}`,
+			expected: "",
+		},
+		{
+			name: "nested JSON response with missing response field",
+			input: `{
+				"dontBatch": true,
+				"message": "Direct message"
+			}`,
+			expected: "Direct message",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ext.GetErrorMessage(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestGetErrorMessage_ComplexNestedStructures(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name: "nested JSON with array of objects containing error messages",
+			input: `{
+				"response": "{\"invalid_events\":[{\"error_message\":\"event_at timestamp must be less than 168h0m0s old\"},{\"error_message\":\"invalid event type\"}],\"message\":\"There were 2 invalid conversion events. None were processed.\"}",
+				"dontBatch": true
+			}`,
+			expected: "invalid event type",
+		},
+		{
+			name: "nested JSON with multiple levels of nesting",
+			input: `{
+				"response": "{\"result\":{\"status\":{\"error\":{\"message\":\"Multi-level nested error\"}}}}",
+				"dontBatch": true
+			}`,
+			expected: "Multi-level nested error",
+		},
+		{
+			name: "nested JSON with mixed data types",
+			input: `{
+				"response": "{\"message\":\"String message\",\"code\":123,\"active\":true,\"data\":[1,2,3]}",
+				"dontBatch": true
+			}`,
+			expected: "String message",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ext.GetErrorMessage(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestGetErrorMessage_EdgeCases(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "non-JSON input",
+			input:    "plain text error message",
+			expected: "plain text error message",
+		},
+		{
+			name:     "null input",
+			input:    "null",
+			expected: "null",
+		},
+		{
+			name:     "empty object",
+			input:    "{}",
+			expected: "",
+		},
+		{
+			name:     "object with no error fields",
+			input:    `{"status": "ok", "data": "success"}`,
+			expected: "",
+		},
+		{
+			name: "nested JSON with escaped quotes",
+			input: `{
+				"response": "{\"message\":\"Error with \\\"quotes\\\" inside\"}",
+				"dontBatch": true
+			}`,
+			expected: "Error with \"quotes\" inside",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := ext.GetErrorMessage(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestExtractErrorDetails(t *testing.T) {
 	type depTcOutput struct {
 		errorMsg  string
@@ -382,7 +602,7 @@ func TestExtractErrorDetails(t *testing.T) {
 	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
-			errorDetails := edr.extractErrorDetails(tc.inputErrMsg, tc.statTags)
+			errorDetails := edr.extractErrorDetails(tc.inputErrMsg, tc.statTags, "TEST_DESTINATION")
 
 			require.Equal(t, tc.output.errorMsg, errorDetails.Message)
 			require.Equal(t, tc.output.errorCode, errorDetails.Code)
@@ -771,4 +991,170 @@ func TestAggregationLogic(t *testing.T) {
 	}
 
 	require.Equal(t, reportResults, reportingMetrics)
+}
+
+func TestExtractorHandle_GetErrorCode_WarehouseDestinations(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name         string
+		errorMessage string
+		statTags     map[string]string
+		destType     string
+		expectedCode string
+		description  string
+	}{
+		{
+			name:         "warehouse destination should not return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "DELTALAKE",
+			expectedCode: "",
+			description:  "DELTALAKE warehouse destination should be skipped for deprecation detection",
+		},
+		{
+			name:         "warehouse destination should not return deprecation error for SNOWFLAKE",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "SNOWFLAKE",
+			expectedCode: "",
+			description:  "SNOWFLAKE warehouse destination should be skipped for deprecation detection",
+		},
+		{
+			name:         "warehouse destination should not return deprecation error for BQ",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "BQ",
+			expectedCode: "",
+			description:  "BQ warehouse destination should be skipped for deprecation detection",
+		},
+		{
+			name:         "non-warehouse destination should return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "deprecation",
+			description:  "Non-warehouse destination should still detect deprecation errors",
+		},
+		{
+			name:         "non-warehouse destination should return deprecation error for GOOGLE_ANALYTICS",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "GOOGLE_ANALYTICS",
+			expectedCode: "deprecation",
+			description:  "Non-warehouse destination should still detect deprecation errors",
+		},
+		{
+			name:         "warehouse destination should return error code from stat tags",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{"errorCategory": "network", "errorType": "aborted"},
+			destType:     "DELTALAKE",
+			expectedCode: "network:aborted",
+			description:  "Warehouse destination should still return error codes from stat tags",
+		},
+		{
+			name:         "non-warehouse destination should return error code from stat tags",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{"errorCategory": "network", "errorType": "aborted"},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "network:aborted",
+			description:  "Non-warehouse destination should still return error codes from stat tags",
+		},
+		{
+			name:         "empty destination type should not return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "",
+			expectedCode: "deprecation",
+			description:  "Empty destination type should be treated as non-warehouse",
+		},
+		{
+			name:         "unknown destination type should return deprecation error",
+			errorMessage: "API version deprecated and no longer supported",
+			statTags:     map[string]string{},
+			destType:     "UNKNOWN_DESTINATION",
+			expectedCode: "deprecation",
+			description:  "Unknown destination type should be treated as non-warehouse",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := ext.GetErrorCode(tc.errorMessage, tc.statTags, tc.destType)
+			require.Equal(t, tc.expectedCode, result, tc.description)
+		})
+	}
+}
+
+func TestExtractorHandle_GetErrorCode_AllWarehouseDestinations(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+	errorMessage := "API version deprecated and no longer supported"
+	statTags := map[string]string{}
+
+	// Test all warehouse destinations
+	for _, destType := range warehouseutils.WarehouseDestinations {
+		t.Run("warehouse_destination_"+destType, func(t *testing.T) {
+			t.Parallel()
+
+			result := ext.GetErrorCode(errorMessage, statTags, destType)
+			require.Equal(t, "", result, "Warehouse destination %s should not return deprecation error", destType)
+		})
+	}
+}
+
+func TestExtractorHandle_GetErrorCode_EdgeCases(t *testing.T) {
+	ext := NewErrorDetailExtractor(logger.NOP)
+
+	testCases := []struct {
+		name         string
+		errorMessage string
+		statTags     map[string]string
+		destType     string
+		expectedCode string
+		description  string
+	}{
+		{
+			name:         "warehouse destination with non-deprecation error",
+			errorMessage: "Connection timeout",
+			statTags:     map[string]string{},
+			destType:     "DELTALAKE",
+			expectedCode: "",
+			description:  "Warehouse destination should return empty for non-deprecation errors",
+		},
+		{
+			name:         "non-warehouse destination with non-deprecation error",
+			errorMessage: "Connection timeout",
+			statTags:     map[string]string{},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "",
+			description:  "Non-warehouse destination should return empty for non-deprecation errors",
+		},
+		{
+			name:         "warehouse destination with empty error message",
+			errorMessage: "",
+			statTags:     map[string]string{},
+			destType:     "DELTALAKE",
+			expectedCode: "",
+			description:  "Warehouse destination should return empty for empty error messages",
+		},
+		{
+			name:         "non-warehouse destination with empty error message",
+			errorMessage: "",
+			statTags:     map[string]string{},
+			destType:     "FACEBOOK_PIXEL",
+			expectedCode: "",
+			description:  "Non-warehouse destination should return empty for empty error messages",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := ext.GetErrorCode(tc.errorMessage, tc.statTags, tc.destType)
+			require.Equal(t, tc.expectedCode, result, tc.description)
+		})
+	}
 }

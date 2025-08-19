@@ -325,11 +325,11 @@ func TestTableUploadRepo(t *testing.T) {
 				loadFiles = append(loadFiles, model.LoadFile{
 					TableName: tables2[i],
 					TotalRows: i + 1,
-					UploadID:  &uploadId,
+					UploadID:  uploadId,
 				}, model.LoadFile{
 					TableName: tables2[i],
 					TotalRows: i + 1,
-					UploadID:  &uploadId,
+					UploadID:  uploadId,
 				})
 			}
 			insertErr := l.Insert(ctx, loadFiles)

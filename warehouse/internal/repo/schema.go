@@ -152,7 +152,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 						table_name = $7;
 	`,
 					tableSchemaPayload,
-					sh.now().UTC(),
+					now.UTC(),
 					whSchema.ExpiresAt,
 					whSchema.DestinationID,
 					whSchema.Namespace,
@@ -185,8 +185,8 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 					whSchema.DestinationID,
 					whSchema.DestinationType,
 					tableSchemaPayload,
-					whSchema.CreatedAt.UTC(),
-					whSchema.UpdatedAt.UTC(),
+					now.UTC(),
+					now.UTC(),
 					whSchema.ExpiresAt,
 					tableName,
 				)
@@ -213,6 +213,9 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	originalSchema, err := sh.getForNamespace(ctx, destID, namespace)
 	if err != nil {
 		return model.WHSchema{}, err
+	}
+	if len(originalSchema.Schema) == 0 {
+		return originalSchema, nil
 	}
 
 	var tableLevelSchemas model.Schema
@@ -526,4 +529,40 @@ func (sh *WHSchema) SetExpiryForDestination(ctx context.Context, destinationID s
 	`
 	_, err := sh.db.ExecContext(ctx, query, expiresAt, sh.now(), destinationID)
 	return err
+}
+
+// GetDestinationNamespaces returns the most recent namespace for each source for a given destination ID.
+func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID string) ([]model.NamespaceMapping, error) {
+	defer sh.TimerStat("get_destination_namespaces", stats.Tags{"destId": destinationID})()
+
+	query := `
+		SELECT DISTINCT ON (source_id)
+			source_id,
+			namespace
+		FROM ` + whSchemaTableName + `
+		WHERE destination_id = $1
+		ORDER BY source_id, updated_at DESC;
+	`
+
+	rows, err := sh.db.QueryContext(ctx, query, destinationID)
+	if err != nil {
+		return nil, fmt.Errorf("querying destination namespaces: %w", err)
+	}
+	defer rows.Close()
+
+	var mappings []model.NamespaceMapping
+	for rows.Next() {
+		var mapping model.NamespaceMapping
+		err := rows.Scan(&mapping.SourceID, &mapping.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("scanning namespace mapping: %w", err)
+		}
+		mappings = append(mappings, mapping)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating over namespace mappings: %w", err)
+	}
+
+	return mappings, nil
 }

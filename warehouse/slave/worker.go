@@ -13,24 +13,30 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
+
+	"github.com/rudderlabs/rudder-server/services/notifier"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type uploadProcessingResult struct {
@@ -43,8 +49,7 @@ type uploadResult struct {
 	Location              string
 	TotalRows             int
 	ContentLength         int64
-	StagingFileID         int64 // Only used for upload jobs
-	UploadID              int64 // Only used for upload_v2 jobs
+	UploadID              int64
 	DestinationRevisionID string
 	UseRudderStorage      bool
 }
@@ -214,43 +219,21 @@ func (w *worker) processClaimedUploadJob(ctx context.Context, claimedJob *notifi
 		jobJSON []byte
 		err     error
 	)
-
-	switch claimedJob.Job.Type {
-	case notifier.JobTypeUploadV2:
-		var job payloadV2
-		if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
-			handleErr(err, claimedJob)
-			return
-		}
-		job.BatchID = claimedJob.Job.BatchID
-		w.log.Infon("Starting processing staging-files from claim",
-			logger.NewIntField("jobId", claimedJob.Job.ID),
-		)
-		job.Output, err = w.processMultiStagingFiles(ctx, &job)
-		if err != nil {
-			handleErr(err, claimedJob)
-			return
-		}
-		jobJSON, err = jsonrs.Marshal(job)
-	default:
-		var job payload
-		if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
-			handleErr(err, claimedJob)
-			return
-		}
-		job.BatchID = claimedJob.Job.BatchID
-		w.log.Infon("Starting processing staging-file from claim",
-			logger.NewIntField("stagingFileID", job.StagingFileID),
-			logger.NewIntField("jobId", claimedJob.Job.ID),
-		)
-		job.Output, err = w.processStagingFile(ctx, &job)
-		if err != nil {
-			handleErr(err, claimedJob)
-			return
-		}
-		jobJSON, err = jsonrs.Marshal(job)
+	var job payloadV2
+	if err = jsonrs.Unmarshal(claimedJob.Job.Payload, &job); err != nil {
+		handleErr(err, claimedJob)
+		return
 	}
-
+	job.BatchID = claimedJob.Job.BatchID
+	w.log.Infon("Starting processing staging-files from claim",
+		logger.NewIntField("jobId", claimedJob.Job.ID),
+	)
+	job.Output, err = w.processMultiStagingFiles(ctx, &job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	jobJSON, err = jsonrs.Marshal(job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -506,42 +489,6 @@ func (w *worker) processSingleStagingFile(
 	jr.bytesProcessedStagingFileStat.Count(lineBytesCounter)
 
 	return nil
-}
-
-func (w *worker) processStagingFile(ctx context.Context, job *payload) ([]uploadResult, error) {
-	processStartTime := time.Now()
-
-	jr := newJobRun(job.basePayload, w.workerIdx, w.conf, w.log, w.statsFactory, w.encodingFactory)
-
-	w.log.Debugn("Starting processing staging file",
-		logger.NewIntField("stagingFileID", job.StagingFileID),
-		logger.NewStringField("stagingFileLocation", job.StagingFileLocation),
-		logger.NewStringField("identifier", jr.identifier),
-	)
-
-	defer func() {
-		jr.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Count(1)
-		jr.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(w.workerIdx)}).Since(processStartTime)
-		jr.cleanup()
-	}()
-
-	// Initialize Discards Table
-	discardsTable := job.discardsTable()
-	jr.tableEventCountMap[discardsTable] = 0
-
-	// Process the staging file
-	if err := w.processSingleStagingFile(ctx, jr, &job.basePayload, stagingFileInfo{
-		ID:       job.StagingFileID,
-		Location: job.StagingFileLocation,
-	}, misc.GetMD5Hash(job.StagingFileLocation)); err != nil {
-		return nil, err
-	}
-
-	jr.closeLoadFiles()
-	return jr.uploadLoadFiles(ctx, func(result uploadResult) uploadResult {
-		result.StagingFileID = job.StagingFileID
-		return result
-	})
 }
 
 func (w *worker) processMultiStagingFiles(ctx context.Context, job *payloadV2) ([]uploadResult, error) {

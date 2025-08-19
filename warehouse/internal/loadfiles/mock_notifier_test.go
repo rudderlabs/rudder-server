@@ -14,70 +14,13 @@ import (
 )
 
 type mockNotifier struct {
-	t *testing.T
-
-	requests   []loadfiles.WorkerJobRequest
+	t          *testing.T
 	requestsV2 []loadfiles.WorkerJobRequestV2
 	tables     []string
 }
 
 func (n *mockNotifier) Publish(_ context.Context, payload *notifier.PublishRequest) (<-chan *notifier.PublishResponse, error) {
-	if payload.JobType == notifier.JobTypeUploadV2 {
-		return n.publishV2(payload)
-	}
-	return n.publish(payload)
-}
-
-func (n *mockNotifier) publish(payload *notifier.PublishRequest) (<-chan *notifier.PublishResponse, error) {
-	var responses notifier.PublishResponse
-	for _, p := range payload.Payloads {
-		var req loadfiles.WorkerJobRequest
-		err := jsonrs.Unmarshal(p, &req)
-		require.NoError(n.t, err)
-
-		var loadFileUploads []loadfiles.LoadFileUpload
-		for _, tableName := range n.tables {
-			destinationRevisionID := req.DestinationRevisionID
-
-			n.requests = append(n.requests, req)
-
-			loadFileUploads = append(loadFileUploads, loadfiles.LoadFileUpload{
-				TableName:             tableName,
-				Location:              req.StagingFileLocation + "/" + req.UniqueLoadGenID + "/" + tableName,
-				TotalRows:             10,
-				ContentLength:         1000,
-				StagingFileID:         req.StagingFileID,
-				DestinationRevisionID: destinationRevisionID,
-				UseRudderStorage:      req.UseRudderStorage,
-			})
-		}
-		jobResponse := loadfiles.WorkerJobResponse{
-			StagingFileID: req.StagingFileID,
-			Output:        loadFileUploads,
-		}
-		out, err := jsonrs.Marshal(jobResponse)
-
-		errString := ""
-		if err != nil {
-			errString = err.Error()
-		}
-
-		status := notifier.Succeeded
-		if req.StagingFileLocation == "" {
-			errString = "staging file location is empty"
-			status = notifier.Aborted
-		}
-
-		responses.Jobs = append(responses.Jobs, notifier.Job{
-			Payload: out,
-			Error:   errors.New(errString),
-			Status:  status,
-		})
-	}
-
-	ch := make(chan *notifier.PublishResponse, 1)
-	ch <- &responses
-	return ch, nil
+	return n.publishV2(payload)
 }
 
 func (n *mockNotifier) publishV2(payload *notifier.PublishRequest) (<-chan *notifier.PublishResponse, error) {

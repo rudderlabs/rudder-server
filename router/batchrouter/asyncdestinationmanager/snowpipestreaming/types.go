@@ -104,13 +104,22 @@ type (
 		EnableIceberg        bool   `mapstructure:"enableIceberg"`
 	}
 
+	failedJobIds struct {
+		Start int64 `json:"start"`
+		End   int64 `json:"end"`
+	}
+
 	importInfo struct {
 		ChannelID string `json:"channelId"`
 		Offset    string `json:"offset"`
 		Table     string `json:"table"`
-		Failed    bool   `json:"failed"`
-		Reason    string `json:"reason"`
-		Count     int    `json:"count"`
+		// Is set to true if all/some jobs have failed.
+		Failed bool   `json:"failed"`
+		Reason string `json:"reason"`
+		Count  int    `json:"count"`
+		// Marks a specific range of failed job IDs (partial failure).
+		// If all jobs have failed, this field may be nil.
+		FailedJobIds *failedJobIds `json:"failedJobIds,omitempty"`
 	}
 
 	discardInfo struct {

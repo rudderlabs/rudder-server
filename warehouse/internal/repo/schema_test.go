@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -417,7 +418,94 @@ func TestWHSchemasRepo(t *testing.T) {
 						{TableName: "table_name_2", Schema: schemaModel["table_name_2"]},
 					}, tableLevelSchemasResult)
 				})
+
+				t.Run("Empty schema", func(t *testing.T) {
+					emptySchema := model.WHSchema{
+						SourceID:        "empty_source_id_1",
+						Namespace:       "empty_namespace_1",
+						DestinationID:   "empty_destination_id_1",
+						DestinationType: destinationType,
+						Schema:          map[string]model.TableSchema{},
+						CreatedAt:       now,
+						UpdatedAt:       now,
+						ExpiresAt:       now.Add(time.Hour),
+					}
+
+					err := r.Insert(ctx, &emptySchema)
+					require.NoError(t, err)
+
+					expectedSchema, err := r.GetForNamespace(ctx, "empty_destination_id_1", "empty_namespace_1")
+					require.NoError(t, err)
+					require.Empty(t, expectedSchema.Schema)
+				})
 			})
 		})
 	}
+}
+
+func TestWHSchemasRepo_GetDestinationNamespaces(t *testing.T) {
+	destinationID := "test_destination_id"
+	conf := config.New()
+	db, ctx := setupDB(t), context.Background()
+	now := timeutil.Now()
+	r := repo.NewWHSchemas(db, conf)
+
+	// Insert test data with multiple sources and timestamps
+	schemas := []model.WHSchema{
+		{
+			SourceID:      "source_1",
+			DestinationID: destinationID,
+			Namespace:     "namespace_1",
+			UpdatedAt:     now.Add(-time.Hour),
+		},
+		{
+			SourceID:      "source_1",
+			DestinationID: destinationID,
+			Namespace:     "namespace_1_updated",
+			UpdatedAt:     now,
+		},
+		{
+			SourceID:      "source_2",
+			DestinationID: destinationID,
+			Namespace:     "namespace_2",
+		},
+		{
+			SourceID:      "source_3",
+			DestinationID: destinationID,
+			Namespace:     "namespace_3",
+		},
+		{
+			SourceID:      "source_4",
+			DestinationID: "destination_id_2",
+			Namespace:     "namespace_4",
+		},
+	}
+
+	for _, schema := range schemas {
+		err := r.Insert(ctx, &schema)
+		require.NoError(t, err)
+	}
+
+	// Test GetDestinationNamespaces
+	mappings, err := r.GetDestinationNamespaces(ctx, destinationID)
+	require.NoError(t, err)
+
+	// Should return 3 mappings (one per source)
+	require.Len(t, mappings, 3)
+
+	// Create a map for easier assertion
+	mappingMap := make(map[string]string)
+	for _, mapping := range mappings {
+		mappingMap[mapping.SourceID] = mapping.Namespace
+	}
+
+	// Verify the most recent namespace for each source is returned
+	require.Equal(t, "namespace_1_updated", mappingMap["source_1"])
+	require.Equal(t, "namespace_2", mappingMap["source_2"])
+	require.Equal(t, "namespace_3", mappingMap["source_3"])
+
+	// Test with non-existent destination ID
+	emptyMappings, err := r.GetDestinationNamespaces(ctx, "non_existent_destination")
+	require.NoError(t, err)
+	require.Empty(t, emptyMappings)
 }

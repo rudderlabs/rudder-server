@@ -40,7 +40,7 @@ func TestNotifier(t *testing.T) {
 				json.RawMessage(`{"id":"4"}`),
 				json.RawMessage(`{"id":"5"}`),
 			},
-			JobType:      notifier.JobTypeUpload,
+			JobType:      notifier.JobTypeUploadV2,
 			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
@@ -125,7 +125,7 @@ func TestNotifier(t *testing.T) {
 				json.RawMessage(`{"id":"4"}`),
 				json.RawMessage(`{"id":"5"}`),
 			},
-			JobType:      notifier.JobTypeUpload,
+			JobType:      notifier.JobTypeUploadV2,
 			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
@@ -268,7 +268,7 @@ func TestNotifier(t *testing.T) {
 
 		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
-			JobType:      notifier.JobTypeUpload,
+			JobType:      notifier.JobTypeUploadV2,
 			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
@@ -353,7 +353,7 @@ func TestNotifier(t *testing.T) {
 
 		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
-			JobType:      notifier.JobTypeUpload,
+			JobType:      notifier.JobTypeUploadV2,
 			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}
@@ -437,7 +437,7 @@ func TestNotifier(t *testing.T) {
 
 		publishRequest := &notifier.PublishRequest{
 			Payloads:     payloads,
-			JobType:      notifier.JobTypeUpload,
+			JobType:      notifier.JobTypeUploadV2,
 			UploadSchema: json.RawMessage(`{"UploadSchema": "1"}`),
 			Priority:     50,
 		}

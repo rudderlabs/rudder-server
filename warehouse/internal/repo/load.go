@@ -23,7 +23,6 @@ const (
 	loadTableName    = warehouseutils.WarehouseLoadFilesTable
 	loadTableColumns = `
 		id,
-		staging_file_id,
 		location,
 		source_id,
 		destination_id,
@@ -56,18 +55,17 @@ func NewLoadFiles(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *LoadF
 	return r
 }
 
-// Delete deletes load files associated with stagingFileIDs.
-func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error {
+// Delete deletes load files associated with the uploadID.
+func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64) error {
 	defer lf.TimerStat("delete", nil)()
 
 	sqlStatement := `
 		DELETE FROM
 		  ` + loadTableName + `
 		WHERE
-		  upload_id = $1
-		  OR staging_file_id = ANY($2);`
+		  upload_id = $1;`
 
-	_, err := lf.db.ExecContext(ctx, sqlStatement, uploadID, pq.Array(stagingFileIDs))
+	_, err := lf.db.ExecContext(ctx, sqlStatement, uploadID)
 	if err != nil {
 		return fmt.Errorf(`deleting load files: %w`, err)
 	}
@@ -88,7 +86,6 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 			ctx,
 			pq.CopyIn(
 				"wh_load_files",
-				"staging_file_id",
 				"location",
 				"source_id",
 				"destination_id",
@@ -107,7 +104,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 
 		for _, loadFile := range loadFiles {
 			metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
-			_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, lf.now(), metadata, loadFile.UploadID)
+			_, err = stmt.ExecContext(ctx, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, lf.now(), metadata, loadFile.UploadID)
 			if err != nil {
 				return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
 			}
@@ -169,13 +166,10 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		ContentLength         int64  `json:"content_length"`
 		UseRudderStorage      bool   `json:"use_rudder_storage"`
 	}
-	var (
-		metadataRaw json.RawMessage
-		uploadID    sql.NullInt64
-	)
+
+	var metadataRaw json.RawMessage
 	err := scan(
 		&loadFile.ID,
-		&loadFile.StagingFileID,
 		&loadFile.Location,
 		&loadFile.SourceID,
 		&loadFile.DestinationID,
@@ -184,13 +178,10 @@ func scanLoadFile(scan scanFn, loadFile *model.LoadFile) error {
 		&loadFile.TotalRows,
 		&metadataRaw,
 		&loadFile.CreatedAt,
-		&uploadID,
+		&loadFile.UploadID,
 	)
 	if err != nil {
 		return fmt.Errorf(`scanning row: %w`, err)
-	}
-	if uploadID.Valid {
-		loadFile.UploadID = &uploadID.Int64
 	}
 
 	var metadata metadataSchema

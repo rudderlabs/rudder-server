@@ -35,17 +35,17 @@ func TestSlaveJobPayload(t *testing.T) {
 	t.Run("pickup staging configuration", func(t *testing.T) {
 		testCases := []struct {
 			name     string
-			job      *payload
+			job      *payloadV2
 			expected bool
 		}{
 			{
 				name:     "empty payload",
-				job:      &payload{},
+				job:      &payloadV2{},
 				expected: false,
 			},
 			{
 				name: "same staging and destination revision id",
-				job: &payload{
+				job: &payloadV2{
 					basePayload: basePayload{
 						StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 						DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
@@ -55,7 +55,7 @@ func TestSlaveJobPayload(t *testing.T) {
 			},
 			{
 				name: "different staging and destination revision id",
-				job: &payload{
+				job: &payloadV2{
 					basePayload: basePayload{
 						StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 						DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
@@ -65,7 +65,7 @@ func TestSlaveJobPayload(t *testing.T) {
 			},
 			{
 				name: "different staging and destination revision id with staging config",
-				job: &payload{
+				job: &payloadV2{
 					basePayload: basePayload{
 						StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 						DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
@@ -86,7 +86,7 @@ func TestSlaveJobPayload(t *testing.T) {
 	})
 
 	t.Run("sorted columns map", func(t *testing.T) {
-		p := &payload{}
+		p := &payloadV2{}
 		p.UploadSchema = make(model.Schema)
 		p.UploadSchema["a"] = model.TableSchema{
 			"0": "0",
@@ -193,7 +193,8 @@ func TestSlaveJob(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Run("download", func(t *testing.T) {
-			p := payload{
+			stagingFileID := int64(1001)
+			p := payloadV2{
 				basePayload: basePayload{
 					WorkspaceID:       workspaceID,
 					SourceID:          sourceID,
@@ -202,7 +203,12 @@ func TestSlaveJob(t *testing.T) {
 					DestinationType:   destType,
 					DestinationConfig: conf,
 				},
-				StagingFileLocation: uf.ObjectName,
+				StagingFiles: []stagingFileInfo{
+					{
+						ID:       stagingFileID,
+						Location: uf.ObjectName,
+					},
+				},
 			}
 
 			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
@@ -210,14 +216,15 @@ func TestSlaveJob(t *testing.T) {
 			defer jr.cleanup()
 
 			err = jr.downloadStagingFile(ctx, stagingFileInfo{
-				ID:       p.StagingFileID,
-				Location: p.StagingFileLocation,
+				ID:       p.StagingFiles[0].ID,
+				Location: p.StagingFiles[0].Location,
 			})
 			require.NoError(t, err)
 		})
 
 		t.Run("context cancelled", func(t *testing.T) {
-			p := payload{
+			stagingFileID := int64(1002)
+			p := payloadV2{
 				basePayload: basePayload{
 					WorkspaceID:       workspaceID,
 					SourceID:          sourceID,
@@ -226,7 +233,12 @@ func TestSlaveJob(t *testing.T) {
 					DestinationType:   destType,
 					DestinationConfig: conf,
 				},
-				StagingFileLocation: uf.ObjectName,
+				StagingFiles: []stagingFileInfo{
+					{
+						ID:       stagingFileID,
+						Location: uf.ObjectName,
+					},
+				},
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -238,8 +250,8 @@ func TestSlaveJob(t *testing.T) {
 			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, statsStore, encoding.NewFactory(config.New()))
 
 			err = jr.downloadStagingFile(ctx, stagingFileInfo{
-				ID:       p.StagingFileID,
-				Location: p.StagingFileLocation,
+				ID:       p.StagingFiles[0].ID,
+				Location: p.StagingFiles[0].Location,
 			})
 			require.ErrorIs(t, err, context.Canceled)
 
@@ -252,7 +264,8 @@ func TestSlaveJob(t *testing.T) {
 		})
 
 		t.Run("download twice failed", func(t *testing.T) {
-			p := payload{
+			stagingFileID := int64(1003)
+			p := payloadV2{
 				basePayload: basePayload{
 					WorkspaceID:                  workspaceID,
 					SourceID:                     sourceID,
@@ -264,7 +277,12 @@ func TestSlaveJob(t *testing.T) {
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationRevisionID:        uuid.New().String(),
 				},
-				StagingFileLocation: uf.ObjectName,
+				StagingFiles: []stagingFileInfo{
+					{
+						ID:       stagingFileID,
+						Location: uf.ObjectName,
+					},
+				},
 			}
 
 			ctx, cancel := context.WithCancel(context.Background())
@@ -277,8 +295,8 @@ func TestSlaveJob(t *testing.T) {
 
 			defer jr.cleanup()
 			err = jr.downloadStagingFile(ctx, stagingFileInfo{
-				ID:       p.StagingFileID,
-				Location: p.StagingFileLocation,
+				ID:       p.StagingFiles[0].ID,
+				Location: p.StagingFiles[0].Location,
 			})
 			require.ErrorIs(t, err, context.Canceled)
 
@@ -291,7 +309,8 @@ func TestSlaveJob(t *testing.T) {
 		})
 
 		t.Run("download twice succeeded", func(t *testing.T) {
-			p := payload{
+			stagingFileID := int64(1004)
+			p := payloadV2{
 				basePayload: basePayload{
 					WorkspaceID:                  workspaceID,
 					SourceID:                     sourceID,
@@ -303,7 +322,12 @@ func TestSlaveJob(t *testing.T) {
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationRevisionID:        uuid.New().String(),
 				},
-				StagingFileLocation: uf.ObjectName,
+				StagingFiles: []stagingFileInfo{
+					{
+						ID:       stagingFileID,
+						Location: uf.ObjectName,
+					},
+				},
 			}
 
 			jr := newJobRun(p.basePayload, worker, config.New(), logger.NOP, stats.NOP, encoding.NewFactory(config.New()))
@@ -311,8 +335,8 @@ func TestSlaveJob(t *testing.T) {
 			defer jr.cleanup()
 
 			err = jr.downloadStagingFile(ctx, stagingFileInfo{
-				ID:       p.StagingFileID,
-				Location: p.StagingFileLocation,
+				ID:       p.StagingFiles[0].ID,
+				Location: p.StagingFiles[0].Location,
 			})
 			require.NoError(t, err)
 		})
@@ -324,13 +348,20 @@ func TestSlaveJob(t *testing.T) {
 			lines = 100
 		)
 
-		p := payload{
+		stagingFileID := int64(1005)
+		p := payloadV2{
 			basePayload: basePayload{
 				WorkspaceID:     workspaceID,
 				SourceID:        sourceID,
 				DestinationID:   destinationID,
 				DestinationName: destinationName,
 				DestinationType: destType,
+			},
+			StagingFiles: []stagingFileInfo{
+				{
+					ID:       stagingFileID,
+					Location: "test-location",
+				},
 			},
 		}
 
@@ -340,8 +371,8 @@ func TestSlaveJob(t *testing.T) {
 
 		t.Run("writer", func(t *testing.T) {
 			writer, releaseWriter, err := jr.writer(table, stagingFileInfo{
-				ID:       p.StagingFileID,
-				Location: p.StagingFileLocation,
+				ID:       p.StagingFiles[0].ID,
+				Location: p.StagingFiles[0].Location,
 			}, "")
 			require.NoError(t, err)
 
@@ -386,7 +417,7 @@ func TestSlaveJob(t *testing.T) {
 	t.Run("discards", func(t *testing.T) {
 		discardWriter := &mockLoadFileWriter{}
 
-		p := payload{
+		p := payloadV2{
 			basePayload: basePayload{
 				DestinationType: warehouseutils.RS,
 				LoadFileType:    warehouseutils.LoadFileTypeCsv,
@@ -520,15 +551,14 @@ func TestSlaveJob(t *testing.T) {
 				statsStore, err := memstats.New()
 				require.NoError(t, err)
 
-				stagingFileID := int64(1001)
+				uploadID := int64(2001)
 
 				destType := destType
 				if tc.destType != "" {
 					destType = tc.destType
 				}
 
-				job := payload{
-					StagingFileID: stagingFileID,
+				job := payloadV2{
 					basePayload: basePayload{
 						DestinationConfig:        conf,
 						UseRudderStorage:         false,
@@ -543,6 +573,13 @@ func TestSlaveJob(t *testing.T) {
 						LoadFilePrefix:           prefix,
 						UniqueLoadGenID:          uuid.New().String(),
 						DestinationNamespace:     namespace,
+						UploadID:                 uploadID,
+					},
+					StagingFiles: []stagingFileInfo{
+						{
+							ID:       1001,
+							Location: "test-location",
+						},
 					},
 				}
 				c := config.New()
@@ -562,7 +599,7 @@ func TestSlaveJob(t *testing.T) {
 				}
 
 				loadFile, err := jr.uploadLoadFiles(ctx, func(result uploadResult) uploadResult {
-					result.StagingFileID = stagingFileID
+					result.UploadID = uploadID
 					return result
 				})
 				if tc.wantError != nil {
@@ -584,7 +621,7 @@ func TestSlaveJob(t *testing.T) {
 
 				for _, f := range loadFile {
 					require.Regexp(t, outputPathRegex, f.Location)
-					require.Equal(t, f.StagingFileID, stagingFileID)
+					require.Equal(t, f.UploadID, uploadID)
 				}
 			})
 		}

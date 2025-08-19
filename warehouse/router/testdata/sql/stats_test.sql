@@ -1,65 +1,72 @@
 BEGIN;
+INSERT INTO wh_uploads (
+  id, source_id, destination_id, destination_type, workspace_id, namespace, schema,
+  status, created_at, updated_at
+)
+VALUES
+  (1, 'test-sourceID', 'test-destinationID', 'destination_type', 'workspace_id', 'namespace', '{}', 'succeeded', NOW(), NOW());
+
 INSERT INTO wh_staging_files (
   id, location, schema, source_id, destination_id,
   status, total_events, first_event_at,
   last_event_at, created_at, updated_at,
-  metadata
+  metadata, upload_id
 )
 VALUES
   (
     1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', 1
   ),
   (
     2, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', 1
   ),
   (
     3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', 1
   ),
   (
     4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', 1
   );
 INSERT INTO wh_load_files (
-  id, staging_file_id, location, source_id,
+  id, location, source_id,
   destination_id, destination_type,
   table_name, total_events, created_at,
-  metadata
+  metadata, upload_id
 )
 VALUES
   (
-    1, 1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
+    1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
     'POSTGRES', 'test-table', 1, NOW() + INTERVAL '1 seconds',
-    '{}'
+    '{}', 1
   ),
   (
-    2, 2, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
+    2, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
     'POSTGRES', 'test-table', 1, NOW()+ INTERVAL '2 seconds',
-    '{}'
+    '{}', 1
   ),
   (
-    3, 3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
+    3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
     'POSTGRES', 'test-table', 1, NOW()+ INTERVAL '3 seconds',
-    '{}'
+    '{}', 1
   ),
   (
-    4, 4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
+    4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     'test-sourceID', 'test-destinationID',
     'POSTGRES', 'test-table', 1, NOW()+ INTERVAL '4 seconds',
-    '{}'
+    '{}', 1
   );
 INSERT INTO wh_table_uploads (
   id, wh_upload_id, table_name, status,

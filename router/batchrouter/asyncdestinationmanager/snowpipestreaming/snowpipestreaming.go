@@ -6,6 +6,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"slices"
@@ -536,6 +537,8 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 		if _, alreadyProcessed := m.polledImportInfoMap[info.ChannelID]; alreadyProcessed {
 			continue
 		}
+		info.FailedJobIds = nil
+		info.Failed = false
 
 		inProgress, err := m.getImportStatus(ctx, info)
 		if err != nil {
@@ -556,25 +559,124 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, error) {
 	log := m.logger.Withn(
 		logger.NewStringField("channelId", info.ChannelID),
-		logger.NewStringField("offset", info.Offset),
+		logger.NewStringField("expectedOffset", info.Offset),
 		logger.NewStringField("table", info.Table),
 	)
 	log.Infon("Polling for import info")
 
 	statusRes, err := m.api.GetStatus(ctx, info.ChannelID)
+	if err == nil {
+		log.Infon("Polled import info",
+			logger.NewBoolField("success", statusRes.Success),
+			logger.NewStringField("latestCommittedOffset", statusRes.Offset),
+			logger.NewStringField("latestInsertedOffset", statusRes.LatestInsertedOffset),
+			logger.NewBoolField("valid", statusRes.Valid),
+		)
+		if !statusRes.Valid || !statusRes.Success {
+			return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
+		}
+		return isInProgress(statusRes, info, log)
+	}
+	/*
+		404 can happen in the case where the channel is cached in the rudder-server,
+		but then the snowpipe service restarts making the channel id invalid.
+		During polling, we try to recreate the channel to check the status.
+	*/
+	if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
+		log.Infon("Channel not found during polling, attempting to recreate channel", logger.NewStringField("channelID", info.ChannelID))
+
+		var destConf destConfig
+		if decodeErr := destConf.Decode(m.destination.Config); decodeErr != nil {
+			return false, fmt.Errorf("failed to decode destination config during channel recreation: %w", decodeErr)
+		}
+
+		req := buildCreateChannelRequest(m.destination.ID, m.config.instanceID, &destConf, info.Table)
+		recreatedChannel, recreateErr := m.api.CreateChannel(ctx, req)
+		if recreateErr != nil {
+			return false, fmt.Errorf("recreating channel: %w", recreateErr)
+		}
+		m.channelCache.Store(info.Table, recreatedChannel)
+
+		log.Infon("Recreated channel for polling", logger.NewStringField("channelID", recreatedChannel.ChannelID))
+
+		// The new channel id is not being associated with the import info. This is because even if we do that,
+		// it will update the in memory map and not the database
+		// So the next time we poll, we will get the old channel id and not the new one
+
+		statusRes2, err2 := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
+		if err2 != nil {
+			return false, fmt.Errorf("getting status after channel recreation: %w", err2)
+		}
+
+		log.Infon("Polled import info after recreation",
+			logger.NewBoolField("success", statusRes2.Success),
+			logger.NewStringField("latestCommittedOffset", statusRes2.Offset),
+			logger.NewStringField("latestInsertedOffset", statusRes2.LatestInsertedOffset),
+			logger.NewBoolField("valid", statusRes2.Valid),
+		)
+
+		if !statusRes2.Valid || !statusRes2.Success {
+			return false, fmt.Errorf("invalid status response after recreation with valid: %t, success: %t", statusRes2.Valid, statusRes2.Success)
+		}
+
+		return isInProgress(statusRes2, info, log)
+	}
+	return false, fmt.Errorf("getting status: %w", err)
+}
+
+func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.Logger) (bool, error) {
+	latestCommittedOffset, err := convertToInt(statusRes.Offset)
 	if err != nil {
-		return false, fmt.Errorf("getting status: %w", err)
+		return false, fmt.Errorf("failed to convert latestCommittedOffset to int: %w", err)
 	}
-	log.Infon("Polled import info",
-		logger.NewBoolField("success", statusRes.Success),
-		logger.NewStringField("polledOffset", statusRes.Offset),
-		logger.NewBoolField("valid", statusRes.Valid),
-		logger.NewBoolField("completed", statusRes.Offset == info.Offset),
-	)
-	if !statusRes.Valid || !statusRes.Success {
-		return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
+	latestInsertedOffset, err := convertToInt(statusRes.LatestInsertedOffset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert latestInsertedOffset to int: %w", err)
 	}
-	return statusRes.Offset != info.Offset, nil
+	expectedOffset, err := convertToInt(info.Offset)
+	if err != nil {
+		return false, fmt.Errorf("failed to convert expectedOffset to int: %w", err)
+	}
+
+	// Case 1: All events have been flushed - proceed to next batch
+	if latestCommittedOffset == expectedOffset {
+		log.Infon("All events have been flushed successfully")
+		return false, nil
+	}
+
+	// Case 2: Events lost - restart/error scenario
+	if latestInsertedOffset < expectedOffset {
+		log.Infon("Events lost due to Snowpipe restart or error")
+		info.FailedJobIds = &failedJobIds{
+			Start: latestCommittedOffset + 1,
+			End:   expectedOffset,
+		}
+		return false, fmt.Errorf("events lost: latestCommittedOffset=%d, latestInsertedOffset=%d, expectedOffset=%d",
+			latestCommittedOffset, latestInsertedOffset, expectedOffset)
+	}
+
+	// Case 3: Flushing in progress - continue polling
+	if latestInsertedOffset > latestCommittedOffset {
+		log.Infon("Flushing in progress, continuing to poll")
+		return true, nil
+	}
+
+	// Unexpected case - should not reach here based on the logic
+	log.Warnn("Unexpected polling state encountered")
+	return true, nil
+}
+
+func convertToInt(a string) (int64, error) {
+	if a == "" {
+		// Using math.MinInt64 instead of 0 to avoid skipping events
+		// with negative job ids in case of downscaling of nodes
+		return math.MinInt64, nil
+	}
+	ai, err := strconv.ParseInt(a, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert a to int: %w", err)
+	}
+	return ai, nil
 }
 
 func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
@@ -662,9 +764,14 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 			succeededJobIDs = append(succeededJobIDs, job.JobID)
 		}
 		if info, ok := failedTables[tableName]; ok {
-			failedJobIDs = append(failedJobIDs, job.JobID)
-			failedJobReasons[job.JobID] = info.Reason
+			if info.FailedJobIds == nil || (job.JobID >= info.FailedJobIds.Start && job.JobID <= info.FailedJobIds.End) {
+				failedJobIDs = append(failedJobIDs, job.JobID)
+				failedJobReasons[job.JobID] = info.Reason
+			} else {
+				succeededJobIDs = append(succeededJobIDs, job.JobID)
+			}
 		}
+
 	}
 	return common.GetUploadStatsResponse{
 		StatusCode: http.StatusOK,
