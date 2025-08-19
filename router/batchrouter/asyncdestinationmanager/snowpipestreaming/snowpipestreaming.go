@@ -624,7 +624,7 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 	return false, fmt.Errorf("getting status: %w", err)
 }
 
-func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.Logger, ) (bool, error) {
+func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.Logger) (bool, error) {
 	latestCommittedOffset, err := convertToInt(statusRes.Offset)
 	if err != nil {
 		return false, fmt.Errorf("failed to convert latestCommittedOffset to int: %w", err)
