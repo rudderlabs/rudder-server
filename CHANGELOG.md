@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.57.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.56.0...v1.57.0-rc.2) (2025-08-19)
+
+
+### Features
+
+* add support for manual sync mode in warehouse ([#6199](https://github.com/rudderlabs/rudder-server/issues/6199)) ([6f87119](https://github.com/rudderlabs/rudder-server/commit/6f871192505e4c406674e6c26168c5ba101e72ea))
+* enable oauthV2 by removing oauthV2enabled variable ([#6175](https://github.com/rudderlabs/rudder-server/issues/6175)) ([caad8f0](https://github.com/rudderlabs/rudder-server/commit/caad8f078cba5f5a4b3acf93a643a2dd793f5b3b))
+* **router:** support different throttler per event type ([#6181](https://github.com/rudderlabs/rudder-server/issues/6181)) ([12254bb](https://github.com/rudderlabs/rudder-server/commit/12254bbc2c4d89edadc42725c23721831d408242))
+* warehouse grpc API to get namespace mappings of a destination ([#6200](https://github.com/rudderlabs/rudder-server/issues/6200)) ([9613236](https://github.com/rudderlabs/rudder-server/commit/96132368d17d7d571098e3c9401c3f68eb4be403))
+
+
+### Bug Fixes
+
+* adaptive throttling not applying dynamic throttling limits consistently ([#6219](https://github.com/rudderlabs/rudder-server/issues/6219)) ([478b2e1](https://github.com/rudderlabs/rudder-server/commit/478b2e137f3d712d03b35913e283dd3b7f7b618d))
+* error extractor to handle nested JSON responses ([#6209](https://github.com/rudderlabs/rudder-server/issues/6209)) ([ffc0d7a](https://github.com/rudderlabs/rudder-server/commit/ffc0d7a8767a6a15358029f2e80cb8c5b8707099))
+* getting occasional unauthenticated errors from googlepubsub ([#6228](https://github.com/rudderlabs/rudder-server/issues/6228)) ([cc39306](https://github.com/rudderlabs/rudder-server/commit/cc39306e97ea474d7e54a11cce61c3c19920e8f8))
+* handle snowpipe service restarts in destination polling logic ([#6236](https://github.com/rudderlabs/rudder-server/issues/6236)) ([b76bc7f](https://github.com/rudderlabs/rudder-server/commit/b76bc7f3eb770143821ba0138b3290f12a610f96))
+* handling empty schema for table level schemas ([#6233](https://github.com/rudderlabs/rudder-server/issues/6233)) ([cc39306](https://github.com/rudderlabs/rudder-server/commit/cc39306e97ea474d7e54a11cce61c3c19920e8f8))
+* histogram buckets for schema snapshots ([#6234](https://github.com/rudderlabs/rudder-server/issues/6234)) ([cc39306](https://github.com/rudderlabs/rudder-server/commit/cc39306e97ea474d7e54a11cce61c3c19920e8f8))
+* warehouse source empty jobs ([#6204](https://github.com/rudderlabs/rudder-server/issues/6204)) ([42f5ae4](https://github.com/rudderlabs/rudder-server/commit/42f5ae496fa55597bb730cb92158871b2cf01698))
+
+
+### Miscellaneous
+
+* bump  the go-dependencies group with 12 updates ([#6189](https://github.com/rudderlabs/rudder-server/issues/6189)) ([e6e2bcd](https://github.com/rudderlabs/rudder-server/commit/e6e2bcd68daf47b5b4eeb26ce30102ea385aa8b6))
+* enforcing non-sugared logger ([#6066](https://github.com/rudderlabs/rudder-server/issues/6066)) ([b24ded8](https://github.com/rudderlabs/rudder-server/commit/b24ded86ed9912fd6938876d55c3cce371cb62ba))
+* force new MTU metrics from 1st September 2025 onwards ([#6227](https://github.com/rudderlabs/rudder-server/issues/6227)) ([154d2c3](https://github.com/rudderlabs/rudder-server/commit/154d2c3d67aef2d2714ab16f1982ff6f2e05e15b))
+* implement configurable deduplication mirror mode ([#6224](https://github.com/rudderlabs/rudder-server/issues/6224)) ([c97ad7a](https://github.com/rudderlabs/rudder-server/commit/c97ad7aa5ce6bbdc682ac77a30d5cba9e1676ce3))
+* refactor Google Pub/Sub to add retry logic for auth errors ([#6229](https://github.com/rudderlabs/rudder-server/issues/6229)) ([cc39306](https://github.com/rudderlabs/rudder-server/commit/cc39306e97ea474d7e54a11cce61c3c19920e8f8))
+* remove enableV2NotifierJob flag support ([#6196](https://github.com/rudderlabs/rudder-server/issues/6196)) ([8be54bf](https://github.com/rudderlabs/rudder-server/commit/8be54bf928a9be5d194cec5a5bf508d72a825b32))
+* remove event blocking flag ([#6240](https://github.com/rudderlabs/rudder-server/issues/6240)) ([e668e14](https://github.com/rudderlabs/rudder-server/commit/e668e1425c12a9b270464e6a229bfcef007a6c10))
+* remove queryWithUploadId flag support for load files ([#6192](https://github.com/rudderlabs/rudder-server/issues/6192)) ([e6e2bcd](https://github.com/rudderlabs/rudder-server/commit/e6e2bcd68daf47b5b4eeb26ce30102ea385aa8b6))
+* revert "fix: snowpipe events getting duplicated if status API fails" ([#6211](https://github.com/rudderlabs/rudder-server/issues/6211)) ([777b08e](https://github.com/rudderlabs/rudder-server/commit/777b08e58b083535d4fd9261a20d82cf4159514a))
+* skip warehouse destinations from version deprecation error extraction ([#6226](https://github.com/rudderlabs/rudder-server/issues/6226)) ([87c3320](https://github.com/rudderlabs/rudder-server/commit/87c3320ea33a12c27efe6a2294ad1f9af4787ad1))
+* stop collecting errors in proc_error jobsdb ([#6232](https://github.com/rudderlabs/rudder-server/issues/6232)) ([c600968](https://github.com/rudderlabs/rudder-server/commit/c6009685f1c7dfeae43bd35425a70213012c7786))
+* throttler should emit no warning if not enabled ([#6223](https://github.com/rudderlabs/rudder-server/issues/6223)) ([0773168](https://github.com/rudderlabs/rudder-server/commit/07731684d1cfd2bcb12958de9dec4971b68542a7))
+* update keydb dependency ([#6222](https://github.com/rudderlabs/rudder-server/issues/6222)) ([d1d64bc](https://github.com/rudderlabs/rudder-server/commit/d1d64bc5fdef4d2f0f5161a6e98960ef2980536a))
+* use harbor to pull docker images ([#6210](https://github.com/rudderlabs/rudder-server/issues/6210)) ([6c324cf](https://github.com/rudderlabs/rudder-server/commit/6c324cf633b5e0c21cba716da2a5aedd7dd64a18))
+
 ## [1.56.3](https://github.com/rudderlabs/rudder-server/compare/v1.56.2...v1.56.3) (2025-08-14)
 
 
