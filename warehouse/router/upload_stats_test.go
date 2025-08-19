@@ -52,9 +52,6 @@ func TestUploadJob_Stats(t *testing.T) {
 			},
 		}, nil)
 
-		_, err = repo.NewUploads(job.db).CreateWithStagingFiles(context.Background(), job.upload, job.stagingFiles)
-		require.NoError(t, err)
-
 		job.generateUploadSuccessMetrics()
 
 		tags := stats.Tags{
