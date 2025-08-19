@@ -3,7 +3,6 @@ package router
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -13,24 +12,7 @@ import (
 )
 
 func (job *UploadJob) generateLoadFiles() error {
-	generateAll := slices.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) ||
-		job.config.alwaysRegenerateAllLoadFiles ||
-		/*
-			In v2 mode, we create load files for all staging files, not just the ones without a "succeeded" status.
-			This differs from the old logic because v2 no longer updates the status of staging files,
-			so we can't reliably determine which have succeeded or failed.
-			However, for cases where the job contains v1 staging files,
-			we will end up recreating load files for successfully processed v1 staging files.
-			While not ideal, this is acceptable given that there won't be many such jobs.
-		*/
-		job.loadfile.AllowUploadV2JobCreation(job.DTO())
-	var startLoadFileID, endLoadFileID int64
-	var err error
-	if generateAll {
-		startLoadFileID, endLoadFileID, err = job.loadfile.ForceCreateLoadFiles(job.ctx, job.DTO())
-	} else {
-		startLoadFileID, endLoadFileID, err = job.loadfile.CreateLoadFiles(job.ctx, job.DTO())
-	}
+	startLoadFileID, endLoadFileID, err := job.loadfile.CreateLoadFiles(job.ctx, job.DTO())
 	if err != nil {
 		return err
 	}

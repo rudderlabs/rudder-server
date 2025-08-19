@@ -17,7 +17,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	keydbcache "github.com/rudderlabs/keydb/cache"
 	keydbclient "github.com/rudderlabs/keydb/client"
 	keydb "github.com/rudderlabs/keydb/node"
 	keydbproto "github.com/rudderlabs/keydb/proto"
@@ -28,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/services/dedup"
-	dkdb "github.com/rudderlabs/rudder-server/services/dedup/keydb"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -122,11 +120,14 @@ func Test_KeyDB(t *testing.T) {
 	conf := config.New()
 	startKeydb(t, conf)
 
+	// Configure to use KeyDB only mode
+	conf.Set("Dedup.Mirror.Mode", "keydb")
+
 	var (
-		d   dedup.Dedup
+		d   types.Dedup
 		err error
 	)
-	d, err = dkdb.NewKeyDB(conf, stats.NOP, logger.NOP)
+	d, err = dedup.New(conf, stats.NOP, logger.NOP)
 	require.Nil(t, err)
 	defer d.Close()
 
@@ -136,26 +137,27 @@ func Test_KeyDB(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, found[key])
 
-		// Checking it again should give us the same result since we're not using any cache for keydb due to mirroring
+		// Checking it again should give us the different result since we're using cache for keydb as well
 		found, err = d.Allowed(key)
 		require.NoError(t, err)
-		require.True(t, found[key])
+		require.False(t, found[key])
 	})
 
 	t.Run("key a gets committed", func(t *testing.T) {
-		keyB := dedup.SingleKey("b")
+		keyB := dedup.SingleKey("b" + uuid.New().String())
 		found, err := d.Allowed(keyB)
 		require.NoError(t, err)
 		require.True(t, found[keyB])
 
-		err = d.Commit([]string{"a"})
-		require.NoError(t, err)
+		keyA := dedup.SingleKey("a" + uuid.New().String())
 
-		keyA := dedup.SingleKey("a")
+		err = d.Commit([]string{keyA.Key})
+		require.Error(t, err)
+
 		found, err = d.Allowed(keyA, keyB)
 		require.Nil(t, err)
-		require.False(t, found[keyA])
-		require.True(t, found[keyB])
+		require.True(t, found[keyA])
+		require.False(t, found[keyB])
 	})
 
 	t.Run("unique keys", func(t *testing.T) {
@@ -295,6 +297,185 @@ func Test_Dedup_Race(t *testing.T) {
 	}
 }
 
+func Test_Dedup_MirrorMode_Badger(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Test mirrorBadger mode (default)
+	conf.Set("Dedup.Mirror.Mode", "mirrorBadger")
+
+	// Mock KeyDB to simulate failure, should fall back to badger only
+	conf.Set("KeyDB.Dedup.Addresses", "localhost:12345")
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	// Should work with badger only since KeyDB is not available
+	key := dedup.SingleKey("test_mirror_badger")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_mirror_badger"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+}
+
+func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Test mirrorKeyDB mode with KeyDB error
+	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
+	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+
+	key := dedup.SingleKey("test_mirror_keydb_error")
+	_, err = d.Allowed(key)
+	require.Error(t, err)
+}
+
+func Test_Dedup_NoMirror(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Test with no mirroring (default behavior when KeyDB fails)
+	conf.Set("Dedup.Mirror.Mode", "invalid_mode")
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	key := dedup.SingleKey("test_no_mirror")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_no_mirror"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+}
+
+func Test_Dedup_MirrorMode_KeyDB_Success(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Start a KeyDB instance
+	startKeydb(t, conf)
+
+	// Test mirrorKeyDB mode with working KeyDB
+	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	// Test basic functionality with mirroring
+	key := dedup.SingleKey("test_mirror_keydb")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_mirror_keydb"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+
+	// Test with multiple keys
+	kvs := []types.BatchKey{
+		{Index: 0, Key: "multi_key_1"},
+		{Index: 1, Key: "multi_key_2"},
+		{Index: 2, Key: "multi_key_3"},
+	}
+	found, err = d.Allowed(kvs...)
+	require.NoError(t, err)
+	for _, kv := range kvs {
+		require.True(t, found[kv], "key %s should be allowed", kv.Key)
+	}
+
+	err = d.Commit([]string{"multi_key_1", "multi_key_2", "multi_key_3"})
+	require.NoError(t, err)
+}
+
+func Test_Dedup_MirrorMode_Badger_Success(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+	misc.Init()
+
+	dbPath := t.TempDir()
+	conf := config.New()
+	t.Setenv("RUDDER_TMPDIR", dbPath)
+
+	// Start a KeyDB instance
+	startKeydb(t, conf)
+
+	// Test mirrorBadger mode (default) with working KeyDB
+	// Not setting the mode explicitly to test the default behavior
+
+	d, err := dedup.New(conf, stats.NOP, logger.NOP)
+	require.NoError(t, err)
+	defer d.Close()
+
+	// Test basic functionality with mirroring
+	key := dedup.SingleKey("test_mirror_badger_success")
+	found, err := d.Allowed(key)
+	require.NoError(t, err)
+	require.True(t, found[key])
+
+	err = d.Commit([]string{"test_mirror_badger_success"})
+	require.NoError(t, err)
+
+	found, err = d.Allowed(key)
+	require.NoError(t, err)
+	require.False(t, found[key])
+
+	// Test with multiple keys
+	kvs := []types.BatchKey{
+		{Index: 0, Key: "multi_key_a"},
+		{Index: 1, Key: "multi_key_b"},
+		{Index: 2, Key: "multi_key_c"},
+	}
+	found, err = d.Allowed(kvs...)
+	require.NoError(t, err)
+	for _, kv := range kvs {
+		require.True(t, found[kv], "key %s should be allowed", kv.Key)
+	}
+
+	err = d.Commit([]string{"multi_key_a", "multi_key_b", "multi_key_c"})
+	require.NoError(t, err)
+}
+
 func Benchmark_Dedup(b *testing.B) {
 	config.Reset()
 	logger.Reset()
@@ -395,12 +576,8 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		SnapshotInterval: time.Minute,
 		Addresses:        []string{address},
 	}
-	cf := func(hashRange uint32) (keydb.Cache, error) {
-		conf.Set("BadgerDB.Dedup.Path", t.TempDir())
-		return keydbcache.BadgerFactory(conf, logger.NOP)(hashRange)
-	}
 	require.NoError(t, err)
-	service, err = keydb.NewService(ctx, nodeConfig, cf, &mockedCloudStorage{}, logger.NOP)
+	service, err = keydb.NewService(ctx, nodeConfig, &mockedCloudStorage{}, conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
 
 	// Create a gRPC server
@@ -428,9 +605,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		RetryDelay:      time.Second,
 	}, logger.NOP)
 	require.NoError(t, err)
-	resp, err := c.GetNodeInfo(context.Background(), 0)
+	size := c.ClusterSize()
 	require.NoError(t, err)
-	require.EqualValues(t, 1, resp.ClusterSize)
+	require.EqualValues(t, 1, size)
 	require.NoError(t, c.Close())
 
 	t.Logf("keydb address: %s", address)
@@ -444,7 +621,14 @@ func (m *mockedFilemanagerSession) Next() (fileObjects []*filemanager.FileInfo, 
 
 type mockedCloudStorage struct{}
 
-func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string) error { return nil }
+func (m *mockedCloudStorage) Delete(ctx context.Context, keys []string) error {
+	return nil
+}
+
+func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string, options ...filemanager.DownloadOption) error {
+	return nil
+}
+
 func (m *mockedCloudStorage) UploadReader(_ context.Context, _ string, _ io.Reader) (filemanager.UploadedFile, error) {
 	return filemanager.UploadedFile{}, nil
 }

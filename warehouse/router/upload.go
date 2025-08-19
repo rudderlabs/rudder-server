@@ -68,7 +68,7 @@ type UploadJobFactory struct {
 
 type loadFilesRepo interface {
 	Get(ctx context.Context, uploadID int64) ([]model.LoadFile, error)
-	Delete(ctx context.Context, uploadID int64, stagingFileIDs []int64) error
+	Delete(ctx context.Context, uploadID int64) error
 	TotalExportedEvents(ctx context.Context, uploadID int64, skipTables []string) (int64, error)
 	GetByID(ctx context.Context, id int64) (*model.LoadFile, error)
 	DistinctTableName(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]string, error)
@@ -115,7 +115,6 @@ type UploadJob struct {
 		disableAlter                        bool
 		minUploadBackoff                    time.Duration
 		maxUploadBackoff                    time.Duration
-		alwaysRegenerateAllLoadFiles        bool
 		reportingEnabled                    bool
 		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
@@ -154,9 +153,8 @@ type pendingTableUploadsRepo interface {
 }
 
 var (
-	alwaysMarkExported                               = []string{whutils.DiscardsTable}
-	warehousesToAlwaysRegenerateAllLoadFilesOnResume = []string{whutils.SNOWFLAKE, whutils.BQ}
-	mergeSourceCategoryMap                           = map[string]struct{}{
+	alwaysMarkExported     = []string{whutils.DiscardsTable}
+	mergeSourceCategoryMap = map[string]struct{}{
 		"cloud":           {},
 		"singer-protocol": {},
 	}
@@ -212,7 +210,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
 	uj.config.minRetryAttempts = f.conf.GetInt("Warehouse.minRetryAttempts", 3)
 	uj.config.disableAlter = f.conf.GetBool("Warehouse.disableAlter", false)
-	uj.config.alwaysRegenerateAllLoadFiles = f.conf.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 	uj.config.reportingEnabled = f.conf.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]), 100)
 	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]), nil)
@@ -484,7 +481,7 @@ func (job *UploadJob) run() (err error) {
 		job.timerStat(nextUploadState.inProgress).SendTiming(time.Since(stateStartTime))
 
 		if newStatus == model.ExportedData {
-			_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID, job.stagingFileIDs)
+			_ = job.loadFilesRepo.Delete(job.ctx, job.upload.ID)
 			break
 		}
 

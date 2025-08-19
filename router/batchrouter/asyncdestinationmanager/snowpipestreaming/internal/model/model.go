@@ -70,9 +70,10 @@ type (
 	}
 
 	StatusResponse struct {
-		Success bool   `json:"success"`
-		Offset  string `json:"offset"`
-		Valid   bool   `json:"valid"`
+		Success              bool   `json:"success"`
+		Offset               string `json:"offset"`
+		Valid                bool   `json:"valid"`
+		LatestInsertedOffset string `json:"latestInsertedOffset"`
 	}
 )
 
