@@ -1441,7 +1441,9 @@ func (proc *Handle) getTransformationMetrics(
 		for _, messageID := range failedEvent.Metadata.GetMessagesIDs() {
 			message := eventsByMessageID[messageID].SingularEvent
 			failedEventWithMetadata := *failedEvent
-			failedEventWithMetadata.Metadata = *metadataByMessageID[messageID]
+			if metadata, ok := metadataByMessageID[messageID]; ok {
+				failedEventWithMetadata.Metadata = *metadata
+			}
 
 			proc.updateMetricMaps(
 				nil,
