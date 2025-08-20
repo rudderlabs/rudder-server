@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.57.1](https://github.com/rudderlabs/rudder-server/compare/v1.57.0...v1.57.1) (2025-08-20)
+
+
+### Bug Fixes
+
+* update table schema local repository ([#6255](https://github.com/rudderlabs/rudder-server/issues/6255)) ([ddce7e4](https://github.com/rudderlabs/rudder-server/commit/ddce7e4d929f23a8ae14a3867a90634a51e3332b))
+
 ## [1.57.0](https://github.com/rudderlabs/rudder-server/compare/v1.56.0...v1.57.0) (2025-08-19)
 
 
