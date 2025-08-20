@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -165,14 +166,12 @@ func (a *Api) addMasterEndpoints(ctx context.Context, r chi.Router) {
 	a.bcConfig.WaitForConfig(ctx)
 
 	stagingFileSchemaSnapshotTTL := a.conf.GetDurationVar(3, time.Hour, "Warehouse.stagingFileSchemaSnapshotTTL")
-	enableStagingFileSchemaSnapshot := a.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
 	stagingFileSchemaSnapshots := snapshots.NewStagingFileSchema(
 		a.conf,
 		repo.NewStagingFileSchemaSnapshots(a.db, repo.WithStats(a.statsFactory)),
 		snapshots.NewStagingFileSchemaTimeBasedExpiryStrategy(stagingFileSchemaSnapshotTTL),
 	)
 	schemaSnapshotHandler := &api.StagingFileSchemaSnapshotHandler{
-		Enable:    enableStagingFileSchemaSnapshot,
 		Snapshots: stagingFileSchemaSnapshots,
 		PatchGen:  warehouseutils.GenerateJSONPatch,
 	}
