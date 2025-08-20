@@ -1340,6 +1340,7 @@ func (proc *Handle) updateMetricMaps(
 
 func (proc *Handle) getNonSuccessfulMetrics(
 	response types.Response,
+	inputEvents []types.TransformerEvent,
 	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	inPU, pu string,
@@ -1354,11 +1355,17 @@ func (proc *Handle) getNonSuccessfulMetrics(
 	)
 	filtered, failed := grouped[true], grouped[false]
 
+	metadataByMessageID := make(map[string]*types.Metadata)
+	for _, event := range inputEvents {
+		metadataByMessageID[event.Metadata.MessageID] = &event.Metadata
+	}
+
 	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(
 		filtered,
 		jobsdb.Filtered.State,
 		commonMetaData,
 		eventsByMessageID,
+		metadataByMessageID,
 		inPU,
 		pu,
 	)
@@ -1368,6 +1375,7 @@ func (proc *Handle) getNonSuccessfulMetrics(
 		jobsdb.Aborted.State,
 		commonMetaData,
 		eventsByMessageID,
+		metadataByMessageID,
 		inPU,
 		pu,
 	)
@@ -1404,6 +1412,7 @@ func (proc *Handle) getTransformationMetrics(
 	state string,
 	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	metadataByMessageID map[string]*types.Metadata,
 	inPU, pu string,
 ) ([]*jobsdb.JobT, []*reportingtypes.PUReportedMetric, map[string]int64) {
 	metrics := make([]*reportingtypes.PUReportedMetric, 0)
@@ -1429,13 +1438,17 @@ func (proc *Handle) getTransformationMetrics(
 			continue
 		}
 
-		for _, message := range messages {
+		for _, messageID := range failedEvent.Metadata.GetMessagesIDs() {
+			message := eventsByMessageID[messageID].SingularEvent
+			failedEventWithMetadata := *failedEvent
+			failedEventWithMetadata.Metadata = *metadataByMessageID[messageID]
+
 			proc.updateMetricMaps(
 				nil,
 				countMap,
 				connectionDetailsMap,
 				statusDetailsMap,
-				failedEvent,
+				&failedEventWithMetadata,
 				state,
 				pu,
 				func() json.RawMessage {
@@ -3216,7 +3229,7 @@ func (proc *Handle) userTransformAndFilter(
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.USER_TRANSFORMER)
-			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, reportingtypes.USER_TRANSFORMER)
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.USER_TRANSFORMER)
 			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -3309,7 +3322,7 @@ func (proc *Handle) userTransformAndFilter(
 	var successMetrics []*reportingtypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
+	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
 	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 	if _, ok := procErrorJobsByDestID[destID]; !ok {
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -3415,7 +3428,7 @@ func (proc *Handle) destTransform(
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
-				response, data.commonMetaData, eventsByMessageID,
+				response, data.eventsToTransform, data.commonMetaData, eventsByMessageID,
 				reportingtypes.EVENT_FILTER, reportingtypes.DEST_TRANSFORMER,
 			)
 			destTransformationStat.numEvents.Count(len(data.eventsToTransform))
