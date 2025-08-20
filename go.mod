@@ -44,7 +44,7 @@ require (
 	github.com/bufbuild/httplb v0.4.1
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/confluentinc/confluent-kafka-go/v2 v2.11.0
+	github.com/confluentinc/confluent-kafka-go/v2 v2.11.1
 	github.com/databricks/databricks-sql-go v1.8.0
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/dlclark/regexp2 v1.11.5
@@ -77,7 +77,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.95
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/onsi/ginkgo/v2 v2.23.4
+	github.com/onsi/ginkgo/v2 v2.24.0
 	github.com/onsi/gomega v1.38.0
 	github.com/ory/dockertest/v3 v3.12.0
 	github.com/oschwald/maxminddb-golang v1.13.1
@@ -115,7 +115,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/goleak v1.3.0
-	go.uber.org/mock v0.5.2
+	go.uber.org/mock v0.6.0
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
@@ -127,6 +127,7 @@ require (
 )
 
 require (
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/containerd/typeurl/v2 v2.2.0 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
@@ -355,12 +356,12 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
-	golang.org/x/mod v0.25.0 // indirect
-	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
+	golang.org/x/net v0.43.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/term v0.33.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
-	golang.org/x/tools v0.33.0 // indirect
+	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/tools v0.36.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250721164621-a45f3dfb1074 // indirect
