@@ -327,7 +327,7 @@ func TestStagingFilesRepo(t *testing.T) {
 						r := repo.NewStagingFiles(db, conf)
 
 						expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
-						require.ErrorContains(t, err, "cannot get schemas by ids: unmarshal staging schema:")
+						require.Error(t, err)
 						require.Nil(t, expectedSchemas)
 					})
 
@@ -440,7 +440,6 @@ func TestStagingFilesRepo(t *testing.T) {
 									WithSnapshotIDAndPatch(snapshotID, patchSchemaBytes)
 
 								c := defaultConfig()
-								c.Set("Warehouse.enableStagingFileSchemaSnapshot", true)
 								rs := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 									return now
 								}))

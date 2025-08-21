@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -324,43 +323,14 @@ func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFil
 func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
 	defer sf.TimerStat("get_schemas_by_ids", nil)()
 
-	enableStagingFileSchemaSnapshot := sf.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
-	if !enableStagingFileSchemaSnapshot.Load() {
-		query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
-
-		rows, err := sf.db.QueryContext(ctx, query, pq.Array(ids))
-		if err != nil {
-			return nil, fmt.Errorf("querying schemas: %w", err)
-		}
-		defer func() { _ = rows.Close() }()
-
-		schemas := make([]model.Schema, 0, len(ids))
-
-		for rows.Next() {
-			var (
-				rawSchema []byte
-				schema    model.Schema
-			)
-
-			if err := rows.Scan(&rawSchema); err != nil {
-				return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
-			}
-			if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
-				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
-			}
-			schemas = append(schemas, schema)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("cannot get schemas by ids: iterating rows: %w", err)
-		}
-		if len(schemas) != len(ids) {
-			return nil, fmt.Errorf("cannot get schemas by ids: not all schemas were found")
-		}
-		return schemas, nil
-	}
-
 	query := `
-			SELECT sf.schema AS schema, sf.schema_snapshot_patch as schema_snapshot_patch, ss.schema AS schema_snapshot
+			SELECT 
+				CASE 
+					WHEN sf.schema_snapshot_id IS NULL THEN sf.schema 
+					ELSE '{}'::jsonb 
+				END AS schema,
+				sf.schema_snapshot_patch as schema_snapshot_patch, 
+				ss.schema AS schema_snapshot
 			FROM ` + stagingTableName + ` sf
 			LEFT JOIN ` + stagingFileSchemaSnapshotTableName + ` ss ON sf.schema_snapshot_id = ss.id
 			WHERE sf.id = ANY($1);
@@ -382,6 +352,7 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 			return nil, fmt.Errorf("scanning row: %w", err)
 		}
 
+		// If both snapshot and patch are present, use them instead of the regular schema
 		if len(schemaPatch) > 0 && len(schemaSnapshot) > 0 {
 			originalSchemaBytes, err := warehouseutils.ApplyPatchToJSON(schemaSnapshot, schemaPatch)
 			if err != nil {
@@ -391,15 +362,9 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 			if err := jsonrs.Unmarshal(originalSchemaBytes, &originalSchema); err != nil {
 				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
 			}
-			var oldSchema model.Schema
-			if err := jsonrs.Unmarshal(rawSchema, &oldSchema); err != nil {
-				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
-			}
-			if !reflect.DeepEqual(originalSchema, oldSchema) {
-				return nil, fmt.Errorf("cannot get schemas by ids: schema patch does not apply to snapshot schema")
-			}
 			schemas = append(schemas, originalSchema)
 		} else {
+			// Fall back to regular schema only if snapshot or patch is missing
 			var schema model.Schema
 			if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
 				return nil, fmt.Errorf("unmarshal staging schema: %w", err)
