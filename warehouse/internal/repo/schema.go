@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -234,8 +235,9 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	if err != nil {
 		return model.WHSchema{}, err
 	}
-	if !reflect.DeepEqual(originalSchema.Schema, tableLevelSchemas) {
-		return model.WHSchema{}, errors.New("parent schema does not match parent schema")
+	diff := cmp.Diff(originalSchema.Schema, tableLevelSchemas)
+	if len(diff) > 0 {
+		return model.WHSchema{}, fmt.Errorf("parent schema does not match: %s", diff)
 	}
 	return originalSchema, nil
 }
@@ -247,7 +249,7 @@ func (sh *WHSchema) getForNamespace(ctx context.Context, destID, namespace strin
 		namespace = $2 AND
 		table_name = ''
 	ORDER BY
-		id DESC;
+		source_id DESC;
 	`
 
 	rows, err := sh.db.QueryContext(
@@ -329,13 +331,13 @@ func (sh *WHSchema) getTableLevelSchemasForNamespaceWithTx(ctx context.Context, 
 				schema,
 				ROW_NUMBER() OVER (
 					PARTITION BY destination_id, namespace, table_name
-					ORDER BY id DESC
+					ORDER BY source_id DESC
 				) as rn
 			FROM ` + whSchemaTableName + `
 			WHERE
-				destination_id = $1
-				AND namespace = $2
-				AND table_name != ''
+				destination_id = $1 AND
+				namespace = $2 AND
+				table_name != ''
 		) t
 		WHERE rn = 1;
 	`
