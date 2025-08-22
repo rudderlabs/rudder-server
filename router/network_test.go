@@ -64,11 +64,10 @@ func TestSendPostWithGzipData(t *testing.T) {
 
 	t.Run("should fail to send Gzip data when payload is missing", func(r *testing.T) {
 		network := &netHandle{
-			logger:                logger.NewLogger().Child("network"),
-			httpClient:            http.DefaultClient,
-			blockPrivateIPsDryRun: false,
-			blockPrivateIPs:       false,
-			blockPrivateIPsCIDRs:  netutil.DefaultPrivateCidrRanges,
+			logger:               logger.NewLogger().Child("network"),
+			httpClient:           http.DefaultClient,
+			blockPrivateIPs:      false,
+			blockPrivateIPsCIDRs: netutil.DefaultPrivateCidrRanges,
 		}
 		eventData := `[{"event":"Signed Up"}]`
 		var structData integrations.PostParametersT
