@@ -443,6 +443,61 @@ func TestWHSchemasRepo(t *testing.T) {
 	}
 }
 
+func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
+	t.Run("SourceID ordering", func(t *testing.T) {
+		db, ctx := setupDB(t), context.Background()
+		now := time.Now().Truncate(time.Second).UTC()
+		r := repo.NewWHSchemas(db, config.New(), repo.WithNow(func() time.Time {
+			return now
+		}))
+
+		require.NoError(t, r.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_2",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: "destination_type_1",
+			Schema: model.Schema{
+				"table_name_1": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+			},
+		}))
+		require.NoError(t, r.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_1",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: "destination_type_1",
+			Schema: model.Schema{
+				"table_name_1": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+			},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}))
+
+		expectedSchema, err := r.GetForNamespace(ctx, "destination_id_1", "namespace_1")
+		require.NoError(t, err)
+		require.Equal(t, "source_id_2", expectedSchema.SourceID)
+		require.Equal(t, "namespace_1", expectedSchema.Namespace)
+		require.Equal(t, "destination_id_1", expectedSchema.DestinationID)
+		require.Equal(t, "destination_type_1", expectedSchema.DestinationType)
+		require.Equal(t, model.Schema{
+			"table_name_1": {
+				"column_name_1": "string",
+				"column_name_2": "int",
+				"column_name_3": "boolean",
+			},
+		}, expectedSchema.Schema)
+		require.Equal(t, now, expectedSchema.CreatedAt)
+		require.Equal(t, now, expectedSchema.UpdatedAt)
+	})
+}
+
 func TestWHSchemasRepo_GetDestinationNamespaces(t *testing.T) {
 	destinationID := "test_destination_id"
 	conf := config.New()
