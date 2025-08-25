@@ -1,6 +1,10 @@
 package adaptive
 
-import "github.com/rudderlabs/rudder-go-kit/logger"
+import (
+	"context"
+
+	"github.com/rudderlabs/rudder-go-kit/logger"
+)
 
 type Algorithm interface {
 	// ResponseCodeReceived is called when a response is received from the destination
@@ -13,6 +17,10 @@ type Algorithm interface {
 
 type Logger interface {
 	Warnn(msg string, fields ...logger.Field)
+}
+
+type Limiter interface {
+	Allow(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
 }
 
 const DefaultMaxThrottlingLimit = 1000 // 1000 requests per second

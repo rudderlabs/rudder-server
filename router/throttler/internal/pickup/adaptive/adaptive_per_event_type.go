@@ -7,13 +7,12 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
-	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
 )
 
 // NewPerEventTypeThrottler constructs a new adaptive throttler for a specific event type of a destination
 func NewPerEventTypeThrottler(destType, destinationID, eventType string,
 	algorithm Algorithm,
-	limiter types.Limiter, config *config.Config, stat stats.Stats, log Logger,
+	limiter Limiter, config *config.Config, stat stats.Stats, log Logger,
 ) *throttler {
 	return &throttler{
 		destinationID: destinationID,
