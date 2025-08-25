@@ -74,7 +74,7 @@ func New(
 	m.config.backoff.initialInterval = conf.GetReloadableDurationVar(1, time.Second, "SnowpipeStreaming.backoffInitialIntervalInSeconds")
 	m.config.backoff.multiplier = conf.GetReloadableFloat64Var(2.0, "SnowpipeStreaming.backoffMultiplier")
 	m.config.backoff.maxInterval = conf.GetReloadableDurationVar(1, time.Hour, "SnowpipeStreaming.backoffMaxIntervalInHours")
-	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(30, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
+	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
