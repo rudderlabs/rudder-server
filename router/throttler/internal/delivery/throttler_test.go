@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 )
 
@@ -17,8 +18,7 @@ func TestDeliveryThrottler(t *testing.T) {
 	t.Run("NewThrottler", func(t *testing.T) {
 		t.Run("with destination id configuration", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -36,13 +36,12 @@ func TestDeliveryThrottler(t *testing.T) {
 			require.Equal(t, endpointLabel, throttler.endpointLabel)
 			require.Equal(t, "delivery:dest123:endpoint1", throttler.key)
 			require.Equal(t, mockLimiter, throttler.limiter)
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.getLimit())
 		})
 
 		t.Run("with destination type configuration", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -55,14 +54,13 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(50), throttler.GetLimit())
+			require.Equal(t, int64(50), throttler.getLimit())
 			require.Equal(t, int64(5), throttler.getTimeWindowInSeconds())
 		})
 
 		t.Run("stats", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -80,8 +78,7 @@ func TestDeliveryThrottler(t *testing.T) {
 	t.Run("Wait", func(t *testing.T) {
 		t.Run("returns immediately when allowed", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true, RetryAfter: 0}
 
 			destType := "WEBHOOK"
@@ -109,8 +106,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("waits when not allowed", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 
 			// First call not allowed, second call allowed
 			mockLimiter := &MockLimiter{
@@ -138,8 +134,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("errors when limiter fails", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{
 				AllowAfterResult: false,
 				AllowAfterError:  errors.New("limiter error"),
@@ -164,8 +159,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("returns immediately when throttler not enabled", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -184,8 +178,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("returns immediately for zero limit", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -206,8 +199,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("returns immediately for zero window", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -230,8 +222,7 @@ func TestDeliveryThrottler(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		t.Run("enabled when limit and window are set", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -248,8 +239,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("disabled when limit is zero", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -266,8 +256,7 @@ func TestDeliveryThrottler(t *testing.T) {
 
 		t.Run("disabled when window is zero", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -286,8 +275,7 @@ func TestDeliveryThrottler(t *testing.T) {
 	t.Run("GetLimit", func(t *testing.T) {
 		t.Run("returns configured limit", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -298,13 +286,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(250), throttler.GetLimit())
+			require.Equal(t, int64(250), throttler.getLimit())
 		})
 
 		t.Run("detects config changes", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -315,20 +302,19 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.getLimit())
 
 			// Update config
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 200)
 
-			require.Equal(t, int64(200), throttler.GetLimit())
+			require.Equal(t, int64(200), throttler.getLimit())
 		})
 	})
 
 	t.Run("getTimeWindowInSeconds", func(t *testing.T) {
 		t.Run("returns correct seconds", func(t *testing.T) {
 			config := config.New()
-			statsStore, err := memstats.New()
-			require.NoError(t, err)
+			statsStore := stats.NOP
 			mockLimiter := &MockLimiter{AllowAfterResult: true}
 
 			destType := "WEBHOOK"
@@ -411,7 +397,7 @@ func TestDeliveryThrottler(t *testing.T) {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
 					metric.Tags["endpointLabel"] == endpointLabel {
-					require.Equal(t, float64(0), metric.Value) // Should remain 0
+					require.Equalf(t, float64(0), metric.Value, "Gauge value of %s should be 0 when window is 0 (disabled)", metric.Name) // Should remain 0
 					found = true
 					break
 				}
@@ -586,7 +572,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			require.True(t, found, "Should find success timer metric")
 		})
 
-		t.Run("does not record timers for disabled throttler", func(t *testing.T) {
+		t.Run("records minimal timers for disabled throttler", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)

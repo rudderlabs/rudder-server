@@ -21,6 +21,4 @@ type PickupThrottler interface {
 type DeliveryThrottler interface {
 	// Wait blocks until the next request can be sent and returns the duration blocked. An error is returned if the context is canceled.
 	Wait(ctx context.Context) (time.Duration, error)
-	// GetLimit returns the current limit.
-	GetLimit() int64
 }

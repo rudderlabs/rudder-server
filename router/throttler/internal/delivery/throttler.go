@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // NewThrottler constructs a new static delivery throttler for a destination endpoint
-func NewThrottler(destType, destinationID, endpointLabel string, limiter Limiter, config *config.Config, stat stats.Stats, log Logger) *throttler {
+func NewThrottler(destType, destinationID, endpointLabel string, limiter Limiter, config *config.Config, stat stats.Stats, log logger.Logger) *throttler {
 	return &throttler{
 		destinationID: destinationID,
 		endpointLabel: endpointLabel,
@@ -56,7 +57,7 @@ type throttler struct {
 	key           string
 
 	limiter Limiter
-	log     Logger
+	log     logger.Logger
 	limit   config.ValueLoader[int64]
 	window  config.ValueLoader[time.Duration]
 
@@ -82,7 +83,7 @@ func (t *throttler) Wait(ctx context.Context) (dur time.Duration, err error) {
 	var allowed bool
 	var retryAfter time.Duration
 	for !allowed {
-		allowed, retryAfter, _, err = t.limiter.AllowAfter(ctx, 1, t.GetLimit(), t.getTimeWindowInSeconds(), t.key)
+		allowed, retryAfter, _, err = t.limiter.AllowAfter(ctx, 1, t.getLimit(), t.getTimeWindowInSeconds(), t.key)
 		if err != nil {
 			return time.Since(start), fmt.Errorf("throttling failed for %s: %w", t.key, err)
 		}
@@ -101,7 +102,7 @@ func (t *throttler) enabled() bool {
 	return limit > 0 && window > 0
 }
 
-func (t *throttler) GetLimit() int64 {
+func (t *throttler) getLimit() int64 {
 	return t.limit.Load()
 }
 
@@ -112,7 +113,7 @@ func (t *throttler) getTimeWindowInSeconds() int64 {
 func (t *throttler) updateGauges() {
 	t.onceEveryGauge.Do(func() {
 		if window := t.getTimeWindowInSeconds(); window > 0 {
-			t.rateLimitGauge.Gauge(t.GetLimit() / window)
+			t.rateLimitGauge.Gauge(t.getLimit() / window)
 		}
 	})
 }
