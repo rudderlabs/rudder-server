@@ -3,46 +3,63 @@ package schemarepository
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+type Uploader interface {
+	GetLocalSchema(ctx context.Context) (model.Schema, error)
+	UpdateLocalSchema(ctx context.Context, schema model.Schema) error
+}
 type LocalSchemaRepository struct {
 	warehouse model.Warehouse
-	uploader  warehouseutils.Uploader
+	uploader  Uploader
+
+	// mu protects the read-modify-write pattern for schema operations
+	// Operations like CreateTable, AddColumns, AlterColumn:
+	// 1. Read schema from PostgreSQL via GetLocalSchema
+	// 2. Modify the schema in memory
+	// 3. Write back to PostgreSQL via UpdateLocalSchema
+	// This prevents race conditions when multiple goroutines modify the schema concurrently
+	mu sync.RWMutex
 }
 
-func NewLocalSchemaRepository(wh model.Warehouse, uploader warehouseutils.Uploader) (*LocalSchemaRepository, error) {
+func NewLocalSchemaRepository(warehouse model.Warehouse, uploader Uploader) (*LocalSchemaRepository, error) {
 	ls := LocalSchemaRepository{
-		warehouse: wh,
+		warehouse: warehouse,
 		uploader:  uploader,
 	}
-
 	return &ls, nil
 }
 
 func (ls *LocalSchemaRepository) FetchSchema(ctx context.Context, _ model.Warehouse) (model.Schema, error) {
+	ls.mu.RLock()
+	defer ls.mu.RUnlock()
+
 	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
 		return model.Schema{}, fmt.Errorf("fetching local schema: %w", err)
 	}
-
 	return schema, nil
 }
 
-func (*LocalSchemaRepository) CreateSchema(context.Context) (err error) {
+func (*LocalSchemaRepository) CreateSchema(context.Context) error {
 	return nil
 }
 
-func (ls *LocalSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
+func (ls *LocalSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) error {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
 	// fetch schema from local db
 	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching local schema: %w", err)
 	}
 
+	// check if table already exists
 	if _, ok := schema[tableName]; ok {
 		return fmt.Errorf("failed to create table: table %s already exists", tableName)
 	}
@@ -54,7 +71,10 @@ func (ls *LocalSchemaRepository) CreateTable(ctx context.Context, tableName stri
 	return ls.uploader.UpdateLocalSchema(ctx, schema)
 }
 
-func (ls *LocalSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ls *LocalSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) error {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
 	// fetch schema from local db
 	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
@@ -75,6 +95,9 @@ func (ls *LocalSchemaRepository) AddColumns(ctx context.Context, tableName strin
 }
 
 func (ls *LocalSchemaRepository) AlterColumn(ctx context.Context, tableName, columnName, columnType string) (model.AlterTableResponse, error) {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
 	// fetch schema from local db
 	schema, err := ls.uploader.GetLocalSchema(ctx)
 	if err != nil {
@@ -91,12 +114,13 @@ func (ls *LocalSchemaRepository) AlterColumn(ctx context.Context, tableName, col
 		return model.AlterTableResponse{}, fmt.Errorf("failed to alter column: column %s does not exist in table %s", columnName, tableName)
 	}
 
+	// update column type
 	schema[tableName][columnName] = columnType
 
 	// update schema
 	return model.AlterTableResponse{}, ls.uploader.UpdateLocalSchema(ctx, schema)
 }
 
-func (*LocalSchemaRepository) RefreshPartitions(context.Context, string, []warehouseutils.LoadFile) error {
+func (*LocalSchemaRepository) RefreshPartitions(context.Context, string, []whutils.LoadFile) error {
 	return nil
 }

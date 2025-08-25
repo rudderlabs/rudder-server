@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.57.2](https://github.com/rudderlabs/rudder-server/compare/v1.57.1...v1.57.2) (2025-08-22)
+
+
+### Bug Fixes
+
+* use source-id for getting cached schemas ([#6268](https://github.com/rudderlabs/rudder-server/issues/6268)) ([ea0dab3](https://github.com/rudderlabs/rudder-server/commit/ea0dab3b346c9a79f861b99f971fa4838bcf6a12))
+
+## [1.57.1](https://github.com/rudderlabs/rudder-server/compare/v1.57.0...v1.57.1) (2025-08-20)
+
+
+### Bug Fixes
+
+* update table schema local repository ([#6255](https://github.com/rudderlabs/rudder-server/issues/6255)) ([ddce7e4](https://github.com/rudderlabs/rudder-server/commit/ddce7e4d929f23a8ae14a3867a90634a51e3332b))
+
 ## [1.57.0](https://github.com/rudderlabs/rudder-server/compare/v1.56.0...v1.57.0) (2025-08-19)
 
 
