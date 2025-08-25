@@ -10,85 +10,98 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/utils/types"
 
 	mocks "github.com/rudderlabs/rudder-server/mocks/enterprise/reporting"
 )
 
-func TestErrorDetailReporter_WithMockRateLimiter(t *testing.T) {
+func TestErrorDetailReporter_WithMockErrorNormalizer(t *testing.T) {
 	t.Parallel()
 
-	t.Run("rate limiter allows reporting", func(t *testing.T) {
+	t.Run("error normalizer allows reporting", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockRateLimiter := mocks.NewMockErrorRateLimiter(ctrl)
+		mockErrorNormalizer := mocks.NewMockErrorNormalizer(ctrl)
 
 		// Configure mock expectations
-		mockRateLimiter.EXPECT().
-			CanonicalizeError(gomock.Any(), "source1:dest1:identify:router", "test error message").
+		testKey := types.ErrorDetailGroupKey{
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "identify",
+			EventType:     "router",
+		}
+		mockErrorNormalizer.EXPECT().
+			NormalizeError(gomock.Any(), testKey, "test error message").
 			Return("test error message") // Return original message when allowed
 
 		// Create config subscriber
 		configSubscriber := newConfigSubscriber(logger.NOP)
 
-		// Create error detail reporter with mock rate limiter
+		// Create error detail reporter with mock error normalizer
 		edr := &ErrorDetailReporter{
 			configSubscriber: configSubscriber,
-			errorRateLimiter: mockRateLimiter,
+			errorNormalizer:  mockErrorNormalizer,
 			log:              logger.NOP,
 			stats:            stats.NOP,
 			config:           config.New(),
 		}
 
-		// Test that the reporter uses the mock rate limiter correctly
-		require.NotNil(t, edr.errorRateLimiter)
+		// Test that the reporter uses the mock error normalizer correctly
+		require.NotNil(t, edr.errorNormalizer)
 
 		// Actually call the method to verify mock expectations
 		ctx := context.Background()
-		canonicalError := edr.errorRateLimiter.CanonicalizeError(ctx, "source1:dest1:identify:router", "test error message")
-		require.Equal(t, "test error message", canonicalError)
+		normalizedError := edr.errorNormalizer.NormalizeError(ctx, testKey, "test error message")
+		require.Equal(t, "test error message", normalizedError)
 	})
 
-	t.Run("rate limiter blocks reporting", func(t *testing.T) {
+	t.Run("error normalizer blocks reporting", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockRateLimiter := mocks.NewMockErrorRateLimiter(ctrl)
+		mockErrorNormalizer := mocks.NewMockErrorNormalizer(ctrl)
 
 		// Configure mock expectations - return UnknownError when rate limited
-		mockRateLimiter.EXPECT().
-			CanonicalizeError(gomock.Any(), "source1:dest1:identify:router", "test error message").
+		testKey := types.ErrorDetailGroupKey{
+			SourceID:      "source1",
+			DestinationID: "dest1",
+			PU:            "identify",
+			EventType:     "router",
+		}
+		mockErrorNormalizer.EXPECT().
+			NormalizeError(gomock.Any(), testKey, "test error message").
 			Return("UnknownError") // Return UnknownError when rate limited
 
 		// Create config subscriber
 		configSubscriber := newConfigSubscriber(logger.NOP)
 
-		// Create error detail reporter with mock rate limiter
+		// Create error detail reporter with mock error normalizer
 		edr := &ErrorDetailReporter{
 			configSubscriber: configSubscriber,
-			errorRateLimiter: mockRateLimiter,
+			errorNormalizer:  mockErrorNormalizer,
 			log:              logger.NOP,
 			stats:            stats.NOP,
 			config:           config.New(),
 		}
 
-		// Test that the reporter uses the mock rate limiter correctly
-		require.NotNil(t, edr.errorRateLimiter)
+		// Test that the reporter uses the mock error normalizer correctly
+		require.NotNil(t, edr.errorNormalizer)
 
 		// Actually call the method to verify mock expectations
 		ctx := context.Background()
-		canonicalError := edr.errorRateLimiter.CanonicalizeError(ctx, "source1:dest1:identify:router", "test error message")
-		require.Equal(t, "UnknownError", canonicalError)
+		normalizedError := edr.errorNormalizer.NormalizeError(ctx, testKey, "test error message")
+		require.Equal(t, "UnknownError", normalizedError)
 	})
 }
 
 func TestErrorDetailReporter_ConstructorWithMock(t *testing.T) {
 	t.Parallel()
 
-	t.Run("constructor creates reporter with real rate limiter", func(t *testing.T) {
+	t.Run("constructor creates reporter with real error normalizer", func(t *testing.T) {
 		configSubscriber := newConfigSubscriber(logger.NOP)
 		conf := config.New()
-		conf.Set("Reporting.errorReporting.rateLimit.enabled", true)
+		conf.Set("Reporting.errorReporting.normalizer.enabled", true)
 
 		edr := NewErrorDetailReporter(
 			context.Background(),
@@ -97,11 +110,11 @@ func TestErrorDetailReporter_ConstructorWithMock(t *testing.T) {
 			conf,
 		)
 
-		// Verify that the constructor creates a real ErrorRateLimiter
-		require.NotNil(t, edr.errorRateLimiter)
+		// Verify that the constructor creates a real ErrorNormalizer
+		require.NotNil(t, edr.errorNormalizer)
 
 		// Type assertion to verify it's a real implementation
-		_, ok := edr.errorRateLimiter.(*errorRateLimiter)
-		require.True(t, ok, "Expected real ErrorRateLimiter implementation")
+		_, ok := edr.errorNormalizer.(*errorNormalizer)
+		require.True(t, ok, "Expected real ErrorNormalizer implementation")
 	})
 }

@@ -15,64 +15,66 @@ func TestErrorGrouper_GroupErrors(t *testing.T) {
 	}
 
 	// Create test metrics
-	metrics := []*types.PUReportedMetric{
+	metrics := []*types.EDReportsDB{
 		{
-			ConnectionDetails: types.ConnectionDetails{
+			EDConnectionDetails: types.EDConnectionDetails{
 				SourceID:      "source1",
 				DestinationID: "dest1",
 			},
-			PUDetails: types.PUDetails{
-				PU: "processor",
-			},
-			StatusDetail: &types.StatusDetail{
-				EventType: "track",
-				ErrorDetails: types.ErrorDetails{
-					Message: "Database connection failed: timeout",
-					Code:    "DB_TIMEOUT",
+			PU: "processor",
+			EDErrorDetails: types.EDErrorDetails{
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					EventType:    "track",
+					ErrorMessage: "Database connection failed: timeout",
+					ErrorCode:    "DB_TIMEOUT",
 				},
-				Count: 5,
+				ErrorCount: 5,
 			},
+			Count: 5,
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
+			EDConnectionDetails: types.EDConnectionDetails{
 				SourceID:      "source1",
 				DestinationID: "dest1",
 			},
-			PUDetails: types.PUDetails{
-				PU: "processor",
-			},
-			StatusDetail: &types.StatusDetail{
-				EventType: "track",
-				ErrorDetails: types.ErrorDetails{
-					Message: "Database connection failed: timeout",
-					Code:    "DB_TIMEOUT",
+			PU: "processor",
+			EDErrorDetails: types.EDErrorDetails{
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					EventType:    "track",
+					ErrorMessage: "Database connection failed: timeout",
+					ErrorCode:    "DB_TIMEOUT",
 				},
-				Count: 3,
+				ErrorCount: 3,
 			},
+			Count: 3,
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
+			EDConnectionDetails: types.EDConnectionDetails{
 				SourceID:      "source1",
 				DestinationID: "dest1",
 			},
-			PUDetails: types.PUDetails{
-				PU: "processor",
-			},
-			StatusDetail: &types.StatusDetail{
-				EventType: "track",
-				ErrorDetails: types.ErrorDetails{
-					Message: "Authentication failed: invalid credentials",
-					Code:    "AUTH_ERROR",
+			PU: "processor",
+			EDErrorDetails: types.EDErrorDetails{
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					EventType:    "track",
+					ErrorMessage: "Authentication failed: invalid credentials",
+					ErrorCode:    "AUTH_ERROR",
 				},
-				Count: 2,
+				ErrorCount: 2,
 			},
+			Count: 2,
 		},
 	}
 
 	// Group errors by connection
 	groups := edr.groupByConnection(metrics)
 
-	groupKey := "source1::dest1::processor::track"
+	groupKey := types.ErrorDetailGroupKey{
+		SourceID:      "source1",
+		DestinationID: "dest1",
+		PU:            "processor",
+		EventType:     "track",
+	}
 	groupMetrics := groups[groupKey]
 	require.Len(t, groupMetrics, 3, "Should have 3 metrics in the group")
 
@@ -82,13 +84,13 @@ func TestErrorGrouper_GroupErrors(t *testing.T) {
 	require.Len(t, mergedMetrics, 2, "Should have 2 metrics after merging identical error messages")
 
 	for _, metric := range mergedMetrics {
-		switch metric.StatusDetail.ErrorDetails.Code {
+		switch metric.ErrorCode {
 		case "DB_TIMEOUT":
-			require.Equal(t, int64(8), metric.StatusDetail.Count, "DB group should have total count of 8")
+			require.Equal(t, int64(8), metric.Count, "DB group should have total count of 8")
 		case "AUTH_ERROR":
-			require.Equal(t, int64(2), metric.StatusDetail.Count, "Auth group should have total count of 2")
+			require.Equal(t, int64(2), metric.Count, "Auth group should have total count of 2")
 		default:
-			t.Fatalf("Unexpected error code: %s", metric.StatusDetail.ErrorDetails.Code)
+			t.Fatalf("Unexpected error code: %s", metric.ErrorCode)
 		}
 	}
 }
@@ -99,49 +101,43 @@ func TestErrorGrouper_GroupByConnection(t *testing.T) {
 	}
 
 	// Create test metrics with different connection details
-	metrics := []*types.PUReportedMetric{
+	metrics := []*types.EDReportsDB{
 		{
-			ConnectionDetails: types.ConnectionDetails{
+			EDConnectionDetails: types.EDConnectionDetails{
 				SourceID:      "source1",
 				DestinationID: "dest1",
 			},
-			PUDetails: types.PUDetails{
-				PU: "processor",
-			},
-			StatusDetail: &types.StatusDetail{
-				EventType: "track",
-				ErrorDetails: types.ErrorDetails{
-					Message: "Error 1",
+			PU: "processor",
+			EDErrorDetails: types.EDErrorDetails{
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					EventType:    "track",
+					ErrorMessage: "Error 1",
 				},
 			},
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
+			EDConnectionDetails: types.EDConnectionDetails{
 				SourceID:      "source1",
 				DestinationID: "dest1",
 			},
-			PUDetails: types.PUDetails{
-				PU: "processor",
-			},
-			StatusDetail: &types.StatusDetail{
-				EventType: "track",
-				ErrorDetails: types.ErrorDetails{
-					Message: "Error 2",
+			PU: "processor",
+			EDErrorDetails: types.EDErrorDetails{
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					EventType:    "track",
+					ErrorMessage: "Error 2",
 				},
 			},
 		},
 		{
-			ConnectionDetails: types.ConnectionDetails{
+			EDConnectionDetails: types.EDConnectionDetails{
 				SourceID:      "source2",
 				DestinationID: "dest1",
 			},
-			PUDetails: types.PUDetails{
-				PU: "processor",
-			},
-			StatusDetail: &types.StatusDetail{
-				EventType: "track",
-				ErrorDetails: types.ErrorDetails{
-					Message: "Error 3",
+			PU: "processor",
+			EDErrorDetails: types.EDErrorDetails{
+				EDErrorDetailsKey: types.EDErrorDetailsKey{
+					EventType:    "track",
+					ErrorMessage: "Error 3",
 				},
 			},
 		},
@@ -154,8 +150,18 @@ func TestErrorGrouper_GroupByConnection(t *testing.T) {
 	require.Len(t, connectionGroups, 2, "Should group by connection details")
 
 	// Check that metrics are grouped correctly
-	key1 := "source1::dest1::processor::track"
-	key2 := "source2::dest1::processor::track"
+	key1 := types.ErrorDetailGroupKey{
+		SourceID:      "source1",
+		DestinationID: "dest1",
+		PU:            "processor",
+		EventType:     "track",
+	}
+	key2 := types.ErrorDetailGroupKey{
+		SourceID:      "source2",
+		DestinationID: "dest1",
+		PU:            "processor",
+		EventType:     "track",
+	}
 
 	require.Contains(t, connectionGroups, key1, "Should have group for source1")
 	require.Contains(t, connectionGroups, key2, "Should have group for source2")
@@ -169,87 +175,103 @@ func TestMergeMetricGroupsByErrorMessage(t *testing.T) {
 	}
 
 	// Test data: multiple groups with similar error messages within the same connection
-	groups := map[string][]*types.PUReportedMetric{
-		"source1::dest1::processor::track": {
+	key1 := types.ErrorDetailGroupKey{
+		SourceID:      "source1",
+		DestinationID: "dest1",
+		PU:            "processor",
+		EventType:     "track",
+	}
+	key2 := types.ErrorDetailGroupKey{
+		SourceID:      "source2",
+		DestinationID: "dest1",
+		PU:            "processor",
+		EventType:     "track",
+	}
+	groups := map[types.ErrorDetailGroupKey][]*types.EDReportsDB{
+		key1: {
 			{
-				ConnectionDetails: types.ConnectionDetails{
+				EDConnectionDetails: types.EDConnectionDetails{
 					SourceID:      "source1",
 					DestinationID: "dest1",
 				},
-				PUDetails: types.PUDetails{PU: "processor"},
-				StatusDetail: &types.StatusDetail{
-					EventType: "track",
-					ErrorDetails: types.ErrorDetails{
-						Message: "Database connection failed",
-						Code:    "DB_ERROR",
+				PU: "processor",
+				EDErrorDetails: types.EDErrorDetails{
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						EventType:    "track",
+						ErrorMessage: "Database connection failed",
+						ErrorCode:    "DB_ERROR",
 					},
-					Count: 5,
+					ErrorCount: 5,
 				},
+				Count: 5,
 			},
 			{
-				ConnectionDetails: types.ConnectionDetails{
+				EDConnectionDetails: types.EDConnectionDetails{
 					SourceID:      "source1",
 					DestinationID: "dest1",
 				},
-				PUDetails: types.PUDetails{PU: "processor"},
-				StatusDetail: &types.StatusDetail{
-					EventType: "track",
-					ErrorDetails: types.ErrorDetails{
-						Message: "Database connection failed",
-						Code:    "DB_ERROR",
+				PU: "processor",
+				EDErrorDetails: types.EDErrorDetails{
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						EventType:    "track",
+						ErrorMessage: "Database connection failed",
+						ErrorCode:    "DB_ERROR",
 					},
-					Count: 3,
+					ErrorCount: 3,
 				},
+				Count: 3,
 			},
 			{
-				ConnectionDetails: types.ConnectionDetails{
+				EDConnectionDetails: types.EDConnectionDetails{
 					SourceID:      "source1",
 					DestinationID: "dest1",
 				},
-				PUDetails: types.PUDetails{PU: "processor"},
-				StatusDetail: &types.StatusDetail{
-					EventType: "track",
-					ErrorDetails: types.ErrorDetails{
-						Message: "Authentication failed",
-						Code:    "AUTH_ERROR",
+				PU: "processor",
+				EDErrorDetails: types.EDErrorDetails{
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						EventType:    "track",
+						ErrorMessage: "Authentication failed",
+						ErrorCode:    "AUTH_ERROR",
 					},
-					Count: 2,
+					ErrorCount: 2,
 				},
+				Count: 2,
 			},
 		},
-		"source2::dest1::processor::track": {
+		key2: {
 			{
-				ConnectionDetails: types.ConnectionDetails{
+				EDConnectionDetails: types.EDConnectionDetails{
 					SourceID:      "source2",
 					DestinationID: "dest1",
 				},
-				PUDetails: types.PUDetails{PU: "processor"},
-				StatusDetail: &types.StatusDetail{
-					EventType: "track",
-					ErrorDetails: types.ErrorDetails{
-						Message: "Rate limited",
-						Code:    "RATE_LIMITED",
+				PU: "processor",
+				EDErrorDetails: types.EDErrorDetails{
+					EDErrorDetailsKey: types.EDErrorDetailsKey{
+						EventType:    "track",
+						ErrorMessage: "Rate limited",
+						ErrorCode:    "RATE_LIMITED",
 					},
-					Count: 1,
+					ErrorCount: 1,
 				},
+				Count: 1,
 			},
 		},
 	}
 
 	// Merge metrics by error message similarity
 	merged := edr.mergeMetricGroupsByErrorMessage(groups)
-	metricsOfSource1 := merged["source1::dest1::processor::track"]
-	metricsOfSource2 := merged["source2::dest1::processor::track"]
+	metricsOfSource1 := merged[key1]
+	metricsOfSource2 := merged[key2]
 
 	require.Len(t, metricsOfSource1, 2, "Should have 2 metrics in source1::dest1::processor::track after merging")
 	require.Len(t, metricsOfSource2, 1, "Should have 1 metric in source2::dest1::processor::track")
 
 	for _, metric := range metricsOfSource1 {
-		if metric.StatusDetail.ErrorDetails.Code == "DB_ERROR" {
-			require.Equal(t, int64(8), metric.StatusDetail.Count, "Should have 8 metrics for DB_ERROR after merging")
+		if metric.ErrorCode == "DB_ERROR" {
+			require.Equal(t, int64(8), metric.Count, "Should have 8 metrics for DB_ERROR after merging")
 		}
-		if metric.StatusDetail.ErrorDetails.Code == "AUTH_ERROR" {
-			require.Equal(t, int64(2), metric.StatusDetail.Count, "Should have 2 metrics for AUTH_ERROR")
+		if metric.ErrorCode == "AUTH_ERROR" {
+			require.Equal(t, int64(2), metric.Count, "Should have 2 metrics for AUTH_ERROR")
 		}
 	}
 }
@@ -257,20 +279,25 @@ func TestMergeMetricGroupsByErrorMessage(t *testing.T) {
 func TestGenerateMetricGroupKey(t *testing.T) {
 	edr := &ErrorDetailReporter{}
 
-	metric := &types.PUReportedMetric{
-		ConnectionDetails: types.ConnectionDetails{
+	metric := &types.EDReportsDB{
+		EDConnectionDetails: types.EDConnectionDetails{
 			SourceID:      "test-source",
 			DestinationID: "test-dest",
 		},
-		PUDetails: types.PUDetails{
-			PU: "test-processor",
-		},
-		StatusDetail: &types.StatusDetail{
-			EventType: "test-event",
+		PU: "test-processor",
+		EDErrorDetails: types.EDErrorDetails{
+			EDErrorDetailsKey: types.EDErrorDetailsKey{
+				EventType: "test-event",
+			},
 		},
 	}
 
 	key := edr.generateMetricGroupKey(metric)
-	expectedKey := "test-source::test-dest::test-processor::test-event"
+	expectedKey := types.ErrorDetailGroupKey{
+		SourceID:      "test-source",
+		DestinationID: "test-dest",
+		PU:            "test-processor",
+		EventType:     "test-event",
+	}
 	require.Equal(t, expectedKey, key, "Generated key should match expected format")
 }

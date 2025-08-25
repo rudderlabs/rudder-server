@@ -8,21 +8,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPUReportedMetric_DeepCopy(t *testing.T) {
+func TestPUReportedMetricToEDReportsDB(t *testing.T) {
 	t.Run("nil input", func(t *testing.T) {
 		var metric *PUReportedMetric
-		result := metric.DeepCopy()
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "TEST_ERROR",
+				Message: "Test error message",
+			},
+		}
+		result := PUReportedMetricToEDReportsDB(metric, params)
 		require.Nil(t, result)
 	})
 
-	t.Run("empty metric", func(t *testing.T) {
+	t.Run("empty metric with params", func(t *testing.T) {
 		metric := &PUReportedMetric{}
-		result := metric.DeepCopy()
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "TEST_ERROR",
+				Message: "Test error message",
+			},
+		}
+		result := PUReportedMetricToEDReportsDB(metric, params)
 
 		require.NotNil(t, result)
-		require.Equal(t, metric.ConnectionDetails, result.ConnectionDetails)
-		require.Equal(t, metric.PUDetails, result.PUDetails)
-		require.Nil(t, result.StatusDetail)
+		require.Equal(t, params.WorkspaceID, result.WorkspaceID)
+		require.Equal(t, params.Namespace, result.Namespace)
+		require.Equal(t, params.InstanceID, result.InstanceID)
+		require.Equal(t, params.DestType, result.DestType)
+		require.Equal(t, params.DestinationDefinitionID, result.DestinationDefinitionId)
+		require.Equal(t, params.ErrorDetails.Code, result.ErrorCode)
+		require.Equal(t, params.ErrorDetails.Message, result.ErrorMessage)
+		require.Equal(t, metric.PU, result.PU)
+		require.Equal(t, metric.SourceID, result.SourceID)
+		require.Equal(t, metric.DestinationID, result.DestinationID)
+		require.Equal(t, metric.SourceDefinitionID, result.SourceDefinitionId)
 	})
 
 	t.Run("metric with all fields populated", func(t *testing.T) {
@@ -78,41 +108,51 @@ func TestPUReportedMetric_DeepCopy(t *testing.T) {
 			},
 		}
 
-		result := original.DeepCopy()
-
-		// Verify the copy is not the same pointer
-		require.NotSame(t, original, result)
-		require.NotSame(t, original.StatusDetail, result.StatusDetail)
-
-		// Verify all fields are copied correctly
-		require.Equal(t, original.ConnectionDetails, result.ConnectionDetails)
-		require.Equal(t, original.PUDetails, result.PUDetails)
-		require.Equal(t, original.StatusDetail.Status, result.StatusDetail.Status)
-		require.Equal(t, original.StatusDetail.Count, result.StatusDetail.Count)
-		require.Equal(t, original.StatusDetail.StatusCode, result.StatusDetail.StatusCode)
-		require.Equal(t, original.StatusDetail.SampleResponse, result.StatusDetail.SampleResponse)
-		require.Equal(t, original.StatusDetail.EventName, result.StatusDetail.EventName)
-		require.Equal(t, original.StatusDetail.EventType, result.StatusDetail.EventType)
-		require.Equal(t, original.StatusDetail.ErrorType, result.StatusDetail.ErrorType)
-		require.Equal(t, original.StatusDetail.ViolationCount, result.StatusDetail.ViolationCount)
-		require.Equal(t, original.StatusDetail.ErrorDetails, result.StatusDetail.ErrorDetails)
-
-		// Verify SampleEvent is deep copied
-		require.Equal(t, original.StatusDetail.SampleEvent, result.StatusDetail.SampleEvent)
-		// Note: json.RawMessage is a slice, so we can't use NotSame directly
-		// Instead, we verify the content is the same but the underlying slice is different
-
-		// Verify StatTags is deep copied
-		require.Equal(t, original.StatusDetail.StatTags, result.StatusDetail.StatTags)
-		// Note: maps are reference types, so we verify the content is the same
-
-		// Verify FailedMessages is deep copied
-		require.Equal(t, len(original.StatusDetail.FailedMessages), len(result.StatusDetail.FailedMessages))
-		for i, msg := range original.StatusDetail.FailedMessages {
-			require.Equal(t, msg.MessageID, result.StatusDetail.FailedMessages[i].MessageID)
-			require.Equal(t, msg.ReceivedAt, result.StatusDetail.FailedMessages[i].ReceivedAt)
-			require.NotSame(t, msg, result.StatusDetail.FailedMessages[i])
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "CUSTOM_ERROR",
+				Message: "Custom error message",
+			},
 		}
+
+		result := PUReportedMetricToEDReportsDB(original, params)
+
+		// Verify the result is not the same pointer as original
+		require.NotSame(t, original, result)
+
+		// Verify EDInstanceDetails
+		require.Equal(t, params.WorkspaceID, result.WorkspaceID)
+		require.Equal(t, params.Namespace, result.Namespace)
+		require.Equal(t, params.InstanceID, result.InstanceID)
+
+		// Verify EDConnectionDetails
+		require.Equal(t, original.SourceID, result.SourceID)
+		require.Equal(t, original.DestinationID, result.DestinationID)
+		require.Equal(t, original.SourceDefinitionID, result.SourceDefinitionId)
+		require.Equal(t, params.DestinationDefinitionID, result.DestinationDefinitionId)
+		require.Equal(t, params.DestType, result.DestType)
+
+		// Verify ReportMetadata
+		require.NotZero(t, result.ReportedAt)
+
+		// Verify PU
+		require.Equal(t, original.PU, result.PU)
+
+		// Verify EDErrorDetails
+		require.Equal(t, original.StatusDetail.StatusCode, result.StatusCode)
+		require.Equal(t, params.ErrorDetails.Code, result.ErrorCode)
+		require.Equal(t, params.ErrorDetails.Message, result.ErrorMessage)
+		require.Equal(t, original.StatusDetail.EventType, result.EventType)
+		require.Equal(t, original.StatusDetail.EventName, result.EventName)
+		require.Equal(t, original.StatusDetail.SampleResponse, result.SampleResponse)
+		require.Equal(t, original.StatusDetail.SampleEvent, result.SampleEvent)
+		require.Equal(t, original.StatusDetail.Count, result.ErrorCount)
+		require.Equal(t, original.StatusDetail.Count, result.Count)
 	})
 
 	t.Run("metric with nil StatusDetail", func(t *testing.T) {
@@ -128,82 +168,28 @@ func TestPUReportedMetric_DeepCopy(t *testing.T) {
 			StatusDetail: nil,
 		}
 
-		result := original.DeepCopy()
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "NIL_ERROR",
+				Message: "Nil status detail error",
+			},
+		}
+
+		result := PUReportedMetricToEDReportsDB(original, params)
 
 		require.NotNil(t, result)
-		require.Equal(t, original.ConnectionDetails, result.ConnectionDetails)
-		require.Equal(t, original.PUDetails, result.PUDetails)
-		require.Nil(t, result.StatusDetail)
-	})
-
-	t.Run("StatusDetail with nil complex fields", func(t *testing.T) {
-		original := &PUReportedMetric{
-			StatusDetail: &StatusDetail{
-				Status:     "success",
-				Count:      100,
-				StatusCode: 200,
-				// SampleEvent, StatTags, and FailedMessages are nil
-			},
-		}
-
-		result := original.DeepCopy()
-
-		require.NotNil(t, result.StatusDetail)
-		require.Equal(t, original.StatusDetail.Status, result.StatusDetail.Status)
-		require.Equal(t, original.StatusDetail.Count, result.StatusDetail.Count)
-		require.Equal(t, original.StatusDetail.StatusCode, result.StatusDetail.StatusCode)
-		require.Nil(t, result.StatusDetail.SampleEvent)
-		require.Nil(t, result.StatusDetail.StatTags)
-		require.Nil(t, result.StatusDetail.FailedMessages)
-	})
-
-	t.Run("StatusDetail with empty complex fields", func(t *testing.T) {
-		original := &PUReportedMetric{
-			StatusDetail: &StatusDetail{
-				Status:         "success",
-				Count:          100,
-				StatusCode:     200,
-				SampleEvent:    json.RawMessage{},
-				StatTags:       map[string]string{},
-				FailedMessages: []*FailedMessage{},
-			},
-		}
-
-		result := original.DeepCopy()
-
-		require.NotNil(t, result.StatusDetail)
-		require.Equal(t, original.StatusDetail.Status, result.StatusDetail.Status)
-		require.Equal(t, original.StatusDetail.Count, result.StatusDetail.Count)
-		require.Equal(t, original.StatusDetail.StatusCode, result.StatusDetail.StatusCode)
-		require.Equal(t, original.StatusDetail.SampleEvent, result.StatusDetail.SampleEvent)
-		require.Equal(t, original.StatusDetail.StatTags, result.StatusDetail.StatTags)
-		require.Equal(t, original.StatusDetail.FailedMessages, result.StatusDetail.FailedMessages)
-		// Note: We can't use NotSame for slices and maps directly, but we verify content equality
-	})
-
-	t.Run("StatusDetail with nil FailedMessages elements", func(t *testing.T) {
-		original := &PUReportedMetric{
-			StatusDetail: &StatusDetail{
-				Status: "success",
-				FailedMessages: []*FailedMessage{
-					nil,
-					{
-						MessageID:  "msg-1",
-						ReceivedAt: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-					},
-					nil,
-				},
-			},
-		}
-
-		result := original.DeepCopy()
-
-		require.NotNil(t, result.StatusDetail)
-		require.Equal(t, len(original.StatusDetail.FailedMessages), len(result.StatusDetail.FailedMessages))
-		require.Nil(t, result.StatusDetail.FailedMessages[0])
-		require.NotNil(t, result.StatusDetail.FailedMessages[1])
-		require.Equal(t, original.StatusDetail.FailedMessages[1].MessageID, result.StatusDetail.FailedMessages[1].MessageID)
-		require.Nil(t, result.StatusDetail.FailedMessages[2])
+		require.Equal(t, original.SourceID, result.SourceID)
+		require.Equal(t, original.DestinationID, result.DestinationID)
+		require.Equal(t, original.PU, result.PU)
+		require.Equal(t, params.ErrorDetails.Code, result.ErrorCode)
+		require.Equal(t, params.ErrorDetails.Message, result.ErrorMessage)
+		// StatusCode should be zero value when StatusDetail is nil
+		require.Equal(t, 0, result.StatusCode)
 	})
 
 	t.Run("modification isolation", func(t *testing.T) {
@@ -225,16 +211,22 @@ func TestPUReportedMetric_DeepCopy(t *testing.T) {
 				StatTags: map[string]string{
 					"original": "value",
 				},
-				FailedMessages: []*FailedMessage{
-					{
-						MessageID:  "original-msg",
-						ReceivedAt: time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC),
-					},
-				},
 			},
 		}
 
-		result := original.DeepCopy()
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "ORIGINAL_ERROR",
+				Message: "Original error message",
+			},
+		}
+
+		result := PUReportedMetricToEDReportsDB(original, params)
 
 		// Modify the original
 		original.SourceID = "modified-source"
@@ -244,17 +236,65 @@ func TestPUReportedMetric_DeepCopy(t *testing.T) {
 		original.StatusDetail.SampleResponse = "modified-response"
 		original.StatusDetail.SampleEvent = json.RawMessage(`{"modified": "data"}`)
 		original.StatusDetail.StatTags["modified"] = "new-value"
-		original.StatusDetail.FailedMessages[0].MessageID = "modified-msg"
 
-		// Verify the copy is not affected
+		// Verify the result is not affected by modifications to original
 		require.Equal(t, "original-source", result.SourceID)
-		require.Equal(t, "original-input", result.InPU)
-		require.Equal(t, "original-status", result.StatusDetail.Status)
-		require.Equal(t, int64(100), result.StatusDetail.Count)
-		require.Equal(t, "original-response", result.StatusDetail.SampleResponse)
-		require.Equal(t, json.RawMessage(`{"original": "data"}`), result.StatusDetail.SampleEvent)
-		require.Equal(t, "value", result.StatusDetail.StatTags["original"])
-		require.NotContains(t, result.StatusDetail.StatTags, "modified")
-		require.Equal(t, "original-msg", result.StatusDetail.FailedMessages[0].MessageID)
+		require.Equal(t, "original-pu", result.PU)
+		require.Equal(t, 200, result.StatusCode)   // This comes from original.StatusDetail.StatusCode
+		require.Equal(t, int64(100), result.Count) // This comes from original.StatusDetail.Count
+		require.Equal(t, "original-response", result.SampleResponse)
+		require.Equal(t, json.RawMessage(`{"original": "data"}`), result.SampleEvent)
+		require.Equal(t, "ORIGINAL_ERROR", result.ErrorCode)
+		require.Equal(t, "Original error message", result.ErrorMessage)
+	})
+
+	t.Run("ReportedAt timestamp", func(t *testing.T) {
+		metric := &PUReportedMetric{
+			PUDetails: PUDetails{
+				PU: "test-pu",
+			},
+		}
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "TIMESTAMP_TEST",
+				Message: "Timestamp test",
+			},
+		}
+
+		before := time.Now().UTC().Unix() / 60
+		result := PUReportedMetricToEDReportsDB(metric, params)
+		after := time.Now().UTC().Unix() / 60
+
+		require.GreaterOrEqual(t, result.ReportedAt, before)
+		require.LessOrEqual(t, result.ReportedAt, after)
+	})
+}
+
+func TestErrorMetricParams(t *testing.T) {
+	t.Run("struct creation", func(t *testing.T) {
+		params := ErrorMetricParams{
+			WorkspaceID:             "test-workspace",
+			Namespace:               "test-namespace",
+			InstanceID:              "test-instance",
+			DestType:                "test-dest-type",
+			DestinationDefinitionID: "test-dest-def-id",
+			ErrorDetails: ErrorDetails{
+				Code:    "TEST_CODE",
+				Message: "Test message",
+			},
+		}
+
+		require.Equal(t, "test-workspace", params.WorkspaceID)
+		require.Equal(t, "test-namespace", params.Namespace)
+		require.Equal(t, "test-instance", params.InstanceID)
+		require.Equal(t, "test-dest-type", params.DestType)
+		require.Equal(t, "test-dest-def-id", params.DestinationDefinitionID)
+		require.Equal(t, "TEST_CODE", params.ErrorDetails.Code)
+		require.Equal(t, "Test message", params.ErrorDetails.Message)
 	})
 }

@@ -197,7 +197,7 @@ func TestErrorDetailsReport(t *testing.T) {
 					conf.Set(key, value)
 				}
 			} else {
-				conf.Set("Reporting.errorReporting.rateLimit.enabled", false)
+				conf.Set("Reporting.errorReporting.normalizer.enabled", false)
 			}
 
 			edr := NewErrorDetailReporter(
@@ -594,9 +594,9 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	configSubscriber.Subscribe(context.TODO(), mockBackendConfig)
 
 	conf := config.New()
-	conf.Set("Reporting.errorReporting.rateLimit.enabled", true)
-	conf.Set("Reporting.errorReporting.rateLimit.maxErrorsPerMinute", 1)
-	conf.Set("Reporting.errorReporting.rateLimit.maxCounters", 1)
+	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
+	conf.Set("Reporting.errorReporting.normalizer.maxErrorsPerMinute", 1)
+	conf.Set("Reporting.errorReporting.normalizer.maxCounters", 1)
 
 	edr := NewErrorDetailReporter(
 		context.TODO(),
