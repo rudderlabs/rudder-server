@@ -346,7 +346,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 		limiterStats.Update(w.partition, time.Since(start), successCount+errorCount, errorCount)
 	}()
 
-	ctx := context.TODO()
+	ctx := context.TODO() // TODO: use w.ctx and handle graceful shutdown scenario
 
 	transformerProxy := w.rt.reloadableConfig.transformerProxy.Load()
 
@@ -492,7 +492,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 							destType := destinationJob.Destination.DestinationDefinition.Name
 							deliveryThrottlerTimeout := w.rt.deliveryThrottlerTimeout.Load()
 							deliveryThrottler := w.rt.throttlerFactory.GetDeliveryThrottler(destType, destinationID, endpointLabel)
-							waitCtx, cancel := context.WithTimeoutCause(ctx, deliveryThrottlerTimeout, errors.New("delivery throttler timeout after "+deliveryThrottlerTimeout.String()))
+							waitCtx, cancel := context.WithTimeoutCause(w.ctx, deliveryThrottlerTimeout, errors.New("delivery throttler timeout after "+deliveryThrottlerTimeout.String()))
 							_, err := deliveryThrottler.Wait(waitCtx)
 							cancel()
 							if err != nil && waitCtx.Err() == nil {
