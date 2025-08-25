@@ -523,7 +523,7 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 			duration := now.Sub(m.pollingStartTime)
 			threshold := m.config.stuckPipelineThreshold.Load()
 			if duration > threshold {
-				m.logger.Warnn("Stuck snowipe pipeline detected",
+				m.logger.Warnn("Stuck snowpipe pipeline detected",
 					logger.NewDurationField("duration", duration),
 					logger.NewDurationField("threshold", threshold),
 					logger.NewStringField("importID", pollInput.ImportId),
