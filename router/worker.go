@@ -485,15 +485,18 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								obskit.DestinationType(w.rt.destType),
 								logger.NewBoolField("transformerProxy", w.rt.reloadableConfig.transformerProxy.Load()))
 							errorAt = routerutils.ERROR_AT_DEL
-							if val.EndpointLabel != "" {
-								deliveryThrottlerTimeout := w.rt.deliveryThrottlerTimeout.Load()
-								deliveryThrottler := w.rt.throttlerFactory.GetDeliveryThrottler(destinationJob.Destination.DestinationDefinition.Name, destinationID, val.EndpointLabel)
-								waitCtx, cancel := context.WithTimeoutCause(ctx, deliveryThrottlerTimeout, errors.New("delivery throttler timeout after "+deliveryThrottlerTimeout.String()))
-								_, err := deliveryThrottler.Wait(waitCtx)
-								cancel()
-								if err != nil && waitCtx.Err() == nil {
-									w.logger.Errorn("delivery throttler wait error", obskit.Error(err))
-								}
+							endpointLabel := val.EndpointLabel
+							if endpointLabel == "" {
+								endpointLabel = "default"
+							}
+							destType := destinationJob.Destination.DestinationDefinition.Name
+							deliveryThrottlerTimeout := w.rt.deliveryThrottlerTimeout.Load()
+							deliveryThrottler := w.rt.throttlerFactory.GetDeliveryThrottler(destType, destinationID, endpointLabel)
+							waitCtx, cancel := context.WithTimeoutCause(ctx, deliveryThrottlerTimeout, errors.New("delivery throttler timeout after "+deliveryThrottlerTimeout.String()))
+							_, err := deliveryThrottler.Wait(waitCtx)
+							cancel()
+							if err != nil && waitCtx.Err() == nil {
+								w.logger.Errorn("delivery throttler wait error", obskit.Error(err))
 							}
 							if transformerProxy {
 								attemptedRequests++
