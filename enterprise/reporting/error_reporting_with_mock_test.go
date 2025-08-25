@@ -21,7 +21,7 @@ func TestErrorDetailReporter_WithMockRateLimiter(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockRateLimiter := mocks.NewMockErrorRateLimiter(ctrl)
+		mockRateLimiter := mocks.NewMockErrorLimiter(ctrl)
 
 		// Configure mock expectations
 		mockRateLimiter.EXPECT().
@@ -34,18 +34,18 @@ func TestErrorDetailReporter_WithMockRateLimiter(t *testing.T) {
 		// Create error detail reporter with mock rate limiter
 		edr := &ErrorDetailReporter{
 			configSubscriber: configSubscriber,
-			errorRateLimiter: mockRateLimiter,
+			errorLimiter:     mockRateLimiter,
 			log:              logger.NOP,
 			stats:            stats.NOP,
 			config:           config.New(),
 		}
 
 		// Test that the reporter uses the mock rate limiter correctly
-		require.NotNil(t, edr.errorRateLimiter)
+		require.NotNil(t, edr.errorLimiter)
 
 		// Actually call the method to verify mock expectations
 		ctx := context.Background()
-		canonicalError := edr.errorRateLimiter.CanonicalizeError(ctx, "source1:dest1:identify:router", "test error message")
+		canonicalError := edr.errorLimiter.CanonicalizeError(ctx, "source1:dest1:identify:router", "test error message")
 		require.Equal(t, "test error message", canonicalError)
 	})
 
@@ -53,7 +53,7 @@ func TestErrorDetailReporter_WithMockRateLimiter(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		defer ctrl.Finish()
 
-		mockRateLimiter := mocks.NewMockErrorRateLimiter(ctrl)
+		mockRateLimiter := mocks.NewMockErrorLimiter(ctrl)
 
 		// Configure mock expectations - return UnknownError when rate limited
 		mockRateLimiter.EXPECT().
@@ -66,18 +66,18 @@ func TestErrorDetailReporter_WithMockRateLimiter(t *testing.T) {
 		// Create error detail reporter with mock rate limiter
 		edr := &ErrorDetailReporter{
 			configSubscriber: configSubscriber,
-			errorRateLimiter: mockRateLimiter,
+			errorLimiter:     mockRateLimiter,
 			log:              logger.NOP,
 			stats:            stats.NOP,
 			config:           config.New(),
 		}
 
 		// Test that the reporter uses the mock rate limiter correctly
-		require.NotNil(t, edr.errorRateLimiter)
+		require.NotNil(t, edr.errorLimiter)
 
 		// Actually call the method to verify mock expectations
 		ctx := context.Background()
-		canonicalError := edr.errorRateLimiter.CanonicalizeError(ctx, "source1:dest1:identify:router", "test error message")
+		canonicalError := edr.errorLimiter.CanonicalizeError(ctx, "source1:dest1:identify:router", "test error message")
 		require.Equal(t, "UnknownError", canonicalError)
 	})
 }
@@ -97,11 +97,11 @@ func TestErrorDetailReporter_ConstructorWithMock(t *testing.T) {
 			conf,
 		)
 
-		// Verify that the constructor creates a real ErrorRateLimiter
-		require.NotNil(t, edr.errorRateLimiter)
+		// Verify that the constructor creates a real ErrorLimiter
+		require.NotNil(t, edr.errorLimiter)
 
 		// Type assertion to verify it's a real implementation
-		_, ok := edr.errorRateLimiter.(*errorRateLimiter)
-		require.True(t, ok, "Expected real ErrorRateLimiter implementation")
+		_, ok := edr.errorLimiter.(*errorLimiter)
+		require.True(t, ok, "Expected real ErrorLimiter implementation")
 	})
 }

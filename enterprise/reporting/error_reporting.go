@@ -85,7 +85,7 @@ type ErrorDetailReporter struct {
 	httpClient *http.Client
 
 	errorDetailExtractor *ExtractorHandle
-	errorRateLimiter     ErrorRateLimiter
+	errorLimiter         ErrorLimiter
 
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
@@ -126,10 +126,10 @@ func NewErrorDetailReporter(
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log, conf)
-	var errorRateLimiter ErrorRateLimiter
+	var errorRateLimiter ErrorLimiter
 	if conf.GetBool("Reporting.errorReporting.rateLimit.enabled", false) {
 		log.Infon("error rate limiter is enabled, initializing")
-		errorRateLimiter = NewErrorRateLimiter(log, conf)
+		errorRateLimiter = NewErrorLimiter(log, conf)
 	}
 	groupingThreshold := conf.GetReloadableFloat64Var(0.75, "Reporting.errorReporting.grouping.similarityThreshold")
 	ctx, cancel := context.WithCancel(ctx)
@@ -169,7 +169,7 @@ func NewErrorDetailReporter(
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
-		errorRateLimiter:     errorRateLimiter,
+		errorLimiter:         errorRateLimiter,
 		maxOpenConnections:   maxOpenConnections,
 		stats:                stats,
 		config:               conf,
@@ -259,9 +259,9 @@ func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUR
 	// Group errors by connection details
 	connectionGroups := edr.groupByConnection(reportableMetrics)
 
-	// Apply rate limiting after grouping (modifies connectionGroups in place)
-	if edr.errorRateLimiter != nil {
-		connectionGroups = edr.applyRateLimiting(ctx, connectionGroups)
+	// Canonicalize errors after grouping (modifies connectionGroups in place)
+	if edr.errorLimiter != nil {
+		connectionGroups = edr.canonicalizeErrors(ctx, connectionGroups)
 	}
 
 	// Merge metrics by LCS similarity within the same connection group
@@ -298,11 +298,11 @@ func (edr *ErrorDetailReporter) extractErrorDetailsAndFilterMetrics(metrics []*t
 	return reportableMetrics
 }
 
-func (edr *ErrorDetailReporter) applyRateLimiting(ctx context.Context, connectionGroups map[string][]*types.PUReportedMetric) map[string][]*types.PUReportedMetric {
+func (edr *ErrorDetailReporter) canonicalizeErrors(ctx context.Context, connectionGroups map[string][]*types.PUReportedMetric) map[string][]*types.PUReportedMetric {
 	for groupKey, groupMetrics := range connectionGroups {
 		// Update all metrics in the group with the canonical error message
 		for _, metric := range groupMetrics {
-			metric.StatusDetail.ErrorDetails.Message = edr.errorRateLimiter.CanonicalizeError(ctx, groupKey, metric.StatusDetail.ErrorDetails.Message)
+			metric.StatusDetail.ErrorDetails.Message = edr.errorLimiter.CanonicalizeError(ctx, groupKey, metric.StatusDetail.ErrorDetails.Message)
 		}
 	}
 	return connectionGroups
@@ -447,10 +447,10 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	if edr.errorRateLimiter != nil {
+	if edr.errorLimiter != nil {
 		edr.log.Infon("error rate limiter is enabled, starting cleanup worker")
 		g.Go(func() error {
-			return edr.errorRateLimiter.StartCleanup(edr.ctx)
+			return edr.errorLimiter.StartCleanup(edr.ctx)
 		})
 	}
 
