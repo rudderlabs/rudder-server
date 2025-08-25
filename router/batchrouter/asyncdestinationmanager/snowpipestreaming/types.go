@@ -53,6 +53,7 @@ type (
 				initialInterval config.ValueLoader[time.Duration]
 				maxInterval     config.ValueLoader[time.Duration]
 			}
+			stuckPipelineThreshold config.ValueLoader[time.Duration]
 		}
 		backoff struct {
 			// If an attempt was made to create a resource but it failed likely due to permission issues,
@@ -73,6 +74,9 @@ type (
 			discards          stats.Counter
 			pollingInProgress stats.Counter
 		}
+
+		// Track batch polling start time for stuck pipeline detection
+		pollingStartTime time.Time
 	}
 
 	requestDoer interface {
