@@ -37,7 +37,6 @@ type Notifier interface {
 
 type StageFileRepo interface {
 	SetStatuses(ctx context.Context, ids []int64, status string) (err error)
-	SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error
 }
 
 type LoadFileRepo interface {
@@ -184,8 +183,12 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job *model.Upl
 	if err != nil {
 		return 0, 0, fmt.Errorf("creating upload V2 jobs: %w", err)
 	}
-
-	return lf.getLoadFileIDs(ctx, job, uniqueLoadGenID)
+	// Assign it to "err" to ensure that the defer function is called for the error
+	startID, endID, err := lf.getLoadFileIDs(ctx, job, uniqueLoadGenID)
+	if err != nil {
+		return 0, 0, err
+	}
+	return startID, endID, nil
 }
 
 func (lf *LoadFileGenerator) getLoadFileIDs(ctx context.Context, job *model.UploadJob, uniqueLoadGenID string) (int64, int64, error) {
@@ -438,7 +441,7 @@ func toLoadFile(output LoadFileUpload, job *model.UploadJob) model.LoadFile {
 		SourceID:              job.Upload.SourceID,
 		DestinationID:         job.Upload.DestinationID,
 		DestinationType:       job.Upload.DestinationType,
-		UploadID:              &job.Upload.ID,
+		UploadID:              job.Upload.ID,
 	}
 }
 

@@ -60,7 +60,7 @@ func Test_LoadFiles(t *testing.T) {
 				Location:              "s3://bucket/path/to/file",
 				TotalRows:             10,
 				ContentLength:         1000,
-				UploadID:              &uploads[i%2],
+				UploadID:              uploads[i%2],
 				DestinationRevisionID: "revision_id",
 				UseRudderStorage:      true,
 				SourceID:              "source_id",
@@ -117,7 +117,7 @@ func TestLoadFiles_GetByID(t *testing.T) {
 
 	uploadID := createUpload(t, ctx, db)
 	loadFiles := lo.RepeatBy(10, func(i int) model.LoadFile {
-		file := model.LoadFile{
+		return model.LoadFile{
 			TableName:             "table_name",
 			Location:              "s3://bucket/path/to/file",
 			TotalRows:             10,
@@ -127,12 +127,8 @@ func TestLoadFiles_GetByID(t *testing.T) {
 			SourceID:              "source_id",
 			DestinationID:         "destination_id",
 			DestinationType:       "RS",
+			UploadID:              uploadID,
 		}
-		// Not adding uploadID for first file to test NULL value
-		if i != 0 {
-			file.UploadID = &uploadID
-		}
-		return file
 	})
 	require.NoError(t, r.Insert(ctx, loadFiles))
 
@@ -193,7 +189,7 @@ func TestLoadFiles_TotalExportedEvents(t *testing.T) {
 					Location:              "s3://bucket/path/to/file",
 					TotalRows:             rows,
 					ContentLength:         1000,
-					UploadID:              &uploadID,
+					UploadID:              uploadID,
 					DestinationRevisionID: "revision_id",
 					UseRudderStorage:      true,
 					SourceID:              "source_id",
@@ -250,6 +246,7 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 	loadFilesCount := 25
 
 	loadFiles := make([]model.LoadFile, 0, stagingFilesCount*loadFilesCount)
+	uploadID := createUpload(t, ctx, db)
 
 	for i := 0; i < stagingFilesCount; i++ {
 		for j := 0; j < loadFilesCount; j++ {
@@ -263,6 +260,7 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 				SourceID:              sourceID,
 				DestinationID:         destinationID,
 				DestinationType:       "RS",
+				UploadID:              uploadID,
 			})
 		}
 	}

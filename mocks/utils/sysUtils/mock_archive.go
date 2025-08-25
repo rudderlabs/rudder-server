@@ -12,7 +12,7 @@ package mock_sysUtils
 import (
 	zip "archive/zip"
 	io "io"
-	fs "io/fs"
+	os "os"
 	reflect "reflect"
 
 	gomock "go.uber.org/mock/gomock"
@@ -43,7 +43,7 @@ func (m *MockZipI) EXPECT() *MockZipIMockRecorder {
 }
 
 // FileInfoHeader mocks base method.
-func (m *MockZipI) FileInfoHeader(fi fs.FileInfo) (*zip.FileHeader, error) {
+func (m *MockZipI) FileInfoHeader(fi os.FileInfo) (*zip.FileHeader, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "FileInfoHeader", fi)
 	ret0, _ := ret[0].(*zip.FileHeader)

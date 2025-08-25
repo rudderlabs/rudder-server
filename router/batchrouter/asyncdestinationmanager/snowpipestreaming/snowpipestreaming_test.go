@@ -1298,6 +1298,73 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
+	t.Run("Poll 404 channel not found - successful recreation", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS"}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		getStatusCallCount := 0
+		createChannelCallCount := 0
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					getStatusCallCount++
+					return nil, internalapi.ErrChannelNotFound
+				},
+				"recreated-products-channel": func() (*model.StatusResponse, error) {
+					getStatusCallCount++
+					return &model.StatusResponse{Success: true, Valid: true, Offset: "1003"}, nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					createChannelCallCount++
+					return &model.ChannelResponse{Success: true, ChannelID: "recreated-products-channel"}, nil
+				},
+			},
+		}
+		output := sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, 2, getStatusCallCount)
+		require.Equal(t, 1, createChannelCallCount)
+	})
+
+	t.Run("Poll 404 channel not found - recreation fails", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS"}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		createChannelCallCount := 0
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, internalapi.ErrChannelNotFound
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					createChannelCallCount++
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+		output := sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, 1, createChannelCallCount)
+	})
+
 	t.Run("Poll caching", func(t *testing.T) {
 		importID := `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":false,"reason":"","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":false,"reason":"","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`
 		statsStore, err := memstats.New()
