@@ -74,6 +74,7 @@ func New(
 	m.config.backoff.initialInterval = conf.GetReloadableDurationVar(1, time.Second, "SnowpipeStreaming.backoffInitialIntervalInSeconds")
 	m.config.backoff.multiplier = conf.GetReloadableFloat64Var(2.0, "SnowpipeStreaming.backoffMultiplier")
 	m.config.backoff.maxInterval = conf.GetReloadableDurationVar(1, time.Hour, "SnowpipeStreaming.backoffMaxIntervalInHours")
+	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(30, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -513,6 +514,18 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 
 	if anyInProgress := m.processPollImportInfos(ctx, importInfos); anyInProgress {
 		m.stats.pollingInProgress.Increment()
+
+		// Check for stuck pipeline batch
+		now := m.Now()
+		if m.pollingStartTime.IsZero() {
+			m.pollingStartTime = now
+		} else {
+			duration := now.Sub(m.pollingStartTime)
+			threshold := m.config.stuckPipelineThreshold.Load()
+			if duration > threshold {
+				m.logger.Warnn("Stuck snowipe pipeline detected")
+			}
+		}
 		return common.PollStatusResponse{InProgress: true}
 	}
 
@@ -524,6 +537,8 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	})
 	m.cleanupFailedImports(ctx, failedImports)
 	m.updateJobStatistics(updatedImportInfos)
+	// Reset batch polling start time since all imports completed
+	m.pollingStartTime = time.Time{}
 	m.polledImportInfoMap = make(map[string]*importInfo)
 
 	return m.buildPollStatusResponse(updatedImportInfos, failedImports)
