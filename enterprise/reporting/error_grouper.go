@@ -1,26 +1,22 @@
 package reporting
 
 import (
-	"strings"
-
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// mergeMetricGroupsByErrorSimilarity merges metrics by LCS similarity on error message
-// Returns a map where key is "connectionKey::errorKey" and value is the grouped metrics
-func (edr *ErrorDetailReporter) mergeMetricGroupsByErrorMessage(metricGroups map[string][]*types.PUReportedMetric) map[string][]*types.PUReportedMetric {
+func (edr *ErrorDetailReporter) mergeMetricGroupsByErrorMessage(metricGroups map[types.ErrorDetailGroupKey][]*types.EDReportsDB) map[types.ErrorDetailGroupKey][]*types.EDReportsDB {
 	for groupKey, metrics := range metricGroups {
-		metricsGroupedByError := lo.GroupBy(metrics, func(metric *types.PUReportedMetric) string {
-			return metric.StatusDetail.ErrorDetails.Message
+		metricsGroupedByError := lo.GroupBy(metrics, func(metric *types.EDReportsDB) string {
+			return metric.ErrorMessage
 		})
 
-		mergedMetricsGroups := make(map[string]*types.PUReportedMetric)
+		mergedMetricsGroups := make(map[string]*types.EDReportsDB)
 		for errorMsg, metrics := range metricsGroupedByError {
 			mergedMetricsGroups[errorMsg] = metrics[0]
-			mergedMetricsGroups[errorMsg].StatusDetail.Count = lo.SumBy(metrics, func(metric *types.PUReportedMetric) int64 {
-				return metric.StatusDetail.Count
+			mergedMetricsGroups[errorMsg].Count = lo.SumBy(metrics, func(metric *types.EDReportsDB) int64 {
+				return metric.Count
 			})
 		}
 		metricGroups[groupKey] = lo.Values(mergedMetricsGroups)
@@ -29,8 +25,8 @@ func (edr *ErrorDetailReporter) mergeMetricGroupsByErrorMessage(metricGroups map
 }
 
 // groupMetricsByConnection groups metrics by source, destination, PU, and event type
-func (edr *ErrorDetailReporter) groupByConnection(metrics []*types.PUReportedMetric) map[string][]*types.PUReportedMetric {
-	groups := make(map[string][]*types.PUReportedMetric)
+func (edr *ErrorDetailReporter) groupByConnection(metrics []*types.EDReportsDB) map[types.ErrorDetailGroupKey][]*types.EDReportsDB {
+	groups := make(map[types.ErrorDetailGroupKey][]*types.EDReportsDB)
 
 	for _, metric := range metrics {
 		key := edr.generateMetricGroupKey(metric)
@@ -41,12 +37,11 @@ func (edr *ErrorDetailReporter) groupByConnection(metrics []*types.PUReportedMet
 }
 
 // generateMetricGroupKey creates a unique key for connection details
-func (edr *ErrorDetailReporter) generateMetricGroupKey(metric *types.PUReportedMetric) string {
-	keys := []string{
-		metric.SourceID,
-		metric.DestinationID,
-		metric.PU,
-		metric.StatusDetail.EventType,
+func (edr *ErrorDetailReporter) generateMetricGroupKey(metric *types.EDReportsDB) types.ErrorDetailGroupKey {
+	return types.ErrorDetailGroupKey{
+		SourceID:      metric.SourceID,
+		DestinationID: metric.DestinationID,
+		PU:            metric.PU,
+		EventType:     metric.EventType,
 	}
-	return strings.Join(keys, "::")
 }

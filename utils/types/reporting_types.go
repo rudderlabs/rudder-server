@@ -190,60 +190,72 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
-// DeepCopy creates a deep copy of PUReportedMetric
-func (p *PUReportedMetric) DeepCopy() *PUReportedMetric {
-	if p == nil {
+// ErrorMetricParams holds the parameters needed for converting PUReportedMetric to EDReportsDB
+type ErrorMetricParams struct {
+	WorkspaceID             string
+	Namespace               string
+	InstanceID              string
+	DestType                string
+	DestinationDefinitionID string
+	ErrorDetails            ErrorDetails
+}
+
+// PUReportedMetricToEDReportsDB converts PUReportedMetric to EDReportsDB
+// This avoids deep copying by extracting only the fields needed for error reporting
+func PUReportedMetricToEDReportsDB(
+	metric *PUReportedMetric,
+	params ErrorMetricParams,
+) *EDReportsDB {
+	if metric == nil {
 		return nil
 	}
 
-	result := &PUReportedMetric{
-		ConnectionDetails: p.ConnectionDetails,
-		PUDetails:         p.PUDetails,
+	var statusCode int
+	var eventType, eventName string
+	var sampleResponse string
+	var sampleEvent json.RawMessage
+	var count int64
+
+	if metric.StatusDetail != nil {
+		statusCode = metric.StatusDetail.StatusCode
+		eventType = metric.StatusDetail.EventType
+		eventName = metric.StatusDetail.EventName
+		sampleResponse = metric.StatusDetail.SampleResponse
+		sampleEvent = metric.StatusDetail.SampleEvent
+		count = metric.StatusDetail.Count
 	}
 
-	// Deep copy StatusDetail if it exists
-	if p.StatusDetail != nil {
-		result.StatusDetail = &StatusDetail{
-			Status:         p.StatusDetail.Status,
-			Count:          p.StatusDetail.Count,
-			StatusCode:     p.StatusDetail.StatusCode,
-			SampleResponse: p.StatusDetail.SampleResponse,
-			EventName:      p.StatusDetail.EventName,
-			EventType:      p.StatusDetail.EventType,
-			ErrorType:      p.StatusDetail.ErrorType,
-			ViolationCount: p.StatusDetail.ViolationCount,
-			ErrorDetails:   p.StatusDetail.ErrorDetails,
-		}
-
-		// Deep copy SampleEvent (json.RawMessage)
-		if p.StatusDetail.SampleEvent != nil {
-			result.StatusDetail.SampleEvent = make(json.RawMessage, len(p.StatusDetail.SampleEvent))
-			copy(result.StatusDetail.SampleEvent, p.StatusDetail.SampleEvent)
-		}
-
-		// Deep copy StatTags map
-		if p.StatusDetail.StatTags != nil {
-			result.StatusDetail.StatTags = make(map[string]string, len(p.StatusDetail.StatTags))
-			for k, v := range p.StatusDetail.StatTags {
-				result.StatusDetail.StatTags[k] = v
-			}
-		}
-
-		// Deep copy FailedMessages slice
-		if p.StatusDetail.FailedMessages != nil {
-			result.StatusDetail.FailedMessages = make([]*FailedMessage, len(p.StatusDetail.FailedMessages))
-			for i, msg := range p.StatusDetail.FailedMessages {
-				if msg != nil {
-					result.StatusDetail.FailedMessages[i] = &FailedMessage{
-						MessageID:  msg.MessageID,
-						ReceivedAt: msg.ReceivedAt,
-					}
-				}
-			}
-		}
+	return &EDReportsDB{
+		EDInstanceDetails: EDInstanceDetails{
+			WorkspaceID: params.WorkspaceID,
+			Namespace:   params.Namespace,
+			InstanceID:  params.InstanceID,
+		},
+		EDConnectionDetails: EDConnectionDetails{
+			SourceID:                metric.SourceID,
+			DestinationID:           metric.DestinationID,
+			SourceDefinitionId:      metric.SourceDefinitionID,
+			DestinationDefinitionId: params.DestinationDefinitionID,
+			DestType:                params.DestType,
+		},
+		ReportMetadata: ReportMetadata{
+			ReportedAt: time.Now().UTC().Unix() / 60,
+		},
+		PU: metric.PU,
+		EDErrorDetails: EDErrorDetails{
+			EDErrorDetailsKey: EDErrorDetailsKey{
+				StatusCode:   statusCode,
+				ErrorCode:    params.ErrorDetails.Code,
+				ErrorMessage: params.ErrorDetails.Message,
+				EventType:    eventType,
+				EventName:    eventName,
+			},
+			SampleResponse: sampleResponse,
+			SampleEvent:    sampleEvent,
+			ErrorCount:     count,
+		},
+		Count: count,
 	}
-
-	return result
 }
 
 func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
@@ -274,4 +286,12 @@ func AssertKeysSubset[V1, V2 any](superset map[string]V1, subset map[string]V2) 
 			panic("key in subset not found in superset") // TODO improve msg
 		}
 	}
+}
+
+// ErrorDetailGroupKey represents the key for grouping error detail reports
+type ErrorDetailGroupKey struct {
+	SourceID      string
+	DestinationID string
+	PU            string
+	EventType     string
 }

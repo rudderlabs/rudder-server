@@ -10,7 +10,6 @@ replace (
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
-	github.com/rudderlabs/rudder-go-kit => github.com/rudderlabs/rudder-go-kit v0.61.0
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.3
 	golang.org/x/image => golang.org/x/image v0.24.0
