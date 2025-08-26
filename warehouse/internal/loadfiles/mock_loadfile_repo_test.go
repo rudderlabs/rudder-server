@@ -31,7 +31,7 @@ func (m *mockLoadFilesRepo) Delete(_ context.Context, uploadID int64) error {
 	defer m.mu.Unlock()
 	store := make([]model.LoadFile, 0)
 	for _, loadFile := range m.store {
-		if loadFile.UploadID != &uploadID {
+		if loadFile.UploadID != uploadID {
 			store = append(store, loadFile)
 		}
 	}
@@ -45,7 +45,7 @@ func (m *mockLoadFilesRepo) Get(_ context.Context, uploadID int64) ([]model.Load
 	defer m.mu.Unlock()
 	var loadFiles []model.LoadFile
 	for _, loadFile := range m.store {
-		if *loadFile.UploadID == uploadID {
+		if loadFile.UploadID == uploadID {
 			loadFiles = append(loadFiles, loadFile)
 		}
 	}

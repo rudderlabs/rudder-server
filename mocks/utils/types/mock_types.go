@@ -96,17 +96,17 @@ func (mr *MockReportingMockRecorder) DatabaseSyncer(c any) *gomock.Call {
 }
 
 // Report mocks base method.
-func (m *MockReporting) Report(ctx context.Context, metrics []*types.PUReportedMetric, tx *tx.Tx) error {
+func (m *MockReporting) Report(ctx context.Context, metrics []*types.PUReportedMetric, arg2 *tx.Tx) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Report", ctx, metrics, tx)
+	ret := m.ctrl.Call(m, "Report", ctx, metrics, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Report indicates an expected call of Report.
-func (mr *MockReportingMockRecorder) Report(ctx, metrics, tx any) *gomock.Call {
+func (mr *MockReportingMockRecorder) Report(ctx, metrics, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporting)(nil).Report), ctx, metrics, tx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReporting)(nil).Report), ctx, metrics, arg2)
 }
 
 // Stop mocks base method.

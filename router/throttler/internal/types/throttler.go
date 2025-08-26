@@ -1,10 +1,13 @@
 package types
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
-// Throttler interface defines methods for checking and managing request limits.
+// PickupThrottler interface defines methods for checking and managing request limits.
 // Typically one would have a single throttler per destination id and (optionally) per event type.
-type Throttler interface {
+type PickupThrottler interface {
 	// CheckLimitReached returns true if the limit is exceeded, false otherwise.
 	CheckLimitReached(ctx context.Context, cost int64) (limited bool, err error)
 	// ResponseCodeReceived is called when a response code is received.
@@ -13,4 +16,9 @@ type Throttler interface {
 	Shutdown()
 	// GetLimit returns the current limit.
 	GetLimit() int64
+}
+
+type DeliveryThrottler interface {
+	// Wait blocks until the next request can be sent and returns the duration blocked. An error is returned if the context is canceled.
+	Wait(ctx context.Context) (time.Duration, error)
 }

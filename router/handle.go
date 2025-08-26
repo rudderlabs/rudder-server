@@ -72,6 +72,7 @@ type Handle struct {
 	eventOrderKeyThreshold             config.ValueLoader[int]
 	eventOrderDisabledStateDuration    config.ValueLoader[time.Duration]
 	eventOrderHalfEnabledStateDuration config.ValueLoader[time.Duration]
+	deliveryThrottlerTimeout           config.ValueLoader[time.Duration]
 	drainConcurrencyLimit              config.ValueLoader[int]
 	workerInputBufferSize              int
 	saveDestinationResponse            bool
@@ -361,7 +362,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	for _, workerJobStatus := range *workerJobStatuses {
 		parameters := workerJobStatus.parameters
 		errorCode, _ := strconv.Atoi(workerJobStatus.status.ErrorCode)
-		rt.throttlerFactory.Get(rt.destType, parameters.DestinationID, workerJobStatus.parameters.EventType).ResponseCodeReceived(errorCode) // send response code to throttler
+		rt.throttlerFactory.GetPickupThrottler(rt.destType, parameters.DestinationID, workerJobStatus.parameters.EventType).ResponseCodeReceived(errorCode) // send response code to throttler
 		// Update metrics maps
 		// REPORTING - ROUTER - START
 		workspaceID := workerJobStatus.status.WorkspaceId
@@ -704,7 +705,7 @@ func (rt *Handle) shouldThrottle(ctx context.Context, job *jobsdb.JobT, destinat
 		return false
 	}
 
-	throttler := rt.throttlerFactory.Get(rt.destType, destinationID, eventType)
+	throttler := rt.throttlerFactory.GetPickupThrottler(rt.destType, destinationID, eventType)
 	throttlingCost := rt.getThrottlingCost(job, eventType)
 
 	limited, err := throttler.CheckLimitReached(ctx, throttlingCost)

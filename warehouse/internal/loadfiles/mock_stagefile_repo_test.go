@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type mockStageFilesRepo struct {
@@ -26,19 +25,6 @@ func (m *mockStageFilesRepo) SetStatuses(_ context.Context, ids []int64, status 
 			ID:     id,
 			Status: status,
 		}
-	}
-
-	return nil
-}
-
-func (m *mockStageFilesRepo) SetErrorStatus(_ context.Context, stagingFileID int64, stageFileErr error) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.store[stagingFileID] = model.StagingFile{
-		ID:     stagingFileID,
-		Status: warehouseutils.StagingFileFailedState,
-		Error:  stageFileErr,
 	}
 
 	return nil
