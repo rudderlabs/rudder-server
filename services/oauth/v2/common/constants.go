@@ -1,6 +1,7 @@
 package common
 
 const (
+	OAuth                = "OAuth"
 	CategoryRefreshToken = "REFRESH_TOKEN"
 	// CategoryAuthStatusInactive Identifier to be sent from destination(during transformation/delivery)
 	CategoryAuthStatusInactive = "AUTH_STATUS_INACTIVE"
