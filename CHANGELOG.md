@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.57.3](https://github.com/rudderlabs/rudder-server/compare/v1.57.2...v1.57.3) (2025-08-25)
+
+
+### Miscellaneous
+
+* add alert for stuck snowpipe pipeline ([#6271](https://github.com/rudderlabs/rudder-server/issues/6271)) ([a625462](https://github.com/rudderlabs/rudder-server/commit/a625462f7398ee24cef7f2e5af5fcf42b72f429c))
+
 ## [1.57.2](https://github.com/rudderlabs/rudder-server/compare/v1.57.1...v1.57.2) (2025-08-22)
 
 
