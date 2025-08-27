@@ -344,6 +344,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				"JS HTTP connection error",
 				obskit.Error(err),
 				logger.NewIntField("attempts", int64(retryCount)),
+				obskit.SourceID(labels.SourceID),
+				obskit.DestinationID(labels.DestinationID),
+				obskit.TransformationID(labels.TransformationID),
 			)
 		},
 	)
