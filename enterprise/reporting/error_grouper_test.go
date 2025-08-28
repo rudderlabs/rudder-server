@@ -5,14 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func TestErrorGrouper_GroupErrors(t *testing.T) {
-	edr := &ErrorDetailReporter{
-		groupingThreshold: config.GetReloadableFloat64Var(0.8, "Reporting.errorReporting.groupingThreshold"),
-	}
+	edr := &ErrorDetailReporter{}
 
 	// Create test metrics
 	metrics := []*types.EDReportsDB{
@@ -96,9 +93,7 @@ func TestErrorGrouper_GroupErrors(t *testing.T) {
 }
 
 func TestErrorGrouper_GroupByConnection(t *testing.T) {
-	edr := &ErrorDetailReporter{
-		groupingThreshold: config.GetReloadableFloat64Var(0.8, "Reporting.errorReporting.groupingThreshold"),
-	}
+	edr := &ErrorDetailReporter{}
 
 	// Create test metrics with different connection details
 	metrics := []*types.EDReportsDB{
@@ -170,9 +165,7 @@ func TestErrorGrouper_GroupByConnection(t *testing.T) {
 }
 
 func TestMergeMetricGroupsByErrorMessage(t *testing.T) {
-	edr := &ErrorDetailReporter{
-		groupingThreshold: config.GetReloadableFloat64Var(0.8, "Reporting.errorReporting.groupingThreshold"),
-	}
+	edr := &ErrorDetailReporter{}
 
 	// Test data: multiple groups with similar error messages within the same connection
 	key1 := types.ErrorDetailGroupKey{

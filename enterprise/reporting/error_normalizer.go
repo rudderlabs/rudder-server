@@ -48,17 +48,21 @@ type errorNormalizer struct {
 	maxErrorsPerGroup   config.ValueLoader[int]
 	maxGroups           config.ValueLoader[int]
 	cleanupInterval     config.ValueLoader[time.Duration]
+
+	// Stats manager reference
+	statsManager *ErrorReportingStats
 }
 
-func NewErrorNormalizer(log logger.Logger, conf *config.Config, stats stats.Stats) ErrorNormalizer {
+func NewErrorNormalizer(log logger.Logger, conf *config.Config, statsInstance stats.Stats, statsManager *ErrorReportingStats) ErrorNormalizer {
 	return &errorNormalizer{
 		log:                 log,
 		groups:              make(map[types.ErrorDetailGroupKey]*errorGroup),
-		stats:               stats,
+		stats:               statsInstance,
 		similarityThreshold: conf.GetReloadableFloat64Var(0.75, "Reporting.errorReporting.normalizer.similarityThreshold"),
 		maxErrorsPerGroup:   conf.GetReloadableIntVar(20, 1, "Reporting.errorReporting.normalizer.maxErrorsPerGroup"),
 		maxGroups:           conf.GetReloadableIntVar(10000, 1, "Reporting.errorReporting.normalizer.maxGroups"),
 		cleanupInterval:     conf.GetReloadableDurationVar(5, time.Second, "Reporting.errorReporting.normalizer.cleanupInterval"),
+		statsManager:        statsManager,
 	}
 }
 
@@ -110,7 +114,7 @@ func (e *errorNormalizer) NormalizeError(ctx context.Context, errorDetailGroupKe
 func (e *errorNormalizer) cleanup() {
 	start := time.Now()
 	defer func() {
-		e.stats.NewStat("error_normalizer_cleanup_time", stats.TimerType).Since(start)
+		e.statsManager.NormalizerCleanupTime.Since(start)
 	}()
 
 	e.mu.Lock()
