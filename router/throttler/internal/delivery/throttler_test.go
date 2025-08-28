@@ -23,17 +23,17 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			// Set configuration
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.NotNil(t, throttler)
 			require.Equal(t, destinationID, throttler.destinationID)
-			require.Equal(t, endpointLabel, throttler.endpointLabel)
+			require.Equal(t, endpointPath, throttler.endpointPath)
 			require.Equal(t, "delivery:dest123:endpoint1", throttler.key)
 			require.Equal(t, mockLimiter, throttler.limiter)
 			require.Equal(t, int64(100), throttler.getLimit())
@@ -46,13 +46,13 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			// Set only fallback config (destination type + endpoint)
 			config.Set("Router.throttler.delivery.WEBHOOK.endpoint1.limit", 50)
 			config.Set("Router.throttler.delivery.WEBHOOK.endpoint1.timeWindow", "5s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.Equal(t, int64(50), throttler.getLimit())
 			require.Equal(t, int64(5), throttler.getTimeWindowInSeconds())
@@ -65,9 +65,9 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.NotNil(t, throttler.rateLimitGauge)
 			require.NotNil(t, throttler.waitTimerSuccess)
@@ -83,12 +83,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			start := time.Now()
 			duration, err := throttler.Wait(context.Background())
@@ -116,12 +116,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			duration, err := throttler.Wait(context.Background())
 
@@ -142,12 +142,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			duration, err := throttler.Wait(context.Background())
 
@@ -164,10 +164,10 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			// Invalid configuration - no limit or window set
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			duration, err := throttler.Wait(context.Background())
 
@@ -183,12 +183,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 0)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			duration, err := throttler.Wait(context.Background())
 
@@ -204,12 +204,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "0s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			duration, err := throttler.Wait(context.Background())
 
@@ -227,12 +227,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.True(t, throttler.enabled())
 		})
@@ -244,12 +244,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 0)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.False(t, throttler.enabled())
 		})
@@ -261,12 +261,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "0s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.False(t, throttler.enabled())
 		})
@@ -280,11 +280,11 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 250)
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.Equal(t, int64(250), throttler.getLimit())
 		})
@@ -296,11 +296,11 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.Equal(t, int64(100), throttler.getLimit())
 
@@ -319,11 +319,11 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "30s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			require.Equal(t, int64(30), throttler.getTimeWindowInSeconds())
 		})
@@ -338,12 +338,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Trigger gauge update by calling Wait (which calls updateGauges)
 			_, err = throttler.Wait(context.Background())
@@ -358,7 +358,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel {
+					metric.Tags["endpointPath"] == endpointPath {
 					require.Equal(t, float64(10), metric.Value) // 100/10 = 10
 					found = true
 					break
@@ -375,12 +375,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "0s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// This should not call limiter due to invalid config, but should still call updateGauges
 			_, err = throttler.Wait(context.Background())
@@ -396,7 +396,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel {
+					metric.Tags["endpointPath"] == endpointPath {
 					require.Equalf(t, float64(0), metric.Value, "Gauge value of %s should be 0 when window is 0 (disabled)", metric.Name) // Should remain 0
 					found = true
 					break
@@ -413,12 +413,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Call Wait multiple times rapidly
 			_, err = throttler.Wait(context.Background())
@@ -437,7 +437,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel &&
+					metric.Tags["endpointPath"] == endpointPath &&
 					metric.Value == float64(10) {
 					count++
 				}
@@ -455,12 +455,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			_, err = throttler.Wait(context.Background())
 			require.NoError(t, err)
@@ -474,7 +474,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel &&
+					metric.Tags["endpointPath"] == endpointPath &&
 					metric.Tags["success"] == "true" {
 					require.GreaterOrEqual(t, metric.Value, float64(0)) // Should have non-negative duration
 					found = true
@@ -495,12 +495,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			_, err = throttler.Wait(context.Background())
 			require.Error(t, err)
@@ -514,7 +514,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel &&
+					metric.Tags["endpointPath"] == endpointPath &&
 					metric.Tags["success"] == "false" {
 					require.GreaterOrEqual(t, metric.Value, float64(0)) // Should have non-negative duration
 					found = true
@@ -537,12 +537,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			start := time.Now()
 			_, err = throttler.Wait(context.Background())
@@ -561,7 +561,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel &&
+					metric.Tags["endpointPath"] == endpointPath &&
 					metric.Tags["success"] == "true" {
 					// Just verify that some timing was recorded, timing precision may vary
 					require.GreaterOrEqual(t, metric.Value, float64(0))
@@ -580,10 +580,10 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			// No configuration - throttler should be disabled
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			_, err = throttler.Wait(context.Background())
 			require.NoError(t, err)
@@ -597,7 +597,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel &&
+					metric.Tags["endpointPath"] == endpointPath &&
 					metric.Tags["success"] == "true" {
 					// Should be very fast since no throttling occurred
 					require.Less(t, metric.Value, 0.001) // Less than 1ms
@@ -623,12 +623,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Create a context that will be cancelled after 50ms
 			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -659,12 +659,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Create an already cancelled context
 			ctx, cancel := context.WithCancel(context.Background())
@@ -694,12 +694,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Create a context that will be cancelled after 100ms
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -717,7 +717,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			for _, metric := range metrics {
 				if metric.Tags["destinationId"] == destinationID &&
 					metric.Tags["destType"] == destType &&
-					metric.Tags["endpointLabel"] == endpointLabel &&
+					metric.Tags["endpointPath"] == endpointPath &&
 					metric.Tags["success"] == "false" {
 					// Timer should record some non-negative duration
 					require.GreaterOrEqual(t, metric.Value, float64(0))
@@ -736,10 +736,10 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			// No configuration - throttler should be disabled
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Create an already cancelled context
 			ctx, cancel := context.WithCancel(context.Background())
@@ -766,12 +766,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Create a context with a deadline
 			ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(150*time.Millisecond))
@@ -808,12 +808,12 @@ func TestDeliveryThrottler(t *testing.T) {
 
 			destType := "WEBHOOK"
 			destinationID := "dest123"
-			endpointLabel := "endpoint1"
+			endpointPath := "endpoint1"
 
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.limit", 100)
 			config.Set("Router.throttler.delivery.WEBHOOK.dest123.endpoint1.timeWindow", "10s")
 
-			throttler := NewThrottler(destType, destinationID, endpointLabel, mockLimiter, config, statsStore, logger.NOP)
+			throttler := NewThrottler(destType, destinationID, endpointPath, mockLimiter, config, statsStore, logger.NOP)
 
 			// Cancel context after ~70ms (should allow 2 retries but cancel during 3rd)
 			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Millisecond)

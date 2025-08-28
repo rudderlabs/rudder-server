@@ -11,7 +11,7 @@ import (
 type PostParametersT struct {
 	Type          string `json:"type"`
 	URL           string `json:"endpoint"`
-	EndpointLabel string `json:"endpointLabel,omitempty"`
+	EndpointPath  string `json:"endpointPath,omitempty"`
 	RequestMethod string `json:"method"`
 	// Invalid tag used in struct. skipcq: SCC-SA5008
 	UserID      string                 `json:"userId"`
