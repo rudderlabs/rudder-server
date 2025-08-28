@@ -126,7 +126,7 @@ func NewErrorDetailReporter(
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log, conf)
-	errorNormalizer := NewErrorNormalizer(log, conf)
+	errorNormalizer := NewErrorNormalizer(log, conf, stats)
 	groupingThreshold := conf.GetReloadableFloat64Var(0.75, "Reporting.errorReporting.grouping.similarityThreshold")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -244,6 +244,11 @@ func shouldReport(metric types.PUReportedMetric) bool {
 }
 
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
+	start := time.Now()
+	defer func() {
+		edr.stats.NewStat("error_detail_reporter_report_time", stats.TimerType).Since(start)
+	}()
+
 	// Extract error details and filter metrics that should be reported
 	reportableMetrics := edr.extractErrorDetailsAndFilterMetrics(metrics)
 
@@ -327,6 +332,11 @@ func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups m
 		for _, metric := range groupMetrics {
 			totalCount += metric.Count
 
+			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(*metric, metric.ReportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
+			if err != nil {
+				return fmt.Errorf("event sampling error: %v", err)
+			}
+
 			_, err = stmt.Exec(
 				metric.WorkspaceID,
 				metric.Namespace,
@@ -338,13 +348,13 @@ func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups m
 				metric.DestType,
 				metric.PU,
 				metric.ReportedAt,
-				totalCount,
+				metric.Count,
 				metric.StatusCode,
 				metric.EventType,
 				metric.ErrorCode,
 				metric.ErrorMessage,
-				metric.SampleResponse,
-				string(metric.SampleEvent),
+				sampleResponse,
+				string(sampleEvent),
 				metric.EventName,
 			)
 			if err != nil {

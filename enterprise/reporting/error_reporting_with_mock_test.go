@@ -62,7 +62,7 @@ func TestErrorDetailReporter_WithMockErrorNormalizer(t *testing.T) {
 
 		mockErrorNormalizer := mocks.NewMockErrorNormalizer(ctrl)
 
-		// Configure mock expectations - return UnknownError when rate limited
+		// Configure mock expectations - return RedactedError when rate limited
 		testKey := types.ErrorDetailGroupKey{
 			SourceID:      "source1",
 			DestinationID: "dest1",
@@ -71,7 +71,7 @@ func TestErrorDetailReporter_WithMockErrorNormalizer(t *testing.T) {
 		}
 		mockErrorNormalizer.EXPECT().
 			NormalizeError(gomock.Any(), testKey, "test error message").
-			Return("UnknownError") // Return UnknownError when rate limited
+			Return(RedactedError) // Return RedactedError when rate limited
 
 		// Create config subscriber
 		configSubscriber := newConfigSubscriber(logger.NOP)
@@ -91,7 +91,7 @@ func TestErrorDetailReporter_WithMockErrorNormalizer(t *testing.T) {
 		// Actually call the method to verify mock expectations
 		ctx := context.Background()
 		normalizedError := edr.errorNormalizer.NormalizeError(ctx, testKey, "test error message")
-		require.Equal(t, "UnknownError", normalizedError)
+		require.Equal(t, RedactedError, normalizedError)
 	})
 }
 

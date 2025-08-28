@@ -52,10 +52,8 @@ func getStringifiedSampleEvent(rawSampleEvent json.RawMessage) string {
 	return string(rawSampleEvent)
 }
 
-func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
-	sampleEvent = metric.StatusDetail.SampleEvent
-	sampleResponse = metric.StatusDetail.SampleResponse
-
+// getSampleWithEventSamplingCore contains the common event sampling logic
+func getSampleWithEventSamplingCore(sampleEvent json.RawMessage, sampleResponse string, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, hashGenerator func() string) (json.RawMessage, string, error) {
 	if !eventSamplingEnabled || eventSampler == nil {
 		return sampleEvent, sampleResponse, nil
 	}
@@ -63,10 +61,10 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 	isValidSample := (sampleEvent != nil || sampleResponse != "")
 
 	if isValidSample {
-		sampleEventBucket, _ := GetAggregationBucketMinute(reportedAt, eventSamplingDuration)
-		hash := NewLabelSet(metric, sampleEventBucket).generateHash()
+		hash := hashGenerator()
 
 		var found bool
+		var err error
 		found, err = eventSampler.Get(hash)
 		if err != nil {
 			return sampleEvent, sampleResponse, err
@@ -83,7 +81,33 @@ func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64,
 		}
 	}
 
-	return sampleEvent, sampleResponse, err
+	return sampleEvent, sampleResponse, nil
+}
+
+func getSampleWithEventSampling(metric types.PUReportedMetric, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+	sampleEvent = metric.StatusDetail.SampleEvent
+	sampleResponse = metric.StatusDetail.SampleResponse
+
+	hashGenerator := func() string {
+		sampleEventBucket, _ := GetAggregationBucketMinute(reportedAt, eventSamplingDuration)
+		return NewLabelSet(metric, sampleEventBucket).generateHash()
+	}
+
+	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator)
+}
+
+// getSampleWithEventSamplingForEDReportsDB applies event sampling to EDReportsDB metrics
+// It reuses the common logic from getSampleWithEventSampling but works with EDReportsDB
+func getSampleWithEventSamplingForEDReportsDB(metric types.EDReportsDB, reportedAt int64, eventSampler event_sampler.EventSampler, eventSamplingEnabled bool, eventSamplingDuration int64) (sampleEvent json.RawMessage, sampleResponse string, err error) {
+	sampleEvent = metric.SampleEvent
+	sampleResponse = metric.SampleResponse
+
+	hashGenerator := func() string {
+		sampleEventBucket, _ := GetAggregationBucketMinute(reportedAt, eventSamplingDuration)
+		return NewLabelSetFromEDReportsDB(metric, sampleEventBucket).generateHash()
+	}
+
+	return getSampleWithEventSamplingCore(sampleEvent, sampleResponse, eventSampler, eventSamplingEnabled, hashGenerator)
 }
 
 func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {
