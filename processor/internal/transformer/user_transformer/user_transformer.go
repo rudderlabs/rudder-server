@@ -232,7 +232,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
 				obskit.DestinationID(clientEvents[0].Metadata.DestinationID),
 				logger.NewStringField("url", url),
-				logger.NewStringField("transformationID", transformationID),
+				obskit.TransformationID(transformationID),
 				logger.NewStringField("transformationVersionID", transformationVersionID),
 			)
 		},
@@ -342,15 +342,17 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			retryCount++
 			u.log.Warnn(
 				"JS HTTP connection error",
-				obskit.Error(err),
-				logger.NewIntField("attempts", int64(retryCount)),
-				obskit.SourceID(labels.SourceID),
-				obskit.DestinationID(labels.DestinationID),
-				obskit.TransformationID(labels.TransformationID),
+				append(
+					labels.ToLoggerFields(),
+					obskit.Error(err),
+					logger.NewIntField("attempts", int64(retryCount)),
+				)...,
 			)
 		},
 	)
 	if err != nil {
+		u.log.Errorn("User transformation post error",
+			append(labels.ToLoggerFields(), obskit.Error(err))...)
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
