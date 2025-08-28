@@ -595,8 +595,8 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
-	conf.Set("Reporting.errorReporting.normalizer.maxErrorsPerMinute", 1)
-	conf.Set("Reporting.errorReporting.normalizer.maxCounters", 1)
+	conf.Set("Reporting.errorReporting.normalizer.maxErrorsPerGroup", 1)
+	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 1)
 
 	edr := NewErrorDetailReporter(
 		context.TODO(),
@@ -641,7 +641,7 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	firstReportErr := edr.Report(ctx, metrics, mockTx)
 	assert.NoError(t, firstReportErr)
 
-	// Second report: should be rate limited and return "UnknownError"
+	// Second report: should be rate limited and return "RedactedError"
 	secondCopyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
 
 	tableRow = 0
@@ -661,7 +661,7 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 			metric.StatusDetail.StatusCode,
 			sqlmock.AnyArg(), // event_type
 			sqlmock.AnyArg(), // error_code
-			"UnknownError",   // error_message (rate limited message for second report)
+			RedactedError,    // error_message (rate limited message for second report)
 			sqlmock.AnyArg(), // sample_response
 			sqlmock.AnyArg(), // sample_event
 			sqlmock.AnyArg(), // event_name

@@ -86,11 +86,7 @@ func TestPUReportedMetricToEDReportsDB(t *testing.T) {
 				EventType:      "track",
 				ErrorType:      "none",
 				ViolationCount: 0,
-				ErrorDetails: ErrorDetails{
-					Code:    "SUCCESS",
-					Message: "Operation completed successfully",
-				},
-				SampleEvent: json.RawMessage(`{"event": "test", "data": "value"}`),
+				SampleEvent:    json.RawMessage(`{"event": "test", "data": "value"}`),
 				StatTags: map[string]string{
 					"tag1": "value1",
 					"tag2": "value2",
