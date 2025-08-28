@@ -13,13 +13,18 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
+// createTestStatsManager creates a stats manager for testing
+func createTestStatsManager() *ErrorReportingStats {
+	return NewErrorReportingStats(stats.Default)
+}
+
 func TestErrorNormalizer_BasicFunctionality(t *testing.T) {
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
 	conf.Set("Reporting.errorReporting.normalizer.maxErrorsPerGroup", 2)
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 10)
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	// Test that the first error is allowed
@@ -45,7 +50,7 @@ func TestErrorNormalizer_Disabled(t *testing.T) {
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", false)
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	// When disabled, should always return the original error message
@@ -67,7 +72,7 @@ func TestErrorNormalizer_SimilarityDetection_UpdatesExistingTimestamp(t *testing
 	conf.Set("Reporting.errorReporting.normalizer.maxErrorsPerGroup", 5)
 	conf.Set("Reporting.errorReporting.normalizer.similarityThreshold", 0.6) // Lower threshold to trigger similarity
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	testKey := types.ErrorDetailGroupKey{
@@ -102,7 +107,7 @@ func TestErrorNormalizer_Cleanup_DropStaleMessages(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 100)
 	conf.Set("Reporting.errorReporting.normalizer.cleanupInterval", "100ms")
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	testKey := types.ErrorDetailGroupKey{
@@ -144,7 +149,7 @@ func TestErrorNormalizer_Cleanup_ShouldDropCounter(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 100)
 	conf.Set("Reporting.errorReporting.normalizer.cleanupInterval", "100ms")
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	testKey := types.ErrorDetailGroupKey{
@@ -191,7 +196,7 @@ func TestErrorNormalizer_Cleanup_EmptyGroupRemoval(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 100)
 	conf.Set("Reporting.errorReporting.normalizer.cleanupInterval", "100ms")
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	testKey := types.ErrorDetailGroupKey{
@@ -229,7 +234,7 @@ func TestErrorNormalizer_StartCleanup_TickerExecution(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
 	conf.Set("Reporting.errorReporting.normalizer.cleanupInterval", "50ms")
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -259,7 +264,7 @@ func TestErrorNormalizer_MaxGroupsLimit(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.maxErrorsPerGroup", 1)
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 2)
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	key1 := types.ErrorDetailGroupKey{
@@ -297,7 +302,7 @@ func TestErrorNormalizer_MaxGroupsLimit(t *testing.T) {
 func TestErrorNormalizer_InterfaceCompliance(t *testing.T) {
 	// Test that the implementation implements ErrorNormalizer interface
 	conf := config.New()
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	_ = ern
 }
 
@@ -305,7 +310,7 @@ func TestErrorNormalizer_StartCleanup_ContextCancellation(t *testing.T) {
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -332,7 +337,7 @@ func TestErrorNormalizer_ShouldDropCounter_MaxCapacityAndBlocked(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 100)
 	conf.Set("Reporting.errorReporting.normalizer.cleanupInterval", "100ms")
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	testKey := types.ErrorDetailGroupKey{
@@ -376,7 +381,7 @@ func TestErrorNormalizer_ComprehensiveCleanupCoverage(t *testing.T) {
 	conf.Set("Reporting.errorReporting.normalizer.maxGroups", 100)
 	conf.Set("Reporting.errorReporting.normalizer.cleanupInterval", "50ms")
 
-	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default)
+	ern := NewErrorNormalizer(logger.NOP, conf, stats.Default, createTestStatsManager())
 	require.NotNil(t, ern)
 
 	testKey1 := types.ErrorDetailGroupKey{

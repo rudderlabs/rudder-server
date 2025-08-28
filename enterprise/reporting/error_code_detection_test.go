@@ -8,6 +8,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -266,7 +267,7 @@ func TestExtractErrorDetails(t *testing.T) {
 		},
 	}
 
-	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, nil, config.Default)
+	edr := NewErrorDetailReporter(context.Background(), &configSubscriber{}, stats.NOP, config.Default)
 	for _, tc := range testCases {
 		t.Run(tc.caseDescription, func(t *testing.T) {
 			t.Parallel()

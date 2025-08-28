@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +61,31 @@ var ErrorDetailReportsColumns = []string{
 	"event_name",
 }
 
+// ErrorReportingStats manages all stats for error reporting
+type ErrorReportingStats struct {
+	// Basic stats
+	ReportTime                   stats.Measurement
+	ReportingLag                 stats.Measurement
+	ErrorDetailReportingFailures stats.Measurement
+	HttpRequest                  stats.Measurement
+	VacuumDuration               stats.Measurement
+
+	// Error normalizer stats
+	NormalizerCleanupTime stats.Measurement
+}
+
+// NewErrorReportingStats creates a new stats manager
+func NewErrorReportingStats(statsInstance stats.Stats) *ErrorReportingStats {
+	return &ErrorReportingStats{
+		ReportTime:                   statsInstance.NewStat("error_detail_reporter_report_time", stats.TimerType),
+		ReportingLag:                 statsInstance.NewStat("error_detail_reports_metrics_lag_seconds", stats.GaugeType),
+		ErrorDetailReportingFailures: statsInstance.NewStat("error_detail_reporting_failures", stats.CountType),
+		HttpRequest:                  statsInstance.NewStat("error_detail_reporting_http_request", stats.CountType),
+		VacuumDuration:               statsInstance.NewStat("reporting_vacuum_duration", stats.TimerType),
+		NormalizerCleanupTime:        statsInstance.NewStat("error_detail_reporter_normalizer_cleanup_time", stats.TimerType),
+	}
+}
+
 type ErrorDetailReporter struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
@@ -87,6 +111,10 @@ type ErrorDetailReporter struct {
 	errorDetailExtractor *ExtractorHandle
 	errorNormalizer      ErrorNormalizer
 
+	// Stats management
+	statsManager *ErrorReportingStats
+
+	// Tagged stats (created dynamically with tags)
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
 	edReportingRequestLatency   stats.Measurement
@@ -105,7 +133,7 @@ type ErrorDetailReporter struct {
 func NewErrorDetailReporter(
 	ctx context.Context,
 	configSubscriber *configSubscriber,
-	stats stats.Stats,
+	statsInstance stats.Stats,
 	conf *config.Config,
 ) *ErrorDetailReporter {
 	// DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
@@ -126,7 +154,8 @@ func NewErrorDetailReporter(
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
 	extractor := NewErrorDetailExtractor(log, conf)
-	errorNormalizer := NewErrorNormalizer(log, conf, stats)
+	statsManager := NewErrorReportingStats(statsInstance)
+	errorNormalizer := NewErrorNormalizer(log, conf, statsInstance, statsManager)
 	groupingThreshold := conf.GetReloadableFloat64Var(0.75, "Reporting.errorReporting.grouping.similarityThreshold")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
@@ -135,7 +164,7 @@ func NewErrorDetailReporter(
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.ErrorsReporting, conf, log, stats)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.ErrorsReporting, conf, log, statsInstance)
 		if err != nil {
 			panic(err)
 		}
@@ -158,20 +187,23 @@ func NewErrorDetailReporter(
 		eventSampler:          eventSampler,
 		groupingThreshold:     groupingThreshold,
 
-		namespace:  config.GetKubeNamespace(),
-		instanceID: conf.GetString("INSTANCE_ID", "1"),
-		region:     conf.GetString("region", ""),
+		namespace: config.GetKubeNamespace(),
+
+		// Initialize stats manager
+		statsManager: statsManager,
+		instanceID:   conf.GetString("INSTANCE_ID", "1"),
+		region:       conf.GetString("region", ""),
 
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
 		errorNormalizer:      errorNormalizer,
 		maxOpenConnections:   maxOpenConnections,
-		stats:                stats,
+		stats:                statsInstance,
 		config:               conf,
 
 		useCommonClient: useCommonClient,
-		commonClient:    client.New(client.RouteRecordErrors, conf, log, stats),
+		commonClient:    client.New(client.RouteRecordErrors, conf, log, statsInstance),
 	}
 }
 
@@ -214,12 +246,9 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 
 func (edr *ErrorDetailReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
 	// for monitoring reports pileups
-	reportingLag := edr.stats.NewTaggedStat(
-		"error_detail_reports_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
-	)
 	for {
 		lag := time.Since(lastReportedAtTime.Load())
-		reportingLag.Gauge(lag.Seconds())
+		edr.statsManager.ReportingLag.Gauge(lag.Seconds())
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -246,7 +275,7 @@ func shouldReport(metric types.PUReportedMetric) bool {
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
 	start := time.Now()
 	defer func() {
-		edr.stats.NewStat("error_detail_reporter_report_time", stats.TimerType).Since(start)
+		edr.statsManager.ReportTime.Since(start)
 	}()
 
 	// Extract error details and filter metrics that should be reported
@@ -361,13 +390,7 @@ func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups m
 				return fmt.Errorf("executing statement: %v", err)
 			}
 		}
-		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
-			"errorCode":     groupMetrics[0].ErrorCode,
-			"workspaceId":   groupMetrics[0].WorkspaceID,
-			"destType":      groupMetrics[0].DestType,
-			"sourceId":      groupMetrics[0].SourceID,
-			"destinationId": groupMetrics[0].DestinationID,
-		}).Count(int(totalCount))
+		edr.statsManager.ErrorDetailReportingFailures.Count(int(totalCount))
 	}
 
 	_, err = stmt.ExecContext(ctx)
@@ -602,7 +625,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 }
 
 func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, tags stats.Tags) error {
-	defer edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags).RecordDuration()()
+	defer edr.statsManager.VacuumDuration.RecordDuration()()
 	var query string
 	var full bool
 	if edr.vacuumFull.Load() {
@@ -846,9 +869,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 		}
 
 		edr.edReportingRequestLatency.Since(httpRequestStart)
-		httpStatTags := edr.getTags(label)
-		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		edr.stats.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
+		edr.statsManager.HttpRequest.Increment()
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
