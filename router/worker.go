@@ -485,13 +485,13 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								obskit.DestinationType(w.rt.destType),
 								logger.NewBoolField("transformerProxy", w.rt.reloadableConfig.transformerProxy.Load()))
 							errorAt = routerutils.ERROR_AT_DEL
-							endpointLabel := val.EndpointLabel
-							if endpointLabel == "" {
-								endpointLabel = "default"
+							endpointPath := val.EndpointPath
+							if endpointPath == "" {
+								endpointPath = "default"
 							}
 							destType := destinationJob.Destination.DestinationDefinition.Name
 							deliveryThrottlerTimeout := w.rt.deliveryThrottlerTimeout.Load()
-							deliveryThrottler := w.rt.throttlerFactory.GetDeliveryThrottler(destType, destinationID, endpointLabel)
+							deliveryThrottler := w.rt.throttlerFactory.GetDeliveryThrottler(destType, destinationID, endpointPath)
 							waitCtx, cancel := context.WithTimeoutCause(w.ctx, deliveryThrottlerTimeout, errors.New("delivery throttler timeout after "+deliveryThrottlerTimeout.String()))
 							_, err := deliveryThrottler.Wait(waitCtx)
 							cancel()

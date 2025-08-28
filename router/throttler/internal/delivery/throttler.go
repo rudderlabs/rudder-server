@@ -13,39 +13,39 @@ import (
 )
 
 // NewThrottler constructs a new static delivery throttler for a destination endpoint
-func NewThrottler(destType, destinationID, endpointLabel string, limiter Limiter, config *config.Config, stat stats.Stats, log logger.Logger) *throttler {
+func NewThrottler(destType, destinationID, endpointPath string, limiter Limiter, config *config.Config, stat stats.Stats, log logger.Logger) *throttler {
 	return &throttler{
 		destinationID: destinationID,
-		endpointLabel: endpointLabel,
-		key:           "delivery:" + destinationID + ":" + endpointLabel, // key is destinationID:endpointLabel
+		endpointPath:  endpointPath,
+		key:           "delivery:" + destinationID + ":" + endpointPath, // key is destinationID:endpointPath
 
 		limiter: limiter,
 		log:     log,
 		limit: config.GetReloadableInt64Var(0, 1,
-			fmt.Sprintf(`Router.throttler.delivery.%s.%s.%s.limit`, destType, destinationID, endpointLabel),
-			fmt.Sprintf(`Router.throttler.delivery.%s.%s.limit`, destType, endpointLabel),
+			fmt.Sprintf(`Router.throttler.delivery.%s.%s.%s.limit`, destType, destinationID, endpointPath),
+			fmt.Sprintf(`Router.throttler.delivery.%s.%s.limit`, destType, endpointPath),
 		),
 		window: config.GetReloadableDurationVar(0, time.Second,
-			fmt.Sprintf(`Router.throttler.delivery.%s.%s.%s.timeWindow`, destType, destinationID, endpointLabel),
-			fmt.Sprintf(`Router.throttler.delivery.%s.%s.timeWindow`, destType, endpointLabel),
+			fmt.Sprintf(`Router.throttler.delivery.%s.%s.%s.timeWindow`, destType, destinationID, endpointPath),
+			fmt.Sprintf(`Router.throttler.delivery.%s.%s.timeWindow`, destType, endpointPath),
 		),
 
 		onceEveryGauge: kitsync.NewOnceEvery(time.Second),
 		rateLimitGauge: stat.NewTaggedStat("delivery_throttling_rate_limit", stats.GaugeType, stats.Tags{
 			"destType":      destType,
 			"destinationId": destinationID,
-			"endpointLabel": endpointLabel,
+			"endpointPath":  endpointPath,
 		}),
 		waitTimerSuccess: stat.NewTaggedStat("delivery_throttling_wait_seconds", stats.TimerType, stats.Tags{
 			"destType":      destType,
 			"destinationId": destinationID,
-			"endpointLabel": endpointLabel,
+			"endpointPath":  endpointPath,
 			"success":       "true",
 		}),
 		waitTimerFailure: stat.NewTaggedStat("delivery_throttling_wait_seconds", stats.TimerType, stats.Tags{
 			"destType":      destType,
 			"destinationId": destinationID,
-			"endpointLabel": endpointLabel,
+			"endpointPath":  endpointPath,
 			"success":       "false",
 		}),
 	}
@@ -53,7 +53,7 @@ func NewThrottler(destType, destinationID, endpointLabel string, limiter Limiter
 
 type throttler struct {
 	destinationID string
-	endpointLabel string
+	endpointPath  string
 	key           string
 
 	limiter Limiter
