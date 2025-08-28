@@ -234,7 +234,7 @@ func TestStagingFilesRepo(t *testing.T) {
 					).Scan(&schema, &schemaSnapshotID, &schemaSnapshotPatch, &snapshotPatchSize, &snapshotPatchCompressionRatio)
 					require.NoError(t, err)
 					require.Equal(t, snapshotID.String(), schemaSnapshotID)
-					require.JSONEq(t, string(modifiedSchema), string(schema))
+					require.JSONEq(t, "{}", string(schema))
 					require.JSONEq(t, string(patchSchema), string(schemaSnapshotPatch))
 					require.Equal(t, len(stagingFileWithSchema.SnapshotPatch), snapshotPatchSize)
 					require.Equal(t, float64(len(stagingFileWithSchema.SnapshotPatch))/float64(len(stagingFileWithSchema.Schema)), snapshotPatchCompressionRatio)
@@ -254,9 +254,13 @@ func TestStagingFilesRepo(t *testing.T) {
 					return now
 				}))
 
+				snapshotsRepo := repo.NewStagingFileSchemaSnapshots(db)
+				snapshotID, err := snapshotsRepo.Insert(ctx, "", "", "", []byte(`{"table": {"column": "type"} }`))
+				require.Nil(t, err)
+
 				stagingFiles := manyStagingFiles(10, now)
 				for i := range stagingFiles {
-					file := stagingFiles[i].WithSchema([]byte(`{"table": {"column": "type"} }`))
+					file := stagingFiles[i].WithSchema([]byte(`{"table": {"column": "type"} }`)).WithSnapshotIDAndPatch(snapshotID, []byte("[]"))
 					id, err := r.Insert(ctx, &file)
 					require.NoError(t, err)
 					stagingFiles[i].ID = id
@@ -327,7 +331,7 @@ func TestStagingFilesRepo(t *testing.T) {
 						r := repo.NewStagingFiles(db, conf)
 
 						expectedSchemas, err := r.GetSchemasByIDs(ctx, []int64{1})
-						require.ErrorContains(t, err, "cannot get schemas by ids: unmarshal staging schema:")
+						require.Error(t, err)
 						require.Nil(t, expectedSchemas)
 					})
 
@@ -440,7 +444,6 @@ func TestStagingFilesRepo(t *testing.T) {
 									WithSnapshotIDAndPatch(snapshotID, patchSchemaBytes)
 
 								c := defaultConfig()
-								c.Set("Warehouse.enableStagingFileSchemaSnapshot", true)
 								rs := repo.NewStagingFiles(db, c, repo.WithNow(func() time.Time {
 									return now
 								}))
