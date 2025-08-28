@@ -38,13 +38,12 @@ var (
 
 // netHandle is the wrapper holding private variables
 type netHandle struct {
-	disableEgress         bool
-	httpClient            sysUtils.HTTPClientI
-	logger                logger.Logger
-	blockPrivateIPsDryRun bool
-	blockPrivateIPs       bool
-	blockPrivateIPsCIDRs  netutil.CIDRs
-	destType              string
+	disableEgress        bool
+	httpClient           sysUtils.HTTPClientI
+	logger               logger.Logger
+	blockPrivateIPs      bool
+	blockPrivateIPsCIDRs netutil.CIDRs
+	destType             string
 }
 
 // NetHandle interface
@@ -293,9 +292,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Duration) error {
 	network.logger.Infon("Network Handler Startup")
 
-	network.blockPrivateIPsDryRun = getRouterConfigBool("dryRunMode", network.destType, false)
 	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
-	network.logger.Infon("blockPrivateIPsDryRun", logger.NewBoolField("blockPrivateIPsDryRun", network.blockPrivateIPsDryRun))
 	network.logger.Infon("blockPrivateIPs", logger.NewBoolField("blockPrivateIPs", network.blockPrivateIPs))
 
 	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetString("privateIPRanges", netutil.DefaultPrivateIPRanges), ","))
@@ -316,7 +313,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	originalDialContext := defaultTransportCopy.DialContext
 
 	dialContext := func(ctx context.Context, networkType, address string) (net.Conn, error) {
-		if network.blockPrivateIPsDryRun || network.blockPrivateIPs {
+		if network.blockPrivateIPs {
 			if networkType == "tcp" || networkType == "tcp4" || networkType == "tcp6" {
 				host, _, err := net.SplitHostPort(address)
 				if err != nil {
@@ -328,11 +325,6 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 				}
 				for _, ip := range ips {
 					if network.blockPrivateIPsCIDRs.Contains(ip) {
-						// In dry run mode, just log and allow the connection
-						if network.blockPrivateIPsDryRun {
-							network.logger.Warnn("Connection to private ip detected in dry run mode", logger.NewStringField("ip", ip.String()))
-							return originalDialContext(ctx, networkType, address)
-						}
 						// In block mode, reject the connection
 						if network.blockPrivateIPs {
 							return nil, ErrDenyPrivateIP
