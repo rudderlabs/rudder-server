@@ -244,7 +244,7 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 }
 
-func (edr *ErrorDetailReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
+func (edr *ErrorDetailReporter) emitLagMetric(ctx context.Context, lastReportedAtTime *atomic.Time) error {
 	// for monitoring reports pileups
 	for {
 		lag := time.Since(lastReportedAtTime.Load())
@@ -479,7 +479,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	})
 
 	g.Go(func() error {
-		return edr.emitLagMetric(ctx, c, &lastReportedAtTime)
+		return edr.emitLagMetric(ctx, &lastReportedAtTime)
 	})
 
 	g.Go(func() error {
@@ -624,7 +624,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	}
 }
 
-func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, tags stats.Tags) error {
+func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, _ stats.Tags) error {
 	defer edr.statsManager.VacuumDuration.RecordDuration()()
 	var query string
 	var full bool
@@ -840,7 +840,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 }
 
 // DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
-func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
+func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, _ string, metric *types.EDMetric) error {
 	if edr.useCommonClient.Load() {
 		return edr.commonClient.Send(ctx, metric)
 	}

@@ -1201,8 +1201,8 @@ github.com/rudderlabs/keydb v0.2.1-alpha h1:7ZzBTguw3CzJZhBBxLBiZ7+cRN3ZczyxYmOb
 github.com/rudderlabs/keydb v0.2.1-alpha/go.mod h1:VUiqQjSa4T/hMKu/b6Cq/c9gRANgKg1yL3h9anBYm5Q=
 github.com/rudderlabs/parquet-go v0.0.3 h1:/zgRj929pGKHsthc0kw8stVEcFu1JUcpxDRlhxjSLic=
 github.com/rudderlabs/parquet-go v0.0.3/go.mod h1:WmwBOdvwpXl2aZGRk3NxxgzC/DaWGfax3jrCRhKhtSo=
-github.com/rudderlabs/rudder-go-kit v0.61.0 h1:fEm1SozDUvHch3sstwvQ1fdjfxn61M4afXG81M8ECa8=
-github.com/rudderlabs/rudder-go-kit v0.61.0/go.mod h1:59K/p/XKy5n9f6CXiFdCOypE1tHV7fV3HnH7V33SDjM=
+github.com/rudderlabs/rudder-go-kit v0.61.1 h1:/yokabp3jWFlz/HCTdakTA3YjN4d831Nv0MCIV3uGuM=
+github.com/rudderlabs/rudder-go-kit v0.61.1/go.mod h1:59K/p/XKy5n9f6CXiFdCOypE1tHV7fV3HnH7V33SDjM=
 github.com/rudderlabs/rudder-observability-kit v0.0.4 h1:h9nLoWqiv/nqGOu1dhuVFAHNRkyodR6R3v36bqmavRs=
 github.com/rudderlabs/rudder-observability-kit v0.0.4/go.mod h1:YTsvJmpvh8OLk7c4C+wXiV8NRdcrrdLa8UvIdLoXTho=
 github.com/rudderlabs/rudder-schemas v0.7.0 h1:hKShHYpbIldE1Q591vodI6iaAZ/IUOyC1DqUUJZysNU=
