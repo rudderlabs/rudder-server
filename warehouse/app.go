@@ -247,15 +247,16 @@ func (a *App) setupDatabase(ctx context.Context) error {
 		sqlquerywrapper.WithStats(a.statsFactory),
 	)
 
-	err = a.migrate()
-	if err != nil {
-		return fmt.Errorf("could not migrate: %w", err)
+	if mode.IsMaster(a.config.mode) {
+		err = a.migrate()
+		if err != nil {
+			return fmt.Errorf("could not migrate: %w", err)
+		}
+		err = a.migrateAlways()
+		if err != nil {
+			return fmt.Errorf("could not migrate always: %w", err)
+		}
 	}
-	err = a.migrateAlways()
-	if err != nil {
-		return fmt.Errorf("could not migrate always: %w", err)
-	}
-
 	return nil
 }
 
