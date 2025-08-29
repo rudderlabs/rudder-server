@@ -3645,6 +3645,12 @@ var _ = Describe("Processor", Ordered, func() {
 			metadata3 := commonMetadata
 			metadata3.MessageID = "msg3"
 
+			inputEvents := []types.TransformerEvent{
+				{Metadata: metadata1, Message: event1},
+				{Metadata: metadata2, Message: event2},
+				{Metadata: metadata3, Message: event3},
+			}
+
 			FailedEvents := []types.TransformerResponse{
 				{StatusCode: 400, Metadata: metadata1, Output: event1},
 				{StatusCode: 298, Metadata: metadata2, Output: event2},
@@ -3657,6 +3663,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
+				inputEvents,
 				&commonMetadata,
 				eventsByMessageID,
 				reportingtypes.EVENT_FILTER,
