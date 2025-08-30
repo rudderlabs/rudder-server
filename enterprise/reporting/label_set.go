@@ -62,8 +62,37 @@ func NewLabelSet(metric types.PUReportedMetric, bucket int64) LabelSet {
 		EventType:               metric.StatusDetail.EventType,
 		ErrorType:               metric.StatusDetail.ErrorType,
 		Bucket:                  bucket,
-		ErrorCode:               metric.StatusDetail.ErrorDetails.Code,
-		ErrorMessage:            metric.StatusDetail.ErrorDetails.Message,
+	}
+}
+
+// NewLabelSetFromEDReportsDB creates a LabelSet from EDReportsDB for event sampling
+func NewLabelSetFromEDReportsDB(metric types.EDReportsDB, bucket int64) LabelSet {
+	return LabelSet{
+		WorkspaceID:             metric.WorkspaceID,
+		SourceDefinitionID:      metric.SourceDefinitionId,
+		SourceCategory:          "", // EDReportsDB doesn't have SourceCategory
+		SourceID:                metric.SourceID,
+		DestinationDefinitionID: metric.DestinationDefinitionId,
+		DestinationID:           metric.DestinationID,
+		SourceTaskRunID:         "", // EDReportsDB doesn't have these fields
+		SourceJobID:             "",
+		SourceJobRunID:          "",
+		TransformationID:        "",
+		TransformationVersionID: "",
+		TrackingPlanID:          "",
+		TrackingPlanVersion:     0,
+		InPU:                    "", // EDReportsDB doesn't have InPU
+		PU:                      metric.PU,
+		Status:                  "",    // EDReportsDB doesn't have Status
+		TerminalState:           false, // EDReportsDB doesn't have these fields
+		InitialState:            false,
+		StatusCode:              metric.StatusCode,
+		EventName:               metric.EventName,
+		EventType:               metric.EventType,
+		ErrorType:               "", // EDReportsDB doesn't have ErrorType
+		ErrorCode:               metric.ErrorCode,
+		ErrorMessage:            metric.ErrorMessage,
+		Bucket:                  bucket,
 	}
 }
 
