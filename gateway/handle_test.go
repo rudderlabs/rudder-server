@@ -91,7 +91,6 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 			enableInternalBatchValidator                                                      config.ValueLoader[bool]
 			enableInternalBatchEnrichment                                                     config.ValueLoader[bool]
 			webhookV2HandlerEnabled                                                           bool
-			errorDBEnabled                                                                    config.ValueLoader[bool]
 		}{
 			enableInternalBatchValidator:  config.SingleValueLoader(false),
 			enableInternalBatchEnrichment: config.SingleValueLoader(false),

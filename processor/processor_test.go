@@ -103,8 +103,6 @@ type testContext struct {
 	mockGatewayJobsDB        *mocksJobsDB.MockJobsDB
 	mockRouterJobsDB         *mocksJobsDB.MockJobsDB
 	mockBatchRouterJobsDB    *mocksJobsDB.MockJobsDB
-	mockReadProcErrorsDB     *mocksJobsDB.MockJobsDB
-	mockWriteProcErrorsDB    *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
 	mockArchivalDB           *mocksJobsDB.MockJobsDB
 	MockReportingI           *mockreportingtypes.MockReporting
@@ -126,8 +124,6 @@ func (c *testContext) Setup(testReporters ...gomock.TestReporter) {
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockReadProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockWriteProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockEventSchemasDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockArchivalDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.MockRsourcesService = rsources.NewMockJobService(c.mockCtrl)
@@ -2012,8 +2008,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				nil,
@@ -2044,8 +2038,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				nil,
@@ -2081,8 +2073,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				c.MockReportingI,
@@ -3088,8 +3078,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				nil,
@@ -3110,8 +3098,6 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-			c.mockReadProcErrorsDB.EXPECT().FailExecuting().Times(1)
-			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
@@ -3147,8 +3133,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				c.MockReportingI,
@@ -3167,8 +3151,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
 
-			c.mockReadProcErrorsDB.EXPECT().FailExecuting()
-			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -5168,8 +5150,6 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool,
 		c.mockGatewayJobsDB,
 		c.mockRouterJobsDB,
 		c.mockBatchRouterJobsDB,
-		c.mockReadProcErrorsDB,
-		c.mockWriteProcErrorsDB,
 		c.mockEventSchemasDB,
 		c.mockArchivalDB,
 		c.MockReportingI,

@@ -34,7 +34,6 @@ type Dynamic struct {
 	GatewayDB     lifecycle
 	RouterDB      lifecycle
 	BatchRouterDB lifecycle
-	ErrorDB       lifecycle
 	EventSchemaDB lifecycle
 	ArchivalDB    lifecycle
 
@@ -125,9 +124,6 @@ func (d *Dynamic) start() error {
 	}
 	d.logger.Infon("Starting the server")
 	start := time.Now()
-	if err := d.ErrorDB.Start(); err != nil {
-		return fmt.Errorf("error db start: %w", err)
-	}
 	if err := d.GatewayDB.Start(); err != nil {
 		return fmt.Errorf("gateway db start: %w", err)
 	}
@@ -186,8 +182,6 @@ func (d *Dynamic) stop() {
 	d.logger.Debugn("ArchivalDB stopped")
 	d.GatewayDB.Stop()
 	d.logger.Debugn("GatewayDB stopped")
-	d.ErrorDB.Stop()
-	d.logger.Debugn("ErrorDB stopped")
 	d.serverStopTimeStat.Since(start)
 	d.serverStopCountStat.Increment()
 }

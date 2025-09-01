@@ -41,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -108,8 +107,6 @@ type Handle struct {
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
 	batchRouterDB              jobsdb.JobsDB
-	readErrorDB                jobsdb.JobsDB
-	writeErrorDB               jobsdb.JobsDB
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
@@ -180,7 +177,6 @@ type Handle struct {
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		enableOptimizedConnectionDetailsKey       config.ValueLoader[bool]
-		errorDBEnabled                            config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -386,7 +382,6 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig,
 	gatewayDB, routerDB, batchRouterDB,
-	readErrorDB, writeErrorDB,
 	eventSchemaDB, archivalDB jobsdb.JobsDB,
 	reporting reportingtypes.Reporting,
 	transientSources transientsource.Service,
@@ -418,8 +413,6 @@ func (proc *Handle) Setup(
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.readErrorDB = readErrorDB
-	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
 	proc.archivalDB = archivalDB
 
@@ -697,19 +690,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 	}))
 
-	// stash loop
-	g.Go(crash.Wrapper(func() error {
-		st := stash.New()
-		st.Setup(
-			proc.readErrorDB,
-			proc.transientSources,
-			proc.fileuploader,
-			proc.adaptiveLimit,
-		)
-		st.Start(ctx)
-		return nil
-	}))
-
 	return g.Wait()
 }
 
@@ -782,7 +762,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.enableOptimizedConnectionDetailsKey = proc.conf.GetReloadableBoolVar(false, "Processor.enableOptimizedConnectionDetailsKey")
-	proc.config.errorDBEnabled = proc.conf.GetReloadableBoolVar(false, "ErrorDB.enabled")
 }
 
 type connection struct {
@@ -2865,19 +2844,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	for _, jobs := range in.procErrorJobsByDestID {
 		in.procErrorJobs = append(in.procErrorJobs, jobs...)
 	}
-	if len(in.procErrorJobs) > 0 {
+	if len(in.procErrorJobsByDestID) > 0 {
 		g.Go(func() error {
-			if proc.config.errorDBEnabled.Load() {
-				err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-					return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
-				}, proc.sendRetryStoreStats)
-				if err != nil {
-					proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
-					proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-					return err
-				}
-				proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-			}
 			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 			return nil
 		})

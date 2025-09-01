@@ -162,7 +162,6 @@ type testContext struct {
 
 	mockCtrl           *gomock.Controller
 	mockJobsDB         *mocksJobsDB.MockJobsDB
-	mockErrJobsDB      *mocksJobsDB.MockJobsDB
 	mockBackendConfig  *mocksBackendConfig.MockBackendConfig
 	mockRateLimiter    *mockGateway.MockThrottler
 	mockApp            *mocksApp.MockApp
@@ -190,7 +189,6 @@ func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockErrJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mockGateway.NewMockThrottler(c.mockCtrl)
@@ -286,7 +284,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 
 			waitForBackendConfigInit(gateway)
@@ -423,7 +421,7 @@ var _ = Describe("Gateway", func() {
 		It("should wait for backend config", func() {
 			c.initializeAppFeatures()
 			gateway := &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			err = gateway.Shutdown()
@@ -456,7 +454,7 @@ var _ = Describe("Gateway", func() {
 			GinkgoT().Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(serverPort))
 
 			gateway = &Handle{}
-			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			gateway.irh = mockRequestHandler{}
@@ -551,7 +549,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -891,7 +889,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -999,7 +997,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 			conf.Set("Gateway.enableRateLimit", true)
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1095,7 +1093,7 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, statsStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1396,7 +1394,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1423,7 +1421,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1652,7 +1650,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -1758,7 +1756,7 @@ var _ = Describe("Gateway", func() {
 
 			gateway = &Handle{}
 			srcDebugger = mocksrcdebugger.NewMockSourceDebugger(c.mockCtrl)
-			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
+			err = gateway.Setup(context.Background(), conf, logger.NOP, statStore, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), srcDebugger, nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).AnyTimes()
@@ -2097,7 +2095,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			c.initializeAppFeatures()
 			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockErrJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 			Expect(err).To(BeNil())
 			waitForBackendConfigInit(gateway)
 		})
@@ -2775,7 +2773,6 @@ func TestLeakyUploader(t *testing.T) {
 func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, secretKey string) (gw *Handle, cleanup func()) {
 	mockCtrl := gomock.NewController(t)
 	mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
-	mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockApp := mocksApp.NewMockApp(mockCtrl)
 	mockRateLimiter := mockGateway.NewMockThrottler(mockCtrl)
@@ -2806,7 +2803,7 @@ func createTestGatewayWithLeakyUploader(t *testing.T, endpoint, accessKeyID, sec
 	conf.Set("Gateway.leakyUploader.Storage.DisableSsl", true)
 	conf.Set("Gateway.leakyUploader.Storage.UseGlue", true)
 	conf.Set("Gateway.leakyUploader.Storage.S3ForcePathStyle", true)
-	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockErrJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+	err := gw.Setup(context.Background(), conf, logger.NewLogger().Withn(logger.NewStringField("component", "test")), stats.NOP, mockApp, mockBackendConfig, mockJobsDB, mockRateLimiter, mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		select {
