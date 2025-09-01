@@ -383,7 +383,7 @@ func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups m
 				metric.ErrorCode,
 				metric.ErrorMessage,
 				sampleResponse,
-				string(sampleEvent),
+				getStringifiedSampleEvent(sampleEvent),
 				metric.EventName,
 			)
 			if err != nil {

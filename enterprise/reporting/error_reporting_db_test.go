@@ -2,6 +2,7 @@ package reporting
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -22,6 +23,137 @@ import (
 	utilsTx "github.com/rudderlabs/rudder-server/utils/tx"
 )
 
+// testSetup holds common test configuration and mocks
+type testSetup struct {
+	configSubscriber  *configSubscriber
+	mockCtrl          *gomock.Controller
+	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	conf              *config.Config
+}
+
+// newTestSetup creates a new test setup with common configuration
+func newTestSetup(t *testing.T) *testSetup {
+	configSubscriber := newConfigSubscriber(logger.NOP)
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+
+	conf := config.New()
+	conf.Set("Reporting.errorReporting.normalizer.enabled", false)
+
+	return &testSetup{
+		configSubscriber:  configSubscriber,
+		mockCtrl:          mockCtrl,
+		mockBackendConfig: mockBackendConfig,
+		conf:              conf,
+	}
+}
+
+// setupMockBackendConfig configures the mock backend config with workspace data
+func (ts *testSetup) setupMockBackendConfig(workspaceID, sourceID, destinationID, destDefID, destType string, disablePII bool) {
+	ts.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+		ch := make(chan pubsub.DataEvent, 1)
+		ch <- pubsub.DataEvent{
+			Data: map[string]backendconfig.ConfigT{
+				workspaceID: {
+					WorkspaceID: workspaceID,
+					Sources: []backendconfig.SourceT{
+						{
+							ID:      sourceID,
+							Enabled: true,
+							Destinations: []backendconfig.DestinationT{
+								{
+									ID:      destinationID,
+									Enabled: true,
+									DestinationDefinition: backendconfig.DestinationDefinitionT{
+										ID:   destDefID,
+										Name: destType,
+									},
+								},
+							},
+						},
+					},
+					Settings: backendconfig.Settings{
+						DataRetention: backendconfig.DataRetention{
+							DisableReportingPII: disablePII,
+						},
+					},
+				},
+			},
+			Topic: string(backendconfig.TopicBackendConfig),
+		}
+		close(ch)
+		return ch
+	}).AnyTimes()
+
+	ts.configSubscriber.Subscribe(context.TODO(), ts.mockBackendConfig)
+}
+
+// createTestMetrics creates test metrics with the given parameters
+func createTestMetrics(sourceID, destinationID string, statusCode int, eventType, sampleResponse string, sampleEvent []byte, eventName string) []*types.PUReportedMetric {
+	return []*types.PUReportedMetric{
+		{
+			ConnectionDetails: types.ConnectionDetails{
+				SourceID:      sourceID,
+				DestinationID: destinationID,
+			},
+			StatusDetail: &types.StatusDetail{
+				StatusCode:     statusCode,
+				Count:          1,
+				EventType:      eventType,
+				SampleResponse: sampleResponse,
+				SampleEvent:    sampleEvent,
+				EventName:      eventName,
+			},
+			PUDetails: types.PUDetails{
+				PU: "router",
+			},
+		},
+	}
+}
+
+// setupDatabaseMock creates and configures a database mock for testing
+func setupDatabaseMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock, *utilsTx.Tx) {
+	db, dbMock, err := sqlmock.New()
+	require.NoError(t, err, "failed to create database mock")
+
+	dbMock.ExpectBegin()
+
+	tx, _ := db.Begin()
+	mockTx := &utilsTx.Tx{Tx: tx}
+
+	return db, dbMock, mockTx
+}
+
+// expectCopyStatement sets up expectations for the COPY statement
+func expectCopyStatement(dbMock sqlmock.Sqlmock, sourceID, destinationID string, statusCode int, expectedSampleEvent string) {
+	copyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
+
+	copyStmt.ExpectExec().WithArgs(
+		sqlmock.AnyArg(), // workspace_id
+		sqlmock.AnyArg(), // namespace
+		sqlmock.AnyArg(), // instance_id
+		sqlmock.AnyArg(), // source_definition_id
+		sourceID,         // source_id
+		sqlmock.AnyArg(), // destination_definition_id
+		destinationID,    // destination_id
+		sqlmock.AnyArg(), // dest_type
+		sqlmock.AnyArg(), // pu
+		sqlmock.AnyArg(), // reported_at
+		sqlmock.AnyArg(), // count
+		statusCode,       // status_code
+		sqlmock.AnyArg(), // event_type
+		sqlmock.AnyArg(), // error_code
+		sqlmock.AnyArg(), // error_message
+		sqlmock.AnyArg(), // sample_response
+		"{}",             // sample_event (always empty JSON object for nil input)
+		sqlmock.AnyArg(), // event_name
+	).WillReturnResult(sqlmock.NewResult(0, 1))
+
+	// The final ExecContext call to finalize the COPY statement
+	copyStmt.ExpectExec().WithoutArgs().WillReturnResult(sqlmock.NewResult(0, 0))
+	copyStmt.WillBeClosed()
+}
+
 func TestErrorDetailsReport(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -30,220 +162,61 @@ func TestErrorDetailsReport(t *testing.T) {
 		rateLimitConfig map[string]interface{}
 	}{
 		{
-			name: "PII Reporting Enabled, should report it to error_detail_reports table",
-			metrics: []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:      "source1",
-						DestinationID: "dest1",
-					},
-					StatusDetail: &types.StatusDetail{
-						StatusCode:     400,
-						Count:          1,
-						SampleResponse: `{"error": "Bad Request", "message": "Invalid input"}`,
-					},
-				},
-			},
+			name:            "PII Reporting Enabled, should report it to error_detail_reports table",
+			metrics:         createTestMetrics("source1", "dest1", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
 			expectExecution: true,
 		},
 		{
-			name: "PII Reporting Disabled, should not report it to error_detail_reports table",
-			metrics: []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:      "source2",
-						DestinationID: "dest2",
-					},
-					StatusDetail: &types.StatusDetail{
-						StatusCode:     400,
-						Count:          1,
-						SampleResponse: `{"error": "Bad Request", "message": "Invalid input"}`,
-					},
-				},
-			},
+			name:            "PII Reporting Disabled, should not report it to error_detail_reports table",
+			metrics:         createTestMetrics("source2", "dest2", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
 			expectExecution: false,
 		},
 		{
-			name: "PII Reporting Enabled, should report it to error_detail_reports table",
-			metrics: []*types.PUReportedMetric{
-				{
-					ConnectionDetails: types.ConnectionDetails{
-						SourceID:      "source3",
-						DestinationID: "dest3",
-					},
-					StatusDetail: &types.StatusDetail{
-						StatusCode:     400,
-						Count:          1,
-						EventType:      "identify",
-						SampleResponse: `{"error": "Bad Request", "message": "Invalid input"}`,
-					},
-					PUDetails: types.PUDetails{
-						PU: "router",
-					},
-				},
-			},
+			name:            "PII Reporting Enabled, should report it to error_detail_reports table",
+			metrics:         createTestMetrics("source3", "dest3", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
 			expectExecution: true,
 		},
 	}
 
-	configSubscriber := newConfigSubscriber(logger.NOP)
-	mockCtrl := gomock.NewController(t)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a new mock for each test case to avoid interference
-			db, dbMock, err := sqlmock.New()
-			if err != nil {
-				t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-			}
+			db, dbMock, mockTx := setupDatabaseMock(t)
 			defer db.Close()
 
-			dbMock.ExpectBegin()
-			defer dbMock.ExpectClose()
+			// Create a new test setup for each test to avoid interference
+			testTS := newTestSetup(t)
 
-			tx, _ := db.Begin()
-			mockTx := &utilsTx.Tx{Tx: tx}
-			mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				ch := make(chan pubsub.DataEvent, 1)
-				ch <- pubsub.DataEvent{
-					Data: map[string]backendconfig.ConfigT{
-						"workspace1": {
-							WorkspaceID: "workspace1",
-							Sources: []backendconfig.SourceT{
-								{
-									ID:      "source1",
-									Enabled: true,
-									Destinations: []backendconfig.DestinationT{
-										{
-											ID:      "dest1",
-											Enabled: true,
-											DestinationDefinition: backendconfig.DestinationDefinitionT{
-												ID:   "destDef1",
-												Name: "destType",
-											},
-										},
-									},
-								},
-							},
-							Settings: backendconfig.Settings{
-								DataRetention: backendconfig.DataRetention{
-									DisableReportingPII: false,
-								},
-							},
-						},
-						"workspace2": {
-							WorkspaceID: "workspace2",
-							Sources: []backendconfig.SourceT{
-								{
-									ID:      "source2",
-									Enabled: true,
-									Destinations: []backendconfig.DestinationT{
-										{
-											ID:      "dest2",
-											Enabled: true,
-											DestinationDefinition: backendconfig.DestinationDefinitionT{
-												ID:   "destDef1",
-												Name: "destType",
-											},
-										},
-									},
-								},
-							},
-							Settings: backendconfig.Settings{
-								DataRetention: backendconfig.DataRetention{
-									DisableReportingPII: true,
-								},
-							},
-						},
-						"workspace3": {
-							WorkspaceID: "workspace3",
-							Sources: []backendconfig.SourceT{
-								{
-									ID:      "source3",
-									Enabled: true,
-									Destinations: []backendconfig.DestinationT{
-										{
-											ID:      "dest3",
-											Enabled: true,
-											DestinationDefinition: backendconfig.DestinationDefinitionT{
-												ID:   "destDef1",
-												Name: "destType",
-											},
-										},
-									},
-								},
-							},
-							Settings: backendconfig.Settings{
-								DataRetention: backendconfig.DataRetention{
-									DisableReportingPII: false,
-								},
-							},
-						},
-					},
-					Topic: string(backendconfig.TopicBackendConfig),
-				}
-				close(ch)
-				return ch
-			}).AnyTimes()
+			// Setup mock backend config for each test case
+			workspaceID := "workspace" + tt.metrics[0].ConnectionDetails.SourceID[len("source"):]
+			disablePII := !tt.expectExecution
+			testTS.setupMockBackendConfig(workspaceID, tt.metrics[0].ConnectionDetails.SourceID, tt.metrics[0].ConnectionDetails.DestinationID, "destDef1", "destType", disablePII)
 
-			configSubscriber.Subscribe(context.TODO(), mockBackendConfig)
+			// Wait for config subscriber to be initialized
+			testTS.configSubscriber.Wait()
 
 			conf := config.New()
-
-			// Set rate limit configuration if provided
 			if tt.rateLimitConfig != nil {
 				for key, value := range tt.rateLimitConfig {
 					conf.Set(key, value)
 				}
-			} else {
-				conf.Set("Reporting.errorReporting.normalizer.enabled", false)
 			}
 
 			edr := NewErrorDetailReporter(
 				context.TODO(),
-				configSubscriber,
+				testTS.configSubscriber,
 				stats.NOP,
 				conf,
 			)
 
 			ctx := context.Background()
 
-			// With the new error grouping approach, statement preparation only happens when there are groups to write
 			if tt.expectExecution {
-				copyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
-
-				// With error grouping, we expect one execution per group (not per individual metric)
-				// For the test cases, each metric will likely form its own group since they have different connection details
-				var tableRow int64 = 0
+				// Expect COPY statement for each metric
 				for _, metric := range tt.metrics {
-					copyStmt.ExpectExec().WithArgs(
-						sqlmock.AnyArg(), // workspace_id
-						sqlmock.AnyArg(), // namespace
-						sqlmock.AnyArg(), // instance_id
-						sqlmock.AnyArg(), // source_definition_id
-						metric.ConnectionDetails.SourceID,
-						sqlmock.AnyArg(), // destination_definition_id
-						metric.ConnectionDetails.DestinationID,
-						sqlmock.AnyArg(), // dest_type
-						sqlmock.AnyArg(), // pu
-						sqlmock.AnyArg(), // reported_at
-						sqlmock.AnyArg(), // count (may be aggregated)
-						metric.StatusDetail.StatusCode,
-						sqlmock.AnyArg(), // event_type
-						sqlmock.AnyArg(), // error_code
-						sqlmock.AnyArg(), // error_message
-						sqlmock.AnyArg(), // sample_response
-						sqlmock.AnyArg(), // sample_event
-						sqlmock.AnyArg(), // event_name
-					).WillReturnResult(sqlmock.NewResult(tableRow, 1))
-					tableRow++
+					expectCopyStatement(dbMock, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse)
 				}
-				// The final ExecContext call to finalize the COPY statement
-				copyStmt.ExpectExec().WithoutArgs().WillReturnResult(sqlmock.NewResult(0, 0))
-				copyStmt.WillBeClosed()
 			}
-			// If expectExecution is false (PII disabled), no statement preparation should happen
+
 			reportErr := edr.Report(ctx, tt.metrics, mockTx)
 			assert.NoError(t, reportErr)
 
@@ -393,8 +366,8 @@ func TestAggregationLogic(t *testing.T) {
 		},
 	}
 
-	configSubscriber := newConfigSubscriber(logger.NOP)
-	ed := NewErrorDetailReporter(context.Background(), configSubscriber, stats.NOP, config.Default)
+	ts := newTestSetup(t)
+	ed := NewErrorDetailReporter(context.Background(), ts.configSubscriber, stats.NOP, ts.conf)
 	reportingMetrics := ed.aggregate(dbErrs)
 
 	reportResults := []*types.EDMetric{
@@ -503,95 +476,15 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	// Test rate limiting behavior by sending 2 reports
 	// First report should succeed, second should be rate limited
 
-	metrics := []*types.PUReportedMetric{
-		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:      "source3",
-				DestinationID: "dest3",
-			},
-			StatusDetail: &types.StatusDetail{
-				StatusCode:     400,
-				Count:          1,
-				EventType:      "identify",
-				SampleResponse: `{"error": "Bad Request", "message": "Invalid input"}`,
-			},
-			PUDetails: types.PUDetails{
-				PU: "router",
-			},
-		},
-	}
+	metrics := createTestMetrics("source3", "dest3", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified")
+	metrics2 := createTestMetrics("source3", "dest3", 500, "identify", `{"error": "Internal Server Error", "message": "Server error"}`, nil, "User Identified")
 
-	// Create a second set of metrics with a different error message for the second report
-	metrics2 := []*types.PUReportedMetric{
-		{
-			ConnectionDetails: types.ConnectionDetails{
-				SourceID:      "source3",
-				DestinationID: "dest3",
-			},
-			StatusDetail: &types.StatusDetail{
-				StatusCode:     500,
-				Count:          1,
-				EventType:      "identify",
-				SampleResponse: `{"error": "Internal Server Error", "message": "Server error"}`,
-			},
-			PUDetails: types.PUDetails{
-				PU: "router",
-			},
-		},
-	}
-
-	configSubscriber := newConfigSubscriber(logger.NOP)
-	mockCtrl := gomock.NewController(t)
-	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
-
-	// Create a new mock for the test
-	db, dbMock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-	}
+	ts := newTestSetup(t)
+	db, dbMock, mockTx := setupDatabaseMock(t)
 	defer db.Close()
 
-	dbMock.ExpectBegin()
-	defer dbMock.ExpectClose()
-
-	tx, _ := db.Begin()
-	mockTx := &utilsTx.Tx{Tx: tx}
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{
-			Data: map[string]backendconfig.ConfigT{
-				"workspace3": {
-					WorkspaceID: "workspace3",
-					Sources: []backendconfig.SourceT{
-						{
-							ID:      "source3",
-							Enabled: true,
-							Destinations: []backendconfig.DestinationT{
-								{
-									ID:      "dest3",
-									Enabled: true,
-									DestinationDefinition: backendconfig.DestinationDefinitionT{
-										ID:   "destDef1",
-										Name: "destType",
-									},
-								},
-							},
-						},
-					},
-					Settings: backendconfig.Settings{
-						DataRetention: backendconfig.DataRetention{
-							DisableReportingPII: false,
-						},
-					},
-				},
-			},
-			Topic: string(backendconfig.TopicBackendConfig),
-		}
-		close(ch)
-		return ch
-	}).AnyTimes()
-
-	configSubscriber.Subscribe(context.TODO(), mockBackendConfig)
+	// Setup mock backend config
+	ts.setupMockBackendConfig("workspace3", "source3", "dest3", "destDef1", "destType", false)
 
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
@@ -600,7 +493,7 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 
 	edr := NewErrorDetailReporter(
 		context.TODO(),
-		configSubscriber,
+		ts.configSubscriber,
 		stats.NOP,
 		conf,
 	)
@@ -608,68 +501,14 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	ctx := context.Background()
 
 	// First report: should succeed and fill the bucket
-	firstCopyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
-
-	var tableRow int64 = 0
-	for _, metric := range metrics {
-		firstCopyStmt.ExpectExec().WithArgs(
-			sqlmock.AnyArg(), // workspace_id
-			sqlmock.AnyArg(), // namespace
-			sqlmock.AnyArg(), // instance_id
-			sqlmock.AnyArg(), // source_definition_id
-			metric.ConnectionDetails.SourceID,
-			sqlmock.AnyArg(), // destination_definition_id
-			metric.ConnectionDetails.DestinationID,
-			sqlmock.AnyArg(), // dest_type
-			sqlmock.AnyArg(), // pu
-			sqlmock.AnyArg(), // reported_at
-			sqlmock.AnyArg(), // count (may be aggregated)
-			metric.StatusDetail.StatusCode,
-			sqlmock.AnyArg(), // event_type
-			sqlmock.AnyArg(), // error_code
-			sqlmock.AnyArg(), // error_message (original message for first report)
-			sqlmock.AnyArg(), // sample_response
-			sqlmock.AnyArg(), // sample_event
-			sqlmock.AnyArg(), // event_name
-		).WillReturnResult(sqlmock.NewResult(tableRow, 1))
-		tableRow++
-	}
-	firstCopyStmt.ExpectExec().WithoutArgs().WillReturnResult(sqlmock.NewResult(0, 0))
-	firstCopyStmt.WillBeClosed()
+	expectCopyStatement(dbMock, "source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`)
 
 	// Send first report to fill the bucket
 	firstReportErr := edr.Report(ctx, metrics, mockTx)
 	assert.NoError(t, firstReportErr)
 
 	// Second report: should be rate limited and return "RedactedError"
-	secondCopyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
-
-	tableRow = 0
-	for _, metric := range metrics2 {
-		secondCopyStmt.ExpectExec().WithArgs(
-			sqlmock.AnyArg(), // workspace_id
-			sqlmock.AnyArg(), // namespace
-			sqlmock.AnyArg(), // instance_id
-			sqlmock.AnyArg(), // source_definition_id
-			metric.ConnectionDetails.SourceID,
-			sqlmock.AnyArg(), // destination_definition_id
-			metric.ConnectionDetails.DestinationID,
-			sqlmock.AnyArg(), // dest_type
-			sqlmock.AnyArg(), // pu
-			sqlmock.AnyArg(), // reported_at
-			sqlmock.AnyArg(), // count (may be aggregated)
-			metric.StatusDetail.StatusCode,
-			sqlmock.AnyArg(), // event_type
-			sqlmock.AnyArg(), // error_code
-			RedactedError,    // error_message (rate limited message for second report)
-			sqlmock.AnyArg(), // sample_response
-			sqlmock.AnyArg(), // sample_event
-			sqlmock.AnyArg(), // event_name
-		).WillReturnResult(sqlmock.NewResult(tableRow, 1))
-		tableRow++
-	}
-	secondCopyStmt.ExpectExec().WithoutArgs().WillReturnResult(sqlmock.NewResult(0, 0))
-	secondCopyStmt.WillBeClosed()
+	expectCopyStatement(dbMock, "source3", "dest3", 500, `{"error": "Internal Server Error", "message": "Server error"}`)
 
 	// Send second report (should be rate limited)
 	secondReportErr := edr.Report(ctx, metrics2, mockTx)
@@ -677,4 +516,94 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 
 	expectErr := dbMock.ExpectationsWereMet()
 	assert.NoError(t, expectErr)
+}
+
+func TestErrorDetailReporter_GetStringifiedSampleEvent(t *testing.T) {
+	tests := []struct {
+		name           string
+		sampleEvent    []byte
+		expectedResult string
+	}{
+		{
+			name:           "nil sample event returns empty JSON object",
+			sampleEvent:    nil,
+			expectedResult: "{}",
+		},
+		{
+			name:           "empty sample event returns empty JSON object",
+			sampleEvent:    []byte(`{}`),
+			expectedResult: "{}",
+		},
+		{
+			name:           "valid sample event is preserved as-is",
+			sampleEvent:    []byte(`{"userId": "123", "traits": {"email": "test@example.com"}}`),
+			expectedResult: `{"userId": "123", "traits": {"email": "test@example.com"}}`,
+		},
+		{
+			name:           "complex sample event is preserved as-is",
+			sampleEvent:    []byte(`{"event": "Page Viewed", "properties": {"page": "/home", "referrer": "google.com"}}`),
+			expectedResult: `{"event": "Page Viewed", "properties": {"page": "/home", "referrer": "google.com"}}`,
+		},
+	}
+
+	ts := newTestSetup(t)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a new mock for each test case to avoid interference
+			db, dbMock, mockTx := setupDatabaseMock(t)
+			defer db.Close()
+
+			// Setup mock backend config
+			ts.setupMockBackendConfig("workspace1", "source1", "dest1", "destDef1", "destType", false)
+
+			edr := NewErrorDetailReporter(
+				context.TODO(),
+				ts.configSubscriber,
+				stats.NOP,
+				ts.conf,
+			)
+
+			ctx := context.Background()
+
+			// Create test metrics with the specific sample event
+			metrics := createTestMetrics("source1", "dest1", 400, "identify", `{"error": "Bad Request"}`, tt.sampleEvent, "User Identified")
+
+			// Expect the COPY statement to be prepared with the correct sample event
+			copyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
+
+			copyStmt.ExpectExec().WithArgs(
+				sqlmock.AnyArg(),  // workspace_id
+				sqlmock.AnyArg(),  // namespace
+				sqlmock.AnyArg(),  // instance_id
+				sqlmock.AnyArg(),  // source_definition_id
+				"source1",         // source_id
+				sqlmock.AnyArg(),  // destination_definition_id
+				"dest1",           // destination_id
+				sqlmock.AnyArg(),  // dest_type
+				sqlmock.AnyArg(),  // pu
+				sqlmock.AnyArg(),  // reported_at
+				sqlmock.AnyArg(),  // count
+				400,               // status_code
+				sqlmock.AnyArg(),  // event_type
+				sqlmock.AnyArg(),  // error_code
+				sqlmock.AnyArg(),  // error_message
+				sqlmock.AnyArg(),  // sample_response
+				tt.expectedResult, // sample_event
+				sqlmock.AnyArg(),  // event_name
+			).WillReturnResult(sqlmock.NewResult(0, 1))
+
+			// The final ExecContext call to finalize the COPY statement
+			copyStmt.ExpectExec().WithoutArgs().WillReturnResult(sqlmock.NewResult(0, 0))
+			copyStmt.WillBeClosed()
+
+			// Send the report
+			reportErr := edr.Report(ctx, metrics, mockTx)
+			require.NoError(t, reportErr)
+
+			// Verify all expectations were met
+			expectErr := dbMock.ExpectationsWereMet()
+			require.NoError(t, expectErr)
+		})
+	}
 }
