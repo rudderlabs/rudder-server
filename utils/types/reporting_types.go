@@ -61,7 +61,6 @@ type StatusDetail struct {
 	EventType      string            `json:"eventType"`
 	ErrorType      string            `json:"errorType"`
 	ViolationCount int64             `json:"violationCount"`
-	ErrorDetails   ErrorDetails      `json:"-"`
 	StatTags       map[string]string `json:"-"`
 	FailedMessages []*FailedMessage  `json:"-"`
 }
@@ -190,6 +189,74 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
+// ErrorMetricParams holds the parameters needed for converting PUReportedMetric to EDReportsDB
+type ErrorMetricParams struct {
+	WorkspaceID             string
+	Namespace               string
+	InstanceID              string
+	DestType                string
+	DestinationDefinitionID string
+	ErrorDetails            ErrorDetails
+}
+
+// PUReportedMetricToEDReportsDB converts PUReportedMetric to EDReportsDB
+// This avoids deep copying by extracting only the fields needed for error reporting
+func PUReportedMetricToEDReportsDB(
+	metric *PUReportedMetric,
+	params ErrorMetricParams,
+) *EDReportsDB {
+	if metric == nil {
+		return nil
+	}
+
+	var statusCode int
+	var eventType, eventName string
+	var sampleResponse string
+	var sampleEvent json.RawMessage
+	var count int64
+
+	if metric.StatusDetail != nil {
+		statusCode = metric.StatusDetail.StatusCode
+		eventType = metric.StatusDetail.EventType
+		eventName = metric.StatusDetail.EventName
+		sampleResponse = metric.StatusDetail.SampleResponse
+		sampleEvent = metric.StatusDetail.SampleEvent
+		count = metric.StatusDetail.Count
+	}
+
+	return &EDReportsDB{
+		EDInstanceDetails: EDInstanceDetails{
+			WorkspaceID: params.WorkspaceID,
+			Namespace:   params.Namespace,
+			InstanceID:  params.InstanceID,
+		},
+		EDConnectionDetails: EDConnectionDetails{
+			SourceID:                metric.SourceID,
+			DestinationID:           metric.DestinationID,
+			SourceDefinitionId:      metric.SourceDefinitionID,
+			DestinationDefinitionId: params.DestinationDefinitionID,
+			DestType:                params.DestType,
+		},
+		ReportMetadata: ReportMetadata{
+			ReportedAt: time.Now().UTC().Unix() / 60,
+		},
+		PU: metric.PU,
+		EDErrorDetails: EDErrorDetails{
+			EDErrorDetailsKey: EDErrorDetailsKey{
+				StatusCode:   statusCode,
+				ErrorCode:    params.ErrorDetails.Code,
+				ErrorMessage: params.ErrorDetails.Message,
+				EventType:    eventType,
+				EventName:    eventName,
+			},
+			SampleResponse: sampleResponse,
+			SampleEvent:    sampleEvent,
+			ErrorCount:     count,
+		},
+		Count: count,
+	}
+}
+
 func CreatePUDetails(inPU, pu string, terminalPU, initialPU bool) *PUDetails {
 	return &PUDetails{
 		InPU:       inPU,
@@ -218,4 +285,12 @@ func AssertKeysSubset[V1, V2 any](superset map[string]V1, subset map[string]V2) 
 			panic("key in subset not found in superset") // TODO improve msg
 		}
 	}
+}
+
+// ErrorDetailGroupKey represents the key for grouping error detail reports
+type ErrorDetailGroupKey struct {
+	SourceID      string
+	DestinationID string
+	PU            string
+	EventType     string
 }
