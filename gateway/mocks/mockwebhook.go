@@ -14,7 +14,6 @@ import (
 	reflect "reflect"
 
 	types "github.com/rudderlabs/rudder-server/gateway/types"
-	model "github.com/rudderlabs/rudder-server/gateway/webhook/model"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -54,20 +53,6 @@ func (m *MockGateway) ProcessTransformedWebhookRequest(writer *http.ResponseWrit
 func (mr *MockGatewayMockRecorder) ProcessTransformedWebhookRequest(writer, req, reqType, requestPayload, arctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ProcessTransformedWebhookRequest", reflect.TypeOf((*MockGateway)(nil).ProcessTransformedWebhookRequest), writer, req, reqType, requestPayload, arctx)
-}
-
-// SaveWebhookFailures mocks base method.
-func (m *MockGateway) SaveWebhookFailures(arg0 []*model.FailedWebhookPayload) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveWebhookFailures", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SaveWebhookFailures indicates an expected call of SaveWebhookFailures.
-func (mr *MockGatewayMockRecorder) SaveWebhookFailures(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveWebhookFailures", reflect.TypeOf((*MockGateway)(nil).SaveWebhookFailures), arg0)
 }
 
 // TrackRequestMetrics mocks base method.
