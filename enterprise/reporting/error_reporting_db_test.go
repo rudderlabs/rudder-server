@@ -89,7 +89,7 @@ func (ts *testSetup) setupMockBackendConfig(workspaceID, sourceID, destinationID
 }
 
 // createTestMetrics creates test metrics with the given parameters
-func createTestMetrics(sourceID, destinationID string, statusCode int, eventType, sampleResponse string, sampleEvent []byte, eventName string) []*types.PUReportedMetric {
+func createTestMetrics(sourceID, destinationID string, statusCode int, sampleResponse string, sampleEvent []byte, eventName string) []*types.PUReportedMetric {
 	return []*types.PUReportedMetric{
 		{
 			ConnectionDetails: types.ConnectionDetails{
@@ -99,7 +99,7 @@ func createTestMetrics(sourceID, destinationID string, statusCode int, eventType
 			StatusDetail: &types.StatusDetail{
 				StatusCode:     statusCode,
 				Count:          1,
-				EventType:      eventType,
+				EventType:      "identify", // Always use "identify" as per linter suggestion
 				SampleResponse: sampleResponse,
 				SampleEvent:    sampleEvent,
 				EventName:      eventName,
@@ -125,7 +125,7 @@ func setupDatabaseMock(t *testing.T) (*sql.DB, sqlmock.Sqlmock, *utilsTx.Tx) {
 }
 
 // expectCopyStatement sets up expectations for the COPY statement
-func expectCopyStatement(dbMock sqlmock.Sqlmock, sourceID, destinationID string, statusCode int, expectedSampleEvent string) {
+func expectCopyStatement(dbMock sqlmock.Sqlmock, sourceID, destinationID string, statusCode int, _ string) {
 	copyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
 
 	copyStmt.ExpectExec().WithArgs(
@@ -163,17 +163,17 @@ func TestErrorDetailsReport(t *testing.T) {
 	}{
 		{
 			name:            "PII Reporting Enabled, should report it to error_detail_reports table",
-			metrics:         createTestMetrics("source1", "dest1", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
+			metrics:         createTestMetrics("source1", "dest1", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
 			expectExecution: true,
 		},
 		{
 			name:            "PII Reporting Disabled, should not report it to error_detail_reports table",
-			metrics:         createTestMetrics("source2", "dest2", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
+			metrics:         createTestMetrics("source2", "dest2", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
 			expectExecution: false,
 		},
 		{
 			name:            "PII Reporting Enabled, should report it to error_detail_reports table",
-			metrics:         createTestMetrics("source3", "dest3", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
+			metrics:         createTestMetrics("source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
 			expectExecution: true,
 		},
 	}
@@ -187,9 +187,9 @@ func TestErrorDetailsReport(t *testing.T) {
 			testTS := newTestSetup(t)
 
 			// Setup mock backend config for each test case
-			workspaceID := "workspace" + tt.metrics[0].ConnectionDetails.SourceID[len("source"):]
+			workspaceID := "workspace" + tt.metrics[0].SourceID[len("source"):]
 			disablePII := !tt.expectExecution
-			testTS.setupMockBackendConfig(workspaceID, tt.metrics[0].ConnectionDetails.SourceID, tt.metrics[0].ConnectionDetails.DestinationID, "destDef1", "destType", disablePII)
+			testTS.setupMockBackendConfig(workspaceID, tt.metrics[0].SourceID, tt.metrics[0].DestinationID, "destDef1", "destType", disablePII)
 
 			// Wait for config subscriber to be initialized
 			testTS.configSubscriber.Wait()
@@ -213,7 +213,7 @@ func TestErrorDetailsReport(t *testing.T) {
 			if tt.expectExecution {
 				// Expect COPY statement for each metric
 				for _, metric := range tt.metrics {
-					expectCopyStatement(dbMock, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationID, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse)
+					expectCopyStatement(dbMock, metric.SourceID, metric.DestinationID, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse)
 				}
 			}
 
@@ -476,8 +476,8 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	// Test rate limiting behavior by sending 2 reports
 	// First report should succeed, second should be rate limited
 
-	metrics := createTestMetrics("source3", "dest3", 400, "identify", `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified")
-	metrics2 := createTestMetrics("source3", "dest3", 500, "identify", `{"error": "Internal Server Error", "message": "Server error"}`, nil, "User Identified")
+	metrics := createTestMetrics("source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified")
+	metrics2 := createTestMetrics("source3", "dest3", 500, `{"error": "Internal Server Error", "message": "Server error"}`, nil, "User Identified")
 
 	ts := newTestSetup(t)
 	db, dbMock, mockTx := setupDatabaseMock(t)
@@ -567,7 +567,7 @@ func TestErrorDetailReporter_GetStringifiedSampleEvent(t *testing.T) {
 			ctx := context.Background()
 
 			// Create test metrics with the specific sample event
-			metrics := createTestMetrics("source1", "dest1", 400, "identify", `{"error": "Bad Request"}`, tt.sampleEvent, "User Identified")
+			metrics := createTestMetrics("source1", "dest1", 400, `{"error": "Bad Request"}`, tt.sampleEvent, "User Identified")
 
 			// Expect the COPY statement to be prepared with the correct sample event
 			copyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
