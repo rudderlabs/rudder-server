@@ -220,9 +220,7 @@ func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
 func TestStaticProvider(t *testing.T) {
 	RegisterTestingT(t)
 	prefs := backendconfig.StoragePreferences{
-		GatewayDumps:     true,
-		BatchRouterDumps: false,
-		RouterDumps:      true,
+		GatewayDumps: true,
 	}
 
 	storageSettings := map[string]StorageSettings{
@@ -251,9 +249,7 @@ func TestDefaultProvider(t *testing.T) {
 	prefs, err := d.GetStoragePreferences(context.Background(), "")
 	Expect(err).To(BeNil())
 	Expect(prefs).To(BeEquivalentTo(backendconfig.StoragePreferences{
-		GatewayDumps:     true,
-		BatchRouterDumps: true,
-		RouterDumps:      true,
+		GatewayDumps: true,
 	}))
 
 	_, err = d.GetFileManager(context.Background(), "")

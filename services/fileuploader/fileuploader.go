@@ -234,9 +234,7 @@ func (*defaultProvider) GetFileManager(context.Context, string) (filemanager.Fil
 
 func (*defaultProvider) GetStoragePreferences(context.Context, string) (backendconfig.StoragePreferences, error) {
 	return backendconfig.StoragePreferences{
-		GatewayDumps:     true,
-		RouterDumps:      true,
-		BatchRouterDumps: true,
+		GatewayDumps: true,
 	}, nil
 }
 

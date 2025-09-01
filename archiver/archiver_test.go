@@ -84,9 +84,7 @@ func TestJobsArchival(t *testing.T) {
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
-				GatewayDumps:     true,
-				BatchRouterDumps: true,
-				RouterDumps:      true,
+				GatewayDumps: true,
 			},
 		},
 		"defaultWorkspaceID-2": {
@@ -101,9 +99,7 @@ func TestJobsArchival(t *testing.T) {
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
-				GatewayDumps:     true,
-				BatchRouterDumps: true,
-				RouterDumps:      true,
+				GatewayDumps: true,
 			},
 		},
 		"defaultWorkspaceID-3": {
@@ -118,9 +114,7 @@ func TestJobsArchival(t *testing.T) {
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
-				GatewayDumps:     true,
-				BatchRouterDumps: true,
-				RouterDumps:      true,
+				GatewayDumps: true,
 			},
 		},
 	}
