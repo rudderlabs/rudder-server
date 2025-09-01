@@ -525,6 +525,10 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+
+								// Record the new transformer_outgoing_request_latency metric
+								w.recordTransformerOutgoingRequestLatency(val, destinationJob, time.Since(rdlTime))
+
 								w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
 
 								if isSuccessStatus(respStatusCode) {
@@ -1197,4 +1201,37 @@ func (w *worker) countTransformedJobStatuses(transformType string, transformedJo
 			"destinationId": counterKey.destinationID,
 		}).Count(count)
 	}
+}
+
+// recordTransformerOutgoingRequestLatency records the transformer_outgoing_request_latency metric
+// for router deliveries to match transformer's metric structure
+func (w *worker) recordTransformerOutgoingRequestLatency(
+	postParams integrations.PostParametersT,
+	destinationJob types.DestinationJobT,
+	duration time.Duration,
+) {
+	// Only emit metric if EndpointPath is present
+	if postParams.EndpointPath == "" {
+		return
+	}
+
+	// Get workspace and source IDs from job metadata
+	var workspaceID, sourceID string
+	if len(destinationJob.JobMetadataArray) > 0 {
+		workspaceID = destinationJob.JobMetadataArray[0].WorkspaceID
+		sourceID = destinationJob.JobMetadataArray[0].SourceID
+	}
+
+	labels := stats.Tags{
+		"feature":       "router_delivery",
+		"destType":      w.rt.destType,
+		"endpointPath":  postParams.EndpointPath,
+		"requestMethod": postParams.RequestMethod,
+		"module":        "router",
+		"workspaceId":   workspaceID,
+		"destinationId": destinationJob.Destination.ID,
+		"sourceId":      sourceID,
+	}
+
+	stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels).SendTiming(duration)
 }
