@@ -202,9 +202,7 @@ type StorageBucket struct {
 }
 
 type StoragePreferences struct {
-	ProcErrors       bool `json:"procErrors"`
 	GatewayDumps     bool `json:"gatewayDumps"`
-	ProcErrorDumps   bool `json:"procErrorDumps"`
 	RouterDumps      bool `json:"routerDumps"`
 	BatchRouterDumps bool `json:"batchRouterDumps"`
 }
@@ -217,8 +215,6 @@ func (sp StoragePreferences) Backup(tableprefix string) bool {
 		return sp.RouterDumps
 	case "batch_rt":
 		return sp.BatchRouterDumps
-	case "proc_error":
-		return sp.ProcErrorDumps
 	default:
 		return false
 	}

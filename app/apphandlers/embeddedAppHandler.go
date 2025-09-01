@@ -53,12 +53,11 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		procErrorDSLimit config.ValueLoader[int]
-		eschDSLimit      config.ValueLoader[int]
-		arcDSLimit       config.ValueLoader[int]
-		rtDSLimit        config.ValueLoader[int]
-		batchrtDSLimit   config.ValueLoader[int]
-		gwDSLimit        config.ValueLoader[int]
+		eschDSLimit    config.ValueLoader[int]
+		arcDSLimit     config.ValueLoader[int]
+		rtDSLimit      config.ValueLoader[int]
+		batchrtDSLimit config.ValueLoader[int]
+		gwDSLimit      config.ValueLoader[int]
 	}
 }
 
@@ -66,7 +65,6 @@ func (a *embeddedApp) Setup() error {
 	a.config.gwDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.gw.dsLimit", "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.rtDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.rt.dsLimit", "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.batchrtDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.batch_rt.dsLimit", "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-	a.config.procErrorDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.proc_error.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.eschDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.esch.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	a.config.arcDSLimit = config.GetReloadableIntVar(0, 1, "JobsDB.arc.dsLimit", "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	if err := rudderCoreDBValidator(); err != nil {
@@ -199,29 +197,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	)
 	defer batchRouterDB.Close()
 
-	// We need two errorDBs, one in read & one in write mode to support separate gateway to store failures
-	errorDBForRead := jobsdb.NewForRead(
-		"proc_error",
-		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithDSLimit(a.config.procErrorDSLimit),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
-		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
-	)
-	defer errorDBForRead.Close()
-	errorDBForWrite := jobsdb.NewForWrite(
-		"proc_error",
-		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", true)),
-		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
-	)
-	defer errorDBForWrite.Close()
-	if err = errorDBForWrite.Start(); err != nil {
-		return fmt.Errorf("could not start errorDBForWrite: %w", err)
-	}
-	defer errorDBForWrite.Stop()
-
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -281,8 +256,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		gwDBForProcessor,
 		routerDB,
 		batchRouterDB,
-		errorDBForRead,
-		errorDBForWrite,
 		schemaDB,
 		archivalDB,
 		reporting,
@@ -310,7 +283,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			routerDB,
 		),
-		ProcErrorDB:                errorDBForWrite,
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
 		TransformerFeaturesService: transformerFeaturesService,
@@ -326,7 +298,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			batchRouterDB,
 		),
-		ProcErrorDB:           errorDBForWrite,
 		TransientSources:      transientSources,
 		RsourcesService:       rsourcesService,
 		Debugger:              destinationHandle,
@@ -340,7 +311,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		GatewayDB:       gwDBForProcessor,
 		RouterDB:        routerDB,
 		BatchRouterDB:   batchRouterDB,
-		ErrorDB:         errorDBForRead,
 		EventSchemaDB:   schemaDB,
 		ArchivalDB:      archivalDB,
 		Processor:       proc,
@@ -373,7 +343,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, errorDBForWrite, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gatewayDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),

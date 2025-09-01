@@ -87,7 +87,6 @@ func TestJobsArchival(t *testing.T) {
 				GatewayDumps:     true,
 				BatchRouterDumps: true,
 				RouterDumps:      true,
-				ProcErrorDumps:   true,
 			},
 		},
 		"defaultWorkspaceID-2": {
@@ -105,7 +104,6 @@ func TestJobsArchival(t *testing.T) {
 				GatewayDumps:     true,
 				BatchRouterDumps: true,
 				RouterDumps:      true,
-				ProcErrorDumps:   false,
 			},
 		},
 		"defaultWorkspaceID-3": {
@@ -123,7 +121,6 @@ func TestJobsArchival(t *testing.T) {
 				GatewayDumps:     true,
 				BatchRouterDumps: true,
 				RouterDumps:      true,
-				ProcErrorDumps:   true,
 			},
 		},
 	}

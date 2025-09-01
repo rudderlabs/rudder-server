@@ -63,7 +63,6 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 							Type: "S3",
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors:   true,
 							GatewayDumps: false,
 						},
 						RetentionPeriod: "full",
@@ -80,7 +79,6 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 							Config: map[string]interface{}{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors:   false,
 							GatewayDumps: false,
 						},
 					},
@@ -96,7 +94,6 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 							Config: map[string]interface{}{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors:   false,
 							GatewayDumps: false,
 						},
 						RetentionPeriod: "default",
@@ -145,7 +142,6 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 			return false
 		}
 		if preferences != (backendconfig.StoragePreferences{
-			ProcErrors:   true,
 			GatewayDumps: false,
 		}) {
 			return false
@@ -182,7 +178,6 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 							Config: map[string]interface{}{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors:   false,
 							GatewayDumps: false,
 						},
 					},
@@ -225,9 +220,7 @@ func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
 func TestStaticProvider(t *testing.T) {
 	RegisterTestingT(t)
 	prefs := backendconfig.StoragePreferences{
-		ProcErrors:       false,
 		GatewayDumps:     true,
-		ProcErrorDumps:   true,
 		BatchRouterDumps: false,
 		RouterDumps:      true,
 	}
@@ -258,9 +251,7 @@ func TestDefaultProvider(t *testing.T) {
 	prefs, err := d.GetStoragePreferences(context.Background(), "")
 	Expect(err).To(BeNil())
 	Expect(prefs).To(BeEquivalentTo(backendconfig.StoragePreferences{
-		ProcErrors:       true,
 		GatewayDumps:     true,
-		ProcErrorDumps:   true,
 		BatchRouterDumps: true,
 		RouterDumps:      true,
 	}))

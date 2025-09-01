@@ -32,8 +32,6 @@ type LifecycleManager struct {
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
 	batchRouterDB              jobsdb.JobsDB
-	readErrorDB                jobsdb.JobsDB
-	writeErrorDB               jobsdb.JobsDB
 	esDB                       jobsdb.JobsDB
 	arcDB                      jobsdb.JobsDB
 	clearDB                    *bool
@@ -64,8 +62,6 @@ func (proc *LifecycleManager) Start() error {
 		proc.gatewayDB,
 		proc.routerDB,
 		proc.batchRouterDB,
-		proc.readErrorDB,
-		proc.writeErrorDB,
 		proc.esDB,
 		proc.arcDB,
 		proc.ReportingI,
@@ -117,7 +113,7 @@ func (proc *LifecycleManager) Stop() {
 func New(
 	ctx context.Context,
 	clearDb *bool,
-	gwDb, rtDb, brtDb, errorDBForRead, errorDBForWrite, esDB, arcDB jobsdb.JobsDB,
+	gwDb, rtDb, brtDb, esDB, arcDB jobsdb.JobsDB,
 	reporting types.Reporting,
 	transientSources transientsource.Service,
 	fileuploader fileuploader.Provider,
@@ -144,8 +140,6 @@ func New(
 		gatewayDB:                  gwDb,
 		routerDB:                   rtDb,
 		batchRouterDB:              brtDb,
-		readErrorDB:                errorDBForRead,
-		writeErrorDB:               errorDBForWrite,
 		esDB:                       esDB,
 		arcDB:                      arcDB,
 		clearDB:                    clearDb,
