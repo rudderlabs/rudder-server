@@ -89,7 +89,7 @@ func (ts *testSetup) setupMockBackendConfig(workspaceID, sourceID, destinationID
 }
 
 // createTestMetrics creates test metrics with the given parameters
-func createTestMetrics(sourceID, destinationID string, statusCode int, sampleResponse string, sampleEvent []byte, eventName string) []*types.PUReportedMetric {
+func createTestMetrics(sourceID, destinationID string, statusCode int, sampleResponse string, sampleEvent []byte) []*types.PUReportedMetric {
 	return []*types.PUReportedMetric{
 		{
 			ConnectionDetails: types.ConnectionDetails{
@@ -102,7 +102,7 @@ func createTestMetrics(sourceID, destinationID string, statusCode int, sampleRes
 				EventType:      "identify", // Always use "identify" as per linter suggestion
 				SampleResponse: sampleResponse,
 				SampleEvent:    sampleEvent,
-				EventName:      eventName,
+				EventName:      "User Identified", // Always use "User Identified" as per linter suggestion
 			},
 			PUDetails: types.PUDetails{
 				PU: "router",
@@ -163,17 +163,17 @@ func TestErrorDetailsReport(t *testing.T) {
 	}{
 		{
 			name:            "PII Reporting Enabled, should report it to error_detail_reports table",
-			metrics:         createTestMetrics("source1", "dest1", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
+			metrics:         createTestMetrics("source1", "dest1", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil),
 			expectExecution: true,
 		},
 		{
 			name:            "PII Reporting Disabled, should not report it to error_detail_reports table",
-			metrics:         createTestMetrics("source2", "dest2", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
+			metrics:         createTestMetrics("source2", "dest2", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil),
 			expectExecution: false,
 		},
 		{
 			name:            "PII Reporting Enabled, should report it to error_detail_reports table",
-			metrics:         createTestMetrics("source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified"),
+			metrics:         createTestMetrics("source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil),
 			expectExecution: true,
 		},
 	}
@@ -476,8 +476,8 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	// Test rate limiting behavior by sending 2 reports
 	// First report should succeed, second should be rate limited
 
-	metrics := createTestMetrics("source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil, "User Identified")
-	metrics2 := createTestMetrics("source3", "dest3", 500, `{"error": "Internal Server Error", "message": "Server error"}`, nil, "User Identified")
+	metrics := createTestMetrics("source3", "dest3", 400, `{"error": "Bad Request", "message": "Invalid input"}`, nil)
+	metrics2 := createTestMetrics("source3", "dest3", 500, `{"error": "Internal Server Error", "message": "Server error"}`, nil)
 
 	ts := newTestSetup(t)
 	db, dbMock, mockTx := setupDatabaseMock(t)
@@ -567,7 +567,7 @@ func TestErrorDetailReporter_GetStringifiedSampleEvent(t *testing.T) {
 			ctx := context.Background()
 
 			// Create test metrics with the specific sample event
-			metrics := createTestMetrics("source1", "dest1", 400, `{"error": "Bad Request"}`, tt.sampleEvent, "User Identified")
+			metrics := createTestMetrics("source1", "dest1", 400, `{"error": "Bad Request"}`, tt.sampleEvent)
 
 			// Expect the COPY statement to be prepared with the correct sample event
 			copyStmt := dbMock.ExpectPrepare(`COPY "error_detail_reports" \("workspace_id", "namespace", "instance_id", "source_definition_id", "source_id", "destination_definition_id", "destination_id", "dest_type", "pu", "reported_at", "count", "status_code", "event_type", "error_code", "error_message", "sample_response", "sample_event", "event_name"\) FROM STDIN`)
