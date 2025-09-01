@@ -202,19 +202,13 @@ type StorageBucket struct {
 }
 
 type StoragePreferences struct {
-	GatewayDumps     bool `json:"gatewayDumps"`
-	RouterDumps      bool `json:"routerDumps"`
-	BatchRouterDumps bool `json:"batchRouterDumps"`
+	GatewayDumps bool `json:"gatewayDumps"`
 }
 
 func (sp StoragePreferences) Backup(tableprefix string) bool {
 	switch tableprefix {
 	case "gw":
 		return sp.GatewayDumps
-	case "rt":
-		return sp.RouterDumps
-	case "batch_rt":
-		return sp.BatchRouterDumps
 	default:
 		return false
 	}
