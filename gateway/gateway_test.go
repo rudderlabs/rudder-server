@@ -1645,22 +1645,6 @@ var _ = Describe("Gateway", func() {
 		})
 	})
 
-	Context("SaveWebhookFailures", func() {
-		var gateway *Handle
-		BeforeEach(func() {
-			c.initializeAppFeatures()
-			gateway = &Handle{}
-			err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
-			Expect(err).To(BeNil())
-			waitForBackendConfigInit(gateway)
-		})
-
-		AfterEach(func() {
-			err := gateway.Shutdown()
-			Expect(err).To(BeNil())
-		})
-	})
-
 	Context("Internal Batch", func() {
 		client := http.Client{}
 		var (
