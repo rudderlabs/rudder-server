@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.58.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.57.0...v1.58.0-rc.2) (2025-09-02)
+
+
+### Features
+
+* implement error normalizer with similarity detection for reporting ([#6248](https://github.com/rudderlabs/rudder-server/issues/6248)) ([b4653d3](https://github.com/rudderlabs/rudder-server/commit/b4653d32c93bd82d6bd826139705dfd1a06e6e15))
+* **router:** delivery throttler ([#6225](https://github.com/rudderlabs/rudder-server/issues/6225)) ([f55c7a8](https://github.com/rudderlabs/rudder-server/commit/f55c7a8427dd5609c39294f6215d124c526f8baa))
+
+
+### Bug Fixes
+
+* cron tracker query causing master restarts ([#6252](https://github.com/rudderlabs/rudder-server/issues/6252)) ([51437b9](https://github.com/rudderlabs/rudder-server/commit/51437b9b8b2e5456684e2b07f2ff96a9f7393f4c))
+* snowpipe events getting duplicated if status API fails ([#6211](https://github.com/rudderlabs/rudder-server/issues/6211)) ([#6244](https://github.com/rudderlabs/rudder-server/issues/6244)) ([8d6838d](https://github.com/rudderlabs/rudder-server/commit/8d6838dcb817f5e2465e46bf0c126972edcf13e7))
+* transformation metrics count amplification ([#6258](https://github.com/rudderlabs/rudder-server/issues/6258)) ([fded7b3](https://github.com/rudderlabs/rudder-server/commit/fded7b39bc24cf98ed5e87241a2bf34570a61a55))
+* update table schema local repository ([#6255](https://github.com/rudderlabs/rudder-server/issues/6255)) ([2ec9a9f](https://github.com/rudderlabs/rudder-server/commit/2ec9a9f78bb8032d7a6c1fed133d05bb7171de3a))
+* update table schema local repository ([#6255](https://github.com/rudderlabs/rudder-server/issues/6255)) ([4446e5b](https://github.com/rudderlabs/rudder-server/commit/4446e5b6bd897accc169794349eab853696aab58))
+* use getStringifiedSampleEvent for consistent sample event handling ([#6290](https://github.com/rudderlabs/rudder-server/issues/6290)) ([526975c](https://github.com/rudderlabs/rudder-server/commit/526975c56e65b52905aeeeabd5844d9788ecb657))
+* use source-id for getting cached schemas ([#6268](https://github.com/rudderlabs/rudder-server/issues/6268)) ([2ec9a9f](https://github.com/rudderlabs/rudder-server/commit/2ec9a9f78bb8032d7a6c1fed133d05bb7171de3a))
+* use source-id for getting cached schemas ([#6268](https://github.com/rudderlabs/rudder-server/issues/6268)) ([90e4191](https://github.com/rudderlabs/rudder-server/commit/90e4191b5fb0a336672d664dffc27a87a28304b8))
+* warehouse migrations from master only ([#6282](https://github.com/rudderlabs/rudder-server/issues/6282)) ([2309507](https://github.com/rudderlabs/rudder-server/commit/2309507e1debd15b90a07c34d01559176744b1db))
+
+
+### Miscellaneous
+
+* add alert for stuck snowpipe pipeline ([#6271](https://github.com/rudderlabs/rudder-server/issues/6271)) ([2ec9a9f](https://github.com/rudderlabs/rudder-server/commit/2ec9a9f78bb8032d7a6c1fed133d05bb7171de3a))
+* add context information on ut http error logs ([#6278](https://github.com/rudderlabs/rudder-server/issues/6278)) ([424f22c](https://github.com/rudderlabs/rudder-server/commit/424f22c658dea4d73186a81dac5ffe284268b0eb))
+* bump amannn/action-semantic-pull-request from 5 to 6 ([#6237](https://github.com/rudderlabs/rudder-server/issues/6237)) ([41c1548](https://github.com/rudderlabs/rudder-server/commit/41c154881adde4130501e9d4f96d50ef7a08856b))
+* bump the go-deps group with 15 updates ([#6247](https://github.com/rudderlabs/rudder-server/issues/6247)) ([8d6838d](https://github.com/rudderlabs/rudder-server/commit/8d6838dcb817f5e2465e46bf0c126972edcf13e7))
+* bump the go-deps group with 3 updates ([#6254](https://github.com/rudderlabs/rudder-server/issues/6254)) ([02a0263](https://github.com/rudderlabs/rudder-server/commit/02a0263bb29a77423d402370c7fcccac9b7c4bea))
+* cleanup for schema snapshoting ([#6257](https://github.com/rudderlabs/rudder-server/issues/6257)) ([4f3a68f](https://github.com/rudderlabs/rudder-server/commit/4f3a68f6499f2789a0b8ed831433c324d5abba5d))
+* remove flaky GooglePubSub retry configuration tests ([#6260](https://github.com/rudderlabs/rudder-server/issues/6260)) ([6c48784](https://github.com/rudderlabs/rudder-server/commit/6c48784551c7c18b2dbe16dea1af26fa5a09c376))
+* remove null handling of upload id in load files ([#6241](https://github.com/rudderlabs/rudder-server/issues/6241)) ([8d6838d](https://github.com/rudderlabs/rudder-server/commit/8d6838dcb817f5e2465e46bf0c126972edcf13e7))
+* remove unused network code ([#6266](https://github.com/rudderlabs/rudder-server/issues/6266)) ([f7cbc94](https://github.com/rudderlabs/rudder-server/commit/f7cbc94b4c3c373a67dd68edb7b85cc4f83b601c))
+* **router:** rename endpointLabel to endpointPath ([#6279](https://github.com/rudderlabs/rudder-server/issues/6279)) ([c933525](https://github.com/rudderlabs/rudder-server/commit/c9335258e4b3c8f989447ede9283273df1473b49))
+
 ## [1.57.3](https://github.com/rudderlabs/rudder-server/compare/v1.57.2...v1.57.3) (2025-08-25)
 
 
