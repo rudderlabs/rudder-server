@@ -651,7 +651,8 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			},
 			destinationJob: types.DestinationJobT{
 				Destination: backendconfig.DestinationT{
-					ID: "dest-123",
+					ID:          "dest-123",
+					WorkspaceID: "ws-456",
 				},
 				JobMetadataArray: []types.JobMetadataT{
 					{
@@ -682,7 +683,8 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			},
 			destinationJob: types.DestinationJobT{
 				Destination: backendconfig.DestinationT{
-					ID: "dest-456",
+					ID:          "dest-456",
+					WorkspaceID: "ws-789",
 				},
 				JobMetadataArray: []types.JobMetadataT{
 					{
@@ -704,7 +706,8 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			},
 			destinationJob: types.DestinationJobT{
 				Destination: backendconfig.DestinationT{
-					ID: "dest-789",
+					ID:          "dest-789",
+					WorkspaceID: "",
 				},
 				JobMetadataArray: []types.JobMetadataT{},
 			},

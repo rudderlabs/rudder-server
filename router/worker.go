@@ -1216,12 +1216,6 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 		return
 	}
 
-	// Get workspace ID from job metadata
-	var workspaceID string
-	if len(destinationJob.JobMetadataArray) > 0 {
-		workspaceID = destinationJob.JobMetadataArray[0].WorkspaceID
-	}
-
 	// Common labels for both metrics
 	labels := stats.Tags{
 		"destType":      w.rt.destType,
@@ -1229,7 +1223,7 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 		"statusCode":    strconv.Itoa(resp.StatusCode),
 		"requestMethod": postParams.RequestMethod,
 		"module":        "router",
-		"workspaceId":   workspaceID,
+		"workspaceId":   destinationJob.Destination.WorkspaceID,
 		"destinationId": destinationJob.Destination.ID,
 	}
 
