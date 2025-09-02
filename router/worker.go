@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -51,6 +52,10 @@ type worker struct {
 	deliveryTimeStat          stats.Measurement
 	routerDeliveryLatencyStat stats.Measurement
 	routerProxyStat           stats.Measurement
+
+	// Cache for transformer outgoing request metrics to avoid recreating stats objects
+	deliveryLatencyStatsCache map[deliveryMetricLabel]stats.Measurement
+	deliveryCountStatsCache   map[deliveryMetricLabel]stats.Measurement
 }
 
 type workerJob struct {
@@ -1216,20 +1221,64 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 		return
 	}
 
-	// Common labels for both metrics
-	labels := stats.Tags{
-		"destType":      w.rt.destType,
-		"endpointPath":  postParams.EndpointPath,
-		"statusCode":    strconv.Itoa(resp.StatusCode),
-		"requestMethod": postParams.RequestMethod,
-		"module":        "router",
-		"workspaceId":   destinationJob.Destination.WorkspaceID,
-		"destinationId": destinationJob.Destination.ID,
+	labels := deliveryMetricLabel{
+		DestType:      w.rt.destType,
+		EndpointPath:  postParams.EndpointPath,
+		StatusCode:    strconv.Itoa(resp.StatusCode),
+		RequestMethod: postParams.RequestMethod,
+		Module:        "router",
+		WorkspaceID:   destinationJob.Destination.WorkspaceID,
+		DestinationID: destinationJob.Destination.ID,
 	}
 
-	// Record latency metric
-	stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels).SendTiming(duration)
+	// Get or create cached stats objects
+	latencyStat := w.getOrCreateLatencyStat(labels)
+	countStat := w.getOrCreateCountStat(labels)
 
-	// Record count metric
-	stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels).Increment()
+	// Record metrics using cached stats
+	latencyStat.SendTiming(duration)
+	countStat.Increment()
+}
+
+// deliveryMetricLabel represents a unique key for caching stats based on labels
+type deliveryMetricLabel struct {
+	DestType      string `mapstructure:"destType"`
+	EndpointPath  string `mapstructure:"endpointPath"`
+	StatusCode    string `mapstructure:"statusCode"`
+	RequestMethod string `mapstructure:"requestMethod"`
+	Module        string `mapstructure:"module"`
+	WorkspaceID   string `mapstructure:"workspaceId"`
+	DestinationID string `mapstructure:"destinationId"`
+}
+
+// ToStatsTags converts metricCacheKey to stats.Tags using mapstructure
+func (w *worker) convertDeliveryMetricLabelToStatsTags(labels deliveryMetricLabel) stats.Tags {
+	var tags map[string]string
+	err := mapstructure.Decode(labels, &tags)
+	if err != nil {
+		w.logger.Errorn("error decoding delivery metric label", obskit.Error(err))
+	}
+	return tags
+}
+
+// getOrCreateLatencyStat returns a cached latency stat or creates a new one
+func (w *worker) getOrCreateLatencyStat(labels deliveryMetricLabel) stats.Measurement {
+	if stat, exists := w.deliveryLatencyStatsCache[labels]; exists {
+		return stat
+	}
+
+	stat := stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, w.convertDeliveryMetricLabelToStatsTags(labels))
+	w.deliveryLatencyStatsCache[labels] = stat
+	return stat
+}
+
+// getOrCreateCountStat returns a cached count stat or creates a new one
+func (w *worker) getOrCreateCountStat(labels deliveryMetricLabel) stats.Measurement {
+	if stat, exists := w.deliveryCountStatsCache[labels]; exists {
+		return stat
+	}
+
+	countStat := stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, w.convertDeliveryMetricLabelToStatsTags(labels))
+	w.deliveryCountStatsCache[labels] = countStat
+	return countStat
 }

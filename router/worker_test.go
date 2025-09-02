@@ -728,6 +728,150 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 		},
 	}
 
+	// Test the convertDeliveryMetricLabelToStatsTags method
+	t.Run("convertDeliveryMetricLabelToStatsTags", func(t *testing.T) {
+		worker := &worker{
+			rt: &Handle{
+				destType: "TEST_DEST",
+			},
+		}
+
+		labels := deliveryMetricLabel{
+			DestType:      "TEST_DEST",
+			EndpointPath:  "/api/test",
+			StatusCode:    "200",
+			RequestMethod: "POST",
+			Module:        "router",
+			WorkspaceID:   "ws-123",
+			DestinationID: "dest-456",
+		}
+
+		expectedTags := stats.Tags{
+			"destType":      "TEST_DEST",
+			"endpointPath":  "/api/test",
+			"statusCode":    "200",
+			"requestMethod": "POST",
+			"module":        "router",
+			"workspaceId":   "ws-123",
+			"destinationId": "dest-456",
+		}
+
+		result := worker.convertDeliveryMetricLabelToStatsTags(labels)
+		require.Equal(t, expectedTags, result)
+	})
+
+	// Test caching behavior
+	t.Run("caching behavior", func(t *testing.T) {
+		worker := &worker{
+			rt: &Handle{
+				destType: "TEST_DEST",
+			},
+			deliveryLatencyStatsCache: make(map[deliveryMetricLabel]stats.Measurement),
+			deliveryCountStatsCache:   make(map[deliveryMetricLabel]stats.Measurement),
+		}
+
+		labels := deliveryMetricLabel{
+			DestType:      "TEST_DEST",
+			EndpointPath:  "/api/cache",
+			StatusCode:    "200",
+			RequestMethod: "GET",
+			Module:        "router",
+			WorkspaceID:   "ws-cache",
+			DestinationID: "dest-cache",
+		}
+
+		// First call should create new stats
+		latencyStat1 := worker.getOrCreateLatencyStat(labels)
+		countStat1 := worker.getOrCreateCountStat(labels)
+
+		// Second call with same labels should return cached stats
+		latencyStat2 := worker.getOrCreateLatencyStat(labels)
+		countStat2 := worker.getOrCreateCountStat(labels)
+
+		// Should be the same objects (cached)
+		require.Equal(t, latencyStat1, latencyStat2)
+		require.Equal(t, countStat1, countStat2)
+
+		// Cache should have one entry for each type
+		require.Len(t, worker.deliveryLatencyStatsCache, 1)
+		require.Len(t, worker.deliveryCountStatsCache, 1)
+
+		// Test that different labels create different cache entries
+		differentLabels := deliveryMetricLabel{
+			DestType:      "TEST_DEST",
+			EndpointPath:  "/api/different",
+			StatusCode:    "404",
+			RequestMethod: "PUT",
+			Module:        "router",
+			WorkspaceID:   "ws-diff",
+			DestinationID: "dest-diff",
+		}
+
+		worker.getOrCreateLatencyStat(differentLabels)
+		worker.getOrCreateCountStat(differentLabels)
+
+		// Cache should now have two entries for each type
+		require.Len(t, worker.deliveryLatencyStatsCache, 2)
+		require.Len(t, worker.deliveryCountStatsCache, 2)
+	})
+
+	// Test mapstructure tags with edge cases
+	t.Run("mapstructure edge cases", func(t *testing.T) {
+		worker := &worker{
+			rt: &Handle{
+				destType: "TEST_DEST",
+			},
+		}
+
+		// Test with empty strings
+		emptyLabels := deliveryMetricLabel{
+			DestType:      "",
+			EndpointPath:  "",
+			StatusCode:    "",
+			RequestMethod: "",
+			Module:        "",
+			WorkspaceID:   "",
+			DestinationID: "",
+		}
+
+		expectedEmptyTags := stats.Tags{
+			"destType":      "",
+			"endpointPath":  "",
+			"statusCode":    "",
+			"requestMethod": "",
+			"module":        "",
+			"workspaceId":   "",
+			"destinationId": "",
+		}
+
+		result := worker.convertDeliveryMetricLabelToStatsTags(emptyLabels)
+		require.Equal(t, expectedEmptyTags, result)
+
+		// Test with special characters in strings
+		specialLabels := deliveryMetricLabel{
+			DestType:      "test-dest_with.special:chars",
+			EndpointPath:  "/api/test?param=value&other=123",
+			StatusCode:    "200",
+			RequestMethod: "POST",
+			Module:        "router",
+			WorkspaceID:   "ws-123_456",
+			DestinationID: "dest-789",
+		}
+
+		expectedSpecialTags := stats.Tags{
+			"destType":      "test-dest_with.special:chars",
+			"endpointPath":  "/api/test?param=value&other=123",
+			"statusCode":    "200",
+			"requestMethod": "POST",
+			"module":        "router",
+			"workspaceId":   "ws-123_456",
+			"destinationId": "dest-789",
+		}
+
+		result = worker.convertDeliveryMetricLabelToStatsTags(specialLabels)
+		require.Equal(t, expectedSpecialTags, result)
+	})
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a memstats store for testing
@@ -739,6 +883,8 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 				rt: &Handle{
 					destType: "TEST_DEST",
 				},
+				deliveryLatencyStatsCache: make(map[deliveryMetricLabel]stats.Measurement),
+				deliveryCountStatsCache:   make(map[deliveryMetricLabel]stats.Measurement),
 			}
 
 			// Override the stats.Default to use our memstats store

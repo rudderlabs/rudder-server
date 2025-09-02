@@ -38,6 +38,8 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			routerDeliveryLatencyStat: stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
 			routerProxyStat:           stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
+			deliveryLatencyStatsCache: make(map[deliveryMetricLabel]stats.Measurement),
+			deliveryCountStatsCache:   make(map[deliveryMetricLabel]stats.Measurement),
 		}
 		pw.workers[i] = worker
 
