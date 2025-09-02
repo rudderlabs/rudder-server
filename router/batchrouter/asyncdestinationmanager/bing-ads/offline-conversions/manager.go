@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -18,7 +19,7 @@ import (
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
+func newManagerInternal(log logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
@@ -38,8 +39,16 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 		CurrentTime:        time.Now,
 	}
 	secret, err := token.GenerateTokenV2()
+	initializationError := ""
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate oauth token: %v", err)
+		log.Errorn("[BingAds] token generation failed", obskit.Error(err),
+			obskit.DestinationID(destination.ID),
+			obskit.WorkspaceID(destination.WorkspaceID),
+			logger.NewStringField("AccountID", destConfig.RudderAccountID))
+		initializationError = err.Error()
+		secret = &common.SecretStruct{
+			DeveloperToken: "InvalidDeveloperToken",
+		}
 	}
 	sessionConfig := bingads.SessionConfig{
 		DeveloperToken: secret.DeveloperToken,
@@ -49,7 +58,7 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 		TokenSource:    &token,
 	}
 	session := bingads.NewSession(sessionConfig)
-	bingUploader := NewBingAdsBulkUploader(logger, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session), destConfig.IsHashRequired)
+	bingUploader := NewBingAdsBulkUploader(log, statsFactory, destination.DestinationDefinition.Name, bingads.NewBulkService(session), destConfig.IsHashRequired, initializationError)
 	return bingUploader, nil
 }
 

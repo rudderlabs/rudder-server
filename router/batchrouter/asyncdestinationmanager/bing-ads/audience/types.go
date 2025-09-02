@@ -16,13 +16,14 @@ type Client struct {
 	client *http.Client
 }
 type BingAdsBulkUploader struct {
-	destName      string
-	service       bingads.BulkServiceI
-	logger        logger.Logger
-	statsFactory  stats.Stats
-	client        Client
-	fileSizeLimit int64
-	eventsLimit   int64
+	initializationError string
+	destName            string
+	service             bingads.BulkServiceI
+	logger              logger.Logger
+	statsFactory        stats.Stats
+	client              Client
+	fileSizeLimit       int64
+	eventsLimit         int64
 }
 type User struct {
 	Email       string `json:"email"`

@@ -1,6 +1,7 @@
 package audience
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -22,19 +23,23 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, client *Client) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, client *Client, initializationError string) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
-		destName:      destName,
-		service:       service,
-		logger:        logger.Child("BingAds").Child("BingAdsBulkUploader"),
-		statsFactory:  statsFactory,
-		client:        *client,
-		fileSizeLimit: common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
-		eventsLimit:   common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 4000000),
+		initializationError: initializationError,
+		destName:            destName,
+		service:             service,
+		logger:              logger.Child("BingAds").Child("BingAdsBulkUploader"),
+		statsFactory:        statsFactory,
+		client:              *client,
+		fileSizeLimit:       common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
+		eventsLimit:         common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 4000000),
 	}
 }
 
-func (*BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	if b.initializationError != "" {
+		return "", errors.New(b.initializationError)
+	}
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
