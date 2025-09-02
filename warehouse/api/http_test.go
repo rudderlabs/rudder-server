@@ -295,7 +295,7 @@ func TestHTTPApi(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	schemaRepo := repo.NewWHSchemas(db, c)
+	schemaRepo := repo.NewWHSchemas(db, c, logger.NOP)
 	err = schemaRepo.Insert(ctx,
 		&model.WHSchema{
 			SourceID:        sourceID,

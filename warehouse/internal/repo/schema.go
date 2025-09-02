@@ -12,6 +12,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -38,12 +41,13 @@ const whSchemaTableColumns = `
 type WHSchema struct {
 	*repo
 
+	log    logger.Logger
 	config struct {
 		enableTableLevelSchema config.ValueLoader[bool]
 	}
 }
 
-func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSchema {
+func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, log logger.Logger, opts ...Opt) *WHSchema {
 	r := &WHSchema{
 		repo: &repo{
 			db:           db,
@@ -51,6 +55,7 @@ func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSch
 			statsFactory: stats.NOP,
 			repoType:     whSchemaTableName,
 		},
+		log: log.Child("repo.wh_schemas"),
 	}
 	r.config.enableTableLevelSchema = conf.GetReloadableBoolVar(false, "Warehouse.enableTableLevelSchema")
 	for _, opt := range opts {
@@ -75,6 +80,13 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
 
+	log := sh.log.Withn(
+		obskit.SourceID(whSchema.SourceID),
+		obskit.Namespace(whSchema.Namespace),
+		obskit.DestinationID(whSchema.DestinationID),
+		obskit.DestinationType(whSchema.DestinationType),
+	)
+
 	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		// update all schemas with the same destination_id and namespace but different source_id
 		// this is to ensure all the connections for a destination have the same schema copy
@@ -98,6 +110,7 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 			whSchema.SourceID,
 		)
 		if err != nil {
+			log.Warnn("Updating related schemas", logger.NewStringField("schema", string(schemaPayload)))
 			return fmt.Errorf("updating related schemas: %w", err)
 		}
 
@@ -161,6 +174,10 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 					tableName,
 				)
 				if err != nil {
+					log.Warnn("Updating table-level related schemas",
+						logger.NewStringField("tableName", tableName),
+						logger.NewStringField("schema", string(tableSchemaPayload)),
+					)
 					return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
 				}
 
