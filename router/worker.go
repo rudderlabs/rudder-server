@@ -526,8 +526,8 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								cancel()
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 
-								// Record the new transformer_outgoing_request_latency metric
-								w.recordTransformerOutgoingRequestLatency(val, destinationJob, time.Since(rdlTime))
+								// Record the new transformer_outgoing_request metrics
+								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp, time.Since(rdlTime))
 
 								w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
 
@@ -1203,35 +1203,39 @@ func (w *worker) countTransformedJobStatuses(transformType string, transformedJo
 	}
 }
 
-// recordTransformerOutgoingRequestLatency records the transformer_outgoing_request_latency metric
+// recordTransformerOutgoingRequestMetrics records both transformer_outgoing_request_latency and transformer_outgoing_request_count metrics
 // for router deliveries to match transformer's metric structure
-func (w *worker) recordTransformerOutgoingRequestLatency(
+func (w *worker) recordTransformerOutgoingRequestMetrics(
 	postParams integrations.PostParametersT,
 	destinationJob types.DestinationJobT,
+	resp *routerutils.SendPostResponse,
 	duration time.Duration,
 ) {
-	// Only emit metric if EndpointPath is present
+	// Only emit metrics if EndpointPath is present
 	if postParams.EndpointPath == "" {
 		return
 	}
 
-	// Get workspace and source IDs from job metadata
-	var workspaceID, sourceID string
+	// Get workspace ID from job metadata
+	var workspaceID string
 	if len(destinationJob.JobMetadataArray) > 0 {
 		workspaceID = destinationJob.JobMetadataArray[0].WorkspaceID
-		sourceID = destinationJob.JobMetadataArray[0].SourceID
 	}
 
+	// Common labels for both metrics
 	labels := stats.Tags{
-		"feature":       "router_delivery",
 		"destType":      w.rt.destType,
 		"endpointPath":  postParams.EndpointPath,
+		"statusCode":    strconv.Itoa(resp.StatusCode),
 		"requestMethod": postParams.RequestMethod,
 		"module":        "router",
 		"workspaceId":   workspaceID,
 		"destinationId": destinationJob.Destination.ID,
-		"sourceId":      sourceID,
 	}
 
+	// Record latency metric
 	stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels).SendTiming(duration)
+
+	// Record count metric
+	stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels).Increment()
 }

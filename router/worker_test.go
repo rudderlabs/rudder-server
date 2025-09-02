@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
+	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -632,11 +633,12 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 	worker.transform(routerJobs)
 }
 
-func TestWorker_recordTransformerOutgoingRequestLatency(t *testing.T) {
+func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 	testCases := []struct {
 		name           string
 		postParams     integrations.PostParametersT
 		destinationJob types.DestinationJobT
+		resp           *routerutils.SendPostResponse
 		duration       time.Duration
 		expectedLabels stats.Tags
 		shouldEmit     bool
@@ -654,20 +656,21 @@ func TestWorker_recordTransformerOutgoingRequestLatency(t *testing.T) {
 				JobMetadataArray: []types.JobMetadataT{
 					{
 						WorkspaceID: "ws-456",
-						SourceID:    "src-789",
 					},
 				},
 			},
+			resp: &routerutils.SendPostResponse{
+				StatusCode: 200,
+			},
 			duration: 150 * time.Millisecond,
 			expectedLabels: stats.Tags{
-				"feature":       "router_delivery",
 				"destType":      "TEST_DEST",
 				"endpointPath":  "/api/track",
+				"statusCode":    "200",
 				"requestMethod": "POST",
 				"module":        "router",
 				"workspaceId":   "ws-456",
 				"destinationId": "dest-123",
-				"sourceId":      "src-789",
 			},
 			shouldEmit: true,
 		},
@@ -684,9 +687,11 @@ func TestWorker_recordTransformerOutgoingRequestLatency(t *testing.T) {
 				JobMetadataArray: []types.JobMetadataT{
 					{
 						WorkspaceID: "ws-789",
-						SourceID:    "src-123",
 					},
 				},
+			},
+			resp: &routerutils.SendPostResponse{
+				StatusCode: 400,
 			},
 			duration:   200 * time.Millisecond,
 			shouldEmit: false,
@@ -703,16 +708,18 @@ func TestWorker_recordTransformerOutgoingRequestLatency(t *testing.T) {
 				},
 				JobMetadataArray: []types.JobMetadataT{},
 			},
+			resp: &routerutils.SendPostResponse{
+				StatusCode: 500,
+			},
 			duration: 100 * time.Millisecond,
 			expectedLabels: stats.Tags{
-				"feature":       "router_delivery",
 				"destType":      "TEST_DEST",
 				"endpointPath":  "/api/identify",
+				"statusCode":    "500",
 				"requestMethod": "PUT",
 				"module":        "router",
 				"workspaceId":   "",
 				"destinationId": "dest-789",
-				"sourceId":      "",
 			},
 			shouldEmit: true,
 		},
@@ -739,15 +746,17 @@ func TestWorker_recordTransformerOutgoingRequestLatency(t *testing.T) {
 			}()
 
 			// Call the method under test
-			worker.recordTransformerOutgoingRequestLatency(tc.postParams, tc.destinationJob, tc.duration)
+			worker.recordTransformerOutgoingRequestMetrics(tc.postParams, tc.destinationJob, tc.resp, tc.duration)
 
 			// Get all recorded metrics
 			allMetrics := statsStore.GetAll()
 
 			if tc.shouldEmit {
-				// Verify the metric was recorded by checking the memstats store
-				// Find our metric
-				var foundMetric memstats.Metric
+				// Verify both metrics were recorded by checking the memstats store
+				// Find latency metric
+				var foundLatencyMetric memstats.Metric
+				var foundCountMetric memstats.Metric
+
 				for _, metric := range allMetrics {
 					if metric.Name == "transformer_outgoing_request_latency" {
 						// Check if tags match
@@ -759,25 +768,45 @@ func TestWorker_recordTransformerOutgoingRequestLatency(t *testing.T) {
 							}
 						}
 						if tagsMatch {
-							foundMetric = metric
-							break
+							foundLatencyMetric = metric
+						}
+					}
+					if metric.Name == "transformer_outgoing_request_count" {
+						// Check if tags match
+						tagsMatch := true
+						for key, expectedValue := range tc.expectedLabels {
+							if metric.Tags[key] != expectedValue {
+								tagsMatch = false
+								break
+							}
+						}
+						if tagsMatch {
+							foundCountMetric = metric
 						}
 					}
 				}
 
-				require.NotEmpty(t, foundMetric.Name, "Expected metric 'transformer_outgoing_request_latency' with matching tags to be recorded. Available metrics: %+v", allMetrics)
-				require.Equal(t, "transformer_outgoing_request_latency", foundMetric.Name)
-				require.Equal(t, tc.expectedLabels, foundMetric.Tags)
+				require.NotEmpty(t, foundLatencyMetric.Name, "Expected metric 'transformer_outgoing_request_latency' with matching tags to be recorded. Available metrics: %+v", allMetrics)
+				require.Equal(t, "transformer_outgoing_request_latency", foundLatencyMetric.Name)
+				require.Equal(t, tc.expectedLabels, foundLatencyMetric.Tags)
+
+				require.NotEmpty(t, foundCountMetric.Name, "Expected metric 'transformer_outgoing_request_count' with matching tags to be recorded. Available metrics: %+v", allMetrics)
+				require.Equal(t, "transformer_outgoing_request_count", foundCountMetric.Name)
+				require.Equal(t, tc.expectedLabels, foundCountMetric.Tags)
 			} else {
-				// Verify no metric was recorded
-				var foundMetric bool
+				// Verify no metrics were recorded
+				var foundLatencyMetric bool
+				var foundCountMetric bool
 				for _, metric := range allMetrics {
 					if metric.Name == "transformer_outgoing_request_latency" {
-						foundMetric = true
-						break
+						foundLatencyMetric = true
+					}
+					if metric.Name == "transformer_outgoing_request_count" {
+						foundCountMetric = true
 					}
 				}
-				require.False(t, foundMetric, "Expected no 'transformer_outgoing_request_latency' metric to be recorded when EndpointPath is empty")
+				require.False(t, foundLatencyMetric, "Expected no 'transformer_outgoing_request_latency' metric to be recorded when EndpointPath is empty")
+				require.False(t, foundCountMetric, "Expected no 'transformer_outgoing_request_count' metric to be recorded when EndpointPath is empty")
 			}
 		})
 	}
