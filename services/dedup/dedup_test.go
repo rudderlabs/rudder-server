@@ -601,8 +601,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	c, err := keydbclient.NewClient(keydbclient.Config{
 		Addresses:       []string{address},
 		TotalHashRanges: 128,
-		RetryCount:      3,
-		RetryDelay:      time.Second,
+		RetryPolicy: keydbclient.RetryPolicy{
+			Disabled: true,
+		},
 	}, logger.NOP)
 	require.NoError(t, err)
 	size := c.ClusterSize()
