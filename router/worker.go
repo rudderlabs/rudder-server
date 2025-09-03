@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-viper/mapstructure/v2"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
@@ -30,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -53,9 +53,9 @@ type worker struct {
 	routerDeliveryLatencyStat stats.Measurement
 	routerProxyStat           stats.Measurement
 
-	// Cache for transformer outgoing request metrics to avoid recreating stats objects
-	deliveryLatencyStatsCache map[deliveryMetricLabel]stats.Measurement
-	deliveryCountStatsCache   map[deliveryMetricLabel]stats.Measurement
+	// Cache for transformer outgoing request metrics using StatsCache
+	deliveryLatencyStatsCache *cache.StatsCache[deliveryMetricLabels]
+	deliveryCountStatsCache   *cache.StatsCache[deliveryMetricLabels]
 }
 
 type workerJob struct {
@@ -1221,7 +1221,7 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 		return
 	}
 
-	labels := deliveryMetricLabel{
+	labels := deliveryMetricLabels{
 		DestType:      w.rt.destType,
 		EndpointPath:  postParams.EndpointPath,
 		StatusCode:    strconv.Itoa(resp.StatusCode),
@@ -1231,54 +1231,35 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 		DestinationID: destinationJob.Destination.ID,
 	}
 
-	// Get or create cached stats objects
-	latencyStat := w.getOrCreateLatencyStat(labels)
-	countStat := w.getOrCreateCountStat(labels)
+	// Get or create cached stats objects using StatsCache
+	latencyStat := w.deliveryLatencyStatsCache.Get(labels)
+	countStat := w.deliveryCountStatsCache.Get(labels)
 
 	// Record metrics using cached stats
 	latencyStat.SendTiming(duration)
 	countStat.Increment()
 }
 
-// deliveryMetricLabel represents a unique key for caching stats based on labels
-type deliveryMetricLabel struct {
-	DestType      string `mapstructure:"destType"`
-	EndpointPath  string `mapstructure:"endpointPath"`
-	StatusCode    string `mapstructure:"statusCode"`
-	RequestMethod string `mapstructure:"requestMethod"`
-	Module        string `mapstructure:"module"`
-	WorkspaceID   string `mapstructure:"workspaceId"`
-	DestinationID string `mapstructure:"destinationId"`
+// deliveryMetricLabels represents a unique key for caching stats based on labels
+type deliveryMetricLabels struct {
+	DestType      string
+	EndpointPath  string
+	StatusCode    string
+	RequestMethod string
+	Module        string
+	WorkspaceID   string
+	DestinationID string
 }
 
-// ToStatsTags converts metricCacheKey to stats.Tags using mapstructure
-func (w *worker) convertDeliveryMetricLabelToStatsTags(labels deliveryMetricLabel) stats.Tags {
-	var tags map[string]string
-	err := mapstructure.Decode(labels, &tags)
-	if err != nil {
-		w.logger.Errorn("error decoding delivery metric label", obskit.Error(err))
+// ToStatTags converts deliveryMetricLabels to stats.Tags for StatsCacheKey interface
+func (l deliveryMetricLabels) ToStatTags() stats.Tags {
+	return stats.Tags{
+		"destType":      l.DestType,
+		"endpointPath":  l.EndpointPath,
+		"statusCode":    l.StatusCode,
+		"requestMethod": l.RequestMethod,
+		"module":        l.Module,
+		"workspaceId":   l.WorkspaceID,
+		"destinationId": l.DestinationID,
 	}
-	return tags
-}
-
-// getOrCreateLatencyStat returns a cached latency stat or creates a new one
-func (w *worker) getOrCreateLatencyStat(labels deliveryMetricLabel) stats.Measurement {
-	if stat, exists := w.deliveryLatencyStatsCache[labels]; exists {
-		return stat
-	}
-
-	stat := stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, w.convertDeliveryMetricLabelToStatsTags(labels))
-	w.deliveryLatencyStatsCache[labels] = stat
-	return stat
-}
-
-// getOrCreateCountStat returns a cached count stat or creates a new one
-func (w *worker) getOrCreateCountStat(labels deliveryMetricLabel) stats.Measurement {
-	if stat, exists := w.deliveryCountStatsCache[labels]; exists {
-		return stat
-	}
-
-	countStat := stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, w.convertDeliveryMetricLabelToStatsTags(labels))
-	w.deliveryCountStatsCache[labels] = countStat
-	return countStat
 }

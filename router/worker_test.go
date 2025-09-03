@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/utils/cache"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -38,6 +39,21 @@ import (
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
+
+// createTestWorker creates a worker instance for testing with properly initialized StatsCache instances
+func createTestWorker(destType string) *worker {
+	return &worker{
+		rt: &Handle{
+			destType: destType,
+		},
+		deliveryLatencyStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
+			return stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels.ToStatTags())
+		}),
+		deliveryCountStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
+			return stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
+		}),
+	}
+}
 
 func TestConsolidateRespBodys(t *testing.T) {
 	tcs := []struct {
@@ -728,15 +744,9 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 		},
 	}
 
-	// Test the convertDeliveryMetricLabelToStatsTags method
-	t.Run("convertDeliveryMetricLabelToStatsTags", func(t *testing.T) {
-		worker := &worker{
-			rt: &Handle{
-				destType: "TEST_DEST",
-			},
-		}
-
-		labels := deliveryMetricLabel{
+	// Test the convertDeliveryMetricLabelToStatTags method
+	t.Run("convertDeliveryMetricLabelToStatTags", func(t *testing.T) {
+		labels := deliveryMetricLabels{
 			DestType:      "TEST_DEST",
 			EndpointPath:  "/api/test",
 			StatusCode:    "200",
@@ -756,21 +766,15 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			"destinationId": "dest-456",
 		}
 
-		result := worker.convertDeliveryMetricLabelToStatsTags(labels)
+		result := labels.ToStatTags()
 		require.Equal(t, expectedTags, result)
 	})
 
 	// Test caching behavior
 	t.Run("caching behavior", func(t *testing.T) {
-		worker := &worker{
-			rt: &Handle{
-				destType: "TEST_DEST",
-			},
-			deliveryLatencyStatsCache: make(map[deliveryMetricLabel]stats.Measurement),
-			deliveryCountStatsCache:   make(map[deliveryMetricLabel]stats.Measurement),
-		}
+		worker := createTestWorker("TEST_DEST")
 
-		labels := deliveryMetricLabel{
+		labels := deliveryMetricLabels{
 			DestType:      "TEST_DEST",
 			EndpointPath:  "/api/cache",
 			StatusCode:    "200",
@@ -781,23 +785,22 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 		}
 
 		// First call should create new stats
-		latencyStat1 := worker.getOrCreateLatencyStat(labels)
-		countStat1 := worker.getOrCreateCountStat(labels)
+		latencyStat1 := worker.deliveryLatencyStatsCache.Get(labels)
+		countStat1 := worker.deliveryCountStatsCache.Get(labels)
 
 		// Second call with same labels should return cached stats
-		latencyStat2 := worker.getOrCreateLatencyStat(labels)
-		countStat2 := worker.getOrCreateCountStat(labels)
+		latencyStat2 := worker.deliveryLatencyStatsCache.Get(labels)
+		countStat2 := worker.deliveryCountStatsCache.Get(labels)
 
 		// Should be the same objects (cached)
 		require.Equal(t, latencyStat1, latencyStat2)
 		require.Equal(t, countStat1, countStat2)
 
-		// Cache should have one entry for each type
-		require.Len(t, worker.deliveryLatencyStatsCache, 1)
-		require.Len(t, worker.deliveryCountStatsCache, 1)
+		// Cache should have one entry for each type (StatsCache doesn't expose length)
+		// We can verify caching by checking that the same object is returned
 
 		// Test that different labels create different cache entries
-		differentLabels := deliveryMetricLabel{
+		differentLabels := deliveryMetricLabels{
 			DestType:      "TEST_DEST",
 			EndpointPath:  "/api/different",
 			StatusCode:    "404",
@@ -807,24 +810,23 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			DestinationID: "dest-diff",
 		}
 
-		worker.getOrCreateLatencyStat(differentLabels)
-		worker.getOrCreateCountStat(differentLabels)
+		worker.deliveryLatencyStatsCache.Get(differentLabels)
+		worker.deliveryCountStatsCache.Get(differentLabels)
 
-		// Cache should now have two entries for each type
-		require.Len(t, worker.deliveryLatencyStatsCache, 2)
-		require.Len(t, worker.deliveryCountStatsCache, 2)
+		// Cache should now have two entries for each type (StatsCache doesn't expose length)
+		// We can verify by getting the stats again and ensuring they're different objects
+		latencyStat3 := worker.deliveryLatencyStatsCache.Get(differentLabels)
+		countStat3 := worker.deliveryCountStatsCache.Get(differentLabels)
+
+		// Should be different objects from the first set
+		require.NotEqual(t, latencyStat1, latencyStat3)
+		require.NotEqual(t, countStat1, countStat3)
 	})
 
-	// Test mapstructure tags with edge cases
-	t.Run("mapstructure edge cases", func(t *testing.T) {
-		worker := &worker{
-			rt: &Handle{
-				destType: "TEST_DEST",
-			},
-		}
-
+	// Test ToStatTags method with edge cases
+	t.Run("ToStatTags edge cases", func(t *testing.T) {
 		// Test with empty strings
-		emptyLabels := deliveryMetricLabel{
+		emptyLabels := deliveryMetricLabels{
 			DestType:      "",
 			EndpointPath:  "",
 			StatusCode:    "",
@@ -844,11 +846,11 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			"destinationId": "",
 		}
 
-		result := worker.convertDeliveryMetricLabelToStatsTags(emptyLabels)
+		result := emptyLabels.ToStatTags()
 		require.Equal(t, expectedEmptyTags, result)
 
 		// Test with special characters in strings
-		specialLabels := deliveryMetricLabel{
+		specialLabels := deliveryMetricLabels{
 			DestType:      "test-dest_with.special:chars",
 			EndpointPath:  "/api/test?param=value&other=123",
 			StatusCode:    "200",
@@ -868,7 +870,7 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			"destinationId": "dest-789",
 		}
 
-		result = worker.convertDeliveryMetricLabelToStatsTags(specialLabels)
+		result = specialLabels.ToStatTags()
 		require.Equal(t, expectedSpecialTags, result)
 	})
 
@@ -879,13 +881,7 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create worker with mock router
-			worker := &worker{
-				rt: &Handle{
-					destType: "TEST_DEST",
-				},
-				deliveryLatencyStatsCache: make(map[deliveryMetricLabel]stats.Measurement),
-				deliveryCountStatsCache:   make(map[deliveryMetricLabel]stats.Measurement),
-			}
+			worker := createTestWorker("TEST_DEST")
 
 			// Override the stats.Default to use our memstats store
 			originalStats := stats.Default
