@@ -342,6 +342,7 @@ func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
 	// Test mirrorKeyDB mode with KeyDB error
 	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
 	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
+	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)     // Invalid address to simulate KeyDB failure
 
 	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
