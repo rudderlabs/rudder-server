@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -17,8 +18,9 @@ import (
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/samber/lo"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -112,7 +114,10 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 			whSchema.SourceID,
 		)
 		if err != nil {
-			log.Warnn("Updating related schemas", logger.NewStringField("schema", string(schemaPayload)))
+			log.Errorn("Failed to update related schemas",
+				logger.NewStringField("schema", string(schemaPayload)),
+				obskit.Error(err),
+			)
 			return fmt.Errorf("updating related schemas: %w", err)
 		}
 
@@ -197,10 +202,11 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 					tableName,
 				)
 				if err != nil {
-					log.Warnn("Updating table-level related schemas",
+					log.Errorn("Failed to update table-level related schemas",
 						logger.NewStringField("tableName", tableName),
 						logger.NewStringField("schema", string(schemaPayload)),
-						logger.NewStringField("tableLevelSchem", string(tableSchemaPayload)),
+						logger.NewStringField("tableLevelSchema", string(tableSchemaPayload)),
+						obskit.Error(err),
 					)
 					return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
 				}
