@@ -1915,7 +1915,7 @@ func TestGRPC(t *testing.T) {
 		})
 
 		t.Run("GetDestinationNamespaces", func(t *testing.T) {
-			schemaRepo := repo.NewWHSchemas(db, c)
+			schemaRepo := repo.NewWHSchemas(db, c, logger.NOP)
 			schema := model.WHSchema{
 				SourceID:        "source_1",
 				DestinationID:   destinationID,

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
@@ -25,7 +26,7 @@ func TestStatsEmission(t *testing.T) {
 		require.NoError(t, err)
 
 		repoLoadFiles := repo.NewLoadFiles(db, config.New(), repo.WithStats(statsStore))
-		repoSchemas := repo.NewWHSchemas(db, config.New(), repo.WithStats(statsStore))
+		repoSchemas := repo.NewWHSchemas(db, config.New(), logger.NOP, repo.WithStats(statsStore))
 		repoStagingFiles := repo.NewStagingFiles(db, config.New(), repo.WithStats(statsStore))
 		repoTableUploads := repo.NewTableUploads(db, config.New(), repo.WithStats(statsStore))
 		repoSources := repo.NewSource(db, repo.WithStats(statsStore))
