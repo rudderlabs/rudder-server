@@ -294,47 +294,56 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 	err := backoff.RetryNotify(
 		func() error {
-			var reqErr error
-			requestStartTime := time.Now()
+			start := time.Now()
+			err := func() error {
+				var reqErr error
+				requestStartTime := time.Now()
 
-			var req *http.Request
-			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
-			if reqErr != nil {
+				var req *http.Request
+				req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+				if reqErr != nil {
+					return reqErr
+				}
+
+				req.Header.Set("Content-Type", "application/json; charset=utf-8")
+				req.Header.Set("X-Feature-Gzip-Support", "?1")
+				// Header to let transformer know that the client understands event filter code
+				req.Header.Set("X-Feature-Filter-Code", "?1")
+				for k, v := range extraHeaders {
+					req.Header.Set(k, v)
+				}
+
+				resp, reqErr = d.client.Do(req)
+				defer func() { httputil.CloseResponse(resp) }()
+				// Record metrics with labels
+				tags := labels.ToStatsTag()
+				duration := time.Since(requestStartTime)
+				d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+				d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
+
+				if reqErr != nil {
+					return reqErr
+				}
+
+				if !transformerutils.IsJobTerminated(resp.StatusCode) {
+					return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
+				}
+
+				respData, reqErr = io.ReadAll(resp.Body)
+				if reqErr == nil {
+					d.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
+					// We'll count response events after unmarshaling in the request method
+				}
 				return reqErr
-			}
-
-			req.Header.Set("Content-Type", "application/json; charset=utf-8")
-			req.Header.Set("X-Feature-Gzip-Support", "?1")
-			// Header to let transformer know that the client understands event filter code
-			req.Header.Set("X-Feature-Filter-Code", "?1")
-			for k, v := range extraHeaders {
-				req.Header.Set(k, v)
-			}
-
-			resp, reqErr = d.client.Do(req)
-			defer func() { httputil.CloseResponse(resp) }()
-			// Record metrics with labels
+			}()
 			tags := labels.ToStatsTag()
-			duration := time.Since(requestStartTime)
-			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
-
-			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			d.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
-
-			if reqErr != nil {
-				return reqErr
+			if err == nil {
+				tags["success"] = "true"
+			} else {
+				tags["success"] = "false"
 			}
-
-			if !transformerutils.IsJobTerminated(resp.StatusCode) {
-				return fmt.Errorf("transformer returned status code: %v", resp.StatusCode)
-			}
-
-			respData, reqErr = io.ReadAll(resp.Body)
-			if reqErr == nil {
-				d.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
-				// We'll count response events after unmarshaling in the request method
-			}
-			return reqErr
+			d.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(start))
+			return err
 		},
 		backoff.WithMaxRetries(retryStrategy, uint64(d.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
