@@ -361,7 +361,7 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 	}
 	if schemaExists {
 		log.Infon("Skipping creating schema since it already exists")
-		return
+		return err
 	}
 
 	ds := bq.db.Dataset(bq.namespace)
@@ -377,7 +377,7 @@ func (bq *BigQuery) CreateSchema(ctx context.Context) (err error) {
 			return nil
 		}
 	}
-	return
+	return err
 }
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
@@ -636,11 +636,11 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	_, identifyLoadTable, err := bq.loadTable(ctx, warehouseutils.IdentifiesTable)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
-		return
+		return errorMap
 	}
 
 	if len(bq.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
@@ -652,7 +652,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	if err != nil {
 		log.Warnn("Creating and loading staging table", obskit.Error(err))
 		errorMap[warehouseutils.UsersTable] = fmt.Errorf(`creating and loading staging table: %w`, err)
-		return
+		return errorMap
 	}
 
 	firstValueSQL := func(column string) string {
@@ -676,7 +676,7 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	if err != nil {
 		log.Warnn("Deduplication query for users table", obskit.Error(err))
 		errorMap[warehouseutils.UsersTable] = fmt.Errorf("deduplication query for users table: %w", err)
-		return
+		return errorMap
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT DISTINCT * FROM (
@@ -712,18 +712,18 @@ func (bq *BigQuery) LoadUserTables(ctx context.Context) (errorMap map[string]err
 	if err != nil {
 		log.Warnn("Initiating load job", obskit.Error(err))
 		errorMap[warehouseutils.UsersTable] = fmt.Errorf(`executing users append: %w`, err)
-		return
+		return errorMap
 	}
 	status, err := job.Wait(ctx)
 	if err != nil {
 		log.Warnn("Running load job", obskit.Error(err))
 		errorMap[warehouseutils.UsersTable] = fmt.Errorf(`waiting for users append: %w`, err)
-		return
+		return errorMap
 	}
 	if status.Err() != nil {
 		log.Warnn("Job status", obskit.Error(status.Err()))
 		errorMap[warehouseutils.UsersTable] = fmt.Errorf(`status for users append: %w`, status.Err())
-		return
+		return errorMap
 	}
 	return errorMap
 }
@@ -1093,7 +1093,7 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 		var exists bool
 		exists, err = bq.tableExists(ctx, tableName)
 		if err != nil || !exists {
-			return
+			return err
 		}
 
 		tableMetadata, err := bq.db.Dataset(bq.namespace).Table(tableName).Metadata(ctx)
@@ -1104,11 +1104,11 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 		// check if table in warehouse has anonymous_id and user_id and construct accordingly
 		hasAnonymousID, err := bq.columnExists(ctx, "anonymous_id", tableName)
 		if err != nil {
-			return
+			return err
 		}
 		hasUserID, err := bq.columnExists(ctx, "user_id", tableName)
 		if err != nil {
-			return
+			return err
 		}
 
 		var toSelectFields string
@@ -1187,17 +1187,17 @@ func (bq *BigQuery) DownloadIdentityRules(ctx context.Context, gzWriter *misc.GZ
 				break
 			}
 		}
-		return
+		return err
 	}
 
 	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, table := range tables {
 		err = getFromTable(table)
 		if err != nil {
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {

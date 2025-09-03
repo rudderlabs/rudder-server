@@ -11,7 +11,7 @@ type csvReader struct {
 
 func (csv *csvReader) Read([]string) (record []string, err error) {
 	record, err = csv.reader.Read()
-	return
+	return record, err
 }
 
 func newCsvReader(r io.Reader) *csvReader {

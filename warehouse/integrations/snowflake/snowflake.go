@@ -218,7 +218,7 @@ func (sf *Snowflake) createTable(ctx context.Context, tableName string, columns 
 		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (sf *Snowflake) tableExists(ctx context.Context, tableName string) (exists bool, err error) {
@@ -228,7 +228,7 @@ func (sf *Snowflake) tableExists(ctx context.Context, tableName string) (exists 
    								 AND    table_name = '%s'
 								   )`, sf.Namespace, tableName)
 	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
-	return
+	return exists, err
 }
 
 func (sf *Snowflake) columnExists(ctx context.Context, columnName, tableName string) (exists bool, err error) {
@@ -239,7 +239,7 @@ func (sf *Snowflake) columnExists(ctx context.Context, columnName, tableName str
 									AND column_name = '%s'
 								   )`, sf.Namespace, tableName, columnName)
 	err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
-	return
+	return exists, err
 }
 
 func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) {
@@ -250,7 +250,7 @@ func (sf *Snowflake) schemaExists(ctx context.Context) (exists bool, err error) 
 	if errors.Is(err, sql.ErrNoRows) {
 		err = nil
 	}
-	return
+	return exists, err
 }
 
 func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
@@ -262,7 +262,7 @@ func (sf *Snowflake) createSchema(ctx context.Context) (err error) {
 		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func checkAndIgnoreAlreadyExistError(err error) bool {
@@ -1159,7 +1159,7 @@ func (sf *Snowflake) DropTable(ctx context.Context, tableName string) (err error
 		logger.NewStringField(lf.Query, sqlStatement),
 	)
 	_, err = sf.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsInfo []whutils.ColumnInfo) (err error) {
@@ -1179,7 +1179,7 @@ func (sf *Snowflake) AddColumns(ctx context.Context, tableName string, columnsIn
 	)
 	log.Infon("Adding columns", logger.NewStringField(lf.Query, query))
 	_, err = sf.DB.ExecContext(ctx, query)
-	return
+	return err
 }
 
 func (*Snowflake) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
@@ -1192,7 +1192,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		var exists bool
 		exists, err = sf.tableExists(ctx, tableName)
 		if err != nil || !exists {
-			return
+			return err
 		}
 
 		schemaIdentifier := sf.schemaIdentifier()
@@ -1200,17 +1200,17 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 		var totalRows int64
 		err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&totalRows)
 		if err != nil {
-			return
+			return err
 		}
 
 		// check if table in warehouse has anonymous_id and user_id and construct accordingly
 		hasAnonymousID, err := sf.columnExists(ctx, "ANONYMOUS_ID", tableName)
 		if err != nil {
-			return
+			return err
 		}
 		hasUserID, err := sf.columnExists(ctx, "USER_ID", tableName)
 		if err != nil {
-			return
+			return err
 		}
 
 		var toSelectFields string
@@ -1242,7 +1242,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 			var rows *sqlmw.Rows
 			rows, err = sf.DB.QueryContext(ctx, sqlStatement)
 			if err != nil {
-				return
+				return err
 			}
 
 			for rows.Next() {
@@ -1253,7 +1253,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 				var anonymousID, userID sql.NullString
 				err = rows.Scan(&anonymousID, &userID)
 				if err != nil {
-					return
+					return err
 				}
 
 				if !anonymousID.Valid && !userID.Valid {
@@ -1271,7 +1271,7 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 				_ = gzWriter.WriteGZ(buff.String())
 			}
 			if err = rows.Err(); err != nil {
-				return
+				return err
 			}
 
 			offset += batchSize
@@ -1279,14 +1279,14 @@ func (sf *Snowflake) DownloadIdentityRules(ctx context.Context, gzWriter *misc.G
 				break
 			}
 		}
-		return
+		return err
 	}
 
 	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
 	for _, table := range tables {
 		err = getFromTable(table)
 		if err != nil {
-			return
+			return err
 		}
 	}
 	return nil
@@ -1299,7 +1299,7 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 	sf.Namespace = warehouse.Namespace
 	sf.DB, err = sf.connect(ctx, optionalCreds{})
 	if err != nil {
-		return
+		return empty, err
 	}
 	defer func() { _ = sf.DB.Close() }()
 
@@ -1308,7 +1308,7 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 		var exists bool
 		exists, err = sf.tableExists(ctx, tableName)
 		if err != nil {
-			return
+			return empty, err
 		}
 		if !exists {
 			continue
@@ -1318,14 +1318,14 @@ func (sf *Snowflake) IsEmpty(ctx context.Context, warehouse model.Warehouse) (em
 		var count int64
 		err = sf.DB.QueryRowContext(ctx, sqlStatement).Scan(&count)
 		if err != nil {
-			return
+			return empty, err
 		}
 		if count > 0 {
 			empty = false
-			return
+			return empty, err
 		}
 	}
-	return
+	return empty, err
 }
 
 func (sf *Snowflake) Setup(ctx context.Context, warehouse model.Warehouse, uploader whutils.Uploader) (err error) {

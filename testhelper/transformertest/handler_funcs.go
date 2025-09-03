@@ -26,7 +26,7 @@ var MirroringTransformerHandler TransformerHandler = func(request []proctypes.Tr
 			StatusCode: http.StatusOK,
 		})
 	}
-	return
+	return response
 }
 
 // MirroringRouterTransformerHandler mirrors the router request payload in the response
@@ -42,7 +42,7 @@ var MirroringRouterTransformerHandler RouterTransformerHandler = func(request ty
 			StatusCode:       http.StatusOK,
 		}
 	}
-	return
+	return response
 }
 
 // ErrorTransformerHandler mirrors the request payload in the response but uses an error status code
@@ -57,7 +57,7 @@ func ErrorTransformerHandler(code int, err string) TransformerHandler {
 				Error:      err,
 			})
 		}
-		return
+		return response
 	}
 }
 
@@ -74,7 +74,7 @@ func ViolationErrorTransformerHandler(code int, err string, validationErrors []p
 				ValidationErrors: validationErrors,
 			})
 		}
-		return
+		return response
 	}
 }
 
@@ -97,7 +97,7 @@ func DestTransformerHandler(f func(event proctypes.TransformerEvent) integration
 				StatusCode: http.StatusOK,
 			})
 		}
-		return
+		return res
 	}
 }
 
@@ -134,6 +134,6 @@ func WarehouseTransformerHandler(tableName string, code int, err string) Transfo
 				Error:      err,
 			})
 		}
-		return
+		return response
 	}
 }

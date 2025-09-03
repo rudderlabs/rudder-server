@@ -398,7 +398,7 @@ func (jd *Handle) cleanStatusTable(ctx context.Context, tx *Tx, table string, ca
 		_, err = tx.ExecContext(ctx, fmt.Sprintf(`ANALYZE %q`, table))
 	}
 
-	return
+	return vacuum, err
 }
 
 // getMigrationList returns the list of datasets to migrate from,
@@ -437,7 +437,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 		migrate, needsPair, recordsLeft, migrateErr := jd.checkIfMigrateDS(ds)
 		if migrateErr != nil {
 			err = migrateErr
-			return
+			return migrateFrom, pendingJobsCount, insertBeforeDS, err
 		}
 		jd.logger.Debugn(
 			"[[ migrateDSLoop ]]: Migrate check",
@@ -479,7 +479,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT) (migrateFrom []dsWithPendi
 		}
 		migrateDSProbeCount++
 	}
-	return
+	return migrateFrom, pendingJobsCount, insertBeforeDS, err
 }
 
 func getColumnConversion(srcType, destType string) (string, error) {

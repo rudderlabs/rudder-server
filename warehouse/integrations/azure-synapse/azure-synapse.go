@@ -208,7 +208,7 @@ func columnsWithDataTypes(columns model.TableSchema, prefix string) string {
 }
 
 func (*AzureSynapse) IsEmpty(_ context.Context, _ model.Warehouse) (empty bool, err error) {
-	return
+	return empty, err
 }
 
 func (as *AzureSynapse) loadTable(
@@ -662,11 +662,11 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	_, identifyStagingTable, err := as.loadTable(ctx, warehouseutils.IdentifiesTable, as.uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
-		return
+		return errorMap
 	}
 
 	if len(as.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
@@ -713,7 +713,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 	_, err = as.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT * INTO %[1]s FROM (SELECT DISTINCT * FROM
@@ -738,14 +738,14 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 			obskit.Error(err),
 		)
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	// BEGIN TRANSACTION
 	tx, err := as.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	primaryKey := "id"
@@ -761,7 +761,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 		)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, as.namespace, warehouseutils.UsersTable, as.namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
@@ -776,7 +776,7 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 		)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	err = tx.Commit()
@@ -786,9 +786,9 @@ func (as *AzureSynapse) loadUserTables(ctx context.Context) (errorMap map[string
 		)
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
-	return
+	return errorMap
 }
 
 func (*AzureSynapse) DeleteBy(context.Context, []string, warehouseutils.DeleteByParams) error {
@@ -806,7 +806,7 @@ func (as *AzureSynapse) CreateSchema(ctx context.Context) (err error) {
 	if errors.Is(err, io.EOF) {
 		return nil
 	}
-	return
+	return err
 }
 
 func (as *AzureSynapse) dropStagingTable(ctx context.Context, stagingTableName string) {
@@ -831,7 +831,7 @@ func (as *AzureSynapse) createTable(ctx context.Context, name string, columns mo
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = as.db.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (as *AzureSynapse) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
@@ -847,7 +847,7 @@ func (as *AzureSynapse) DropTable(ctx context.Context, tableName string) (err er
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = as.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, as.namespace, tableName))
-	return
+	return err
 }
 
 func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -894,7 +894,7 @@ func (as *AzureSynapse) AddColumns(ctx context.Context, tableName string, column
 		logger.NewStringField(logfield.Query, query),
 	)
 	_, err = as.db.ExecContext(ctx, query)
-	return
+	return err
 }
 
 func (*AzureSynapse) AlterColumn(_ context.Context, _, _, _ string) (model.AlterTableResponse, error) {
@@ -1056,15 +1056,15 @@ func (as *AzureSynapse) Cleanup(ctx context.Context) {
 }
 
 func (*AzureSynapse) LoadIdentityMergeRulesTable(_ context.Context) (err error) {
-	return
+	return err
 }
 
 func (*AzureSynapse) LoadIdentityMappingsTable(_ context.Context) (err error) {
-	return
+	return err
 }
 
 func (*AzureSynapse) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
-	return
+	return err
 }
 
 func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
@@ -1087,7 +1087,7 @@ func (as *AzureSynapse) TestLoadTable(ctx context.Context, _, tableName string, 
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = as.db.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (as *AzureSynapse) TestFetchSchema(ctx context.Context) error {

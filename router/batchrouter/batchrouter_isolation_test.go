@@ -380,7 +380,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 
 	cancel()
 	<-svcDone
-	return
+	return overallDuration
 }
 
 type BrtIsolationScenarioSpec struct {

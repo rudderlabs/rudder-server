@@ -169,7 +169,7 @@ func exportPath() (baseDir string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
-	return
+	return baseDir, err
 }
 
 func handler(t *testing.T) http.Handler {

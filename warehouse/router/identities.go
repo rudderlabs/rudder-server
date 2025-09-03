@@ -127,14 +127,14 @@ func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 		&upload.Error,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
-		return
+		return upload, found
 	}
 	if err != nil {
 		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
-	return
+	return upload, found
 }
 
 func (r *Router) populateHistoricIdentitiesDestType() string {
@@ -158,7 +158,7 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 		// TODO: Handle this
 		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
 	}
-	return
+	return exists
 }
 
 func (r *Router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {

@@ -580,7 +580,7 @@ func runRudderServer(ctx context.Context, port int, postgresContainer *postgres.
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
-	return
+	return err
 }
 
 func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unparam

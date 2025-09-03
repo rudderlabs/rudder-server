@@ -362,7 +362,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	t.Log("shutting down rudder-server")
 	cancel()
 	<-svcDone
-	return
+	return overallDuration
 }
 
 type ProcIsolationScenarioSpec struct {

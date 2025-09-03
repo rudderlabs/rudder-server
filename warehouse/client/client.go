@@ -72,7 +72,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	ctx := context.Background()
 	it, err := query.Read(ctx)
 	if err != nil {
-		return
+		return result, err
 	}
 
 	for index := 0; index < len(it.Schema); index++ {
@@ -86,7 +86,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 			if errors.Is(err, iterator.Done) {
 				break
 			}
-			return
+			return result, err
 		}
 		var stringRow []string
 		for index := 0; index < len(row); index++ {

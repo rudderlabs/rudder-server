@@ -504,7 +504,7 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 func (ch *Clickhouse) loadTable(ctx context.Context, tableName string, tableSchemaInUpload model.TableSchema) (err error) {
 	if delay := ch.config.randomLoadDelay(ch.Warehouse.WorkspaceID); delay > 0 {
 		if err = misc.SleepCtx(ctx, delay); err != nil {
-			return
+			return err
 		}
 	}
 	if ch.UseS3CopyEngineForLoading() {
@@ -535,7 +535,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 	fileNames, err := ch.LoadFileDownloader.Download(ctx, tableName)
 	chStats.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
-		return
+		return err
 	}
 	defer misc.RemoveFilePaths(fileNames...)
 
@@ -557,7 +557,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 	if retryError != nil {
 		err = retryError
 	}
-	return
+	return err
 }
 
 func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey string, err error) {
@@ -674,7 +674,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	if err != nil {
 		err = fmt.Errorf("%s Error while beginning a transaction in db for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
-		return
+		return terr
 	}
 	ch.logger.Debugn("Completed a transaction in db for loading in table",
 		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
@@ -693,7 +693,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	if err != nil {
 		err = fmt.Errorf("%s Error while preparing statement for transaction in db for loading in table for query:%s error:%v", ch.GetLogIdentifier(tableName), sqlStatement, err)
 		onError(err)
-		return
+		return terr
 	}
 	defer func() {
 		_ = stmt.Close()
@@ -710,7 +710,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 		if err != nil {
 			err = fmt.Errorf("%s Error opening file using os.Open for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err.Error())
 			onError(err)
-			return
+			return terr
 		}
 
 		var gzipReader *gzip.Reader
@@ -719,7 +719,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			_ = gzipFile.Close()
 			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
 			onError(err)
-			return
+			return terr
 		}
 
 		csvReader := csv.NewReader(gzipReader)
@@ -737,12 +737,12 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				}
 				err = fmt.Errorf("%s Error while reading csv file %s for loading in table with error:%v", ch.GetLogIdentifier(tableName), objectFileName, err)
 				onError(err)
-				return
+				return terr
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`%s Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table with sortedColumnKeys: %d. Processed rows in csv file until mismatch: %d`, ch.GetLogIdentifier(tableName), len(record), len(sortedColumnKeys), csvRowsProcessedCount)
 				onError(err)
-				return
+				return terr
 			}
 			var recordInterface []interface{}
 			for index, value := range record {
@@ -778,7 +778,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 			if err != nil {
 				err = fmt.Errorf("%s Error in inserting statement for loading in table with error:%v", ch.GetLogIdentifier(tableName), err)
 				onError(err)
-				return
+				return terr
 			}
 			csvRowsProcessedCount++
 		}
@@ -813,12 +813,12 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 	if err != nil {
 		err = fmt.Errorf("%s Error occurred while committing with error:%v", ch.GetLogIdentifier(tableName), err)
 		onError(err)
-		return
+		return terr
 	}
 	ch.logger.Infon("Completed loading the table",
 		logger.NewStringField("identifier", ch.GetLogIdentifier(tableName)),
 	)
-	return
+	return terr
 }
 
 func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exists bool, err error) {
@@ -830,7 +830,7 @@ func (ch *Clickhouse) schemaExists(ctx context.Context, schemaName string) (exis
 		err = nil
 	}
 	exists = count > 0
-	return
+	return exists, err
 }
 
 /*
@@ -856,7 +856,7 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func getSortKeyTuple(sortKeyFields []string) string {
@@ -912,13 +912,13 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (ch *Clickhouse) DropTable(ctx context.Context, tableName string) (err error) {
 	sqlStatement := fmt.Sprintf(`DROP TABLE %q.%q %s `, ch.Warehouse.Namespace, tableName, ch.clusterClause())
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -954,7 +954,7 @@ func (ch *Clickhouse) AddColumns(ctx context.Context, tableName string, columnsI
 		logger.NewStringField(logfield.Query, query),
 	)
 	_, err = ch.DB.ExecContext(ctx, query)
-	return
+	return err
 }
 
 func (ch *Clickhouse) CreateSchema(ctx context.Context) error {
@@ -1084,19 +1084,19 @@ func (ch *Clickhouse) LoadUserTables(ctx context.Context) (errorMap map[string]e
 	err := ch.loadTable(ctx, warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
-		return
+		return errorMap
 	}
 
 	if len(ch.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 	err = ch.loadTable(ctx, warehouseutils.UsersTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable))
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
-	return
+	return errorMap
 }
 
 func (ch *Clickhouse) LoadTable(ctx context.Context, tableName string) (*types.LoadTableStats, error) {
@@ -1136,19 +1136,19 @@ func (ch *Clickhouse) Cleanup(_ context.Context) {
 }
 
 func (*Clickhouse) LoadIdentityMergeRulesTable(_ context.Context) (err error) {
-	return
+	return err
 }
 
 func (*Clickhouse) LoadIdentityMappingsTable(_ context.Context) (err error) {
-	return
+	return err
 }
 
 func (*Clickhouse) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
-	return
+	return err
 }
 
 func (*Clickhouse) IsEmpty(_ context.Context, _ model.Warehouse) (empty bool, err error) {
-	return
+	return empty, err
 }
 
 func (ch *Clickhouse) totalCountIntable(ctx context.Context, tableName string) (int64, error) {

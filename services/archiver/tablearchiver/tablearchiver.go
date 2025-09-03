@@ -115,14 +115,14 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 	file, err := os.Open(jsonArchiver.OutputPath)
 	if err != nil {
 		pkgLogger.Errorn(`[TableJSONArchiver]: Error opening local file dump`, obskit.Error(err))
-		return
+		return location, err
 	}
 	defer func() { _ = file.Close() }()
 
 	output, err := jsonArchiver.FileManager.Upload(context.TODO(), file)
 	if err != nil {
 		pkgLogger.Errorn(`[TableJSONArchiver]: Error uploading local file dump to object storage`, obskit.Error(err))
-		return
+		return location, err
 	}
 	location = output.Location
 	return location, nil

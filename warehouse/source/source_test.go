@@ -499,5 +499,5 @@ func getAll(t testing.TB, ctx context.Context, sourceRepo sourceRepo, runs ...jo
 
 		jobs = append(jobs, job)
 	}
-	return
+	return jobs
 }

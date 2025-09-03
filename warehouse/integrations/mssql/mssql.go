@@ -213,7 +213,7 @@ func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 }
 
 func (*MSSQL) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
-	return
+	return empty, err
 }
 
 func (ms *MSSQL) DeleteBy(ctx context.Context, tableNames []string, params warehouseutils.DeleteByParams) (err error) {
@@ -675,11 +675,11 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	_, identifyStagingTable, err := ms.loadTable(ctx, warehouseutils.IdentifiesTable, ms.uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
-		return
+		return errorMap
 	}
 
 	if len(ms.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
-		return
+		return errorMap
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
@@ -726,7 +726,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT * INTO %[1]s FROM (SELECT DISTINCT * FROM
@@ -746,14 +746,14 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 	if err != nil {
 		ms.logger.Errorn("MSSQL: Error Creating staging table for users", logger.NewStringField("statement", sqlStatement))
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	// BEGIN TRANSACTION
 	tx, err := ms.db.BeginTx(ctx, &sql.TxOptions{})
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	primaryKey := "id"
@@ -766,7 +766,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 		ms.logger.Errorn("MSSQL: Error deleting from main table for dedup", obskit.Error(err))
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.namespace, warehouseutils.UsersTable, ms.namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
@@ -778,7 +778,7 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 		ms.logger.Errorn("MSSQL: Error inserting into users table from staging table", obskit.Error(err))
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
 
 	err = tx.Commit()
@@ -786,9 +786,9 @@ func (ms *MSSQL) loadUserTables(ctx context.Context) (errorMap map[string]error)
 		ms.logger.Errorn("MSSQL: Error in transaction commit for users table", obskit.Error(err))
 		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
-		return
+		return errorMap
 	}
-	return
+	return errorMap
 }
 
 func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
@@ -801,7 +801,7 @@ func (ms *MSSQL) CreateSchema(ctx context.Context) (err error) {
 	if errors.Is(err, io.EOF) {
 		return nil
 	}
-	return
+	return err
 }
 
 func (ms *MSSQL) dropStagingTable(ctx context.Context, stagingTableName string) {
@@ -823,7 +823,7 @@ func (ms *MSSQL) createTable(ctx context.Context, name string, columns model.Tab
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
 		logger.NewStringField("sqlStatement", sqlStatement))
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (ms *MSSQL) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
@@ -838,7 +838,7 @@ func (ms *MSSQL) DropTable(ctx context.Context, tableName string) (err error) {
 		logger.NewStringField(logfield.DestinationID, ms.warehouse.Destination.ID),
 		logger.NewStringField("sqlStatement", sqlStatement))
 	_, err = ms.db.ExecContext(ctx, fmt.Sprintf(sqlStatement, ms.namespace, tableName))
-	return
+	return err
 }
 
 func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -884,7 +884,7 @@ func (ms *MSSQL) AddColumns(ctx context.Context, tableName string, columnsInfo [
 		logger.NewStringField("tableName", tableName),
 		logger.NewStringField("query", query))
 	_, err = ms.db.ExecContext(ctx, query)
-	return
+	return err
 }
 
 func (*MSSQL) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
@@ -1043,15 +1043,15 @@ func (ms *MSSQL) Cleanup(ctx context.Context) {
 }
 
 func (*MSSQL) LoadIdentityMergeRulesTable(context.Context) (err error) {
-	return
+	return err
 }
 
 func (*MSSQL) LoadIdentityMappingsTable(context.Context) (err error) {
-	return
+	return err
 }
 
 func (*MSSQL) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
-	return
+	return err
 }
 
 func (ms *MSSQL) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
@@ -1079,7 +1079,7 @@ func (ms *MSSQL) TestLoadTable(ctx context.Context, _, tableName string, payload
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = ms.db.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (ms *MSSQL) TestFetchSchema(ctx context.Context) error {

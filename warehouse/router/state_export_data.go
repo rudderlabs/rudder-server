@@ -195,15 +195,15 @@ func (job *UploadJob) exportUserTables(loadFilesTableMap map[tableNameT]bool) (e
 		var loadErrors []error
 		loadErrors, err = job.loadUserTables(loadFilesTableMap)
 		if err != nil {
-			return
+			return err
 		}
 
 		if len(loadErrors) > 0 {
 			err = misc.ConcatErrors(loadErrors)
-			return
+			return err
 		}
 	}
-	return
+	return err
 }
 
 func (job *UploadJob) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {
@@ -466,16 +466,16 @@ func (job *UploadJob) exportIdentities() (err error) {
 			var loadErrors []error
 			loadErrors, err = job.loadIdentityTables(false)
 			if err != nil {
-				return
+				return err
 			}
 
 			if len(loadErrors) > 0 {
 				err = misc.ConcatErrors(loadErrors)
-				return
+				return err
 			}
 		}
 	}
-	return
+	return err
 }
 
 func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadErrors []error, tableUploadErr error) {
@@ -618,10 +618,10 @@ func (job *UploadJob) exportRegularTables(specialTables []string, loadFilesTable
 
 	if len(loadErrors) > 0 {
 		err = misc.ConcatErrors(loadErrors)
-		return
+		return err
 	}
 
-	return
+	return err
 }
 
 func (job *UploadJob) loadAllTablesExcept(skipLoadForTables []string, loadFilesTableMap map[tableNameT]bool) []error {

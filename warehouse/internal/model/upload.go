@@ -140,7 +140,7 @@ func GetLastFailedStatus(timingsMap Timings) (status string) {
 			}
 		}
 	}
-	return // zero values
+	return status // zero values
 }
 
 type AlterTableResponse struct {

@@ -343,7 +343,7 @@ func (s *eventDropScenario) runRudderServer(ctx context.Context, t *testing.T, p
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
-	return
+	return err
 }
 
 func (s *eventDropScenario) sendEvents(url, writeKey, workspaceID, sourceID string) error {

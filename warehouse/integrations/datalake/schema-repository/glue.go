@@ -81,7 +81,7 @@ func (g *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
 		g.logger.Infon("Skipping database creation: database already exists", logger.NewStringField("database", g.Namespace))
 		err = nil
 	}
-	return
+	return err
 }
 
 func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
@@ -112,7 +112,7 @@ func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string
 			err = nil
 		}
 	}
-	return
+	return err
 }
 
 func (g *GlueSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -311,7 +311,7 @@ func (g *GlueSchemaRepository) partitionColumns() (columns []types.Column, err e
 	)
 
 	if layout = g.Warehouse.GetStringDestinationConfig(g.conf, model.TimeWindowLayoutSetting); layout == "" {
-		return
+		return columns, err
 	}
 
 	if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionWindowRegex, layout); err != nil {
@@ -319,7 +319,7 @@ func (g *GlueSchemaRepository) partitionColumns() (columns []types.Column, err e
 	}
 
 	columns = append(columns, types.Column{Name: aws.String(partitionGroups["name"]), Type: aws.String("date")})
-	return
+	return columns, err
 }
 
 func (g *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap model.TableSchema) *types.StorageDescriptor {

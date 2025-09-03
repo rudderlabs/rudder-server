@@ -38,7 +38,7 @@ func Query(c *cli.Context) (err error) {
 		var content []byte
 		content, err = os.ReadFile(c.String("file"))
 		if err != nil {
-			return
+			return err
 		}
 		sqlStmt = string(content)
 	}
@@ -53,7 +53,7 @@ func Query(c *cli.Context) (err error) {
 	}
 	err = client.GetUDSClient().Call("Warehouse.Query", input, &reply)
 	if err != nil {
-		return
+		return err
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
@@ -69,7 +69,7 @@ func Query(c *cli.Context) (err error) {
 		table.Append(v)
 	}
 	table.Render()
-	return
+	return err
 }
 
 func ConfigurationTest(c *cli.Context) (err error) {
@@ -81,7 +81,7 @@ func ConfigurationTest(c *cli.Context) (err error) {
 
 	err = client.GetUDSClient().Call("Warehouse.ConfigurationTest", input, &reply)
 	if err != nil {
-		return
+		return err
 	}
 
 	if reply.Valid {
@@ -89,5 +89,5 @@ func ConfigurationTest(c *cli.Context) (err error) {
 	} else {
 		fmt.Printf("Failed validation for destID: %s with err: %s \n", input.DestID, reply.Error)
 	}
-	return
+	return err
 }

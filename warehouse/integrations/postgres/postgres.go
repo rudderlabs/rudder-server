@@ -262,7 +262,7 @@ func ColumnsWithDataTypes(columns model.TableSchema, prefix string) string {
 }
 
 func (*Postgres) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
-	return
+	return empty, err
 }
 
 // DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
@@ -306,7 +306,7 @@ func (pg *Postgres) DeleteBy(ctx context.Context, tableNames []string, params wa
 func (pg *Postgres) schemaExists(ctx context.Context, _ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
 	err = pg.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
-	return
+	return exists, err
 }
 
 func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
@@ -323,7 +323,7 @@ func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
 		pg.logger.Infon("PG: Skipping creating schema since it already exists",
 			logger.NewStringField(logfield.Schema, pg.Namespace),
 		)
-		return
+		return err
 	}
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, pg.Namespace)
 	pg.logger.Infon("PG: Creating schema name in postgres for PG",
@@ -331,7 +331,7 @@ func (pg *Postgres) CreateSchema(ctx context.Context) (err error) {
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (pg *Postgres) createTable(ctx context.Context, name string, columns model.TableSchema) (err error) {
@@ -341,7 +341,7 @@ func (pg *Postgres) createTable(ctx context.Context, name string, columns model.
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (pg *Postgres) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
@@ -367,7 +367,7 @@ func (pg *Postgres) DropTable(ctx context.Context, tableName string) (err error)
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -379,7 +379,7 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	query = fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	if _, err = pg.DB.ExecContext(ctx, query); err != nil {
-		return
+		return err
 	}
 	pg.logger.Infon("PG: Updated search_path in postgres for PG",
 		logger.NewStringField(logfield.Schema, pg.Namespace),
@@ -407,7 +407,7 @@ func (pg *Postgres) AddColumns(ctx context.Context, tableName string, columnsInf
 		logger.NewStringField(logfield.Query, query),
 	)
 	_, err = pg.DB.ExecContext(ctx, query)
-	return
+	return err
 }
 
 func (*Postgres) AlterColumn(context.Context, string, string, string) (model.AlterTableResponse, error) {
@@ -502,15 +502,15 @@ func (pg *Postgres) Cleanup(context.Context) {
 }
 
 func (*Postgres) LoadIdentityMergeRulesTable(context.Context) (err error) {
-	return
+	return err
 }
 
 func (*Postgres) LoadIdentityMappingsTable(context.Context) (err error) {
-	return
+	return err
 }
 
 func (*Postgres) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
-	return
+	return err
 }
 
 func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (client.Client, error) {
@@ -543,7 +543,7 @@ func (pg *Postgres) TestLoadTable(ctx context.Context, _, tableName string, payl
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
 	_, err = pg.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (pg *Postgres) TestFetchSchema(ctx context.Context) error {

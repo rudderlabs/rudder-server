@@ -332,7 +332,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		_ = misc.SleepCtx(ctx, rt.reloadableConfig.failingJobsPenaltySleep.Load())
 	}
 
-	return
+	return pickupCount, limitsReached
 }
 
 func (rt *Handle) stopIteration(err error, destinationID string) bool {
