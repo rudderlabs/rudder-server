@@ -38,6 +38,9 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 			InitialInterval: conf.GetDuration("KeyDB.Dedup.RetryPolicy.InitialInterval", 100, time.Millisecond),
 			Multiplier:      conf.GetFloat64("KeyDB.Dedup.RetryPolicy.Multiplier", 1.5),
 			MaxInterval:     conf.GetDuration("KeyDB.Dedup.RetryPolicy.MaxInterval", 30, time.Second),
+			// No MaxElapsedTime, the client will retry forever.
+			// To detect issues monitor the client metrics:
+			// https://github.com/rudderlabs/keydb/blob/v0.4.2-alpha/client/client.go#L160
 		},
 	}, log.Child("keydb"))
 	if err != nil {
