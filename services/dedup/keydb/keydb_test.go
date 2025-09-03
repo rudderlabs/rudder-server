@@ -118,8 +118,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	c, err := keydbclient.NewClient(keydbclient.Config{
 		Addresses:       []string{address},
 		TotalHashRanges: 128,
-		RetryCount:      3,
-		RetryDelay:      time.Second,
+		RetryPolicy: keydbclient.RetryPolicy{
+			Disabled: true,
+		},
 	}, logger.NOP)
 	require.NoError(t, err)
 	size := c.ClusterSize()
@@ -138,11 +139,11 @@ func (m *mockedFilemanagerSession) Next() (fileObjects []*filemanager.FileInfo, 
 
 type mockedCloudStorage struct{}
 
-func (m *mockedCloudStorage) Download(ctx context.Context, output io.WriterAt, key string, opts ...filemanager.DownloadOption) error {
+func (m *mockedCloudStorage) Download(_ context.Context, _ io.WriterAt, _ string, _ ...filemanager.DownloadOption) error {
 	return nil
 }
 
-func (m *mockedCloudStorage) Delete(ctx context.Context, keys []string) error {
+func (m *mockedCloudStorage) Delete(_ context.Context, _ []string) error {
 	return nil
 }
 

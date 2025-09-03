@@ -33,9 +33,12 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 	c, err := client.NewClient(client.Config{
 		Addresses:       strings.Split(nodeAddresses, ","),
 		TotalHashRanges: uint32(conf.GetInt("KeyDB.Dedup.TotalHashRanges", 128)),
-		// TODO the client should support exponential backoff and circuit breakers
-		RetryCount: conf.GetInt("KeyDB.Dedup.RetryCount", 60),
-		RetryDelay: conf.GetDuration("KeyDB.Dedup.RetryDelay", 1, time.Second),
+		RetryPolicy: client.RetryPolicy{
+			Disabled:        conf.GetBool("KeyDB.Dedup.RetryPolicy.Disabled", false),
+			InitialInterval: conf.GetDuration("KeyDB.Dedup.RetryPolicy.InitialInterval", 100, time.Millisecond),
+			Multiplier:      conf.GetFloat64("KeyDB.Dedup.RetryPolicy.Multiplier", 1.5),
+			MaxInterval:     conf.GetDuration("KeyDB.Dedup.RetryPolicy.MaxInterval", 30, time.Second),
+		},
 	}, log.Child("keydb"))
 	if err != nil {
 		return nil, err
