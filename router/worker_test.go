@@ -41,16 +41,16 @@ import (
 )
 
 // createTestWorker creates a worker instance for testing with properly initialized StatsCache instances
-func createTestWorker(destType string) *worker {
+func createTestWorker(destType string, stat stats.Stats) *worker {
 	return &worker{
 		rt: &Handle{
 			destType: destType,
 		},
 		deliveryLatencyStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
-			return stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels.ToStatTags())
+			return stat.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels.ToStatTags())
 		}),
 		deliveryCountStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
-			return stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
+			return stat.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 		}),
 	}
 }
@@ -772,7 +772,9 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 
 	// Test caching behavior
 	t.Run("caching behavior", func(t *testing.T) {
-		worker := createTestWorker("TEST_DEST")
+		stat, err := memstats.New()
+		require.NoError(t, err)
+		worker := createTestWorker("TEST_DEST", stat)
 
 		labels := deliveryMetricLabels{
 			DestType:      "TEST_DEST",
@@ -877,24 +879,17 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a memstats store for testing
-			statsStore, err := memstats.New()
+			stat, err := memstats.New()
 			require.NoError(t, err)
 
 			// Create worker with mock router
-			worker := createTestWorker("TEST_DEST")
-
-			// Override the stats.Default to use our memstats store
-			originalStats := stats.Default
-			stats.Default = statsStore
-			defer func() {
-				stats.Default = originalStats
-			}()
+			worker := createTestWorker("TEST_DEST", stat)
 
 			// Call the method under test
 			worker.recordTransformerOutgoingRequestMetrics(tc.postParams, tc.destinationJob, tc.resp, tc.duration)
 
 			// Get all recorded metrics
-			allMetrics := statsStore.GetAll()
+			allMetrics := stat.GetAll()
 
 			if tc.shouldEmit {
 				// Verify both metrics were recorded by checking the memstats store
