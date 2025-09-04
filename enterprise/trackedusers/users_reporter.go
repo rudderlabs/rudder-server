@@ -264,10 +264,6 @@ func (u *UniqueUsersReporter) hllToString(hllStruct *hll.Hll) (string, error) {
 	return hex.EncodeToString(hllStruct.ToBytes()), nil
 }
 
-func combineUserIDAnonymousID(userID, anonymousID string) string {
-	return userID + ":" + anonymousID
-}
-
 func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
 	if idTypeHllMap == nil {
 		idTypeHllMap = make(map[string]*hll.Hll)
