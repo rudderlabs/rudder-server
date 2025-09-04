@@ -178,7 +178,7 @@ func TestHTTPApi(t *testing.T) {
 
 	ctx, stopTest := context.WithCancel(context.Background())
 
-	n := notifier.New(config.New(), logger.NOP, stats.NOP, workspaceIdentifier)
+	n := notifier.New(config.New(), logger.NOP, stats.NOP, workspaceIdentifier, true)
 	err = n.Setup(ctx, pgResource.DBDsn)
 	require.NoError(t, err)
 
