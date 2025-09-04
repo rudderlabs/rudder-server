@@ -311,6 +311,7 @@ func Test_Dedup_MirrorMode_Badger(t *testing.T) {
 
 	// Mock KeyDB to simulate failure, should fall back to badger only
 	conf.Set("KeyDB.Dedup.Addresses", "localhost:12345")
+	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)
 
 	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
@@ -342,6 +343,7 @@ func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
 	// Test mirrorKeyDB mode with KeyDB error
 	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
 	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
+	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)
 
 	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
@@ -601,8 +603,9 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	c, err := keydbclient.NewClient(keydbclient.Config{
 		Addresses:       []string{address},
 		TotalHashRanges: 128,
-		RetryCount:      3,
-		RetryDelay:      time.Second,
+		RetryPolicy: keydbclient.RetryPolicy{
+			Disabled: true,
+		},
 	}, logger.NOP)
 	require.NoError(t, err)
 	size := c.ClusterSize()
