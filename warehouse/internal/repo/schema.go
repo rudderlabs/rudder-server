@@ -9,9 +9,16 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stringify"
+
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -38,12 +45,13 @@ const whSchemaTableColumns = `
 type WHSchema struct {
 	*repo
 
+	log    logger.Logger
 	config struct {
 		enableTableLevelSchema config.ValueLoader[bool]
 	}
 }
 
-func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSchema {
+func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, log logger.Logger, opts ...Opt) *WHSchema {
 	r := &WHSchema{
 		repo: &repo{
 			db:           db,
@@ -51,6 +59,7 @@ func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, opts ...Opt) *WHSch
 			statsFactory: stats.NOP,
 			repoType:     whSchemaTableName,
 		},
+		log: log.Child("repo.wh_schemas"),
 	}
 	r.config.enableTableLevelSchema = conf.GetReloadableBoolVar(false, "Warehouse.enableTableLevelSchema")
 	for _, opt := range opts {
@@ -75,6 +84,13 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 		return fmt.Errorf("marshaling schema: %w", err)
 	}
 
+	log := sh.log.Withn(
+		obskit.SourceID(whSchema.SourceID),
+		obskit.Namespace(whSchema.Namespace),
+		obskit.DestinationID(whSchema.DestinationID),
+		obskit.DestinationType(whSchema.DestinationType),
+	)
+
 	err = sh.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		// update all schemas with the same destination_id and namespace but different source_id
 		// this is to ensure all the connections for a destination have the same schema copy
@@ -98,6 +114,10 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 			whSchema.SourceID,
 		)
 		if err != nil {
+			log.Errorn("Failed to update related schemas",
+				logger.NewStringField("schema", string(schemaPayload)),
+				obskit.Error(err),
+			)
 			return fmt.Errorf("updating related schemas: %w", err)
 		}
 
@@ -134,6 +154,27 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 
 		// If table-level schema is enabled, insert/update for each table
 		if sh.config.enableTableLevelSchema.Load() {
+			if len(whSchema.Schema) > 0 {
+				// Delete orphaned table-level schemas for the current source_id + destination_id + namespace
+				// This ensures consistency between raw schema and table-level schemas
+				_, err = tx.ExecContext(ctx, `
+				DELETE FROM `+whSchemaTableName+`
+				WHERE destination_id = $1
+				  AND namespace = $2
+				  AND table_name != ''
+				  AND table_name NOT IN (
+					SELECT unnest($3::text[])
+				  );
+			`,
+					whSchema.DestinationID,
+					whSchema.Namespace,
+					pq.Array(lo.Keys(whSchema.Schema)),
+				)
+				if err != nil {
+					return fmt.Errorf("deleting orphaned table-level schemas: %w", err)
+				}
+			}
+
 			for tableName, tableSchema := range whSchema.Schema {
 				tableSchemaPayload, err := jsonrs.Marshal(tableSchema)
 				if err != nil {
@@ -161,6 +202,12 @@ func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error 
 					tableName,
 				)
 				if err != nil {
+					log.Errorn("Failed to update table-level related schemas",
+						logger.NewStringField("tableName", tableName),
+						logger.NewStringField("schema", string(schemaPayload)),
+						logger.NewStringField("tableLevelSchema", string(tableSchemaPayload)),
+						obskit.Error(err),
+					)
 					return fmt.Errorf("updating other table-level schemas for table %s: %w", tableName, err)
 				}
 
@@ -237,6 +284,12 @@ func (sh *WHSchema) GetForNamespace(ctx context.Context, destID, namespace strin
 	}
 	diff := cmp.Diff(originalSchema.Schema, tableLevelSchemas)
 	if len(diff) > 0 {
+		sh.log.Warnn("Parent schema does not match",
+			obskit.Namespace(namespace),
+			obskit.DestinationID(destID),
+			logger.NewStringField("schema", stringify.Any(originalSchema.Schema)),
+			logger.NewStringField("tableLevelSchemas", stringify.Any(tableLevelSchemas)),
+		)
 		return model.WHSchema{}, fmt.Errorf("parent schema does not match: %s", diff)
 	}
 	return originalSchema, nil

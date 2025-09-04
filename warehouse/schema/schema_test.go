@@ -1400,7 +1400,7 @@ func TestSchema(t *testing.T) {
 
 	t.Run("SchemaOperationsAcrossConnections", func(t *testing.T) {
 		db, ctx := setupDB(t), context.Background()
-		schemaRepo := repo.NewWHSchemas(db, config.New())
+		schemaRepo := repo.NewWHSchemas(db, config.New(), logger.NOP)
 
 		// Create initial schema for connection 1
 		warehouse1 := model.Warehouse{
