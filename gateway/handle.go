@@ -1023,6 +1023,13 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotAction:           msg.Properties.BotAction,
 		}
 
+		if msg.Properties.SourceJobRunID != "" && src.SourceDefinition.Category == "" {
+			gw.logger.Warnn("event stream source found for event with sourceJobRunID",
+				logger.NewStringField("messageId", messageID),
+				logger.NewStringField("sourceJobRunId", msg.Properties.SourceJobRunID),
+				obskit.SourceID(msg.Properties.SourceID))
+		}
+
 		eventName := gjson.GetBytes(msg.Payload, "event").String()
 		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, msg.Properties.RequestType, eventName) {
 			jobsDBParams.IsEventBlocked = true
