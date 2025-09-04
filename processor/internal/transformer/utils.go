@@ -9,8 +9,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 const (
@@ -72,4 +74,20 @@ func GetEndpointFromURL(urlStr string) string {
 		return parsedURL.Host
 	}
 	return ""
+}
+
+// WithProcTransformReqTimeStat is a wrapper function to measure time taken by a request function as stats, capturing error rates as well, through a [success] label
+func WithProcTransformReqTimeStat(request func() error, stat stats.Stats, labels types.TransformerMetricLabels) func() error {
+	return func() error {
+		start := time.Now()
+		err := request()
+		tags := labels.ToStatsTag()
+		if err == nil {
+			tags["success"] = "true"
+		} else {
+			tags["success"] = "false"
+		}
+		stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, tags).SendTiming(time.Since(start))
+		return err
+	}
 }
