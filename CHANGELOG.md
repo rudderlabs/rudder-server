@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.58.1](https://github.com/rudderlabs/rudder-server/compare/v1.58.0...v1.58.1) (2025-09-04)
+
+
+### Bug Fixes
+
+* avoid running migrations for notifier from slaves ([#6303](https://github.com/rudderlabs/rudder-server/issues/6303)) ([f698749](https://github.com/rudderlabs/rudder-server/commit/f6987499c8a6fb3a61ebc8c787e4594712770cee))
+* remove unwanted table level schemas ([#6296](https://github.com/rudderlabs/rudder-server/issues/6296)) ([1b52d26](https://github.com/rudderlabs/rudder-server/commit/1b52d2698a44286fb32c1b5babb417c34e9966d8))
+
 ## [1.58.0](https://github.com/rudderlabs/rudder-server/compare/v1.57.0...v1.58.0) (2025-09-02)
 
 
