@@ -112,6 +112,7 @@ type Notifier struct {
 	batchIDGenerator    func() uuid.UUID
 	randGenerator       *rand.Rand
 	now                 func() time.Time
+	canRunMigrations    bool
 	background          struct {
 		group       *errgroup.Group
 		groupCtx    context.Context
@@ -152,12 +153,14 @@ func New(
 	log logger.Logger,
 	statsFactory stats.Stats,
 	workspaceIdentifier string,
+	canRunMigrations bool,
 ) *Notifier {
 	n := &Notifier{
 		conf:                conf,
 		logger:              log.Child("notifier"),
 		statsFactory:        statsFactory,
 		workspaceIdentifier: workspaceIdentifier,
+		canRunMigrations:    canRunMigrations,
 		batchIDGenerator:    misc.FastUUID,
 		randGenerator:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		now:                 time.Now,
@@ -280,8 +283,10 @@ func (n *Notifier) setupDatabase(
 		sqlmw.WithStats(n.statsFactory),
 	)
 
-	if err := n.setupTables(); err != nil {
-		return fmt.Errorf("could not setup tables: %w", err)
+	if n.canRunMigrations {
+		if err := n.setupTables(); err != nil {
+			return fmt.Errorf("could not setup tables: %w", err)
+		}
 	}
 	return nil
 }

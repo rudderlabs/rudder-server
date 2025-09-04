@@ -166,6 +166,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.logger,
 		a.statsFactory,
 		workspaceIdentifier,
+		mode.IsMaster(a.config.mode),
 	)
 	err := a.notifier.Setup(ctx, a.connectionString("notifier"))
 	if err != nil {
