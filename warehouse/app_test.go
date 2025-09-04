@@ -33,6 +33,7 @@ import (
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -105,6 +106,12 @@ func TestApp(t *testing.T) {
 			for _, subTC := range subTestCases {
 				t.Run(tc.name+" with "+subTC.name, func(t *testing.T) {
 					pgResource, err := postgres.Setup(pool, t)
+					require.NoError(t, err)
+
+					err = (&migrator.Migrator{
+						Handle:          pgResource.DB,
+						MigrationsTable: "pg_notifier_queue_migrations",
+					}).Migrate("pg_notifier_queue")
 					require.NoError(t, err)
 
 					webPort, err := kithelper.GetFreePort()
