@@ -10,7 +10,7 @@ import (
 )
 
 // NewPerEventTypeThrottler constructs a new static throttler for a specific event type of a destination
-func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter Limiter, config *config.Config, stat stats.Stats, log Logger) *throttler {
+func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter Limiter, c *config.Config, stat stats.Stats, log Logger) *throttler {
 	return &throttler{
 		destinationID: destinationID,
 		eventType:     eventType,
@@ -18,20 +18,20 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter
 
 		limiter: limiter,
 		log:     log,
-		limit: config.GetReloadableInt64Var(0, 1,
+		limit: c.GetReloadableInt64Var(0, 1,
 			fmt.Sprintf(`Router.throttler.%s.%s.%s.limit`, destType, destinationID, eventType),
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, eventType),
 			fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 		),
-		window: config.GetReloadableDurationVar(0, time.Second,
+		window: c.GetReloadableDurationVar(0, time.Second,
 			fmt.Sprintf(`Router.throttler.%s.%s.%s.timeWindow`, destType, destinationID, eventType),
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, destinationID),
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, eventType),
 			fmt.Sprintf(`Router.throttler.%s.timeWindow`, destType),
 		),
 		// static cost for per-event-type throttler: cost was originally introduced to address rate limit differences between different event types, so not needed when using per-event-type throttler
-		staticCost: true,
+		staticCost: config.SingleValueLoader(true),
 
 		onceEveryGauge: kitsync.NewOnceEvery(time.Second),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{

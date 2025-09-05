@@ -19,7 +19,7 @@ type throttler struct {
 	log        Logger
 	limit      config.ValueLoader[int64]
 	window     config.ValueLoader[time.Duration]
-	staticCost bool
+	staticCost config.ValueLoader[bool]
 
 	onceEveryGauge *kitsync.OnceEvery
 	rateLimitGauge stats.Gauge
@@ -66,7 +66,7 @@ func (t *throttler) updateGauges() {
 }
 
 func (t *throttler) costFn(input int64) int64 {
-	if t.staticCost {
+	if t.staticCost.Load() {
 		return 1
 	}
 	return input

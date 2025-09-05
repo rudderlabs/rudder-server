@@ -10,7 +10,7 @@ import (
 )
 
 // NewAllEventTypesThrottler constructs a new static throttler for all event types of a destination
-func NewAllEventTypesThrottler(destType, destinationID string, limiter Limiter, config *config.Config, stat stats.Stats, log Logger) *throttler {
+func NewAllEventTypesThrottler(destType, destinationID string, limiter Limiter, c *config.Config, stat stats.Stats, log Logger) *throttler {
 	return &throttler{
 		destinationID: destinationID,
 		eventType:     "all",
@@ -18,15 +18,15 @@ func NewAllEventTypesThrottler(destType, destinationID string, limiter Limiter, 
 
 		limiter: limiter,
 		log:     log,
-		limit: config.GetReloadableInt64Var(0, 1,
+		limit: c.GetReloadableInt64Var(0, 1,
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
 			fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 		),
-		window: config.GetReloadableDurationVar(0, time.Second,
+		window: c.GetReloadableDurationVar(0, time.Second,
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, destinationID),
 			fmt.Sprintf(`Router.throttler.%s.timeWindow`, destType),
 		),
-		staticCost: false,
+		staticCost: c.GetReloadableBoolVar(true, `Router.throttler.ignoreThrottlingCosts`),
 
 		onceEveryGauge: kitsync.NewOnceEvery(time.Second),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{
