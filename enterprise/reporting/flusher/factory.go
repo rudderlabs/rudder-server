@@ -56,7 +56,7 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
 		reportingURL := parsedURL.String()
 
-		a := aggregator.NewTrackedUsersInAppAggregator(db, stats, conf, module, log)
+		a := aggregator.NewTrackedUsersInAppAggregator(db, stats, conf, module)
 		f, err := NewFlusher(db, log, stats, conf, table, reportingURL, commonClient, a, module)
 		if err != nil {
 			return nil, fmt.Errorf("error creating flusher %w", err)
