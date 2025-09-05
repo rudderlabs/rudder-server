@@ -262,15 +262,6 @@ func (brt *Handle) updatePollStatusToDB(
 			brt.asyncSuccessfulJobCount.Count(len(statusList) - len(failedJobs) - len(abortedJobs))
 			brt.asyncFailedJobCount.Count(len(failedJobs))
 			brt.asyncAbortedJobCount.Count(len(abortedJobs))
-			if len(abortedJobs) > 0 {
-				err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-					return brt.errorDB.Store(ctx, abortedJobs)
-				}, brt.sendRetryStoreStats)
-				if err != nil {
-					brt.logger.Errorn("[Batch Router] Failed to store aborted jobs", obskit.DestinationType(brt.destType), obskit.Error(err))
-					panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
-				}
-			}
 			if err := brt.updateJobStatuses(ctx, destinationID, importingList, completedJobsList, statusList); err != nil {
 				brt.logger.Errorn("[Batch Router] Failed to update job status", obskit.DestinationType(brt.destType), obskit.Error(err))
 				return statusList, err

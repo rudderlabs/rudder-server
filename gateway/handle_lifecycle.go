@@ -70,7 +70,7 @@ This function will block until backend config is initially received.
 func (gw *Handle) Setup(
 	ctx context.Context,
 	config *config.Config, logger logger.Logger, stat stats.Stats,
-	application app.App, backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB,
+	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
 	rateLimiter throttler.Throttler, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService, transformerFeaturesService transformer.FeaturesService,
 	sourcehandle sourcedebugger.SourceDebugger, streamMsgValidator func(message *stream.Message) error,
@@ -83,7 +83,6 @@ func (gw *Handle) Setup(
 	gw.application = application
 	gw.backendConfig = backendConfig
 	gw.jobsDB = jobsDB
-	gw.errorDB = errorDB
 	gw.rateLimiter = rateLimiter
 	gw.versionHandler = versionHandler
 	gw.rsourcesService = rsourcesService
@@ -129,7 +128,6 @@ func (gw *Handle) Setup(
 	gw.conf.enableInternalBatchEnrichment = config.GetReloadableBoolVar(true, "gateway.enableBatchEnrichment")
 	// enable webhook v2 handler. disabled by default
 	gw.conf.webhookV2HandlerEnabled = config.GetBoolVar(false, "Gateway.webhookV2HandlerEnabled")
-	gw.conf.errorDBEnabled = config.GetReloadableBoolVar(false, "ErrorDB.enabled")
 	// Registering stats
 	gw.batchSizeStat = gw.stats.NewStat("gateway.batch_size", stats.HistogramType)
 	gw.requestSizeStat = gw.stats.NewStat("gateway.request_size", stats.HistogramType)

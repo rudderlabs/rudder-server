@@ -64,7 +64,6 @@ func TestDynamicCluster(t *testing.T) {
 	gatewayDB := &mockLifecycle{status: "", callCount: &callCount}
 	routerDB := &mockLifecycle{status: "", callCount: &callCount}
 	batchRouterDB := &mockLifecycle{status: "", callCount: &callCount}
-	errorDB := &mockLifecycle{status: "", callCount: &callCount}
 	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
 	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 	archDB := &mockLifecycle{status: "", callCount: &callCount}
@@ -78,7 +77,6 @@ func TestDynamicCluster(t *testing.T) {
 		GatewayDB:     gatewayDB,
 		RouterDB:      routerDB,
 		BatchRouterDB: batchRouterDB,
-		ErrorDB:       errorDB,
 		EventSchemaDB: eschDB,
 		ArchivalDB:    archDB,
 
@@ -113,7 +111,6 @@ func TestDynamicCluster(t *testing.T) {
 		require.Equal(t, "start", gatewayDB.status)
 		require.Equal(t, "start", routerDB.status)
 		require.Equal(t, "start", batchRouterDB.status)
-		require.Equal(t, "start", errorDB.status)
 
 		require.Equal(t, "start", processor.status)
 		require.Equal(t, "start", router.status)
@@ -122,13 +119,11 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, gatewayDB.callOrder < processor.callOrder)
 		require.True(t, routerDB.callOrder < processor.callOrder)
 		require.True(t, batchRouterDB.callOrder < processor.callOrder)
-		require.True(t, errorDB.callOrder < processor.callOrder)
 
 		t.Log("dbs should be started before router")
 		require.True(t, gatewayDB.callOrder < router.callOrder)
 		require.True(t, routerDB.callOrder < router.callOrder)
 		require.True(t, batchRouterDB.callOrder < router.callOrder)
-		require.True(t, errorDB.callOrder < router.callOrder)
 	})
 
 	t.Run("server should start in NORMAL mode by default when there is no instruction by scheduler", func(t *testing.T) {
@@ -138,10 +133,6 @@ func TestDynamicCluster(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			return routerDB.status == "start"
-		}, time.Second, time.Millisecond)
-
-		require.Eventually(t, func() bool {
-			return errorDB.status == "start"
 		}, time.Second, time.Millisecond)
 
 		require.Eventually(t, func() bool {
@@ -172,7 +163,6 @@ func TestDynamicCluster(t *testing.T) {
 		require.Equal(t, "stop", gatewayDB.status)
 		require.Equal(t, "stop", routerDB.status)
 		require.Equal(t, "stop", batchRouterDB.status)
-		require.Equal(t, "stop", errorDB.status)
 
 		require.Equal(t, "stop", processor.status)
 		require.Equal(t, "stop", router.status)
@@ -181,13 +171,11 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, gatewayDB.callOrder > processor.callOrder)
 		require.True(t, routerDB.callOrder > processor.callOrder)
 		require.True(t, batchRouterDB.callOrder > processor.callOrder)
-		require.True(t, errorDB.callOrder > processor.callOrder)
 
 		t.Log("dbs should be stopped after router")
 		require.True(t, gatewayDB.callOrder > router.callOrder)
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
-		require.True(t, errorDB.callOrder > router.callOrder)
 	})
 
 	t.Run("Shutdown from Normal", func(t *testing.T) {
@@ -197,7 +185,6 @@ func TestDynamicCluster(t *testing.T) {
 		require.Equal(t, "stop", gatewayDB.status)
 		require.Equal(t, "stop", routerDB.status)
 		require.Equal(t, "stop", batchRouterDB.status)
-		require.Equal(t, "stop", errorDB.status)
 
 		require.Equal(t, "stop", processor.status)
 		require.Equal(t, "stop", router.status)
@@ -206,12 +193,10 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, gatewayDB.callOrder > processor.callOrder)
 		require.True(t, routerDB.callOrder > processor.callOrder)
 		require.True(t, batchRouterDB.callOrder > processor.callOrder)
-		require.True(t, errorDB.callOrder > processor.callOrder)
 
 		t.Log("dbs should be stopped after router")
 		require.True(t, gatewayDB.callOrder > router.callOrder)
 		require.True(t, routerDB.callOrder > router.callOrder)
 		require.True(t, batchRouterDB.callOrder > router.callOrder)
-		require.True(t, errorDB.callOrder > router.callOrder)
 	})
 }

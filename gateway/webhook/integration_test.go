@@ -97,14 +97,6 @@ func TestIntegrationWebhook(t *testing.T) {
 	require.NoError(t, gatewayDB.Start())
 	defer gatewayDB.TearDown()
 
-	errorDB := jobsdb.NewForReadWrite(
-		"err",
-		jobsdb.WithDBHandle(p.DB),
-		jobsdb.WithStats(stats.NOP),
-	)
-	require.NoError(t, errorDB.Start())
-	defer errorDB.TearDown()
-
 	var (
 		rateLimiter        throttler.Throttler
 		versionHandler     func(w http.ResponseWriter, r *http.Request)
@@ -165,7 +157,7 @@ func TestIntegrationWebhook(t *testing.T) {
 		conf, logger, stat,
 		application,
 		backendconfigtest.NewStaticLibrary(bcs),
-		gatewayDB, errorDB,
+		gatewayDB,
 		rateLimiter, versionHandler, rsources.NewNoOpService(), transformerFeaturesService, sourcedebugger.NewNoOpService(),
 		streamMsgValidator,
 		gateway.WithNow(func() time.Time {
