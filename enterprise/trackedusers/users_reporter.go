@@ -58,13 +58,11 @@ type UsersReporter interface {
 }
 
 type UniqueUsersReporter struct {
-	log              logger.Logger
-	hllSettings      *hll.Settings
-	instanceID       string
-	now              func() time.Time
-	stats            stats.Stats
-	enabledV2Metrics config.ValueLoader[bool]
-	shadowV2Metrics  config.ValueLoader[bool]
+	log         logger.Logger
+	hllSettings *hll.Settings
+	instanceID  string
+	now         func() time.Time
+	stats       stats.Stats
 }
 
 func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.Stats) (*UniqueUsersReporter, error) {
@@ -81,8 +79,6 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 		now: func() time.Time {
 			return timeutil.Now()
 		},
-		enabledV2Metrics: config.GetReloadableBoolVar(false, "TrackedUsers.v2Metrics.enabled"),
-		shadowV2Metrics:  config.GetReloadableBoolVar(true, "TrackedUsers.v2Metrics.shadow"),
 	}, nil
 }
 
@@ -110,25 +106,6 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 }
 
 func (u *UniqueUsersReporter) GenerateReportsFromJobs(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool) []*UsersReport {
-	// force new metrics from 1st September 2025 onwards
-	v2MetricsActivationDate := time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
-	if !u.now().UTC().Before(v2MetricsActivationDate) {
-		return u.generateReportsFromJobs(jobs, sourceIDtoFilter, false)
-	}
-
-	if !u.enabledV2Metrics.Load() {
-		return u.generateReportsFromJobsLegacy(jobs, sourceIDtoFilter)
-	}
-
-	shadowEnabled := u.shadowV2Metrics.Load()
-	if shadowEnabled {
-		return append(u.generateReportsFromJobsLegacy(jobs, sourceIDtoFilter), u.generateReportsFromJobs(jobs, sourceIDtoFilter, shadowEnabled)...)
-	}
-
-	return u.generateReportsFromJobs(jobs, sourceIDtoFilter, shadowEnabled)
-}
-
-func (u *UniqueUsersReporter) generateReportsFromJobs(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool, shadowEnabled bool) []*UsersReport {
 	if len(jobs) == 0 {
 		return nil
 	}
@@ -191,94 +168,6 @@ func (u *UniqueUsersReporter) generateReportsFromJobs(jobs []*jobsdb.JobT, sourc
 			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
 			if previousID != "" && previousID != userID && previousID != anonymousID {
 				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeUserID)
-				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeIdentifiedAnonymousID)
-			}
-		}
-	}
-
-	if len(workspaceSourceUserIdTypeMap) == 0 {
-		u.log.Warnn("no data to collect", obskit.WorkspaceID(jobs[0].WorkspaceId))
-		return nil
-	}
-
-	reports := make([]*UsersReport, 0)
-	for workspaceID, sourceUserMp := range workspaceSourceUserIdTypeMap {
-		finalWorkspaceID := getNewID(workspaceID, shadowEnabled)
-		reports = append(reports, lo.MapToSlice(sourceUserMp, func(sourceID string, userIdTypeMap map[string]*hll.Hll) *UsersReport {
-			finalSourceID := getNewID(sourceID, shadowEnabled)
-			return &UsersReport{
-				WorkspaceID:              finalWorkspaceID,
-				SourceID:                 finalSourceID,
-				UserIDHll:                userIdTypeMap[idTypeUserID],
-				AnonymousIDHll:           userIdTypeMap[idTypeAnonymousID],
-				IdentifiedAnonymousIDHll: userIdTypeMap[idTypeIdentifiedAnonymousID],
-			}
-		})...)
-	}
-	return reports
-}
-
-func (u *UniqueUsersReporter) generateReportsFromJobsLegacy(jobs []*jobsdb.JobT, sourceIDtoFilter map[string]bool) []*UsersReport {
-	if len(jobs) == 0 {
-		return nil
-	}
-	workspaceSourceUserIdTypeMap := make(map[string]map[string]map[string]*hll.Hll)
-	for _, job := range jobs {
-		if job.WorkspaceId == "" {
-			u.log.Warnn("workspace_id not found in job", logger.NewIntField("jobId", job.JobID))
-			continue
-		}
-
-		sourceID := gjson.GetBytes(job.Parameters, "source_id").String()
-		if sourceID == "" {
-			u.log.Warnn("source_id not found in job parameters", obskit.WorkspaceID(job.WorkspaceId),
-				logger.NewIntField("jobId", job.JobID))
-			continue
-		}
-
-		if sourceIDtoFilter != nil && sourceIDtoFilter[sourceID] {
-			u.log.Debugn("source to filter", obskit.SourceID(sourceID))
-			continue
-		}
-		userID := gjson.GetBytes(job.EventPayload, "batch.0.userId").String()
-		anonymousID := gjson.GetBytes(job.EventPayload, "batch.0.anonymousId").String()
-		eventType := gjson.GetBytes(job.EventPayload, "batch.0.type").String()
-		if userID == "" && anonymousID == "" {
-			u.log.Warnn("both userID and anonymousID not found in job event payload", obskit.WorkspaceID(job.WorkspaceId),
-				logger.NewIntField("jobId", job.JobID))
-			continue
-		}
-
-		if workspaceSourceUserIdTypeMap[job.WorkspaceId] == nil {
-			workspaceSourceUserIdTypeMap[job.WorkspaceId] = make(map[string]map[string]*hll.Hll)
-		}
-
-		if userID != "" {
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], userID, idTypeUserID)
-		}
-
-		if anonymousID != "" && userID != anonymousID {
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], anonymousID, idTypeUserID)
-		}
-
-		if userID != "" && anonymousID != "" && userID != anonymousID {
-			combinedUserIDAnonymousID := combineUserIDAnonymousID(userID, anonymousID)
-			workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], combinedUserIDAnonymousID, idTypeIdentifiedAnonymousID)
-		}
-
-		// for alias event we will be adding previousId to identifiedAnonymousID hll,
-		// so for calculating unique users we do not double count the user
-		// e.g. we receive events
-		// {type:track, anonymousID: anon1}
-		// {type:track, userID: user1}
-		// {type:track, userID: user2}
-		// {type:identify, userID: user1, anonymousID: anon1}
-		// {type:alias, previousId: user2, userID: user1}
-		// userHLL: {user1, user2}, anonHLL: {anon1}, identifiedAnonHLL: {user1-anon1, user2}
-		// cardinality: len(userHLL)+len(anonHLL)-len(identifiedAnonHLL): 2+1-2 = 1
-		if eventType == eventTypeAlias {
-			previousID := gjson.GetBytes(job.EventPayload, "batch.0.previousId").String()
-			if previousID != "" && previousID != userID && previousID != anonymousID {
 				workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID] = u.recordIdentifier(workspaceSourceUserIdTypeMap[job.WorkspaceId][sourceID], previousID, idTypeIdentifiedAnonymousID)
 			}
 		}
@@ -375,10 +264,6 @@ func (u *UniqueUsersReporter) hllToString(hllStruct *hll.Hll) (string, error) {
 	return hex.EncodeToString(hllStruct.ToBytes()), nil
 }
 
-func combineUserIDAnonymousID(userID, anonymousID string) string {
-	return userID + ":" + anonymousID
-}
-
 func (u *UniqueUsersReporter) recordIdentifier(idTypeHllMap map[string]*hll.Hll, identifier, identifierType string) map[string]*hll.Hll {
 	if idTypeHllMap == nil {
 		idTypeHllMap = make(map[string]*hll.Hll)
@@ -416,11 +301,4 @@ func (u *UniqueUsersReporter) recordHllSizeStats(report *UsersReport) {
 			"identifier":   idTypeIdentifiedAnonymousID,
 		}).Observe(float64(len(report.IdentifiedAnonymousIDHll.ToBytes())))
 	}
-}
-
-func getNewID(id string, shadowEnabled bool) string {
-	if shadowEnabled {
-		return id + "-shadow"
-	}
-	return id
 }
