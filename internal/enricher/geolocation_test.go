@@ -477,7 +477,7 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	conf := config.New()
 	conf.Set("Geolocation.db.key", uploaded.ObjectName)
 	conf.Set("Geolocation.db.storage.bucket", minio.BucketName)
-	conf.Set("Geolocation.db.storage.endpoint", minio.Endpoint)
+	conf.Set("Geolocation.db.storage.endpoint", fmt.Sprintf("http://%s", minio.Endpoint))
 	conf.Set("Geolocation.db.storage.accessKey", minio.AccessKeyID)
 	conf.Set("Geolocation.db.storage.secretAccessKey", minio.AccessKeySecret)
 	conf.Set("Geolocation.db.storage.s3ForcePathStyle", true)
