@@ -83,12 +83,12 @@ func TestAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockLimiter, config, statsStore, logger.NOP)
 
-			limited, err := throttler.CheckLimitReached(context.Background(), 5)
+			limited, err := throttler.CheckLimitReached(context.Background(), 1)
 
 			require.NoError(t, err)
 			require.False(t, limited)
 			require.Len(t, mockLimiter.CallLog, 1)
-			require.Equal(t, int64(5), mockLimiter.CallLog[0].Cost)
+			require.Equal(t, int64(1), mockLimiter.CallLog[0].Cost)
 			require.Equal(t, int64(100), mockLimiter.CallLog[0].Rate)
 			require.Equal(t, int64(10), mockLimiter.CallLog[0].Window)
 			require.Equal(t, destinationID, mockLimiter.CallLog[0].Key)
