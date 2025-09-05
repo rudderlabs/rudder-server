@@ -547,6 +547,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 				JobState:   jobsdb.Aborted.State,
 			}
 			brt.updateJobStatus(&failedAsyncJobs, false, err, false)
+			brt.asyncAbortedJobCount.Increment()
 			continue
 		}
 

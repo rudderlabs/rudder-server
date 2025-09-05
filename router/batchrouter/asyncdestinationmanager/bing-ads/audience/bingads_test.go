@@ -73,7 +73,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
 				RequestId: misc.FastUUID().URN(),
@@ -140,7 +140,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("Error in getting bulk upload url"))
 
@@ -193,7 +193,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			ClientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &ClientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &ClientI, "")
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
 
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(nil, fmt.Errorf("unable to get bulk upload url, check your credentials"))
@@ -247,7 +247,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload1",
 				RequestId: misc.FastUUID().URN(),
@@ -312,7 +312,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
@@ -335,7 +335,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(nil, fmt.Errorf("failed to get bulk upload status:"))
 			pollInput := common.AsyncPoll{
@@ -354,7 +354,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
@@ -383,7 +383,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
@@ -410,7 +410,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId123").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(0),
@@ -437,7 +437,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			bingAdsService.EXPECT().GetBulkUploadStatus("dummyRequestId456").Return(&bingads_sdk.GetBulkUploadStatusResponse{
 				PercentComplete: int64(100),
@@ -483,7 +483,7 @@ var _ = Describe("Bing ads Audience", func() {
 			client := ts.Client()
 			modifiedURL := ts.URL // Use the test server URL
 			clientI := Client{client: client, URL: modifiedURL}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobParameters: modifiedURL,
@@ -533,7 +533,7 @@ var _ = Describe("Bing ads Audience", func() {
 			client := ts.Client()
 			modifiedURL := ts.URL // Use the test server URL
 			clientI := Client{client: client, URL: modifiedURL}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 
 			UploadStatsInput := common.GetUploadStatsInput{
 				FailedJobParameters: modifiedURL,
@@ -598,7 +598,7 @@ var _ = Describe("Bing ads Audience", func() {
 			ctrl := gomock.NewController(GinkgoT())
 			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
 			clientI := Client{}
-			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI)
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
 			bingAdsService.EXPECT().GetBulkUploadUrl().Return(&bingads_sdk.GetBulkUploadUrlResponse{
 				UploadUrl: "http://localhost/upload",
 				RequestId: misc.FastUUID().URN(),
@@ -653,6 +653,29 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 
 			Expect(received).To(Equal(expected))
+		})
+
+		It("Transform() Test -> successful transform when no initialization error", func() {
+			initBingads()
+			ctrl := gomock.NewController(GinkgoT())
+			defer ctrl.Finish()
+
+			bingAdsService := mockbulkservice.NewMockBulkServiceI(ctrl)
+			clientI := Client{}
+
+			// Test without initialization error
+			bulkUploader := NewBingAdsBulkUploader(logger.NOP, stats.NOP, "BING_ADS", bingAdsService, &clientI, "")
+
+			job := &jobsdb.JobT{
+				EventPayload: []byte(`{"body": {"JSON": "{\"key\": \"value\"}"}}`),
+			}
+
+			// Transform should succeed
+			result, err := bulkUploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(result).To(ContainSubstring("key"))
+			Expect(result).To(ContainSubstring("value"))
+			Expect(result).To(ContainSubstring("job_id"))
 		})
 	})
 })

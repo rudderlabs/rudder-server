@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"testing"
@@ -33,9 +34,13 @@ type mockAsyncDestinationManager struct {
 	uploadOutput common.AsyncUploadOutput
 	pollOutput   common.PollStatusResponse
 	statsOutput  common.GetUploadStatsResponse
+	shouldFail   bool
 }
 
 func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
+	if m.shouldFail {
+		return "", errors.New("mocked transform failure")
+	}
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
@@ -852,6 +857,73 @@ func TestAsyncDestinationManager(t *testing.T) {
 				},
 			})
 			require.Error(t, err)
+		})
+
+		t.Run("Transform Failure with Stats Increment", func(t *testing.T) {
+			destType := "TEST_DESTINATION"
+			destination := backendconfig.DestinationT{
+				ID:   "destinationID",
+				Name: destType,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: destType,
+				},
+			}
+			source := backendconfig.SourceT{
+				ID: "sourceID",
+				Destinations: []backendconfig.DestinationT{
+					destination,
+				},
+			}
+
+			batchRouter := defaultHandle(destType)
+			batchRouter.initAsyncDestinationStruct(&destination)
+
+			// Set up stats
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			batchRouter.asyncAbortedJobCount = statsStore.NewStat("async_aborted_job_count", stats.CountType)
+
+			mockCtrl := gomock.NewController(t)
+			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+			batchRouter.jobsDB = mockJobsDB
+			batchRouter.errorDB = mockErrJobsDB
+
+			// Create a mock manager that will fail Transform
+			mockManager := &mockAsyncDestinationManager{shouldFail: true}
+			batchRouter.asyncDestinationStruct[destination.ID].Manager = mockManager
+
+			job := &jobsdb.JobT{
+				JobID:        1,
+				EventPayload: []byte(`{"key": "value"}`),
+			}
+
+			// Mock the database calls
+			mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
+					_ = f(jobsdb.EmptyUpdateSafeTx())
+				}).Return(nil)
+			mockJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, customValFilters []string, _ interface{}) {
+					require.Equal(t, []string{destType}, customValFilters)
+					require.Len(t, statuses, 1)
+					require.Equal(t, job.JobID, statuses[0].JobID)
+					require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
+				}).Return(nil)
+
+			err2 := batchRouter.sendJobsToStorage(BatchedJobs{
+				Jobs: []*jobsdb.JobT{
+					job,
+				},
+				Connection: &Connection{
+					Source:      source,
+					Destination: destination,
+				},
+			})
+			require.NoError(t, err2)
+
+			// Verify that the stats were incremented
+			require.Equal(t, float64(1), statsStore.Get("async_aborted_job_count", stats.Tags{}).LastValue())
 		})
 	})
 }
