@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/glue/types"
 
-	awsutils "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	awsutils "github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -46,7 +46,7 @@ type GlueSchemaRepository struct {
 }
 
 func NewGlueSchemaRepository(conf *config.Config, logger logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
-	sessionConfig, err := utils.NewSimpleSessionConfigForDestinationV2(&wh.Destination, "glue")
+	sessionConfig, err := utils.NewSimpleSessionConfigForDestination(&wh.Destination, "glue")
 	if err != nil {
 		return nil, err
 	}

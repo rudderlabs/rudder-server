@@ -206,7 +206,7 @@ func TestCreateSessionWithRole(t *testing.T) {
 			IAMRoleARN:    someIAMRoleARN,
 			Timeout:       &httpTimeout,
 		}
-		awsSession, err := awsutil.CreateSession(&sessionConfig)
+		awsSession, err := awsutil.CreateAWSConfig(t.Context(), &sessionConfig)
 		assert.NotNil(t, err)
 		assert.Nil(t, awsSession)
 		assert.EqualError(t, err, "externalID is required for IAM role")
@@ -219,7 +219,7 @@ func TestCreateSessionWithRole(t *testing.T) {
 			IAMRoleARN:    someIAMRoleARN,
 			Timeout:       &httpTimeout,
 		}
-		awsSession, err := awsutil.CreateSession(&sessionConfig)
+		awsSession, err := awsutil.CreateAWSConfig(t.Context(), &sessionConfig)
 		assert.Nil(t, err)
 		assert.NotNil(t, awsSession)
 	})
@@ -232,49 +232,8 @@ func TestCreateSessionWithRole(t *testing.T) {
 			IAMRoleARN:    someIAMRoleARN,
 			Timeout:       &httpTimeout,
 		}
-		awsSession, err := awsutil.CreateSession(&sessionConfig)
+		awsSession, err := awsutil.CreateAWSConfig(t.Context(), &sessionConfig)
 		assert.Nil(t, err)
 		assert.NotNil(t, awsSession)
 	})
-}
-
-func TestCreateSessionWithAccessKeys(t *testing.T) {
-	sessionConfig := awsutil.SessionConfig{
-		Region:      destinationWithAccessKey.Config["region"].(string),
-		AccessKeyID: destinationWithAccessKey.Config["accessKeyID"].(string),
-		AccessKey:   destinationWithAccessKey.Config["accessKey"].(string),
-		Timeout:     &httpTimeout,
-	}
-	awsSession, err := awsutil.CreateSession(&sessionConfig)
-	assert.Nil(t, err)
-	assert.NotNil(t, awsSession)
-	assert.NotNil(t, awsSession.Config.Credentials)
-	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
-	assert.Equal(t, *sessionConfig.Timeout, awsSession.Config.HTTPClient.Timeout)
-}
-
-func TestCreateSessionWithoutAccessKeysOrRole(t *testing.T) {
-	sessionConfig := awsutil.SessionConfig{
-		Region:  "someRegion",
-		Timeout: &httpTimeout,
-	}
-	awsSession, err := awsutil.CreateSession(&sessionConfig)
-	assert.Nil(t, err)
-	assert.NotNil(t, awsSession)
-	assert.NotNil(t, awsSession.Config.Credentials)
-	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
-	assert.Equal(t, *sessionConfig.Timeout, awsSession.Config.HTTPClient.Timeout)
-}
-
-func TestCreateSessionWithoutTimeout(t *testing.T) {
-	sessionConfig := awsutil.SessionConfig{
-		Region: "someRegion",
-	}
-	awsSession, err := awsutil.CreateSession(&sessionConfig)
-	assert.Nil(t, err)
-	assert.NotNil(t, awsSession)
-	assert.NotNil(t, awsSession.Config.Credentials)
-	// Http client created with defaults
-	assert.NotNil(t, awsSession.Config.HTTPClient)
-	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
 }
