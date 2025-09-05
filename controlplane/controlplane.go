@@ -39,7 +39,10 @@ func (cm *ConnectionManager) establishConnection() (*ConnHandler, error) {
 	}
 
 	grpcServer := grpc.NewServer(cm.Options...)
-	service := &authService{authInfo: cm.AuthInfo}
+	service := &authService{
+		authInfo:          cm.AuthInfo,
+		connectionManager: cm,
+	}
 	proto.RegisterDPAuthServiceServer(grpcServer, service)
 	cn := &ConnHandler{
 		GRPCServer: grpcServer,

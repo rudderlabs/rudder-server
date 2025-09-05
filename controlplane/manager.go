@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	proto "github.com/rudderlabs/rudder-server/proto/common"
 )
 
 type ConnectionManager struct {
@@ -19,6 +22,9 @@ type ConnectionManager struct {
 	url             string
 	connHandler     *ConnHandler
 	Options         []grpc.ServerOption
+
+	Config                   *config.Config
+	duplicateBackoffInterval time.Duration
 }
 
 type LoggerI interface {
@@ -30,7 +36,27 @@ type LoggerI interface {
 	Errorf(format string, a ...interface{})
 }
 
-const defaultRetryInterval time.Duration = time.Second
+const (
+	defaultRetryInterval            time.Duration = time.Second
+	defaultDuplicateBackoffInterval time.Duration = 5 * time.Minute
+)
+
+// SetConfig sets the config and loads configuration values for the ConnectionManager
+func (cm *ConnectionManager) SetConfig(conf *config.Config) {
+	cm.Config = conf
+	cm.loadConfigValues()
+}
+
+// loadConfigValues loads configuration values from config
+func (cm *ConnectionManager) loadConfigValues() {
+	if cm.Config != nil {
+		cm.RetryInterval = cm.Config.GetDuration("CPRouter.retryInterval", 1, time.Second)
+		cm.duplicateBackoffInterval = cm.Config.GetDuration("CPRouter.duplicateConnectionBackoff", 300, time.Second)
+	} else {
+		cm.RetryInterval = defaultRetryInterval
+		cm.duplicateBackoffInterval = defaultDuplicateBackoffInterval
+	}
+}
 
 func (cm *ConnectionManager) Apply(url string, active bool) {
 	if url == "" {
@@ -75,7 +101,8 @@ func (cm *ConnectionManager) maintainConnection() {
 			}
 		}
 
-		time.Sleep(cm.retryInterval())
+		time.Sleep(cm.getRetryInterval())
+		cm.resetRetryInterval()
 	}
 }
 
@@ -91,10 +118,47 @@ func (cm *ConnectionManager) closeConnection() error {
 	return nil
 }
 
-func (cm *ConnectionManager) retryInterval() time.Duration {
+func (cm *ConnectionManager) getRetryInterval() time.Duration {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
 	if cm.RetryInterval == 0 {
 		return defaultRetryInterval
 	}
-
 	return cm.RetryInterval
+}
+
+func (cm *ConnectionManager) handleDuplicateConnectionNotification(req *proto.DuplicateConnectionRequest) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	cm.Logger.Warnf("Received duplicate connection notification. ConnectionID: %s, Service: %s, Existing: %s, Rejected: %s",
+		req.ConnectionID, req.Service, req.ExistingInstanceID, req.RejectedInstanceID)
+
+	// If this is our instance being rejected, we should back off longer
+	if req.RejectedInstanceID == cm.AuthInfo.InstanceID {
+		cm.Logger.Infof("This instance was rejected due to duplicate connection. Will use extended backoff.")
+		// Set a flag or modify retry behavior
+		cm.setDuplicateConnectionBackoff()
+	}
+}
+
+func (cm *ConnectionManager) setDuplicateConnectionBackoff() {
+	// Extend the retry interval for duplicate connections using configurable value
+	cm.RetryInterval = cm.getDuplicateBackoffInterval()
+}
+
+func (cm *ConnectionManager) resetRetryInterval() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// Reset to configured default or reload from config
+	cm.loadConfigValues()
+}
+
+func (cm *ConnectionManager) getDuplicateBackoffInterval() time.Duration {
+	if cm.duplicateBackoffInterval == 0 {
+		return defaultDuplicateBackoffInterval
+	}
+	return cm.duplicateBackoffInterval
 }

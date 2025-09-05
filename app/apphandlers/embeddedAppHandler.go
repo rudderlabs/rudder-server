@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/bench"
 	"github.com/rudderlabs/rudder-server/processor"
+	processorapi "github.com/rudderlabs/rudder-server/processor/api"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
@@ -52,6 +53,7 @@ type embeddedApp struct {
 	app            app.App
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
+	grpcServer     *processorapi.ProcessorGRPCServer
 	config         struct {
 		procErrorDSLimit config.ValueLoader[int]
 		eschDSLimit      config.ValueLoader[int]
@@ -297,6 +299,12 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		pendingEventsRegistry,
 		processor.WithAdaptiveLimit(adaptiveLimit),
 	)
+
+	// Initialize processor gRPC server
+	a.grpcServer, err = processorapi.NewProcessorGRPCServer(config, a.log, statsFactory)
+	if err != nil {
+		return fmt.Errorf("cannot create processor grpc server: %w", err)
+	}
 	routerLogger := logger.NewLogger().Child("router")
 	throttlerFactory, err := rtThrottler.NewFactory(config, statsFactory, routerLogger.Child("throttler"))
 	if err != nil {
@@ -419,5 +427,11 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			return b.Run(ctx)
 		})
 	}
+
+	g.Go(func() error {
+		a.grpcServer.Start(ctx)
+		return nil
+	})
+
 	return g.Wait()
 }

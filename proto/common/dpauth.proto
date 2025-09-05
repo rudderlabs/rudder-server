@@ -7,6 +7,7 @@ option go_package = ".;proto";
 service DPAuthService{
   rpc GetConnectionToken( GetConnectionTokenRequest ) returns ( GetConnectionTokenResponse );
   rpc GetWorkspaceToken( GetWorkspaceTokenRequest ) returns ( GetWorkspaceTokenResponse );
+  rpc NotifyDuplicateConnection( DuplicateConnectionRequest ) returns ( DuplicateConnectionResponse );
 }
 
 message GetConnectionTokenRequest {
@@ -38,4 +39,15 @@ message GetWorkspaceTokenResponse {
   string workspaceToken = 1;
   string service = 2;
   string instanceID = 3;
+}
+
+message DuplicateConnectionRequest {
+  string connectionID = 1;
+  string service = 2;
+  string existingInstanceID = 3;
+  string rejectedInstanceID = 4;
+}
+
+message DuplicateConnectionResponse {
+  bool acknowledged = 1;
 }

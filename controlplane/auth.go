@@ -15,7 +15,8 @@ type AuthInfo struct {
 }
 
 type authService struct {
-	authInfo AuthInfo
+	authInfo          AuthInfo
+	connectionManager *ConnectionManager
 	proto.UnimplementedDPAuthServiceServer
 }
 
@@ -47,5 +48,16 @@ func (a *authService) GetWorkspaceToken(_ context.Context, _ *proto.GetWorkspace
 		WorkspaceToken: a.authInfo.ConnectionToken,
 		Service:        a.authInfo.Service,
 		InstanceID:     a.authInfo.InstanceID,
+	}, nil
+}
+
+func (a *authService) NotifyDuplicateConnection(_ context.Context, req *proto.DuplicateConnectionRequest) (*proto.DuplicateConnectionResponse, error) {
+	// Log the duplicate connection notification
+	if a.connectionManager != nil {
+		a.connectionManager.handleDuplicateConnectionNotification(req)
+	}
+
+	return &proto.DuplicateConnectionResponse{
+		Acknowledged: true,
 	}, nil
 }
