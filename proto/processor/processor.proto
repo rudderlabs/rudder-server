@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = ".;proto";
+
+// Processor service for processing and testing operations
+service Processor {}
+
