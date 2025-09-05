@@ -110,7 +110,7 @@ func newWorker(
 	// Increasing maxConcurrentStagingFiles config would also require increasing the memory requests for the slave pods
 	s.config.maxConcurrentStagingFiles = s.conf.GetReloadableIntVar(10, 1, "Warehouse.maxStagingFilesInUploadV2Job")
 	s.config.claimRefreshInterval = s.conf.GetReloadableDurationVar(30, time.Second, "Warehouse.claimRefreshIntervalInS")
-	s.config.enableNotifierHeartbeat = s.conf.GetReloadableBoolVar(false, "Warehouse.enableNotifierHeartbeat")
+	s.config.enableNotifierHeartbeat = s.conf.GetReloadableBoolVar(true, "Warehouse.enableNotifierHeartbeat")
 
 	tags := stats.Tags{
 		"module":   "warehouse",
