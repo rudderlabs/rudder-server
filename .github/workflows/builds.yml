@@ -94,7 +94,7 @@ jobs:
     strategy:
       matrix:
         build-config:
-          - os: [ self-hosted, Linux, ARM64 ]
+          - os: [ self-hosted, Linux, ARM64, ubuntu-22 ]
             tags: ${{needs.docker-oss-meta.outputs.arm64_tags}}
             labels: ${{needs.docker-oss-meta.outputs.arm64_labels}}
             platform: linux/arm64
@@ -167,7 +167,7 @@ jobs:
     strategy:
       matrix:
         build-config:
-          - os: [ self-hosted, Linux, ARM64 ]
+          - os: [ self-hosted, Linux, ARM64, ubuntu-22 ]
             tags: ${{needs.docker-ent-meta.outputs.arm64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.arm64_labels}}
             platform: linux/arm64
@@ -243,7 +243,7 @@ jobs:
     strategy:
       matrix:
         build-config:
-          - os: [ self-hosted, Linux, ARM64 ]
+          - os: [ self-hosted, Linux, ARM64, ubuntu-22 ]
             tags: ${{needs.docker-sbsvc-meta.outputs.arm64_tags}}
             labels: ${{needs.docker-sbsvc-meta.outputs.arm64_labels}}
             platform: linux/arm64
