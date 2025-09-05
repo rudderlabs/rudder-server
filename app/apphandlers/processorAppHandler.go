@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proc "github.com/rudderlabs/rudder-server/processor"
+	processorapi "github.com/rudderlabs/rudder-server/processor/api"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
@@ -47,6 +48,7 @@ type processorApp struct {
 	app            app.App
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
+	grpcServer     *processorapi.ProcessorGRPCServer
 	config         struct {
 		procErrorDSLimit config.ValueLoader[int]
 		eschDSLimit      config.ValueLoader[int]
@@ -149,6 +151,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
 		FeaturesRetryMaxAttempts: 10,
 	})
+
+	// Initialize processor gRPC server
+	a.grpcServer, err = processorapi.NewProcessorGRPCServer(config, a.log, statsFactory)
+	if err != nil {
+		return fmt.Errorf("cannot create processor grpc server: %w", err)
+	}
 
 	var dbPool *sql.DB
 	if config.GetBoolVar(true, "db.processor.pool.shared", "db.pool.shared") {
@@ -371,6 +379,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		replicationLagStat := statsFactory.NewStat("rsources_log_replication_lag", stats.GaugeType)
 		replicationSlotStat := statsFactory.NewStat("rsources_log_replication_slot", stats.GaugeType)
 		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
+		return nil
+	})
+
+	// Start processor gRPC server
+	g.Go(func() error {
+		a.grpcServer.Start(ctx)
 		return nil
 	})
 
