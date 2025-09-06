@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -31,7 +32,7 @@ func TestTransformer_CompareResponsesAndUpload(t *testing.T) {
 	c := config.New()
 	c.Set("Warehouse.Transformer.Sampling.maxLoggedEvents", maxLoggedEvents)
 	c.Set("Warehouse.Transformer.Sampling.Bucket", minioResource.BucketName)
-	c.Set("Warehouse.Transformer.Sampling.Endpoint", minioResource.Endpoint)
+	c.Set("Warehouse.Transformer.Sampling.Endpoint", fmt.Sprintf("http://%s", minioResource.Endpoint))
 	c.Set("Warehouse.Transformer.Sampling.AccessKey", minioResource.AccessKeyID)
 	c.Set("Warehouse.Transformer.Sampling.SecretAccessKey", minioResource.AccessKeySecret)
 	c.Set("Warehouse.Transformer.Sampling.S3ForcePathStyle", true)

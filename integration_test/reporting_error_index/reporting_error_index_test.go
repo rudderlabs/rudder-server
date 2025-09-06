@@ -759,7 +759,7 @@ func runRudderServer(
 	config.Set("Gateway.enableSuppressUserFeature", false)
 
 	config.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
-	config.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
+	config.Set("ErrorIndex.storage.Endpoint", fmt.Sprintf("http://%s", minioResource.Endpoint))
 	config.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKeyID)
 	config.Set("ErrorIndex.storage.SecretAccessKey", minioResource.AccessKeySecret)
 	config.Set("ErrorIndex.storage.S3ForcePathStyle", true)

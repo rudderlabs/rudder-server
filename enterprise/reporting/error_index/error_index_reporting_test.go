@@ -2,6 +2,7 @@ package error_index
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -536,7 +537,7 @@ func TestErrorIndexReporter(t *testing.T) {
 
 		c := config.New()
 		c.Set("ErrorIndex.storage.Bucket", minioResource.BucketName)
-		c.Set("ErrorIndex.storage.Endpoint", minioResource.Endpoint)
+		c.Set("ErrorIndex.storage.Endpoint", fmt.Sprintf("http://%s", minioResource.Endpoint))
 		c.Set("ErrorIndex.storage.AccessKey", minioResource.AccessKeyID)
 		c.Set("ErrorIndex.storage.SecretAccessKey", minioResource.AccessKeySecret)
 		c.Set("ErrorIndex.storage.S3ForcePathStyle", true)

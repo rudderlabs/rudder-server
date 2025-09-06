@@ -2709,7 +2709,7 @@ func TestLeakyUploader(t *testing.T) {
 		require.NoError(t, err)
 
 		// create a test gateway with leaky uploader enabled
-		gw, cleanupFn := createTestGatewayWithLeakyUploader(t, minioContainer.Endpoint, minioContainer.AccessKeyID, minioContainer.AccessKeySecret)
+		gw, cleanupFn := createTestGatewayWithLeakyUploader(t, fmt.Sprintf("http://%s", minioContainer.Endpoint), minioContainer.AccessKeyID, minioContainer.AccessKeySecret)
 		t.Cleanup(cleanupFn)
 
 		// Prepare invalid JSON payload

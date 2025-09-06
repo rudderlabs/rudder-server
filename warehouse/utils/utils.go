@@ -28,7 +28,6 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
-	"github.com/rudderlabs/rudder-go-kit/awsutil_v2"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -636,22 +635,8 @@ func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName
 	}, nil
 }
 
-func CreateAWSSessionConfigV2(destination *backendconfig.DestinationT, serviceName string) (*awsutil_v2.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
-		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
-		return awsutils.NewSimpleSessionConfigForDestinationV2(destination, serviceName)
-	}
-	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
-	return &awsutil_v2.SessionConfig{
-		AccessKeyID: accessKeyID,
-		AccessKey:   accessKey,
-		Service:     serviceName,
-		Region:      misc.GetRegionHint(),
-	}, nil
-}
-
 func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
-	sessionConfig, err := CreateAWSSessionConfigV2(destination, s3v2.ServiceID)
+	sessionConfig, err := CreateAWSSessionConfig(destination, s3v2.ServiceID)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -666,14 +651,14 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 			return "", "", "", fmt.Errorf("bucketName not found in destination config")
 		}
 
-		region, err := awsutil_v2.GetRegionFromBucket(context.Background(), bucketName, misc.GetRegionHint())
+		region, err := awsutil.GetRegionFromBucket(context.Background(), bucketName, misc.GetRegionHint())
 		if err != nil {
 			return "", "", "", fmt.Errorf("failed to fetch AWS region for bucket: %w", err)
 		}
 		sessionConfig.Region = region
 	}
 
-	awsConfig, err := awsutil_v2.CreateAWSConfig(context.Background(), sessionConfig)
+	awsConfig, err := awsutil.CreateAWSConfig(context.Background(), sessionConfig)
 	if err != nil {
 		return "", "", "", err
 	}

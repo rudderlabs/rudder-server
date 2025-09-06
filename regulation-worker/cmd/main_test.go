@@ -77,7 +77,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 		"accessKey":        minioResource.AccessKeySecret,
 		"enableSSE":        false,
 		"prefix":           "some-prefix",
-		"endPoint":         minioResource.Endpoint,
+		"endPoint":         fmt.Sprintf("http://%s", minioResource.Endpoint),
 		"s3ForcePathStyle": true,
 		"disableSSL":       true,
 		"region":           minioResource.Region,
