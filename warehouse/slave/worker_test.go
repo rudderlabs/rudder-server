@@ -71,7 +71,7 @@ func TestSlaveWorker(t *testing.T) {
 		"accessKeyID":      minioResource.AccessKeyID,
 		"accessKey":        minioResource.AccessKeyID,
 		"secretAccessKey":  minioResource.AccessKeySecret,
-		"endPoint":         fmt.Sprintf("http://%s", minioResource.Endpoint),
+		"endPoint":         minioResource.Endpoint,
 		"forcePathStyle":   true,
 		"s3ForcePathStyle": true,
 		"disableSSL":       true,
