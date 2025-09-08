@@ -238,8 +238,8 @@ func Test_RouterThrottling(t *testing.T) {
 		}
 	}
 
-	verifyBucket(webhook1.buckets, noOfEvents, 20, 2)
-	verifyBucket(webhook2.buckets, noOfEvents, 50, 2)
+	verifyBucket(webhook1.buckets, noOfEvents, 20, 1)
+	verifyBucket(webhook2.buckets, noOfEvents, 50, 1)
 }
 
 func requireLengthInRange(t *testing.T, x interface{}, min, max int) {
