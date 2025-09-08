@@ -9,5 +9,5 @@ import (
 // ProcessorStage interface defines a stage in the processing pipeline
 type ProcessorStage interface {
 	// Process takes input events and returns output events
-	Process(ctx context.Context, events []*shared.EventWithMetadata) ([]*shared.EventWithMetadata, error)
+	Process(ctx context.Context, events []*shared.InputEvent) ([]*shared.OutputEvent, error)
 }

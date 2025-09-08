@@ -23,10 +23,17 @@ type Metadata struct {
 	EventName string
 }
 
-type EventWithMetadata struct {
+type InputEvent struct {
 	Event     map[string]interface{}
 	MessageID string
 	Metadata  *Metadata
+}
+
+type OutputEvent struct {
+	Event         map[string]interface{}
+	MessageID     string
+	Metadata      *Metadata
+	StatusDetails *StatusDetails
 }
 
 type Mapping struct {

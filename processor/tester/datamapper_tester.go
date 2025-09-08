@@ -19,7 +19,7 @@ func NewDataMapperTester() *DataMapperTester {
 
 // Test implements the ProcessorStageTester interface for data mapper testing
 // The config parameter should contain JSON representation of DataMappings
-func (t *DataMapperTester) Test(events []*shared.EventWithMetadata, config json.RawMessage) ([]*shared.EventWithMetadata, error) {
+func (t *DataMapperTester) Test(events []*shared.InputEvent, config json.RawMessage) ([]*shared.OutputEvent, error) {
 	// Parse the configuration
 	var dataMappings backendconfig.DataMappings
 	if err := json.Unmarshal(config, &dataMappings); err != nil {

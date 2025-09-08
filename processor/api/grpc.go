@@ -122,11 +122,11 @@ func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 
 // TestDataMapper implements the TestDataMapper RPC method
 func (s *ProcessorGRPCServer) TestDataMapper(ctx context.Context, req *proto.TestDataMapperRequest) (*proto.TestDataMapperResponse, error) {
-	s.logger.Info("Processing data mapper test request")
+	s.logger.Infon("Processing data mapper test request")
 
 	// Extract events from proto Struct messages
 	protoEvents := req.GetEvents()
-	eventList := make([]*shared.EventWithMetadata, len(protoEvents))
+	eventList := make([]*shared.InputEvent, len(protoEvents))
 
 	for i, protoEvent := range protoEvents {
 		// Convert structpb.Struct to map[string]interface{}
@@ -137,7 +137,7 @@ func (s *ProcessorGRPCServer) TestDataMapper(ctx context.Context, req *proto.Tes
 			eventData = make(map[string]interface{})
 		}
 
-		eventList[i] = &shared.EventWithMetadata{
+		eventList[i] = &shared.InputEvent{
 			Event: eventData,
 		}
 	}
