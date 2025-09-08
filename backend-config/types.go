@@ -186,6 +186,19 @@ type Settings struct {
 	DataRetention     DataRetention `json:"dataRetention"`
 	EventAuditEnabled bool          `json:"eventAuditEnabled"`
 	EventBlocking     EventBlocking `json:"eventBlocking"`
+	DataMappings      DataMappings  `json:"dataMappings"`
+}
+
+type DataMappings struct {
+	Events     []Mapping `json:"events"`
+	Properties []Mapping `json:"properties"`
+}
+
+type Mapping struct {
+	ID      string `json:"id"`
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Enabled bool   `json:"enabled"`
 }
 
 type DataRetention struct {

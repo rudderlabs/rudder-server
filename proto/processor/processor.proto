@@ -2,8 +2,36 @@ syntax = "proto3";
 
 package proto;
 
+import "google/protobuf/struct.proto";
+
 option go_package = ".;proto";
 
 // Processor service for processing and testing operations
-service Processor {}
+service Processor {
+  rpc TestDataMapper(TestDataMapperRequest) returns (TestDataMapperResponse);
+}
 
+message TestDataMapperRequest {
+  DataMappings dataMappings = 1;
+  repeated google.protobuf.Struct events = 2;
+}
+
+message TestDataMapperResponse {
+  TestDataMapperData data = 1;
+}
+
+message TestDataMapperData {
+  repeated google.protobuf.Struct transformedEvents = 1;
+}
+
+message DataMappings {
+  repeated Mapping events = 1;
+  repeated Mapping properties = 2;
+}
+
+message Mapping {
+  string id = 1;
+  string from = 2;
+  string to = 3;
+  bool enabled = 4;
+}

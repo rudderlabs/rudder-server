@@ -7,7 +7,10 @@
 package proto
 
 import (
+	context "context"
 	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -15,12 +18,15 @@ import (
 // Requires gRPC-Go v1.32.0 or later.
 const _ = grpc.SupportPackageIsVersion7
 
-const ()
+const (
+	Processor_TestDataMapper_FullMethodName = "/proto.Processor/TestDataMapper"
+)
 
 // ProcessorClient is the client API for Processor service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ProcessorClient interface {
+	TestDataMapper(ctx context.Context, in *TestDataMapperRequest, opts ...grpc.CallOption) (*TestDataMapperResponse, error)
 }
 
 type processorClient struct {
@@ -31,10 +37,20 @@ func NewProcessorClient(cc grpc.ClientConnInterface) ProcessorClient {
 	return &processorClient{cc}
 }
 
+func (c *processorClient) TestDataMapper(ctx context.Context, in *TestDataMapperRequest, opts ...grpc.CallOption) (*TestDataMapperResponse, error) {
+	out := new(TestDataMapperResponse)
+	err := c.cc.Invoke(ctx, Processor_TestDataMapper_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProcessorServer is the server API for Processor service.
 // All implementations must embed UnimplementedProcessorServer
 // for forward compatibility
 type ProcessorServer interface {
+	TestDataMapper(context.Context, *TestDataMapperRequest) (*TestDataMapperResponse, error)
 	mustEmbedUnimplementedProcessorServer()
 }
 
@@ -42,6 +58,9 @@ type ProcessorServer interface {
 type UnimplementedProcessorServer struct {
 }
 
+func (UnimplementedProcessorServer) TestDataMapper(context.Context, *TestDataMapperRequest) (*TestDataMapperResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TestDataMapper not implemented")
+}
 func (UnimplementedProcessorServer) mustEmbedUnimplementedProcessorServer() {}
 
 // UnsafeProcessorServer may be embedded to opt out of forward compatibility for this service.
@@ -55,13 +74,36 @@ func RegisterProcessorServer(s grpc.ServiceRegistrar, srv ProcessorServer) {
 	s.RegisterService(&Processor_ServiceDesc, srv)
 }
 
+func _Processor_TestDataMapper_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestDataMapperRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProcessorServer).TestDataMapper(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Processor_TestDataMapper_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProcessorServer).TestDataMapper(ctx, req.(*TestDataMapperRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Processor_ServiceDesc is the grpc.ServiceDesc for Processor service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Processor_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.Processor",
 	HandlerType: (*ProcessorServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "proto/processor/processor.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "TestDataMapper",
+			Handler:    _Processor_TestDataMapper_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/processor/processor.proto",
 }

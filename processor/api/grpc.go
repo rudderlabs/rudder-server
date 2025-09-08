@@ -11,12 +11,17 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
+	"github.com/rudderlabs/rudder-server/processor/stages"
 	proto "github.com/rudderlabs/rudder-server/proto/processor"
+	"github.com/rudderlabs/rudder-server/utils/shared"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -113,4 +118,112 @@ func statsInterceptor(statsFactory stats.Stats) grpc.UnaryServerInterceptor {
 		statsFactory.NewTaggedStat("processor.grpc.response_time", stats.TimerType, tags).Since(start)
 		return res, err
 	}
+}
+
+// TestDataMapper implements the TestDataMapper RPC method
+func (s *ProcessorGRPCServer) TestDataMapper(ctx context.Context, req *proto.TestDataMapperRequest) (*proto.TestDataMapperResponse, error) {
+	s.logger.Info("Processing data mapper test request")
+
+	// Extract events from proto Struct messages
+	protoEvents := req.GetEvents()
+	eventList := make([]*shared.EventWithMetadata, len(protoEvents))
+
+	for i, protoEvent := range protoEvents {
+		// Convert structpb.Struct to map[string]interface{}
+		var eventData map[string]interface{}
+		if protoEvent != nil {
+			eventData = protoEvent.AsMap()
+		} else {
+			eventData = make(map[string]interface{})
+		}
+
+		eventList[i] = &shared.EventWithMetadata{
+			Event: eventData,
+		}
+	}
+
+	// Convert proto DataMappings to backend config DataMappings
+	dataMappings := convertProtoDataMappings(req.GetDataMappings())
+
+	// Create data mapper stage and process
+	dataMapper := stages.NewDataMapperStage(dataMappings)
+	processedEvents, err := dataMapper.Process(ctx, eventList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process events: %w", err)
+	}
+
+	// Convert processed events to structpb.Struct
+	transformedEventStructs := make([]*structpb.Struct, len(processedEvents))
+	for i, event := range processedEvents {
+		// Convert AppliedMappingsMetadata to basic types before structpb conversion
+		convertedEvent := convertAppliedMappingsToBasicTypes(event.Event)
+
+		eventStruct, err := structpb.NewStruct(convertedEvent)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert event to struct: %w", err)
+		}
+		transformedEventStructs[i] = eventStruct
+	}
+
+	return &proto.TestDataMapperResponse{
+		Data: &proto.TestDataMapperData{
+			TransformedEvents: transformedEventStructs,
+		},
+	}, nil
+}
+
+// convertProtoDataMappings converts proto DataMappings to backend config DataMappings
+func convertProtoDataMappings(protoMappings *proto.DataMappings) backendconfig.DataMappings {
+	if protoMappings == nil {
+		return backendconfig.DataMappings{}
+	}
+
+	dataMappings := backendconfig.DataMappings{
+		Events:     make([]backendconfig.Mapping, len(protoMappings.GetEvents())),
+		Properties: make([]backendconfig.Mapping, len(protoMappings.GetProperties())),
+	}
+
+	for i, event := range protoMappings.GetEvents() {
+		dataMappings.Events[i] = backendconfig.Mapping{
+			ID:      event.GetId(),
+			From:    event.GetFrom(),
+			To:      event.GetTo(),
+			Enabled: event.GetEnabled(),
+		}
+	}
+
+	for i, property := range protoMappings.GetProperties() {
+		dataMappings.Properties[i] = backendconfig.Mapping{
+			ID:      property.GetId(),
+			From:    property.GetFrom(),
+			To:      property.GetTo(),
+			Enabled: property.GetEnabled(),
+		}
+	}
+
+	return dataMappings
+}
+
+// convertAppliedMappingsToBasicTypes converts stages.AppliedMappingsMetadata to basic types
+// that can be handled by structpb.NewStruct
+func convertAppliedMappingsToBasicTypes(event map[string]interface{}) map[string]interface{} {
+	if event == nil {
+		return event
+	}
+
+	// Check if context contains dataMappings
+	if context, exists := event["context"].(map[string]interface{}); exists {
+		if dataMappings, exists := context["dataMappings"]; exists {
+			// Convert AppliedMappingsMetadata to basic types via JSON
+			jsonBytes, err := jsonrs.Marshal(dataMappings)
+			if err == nil {
+				var basicDataMappings map[string]interface{}
+				if jsonrs.Unmarshal(jsonBytes, &basicDataMappings) == nil {
+					context["dataMappings"] = basicDataMappings
+				}
+			}
+		}
+	}
+
+	return event
 }

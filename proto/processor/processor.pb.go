@@ -9,7 +9,9 @@ package proto
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
+	sync "sync"
 )
 
 const (
@@ -19,23 +21,363 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type TestDataMapperRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	DataMappings *DataMappings      `protobuf:"bytes,1,opt,name=dataMappings,proto3" json:"dataMappings,omitempty"`
+	Events       []*structpb.Struct `protobuf:"bytes,2,rep,name=events,proto3" json:"events,omitempty"`
+}
+
+func (x *TestDataMapperRequest) Reset() {
+	*x = TestDataMapperRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_processor_processor_proto_msgTypes[0]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *TestDataMapperRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestDataMapperRequest) ProtoMessage() {}
+
+func (x *TestDataMapperRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_processor_processor_proto_msgTypes[0]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestDataMapperRequest.ProtoReflect.Descriptor instead.
+func (*TestDataMapperRequest) Descriptor() ([]byte, []int) {
+	return file_proto_processor_processor_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *TestDataMapperRequest) GetDataMappings() *DataMappings {
+	if x != nil {
+		return x.DataMappings
+	}
+	return nil
+}
+
+func (x *TestDataMapperRequest) GetEvents() []*structpb.Struct {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+type TestDataMapperResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Data *TestDataMapperData `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+}
+
+func (x *TestDataMapperResponse) Reset() {
+	*x = TestDataMapperResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_processor_processor_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *TestDataMapperResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestDataMapperResponse) ProtoMessage() {}
+
+func (x *TestDataMapperResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_processor_processor_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestDataMapperResponse.ProtoReflect.Descriptor instead.
+func (*TestDataMapperResponse) Descriptor() ([]byte, []int) {
+	return file_proto_processor_processor_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *TestDataMapperResponse) GetData() *TestDataMapperData {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type TestDataMapperData struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	TransformedEvents []*structpb.Struct `protobuf:"bytes,1,rep,name=transformedEvents,proto3" json:"transformedEvents,omitempty"`
+}
+
+func (x *TestDataMapperData) Reset() {
+	*x = TestDataMapperData{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_processor_processor_proto_msgTypes[2]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *TestDataMapperData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestDataMapperData) ProtoMessage() {}
+
+func (x *TestDataMapperData) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_processor_processor_proto_msgTypes[2]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestDataMapperData.ProtoReflect.Descriptor instead.
+func (*TestDataMapperData) Descriptor() ([]byte, []int) {
+	return file_proto_processor_processor_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *TestDataMapperData) GetTransformedEvents() []*structpb.Struct {
+	if x != nil {
+		return x.TransformedEvents
+	}
+	return nil
+}
+
+type DataMappings struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Events     []*Mapping `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	Properties []*Mapping `protobuf:"bytes,2,rep,name=properties,proto3" json:"properties,omitempty"`
+}
+
+func (x *DataMappings) Reset() {
+	*x = DataMappings{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_processor_processor_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DataMappings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DataMappings) ProtoMessage() {}
+
+func (x *DataMappings) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_processor_processor_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DataMappings.ProtoReflect.Descriptor instead.
+func (*DataMappings) Descriptor() ([]byte, []int) {
+	return file_proto_processor_processor_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *DataMappings) GetEvents() []*Mapping {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *DataMappings) GetProperties() []*Mapping {
+	if x != nil {
+		return x.Properties
+	}
+	return nil
+}
+
+type Mapping struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Id      string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	From    string `protobuf:"bytes,2,opt,name=from,proto3" json:"from,omitempty"`
+	To      string `protobuf:"bytes,3,opt,name=to,proto3" json:"to,omitempty"`
+	Enabled bool   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
+}
+
+func (x *Mapping) Reset() {
+	*x = Mapping{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_proto_processor_processor_proto_msgTypes[4]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Mapping) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Mapping) ProtoMessage() {}
+
+func (x *Mapping) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_processor_processor_proto_msgTypes[4]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Mapping.ProtoReflect.Descriptor instead.
+func (*Mapping) Descriptor() ([]byte, []int) {
+	return file_proto_processor_processor_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Mapping) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Mapping) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *Mapping) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+func (x *Mapping) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
 var File_proto_processor_processor_proto protoreflect.FileDescriptor
 
 var file_proto_processor_processor_proto_rawDesc = []byte{
 	0x0a, 0x1f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x70, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x6f,
 	0x72, 0x2f, 0x70, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x6f, 0x72, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x32, 0x0b, 0x0a, 0x09, 0x50, 0x72, 0x6f, 0x63,
-	0x65, 0x73, 0x73, 0x6f, 0x72, 0x42, 0x09, 0x5a, 0x07, 0x2e, 0x3b, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6f, 0x12, 0x05, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x1c, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
+	0x2f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x73, 0x74, 0x72, 0x75, 0x63, 0x74,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x22, 0x81, 0x01, 0x0a, 0x15, 0x54, 0x65, 0x73, 0x74, 0x44,
+	0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x12, 0x37, 0x0a, 0x0c, 0x64, 0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x69, 0x6e, 0x67, 0x73,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x13, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x44,
+	0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x69, 0x6e, 0x67, 0x73, 0x52, 0x0c, 0x64, 0x61, 0x74,
+	0x61, 0x4d, 0x61, 0x70, 0x70, 0x69, 0x6e, 0x67, 0x73, 0x12, 0x2f, 0x0a, 0x06, 0x65, 0x76, 0x65,
+	0x6e, 0x74, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x67, 0x6f, 0x6f, 0x67,
+	0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x53, 0x74, 0x72, 0x75,
+	0x63, 0x74, 0x52, 0x06, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x22, 0x47, 0x0a, 0x16, 0x54, 0x65,
+	0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x65, 0x72, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x2d, 0x0a, 0x04, 0x64, 0x61, 0x74, 0x61, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x44,
+	0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x65, 0x72, 0x44, 0x61, 0x74, 0x61, 0x52, 0x04, 0x64,
+	0x61, 0x74, 0x61, 0x22, 0x5b, 0x0a, 0x12, 0x54, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x4d,
+	0x61, 0x70, 0x70, 0x65, 0x72, 0x44, 0x61, 0x74, 0x61, 0x12, 0x45, 0x0a, 0x11, 0x74, 0x72, 0x61,
+	0x6e, 0x73, 0x66, 0x6f, 0x72, 0x6d, 0x65, 0x64, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x18, 0x01,
+	0x20, 0x03, 0x28, 0x0b, 0x32, 0x17, 0x2e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x52, 0x11, 0x74,
+	0x72, 0x61, 0x6e, 0x73, 0x66, 0x6f, 0x72, 0x6d, 0x65, 0x64, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x73,
+	0x22, 0x66, 0x0a, 0x0c, 0x44, 0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x69, 0x6e, 0x67, 0x73,
+	0x12, 0x26, 0x0a, 0x06, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b,
+	0x32, 0x0e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4d, 0x61, 0x70, 0x70, 0x69, 0x6e, 0x67,
+	0x52, 0x06, 0x65, 0x76, 0x65, 0x6e, 0x74, 0x73, 0x12, 0x2e, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x70,
+	0x65, 0x72, 0x74, 0x69, 0x65, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x0e, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4d, 0x61, 0x70, 0x70, 0x69, 0x6e, 0x67, 0x52, 0x0a, 0x70, 0x72,
+	0x6f, 0x70, 0x65, 0x72, 0x74, 0x69, 0x65, 0x73, 0x22, 0x57, 0x0a, 0x07, 0x4d, 0x61, 0x70, 0x70,
+	0x69, 0x6e, 0x67, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x02, 0x69, 0x64, 0x12, 0x12, 0x0a, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x04, 0x66, 0x72, 0x6f, 0x6d, 0x12, 0x0e, 0x0a, 0x02, 0x74, 0x6f, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x02, 0x74, 0x6f, 0x12, 0x18, 0x0a, 0x07, 0x65, 0x6e, 0x61, 0x62, 0x6c,
+	0x65, 0x64, 0x18, 0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x65, 0x6e, 0x61, 0x62, 0x6c, 0x65,
+	0x64, 0x32, 0x5a, 0x0a, 0x09, 0x50, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x6f, 0x72, 0x12, 0x4d,
+	0x0a, 0x0e, 0x54, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x4d, 0x61, 0x70, 0x70, 0x65, 0x72,
+	0x12, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74,
+	0x61, 0x4d, 0x61, 0x70, 0x70, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1d,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x44, 0x61, 0x74, 0x61, 0x4d,
+	0x61, 0x70, 0x70, 0x65, 0x72, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x09, 0x5a,
+	0x07, 0x2e, 0x3b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
-var file_proto_processor_processor_proto_goTypes = []interface{}{}
+var (
+	file_proto_processor_processor_proto_rawDescOnce sync.Once
+	file_proto_processor_processor_proto_rawDescData = file_proto_processor_processor_proto_rawDesc
+)
+
+func file_proto_processor_processor_proto_rawDescGZIP() []byte {
+	file_proto_processor_processor_proto_rawDescOnce.Do(func() {
+		file_proto_processor_processor_proto_rawDescData = protoimpl.X.CompressGZIP(file_proto_processor_processor_proto_rawDescData)
+	})
+	return file_proto_processor_processor_proto_rawDescData
+}
+
+var file_proto_processor_processor_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_proto_processor_processor_proto_goTypes = []interface{}{
+	(*TestDataMapperRequest)(nil),  // 0: proto.TestDataMapperRequest
+	(*TestDataMapperResponse)(nil), // 1: proto.TestDataMapperResponse
+	(*TestDataMapperData)(nil),     // 2: proto.TestDataMapperData
+	(*DataMappings)(nil),           // 3: proto.DataMappings
+	(*Mapping)(nil),                // 4: proto.Mapping
+	(*structpb.Struct)(nil),        // 5: google.protobuf.Struct
+}
 var file_proto_processor_processor_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: proto.TestDataMapperRequest.dataMappings:type_name -> proto.DataMappings
+	5, // 1: proto.TestDataMapperRequest.events:type_name -> google.protobuf.Struct
+	2, // 2: proto.TestDataMapperResponse.data:type_name -> proto.TestDataMapperData
+	5, // 3: proto.TestDataMapperData.transformedEvents:type_name -> google.protobuf.Struct
+	4, // 4: proto.DataMappings.events:type_name -> proto.Mapping
+	4, // 5: proto.DataMappings.properties:type_name -> proto.Mapping
+	0, // 6: proto.Processor.TestDataMapper:input_type -> proto.TestDataMapperRequest
+	1, // 7: proto.Processor.TestDataMapper:output_type -> proto.TestDataMapperResponse
+	7, // [7:8] is the sub-list for method output_type
+	6, // [6:7] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_proto_processor_processor_proto_init() }
@@ -43,18 +385,81 @@ func file_proto_processor_processor_proto_init() {
 	if File_proto_processor_processor_proto != nil {
 		return
 	}
+	if !protoimpl.UnsafeEnabled {
+		file_proto_processor_processor_proto_msgTypes[0].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TestDataMapperRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_processor_processor_proto_msgTypes[1].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TestDataMapperResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_processor_processor_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TestDataMapperData); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_processor_processor_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*DataMappings); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_proto_processor_processor_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Mapping); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_proto_processor_processor_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   0,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_proto_processor_processor_proto_goTypes,
 		DependencyIndexes: file_proto_processor_processor_proto_depIdxs,
+		MessageInfos:      file_proto_processor_processor_proto_msgTypes,
 	}.Build()
 	File_proto_processor_processor_proto = out.File
 	file_proto_processor_processor_proto_rawDesc = nil

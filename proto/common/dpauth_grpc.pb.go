@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.3.0
 // - protoc             v6.32.0
-// source: dpauth.proto
+// source: proto/common/dpauth.proto
 
 package proto
 
@@ -179,5 +179,5 @@ var DPAuthService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "dpauth.proto",
+	Metadata: "proto/common/dpauth.proto",
 }
