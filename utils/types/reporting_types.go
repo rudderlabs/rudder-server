@@ -294,3 +294,8 @@ type ErrorDetailGroupKey struct {
 	PU            string
 	EventType     string
 }
+type StageDetails struct {
+	Stage      string
+	InitialPU  bool
+	TerminalPU bool
+}
