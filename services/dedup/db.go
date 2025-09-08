@@ -28,46 +28,60 @@ func getMode(conf *config.Config) mode {
 }
 
 // NewDB creates a new DB implementation based on configuration
-func NewDB(conf *config.Config, stats stats.Stats, log logger.Logger) (types.DB, error) {
+func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, error) {
 	mirrorMode := getMode(conf)
-	log.Infon("Starting deduplication db", logger.NewStringField("mode", string(mirrorMode)))
+	log = log.Withn(logger.NewStringField("mode", string(mirrorMode)))
+	log.Infon("Starting deduplication db")
+
+	gauge := func(primary, mirror string) {
+		s.NewTaggedStat("dedup_mode", stats.GaugeType, stats.Tags{
+			"primary": primary,
+			"mirror":  mirror,
+		}).Gauge(1)
+	}
+
 	switch mirrorMode {
 	case badgerOnlyMode:
-		return badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		gauge("badger", "none")
+		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
 	case keyDBOnlyMode:
-		keydb, err := kdb.NewKeyDB(conf, stats, log)
+		keydb, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb: %w", err)
 		}
+		gauge("keydb", "none")
 		return keydb, nil
 	case mirrorToKeyDB:
 		// primary is badger, then we mirror to keydb
-		primary, err := badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		primary, err := badger.NewBadgerDB(conf, s, badger.DefaultPath())
 		if err != nil {
 			return nil, fmt.Errorf("create badger primary: %w", err)
 		}
-		mirror, err := kdb.NewKeyDB(conf, stats, log)
+		mirror, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
+			gauge("badger", "none")
 			log.Errorn("Failed to create keydb mirror, falling back to badger only", obskit.Error(err))
 			return primary, nil
 		}
-		return NewMirrorDB(primary, mirror, mirrorToKeyDB, conf, stats, log), nil
+		gauge("badger", "keydb")
+		return NewMirrorDB(primary, mirror, mirrorToKeyDB, conf, s, log), nil
 	case mirrorToBadger:
 		// primary is keydb, then we mirror to badger
-		primary, err := kdb.NewKeyDB(conf, stats, log)
+		primary, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb primary: %w", err)
 		}
-		mirror, err := badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		mirror, err := badger.NewBadgerDB(conf, s, badger.DefaultPath())
 		if err != nil {
 			primary.Close()
-			log.Errorn("Failed to create badger mirror, falling back to keydb only", obskit.Error(err))
 			return nil, fmt.Errorf("create badger mirror: %w", err)
 		}
-		return NewMirrorDB(primary, mirror, mirrorToBadger, conf, stats, log), nil
+		gauge("keydb", "badger")
+		return NewMirrorDB(primary, mirror, mirrorToBadger, conf, s, log), nil
 	default:
-		log.Warnn("Invalid mirror mode, falling back to badger only", logger.NewStringField("mode", string(mirrorMode)))
+		gauge("keydb", "none")
+		log.Warnn("Invalid mirror mode, falling back to badger only")
 		// Default to badger only
-		return badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
 	}
 }
