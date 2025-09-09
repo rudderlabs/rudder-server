@@ -57,7 +57,7 @@ func TestConfigFunctions(t *testing.T) {
 			destinationID := "dest123"
 
 			// Set adaptive config (final fallback)
-			adaptiveKey := "Router.throttler.adaptive.timeWindow"
+			adaptiveKey := "Router.throttler.WEBHOOK.timeWindow"
 			config.Set(adaptiveKey, "2s")
 
 			loader := GetAllEventsWindowConfig(config, destType, destinationID)
@@ -73,7 +73,6 @@ func TestConfigFunctions(t *testing.T) {
 			// Set multiple configs, more specific should win
 			config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "5s")
-			config.Set("Router.throttler.adaptive.timeWindow", "2s")
 
 			loader := GetAllEventsWindowConfig(config, destType, destinationID)
 
@@ -162,7 +161,7 @@ func TestConfigFunctions(t *testing.T) {
 			eventType := "track"
 
 			// Set adaptive config (final fallback)
-			adaptiveKey := "Router.throttler.adaptive.timeWindow"
+			adaptiveKey := "Router.throttler.WEBHOOK.timeWindow"
 			config.Set(adaptiveKey, "2s")
 
 			loader := GetPerEventWindowConfig(config, destType, destinationID, eventType)
@@ -181,7 +180,6 @@ func TestConfigFunctions(t *testing.T) {
 			config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
 			config.Set("Router.throttler.WEBHOOK.track.timeWindow", "8s")
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "5s")
-			config.Set("Router.throttler.adaptive.timeWindow", "2s")
 
 			loader := GetPerEventWindowConfig(config, destType, destinationID, eventType)
 
@@ -212,7 +210,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			// Set static limit and multiplier
 			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
-			config.Set("Router.throttler.adaptive.WEBHOOK.dest123.limitMultiplier", 2.0)
+			config.Set("Router.throttler.WEBHOOK.dest123.limitMultiplier", 2.0)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -242,7 +240,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			// Set specific static limit and destination type multiplier
 			config.Set("Router.throttler.WEBHOOK.dest123.limit", 150)
-			config.Set("Router.throttler.adaptive.WEBHOOK.limitMultiplier", 3.0)
+			config.Set("Router.throttler.WEBHOOK.limitMultiplier", 3.0)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -257,7 +255,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			// Set static limit and global multiplier
 			config.Set("Router.throttler.WEBHOOK.dest123.limit", 80)
-			config.Set("Router.throttler.adaptive.limitMultiplier", 4.0)
+			config.Set("Router.throttler.limitMultiplier", 4.0)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -283,7 +281,7 @@ func TestConfigFunctions(t *testing.T) {
 			maxLimitKeys := []string{"Router.throttler.WEBHOOK.dest123.maxLimit"}
 
 			// Set custom default max limit
-			config.Set("Router.throttler.adaptive.defaultMaxLimit", 2000)
+			config.Set("Router.throttler.defaultMaxLimit", 2000)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -298,7 +296,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			// Set zero static limit (should be ignored)
 			config.Set("Router.throttler.WEBHOOK.dest123.limit", 0)
-			config.Set("Router.throttler.adaptive.limitMultiplier", 2.0)
+			config.Set("Router.throttler.limitMultiplier", 2.0)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -313,7 +311,7 @@ func TestConfigFunctions(t *testing.T) {
 
 			// Set static limit but zero multiplier (should be ignored)
 			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
-			config.Set("Router.throttler.adaptive.limitMultiplier", 0)
+			config.Set("Router.throttler.limitMultiplier", 0)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -329,7 +327,7 @@ func TestConfigFunctions(t *testing.T) {
 			// Set both max limit and static limit, max limit should win
 			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 300)
 			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
-			config.Set("Router.throttler.adaptive.limitMultiplier", 5.0)
+			config.Set("Router.throttler.limitMultiplier", 5.0)
 
 			limitFunc := maxLimitFunc(config, destType, destinationID, maxLimitKeys)
 
@@ -369,7 +367,7 @@ func TestConfigFunctions(t *testing.T) {
 			require.Equal(t, int64(150), limitFunc())
 
 			// Change the multiplier
-			config.Set("Router.throttler.adaptive.limitMultiplier", 3.0)
+			config.Set("Router.throttler.limitMultiplier", 3.0)
 
 			// Should reflect the new multiplier
 			require.Equal(t, int64(300), limitFunc())
