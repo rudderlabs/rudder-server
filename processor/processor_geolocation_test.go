@@ -260,7 +260,7 @@ func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, pos
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
-	return
+	return err
 }
 
 func (s *geolocationScenario) sendEvent(url, writeKey string) error {

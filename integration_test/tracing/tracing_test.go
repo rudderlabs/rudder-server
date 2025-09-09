@@ -377,7 +377,7 @@ func TestTracing(t *testing.T) {
 						StatusCode: http.StatusOK,
 					})
 				}
-				return
+				return response
 			}).
 			Build()
 		defer trServer.Close()
@@ -583,7 +583,7 @@ func runRudderServer(
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
-	return
+	return err
 }
 
 // nolint: unparam, bodyclose

@@ -251,7 +251,7 @@ func (h *handler) deleteFailedRecords(w http.ResponseWriter, r *http.Request) {
 func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []string) {
 	jobRunID = chi.URLParam(r, "job_run_id")
 	if jobRunID == "" {
-		return
+		return jobRunID, taskRunID, sourceID
 	}
 	tID, okTID := r.URL.Query()["task_run_id"]
 	if okTID {

@@ -638,7 +638,7 @@ func (job *UploadJob) getUploadFirstAttemptTime() (timing time.Time) {
 	)
 	err := job.db.QueryRowContext(job.ctx, sqlStatement).Scan(&firstTiming)
 	if err != nil {
-		return
+		return timing
 	}
 	_, timing = whutils.TimingFromJSONString(firstTiming)
 	return timing
@@ -662,7 +662,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	// TODO: fetch upload model instead of just timings
 	marshalledTimings, timings, err := job.getNewTimings(statusOpts.Status)
 	if err != nil {
-		return
+		return err
 	}
 
 	job.upload.Status = statusOpts.Status
@@ -692,7 +692,7 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 			}
 			return nil
 		})
-		return
+		return err
 	}
 	return job.uploadsRepo.Update(job.ctx, job.upload.ID, updateFields)
 }
@@ -970,7 +970,7 @@ func (job *UploadJob) GetLoadFilesMetadata(ctx context.Context, options whutils.
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate query results: %s\nwith Error : %w", sqlStatement, err)
 	}
-	return
+	return loadFiles, err
 }
 
 func (job *UploadJob) getLoadFilesMetadataQuery(tableFilterSQL, limitSQL string) string {

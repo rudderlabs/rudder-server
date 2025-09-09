@@ -142,5 +142,5 @@ func exportPath() (baseDir string, err error) {
 	if err := os.MkdirAll(baseDir, 0o700); err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
-	return
+	return baseDir, err
 }

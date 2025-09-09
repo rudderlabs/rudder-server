@@ -12,7 +12,7 @@ func TestReportViolations(t *testing.T) {
 	eventsFromTransformerResponse := func(response *types.Response) (events []types.TransformerResponse) {
 		events = append(events, response.Events...)
 		events = append(events, response.FailedEvents...)
-		return
+		return events
 	}
 
 	t.Run("Not propagating validation errors", func(t *testing.T) {

@@ -109,7 +109,7 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 				fullPrefix = configPrefix + "/" + prefix
 			}
 		}
-		return
+		return fullPrefix
 	}
 	fullPrefix := getFullPrefix(manager, prefix)
 	fileObjects, err := manager.ListFilesWithPrefix(context.TODO(), "", fullPrefix, 5).Next()
@@ -121,10 +121,10 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 		// Returning the earlier default as we might not able to fetch the list.
 		// because "*:GetObject" and "*:ListBucket" permissions are not available.
 		dateFormat = "MM-DD-YYYY"
-		return
+		return dateFormat, err
 	}
 	if len(fileObjects) == 0 {
-		return
+		return dateFormat, err
 	}
 
 	for idx := range fileObjects {
@@ -141,12 +141,12 @@ func (sdfp *storageDateFormatProvider) GetFormat(log logger.Logger, manager file
 				_, err = time.Parse(layout, date)
 				if err == nil {
 					dateFormat = format
-					return
+					return dateFormat, err
 				}
 			}
 		}
 	}
-	return
+	return dateFormat, err
 }
 
 func IsAsyncDestinationLimitNotReached(brt *Handle, destinationID string) bool {

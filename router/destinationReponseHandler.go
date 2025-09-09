@@ -152,5 +152,5 @@ func (handler *jsonResponseHandler) IsSuccessStatus(respCode int, respBody strin
 // IsSuccessStatus - returns the status code based on the response code and body
 func (*txtResponseHandler) IsSuccessStatus(respCode int, _ string) (returnCode int) {
 	returnCode = respCode
-	return
+	return returnCode
 }
