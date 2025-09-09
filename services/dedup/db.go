@@ -34,7 +34,7 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 	log.Infon("Starting deduplication db")
 
 	gauge := func(primary, mirror string) {
-		s.NewTaggedStat("dedup_mode", stats.GaugeType, stats.Tags{
+		s.NewTaggedStat("processor_dedup_mode", stats.GaugeType, stats.Tags{
 			"primary": primary,
 			"mirror":  mirror,
 		}).Gauge(1)
