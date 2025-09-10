@@ -153,16 +153,16 @@ func (r *RFP) matches(currDir string) (match bool, err error) {
 	var tmpDirPath string
 	tmpDirPath, err = CreateTMPDIR()
 	if err != nil {
-		return
+		return match, err
 	}
 
 	splits := strings.Split(currDir, "/")
 	if len(splits) < r.levelsToKeep {
-		return
+		return match, err
 	}
 	join := strings.Join(splits[0:len(splits)-r.levelsToKeep], "/")
 	match = fmt.Sprintf("%s/%s", tmpDirPath, r.path) == join
-	return
+	return match, err
 }
 
 // RemoveContents removes all the contents of the directory
@@ -415,14 +415,14 @@ type BufferedWriter struct {
 func CreateBufferedWriter(s string) (w BufferedWriter, err error) {
 	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o660)
 	if err != nil {
-		return
+		return w, err
 	}
 	bufWriter := bufio.NewWriter(file)
 	w = BufferedWriter{
 		File:   file,
 		Writer: bufWriter,
 	}
-	return
+	return w, err
 }
 
 func (b BufferedWriter) Write(p []byte) (int, error) {
@@ -450,7 +450,7 @@ type GZipWriter struct {
 func CreateGZ(s string) (w GZipWriter, err error) {
 	file, err := os.OpenFile(s, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o660)
 	if err != nil {
-		return
+		return w, err
 	}
 	gzWriter := gzip.NewWriter(file)
 	bufWriter := bufio.NewWriter(gzWriter)
@@ -459,7 +459,7 @@ func CreateGZ(s string) (w GZipWriter, err error) {
 		GzWriter:  gzWriter,
 		BufWriter: bufWriter,
 	}
-	return
+	return w, err
 }
 
 func (w GZipWriter) WriteGZ(s string) error {
@@ -483,7 +483,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 			obskit.Error(err),
 		)
 	}
-	return
+	return count, err
 }
 
 func (GZipWriter) WriteRow(_ []interface{}) error {
@@ -657,7 +657,7 @@ func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[stri
 	} else {
 		storageConfig["prefix"] = config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
 	}
-	return
+	return storageConfig
 }
 
 func IsConfiguredToUseRudderObjectStorage(storageConfig map[string]interface{}) bool {
@@ -758,7 +758,7 @@ func GetWarehouseURL() (url string) {
 	} else {
 		url = config.GetString("WAREHOUSE_URL", "http://localhost:8082")
 	}
-	return
+	return url
 }
 
 type MapLookupError struct {

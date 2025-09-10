@@ -199,7 +199,7 @@ func (c *NoResultsCache[T]) StartNoResultTx(dataset, workspace string, customVal
 		c:          c,
 	}
 	if c.skipCache(states, parameters) {
-		return
+		return tx
 	}
 	workspace, states, customVals, params := filtersToCacheKeys(workspace, states, customVals, parameters)
 
@@ -227,7 +227,7 @@ func (c *NoResultsCache[T]) StartNoResultTx(dataset, workspace string, customVal
 			}
 		}
 	}
-	return
+	return tx
 }
 
 // NoResultTx is a transaction for the NoResultsCache.

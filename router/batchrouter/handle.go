@@ -182,7 +182,7 @@ func (brt *Handle) activePartitions(ctx context.Context) []string {
 // getWorkerJobs returns the list of jobs for a given partition. Jobs are grouped by destination
 func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJobs) {
 	if brt.skipFetchingJobs(partition) {
-		return
+		return workerJobs
 	}
 
 	defer brt.limiter.read.Begin("")()
@@ -233,7 +233,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		}
 	}
 
-	return
+	return workerJobs
 }
 
 // upload the given batch of jobs to the given object storage provider
@@ -517,10 +517,10 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	err = brt.warehouseClient.Process(context.TODO(), payload)
 	if err != nil {
 		brt.logger.Errorn("BRT: Failed to route staging file", obskit.Error(err))
-		return
+		return err
 	}
 	brt.logger.Infon("BRT: Routed successfully staging file URL to warehouse service")
-	return
+	return err
 }
 
 func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[string]string {

@@ -182,7 +182,7 @@ func (b *Barrier) Enter(key BarrierKey, jobID int64) (accepted bool, previousFai
 	if accepted { // if the job is finally accepted, add it to the active limiters
 		barrier.Enter(jobID)
 	}
-	return
+	return accepted, previousFailedJobID
 }
 
 // Leave the barrier for this key and jobID. Leave acts as an undo operation for Enter, i.e.

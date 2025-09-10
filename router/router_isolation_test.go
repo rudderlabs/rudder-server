@@ -281,7 +281,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 
 	cancel()
 	<-svcDone
-	return
+	return overallDuration
 }
 
 type RtIsolationScenarioSpec struct {

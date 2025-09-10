@@ -56,7 +56,7 @@ func (b *Batch) listFiles(ctx context.Context, prefix string, limit int) (fileOb
 		return []*filemanager.FileInfo{}, fmt.Errorf("list files under prefix: %s and limit: %d from filemanager: %v", prefix, limit, err)
 	}
 
-	return
+	return fileObjects, err
 }
 
 // two pointer algorithm implementation to remove all the files from which users are already deleted.

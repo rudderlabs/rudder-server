@@ -336,7 +336,7 @@ func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
 		extraB = append(extraB, bValue.Index(j).Interface())
 	}
 
-	return
+	return extraA, extraB
 }
 
 var spewConfig = spew.ConfigState{
