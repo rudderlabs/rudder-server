@@ -176,6 +176,13 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 // run claimRefresh periodically to make sure that job is not orphaned
 func (w *worker) runClaimRefresh(ctx context.Context) {
 	baseInterval := w.config.claimRefreshInterval.Load()
+	
+	w.log.Infon("runClaimRefresh debug info",
+		logger.NewStringField("baseInterval", baseInterval.String()),
+		logger.NewStringField("refreshClaimJitter", w.refreshClaimJitter.String()),
+		logger.NewStringField("totalInterval", (baseInterval + w.refreshClaimJitter).String()),
+	)
+	
 	// Distribute claim refresh requests across workers by adding random delay
 	// This will prevent database load spikes from synchronized refresh attempts
 	ticker := time.NewTicker(baseInterval + w.refreshClaimJitter)
