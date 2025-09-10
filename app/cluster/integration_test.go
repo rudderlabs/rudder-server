@@ -114,11 +114,6 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	archDB := jobsdb.NewForReadWrite("archival", jobsdb.WithStats(stats.NOP))
 	defer archDB.TearDown()
-	readErrorDB := jobsdb.NewForRead("proc_error", jobsdb.WithStats(stats.NOP))
-	defer readErrorDB.TearDown()
-	writeErrorDB := jobsdb.NewForWrite("proc_error", jobsdb.WithStats(stats.NOP))
-	require.NoError(t, writeErrorDB.Start())
-	defer writeErrorDB.TearDown()
 
 	clearDb := false
 	ctx := context.Background()
@@ -131,8 +126,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		gwDB,
 		rtDB,
 		brtDB,
-		readErrorDB,
-		writeErrorDB,
 		eschDB,
 		archDB,
 		&reporting.NOOP{},
@@ -155,7 +148,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		Reporting:                  &reporting.NOOP{},
 		BackendConfig:              mockBackendConfig,
 		RouterDB:                   rtDB,
-		ProcErrorDB:                readErrorDB,
 		TransientSources:           transientsource.NewEmptyService(),
 		RsourcesService:            mockRsourcesService,
 		TransformerFeaturesService: transformer.NewNoOpService(),
@@ -165,7 +157,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		Reporting:        &reporting.NOOP{},
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         brtDB,
-		ProcErrorDB:      readErrorDB,
 		TransientSources: transientsource.NewEmptyService(),
 		RsourcesService:  mockRsourcesService,
 	}
@@ -192,7 +183,6 @@ func TestDynamicClusterManager(t *testing.T) {
 		GatewayDB:       gwDB,
 		RouterDB:        rtDB,
 		BatchRouterDB:   brtDB,
-		ErrorDB:         readErrorDB,
 		EventSchemaDB:   eschDB,
 		ArchivalDB:      archDB,
 		SchemaForwarder: schemaForwarder,
