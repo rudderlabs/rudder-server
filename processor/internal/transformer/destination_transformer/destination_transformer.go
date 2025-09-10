@@ -97,8 +97,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.warehouseTransformations.enable = conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
 	handle.config.warehouseTransformations.verify = conf.GetReloadableBoolVar(true, "Processor.verifyWarehouseTransformations")
 
-	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
-
 	for _, opt := range opts {
 		opt(handle)
 	}
@@ -117,7 +115,6 @@ type Client struct {
 
 		maxLoggedEvents config.ValueLoader[int]
 
-		compactionEnabled        config.ValueLoader[bool]
 		warehouseTransformations struct {
 			enable config.ValueLoader[bool]
 			verify config.ValueLoader[bool]
@@ -435,7 +432,7 @@ func (c *Client) canRunWarehouseTransformations(destType string) bool {
 }
 
 func (d *Client) compactRequestPayloads() bool {
-	return (d.config.compactionSupported && d.config.compactionEnabled.Load())
+	return (d.config.compactionSupported)
 }
 
 func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {
@@ -447,10 +444,8 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 		}
 		for i := range data {
 			ctr.Input = append(ctr.Input, types.CompactedTransformerEvent{
-				Message:     data[i].Message,
-				Metadata:    data[i].Metadata,
-				Libraries:   data[i].Libraries,
-				Credentials: data[i].Credentials,
+				Message:  data[i].Message,
+				Metadata: data[i].Metadata,
 			})
 			if _, ok := ctr.Destinations[data[i].Metadata.DestinationID]; !ok {
 				ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
