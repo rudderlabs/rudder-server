@@ -306,8 +306,8 @@ func Test_Dedup_MirrorMode_Badger(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	// Test mirrorBadger mode (default)
-	conf.Set("Dedup.Mirror.Mode", "mirrorBadger")
+	// Test mirrorToKeyDB mode (default)
+	conf.Set("Dedup.Mirror.Mode", "mirrorToKeyDB")
 
 	// Mock KeyDB to simulate failure, should fall back to badger only
 	conf.Set("KeyDB.Dedup.Addresses", "localhost:12345")
@@ -340,8 +340,8 @@ func Test_Dedup_MirrorMode_KeyDB_Error(t *testing.T) {
 	conf := config.New()
 	t.Setenv("RUDDER_TMPDIR", dbPath)
 
-	// Test mirrorKeyDB mode with KeyDB error
-	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
+	// Test mirrorToBadger mode with KeyDB error
+	conf.Set("Dedup.Mirror.Mode", "mirrorToBadger")
 	conf.Set("KeyDB.Dedup.Addresses", "ransjkaljkl:12345") // Invalid address to simulate KeyDB failure
 	conf.Set("KeyDB.Dedup.RetryPolicy.Disabled", true)
 
@@ -394,8 +394,8 @@ func Test_Dedup_MirrorMode_KeyDB_Success(t *testing.T) {
 	// Start a KeyDB instance
 	startKeydb(t, conf)
 
-	// Test mirrorKeyDB mode with working KeyDB
-	conf.Set("Dedup.Mirror.Mode", "mirrorKeyDB")
+	// Test mirrorToBadger mode with working KeyDB
+	conf.Set("Dedup.Mirror.Mode", "mirrorToBadger")
 
 	d, err := dedup.New(conf, stats.NOP, logger.NOP)
 	require.NoError(t, err)
@@ -442,7 +442,7 @@ func Test_Dedup_MirrorMode_Badger_Success(t *testing.T) {
 	// Start a KeyDB instance
 	startKeydb(t, conf)
 
-	// Test mirrorBadger mode (default) with working KeyDB
+	// Test mirrorToKeyDB mode (default) with working KeyDB
 	// Not setting the mode explicitly to test the default behavior
 
 	d, err := dedup.New(conf, stats.NOP, logger.NOP)

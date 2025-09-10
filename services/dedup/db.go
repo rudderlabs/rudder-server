@@ -3,11 +3,10 @@ package dedup
 import (
 	"fmt"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/services/dedup/badger"
 	kdb "github.com/rudderlabs/rudder-server/services/dedup/keydb"
 	"github.com/rudderlabs/rudder-server/services/dedup/types"
@@ -16,10 +15,10 @@ import (
 type mode string
 
 const (
-	badgerOnlyMode   mode = "badger"
-	keyDBOnlyMode    mode = "keydb"
-	mirrorBadgerMode mode = "mirrorBadger"
-	mirrorKeyDBMode  mode = "mirrorKeyDB"
+	badgerOnlyMode mode = "badger"
+	keyDBOnlyMode  mode = "keydb"
+	mirrorToKeyDB  mode = "mirrorToKeyDB"
+	mirrorToBadger mode = "mirrorToBadger"
 )
 
 // getMode determines which mode to use based on configuration
@@ -29,48 +28,60 @@ func getMode(conf *config.Config) mode {
 }
 
 // NewDB creates a new DB implementation based on configuration
-func NewDB(conf *config.Config, stats stats.Stats, log logger.Logger) (types.DB, error) {
+func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, error) {
 	mirrorMode := getMode(conf)
-	log.Infon("starting deduplication db", logger.NewStringField("mode", string(mirrorMode)))
+	log = log.Withn(logger.NewStringField("mode", string(mirrorMode)))
+	log.Infon("Starting deduplication db")
+
+	modeGauge := func(primary, mirror string) {
+		s.NewTaggedStat("processor_dedup_mode", stats.GaugeType, stats.Tags{
+			"primary": primary,
+			"mirror":  mirror,
+		}).Gauge(1)
+	}
+
 	switch mirrorMode {
 	case badgerOnlyMode:
-		return badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		modeGauge("badger", "none")
+		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
 	case keyDBOnlyMode:
-		keydb, err := kdb.NewKeyDB(conf, stats, log)
+		keydb, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb: %w", err)
 		}
+		modeGauge("keydb", "none")
 		return keydb, nil
-	case mirrorBadgerMode:
-		// primary is badger, mirror is keydb
-		primary, err := badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+	case mirrorToKeyDB:
+		// primary is badger, then we mirror to keydb
+		primary, err := badger.NewBadgerDB(conf, s, badger.DefaultPath())
 		if err != nil {
 			return nil, fmt.Errorf("create badger primary: %w", err)
 		}
-		// try to create keydb mirror
-		mirror, err := kdb.NewKeyDB(conf, stats, log)
+		mirror, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
-			log.Errorn("failed to create keydb mirror, falling back to badger only", obskit.Error(err))
+			modeGauge("badger", "none")
+			log.Errorn("Failed to create keydb mirror, falling back to badger only", obskit.Error(err))
 			return primary, nil
 		}
-
-		return NewMirrorDB(primary, mirror, mirrorBadgerMode, conf, stats, log), nil
-	case mirrorKeyDBMode:
-		// primary is keydb, mirror is badger
-		primary, err := kdb.NewKeyDB(conf, stats, log)
+		modeGauge("badger", "keydb")
+		return NewMirrorDB(primary, mirror, mirrorToKeyDB, conf, s, log), nil
+	case mirrorToBadger:
+		// primary is keydb, then we mirror to badger
+		primary, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb primary: %w", err)
 		}
-
-		mirror, err := badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		mirror, err := badger.NewBadgerDB(conf, s, badger.DefaultPath())
 		if err != nil {
 			primary.Close()
 			return nil, fmt.Errorf("create badger mirror: %w", err)
 		}
-		return NewMirrorDB(primary, mirror, mirrorKeyDBMode, conf, stats, log), nil
+		modeGauge("keydb", "badger")
+		return NewMirrorDB(primary, mirror, mirrorToBadger, conf, s, log), nil
 	default:
-		log.Warnn("invalid mirror mode, falling back to badger only", logger.NewStringField("mode", string(mirrorMode)))
+		modeGauge("keydb", "none")
+		log.Warnn("Invalid mirror mode, falling back to badger only")
 		// Default to badger only
-		return badger.NewBadgerDB(conf, stats, badger.DefaultPath())
+		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
 	}
 }
