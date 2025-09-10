@@ -27,7 +27,7 @@ type Opts struct {
 }
 
 func mapErrorMessageToStatusCode(errorMessage string, defaultStatusCode int) int {
-	if strings.Contains(errorMessage, "Throttling") {
+	if strings.Contains(errorMessage, "Throttling") || strings.Contains(errorMessage, "Rate exceeded") {
 		// aws returns  "ThrottlingException"
 		// for throttling requests server will retry
 		return 429
