@@ -271,7 +271,7 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	for s, t := range timingsMap {
 		return s, t.Time()
 	}
-	return // zero values
+	return status, recordedTime // zero values
 }
 
 // GetObjectFolder returns the folder path for the storage object based on the storage provider
@@ -285,7 +285,7 @@ func GetObjectFolder(provider, location string) (folder string) {
 	case AzureBlob:
 		folder = GetAzureBlobLocationFolder(location)
 	}
-	return
+	return folder
 }
 
 // GetObjectFolderForDeltalake returns the folder path for the storage object based on the storage provider for delta lake
@@ -305,7 +305,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 		blobLocation := fmt.Sprintf("wasbs://%s@%s.blob.core.windows.net/%s", blobUrlParts.ContainerName, accountName, blobUrlParts.BlobName)
 		folder = GetLocationFolder(blobLocation)
 	}
-	return
+	return folder
 }
 
 func GetColumnsFromTableSchema(schema model.TableSchema) []string {
@@ -328,7 +328,7 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 	case AzureBlob:
 		objectLocation = GetAzureBlobLocation(location)
 	}
-	return
+	return objectLocation
 }
 
 // GetObjectName extracts object/key objectName from different buckets locations
@@ -354,7 +354,7 @@ func GetObjectName(location string, providerConfig interface{}, objectProvider s
 func CaptureRegexGroup(r *regexp.Regexp, pattern string) (groups map[string]string, err error) {
 	if !r.MatchString(pattern) {
 		err = fmt.Errorf("regex does not match pattern %s", pattern)
-		return
+		return groups, err
 	}
 	m := r.FindStringSubmatch(pattern)
 	groups = make(map[string]string)
@@ -366,7 +366,7 @@ func CaptureRegexGroup(r *regexp.Regexp, pattern string) (groups map[string]stri
 			groups[name] = m[i]
 		}
 	}
-	return
+	return groups, err
 }
 
 // GetS3Location parses path-style location http url to return in s3:// format
@@ -380,10 +380,10 @@ func GetS3Location(location string) (s3Location, region string) {
 		if err == nil {
 			region = groups["region"]
 			s3Location = fmt.Sprintf("s3://%s/%s", groups["bucket"], groups["keyname"])
-			return
+			return s3Location, region
 		}
 	}
-	return
+	return s3Location, region
 }
 
 // GetS3LocationFolder returns the folder path for a s3 object
@@ -420,7 +420,7 @@ func GetGCSLocations(loadFiles []LoadFile, options GCSLocationOptions) (gcsLocat
 	for _, loadFile := range loadFiles {
 		gcsLocations = append(gcsLocations, GetGCSLocation(loadFile.Location, options))
 	}
-	return
+	return gcsLocations
 }
 
 func GetLocationFolder(location string) string {
@@ -797,7 +797,7 @@ func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	var directoryName string
 	if directoryName, err = misc.CreateTMPDIR(); err != nil {
 		pkgLogger.Errorn("Error creating SSL root TMP directory for destination", obskit.Error(err))
-		return
+		return whSSLRootDir
 	}
 	sslDirPath := fmt.Sprintf("%s/dest-ssls/%s", directoryName, destinationID)
 	return sslDirPath

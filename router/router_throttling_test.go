@@ -88,11 +88,11 @@ func Test_RouterThrottling(t *testing.T) {
 	)
 	group.Go(func() (err error) {
 		postgresContainer, err = postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
-		return
+		return err
 	})
 	group.Go(func() (err error) {
 		transformerContainer, err = transformertest.Setup(pool, t)
-		return
+		return err
 	})
 	require.NoError(t, group.Wait())
 

@@ -231,7 +231,7 @@ func (rs *Redshift) CreateTable(ctx context.Context, tableName string, columns m
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = rs.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (rs *Redshift) DropTable(ctx context.Context, tableName string) (err error) {
@@ -241,13 +241,13 @@ func (rs *Redshift) DropTable(ctx context.Context, tableName string) (err error)
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = rs.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (rs *Redshift) schemaExists(ctx context.Context) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.DB.QueryRowContext(ctx, sqlStatement).Scan(&exists)
-	return
+	return exists, err
 }
 
 func (rs *Redshift) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
@@ -358,7 +358,7 @@ func (rs *Redshift) createSchema(ctx context.Context) (err error) {
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = rs.DB.ExecContext(ctx, sqlStatement)
-	return
+	return err
 }
 
 func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (string, error) {
@@ -1173,7 +1173,7 @@ func (rs *Redshift) CreateSchema(ctx context.Context) (err error) {
 		rs.logger.Infon("RS: Skipping creating schema since it already exists",
 			logger.NewStringField(logfield.Namespace, rs.Namespace),
 		)
-		return
+		return err
 	}
 	return rs.createSchema(ctx)
 }
@@ -1383,7 +1383,7 @@ func (rs *Redshift) Cleanup(ctx context.Context) {
 }
 
 func (*Redshift) IsEmpty(context.Context, model.Warehouse) (empty bool, err error) {
-	return
+	return empty, err
 }
 
 func (rs *Redshift) LoadUserTables(ctx context.Context) map[string]error {
@@ -1402,15 +1402,15 @@ func (rs *Redshift) LoadTable(ctx context.Context, tableName string) (*types.Loa
 }
 
 func (*Redshift) LoadIdentityMergeRulesTable(context.Context) (err error) {
-	return
+	return err
 }
 
 func (*Redshift) LoadIdentityMappingsTable(context.Context) (err error) {
-	return
+	return err
 }
 
 func (*Redshift) DownloadIdentityRules(context.Context, *misc.GZipWriter) (err error) {
-	return
+	return err
 }
 
 func (rs *Redshift) Connect(ctx context.Context, warehouse model.Warehouse) (client.Client, error) {
@@ -1432,7 +1432,7 @@ func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName strin
 			logger.NewStringField(logfield.TableName, tableName),
 			obskit.Error(err),
 		)
-		return
+		return err
 	}
 
 	var s3Location, region string

@@ -81,21 +81,21 @@ func (cm *Manager) ViolatedConstraints(destinationType string, brEvent *types.Ba
 	cv = &Violation{}
 
 	if !cm.enableConstraintsViolations.Load() {
-		return
+		return cv
 	}
 
 	constraints, ok := cm.constraintsMap[destinationType]
 	if !ok {
-		return
+		return cv
 	}
 
 	for _, constraint := range constraints {
 		cv = constraint.violates(brEvent, columnName)
 		if cv.IsViolated {
-			return
+			return cv
 		}
 	}
-	return
+	return cv
 }
 
 func (ic *indexConstraint) violates(brEvent *types.BatchRouterEvent, columnName string) *Violation {

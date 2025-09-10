@@ -222,7 +222,7 @@ func getRepoPath() (fullSuppressionPath, latestSuppressionPath string, err error
 	}
 	fullSuppressionPath = path.Join(tmpDir, "fullSuppression")
 	latestSuppressionPath = path.Join(tmpDir, "latestSuppression")
-	return
+	return fullSuppressionPath, latestSuppressionPath, err
 }
 
 func latestDataSeed() (io.ReadCloser, error) {
