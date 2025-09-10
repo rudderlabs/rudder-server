@@ -33,7 +33,7 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 	log = log.Withn(logger.NewStringField("mode", string(mirrorMode)))
 	log.Infon("Starting deduplication db")
 
-	gauge := func(primary, mirror string) {
+	modeGauge := func(primary, mirror string) {
 		s.NewTaggedStat("processor_dedup_mode", stats.GaugeType, stats.Tags{
 			"primary": primary,
 			"mirror":  mirror,
@@ -42,14 +42,14 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 
 	switch mirrorMode {
 	case badgerOnlyMode:
-		gauge("badger", "none")
+		modeGauge("badger", "none")
 		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
 	case keyDBOnlyMode:
 		keydb, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
 			return nil, fmt.Errorf("create keydb: %w", err)
 		}
-		gauge("keydb", "none")
+		modeGauge("keydb", "none")
 		return keydb, nil
 	case mirrorToKeyDB:
 		// primary is badger, then we mirror to keydb
@@ -59,11 +59,11 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 		}
 		mirror, err := kdb.NewKeyDB(conf, s, log)
 		if err != nil {
-			gauge("badger", "none")
+			modeGauge("badger", "none")
 			log.Errorn("Failed to create keydb mirror, falling back to badger only", obskit.Error(err))
 			return primary, nil
 		}
-		gauge("badger", "keydb")
+		modeGauge("badger", "keydb")
 		return NewMirrorDB(primary, mirror, mirrorToKeyDB, conf, s, log), nil
 	case mirrorToBadger:
 		// primary is keydb, then we mirror to badger
@@ -76,10 +76,10 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 			primary.Close()
 			return nil, fmt.Errorf("create badger mirror: %w", err)
 		}
-		gauge("keydb", "badger")
+		modeGauge("keydb", "badger")
 		return NewMirrorDB(primary, mirror, mirrorToBadger, conf, s, log), nil
 	default:
-		gauge("keydb", "none")
+		modeGauge("keydb", "none")
 		log.Warnn("Invalid mirror mode, falling back to badger only")
 		// Default to badger only
 		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
