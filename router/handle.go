@@ -50,7 +50,6 @@ const module = "router"
 type Handle struct {
 	// external dependencies
 	jobsDB                     jobsdb.JobsDB
-	errorDB                    jobsdb.JobsDB
 	throttlerFactory           rtThrottler.Factory
 	backendConfig              backendconfig.BackendConfig
 	Reporting                  reporter
@@ -78,7 +77,6 @@ type Handle struct {
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
-	errorDBEnabled                     config.ValueLoader[bool]
 
 	diagnosisTickerTime time.Duration
 
@@ -357,7 +355,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	routerWorkspaceJobStatusCount := make(map[string]int)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
-	var routerAbortedJobs []*jobsdb.JobT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
 	for _, workerJobStatus := range *workerJobStatuses {
 		parameters := workerJobStatus.parameters
@@ -421,7 +418,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 			sd.FailedMessages = append(sd.FailedMessages, &utilTypes.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()})
-			routerAbortedJobs = append(routerAbortedJobs, workerJobStatus.job)
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
 		}
 
@@ -475,15 +471,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		sort.Slice(statusList, func(i, j int) bool {
 			return statusList[i].JobID < statusList[j].JobID
 		})
-		// Store the aborted jobs to errorDB
-		if len(routerAbortedJobs) > 0 && rt.errorDBEnabled.Load() {
-			err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-				return rt.errorDB.Store(ctx, routerAbortedJobs)
-			}, rt.sendRetryStoreStats)
-			if err != nil {
-				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
-			}
-		}
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {

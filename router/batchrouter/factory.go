@@ -15,7 +15,6 @@ type Factory struct {
 	Reporting             types.Reporting
 	BackendConfig         backendconfig.BackendConfig
 	RouterDB              jobsdb.JobsDB
-	ProcErrorDB           jobsdb.JobsDB
 	TransientSources      transientsource.Service
 	RsourcesService       rsources.JobService
 	Debugger              destinationdebugger.DestinationDebugger
@@ -32,7 +31,6 @@ func (f *Factory) New(destType string) *Handle {
 		destType,
 		f.BackendConfig,
 		f.RouterDB,
-		f.ProcErrorDB,
 		f.Reporting,
 		f.TransientSources,
 		f.RsourcesService,

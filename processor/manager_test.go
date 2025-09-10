@@ -136,17 +136,6 @@ func TestProcessorManager(t *testing.T) {
 		jobsdb.WithStats(stats.NOP),
 	)
 	defer brtDB.Close()
-	readErrorDB := jobsdb.NewForRead("proc_error",
-		jobsdb.WithConfig(c),
-		jobsdb.WithStats(stats.NOP),
-	)
-	defer readErrorDB.Close()
-	writeErrorDB := jobsdb.NewForWrite("proc_error",
-		jobsdb.WithConfig(c),
-		jobsdb.WithStats(stats.NOP),
-	)
-	require.NoError(t, writeErrorDB.Start())
-	defer writeErrorDB.TearDown()
 	eschDB := jobsdb.NewForReadWrite("esch",
 		jobsdb.WithConfig(c),
 		jobsdb.WithStats(stats.NOP),
@@ -167,8 +156,6 @@ func TestProcessorManager(t *testing.T) {
 		gwDB,
 		rtDB,
 		brtDB,
-		readErrorDB,
-		writeErrorDB,
 		eschDB,
 		archDB,
 		&reporting.NOOP{},
@@ -193,8 +180,6 @@ func TestProcessorManager(t *testing.T) {
 		defer rtDB.Stop()
 		require.NoError(t, brtDB.Start())
 		defer brtDB.Stop()
-		require.NoError(t, readErrorDB.Start())
-		defer readErrorDB.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 			func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				ch := make(chan pubsub.DataEvent, 1)
@@ -246,8 +231,6 @@ func TestProcessorManager(t *testing.T) {
 		defer rtDB.Stop()
 		require.NoError(t, brtDB.Start())
 		defer brtDB.Stop()
-		require.NoError(t, readErrorDB.Start())
-		defer readErrorDB.Stop()
 		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
 			func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				ch := make(chan pubsub.DataEvent, 1)

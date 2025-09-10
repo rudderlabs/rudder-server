@@ -22,7 +22,6 @@ type Factory struct {
 	Reporting                  reporter
 	BackendConfig              backendconfig.BackendConfig
 	RouterDB                   jobsdb.JobsDB
-	ProcErrorDB                jobsdb.JobsDB
 	TransientSources           transientsource.Service
 	RsourcesService            rsources.JobService
 	TransformerFeaturesService transformerFeaturesService.FeaturesService
@@ -43,7 +42,6 @@ func (f *Factory) New(destination *backendconfig.DestinationT) *Handle {
 		config.Default,
 		f.BackendConfig,
 		f.RouterDB,
-		f.ProcErrorDB,
 		f.TransientSources,
 		f.RsourcesService,
 		f.TransformerFeaturesService,

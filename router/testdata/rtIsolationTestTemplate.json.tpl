@@ -109,7 +109,6 @@
                 "useSelfStorage": false,
                 "retentionPeriod": "default",
                 "storagePreferences": {
-                    "procErrors": false,
                     "gatewayDumps": false
                 }
             }
