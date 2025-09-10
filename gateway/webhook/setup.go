@@ -17,6 +17,7 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
 
 	"github.com/samber/lo"
 
@@ -36,6 +37,8 @@ type Gateway interface {
 type WebhookRequestProcessor interface {
 	// ProcessTransformedWebhookRequest processes the transformed webhook request and save it to the gw jobsDB
 	ProcessTransformedWebhookRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, arctx *gwtypes.AuthRequestContext) string
+	// SaveWebhookFailures saves the webhook failures to the procErr jobsDB
+	SaveWebhookFailures([]*model.FailedWebhookPayload) error
 }
 
 // StatReporterCreator is a function type that creates StatReporter instances
