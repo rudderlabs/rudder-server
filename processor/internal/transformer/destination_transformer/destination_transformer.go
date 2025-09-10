@@ -449,10 +449,8 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 		}
 		for i := range data {
 			ctr.Input = append(ctr.Input, types.CompactedTransformerEvent{
-				Message:     data[i].Message,
-				Metadata:    data[i].Metadata,
-				Libraries:   data[i].Libraries,
-				Credentials: data[i].Credentials,
+				Message:  data[i].Message,
+				Metadata: data[i].Metadata,
 			})
 			if _, ok := ctr.Destinations[data[i].Metadata.DestinationID]; !ok {
 				ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
