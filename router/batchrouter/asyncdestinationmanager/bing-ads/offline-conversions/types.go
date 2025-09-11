@@ -10,13 +10,14 @@ import (
 )
 
 type BingAdsBulkUploader struct {
-	destName       string
-	service        bingads.BulkServiceI
-	logger         logger.Logger
-	statsFactory   stats.Stats
-	fileSizeLimit  int64
-	eventsLimit    int64
-	isHashRequired bool
+	initializationError string
+	destName            string
+	service             bingads.BulkServiceI
+	logger              logger.Logger
+	statsFactory        stats.Stats
+	fileSizeLimit       int64
+	eventsLimit         int64
+	isHashRequired      bool
 }
 type Message struct {
 	Fields json.RawMessage `json:"fields"`
