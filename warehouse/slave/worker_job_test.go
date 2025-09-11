@@ -467,6 +467,7 @@ func TestSlaveJob(t *testing.T) {
 	t.Run("upload load files", func(t *testing.T) {
 		ctxCancel, cancel := context.WithCancel(context.Background())
 		cancel()
+		minioResource, err := minio.Setup(pool, t)
 
 		testCases := []struct {
 			name              string
@@ -480,6 +481,9 @@ func TestSlaveJob(t *testing.T) {
 				name:              "Parquet file",
 				additionalWriters: 9,
 				destType:          warehouseutils.S3Datalake,
+				conf: map[string]any{
+					"endPoint": fmt.Sprintf("http://%s", minioResource.Endpoint),
+				},
 			},
 			{
 				name: "Few files",
@@ -512,7 +516,6 @@ func TestSlaveJob(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				minioResource, err := minio.Setup(pool, t)
 				require.NoError(t, err)
 
 				conf := map[string]any{

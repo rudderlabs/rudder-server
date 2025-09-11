@@ -2886,7 +2886,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
 }
 
-func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Processor.Store.Sampling.Bucket")
 		regionHint       = conf.GetStringVar("us-east-1", "Processor.Store.Sampling.RegionHint", "AWS_S3_REGION_HINT")
@@ -3973,7 +3973,7 @@ func shouldSample(samplingPercentage float64) bool {
 }
 
 // getUTSamplingUploader can be completely removed once we get rid of UT sampling
-func getUTSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
 		endpoint         = conf.GetString("UTSampling.Endpoint", "")
