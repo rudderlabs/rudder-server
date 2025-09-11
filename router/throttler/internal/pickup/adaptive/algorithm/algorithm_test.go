@@ -55,7 +55,7 @@ func TestAdaptiveRateLimit(t *testing.T) {
 
 	t.Run("should delay for few windows before decreasing again", func(t *testing.T) {
 		cfg := config.New()
-		cfg.Set("Router.throttler.adaptive.decreaseRateDelay", 2)
+		cfg.Set("Router.throttler.adaptiveDecreaseRateDelay", 2)
 		al := NewAdaptiveAlgorithm("dest", cfg, config.SingleValueLoader(500*time.Millisecond))
 		defer al.Shutdown()
 		al.ResponseCodeReceived(429)

@@ -44,6 +44,14 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common
 	return &KinesisProducer{client: kinesis.NewFromConfig(awsConfig)}, err
 }
 
+func parseKinesisError(err error) (int, string, string) {
+	statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+	if respStatus == "ProvisionedThroughputExceededException" {
+		statusCode = 429
+	}
+	return statusCode, respStatus, responseMessage
+}
+
 // Produce creates a producer and send data to Kinesis.
 func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := producer.client
@@ -91,7 +99,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	}
 	putOutput, err := client.PutRecord(context.Background(), &putInput)
 	if err != nil {
-		statusCode, respStatus, responseMessage := common.ParseAWSError(err)
+		statusCode, respStatus, responseMessage := parseKinesisError(err)
 		pkgLogger.Errorn("[Kinesis] error",
 			logger.NewIntField("statusCode", int64(statusCode)),
 			logger.NewStringField("respStatus", respStatus),

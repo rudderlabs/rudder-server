@@ -70,12 +70,10 @@ type TrackingPlanValidationEvent struct {
 	Metadata Metadata       `json:"metadata"`
 }
 
-// CompactedTransformerEvent is similar to a [TransformerEvent] but without the connection and destination fields
+// CompactedTransformerEvent is a subset of the [TransformerEvent] only containing the message and metadata fields
 type CompactedTransformerEvent struct {
-	Message     SingularEventT           `json:"message"`
-	Metadata    Metadata                 `json:"metadata"`
-	Libraries   []backendconfig.LibraryT `json:"libraries,omitempty"`
-	Credentials []Credential             `json:"credentials,omitempty"`
+	Message  SingularEventT `json:"message"`
+	Metadata Metadata       `json:"metadata"`
 }
 
 // CompactedTransformRequest is the request structure for a compacted transformer request payload.
@@ -101,8 +99,6 @@ func (ctr *CompactedTransformRequest) ToTransformerEvents() []TransformerEvent {
 			Metadata:    input.Metadata,
 			Destination: ctr.Destinations[input.Metadata.DestinationID],
 			Connection:  ctr.Connections[input.Metadata.SourceID+":"+input.Metadata.DestinationID],
-			Libraries:   input.Libraries,
-			Credentials: input.Credentials,
 		}
 	}
 	return events

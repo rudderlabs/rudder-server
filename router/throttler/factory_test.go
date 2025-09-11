@@ -20,11 +20,11 @@ import (
 func TestFactory(t *testing.T) {
 	t.Run("when adaptive throttling is enabled", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 		maxLimit := int64(300)
-		config.Set("Router.throttler.adaptive.maxLimit", maxLimit)
-		config.Set("Router.throttler.adaptive.minLimit", int64(100))
-		config.Set("Router.throttler.adaptive.timeWindow", time.Second)
+		config.Set("Router.throttler.maxLimit", maxLimit)
+		config.Set("Router.throttler.minLimit", int64(100))
+		config.Set("Router.throttler.destName.timeWindow", time.Second)
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
 		defer f.Shutdown()
@@ -44,15 +44,15 @@ func TestFactory(t *testing.T) {
 		})
 
 		t.Run("adaptive rate limit back to disabled", func(t *testing.T) {
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			require.Eventually(t, func() bool {
 				return floatCheck(ta.GetLimit(), 0) // should be 0 since adaptive rate limiter is disabled
 			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimit(), maxLimit*8/10)
-			config.Set("Router.throttler.adaptive.enabled", true)
+			config.Set("Router.throttler.adaptiveEnabled", true)
 		})
 
 		t.Run("adaptive rate limit back to enabled", func(t *testing.T) {
-			config.Set("Router.throttler.adaptive.enabled", true)
+			config.Set("Router.throttler.adaptiveEnabled", true)
 			ta.ResponseCodeReceived(429)
 			require.Eventually(t, func() bool {
 				return floatCheck(ta.GetLimit(), maxLimit*5/10) // reduces by 30% since there is an error in the last 1 second
@@ -65,10 +65,10 @@ func TestFactory(t *testing.T) {
 		window := 2 * time.Second
 
 		c := config.New()
-		c.Set("Router.throttler.adaptive.enabled", true)
-		c.Set("Router.throttler.adaptive.maxLimit", maxLimit)
-		c.Set("Router.throttler.adaptive.minLimit", int64(100))
-		c.Set("Router.throttler.adaptive.timeWindow", window)
+		c.Set("Router.throttler.adaptiveEnabled", true)
+		c.Set("Router.throttler.maxLimit", maxLimit)
+		c.Set("Router.throttler.minLimit", int64(100))
+		c.Set("Router.throttler.destName.timeWindow", window)
 
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestFactory(t *testing.T) {
 
 	t.Run("when no limit is set", func(t *testing.T) {
 		conf := config.New()
-		conf.Set("Router.throttler.adaptive.enabled", true)
+		conf.Set("Router.throttler.adaptiveEnabled", true)
 		f, err := NewFactory(conf, stats.NOP, logger.NOP)
 		require.NoError(t, err)
 		defer f.Shutdown()
@@ -102,7 +102,7 @@ func TestFactory(t *testing.T) {
 
 	t.Run("when adaptive throttling is disabled", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", false)
+		config.Set("Router.throttler.adaptiveEnabled", false)
 		config.Set("Router.throttler.destName.destID.limit", int64(100))
 		config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 
@@ -127,7 +127,7 @@ func TestFactory(t *testing.T) {
 
 	t.Run("throttler caching and reuse", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
@@ -160,7 +160,7 @@ func TestFactory(t *testing.T) {
 
 	t.Run("factory shutdown", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
@@ -178,11 +178,11 @@ func TestFactory(t *testing.T) {
 
 	t.Run("per event type throttling configuration", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
-		config.Set("Router.throttler.adaptive.destName.destID.track.maxLimit", int64(50))
-		config.Set("Router.throttler.adaptive.destName.destID.track.minLimit", int64(10))
-		config.Set("Router.throttler.adaptive.timeWindow", time.Second)
+		config.Set("Router.throttler.destName.destID.track.maxLimit", int64(50))
+		config.Set("Router.throttler.destName.destID.track.minLimit", int64(10))
+		config.Set("Router.throttler.destName.timeWindow", time.Second)
 
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
@@ -198,11 +198,11 @@ func TestFactory(t *testing.T) {
 
 	t.Run("hierarchical configuration", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 
 		t.Run("destination-specific adaptive enabled", func(t *testing.T) {
-			config.Set("Router.throttler.adaptive.destName.destID.enabled", true)
-			config.Set("Router.throttler.adaptive.enabled", false) // Global disabled
+			config.Set("Router.throttler.destName.destID.adaptiveEnabled", true)
+			config.Set("Router.throttler.adaptiveEnabled", false) // Global disabled
 
 			f, err := NewFactory(config, stats.NOP, logger.NOP)
 			require.NoError(t, err)
@@ -214,8 +214,8 @@ func TestFactory(t *testing.T) {
 		})
 
 		t.Run("destination-type-specific adaptive enabled", func(t *testing.T) {
-			config.Set("Router.throttler.adaptive.destName.enabled", true)
-			config.Set("Router.throttler.adaptive.enabled", false) // Global disabled
+			config.Set("Router.throttler.destName.adaptiveEnabled", true)
+			config.Set("Router.throttler.adaptiveEnabled", false) // Global disabled
 
 			f, err := NewFactory(config, stats.NOP, logger.NOP)
 			require.NoError(t, err)
@@ -231,7 +231,7 @@ func TestFactory(t *testing.T) {
 		t.Run("GCRA algorithm", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "gcra")
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(100))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 
@@ -285,7 +285,7 @@ func TestFactory(t *testing.T) {
 
 	t.Run("concurrent access", func(t *testing.T) {
 		config := config.New()
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
@@ -323,7 +323,7 @@ func TestFactory(t *testing.T) {
 
 		t.Run("static throttler stats", func(t *testing.T) {
 			config := config.New()
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(200))
 			config.Set("Router.throttler.destName.destID.timeWindow", 2*time.Second)
 
@@ -344,11 +344,11 @@ func TestFactory(t *testing.T) {
 
 		t.Run("per-event type stats", func(t *testing.T) {
 			config := config.New()
-			config.Set("Router.throttler.adaptive.enabled", true)
+			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
-			config.Set("Router.throttler.adaptive.destName.destID.track.maxLimit", int64(150))
-			config.Set("Router.throttler.adaptive.destName.destID.track.minLimit", int64(50))
-			config.Set("Router.throttler.adaptive.timeWindow", 3*time.Second)
+			config.Set("Router.throttler.destName.destID.track.maxLimit", int64(150))
+			config.Set("Router.throttler.destName.destID.track.minLimit", int64(50))
+			config.Set("Router.throttler.destName.timeWindow", 3*time.Second)
 
 			f, err := NewFactory(config, statsStore, logger.NOP)
 			require.NoError(t, err)
@@ -381,10 +381,10 @@ func TestFactoryWithRedis(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
 			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.adaptive.enabled", true)
-			config.Set("Router.throttler.adaptive.maxLimit", int64(100))
-			config.Set("Router.throttler.adaptive.minLimit", int64(10))
-			config.Set("Router.throttler.adaptive.timeWindow", time.Second)
+			config.Set("Router.throttler.adaptiveEnabled", true)
+			config.Set("Router.throttler.maxLimit", int64(100))
+			config.Set("Router.throttler.minLimit", int64(10))
+			config.Set("Router.throttler.destName.timeWindow", time.Second)
 
 			f, err := NewFactory(config, stats.NOP, logger.NOP)
 			require.NoError(t, err)
@@ -414,7 +414,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
 			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(50))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 
@@ -431,7 +431,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
 			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID1.limit", int64(30))
 			config.Set("Router.throttler.destName.destID2.limit", int64(60))
 			config.Set("Router.throttler.destName.destID1.timeWindow", time.Second)
@@ -463,10 +463,10 @@ func TestFactoryWithRedis(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-sorted-set")
 			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.adaptive.enabled", true)
-			config.Set("Router.throttler.adaptive.maxLimit", int64(200))
-			config.Set("Router.throttler.adaptive.minLimit", int64(20))
-			config.Set("Router.throttler.adaptive.timeWindow", time.Second)
+			config.Set("Router.throttler.adaptiveEnabled", true)
+			config.Set("Router.throttler.maxLimit", int64(200))
+			config.Set("Router.throttler.minLimit", int64(20))
+			config.Set("Router.throttler.destName.timeWindow", time.Second)
 
 			f, err := NewFactory(config, stats.NOP, logger.NOP)
 			require.NoError(t, err)
@@ -505,7 +505,7 @@ func TestFactoryWithRedis(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-sorted-set")
 			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(75))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 
@@ -548,10 +548,10 @@ func TestFactoryWithRedis(t *testing.T) {
 			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
 			config.Set("Router.throttler.redis.username", "")
 			config.Set("Router.throttler.redis.password", "")
-			config.Set("Router.throttler.adaptive.enabled", true)
-			config.Set("Router.throttler.adaptive.maxLimit", int64(100))
-			config.Set("Router.throttler.adaptive.minLimit", int64(10))
-			config.Set("Router.throttler.adaptive.timeWindow", time.Second)
+			config.Set("Router.throttler.adaptiveEnabled", true)
+			config.Set("Router.throttler.maxLimit", int64(100))
+			config.Set("Router.throttler.minLimit", int64(10))
+			config.Set("Router.throttler.destName.timeWindow", time.Second)
 
 			f, err := NewFactory(config, stats.NOP, logger.NOP)
 			require.NoError(t, err)
@@ -573,10 +573,10 @@ func TestFactoryWithRedis(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-gcra")
 		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-		config.Set("Router.throttler.adaptive.enabled", true)
-		config.Set("Router.throttler.adaptive.maxLimit", int64(120))
-		config.Set("Router.throttler.adaptive.minLimit", int64(12))
-		config.Set("Router.throttler.adaptive.timeWindow", 2*time.Second)
+		config.Set("Router.throttler.adaptiveEnabled", true)
+		config.Set("Router.throttler.maxLimit", int64(120))
+		config.Set("Router.throttler.minLimit", int64(12))
+		config.Set("Router.throttler.destName.timeWindow", 2*time.Second)
 
 		f, err := NewFactory(config, statsStore, logger.NOP)
 		require.NoError(t, err)
@@ -602,7 +602,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-gcra")
 		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-		config.Set("Router.throttler.adaptive.enabled", false)
+		config.Set("Router.throttler.adaptiveEnabled", false)
 		config.Set("Router.throttler.destName.destID.limit", int64(1000))
 		config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 
@@ -626,13 +626,13 @@ func TestFactoryWithRedis(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-sorted-set")
 		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
-		config.Set("Router.throttler.adaptive.destName.destID.track.maxLimit", int64(80))
-		config.Set("Router.throttler.adaptive.destName.destID.track.minLimit", int64(8))
-		config.Set("Router.throttler.adaptive.destName.destID.identify.maxLimit", int64(40))
-		config.Set("Router.throttler.adaptive.destName.destID.identify.minLimit", int64(4))
-		config.Set("Router.throttler.adaptive.timeWindow", time.Second)
+		config.Set("Router.throttler.destName.destID.track.maxLimit", int64(80))
+		config.Set("Router.throttler.destName.destID.track.minLimit", int64(8))
+		config.Set("Router.throttler.destName.destID.identify.maxLimit", int64(40))
+		config.Set("Router.throttler.destName.destID.identify.minLimit", int64(4))
+		config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 
 		f, err := NewFactory(config, stats.NOP, logger.NOP)
 		require.NoError(t, err)
