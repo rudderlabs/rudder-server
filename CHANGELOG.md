@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.2](https://github.com/rudderlabs/rudder-server/compare/v1.58.1...v1.58.2) (2025-09-11)
+
+
+### Bug Fixes
+
+* **router:** kinesis rate exceeded errors are being aborted with http 400 ([#6329](https://github.com/rudderlabs/rudder-server/issues/6329)) ([c07565a](https://github.com/rudderlabs/rudder-server/commit/c07565a1bda50e4e252fcae7cdb870c133f76775))
+
 ## [1.58.1](https://github.com/rudderlabs/rudder-server/compare/v1.58.0...v1.58.1) (2025-09-04)
 
 
