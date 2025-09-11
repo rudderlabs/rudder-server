@@ -344,8 +344,8 @@ func TestExtractorHandle_CleanUpErrorMessage(t *testing.T) {
 		},
 		{
 			name:     "ID cleanup",
-			input:    "Object 12345-abc-def not found",
-			expected: "Object abc def not found",
+			input:    "Object 12345-a_bc-def not found",
+			expected: "Object not found",
 		},
 		{
 			name:     "multiple special characters",

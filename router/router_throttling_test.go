@@ -88,11 +88,11 @@ func Test_RouterThrottling(t *testing.T) {
 	)
 	group.Go(func() (err error) {
 		postgresContainer, err = postgres.Setup(pool, t, postgres.WithShmSize(256*bytesize.MB))
-		return
+		return err
 	})
 	group.Go(func() (err error) {
 		transformerContainer, err = transformertest.Setup(pool, t)
-		return
+		return err
 	})
 	require.NoError(t, group.Wait())
 
@@ -238,8 +238,8 @@ func Test_RouterThrottling(t *testing.T) {
 		}
 	}
 
-	verifyBucket(webhook1.buckets, noOfEvents, 20, 2)
-	verifyBucket(webhook2.buckets, noOfEvents, 50, 2)
+	verifyBucket(webhook1.buckets, noOfEvents, 20, 1)
+	verifyBucket(webhook2.buckets, noOfEvents, 50, 1)
 }
 
 func requireLengthInRange(t *testing.T, x interface{}, min, max int) {

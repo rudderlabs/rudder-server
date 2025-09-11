@@ -41,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -108,8 +107,6 @@ type Handle struct {
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
 	batchRouterDB              jobsdb.JobsDB
-	readErrorDB                jobsdb.JobsDB
-	writeErrorDB               jobsdb.JobsDB
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
@@ -180,7 +177,6 @@ type Handle struct {
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		enableOptimizedConnectionDetailsKey       config.ValueLoader[bool]
-		errorDBEnabled                            config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -386,7 +382,6 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig,
 	gatewayDB, routerDB, batchRouterDB,
-	readErrorDB, writeErrorDB,
 	eventSchemaDB, archivalDB jobsdb.JobsDB,
 	reporting reportingtypes.Reporting,
 	transientSources transientsource.Service,
@@ -418,8 +413,6 @@ func (proc *Handle) Setup(
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.readErrorDB = readErrorDB
-	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
 	proc.archivalDB = archivalDB
 
@@ -697,19 +690,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 	}))
 
-	// stash loop
-	g.Go(crash.Wrapper(func() error {
-		st := stash.New()
-		st.Setup(
-			proc.readErrorDB,
-			proc.transientSources,
-			proc.fileuploader,
-			proc.adaptiveLimit,
-		)
-		st.Start(ctx)
-		return nil
-	}))
-
 	return g.Wait()
 }
 
@@ -782,7 +762,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.enableOptimizedConnectionDetailsKey = proc.conf.GetReloadableBoolVar(false, "Processor.enableOptimizedConnectionDetailsKey")
-	proc.config.errorDBEnabled = proc.conf.GetReloadableBoolVar(false, "ErrorDB.enabled")
 }
 
 type connection struct {
@@ -1695,7 +1674,6 @@ type preTransformationMessage struct {
 	marshalStart                  time.Time
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
 	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
-	procErrorJobs                 []*jobsdb.JobT
 	jobIDToSpecificDestMapOnly    map[int64]string
 	groupedEvents                 map[string][]types.TransformerEvent
 	uniqueMessageIdsBySrcDestKey  map[string]map[string]struct{}
@@ -1724,7 +1702,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
-	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 	archivalJobs := make([]*jobsdb.JobT, 0)
 
@@ -2145,7 +2122,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		marshalStart:                  marshalStart,
 		groupedEventsBySourceId:       groupedEventsBySourceId,
 		eventsByMessageID:             eventsByMessageID,
-		procErrorJobs:                 procErrorJobs,
 		jobIDToSpecificDestMapOnly:    jobIDToSpecificDestMapOnly,
 		groupedEvents:                 groupedEvents,
 		uniqueMessageIdsBySrcDestKey:  uniqueMessageIdsBySrcDestKey,
@@ -2309,12 +2285,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
+	validatedEventsBySourceId, validatedReportMetrics, _, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime(preTrans.partition).SendTiming(validateEventsTime)
-
-	// Appending validatedErrorJobs to procErrorJobs
-	preTrans.procErrorJobs = append(preTrans.procErrorJobs, validatedErrorJobs...)
 
 	// Appending validatedReportMetrics to reportMetrics
 	preTrans.reportMetrics = append(preTrans.reportMetrics, validatedReportMetrics...)
@@ -2402,7 +2375,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.uniqueMessageIdsBySrcDestKey,
 		preTrans.reportMetrics,
 		preTrans.statusList,
-		preTrans.procErrorJobs,
 		preTrans.sourceDupStats,
 		preTrans.dedupKeys,
 
@@ -2424,7 +2396,6 @@ type transformationMessage struct {
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	reportMetrics                []*reportingtypes.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
-	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[dupStatKey]int
 	dedupKeys                    map[string]struct{}
 
@@ -2441,7 +2412,6 @@ type userTransformData struct {
 	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	statusList                    []*jobsdb.JobStatusT
-	procErrorJobs                 []*jobsdb.JobT
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
 	trackedUsersReports           []*trackedusers.UsersReport
@@ -2534,7 +2504,6 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
 		reportMetrics:                 in.reportMetrics,
 		statusList:                    in.statusList,
-		procErrorJobs:                 in.procErrorJobs,
 		sourceDupStats:                in.sourceDupStats,
 		dedupKeys:                     in.dedupKeys,
 		totalEvents:                   in.totalEvents,
@@ -2617,7 +2586,6 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 		droppedJobs,
 
 		procErrorJobsByDestID,
-		in.procErrorJobs,
 		lo.Keys(routerDestIDs),
 
 		in.reportMetrics,
@@ -2640,7 +2608,6 @@ type storeMessage struct {
 	droppedJobs         []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
-	procErrorJobs         []*jobsdb.JobT
 	routerDestIDs         []string
 
 	reportMetrics  []*reportingtypes.PUReportedMetric
@@ -2661,7 +2628,6 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.batchDestJobs = append(sm.batchDestJobs, subJob.batchDestJobs...)
 	sm.droppedJobs = append(sm.droppedJobs, subJob.droppedJobs...)
 
-	sm.procErrorJobs = append(sm.procErrorJobs, subJob.procErrorJobs...)
 	for id, job := range subJob.procErrorJobsByDestID {
 		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
 	}
@@ -2862,27 +2828,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		})
 	}
 
-	for _, jobs := range in.procErrorJobsByDestID {
-		in.procErrorJobs = append(in.procErrorJobs, jobs...)
-	}
-	if len(in.procErrorJobs) > 0 {
-		g.Go(func() error {
-			if proc.config.errorDBEnabled.Load() {
-				err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-					return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
-				}, proc.sendRetryStoreStats)
-				if err != nil {
-					proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
-					proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-					return err
-				}
-				proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-			}
-			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
-			return nil
-		})
-	}
-
 	if !enableConcurrentStore {
 		if err := g.Wait(); err != nil {
 			panic(err)
@@ -2933,12 +2878,15 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			}
 		}
 	}
+	if len(in.procErrorJobsByDestID) > 0 {
+		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
+	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
 	proc.logger.Debugn("Processor GW DB Write Complete", logger.NewIntField("totalProcessed", int64(len(statusList))))
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
 }
 
-func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Processor.Store.Sampling.Bucket")
 		regionHint       = conf.GetStringVar("us-east-1", "Processor.Store.Sampling.RegionHint", "AWS_S3_REGION_HINT")
@@ -4025,7 +3973,7 @@ func shouldSample(samplingPercentage float64) bool {
 }
 
 // getUTSamplingUploader can be completely removed once we get rid of UT sampling
-func getUTSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
 		endpoint         = conf.GetString("UTSampling.Endpoint", "")

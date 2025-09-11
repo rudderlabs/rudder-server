@@ -175,7 +175,7 @@ func TestUTMirroring(t *testing.T) {
 		conf.Set("Processor.userTransformationMirroring.fireAndForget", strconv.FormatBool(fireAndForget))
 		// conf.Set("USER_TRANSFORM_MIRROR_URL", "TODO")
 		conf.Set("UTSampling.Bucket", minioContainer.BucketName)
-		conf.Set("UTSampling.Endpoint", minioContainer.Endpoint)
+		conf.Set("UTSampling.Endpoint", fmt.Sprintf("http://%s", minioContainer.Endpoint))
 		conf.Set("UTSampling.AccessKeyId", minioContainer.AccessKeyID)
 		conf.Set("UTSampling.AccessKey", minioContainer.AccessKeySecret)
 		conf.Set("UTSampling.S3ForcePathStyle", "true")

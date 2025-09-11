@@ -24,14 +24,12 @@
                 "config": {
                     "global": {
                         "ajvOptions": {},
-                        "allowUnplannedEvents": true,
-                        "sendViolatedEventsTo": "procErrors"
+                        "allowUnplannedEvents": true
                     },
                     "track": {
                         "allowUnplannedEvents": true,
                         "anyOtherViolation": "forward",
                         "propagateValidationErrors": true,
-                        "sendViolatedEventsTo": "procErrors",
                         "unplannedProperties": "forward"
                     }
                 },

@@ -142,7 +142,6 @@ func TestWebhookRequestHandlerWithTransformerBatchGeneralError(t *testing.T) {
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 	arctx := &gwtypes.AuthRequestContext{
 		SourceDefName: sourceDefName,
 		WriteKey:      sampleWriteKey,
@@ -187,8 +186,6 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
 
-	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
-
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))
 	w := httptest.NewRecorder()
@@ -229,8 +226,6 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	})
 
 	mockGW.EXPECT().TrackRequestMetrics(gomock.Any()).Times(1)
-
-	mockGW.EXPECT().SaveWebhookFailures(gomock.Any()).Return(nil).Times(1)
 
 	webhookHandler.Register(sourceDefName)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhook?writeKey="+sampleWriteKey, bytes.NewBufferString(sampleJson))

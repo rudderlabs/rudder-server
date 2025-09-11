@@ -544,7 +544,6 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 			mockCtrl := gomock.NewController(t)
 			mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
-			mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			mockDestinationDebugger := mockdestinationdebugger.NewMockDestinationDebugger(mockCtrl)
 
 			batchRouter := defaultHandle(destType)
@@ -552,16 +551,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 				return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 			}
 			batchRouter.jobsDB = mockBatchRouterJobsDB
-			batchRouter.errorDB = mockErrJobsDB
 			batchRouter.debugger = mockDestinationDebugger
-
-			mockErrJobsDB.EXPECT().Store(
-				gomock.Any(), gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, jobList []*jobsdb.JobT) {
-				require.Len(t, jobList, 1)
-				require.Equal(t, int64(4), jobList[0].JobID)
-				require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID","reason":"aborted reason"}`, string(jobList[0].Parameters))
-			})
 
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
@@ -816,17 +806,10 @@ func TestAsyncDestinationManager(t *testing.T) {
 			batchRouter.initAsyncDestinationStruct(&destination)
 			mockCtrl := gomock.NewController(t)
 			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
-			mockErrJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			batchRouter.jobsDB = mockJobsDB
-			batchRouter.errorDB = mockErrJobsDB
 			job := &jobsdb.JobT{
 				JobID:        1,
 				EventPayload: []byte(`{"key": "value"}`),
-			}
-			abortedJob := &jobsdb.JobT{
-				JobID:        job.JobID,
-				EventPayload: job.EventPayload,
-				Parameters:   []byte(`{"stage":"batch_router","reason":"SOME_INVALID_DESTINATION_TYPE initialization failed with error: invalid destination type"}`),
 			}
 			mockJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -840,7 +823,6 @@ func TestAsyncDestinationManager(t *testing.T) {
 					require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
 					require.Equal(t, "SOME_INVALID_DESTINATION_TYPE initialization failed with error: invalid destination type", gjson.GetBytes(statuses[0].ErrorResponse, "Error").String())
 				}).Return(nil)
-			mockErrJobsDB.EXPECT().Store(gomock.Any(), []*jobsdb.JobT{abortedJob}).Return(nil).AnyTimes()
 
 			err := batchRouter.sendJobsToStorage(BatchedJobs{
 				Jobs: []*jobsdb.JobT{

@@ -1615,7 +1615,7 @@ func listPartitions(t testing.TB, ctx context.Context, db *bigquery.Client, name
 			B: partitionID,
 		})
 	}
-	return
+	return partitions
 }
 
 func verifyEventsUsingView(t testing.TB, ctx context.Context, db *bigquery.Client, namespace string, expectedEvents whth.EventsCountMap) {

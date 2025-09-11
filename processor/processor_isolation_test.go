@@ -340,10 +340,6 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 		return processedJobCount == len(spec.jobs)
 	}, 600*time.Second, 1*time.Second, "all batches should be successfully processed")
 
-	var failedJobs int
-	require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('proc_error',5) where parameters->>'stage' != 'router'").Scan(&failedJobs))
-	require.Equal(t, 0, failedJobs, "should not have any failed jobs")
-
 	// count gw min and max job times
 	var gwMinJobTime, gwMaxJobTime time.Time
 	require.NoError(t, postgresContainer.DB.QueryRow("SELECT min(created_at), max(created_at) FROM unionjobsdbmetadata('gw',5)").Scan(&gwMinJobTime, &gwMaxJobTime))
@@ -362,7 +358,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	t.Log("shutting down rudder-server")
 	cancel()
 	<-svcDone
-	return
+	return overallDuration
 }
 
 type ProcIsolationScenarioSpec struct {

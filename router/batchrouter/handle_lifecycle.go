@@ -48,7 +48,7 @@ import (
 func (brt *Handle) Setup(
 	destType string,
 	backendConfig backendconfig.BackendConfig,
-	jobsDB, errorDB jobsdb.JobsDB,
+	jobsDB jobsdb.JobsDB,
 	reporting types.Reporting,
 	transientSources transientsource.Service,
 	rsourcesService rsources.JobService,
@@ -65,7 +65,6 @@ func (brt *Handle) Setup(
 		Timeout:   config.GetDuration("BatchRouter.httpTimeout", 10, time.Second),
 	}
 	brt.jobsDB = jobsDB
-	brt.errorDB = errorDB
 	brt.pendingEventsRegistry = pendingEventsRegistry
 	brt.reporting = reporting
 	brt.fileManagerFactory = filemanager.New
@@ -210,7 +209,6 @@ func (brt *Handle) setupReloadableVars() {
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
-	brt.errorDBEnabled = config.GetReloadableBoolVar(false, "ErrorDB.enabled")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
