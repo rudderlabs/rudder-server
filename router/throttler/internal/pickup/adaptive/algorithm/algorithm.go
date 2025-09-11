@@ -35,22 +35,22 @@ type adaptiveAlgorithm struct {
 // - decreaseWaitWindowMultiplier: Multiplier for the wait window after a decrease.
 // - decreasePercentage: Percentage to decrease the limit factor when 429s are received.
 // - throttleTolerancePercentage: Percentage of throttled requests that triggers a decrease in the limit factor
-func NewAdaptiveAlgorithm(destination string, config *config.Config, window config.ValueLoader[time.Duration]) AdaptiveAlgorithm {
+func NewAdaptiveAlgorithm(destType string, config *config.Config, window config.ValueLoader[time.Duration]) AdaptiveAlgorithm {
 	lf := &limitFactor{value: 1}
 
 	increaseWindowMultiplier := config.GetReloadableIntVar(2, 1,
-		"Router.throttler."+destination+".adaptiveIncreaseWindowMultiplier",
+		"Router.throttler."+destType+".adaptiveIncreaseWindowMultiplier",
 		"Router.throttler.adaptiveIncreaseWindowMultiplier",
 		// TODO: delete the following deprecated keys in the future
-		"Router.throttler.adaptive."+destination+".increaseWindowMultiplier",
+		"Router.throttler.adaptive."+destType+".increaseWindowMultiplier",
 		"Router.throttler.adaptive.increaseWindowMultiplier",
 	)
 	increaseCounterWindow := func() time.Duration { return window.Load() * time.Duration(increaseWindowMultiplier.Load()) }
 	increasePercentage := config.GetReloadableInt64Var(10, 1,
-		"Router.throttler."+destination+".adaptiveIncreasePercentage",
+		"Router.throttler."+destType+".adaptiveIncreasePercentage",
 		"Router.throttler.adaptiveIncreasePercentage",
 		// TODO: delete the following deprecated keys in the future
-		"Router.throttler.adaptive."+destination+".increasePercentage",
+		"Router.throttler.adaptive."+destType+".increasePercentage",
 		"Router.throttler.adaptive.increasePercentage",
 	)
 
@@ -61,25 +61,25 @@ func NewAdaptiveAlgorithm(destination string, config *config.Config, window conf
 	}
 
 	decreaseWaitWindowMultiplier := config.GetReloadableIntVar(1, 1,
-		"Router.throttler."+destination+".adaptiveDecreaseWaitWindowMultiplier",
+		"Router.throttler."+destType+".adaptiveDecreaseWaitWindowMultiplier",
 		"Router.throttler.adaptiveDecreaseWaitWindowMultiplier",
 		// TODO: delete the following deprecated keys in the future
-		"Router.throttler.adaptive."+destination+".decreaseWaitWindowMultiplier",
+		"Router.throttler.adaptive."+destType+".decreaseWaitWindowMultiplier",
 		"Router.throttler.adaptive.decreaseWaitWindowMultiplier",
 	)
 	decreaseWaitWindow := func() time.Duration { return window.Load() * time.Duration(decreaseWaitWindowMultiplier.Load()) }
 	decreasePercentage := config.GetReloadableInt64Var(30, 1,
-		"Router.throttler."+destination+".adaptiveDecreasePercentage",
+		"Router.throttler."+destType+".adaptiveDecreasePercentage",
 		"Router.throttler.adaptiveDecreasePercentage",
 		// TODO: delete the following deprecated keys in the future
-		"Router.throttler.adaptive."+destination+".decreasePercentage",
+		"Router.throttler.adaptive."+destType+".decreasePercentage",
 		"Router.throttler.adaptive.decreasePercentage",
 	)
 	throttleTolerancePercentage := config.GetReloadableInt64Var(10, 1,
-		"Router.throttler."+destination+".adaptiveThrottleTolerancePercentage",
+		"Router.throttler."+destType+".adaptiveThrottleTolerancePercentage",
 		"Router.throttler.adaptiveThrottleTolerancePercentage",
 		// TODO: delete the following deprecated keys in the future
-		"Router.throttler.adaptive."+destination+".throttleTolerancePercentage",
+		"Router.throttler.adaptive."+destType+".throttleTolerancePercentage",
 		"Router.throttler.adaptive.throttleTolerancePercentage",
 	)
 	dlc := &decreaseLimitCounter{
