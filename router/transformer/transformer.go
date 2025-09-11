@@ -167,7 +167,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	start := time.Now()
 	var destinationJobs types.DestinationJobs
 	transformMessageCopy, preservedData := transformMessage.Dehydrate()
-	compactRequestPayloads := trans.compactRequestPayloads() // consistent state for the entire request
+	compactRequestPayloads := trans.compactionSupported // consistent state for the entire request
 
 	rawJSON, err := trans.getRequestPayload(transformMessageCopy, compactRequestPayloads)
 	if err != nil {
@@ -783,10 +783,6 @@ func getEndpointFromURL(urlStr string) string {
 		return parsedURL.Host
 	}
 	return ""
-}
-
-func (trans *handle) compactRequestPayloads() bool {
-	return (trans.compactionSupported)
 }
 
 func (trans *handle) getRequestPayload(data *types.TransformMessageT, compactRequestPayloads bool) ([]byte, error) {

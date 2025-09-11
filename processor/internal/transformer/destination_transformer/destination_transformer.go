@@ -229,7 +229,7 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		return nil, nil
 	}
 	start := time.Now()
-	compactRequestPayloads := d.compactRequestPayloads() // consistent state for the entire request
+	compactRequestPayloads := d.config.compactionSupported // consistent state for the entire request
 	// Call remote transformation
 	rawJSON, err := d.getRequestPayload(data, compactRequestPayloads)
 	if err != nil {
@@ -429,10 +429,6 @@ func (c *Client) canRunWarehouseTransformations(destType string) bool {
 		return c.config.warehouseTransformations.enable.Load()
 	}
 	return false
-}
-
-func (d *Client) compactRequestPayloads() bool {
-	return (d.config.compactionSupported)
 }
 
 func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {
