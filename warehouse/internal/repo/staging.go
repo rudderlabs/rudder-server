@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,7 +12,6 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -147,10 +145,6 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	}
 	now := sf.now()
 
-	schemaPayload, err := jsonrs.Marshal(stagingFile.Schema)
-	if err != nil {
-		return id, fmt.Errorf("marshaling schema: %w", err)
-	}
 	var bytesPerTablePayload interface{}
 	if stagingFile.BytesPerTable != nil {
 		marshalled, err := jsonrs.Marshal(stagingFile.BytesPerTable)
@@ -199,9 +193,8 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 		VALUES
 		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id`,
-
 		stagingFile.Location,
-		schemaPayload,
+		"{}", // schema is not used for now
 		stagingFile.WorkspaceID,
 		stagingFile.SourceID,
 		stagingFile.DestinationID,
@@ -324,41 +317,6 @@ func (sf *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFil
 func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]model.Schema, error) {
 	defer sf.TimerStat("get_schemas_by_ids", nil)()
 
-	enableStagingFileSchemaSnapshot := sf.conf.GetReloadableBoolVar(false, "Warehouse.enableStagingFileSchemaSnapshot")
-	if !enableStagingFileSchemaSnapshot.Load() {
-		query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = ANY ($1);`
-
-		rows, err := sf.db.QueryContext(ctx, query, pq.Array(ids))
-		if err != nil {
-			return nil, fmt.Errorf("querying schemas: %w", err)
-		}
-		defer func() { _ = rows.Close() }()
-
-		schemas := make([]model.Schema, 0, len(ids))
-
-		for rows.Next() {
-			var (
-				rawSchema []byte
-				schema    model.Schema
-			)
-
-			if err := rows.Scan(&rawSchema); err != nil {
-				return nil, fmt.Errorf("cannot get schemas by ids: scanning row: %w", err)
-			}
-			if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
-				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
-			}
-			schemas = append(schemas, schema)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("cannot get schemas by ids: iterating rows: %w", err)
-		}
-		if len(schemas) != len(ids) {
-			return nil, fmt.Errorf("cannot get schemas by ids: not all schemas were found")
-		}
-		return schemas, nil
-	}
-
 	query := `
 			SELECT sf.schema AS schema, sf.schema_snapshot_patch as schema_snapshot_patch, ss.schema AS schema_snapshot
 			FROM ` + stagingTableName + ` sf
@@ -382,6 +340,7 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 			return nil, fmt.Errorf("scanning row: %w", err)
 		}
 
+		// If both snapshot and patch are present, use them instead of the regular schema
 		if len(schemaPatch) > 0 && len(schemaSnapshot) > 0 {
 			originalSchemaBytes, err := warehouseutils.ApplyPatchToJSON(schemaSnapshot, schemaPatch)
 			if err != nil {
@@ -391,18 +350,18 @@ func (sf *StagingFiles) GetSchemasByIDs(ctx context.Context, ids []int64) ([]mod
 			if err := jsonrs.Unmarshal(originalSchemaBytes, &originalSchema); err != nil {
 				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
 			}
-			var oldSchema model.Schema
-			if err := jsonrs.Unmarshal(rawSchema, &oldSchema); err != nil {
-				return nil, fmt.Errorf("cannot get schemas by ids: unmarshal staging schema: %w", err)
-			}
-			if !reflect.DeepEqual(originalSchema, oldSchema) {
-				return nil, fmt.Errorf("cannot get schemas by ids: schema patch does not apply to snapshot schema")
+			if len(originalSchema) == 0 {
+				return nil, fmt.Errorf("cannot get schemas by ids: staging snapshot schema is empty")
 			}
 			schemas = append(schemas, originalSchema)
 		} else {
+			// Fall back to regular schema only if snapshot or patch is missing
 			var schema model.Schema
 			if err := jsonrs.Unmarshal(rawSchema, &schema); err != nil {
 				return nil, fmt.Errorf("unmarshal staging schema: %w", err)
+			}
+			if len(schema) == 0 {
+				return nil, fmt.Errorf("cannot get schemas by ids: staging fallback schema is empty")
 			}
 			schemas = append(schemas, schema)
 		}

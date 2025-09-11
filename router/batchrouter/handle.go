@@ -59,7 +59,6 @@ type Handle struct {
 	logger                logger.Logger
 	netHandle             *http.Client
 	jobsDB                jobsdb.JobsDB
-	errorDB               jobsdb.JobsDB
 	reporting             types.Reporting
 	backendConfig         backendconfig.BackendConfig
 	fileManagerFactory    filemanager.Factory
@@ -99,7 +98,6 @@ type Handle struct {
 	transformerURL               string
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
-	errorDBEnabled               config.ValueLoader[bool]
 
 	drainer routerutils.Drainer
 
@@ -182,7 +180,7 @@ func (brt *Handle) activePartitions(ctx context.Context) []string {
 // getWorkerJobs returns the list of jobs for a given partition. Jobs are grouped by destination
 func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJobs) {
 	if brt.skipFetchingJobs(partition) {
-		return
+		return workerJobs
 	}
 
 	defer brt.limiter.read.Begin("")()
@@ -233,7 +231,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 		}
 	}
 
-	return
+	return workerJobs
 }
 
 // upload the given batch of jobs to the given object storage provider
@@ -517,10 +515,10 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 	err = brt.warehouseClient.Process(context.TODO(), payload)
 	if err != nil {
 		brt.logger.Errorn("BRT: Failed to route staging file", obskit.Error(err))
-		return
+		return err
 	}
 	brt.logger.Infon("BRT: Routed successfully staging file URL to warehouse service")
-	return
+	return err
 }
 
 func (brt *Handle) generateSchemaMap(batchJobs *BatchedJobs) map[string]map[string]string {
@@ -575,7 +573,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		errorResp     []byte
 	)
 	batchRouterWorkspaceJobStatusCount := make(map[string]int)
-	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
 		switch {
@@ -648,7 +645,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			if !notifyWarehouseErr && brt.retryLimitReached(&job.LastJobStatus) {
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
-				abortedEvents = append(abortedEvents, job)
 				failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 				jobState = jobsdb.Aborted.State
 				errorCode = routerutils.DRAIN_ERROR_CODE
@@ -659,7 +655,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 				if time.Since(brt.warehouseServiceFailedTime) > brt.warehouseServiceMaxRetryTime.Load() {
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
-					abortedEvents = append(abortedEvents, job)
 					failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
 					jobState = jobsdb.Aborted.State
 					errorCode = routerutils.DRAIN_ERROR_CODE
@@ -670,7 +665,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 			failedMessage = &types.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()}
-			abortedEvents = append(abortedEvents, job)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
 		jobIDConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
@@ -763,22 +757,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			Name:  "destination_id",
 			Value: batchJobs.Connection.Destination.ID,
 		},
-	}
-
-	// Store the aborted jobs to errorDB
-	if len(abortedEvents) > 0 && brt.errorDBEnabled.Load() {
-		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.errorDB.Store(ctx, abortedEvents)
-		}, brt.sendRetryStoreStats)
-		if err != nil {
-			abortedEventsIDs := make([]int64, len(abortedEvents))
-			for i, job := range abortedEvents {
-				abortedEventsIDs[i] = job.JobID
-			}
-			brt.logger.Errorn("[Batch Router] Store into proc error table failed", obskit.Error(err))
-			brt.logger.Errorn("abortedEvents", logger.NewIntSliceField("count", abortedEventsIDs))
-			panic(err)
-		}
 	}
 
 	// REPORTING - START

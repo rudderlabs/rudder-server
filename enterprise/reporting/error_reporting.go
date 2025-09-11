@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,6 +61,31 @@ var ErrorDetailReportsColumns = []string{
 	"event_name",
 }
 
+// ErrorReportingStats manages all stats for error reporting
+type ErrorReportingStats struct {
+	// Basic stats
+	ReportTime                   stats.Measurement
+	ReportingLag                 stats.Measurement
+	ErrorDetailReportingFailures stats.Measurement
+	HttpRequest                  stats.Measurement
+	VacuumDuration               stats.Measurement
+
+	// Error normalizer stats
+	NormalizerCleanupTime stats.Measurement
+}
+
+// NewErrorReportingStats creates a new stats manager
+func NewErrorReportingStats(statsInstance stats.Stats) *ErrorReportingStats {
+	return &ErrorReportingStats{
+		ReportTime:                   statsInstance.NewStat("error_detail_reporter_report_time", stats.TimerType),
+		ReportingLag:                 statsInstance.NewStat("error_detail_reports_metrics_lag_seconds", stats.GaugeType),
+		ErrorDetailReportingFailures: statsInstance.NewStat("error_detail_reporting_failures", stats.CountType),
+		HttpRequest:                  statsInstance.NewStat("error_detail_reporting_http_request", stats.CountType),
+		VacuumDuration:               statsInstance.NewStat("reporting_vacuum_duration", stats.TimerType),
+		NormalizerCleanupTime:        statsInstance.NewStat("error_detail_reporter_normalizer_cleanup_time", stats.TimerType),
+	}
+}
+
 type ErrorDetailReporter struct {
 	ctx                 context.Context
 	cancel              context.CancelFunc
@@ -85,13 +109,19 @@ type ErrorDetailReporter struct {
 	httpClient *http.Client
 
 	errorDetailExtractor *ExtractorHandle
+	errorNormalizer      ErrorNormalizer
 
+	// Stats management
+	statsManager *ErrorReportingStats
+
+	// Tagged stats (created dynamically with tags)
 	minReportedAtQueryTime      stats.Measurement
 	errorDetailReportsQueryTime stats.Measurement
 	edReportingRequestLatency   stats.Measurement
 	eventSamplingEnabled        config.ValueLoader[bool]
 	eventSamplingDuration       config.ValueLoader[time.Duration]
 	eventSampler                event_sampler.EventSampler
+	groupingThreshold           config.ValueLoader[float64]
 
 	stats  stats.Stats
 	config *config.Config
@@ -103,7 +133,7 @@ type ErrorDetailReporter struct {
 func NewErrorDetailReporter(
 	ctx context.Context,
 	configSubscriber *configSubscriber,
-	stats stats.Stats,
+	statsInstance stats.Stats,
 	conf *config.Config,
 ) *ErrorDetailReporter {
 	// DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
@@ -123,7 +153,10 @@ func NewErrorDetailReporter(
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
 
 	log := logger.NewLogger().Child("enterprise").Child("error-detail-reporting")
-	extractor := NewErrorDetailExtractor(log)
+	extractor := NewErrorDetailExtractor(log, conf)
+	statsManager := NewErrorReportingStats(statsInstance)
+	errorNormalizer := NewErrorNormalizer(log, conf, statsInstance, statsManager)
+	groupingThreshold := conf.GetReloadableFloat64Var(0.75, "Reporting.errorReporting.grouping.similarityThreshold")
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -131,7 +164,7 @@ func NewErrorDetailReporter(
 
 	if eventSamplingEnabled.Load() {
 		var err error
-		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.ErrorsReporting, conf, log, stats)
+		eventSampler, err = event_sampler.NewEventSampler(ctx, eventSamplingDuration, eventSamplerType, eventSamplingCardinality, event_sampler.ErrorsReporting, conf, log, statsInstance)
 		if err != nil {
 			panic(err)
 		}
@@ -152,20 +185,25 @@ func NewErrorDetailReporter(
 		eventSamplingEnabled:  eventSamplingEnabled,
 		eventSamplingDuration: eventSamplingDuration,
 		eventSampler:          eventSampler,
+		groupingThreshold:     groupingThreshold,
 
-		namespace:  config.GetKubeNamespace(),
-		instanceID: conf.GetString("INSTANCE_ID", "1"),
-		region:     conf.GetString("region", ""),
+		namespace: config.GetKubeNamespace(),
+
+		// Initialize stats manager
+		statsManager: statsManager,
+		instanceID:   conf.GetString("INSTANCE_ID", "1"),
+		region:       conf.GetString("region", ""),
 
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
 		errorDetailExtractor: extractor,
+		errorNormalizer:      errorNormalizer,
 		maxOpenConnections:   maxOpenConnections,
-		stats:                stats,
+		stats:                statsInstance,
 		config:               conf,
 
 		useCommonClient: useCommonClient,
-		commonClient:    client.New(client.RouteRecordErrors, conf, log, stats),
+		commonClient:    client.New(client.RouteRecordErrors, conf, log, statsInstance),
 	}
 }
 
@@ -206,14 +244,11 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 }
 
-func (edr *ErrorDetailReporter) emitLagMetric(ctx context.Context, c types.SyncerConfig, lastReportedAtTime *atomic.Time) error {
+func (edr *ErrorDetailReporter) emitLagMetric(ctx context.Context, lastReportedAtTime *atomic.Time) error {
 	// for monitoring reports pileups
-	reportingLag := edr.stats.NewTaggedStat(
-		"error_detail_reports_metrics_lag_seconds", stats.GaugeType, stats.Tags{"client": c.Label},
-	)
 	for {
 		lag := time.Since(lastReportedAtTime.Load())
-		reportingLag.Gauge(lag.Seconds())
+		edr.statsManager.ReportingLag.Gauge(lag.Seconds())
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -238,85 +273,128 @@ func shouldReport(metric types.PUReportedMetric) bool {
 }
 
 func (edr *ErrorDetailReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
-	edr.log.Debugn("[ErrorDetailReport] Report method called")
-	if len(metrics) == 0 {
+	start := time.Now()
+	defer func() {
+		edr.statsManager.ReportTime.Since(start)
+	}()
+
+	// Extract error details and filter metrics that should be reported
+	reportableMetrics := edr.extractErrorDetailsAndFilterMetrics(metrics)
+
+	// Early exit if no metrics to report
+	if len(reportableMetrics) == 0 {
 		return nil
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
-	if err != nil {
-		edr.log.Errorn("Failed during statement preparation", obskit.Error(err))
-		return fmt.Errorf("preparing statement: %v", err)
-	}
-	defer func() { _ = stmt.Close() }()
+	// Group errors by connection details
+	connectionGroups := edr.groupByConnection(reportableMetrics)
 
-	reportedAt := time.Now().UTC().Unix() / 60
+	// Normalize errors after grouping (modifies connectionGroups in place)
+	connectionGroups = edr.normalizeErrors(ctx, connectionGroups)
+
+	// Merge metrics by error messages within the same connection group
+	mergedMetricGroups := edr.mergeMetricGroupsByErrorMessage(connectionGroups)
+
+	// Write grouped errors to database
+	return edr.writeGroupedErrors(ctx, mergedMetricGroups, txn)
+}
+
+func (edr *ErrorDetailReporter) extractErrorDetailsAndFilterMetrics(metrics []*types.PUReportedMetric) []*types.EDReportsDB {
+	var reportableMetrics []*types.EDReportsDB
+
 	for _, metric := range metrics {
-		metric := *metric
-		if !shouldReport(metric) {
+		if !shouldReport(*metric) {
 			continue
 		}
 
 		workspaceID := edr.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 		if edr.IsPIIReportingDisabled(workspaceID) {
-			edr.log.Debugn("PII setting is disabled for workspaceId:", obskit.WorkspaceID(workspaceID))
-			return nil
+			continue
 		}
+
+		// EXTRACT ERROR DETAILS - This is where error messages are created from SampleResponse
 		destinationDetail := edr.configSubscriber.GetDestDetail(metric.DestinationID)
-		edr.log.Debugn("DestinationId & DestDetail details",
-			obskit.DestinationID(metric.DestinationID),
-			obskit.DestinationType(destinationDetail.destType),
-			logger.NewStringField("destinationDefinitionID", destinationDetail.destinationDefinitionID))
+		errorDetails := edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags, destinationDetail.destType)
 
-		// extract error-message & error-code
-		metric.StatusDetail.ErrorDetails = edr.extractErrorDetails(metric.StatusDetail.SampleResponse, metric.StatusDetail.StatTags, destinationDetail.destType)
-
-		edr.stats.NewTaggedStat("error_detail_reporting_failures", stats.CountType, stats.Tags{
-			"errorCode":     metric.StatusDetail.ErrorDetails.Code,
-			"workspaceId":   workspaceID,
-			"destType":      destinationDetail.destType,
-			"sourceId":      metric.SourceID,
-			"destinationId": metric.DestinationID,
-		}).Count(int(metric.StatusDetail.Count))
-
-		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
-		if err != nil {
-			return err
+		if errorDetails.Message == "" {
+			continue
 		}
 
-		_, err = stmt.Exec(
-			workspaceID,
-			edr.namespace,
-			edr.instanceID,
-			metric.SourceDefinitionID,
-			metric.SourceID,
-			destinationDetail.destinationDefinitionID,
-			metric.DestinationID,
-			destinationDetail.destType,
-			metric.PU,
-			reportedAt,
-			metric.StatusDetail.Count,
-			metric.StatusDetail.StatusCode,
-			metric.StatusDetail.EventType,
-			metric.StatusDetail.ErrorDetails.Code,
-			metric.StatusDetail.ErrorDetails.Message,
-			sampleResponse,
-			getStringifiedSampleEvent(sampleEvent),
-			metric.StatusDetail.EventName,
-		)
-		if err != nil {
-			edr.log.Errorn("Failed during statement execution(each metric)", obskit.Error(err))
-			return fmt.Errorf("executing statement: %v", err)
+		// Convert to EDReportsDB instead of deep copying
+		params := types.ErrorMetricParams{
+			WorkspaceID:             workspaceID,
+			Namespace:               edr.namespace,
+			InstanceID:              edr.instanceID,
+			DestType:                destinationDetail.destType,
+			DestinationDefinitionID: destinationDetail.destinationDefinitionID,
+			ErrorDetails:            errorDetails,
 		}
+		errorMetric := types.PUReportedMetricToEDReportsDB(metric, params)
+		reportableMetrics = append(reportableMetrics, errorMetric)
+	}
+
+	return reportableMetrics
+}
+
+func (edr *ErrorDetailReporter) normalizeErrors(ctx context.Context, connectionGroups map[types.ErrorDetailGroupKey][]*types.EDReportsDB) map[types.ErrorDetailGroupKey][]*types.EDReportsDB {
+	for groupKey, groupMetrics := range connectionGroups {
+		// Update all metrics in the group with the normalized error message
+		for _, metric := range groupMetrics {
+			metric.ErrorMessage = edr.errorNormalizer.NormalizeError(ctx, groupKey, metric.ErrorMessage)
+		}
+	}
+	return connectionGroups
+}
+
+func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups map[types.ErrorDetailGroupKey][]*types.EDReportsDB, txn *Tx) error {
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
+	if err != nil {
+		return fmt.Errorf("preparing statement: %v", err)
+	}
+	defer func() { _ = stmt.Close() }()
+
+	for _, groupMetrics := range groups {
+
+		// Calculate total count for the group
+		var totalCount int64
+		// Record stats
+		for _, metric := range groupMetrics {
+			totalCount += metric.Count
+
+			sampleEvent, sampleResponse, err := getSampleWithEventSamplingForEDReportsDB(*metric, metric.ReportedAt, edr.eventSampler, edr.eventSamplingEnabled.Load(), int64(edr.eventSamplingDuration.Load().Minutes()))
+			if err != nil {
+				return fmt.Errorf("event sampling error: %v", err)
+			}
+
+			_, err = stmt.Exec(
+				metric.WorkspaceID,
+				metric.Namespace,
+				metric.InstanceID,
+				metric.SourceDefinitionId,
+				metric.SourceID,
+				metric.DestinationDefinitionId,
+				metric.DestinationID,
+				metric.DestType,
+				metric.PU,
+				metric.ReportedAt,
+				metric.Count,
+				metric.StatusCode,
+				metric.EventType,
+				metric.ErrorCode,
+				metric.ErrorMessage,
+				sampleResponse,
+				getStringifiedSampleEvent(sampleEvent),
+				metric.EventName,
+			)
+			if err != nil {
+				return fmt.Errorf("executing statement: %v", err)
+			}
+		}
+		edr.statsManager.ErrorDetailReportingFailures.Count(int(totalCount))
 	}
 
 	_, err = stmt.ExecContext(ctx)
-	if err != nil {
-		edr.log.Errorn("Failed during statement execution", obskit.Error(err))
-		return fmt.Errorf("executing final statement: %v", err)
-	}
-
-	return nil
+	return err
 }
 
 func (ed *ErrorDetailReporter) IsPIIReportingDisabled(workspaceID string) bool {
@@ -397,7 +475,11 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return edr.emitLagMetric(ctx, c, &lastReportedAtTime)
+		return edr.errorNormalizer.StartCleanup(edr.ctx)
+	})
+
+	g.Go(func() error {
+		return edr.emitLagMetric(ctx, &lastReportedAtTime)
 	})
 
 	g.Go(func() error {
@@ -542,8 +624,8 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 	}
 }
 
-func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, tags stats.Tags) error {
-	defer edr.stats.NewTaggedStat(StatReportingVacuumDuration, stats.TimerType, tags).RecordDuration()()
+func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, _ stats.Tags) error {
+	defer edr.statsManager.VacuumDuration.RecordDuration()()
 	var query string
 	var full bool
 	if edr.vacuumFull.Load() {
@@ -758,7 +840,7 @@ func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types
 }
 
 // DEPRECATED: Remove this after migration to commonClient, use edr.commonClient.Send instead.
-func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, metric *types.EDMetric) error {
+func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, _ string, metric *types.EDMetric) error {
 	if edr.useCommonClient.Load() {
 		return edr.commonClient.Send(ctx, metric)
 	}
@@ -787,9 +869,7 @@ func (edr *ErrorDetailReporter) sendMetric(ctx context.Context, label string, me
 		}
 
 		edr.edReportingRequestLatency.Since(httpRequestStart)
-		httpStatTags := edr.getTags(label)
-		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		edr.stats.NewTaggedStat("error_detail_reporting_http_request", stats.CountType, httpStatTags).Increment()
+		edr.statsManager.HttpRequest.Increment()
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)

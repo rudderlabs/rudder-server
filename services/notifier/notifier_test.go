@@ -62,9 +62,9 @@ func TestNotifier(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		notifierWithIdentifier := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier)
+		notifierWithIdentifier := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier, true)
 		require.NoError(t, notifierWithIdentifier.Setup(ctx, db.DBDsn))
-		notifierWithoutIdentifier := notifier.New(config.New(), logger.NOP, statsStore, "")
+		notifierWithoutIdentifier := notifier.New(config.New(), logger.NOP, statsStore, "", true)
 		require.NoError(t, notifierWithoutIdentifier.Setup(ctx, db.DBDsn))
 
 		t.Run("without workspace identifier", func(t *testing.T) {
@@ -98,7 +98,7 @@ func TestNotifier(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			n := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier)
+			n := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier, true)
 			require.NoError(t, n.Setup(ctx, db.DBDsn))
 			require.True(t, n.CheckHealth(ctx))
 		})
@@ -109,7 +109,7 @@ func TestNotifier(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			n := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier)
+			n := notifier.New(config.New(), logger.NOP, statsStore, workspaceIdentifier, true)
 			require.NoError(t, n.Setup(ctx, db.DBDsn))
 			require.False(t, n.CheckHealth(cancelledCtx))
 		})
@@ -143,7 +143,7 @@ func TestNotifier(t *testing.T) {
 		groupCtx, groupCancel := context.WithCancel(ctx)
 		g, gCtx := errgroup.WithContext(groupCtx)
 
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		const (
@@ -286,7 +286,7 @@ func TestNotifier(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		publishResponses := make(chan *notifier.PublishResponse)
@@ -371,7 +371,7 @@ func TestNotifier(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		publishResponses := make(chan *notifier.PublishResponse)
@@ -455,7 +455,7 @@ func TestNotifier(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 		require.NoError(t, n.Setup(groupCtx, db.DBDsn))
 
 		publishResponses := make(chan *notifier.PublishResponse)
@@ -529,7 +529,7 @@ func TestNotifier(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
-		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+		n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 		err = n.Setup(ctx, db.DBDsn)
 		require.NoError(t, err)
 	})
@@ -543,7 +543,7 @@ func TestNotifier(t *testing.T) {
 			defer cancel()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
-			n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+			n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 			require.NoError(t, n.Setup(ctx, db.DBDsn))
 			require.NoError(t, n.RunMaintenance(ctxWithTimeout))
 			return nil
@@ -555,7 +555,7 @@ func TestNotifier(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier)
+			n := notifier.New(c, logger.NOP, statsStore, workspaceIdentifier, true)
 			require.NoError(t, n.Setup(ctx, db.DBDsn))
 			require.NoError(t, n.RunMaintenance(ctxWithTimeout))
 			return nil

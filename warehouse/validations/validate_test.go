@@ -101,7 +101,7 @@ func TestValidator(t *testing.T) {
 					"bucketName":       bucket,
 					"accessKeyID":      minioResource.AccessKeyID,
 					"accessKey":        minioResource.AccessKeySecret,
-					"endPoint":         minioResource.Endpoint,
+					"endPoint":         fmt.Sprintf("http://%s", minioResource.Endpoint),
 					"enableSSE":        false,
 					"s3ForcePathStyle": true,
 					"disableSSL":       true,

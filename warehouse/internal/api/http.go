@@ -20,8 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -37,15 +35,11 @@ type stagingFileSchemaSnapshotGetter interface {
 
 // StagingFileSchemaSnapshotHandler Handler for schema snapshot logic
 type StagingFileSchemaSnapshotHandler struct {
-	Enable    config.ValueLoader[bool]
 	Snapshots stagingFileSchemaSnapshotGetter
 	PatchGen  func(original, modified json.RawMessage) (json.RawMessage, error)
 }
 
-func (h *StagingFileSchemaSnapshotHandler) ApplyIfEnabled(ctx context.Context, stagingFile model.StagingFileWithSchema) (model.StagingFileWithSchema, error) {
-	if !h.Enable.Load() {
-		return stagingFile, nil
-	}
+func (h *StagingFileSchemaSnapshotHandler) Apply(ctx context.Context, stagingFile model.StagingFileWithSchema) (model.StagingFileWithSchema, error) {
 	snapshot, err := h.Snapshots.GetOrCreate(
 		ctx,
 		stagingFile.SourceID,
@@ -182,7 +176,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("Unable to marshal staging file schema: %s", err.Error()), http.StatusBadRequest)
 		return
 	}
-	stagingFile, err = api.SchemaSnapshotHandler.ApplyIfEnabled(r.Context(), stagingFile)
+	stagingFile, err = api.SchemaSnapshotHandler.Apply(r.Context(), stagingFile)
 	if err != nil {
 		api.Logger.Warnn("Unable to process schema snapshot", obskit.Error(err))
 		http.Error(w, fmt.Sprintf("Unable to process schema snapshot: %s", err.Error()), http.StatusInternalServerError)

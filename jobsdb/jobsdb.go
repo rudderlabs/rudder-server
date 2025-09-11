@@ -1375,12 +1375,12 @@ func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	// Currently we don't have a scenario where we need more than 3 levels.
 	if len(indexStr) > 3 {
 		err = fmt.Errorf("len(indexStr): %d > 3", len(indexStr))
-		return
+		return levelInt, levelVals, err
 	}
 	for _, str := range indexStr {
 		levelInt, err = strconv.Atoi(str)
 		if err != nil {
-			return
+			return levelInt, levelVals, err
 		}
 		levelVals = append(levelVals, levelInt)
 	}
@@ -2343,7 +2343,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates map[string]map[string]map[ParameterFilterT]struct{}, err error) {
 	if len(statusList) == 0 {
-		return
+		return updatedStates, err
 	}
 
 	defer jd.getTimerStat(
@@ -2399,25 +2399,25 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 		rollbackSql  = "ROLLBACK TO " + savepointSql
 	)
 	if _, err = tx.ExecContext(ctx, savepointSql); err != nil {
-		return
+		return updatedStates, err
 	}
 	err = store()
 	var e *pq.Error
 	if err != nil && errors.As(err, &e) {
 		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
 			if _, err = tx.ExecContext(ctx, rollbackSql); err != nil {
-				return
+				return updatedStates, err
 			}
 			for i := range statusList {
 				err = statusList[i].sanitizeJson()
 				if err != nil {
-					return
+					return updatedStates, err
 				}
 			}
 			err = store()
 		}
 	}
-	return
+	return updatedStates, err
 }
 
 /*
@@ -2703,7 +2703,7 @@ func (jd *Handle) GetJournalEntries(opType string) (entries []JournalEntryT) {
 		count++
 	}
 	jd.assertError(rows.Err())
-	return
+	return entries
 }
 
 func (jd *Handle) recoverFromCrash(owner OwnerType, goRoutineType string) {
@@ -2883,7 +2883,7 @@ Later we can move this to query
 */
 func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]map[string]map[string]map[ParameterFilterT]struct{}, err error) {
 	if len(statusList) == 0 {
-		return
+		return updatedStatesByDS, err
 	}
 
 	// First we sort by JobID
@@ -2917,7 +2917,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 				var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 				if err != nil {
-					return
+					return updatedStatesByDS, err
 				}
 				// do not set for ds without any new state written as it would clear emptyCache
 				if len(updatedStates) > 0 {
@@ -2938,7 +2938,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 			var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
 			if err != nil {
-				return
+				return updatedStatesByDS, err
 			}
 			// do not set for ds without any new state written as it would clear emptyCache
 			if len(updatedStates) > 0 {
@@ -2960,14 +2960,14 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 		var updatedStates map[string]map[string]map[ParameterFilterT]struct{}
 		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {
-			return
+			return updatedStatesByDS, err
 		}
 		// do not set for ds without any new state written as it would clear emptyCache
 		if len(updatedStates) > 0 {
 			updatedStatesByDS[dsList[len(dsList)-1]] = updatedStates
 		}
 	}
-	return
+	return updatedStatesByDS, err
 }
 
 // Store stores new jobs to the jobsdb.
@@ -3070,7 +3070,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(
 		tx.AddSuccessListener(func() {
 			jd.invalidateCacheForJobs(ds, lo.Flatten(jobBatches))
 		})
-		return
+		return errorMessagesMap, err
 	}
 	if errors.Is(err, errStaleDsList) {
 		return nil, err
@@ -3109,7 +3109,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(
 			jd.invalidateCacheForJobs(ds, jobBatch)
 		})
 	}
-	return
+	return errorMessagesMap, err
 }
 
 /*

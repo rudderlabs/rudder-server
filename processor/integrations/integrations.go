@@ -11,7 +11,7 @@ import (
 type PostParametersT struct {
 	Type          string `json:"type"`
 	URL           string `json:"endpoint"`
-	EndpointLabel string `json:"endpointLabel,omitempty"`
+	EndpointPath  string `json:"endpointPath,omitempty"`
 	RequestMethod string `json:"method"`
 	// Invalid tag used in struct. skipcq: SCC-SA5008
 	UserID      string                 `json:"userId"`
@@ -56,7 +56,7 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	}
 	clientIntgsList, ok := clientIntgs.(map[string]interface{})
 	if !ok {
-		return
+		return retVal
 	}
 	// All is by default true, if not present make it true
 	allVal, found := clientIntgsList["All"]
@@ -65,7 +65,7 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 	}
 	_, isAllBoolean := allVal.(bool)
 	if !isAllBoolean {
-		return
+		return retVal
 	}
 	var outVal []string
 	for dest := range destNameIDMap {
@@ -89,5 +89,5 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 		}
 	}
 	retVal = outVal
-	return
+	return retVal
 }

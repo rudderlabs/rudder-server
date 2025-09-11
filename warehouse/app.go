@@ -166,6 +166,7 @@ func (a *App) Setup(ctx context.Context) error {
 		a.logger,
 		a.statsFactory,
 		workspaceIdentifier,
+		mode.IsMaster(a.config.mode),
 	)
 	err := a.notifier.Setup(ctx, a.connectionString("notifier"))
 	if err != nil {
@@ -247,15 +248,16 @@ func (a *App) setupDatabase(ctx context.Context) error {
 		sqlquerywrapper.WithStats(a.statsFactory),
 	)
 
-	err = a.migrate()
-	if err != nil {
-		return fmt.Errorf("could not migrate: %w", err)
+	if mode.IsMaster(a.config.mode) {
+		err = a.migrate()
+		if err != nil {
+			return fmt.Errorf("could not migrate: %w", err)
+		}
+		err = a.migrateAlways()
+		if err != nil {
+			return fmt.Errorf("could not migrate always: %w", err)
+		}
 	}
-	err = a.migrateAlways()
-	if err != nil {
-		return fmt.Errorf("could not migrate always: %w", err)
-	}
-
 	return nil
 }
 

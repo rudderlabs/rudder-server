@@ -232,7 +232,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
 				obskit.DestinationID(clientEvents[0].Metadata.DestinationID),
 				logger.NewStringField("url", url),
-				logger.NewStringField("transformationID", transformationID),
+				obskit.TransformationID(transformationID),
 				logger.NewStringField("transformationVersionID", transformationVersionID),
 			)
 		},
@@ -284,7 +284,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	retryStrategy.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
 	err := backoff.RetryNotify(
-		func() error {
+		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()
 
@@ -305,9 +305,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
-
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			u.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr
@@ -336,18 +334,23 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				// We'll count response events after unmarshaling in the request method
 			}
 			return reqErr
-		},
+		}, u.stat, labels),
 		backoff.WithMaxRetries(retryStrategy, uint64(u.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
 			u.log.Warnn(
 				"JS HTTP connection error",
-				obskit.Error(err),
-				logger.NewIntField("attempts", int64(retryCount)),
+				append(
+					labels.ToLoggerFields(),
+					obskit.Error(err),
+					logger.NewIntField("attempts", int64(retryCount)),
+				)...,
 			)
 		},
 	)
 	if err != nil {
+		u.log.Errorn("User transformation post error",
+			append(labels.ToLoggerFields(), obskit.Error(err))...)
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {

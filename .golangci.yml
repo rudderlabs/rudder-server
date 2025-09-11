@@ -29,6 +29,10 @@ linters:
               desc: use "jsonrs" instead
             - pkg: github.com/rudderlabs/sonnet
               desc: use "jsonrs" instead
+            - pkg: github.com/aws/aws-sdk-go$
+              desc: use "aws-sdk-go-v2" instead
+            - pkg: github.com/aws/aws-sdk-go/
+              desc: use "aws-sdk-go-v2" instead
     forbidigo:
       forbid:
         - pattern: ^json\.Marshal.*$

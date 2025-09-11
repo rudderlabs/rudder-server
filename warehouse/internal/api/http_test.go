@@ -76,6 +76,15 @@ func filterPayload(text, match string) string {
 
 func TestAPI_Process(t *testing.T) {
 	body := loadFile(t, "./testdata/process_request.json")
+
+	expectedSnapshot := &model.StagingFileSchemaSnapshot{
+		ID:            uuid.New(),
+		Schema:        json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
+		SourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
+		DestinationID: "27CHciD6leAhurSyFAeN4dp14qZ",
+		WorkspaceID:   "279L3V7FSpx43LaNJ0nIs9KRaNC",
+		CreatedAt:     time.Now().Add(-time.Hour),
+	}
 	expectedStagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{
 			ID:                    0,
@@ -100,7 +109,9 @@ func TestAPI_Process(t *testing.T) {
 			UpdatedAt:             time.Time{},
 			ServerInstanceID:      "test-instance-id-v0",
 		},
-		Schema: json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
+		Schema:        json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
+		SnapshotID:    expectedSnapshot.ID,
+		SnapshotPatch: json.RawMessage("[]"),
 	}
 
 	testcases := []struct {
@@ -200,11 +211,18 @@ func TestAPI_Process(t *testing.T) {
 			require.NoError(t, err)
 
 			wAPI := api.WarehouseAPI{
-				Repo:                  r,
-				Logger:                logger.NOP,
-				Stats:                 statsStore,
-				Multitenant:           m,
-				SchemaSnapshotHandler: &api.StagingFileSchemaSnapshotHandler{Enable: config.SingleValueLoader(false)},
+				Repo:        r,
+				Logger:      logger.NOP,
+				Stats:       statsStore,
+				Multitenant: m,
+				SchemaSnapshotHandler: &api.StagingFileSchemaSnapshotHandler{
+					Snapshots: &mockStagingFileSchemaSnapshotGetter{
+						getFunc: func(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (*model.StagingFileSchemaSnapshot, error) {
+							return expectedSnapshot, nil
+						},
+					},
+					PatchGen: whutils.GenerateJSONPatch,
+				},
 			}
 
 			req, err := http.NewRequest(http.MethodPost, "https://localhost:8080/v1/process", bytes.NewBuffer([]byte(tc.reqBody)))
@@ -415,7 +433,6 @@ func TestAPI_Process_WithSchemaPatch(t *testing.T) {
 				Stats:       statsStore,
 				Multitenant: m,
 				SchemaSnapshotHandler: &api.StagingFileSchemaSnapshotHandler{
-					Enable: config.SingleValueLoader(true),
 					Snapshots: &mockStagingFileSchemaSnapshotGetter{
 						getFunc: tc.getSnapshotFunc,
 					},

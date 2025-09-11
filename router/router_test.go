@@ -119,7 +119,6 @@ type testContext struct {
 
 	mockCtrl          *gomock.Controller
 	mockRouterJobsDB  *mocksJobsDB.MockJobsDB
-	mockProcErrorsDB  *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
 	mockReporting     *mockutils.MockReporting
 }
@@ -129,7 +128,6 @@ func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockReporting = mockutils.NewMockReporting(c.mockCtrl)
 
@@ -181,9 +179,9 @@ func (m *mockThrottlerFactory) GetPickupThrottler(destName, destID, eventType st
 	return throttler.NewNoOpThrottlerFactory().GetPickupThrottler(destName, destID, eventType)
 }
 
-func (m *mockThrottlerFactory) GetDeliveryThrottler(destName, destID, endpointLabel string) throttler.DeliveryThrottler {
+func (m *mockThrottlerFactory) GetDeliveryThrottler(destName, destID, endpointPath string) throttler.DeliveryThrottler {
 	m.count.Add(1)
-	return throttler.NewNoOpThrottlerFactory().GetDeliveryThrottler(destName, destID, endpointLabel)
+	return throttler.NewNoOpThrottlerFactory().GetDeliveryThrottler(destName, destID, endpointPath)
 }
 
 func (m *mockThrottlerFactory) Shutdown() {}
@@ -523,7 +521,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -553,7 +550,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -657,7 +653,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -743,7 +738,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -818,7 +812,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -894,7 +887,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -990,7 +982,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -1094,7 +1085,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -1203,7 +1193,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -1369,7 +1358,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -1559,7 +1547,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -1781,7 +1768,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -1961,7 +1947,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -2133,7 +2118,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),
@@ -2292,7 +2276,6 @@ var _ = Describe("router", func() {
 				conf,
 				c.mockBackendConfig,
 				c.mockRouterJobsDB,
-				c.mockProcErrorsDB,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
 				transformerFeaturesService.NewNoOpService(),

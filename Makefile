@@ -7,7 +7,7 @@ MOUNT_PATH=/local
 
 # go tools versions
 GOLANGCI=github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.2.1
-gofumpt=mvdan.cc/gofumpt@latest
+gofumpt=mvdan.cc/gofumpt@v0.9.1
 govulncheck=golang.org/x/vuln/cmd/govulncheck@latest
 goimports=golang.org/x/tools/cmd/goimports@latest
 mockgen=go.uber.org/mock/mockgen@v0.6.0

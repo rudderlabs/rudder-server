@@ -96,7 +96,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, op
 
 func (t *Transformer) Transform(_ context.Context, clientEvents []types.TransformerEvent) (res types.Response) {
 	if len(clientEvents) == 0 {
-		return
+		return res
 	}
 
 	startTime := t.now()
@@ -161,7 +161,7 @@ func (t *Transformer) Transform(_ context.Context, clientEvents []types.Transfor
 	_ = g.Wait()
 	close(results)
 	<-done
-	return
+	return res
 }
 
 func (t *Transformer) processWarehouseMessage(cache *cache, event *types.TransformerEvent) ([]map[string]any, error) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -73,7 +74,7 @@ func TestWHSchemasRepo(t *testing.T) {
 
 				var (
 					now = time.Now().Truncate(time.Second).UTC()
-					r   = repo.NewWHSchemas(db, conf, repo.WithNow(func() time.Time {
+					r   = repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 						return now
 					}))
 				)
@@ -286,7 +287,7 @@ func TestWHSchemasRepo(t *testing.T) {
 
 				var (
 					now = time.Now().Truncate(time.Second).UTC()
-					r   = repo.NewWHSchemas(db, conf, repo.WithNow(func() time.Time {
+					r   = repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 						return now
 					}))
 				)
@@ -364,7 +365,7 @@ func TestWHSchemasRepo(t *testing.T) {
 				})
 
 				t.Run("GetForNamespace (not already populated)", func(t *testing.T) {
-					rs1 := repo.NewWHSchemas(db, conf, repo.WithNow(func() time.Time {
+					rs1 := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 						return now
 					}))
 					err := rs1.Insert(ctx, &model.WHSchema{
@@ -379,7 +380,7 @@ func TestWHSchemasRepo(t *testing.T) {
 					})
 					require.NoError(t, err)
 
-					rs2 := repo.NewWHSchemas(db, conf, repo.WithNow(func() time.Time {
+					rs2 := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 						return now
 					}))
 					expectedSchema, err := rs2.GetForNamespace(ctx, "destination_id_1", "namespace_1")
@@ -445,9 +446,12 @@ func TestWHSchemasRepo(t *testing.T) {
 
 func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 	t.Run("SourceID ordering", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Warehouse.enableTableLevelSchema", true)
+
 		db, ctx := setupDB(t), context.Background()
 		now := time.Now().Truncate(time.Second).UTC()
-		r := repo.NewWHSchemas(db, config.New(), repo.WithNow(func() time.Time {
+		r := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
 
@@ -476,8 +480,6 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 					"column_name_3": "boolean",
 				},
 			},
-			CreatedAt: now,
-			UpdatedAt: now,
 		}))
 
 		expectedSchema, err := r.GetForNamespace(ctx, "destination_id_1", "namespace_1")
@@ -496,6 +498,103 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 		require.Equal(t, now, expectedSchema.CreatedAt)
 		require.Equal(t, now, expectedSchema.UpdatedAt)
 	})
+
+	t.Run("Unwanted fetch schema", func(t *testing.T) {
+		conf := config.New()
+		conf.Set("Warehouse.enableTableLevelSchema", true)
+
+		db, ctx := setupDB(t), context.Background()
+		now := time.Now().Truncate(time.Second).UTC()
+		r := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
+			return now
+		}))
+
+		require.NoError(t, r.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_1",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: "destination_type_1",
+			Schema: model.Schema{
+				"table_name_1": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+				"table_name_2": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+			},
+		}))
+		require.NoError(t, r.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_2",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: "destination_type_1",
+			Schema: model.Schema{
+				"table_name_1": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+				"table_name_2": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+			},
+		}))
+
+		expectedSchema, err := r.GetForNamespace(ctx, "destination_id_1", "namespace_1")
+		require.NoError(t, err)
+		require.Equal(t, model.Schema{
+			"table_name_1": {
+				"column_name_1": "string",
+				"column_name_2": "int",
+				"column_name_3": "boolean",
+			},
+			"table_name_2": {
+				"column_name_1": "string",
+				"column_name_2": "int",
+				"column_name_3": "boolean",
+			},
+		}, expectedSchema.Schema)
+
+		require.NoError(t, r.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id_1",
+			Namespace:       "namespace_1",
+			DestinationID:   "destination_id_1",
+			DestinationType: "destination_type_1",
+			Schema: model.Schema{
+				"table_name_1": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+				"table_name_3": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+			},
+		}))
+
+		expectedSchema, err = r.GetForNamespace(ctx, "destination_id_1", "namespace_1")
+		require.NoError(t, err)
+		require.Equal(t, model.Schema{
+			"table_name_1": {
+				"column_name_1": "string",
+				"column_name_2": "int",
+				"column_name_3": "boolean",
+			},
+			"table_name_3": {
+				"column_name_1": "string",
+				"column_name_2": "int",
+				"column_name_3": "boolean",
+			},
+		}, expectedSchema.Schema)
+	})
 }
 
 func TestWHSchemasRepo_GetDestinationNamespaces(t *testing.T) {
@@ -503,7 +602,7 @@ func TestWHSchemasRepo_GetDestinationNamespaces(t *testing.T) {
 	conf := config.New()
 	db, ctx := setupDB(t), context.Background()
 	now := timeutil.Now()
-	r := repo.NewWHSchemas(db, conf)
+	r := repo.NewWHSchemas(db, conf, logger.NOP)
 
 	// Insert test data with multiple sources and timestamps
 	schemas := []model.WHSchema{

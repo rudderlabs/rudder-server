@@ -97,7 +97,6 @@ type testContext struct {
 
 	mockCtrl               *gomock.Controller
 	mockBatchRouterJobsDB  *mocksJobsDB.MockJobsDB
-	mockProcErrorsDB       *mocksJobsDB.MockJobsDB
 	mockBackendConfig      *mocksBackendConfig.MockBackendConfig
 	mockFileManagerFactory filemanager.Factory
 	mockFileManager        *mock_filemanager.MockFileManager
@@ -110,7 +109,6 @@ func (c *testContext) Setup() {
 	c.asyncHelper.Setup()
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockFileManager = mock_filemanager.NewMockFileManager(c.mockCtrl)
 	c.mockFileManagerFactory = func(settings *filemanager.Settings) (filemanager.FileManager, error) { return c.mockFileManager, nil }
@@ -180,7 +178,6 @@ var _ = Describe("BatchRouter", func() {
 				s3DestinationDefinition.Name,
 				c.mockBackendConfig,
 				c.mockBatchRouterJobsDB,
-				c.mockProcErrorsDB,
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
@@ -204,7 +201,6 @@ var _ = Describe("BatchRouter", func() {
 				s3DestinationDefinition.Name,
 				c.mockBackendConfig,
 				c.mockBatchRouterJobsDB,
-				c.mockProcErrorsDB,
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
@@ -323,7 +319,6 @@ var _ = Describe("BatchRouter", func() {
 				s3DestinationDefinition.Name,
 				c.mockBackendConfig,
 				c.mockBatchRouterJobsDB,
-				c.mockProcErrorsDB,
 				nil,
 				transientsource.NewEmptyService(),
 				rsources.NewNoOpService(),
@@ -545,13 +540,6 @@ func TestBatchRouter(t *testing.T) {
 	require.NoError(t, routerDB.Start())
 	defer routerDB.TearDown()
 
-	errorDB := jobsdb.NewForReadWrite(
-		"err",
-		jobsdb.WithDBHandle(p.DB),
-	)
-	require.NoError(t, errorDB.Start())
-	defer errorDB.TearDown()
-
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
 
@@ -632,7 +620,6 @@ func TestBatchRouter(t *testing.T) {
 		"MINIO",
 		backendconfigtest.NewStaticLibrary(bcs),
 		routerDB,
-		errorDB,
 		nil,
 		transientsource.NewEmptyService(),
 		rsources.NewNoOpService(),

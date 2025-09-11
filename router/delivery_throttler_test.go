@@ -46,10 +46,10 @@ func TestDeliveryThrottler(t *testing.T) {
 	defer config.Reset()
 
 	const (
-		rp10s         = 20                   // how many jobs per 10 seconds we will allow for identify events
-		totalJobs     = 30                   // how many jobs we will send in total
-		batchSize     = 10                   // how many jobs are we going to send in each gateway request
-		endpointLabel = "rateLimitedWebhook" // the endpoint label for the webhook for which we will enable throttling
+		rp10s        = 20                   // how many jobs per 10 seconds we will allow for identify events
+		totalJobs    = 30                   // how many jobs we will send in total
+		batchSize    = 10                   // how many jobs are we going to send in each gateway request
+		endpointPath = "rateLimitedWebhook" // the endpoint path for the webhook for which we will enable throttling
 	)
 	var (
 		m      deliveryThrottlerMethods
@@ -84,7 +84,7 @@ func TestDeliveryThrottler(t *testing.T) {
 				return integrations.PostParametersT{
 					Type:          "REST",
 					URL:           webhook.Server.URL,
-					EndpointLabel: endpointLabel, // custom transformer adds the endpoint label for throttling
+					EndpointPath:  endpointPath, // custom transformer adds the endpoint label for throttling
 					RequestMethod: http.MethodPost,
 					Body: map[string]interface{}{
 						"JSON": event.Message,
@@ -129,8 +129,8 @@ func TestDeliveryThrottler(t *testing.T) {
 	config.Set("Router.noOfWorkers", 64)
 
 	// throttling config
-	config.Set("Router.throttler.delivery.WEBHOOK."+endpointLabel+".limit", rp10s)
-	config.Set("Router.throttler.delivery.WEBHOOK."+endpointLabel+".timeWindow", "10s")
+	config.Set("Router.throttler.delivery.WEBHOOK."+endpointPath+".limit", rp10s)
+	config.Set("Router.throttler.delivery.WEBHOOK."+endpointPath+".timeWindow", "10s")
 
 	// generatorLoop
 	config.Set("Router.jobQueryBatchSize", totalJobs*2) // be able to query all jobs at once

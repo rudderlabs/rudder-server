@@ -34,7 +34,7 @@ type (
 
 type Factory interface {
 	GetPickupThrottler(destType, destID, eventType string) PickupThrottler
-	GetDeliveryThrottler(destType, destID, endpointLabel string) DeliveryThrottler
+	GetDeliveryThrottler(destType, destID, endpointPath string) DeliveryThrottler
 	Shutdown()
 }
 
@@ -64,7 +64,7 @@ type factory struct {
 	mu                       sync.RWMutex                  // protects the two maps below
 	pickupThrottlers         map[string]PickupThrottler    // map key is the destinationID:eventType
 	allEventTypesPickupAlgos map[string]adaptive.Algorithm // map key is the destinationID
-	deliveryThrottlers       map[string]DeliveryThrottler  // map key is the destinationID:endpointLabel
+	deliveryThrottlers       map[string]DeliveryThrottler  // map key is the destinationID:endpointPath
 }
 
 func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) PickupThrottler {
@@ -110,8 +110,8 @@ func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) 
 	return t
 }
 
-func (f *factory) GetDeliveryThrottler(destType, destinationID, endpointLabel string) DeliveryThrottler {
-	key := destinationID + ":" + endpointLabel
+func (f *factory) GetDeliveryThrottler(destType, destinationID, endpointPath string) DeliveryThrottler {
+	key := destinationID + ":" + endpointPath
 	// Use read lock first for common case
 	f.mu.RLock()
 	if t, ok := f.deliveryThrottlers[key]; ok {
@@ -130,11 +130,11 @@ func (f *factory) GetDeliveryThrottler(destType, destinationID, endpointLabel st
 	log := f.log.Withn(
 		obskit.DestinationType(destType),
 		obskit.DestinationID(destinationID),
-		logger.NewStringField("endpointLabel", endpointLabel),
+		logger.NewStringField("endpointPath", endpointPath),
 		logger.NewStringField("throttlerKind", "delivery"),
 	)
 	// delivery throttler shall be using the static limiter exclusively (redis or in-memory)
-	t := delivery.NewThrottler(destType, destinationID, endpointLabel, f.staticLimiter, f.config, f.Stats, log)
+	t := delivery.NewThrottler(destType, destinationID, endpointPath, f.staticLimiter, f.config, f.Stats, log)
 	f.deliveryThrottlers[key] = t
 	return t
 }
@@ -207,7 +207,7 @@ func (f *NewNoOpFactory) GetPickupThrottler(destName, destID, eventType string) 
 	return &noOpThrottler{}
 }
 
-func (f *NewNoOpFactory) GetDeliveryThrottler(destType, destID, endpointLabel string) DeliveryThrottler {
+func (f *NewNoOpFactory) GetDeliveryThrottler(destType, destID, endpointPath string) DeliveryThrottler {
 	return &noOpDeliveryThrottler{}
 }
 

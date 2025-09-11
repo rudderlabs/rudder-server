@@ -294,6 +294,7 @@ func TestDestinationTransformer(t *testing.T) {
 								"language":         "",
 								"transformationId": "",
 								"mirroring":        "false",
+								"success":          "true",
 
 								// Legacy tags: to be removed
 								"dest_type": destinationConfig.DestinationDefinition.Name,

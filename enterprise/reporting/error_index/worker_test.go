@@ -534,7 +534,7 @@ func minioObjects(t testing.TB, ctx context.Context, mr *minio.Resource, prefix 
 	}) {
 		objects = append(objects, objInfo.Key)
 	}
-	return
+	return objects
 }
 
 func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *minio.Resource, filePath, query string) []payload {

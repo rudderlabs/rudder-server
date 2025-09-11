@@ -103,8 +103,6 @@ type testContext struct {
 	mockGatewayJobsDB        *mocksJobsDB.MockJobsDB
 	mockRouterJobsDB         *mocksJobsDB.MockJobsDB
 	mockBatchRouterJobsDB    *mocksJobsDB.MockJobsDB
-	mockReadProcErrorsDB     *mocksJobsDB.MockJobsDB
-	mockWriteProcErrorsDB    *mocksJobsDB.MockJobsDB
 	mockEventSchemasDB       *mocksJobsDB.MockJobsDB
 	mockArchivalDB           *mocksJobsDB.MockJobsDB
 	MockReportingI           *mockreportingtypes.MockReporting
@@ -126,8 +124,6 @@ func (c *testContext) Setup(testReporters ...gomock.TestReporter) {
 	c.mockGatewayJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBatchRouterJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockReadProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
-	c.mockWriteProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockEventSchemasDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockArchivalDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.MockRsourcesService = rsources.NewMockJobService(c.mockCtrl)
@@ -2012,8 +2008,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				nil,
@@ -2044,8 +2038,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				nil,
@@ -2081,8 +2073,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				c.MockReportingI,
@@ -3088,8 +3078,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				nil,
@@ -3110,8 +3098,6 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-			c.mockReadProcErrorsDB.EXPECT().FailExecuting().Times(1)
-			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()
 			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
@@ -3147,8 +3133,6 @@ var _ = Describe("Processor", Ordered, func() {
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
 				c.mockBatchRouterJobsDB,
-				c.mockReadProcErrorsDB,
-				c.mockWriteProcErrorsDB,
 				nil,
 				nil,
 				c.MockReportingI,
@@ -3167,8 +3151,6 @@ var _ = Describe("Processor", Ordered, func() {
 
 			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
 
-			c.mockReadProcErrorsDB.EXPECT().FailExecuting()
-			c.mockReadProcErrorsDB.EXPECT().GetJobs(gomock.Any(), []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -3645,6 +3627,12 @@ var _ = Describe("Processor", Ordered, func() {
 			metadata3 := commonMetadata
 			metadata3.MessageID = "msg3"
 
+			inputEvents := []types.TransformerEvent{
+				{Metadata: metadata1, Message: event1},
+				{Metadata: metadata2, Message: event2},
+				{Metadata: metadata3, Message: event3},
+			}
+
 			FailedEvents := []types.TransformerResponse{
 				{StatusCode: 400, Metadata: metadata1, Output: event1},
 				{StatusCode: 298, Metadata: metadata2, Output: event2},
@@ -3657,6 +3645,7 @@ var _ = Describe("Processor", Ordered, func() {
 			}
 
 			m := processor.getNonSuccessfulMetrics(transformerResponse,
+				inputEvents,
 				&commonMetadata,
 				eventsByMessageID,
 				reportingtypes.EVENT_FILTER,
@@ -5161,8 +5150,6 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool,
 		c.mockGatewayJobsDB,
 		c.mockRouterJobsDB,
 		c.mockBatchRouterJobsDB,
-		c.mockReadProcErrorsDB,
-		c.mockWriteProcErrorsDB,
 		c.mockEventSchemasDB,
 		c.mockArchivalDB,
 		c.MockReportingI,
@@ -5534,7 +5521,6 @@ func TestStoreMessageMerge(t *testing.T) {
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
 			"1": {{JobID: 1}},
 		},
-		procErrorJobs:       []*jobsdb.JobT{{JobID: 1}},
 		routerDestIDs:       []string{"1"},
 		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 1},
@@ -5550,7 +5536,6 @@ func TestStoreMessageMerge(t *testing.T) {
 		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
 			"2": {{JobID: 2}},
 		},
-		procErrorJobs:       []*jobsdb.JobT{{JobID: 2}},
 		routerDestIDs:       []string{"2"},
 		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
 		sourceDupStats:      map[dupStatKey]int{{sourceID: "1"}: 2},
@@ -5569,7 +5554,6 @@ func TestStoreMessageMerge(t *testing.T) {
 		map[string][]*jobsdb.JobT{
 			"3": {{JobID: 3}},
 		},
-		[]*jobsdb.JobT{{JobID: 3}},
 		[]string{"3"},
 		[]*reportingtypes.PUReportedMetric{{}},
 		map[dupStatKey]int{{sourceID: "1"}: 3},
@@ -5593,7 +5577,6 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.Len(t, merged.destJobs, 1, "dest jobs should have 1 element")
 	require.Len(t, merged.batchDestJobs, 1, "batch dest jobs should have 1 element")
 	require.Len(t, merged.procErrorJobsByDestID, 1, "proc error jobs by dest id should have 1 element")
-	require.Len(t, merged.procErrorJobs, 1, "proc error jobs should have 1 element")
 	require.Len(t, merged.routerDestIDs, 1, "router dest ids should have 1 element")
 	require.Len(t, merged.reportMetrics, 1, "report metrics should have 1 element")
 	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
@@ -5606,7 +5589,6 @@ func TestStoreMessageMerge(t *testing.T) {
 	require.Len(t, merged.destJobs, 2, "dest jobs should have 2 elements")
 	require.Len(t, merged.batchDestJobs, 2, "batch dest jobs should have 2 elements")
 	require.Len(t, merged.procErrorJobsByDestID, 2, "proc error jobs by dest id should have 2 elements")
-	require.Len(t, merged.procErrorJobs, 2, "proc error jobs should have 2 elements")
 	require.Len(t, merged.routerDestIDs, 2, "router dest ids should have 2 elements")
 	require.Len(t, merged.reportMetrics, 2, "report metrics should have 2 elements")
 	require.Len(t, merged.sourceDupStats, 1, "source dup stats should have 1 element")
@@ -5633,7 +5615,6 @@ func TestStoreMessageMerge(t *testing.T) {
 			"2": {{JobID: 2}},
 			"3": {{JobID: 3}},
 		},
-		procErrorJobs:  []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
 		routerDestIDs:  []string{"1", "2", "3"},
 		reportMetrics:  []*reportingtypes.PUReportedMetric{{}, {}, {}},
 		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 6},

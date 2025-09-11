@@ -41,7 +41,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -108,8 +107,6 @@ type Handle struct {
 	gatewayDB                  jobsdb.JobsDB
 	routerDB                   jobsdb.JobsDB
 	batchRouterDB              jobsdb.JobsDB
-	readErrorDB                jobsdb.JobsDB
-	writeErrorDB               jobsdb.JobsDB
 	eventSchemaDB              jobsdb.JobsDB
 	archivalDB                 jobsdb.JobsDB
 	pendingEventsRegistry      rmetrics.PendingEventsRegistry
@@ -180,7 +177,6 @@ type Handle struct {
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		enableOptimizedConnectionDetailsKey       config.ValueLoader[bool]
-		errorDBEnabled                            config.ValueLoader[bool]
 	}
 
 	drainConfig struct {
@@ -386,7 +382,6 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 func (proc *Handle) Setup(
 	backendConfig backendconfig.BackendConfig,
 	gatewayDB, routerDB, batchRouterDB,
-	readErrorDB, writeErrorDB,
 	eventSchemaDB, archivalDB jobsdb.JobsDB,
 	reporting reportingtypes.Reporting,
 	transientSources transientsource.Service,
@@ -418,8 +413,6 @@ func (proc *Handle) Setup(
 	proc.gatewayDB = gatewayDB
 	proc.routerDB = routerDB
 	proc.batchRouterDB = batchRouterDB
-	proc.readErrorDB = readErrorDB
-	proc.writeErrorDB = writeErrorDB
 	proc.eventSchemaDB = eventSchemaDB
 	proc.archivalDB = archivalDB
 
@@ -697,19 +690,6 @@ func (proc *Handle) Start(ctx context.Context) error {
 		}
 	}))
 
-	// stash loop
-	g.Go(crash.Wrapper(func() error {
-		st := stash.New()
-		st.Setup(
-			proc.readErrorDB,
-			proc.transientSources,
-			proc.fileuploader,
-			proc.adaptiveLimit,
-		)
-		st.Start(ctx)
-		return nil
-	}))
-
 	return g.Wait()
 }
 
@@ -782,7 +762,6 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 	proc.config.enableOptimizedConnectionDetailsKey = proc.conf.GetReloadableBoolVar(false, "Processor.enableOptimizedConnectionDetailsKey")
-	proc.config.errorDBEnabled = proc.conf.GetReloadableBoolVar(false, "ErrorDB.enabled")
 }
 
 type connection struct {
@@ -1340,6 +1319,7 @@ func (proc *Handle) updateMetricMaps(
 
 func (proc *Handle) getNonSuccessfulMetrics(
 	response types.Response,
+	inputEvents []types.TransformerEvent,
 	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	inPU, pu string,
@@ -1354,11 +1334,17 @@ func (proc *Handle) getNonSuccessfulMetrics(
 	)
 	filtered, failed := grouped[true], grouped[false]
 
+	metadataByMessageID := make(map[string]*types.Metadata)
+	for _, event := range inputEvents {
+		metadataByMessageID[event.Metadata.MessageID] = &event.Metadata
+	}
+
 	m.filteredJobs, m.filteredMetrics, m.filteredCountMap = proc.getTransformationMetrics(
 		filtered,
 		jobsdb.Filtered.State,
 		commonMetaData,
 		eventsByMessageID,
+		metadataByMessageID,
 		inPU,
 		pu,
 	)
@@ -1368,6 +1354,7 @@ func (proc *Handle) getNonSuccessfulMetrics(
 		jobsdb.Aborted.State,
 		commonMetaData,
 		eventsByMessageID,
+		metadataByMessageID,
 		inPU,
 		pu,
 	)
@@ -1404,6 +1391,7 @@ func (proc *Handle) getTransformationMetrics(
 	state string,
 	commonMetaData *types.Metadata,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	metadataByMessageID map[string]*types.Metadata,
 	inPU, pu string,
 ) ([]*jobsdb.JobT, []*reportingtypes.PUReportedMetric, map[string]int64) {
 	metrics := make([]*reportingtypes.PUReportedMetric, 0)
@@ -1429,13 +1417,19 @@ func (proc *Handle) getTransformationMetrics(
 			continue
 		}
 
-		for _, message := range messages {
+		for _, messageID := range failedEvent.Metadata.GetMessagesIDs() {
+			message := eventsByMessageID[messageID].SingularEvent
+			failedEventWithMetadata := *failedEvent
+			if metadata, ok := metadataByMessageID[messageID]; ok {
+				failedEventWithMetadata.Metadata = *metadata
+			}
+
 			proc.updateMetricMaps(
 				nil,
 				countMap,
 				connectionDetailsMap,
 				statusDetailsMap,
-				failedEvent,
+				&failedEventWithMetadata,
 				state,
 				pu,
 				func() json.RawMessage {
@@ -1680,7 +1674,6 @@ type preTransformationMessage struct {
 	marshalStart                  time.Time
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
 	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
-	procErrorJobs                 []*jobsdb.JobT
 	jobIDToSpecificDestMapOnly    map[int64]string
 	groupedEvents                 map[string][]types.TransformerEvent
 	uniqueMessageIdsBySrcDestKey  map[string]map[string]struct{}
@@ -1709,7 +1702,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 	groupedEvents := make(map[string][]types.TransformerEvent)
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
-	var procErrorJobs []*jobsdb.JobT
 	eventSchemaJobs := make([]*jobsdb.JobT, 0)
 	archivalJobs := make([]*jobsdb.JobT, 0)
 
@@ -2130,7 +2122,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 		marshalStart:                  marshalStart,
 		groupedEventsBySourceId:       groupedEventsBySourceId,
 		eventsByMessageID:             eventsByMessageID,
-		procErrorJobs:                 procErrorJobs,
 		jobIDToSpecificDestMapOnly:    jobIDToSpecificDestMapOnly,
 		groupedEvents:                 groupedEvents,
 		uniqueMessageIdsBySrcDestKey:  uniqueMessageIdsBySrcDestKey,
@@ -2294,12 +2285,9 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
+	validatedEventsBySourceId, validatedReportMetrics, _, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime(preTrans.partition).SendTiming(validateEventsTime)
-
-	// Appending validatedErrorJobs to procErrorJobs
-	preTrans.procErrorJobs = append(preTrans.procErrorJobs, validatedErrorJobs...)
 
 	// Appending validatedReportMetrics to reportMetrics
 	preTrans.reportMetrics = append(preTrans.reportMetrics, validatedReportMetrics...)
@@ -2387,7 +2375,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.uniqueMessageIdsBySrcDestKey,
 		preTrans.reportMetrics,
 		preTrans.statusList,
-		preTrans.procErrorJobs,
 		preTrans.sourceDupStats,
 		preTrans.dedupKeys,
 
@@ -2409,7 +2396,6 @@ type transformationMessage struct {
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	reportMetrics                []*reportingtypes.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
-	procErrorJobs                []*jobsdb.JobT
 	sourceDupStats               map[dupStatKey]int
 	dedupKeys                    map[string]struct{}
 
@@ -2426,7 +2412,6 @@ type userTransformData struct {
 	userTransformAndFilterOutputs map[string]userTransformAndFilterOutput
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	statusList                    []*jobsdb.JobStatusT
-	procErrorJobs                 []*jobsdb.JobT
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
 	trackedUsersReports           []*trackedusers.UsersReport
@@ -2519,7 +2504,6 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		userTransformAndFilterOutputs: userTransformAndFilterOutputs,
 		reportMetrics:                 in.reportMetrics,
 		statusList:                    in.statusList,
-		procErrorJobs:                 in.procErrorJobs,
 		sourceDupStats:                in.sourceDupStats,
 		dedupKeys:                     in.dedupKeys,
 		totalEvents:                   in.totalEvents,
@@ -2602,7 +2586,6 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 		droppedJobs,
 
 		procErrorJobsByDestID,
-		in.procErrorJobs,
 		lo.Keys(routerDestIDs),
 
 		in.reportMetrics,
@@ -2625,7 +2608,6 @@ type storeMessage struct {
 	droppedJobs         []*jobsdb.JobT
 
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
-	procErrorJobs         []*jobsdb.JobT
 	routerDestIDs         []string
 
 	reportMetrics  []*reportingtypes.PUReportedMetric
@@ -2646,7 +2628,6 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.batchDestJobs = append(sm.batchDestJobs, subJob.batchDestJobs...)
 	sm.droppedJobs = append(sm.droppedJobs, subJob.droppedJobs...)
 
-	sm.procErrorJobs = append(sm.procErrorJobs, subJob.procErrorJobs...)
 	for id, job := range subJob.procErrorJobsByDestID {
 		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
 	}
@@ -2847,27 +2828,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 		})
 	}
 
-	for _, jobs := range in.procErrorJobsByDestID {
-		in.procErrorJobs = append(in.procErrorJobs, jobs...)
-	}
-	if len(in.procErrorJobs) > 0 {
-		g.Go(func() error {
-			if proc.config.errorDBEnabled.Load() {
-				err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-					return proc.writeErrorDB.Store(ctx, in.procErrorJobs)
-				}, proc.sendRetryStoreStats)
-				if err != nil {
-					proc.logger.Errorn("Store into proc error table failed", obskit.Error(err))
-					proc.logger.Errorn("procErrorJobs", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-					return err
-				}
-				proc.logger.Debugn("[Processor] Total jobs written to proc_error", logger.NewIntField("jobCount", int64(len(in.procErrorJobs))))
-			}
-			proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
-			return nil
-		})
-	}
-
 	if !enableConcurrentStore {
 		if err := g.Wait(); err != nil {
 			panic(err)
@@ -2918,12 +2878,15 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 			}
 		}
 	}
+	if len(in.procErrorJobsByDestID) > 0 {
+		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
+	}
 	proc.stats.statDBW(partition).Since(beforeStoreStatus)
 	proc.logger.Debugn("Processor GW DB Write Complete", logger.NewIntField("totalProcessed", int64(len(statusList))))
 	proc.stats.statGatewayDBW(partition).Count(len(statusList))
 }
 
-func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetStringVar("rudder-customer-sample-payloads", "Processor.Store.Sampling.Bucket")
 		regionHint       = conf.GetStringVar("us-east-1", "Processor.Store.Sampling.RegionHint", "AWS_S3_REGION_HINT")
@@ -3216,7 +3179,7 @@ func (proc *Handle) userTransformAndFilter(
 			var successCountMap map[string]int64
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.USER_TRANSFORMER)
-			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, reportingtypes.USER_TRANSFORMER)
+			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.USER_TRANSFORMER)
 			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 			if _, ok := procErrorJobsByDestID[destID]; !ok {
 				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -3309,7 +3272,7 @@ func (proc *Handle) userTransformAndFilter(
 	var successMetrics []*reportingtypes.PUReportedMetric
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
-	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
+	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
 	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
 	if _, ok := procErrorJobsByDestID[destID]; !ok {
 		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
@@ -3415,7 +3378,7 @@ func (proc *Handle) destTransform(
 			trace.Logf(ctx, "DestTransform", "output size %d", len(response.Events))
 
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(
-				response, data.commonMetaData, eventsByMessageID,
+				response, data.eventsToTransform, data.commonMetaData, eventsByMessageID,
 				reportingtypes.EVENT_FILTER, reportingtypes.DEST_TRANSFORMER,
 			)
 			destTransformationStat.numEvents.Count(len(data.eventsToTransform))
@@ -4010,7 +3973,7 @@ func shouldSample(samplingPercentage float64) bool {
 }
 
 // getUTSamplingUploader can be completely removed once we get rid of UT sampling
-func getUTSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
 		endpoint         = conf.GetString("UTSampling.Endpoint", "")
