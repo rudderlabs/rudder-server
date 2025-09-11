@@ -18,6 +18,7 @@ import (
 	mock_kinesis "github.com/rudderlabs/rudder-server/mocks/services/streammanager/kinesis"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
@@ -133,4 +134,48 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, errorCode, statusMsg)
 	assert.Contains(t, respMsg, errorCode)
+}
+
+func TestProduceWithProvisionedThroughputExceededException(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
+	pkgLogger = mockLogger
+
+	producer := &KinesisProducer{client: mockClient}
+
+	sampleData := "some data"
+	sampleUserId := "someUser"
+	sampleJsonPayload, _ := jsonrs.Marshal(map[string]string{
+		"message": sampleData,
+		"userId":  sampleUserId,
+	})
+
+	dataPayloadJson, _ := jsonrs.Marshal(sampleData)
+	putRecordInput := kinesis.PutRecordInput{
+		Data:         dataPayloadJson,
+		StreamName:   &validDestinationConfigNotUseMessageID.Stream,
+		PartitionKey: aws.String(sampleUserId),
+	}
+
+	// Return ProvisionedThroughputExceededException error
+	mockClient.EXPECT().PutRecord(gomock.Any(), &putRecordInput, gomock.Any()).Return(nil, &smithy.GenericAPIError{
+		Code:    "ProvisionedThroughputExceededException",
+		Message: "Rate exceeded for shard shardId-000000000000 in stream test-stream under account 123456789012.",
+		Fault:   smithy.FaultClient,
+	})
+
+	// Expect error logging with 429 status code
+	mockLogger.EXPECT().Errorn(
+		"[Kinesis] error",
+		gomock.Any(), // statusCode field
+		gomock.Any(), // respStatus field
+		gomock.Any(), // responseMessage field
+	).AnyTimes()
+
+	statusCode, respStatus, respMsg := producer.Produce(sampleJsonPayload, validDestinationConfigNotUseMessageID)
+
+	require.Equal(t, 429, statusCode)
+	require.Equal(t, "ProvisionedThroughputExceededException", respStatus)
+	require.Contains(t, respMsg, "Rate exceeded")
 }
