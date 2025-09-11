@@ -90,6 +90,10 @@ func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) 
 	}
 	perEventAlgorithm := algorithm.NewAdaptiveAlgorithm(destType, f.config, adaptive.GetPerEventWindowConfig(f.config, destType, destinationID, eventType))
 	adaptiveThrottlerEnabled := f.config.GetReloadableBoolVar(false,
+		fmt.Sprintf(`Router.throttler.%s.%s.adaptiveEnabled`, destType, destinationID),
+		fmt.Sprintf(`Router.throttler.%s.adaptiveEnabled`, destType),
+		"Router.throttler.adaptiveEnabled",
+		// TODO: delete the following deprecated keys in the future
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.enabled`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destType),
 		"Router.throttler.adaptive.enabled")
