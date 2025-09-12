@@ -260,8 +260,9 @@ func TestUTMirroring(t *testing.T) {
 		setupMocksExpectations(t, tc, processor)
 
 		mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			copiedEvents := copyClientEvents(t, clientEvents)
 			outputEvents := make([]types.TransformerResponse, 0)
-			for _, event := range clientEvents {
+			for _, event := range copiedEvents {
 				event.Message["user-transform"] = "value"
 				outputEvents = append(outputEvents, types.TransformerResponse{
 					Output: event.Message,
