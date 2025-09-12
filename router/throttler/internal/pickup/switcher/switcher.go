@@ -42,9 +42,14 @@ func (t *throttlerSwitcher) Shutdown() {
 	t.alternative.Shutdown()
 }
 
-// getLimit returns the limit of the currently active throttler.
-func (t *throttlerSwitcher) GetLimit() int64 {
-	return t.throttler().GetLimit()
+// GetLimitPerSecond returns the limit of the currently active throttler.
+func (t *throttlerSwitcher) GetLimitPerSecond() int64 {
+	return t.throttler().GetLimitPerSecond()
+}
+
+// GetEventType returns the event type of the currently active throttler.
+func (t *throttlerSwitcher) GetEventType() string {
+	return t.throttler().GetEventType()
 }
 
 // throttler returns the currently active throttler based on the useAlternative config.

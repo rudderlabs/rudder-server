@@ -77,7 +77,8 @@ type partitionWorker struct {
 // Work picks up jobs for the partitioned worker and returns whether it worked or not
 func (pw *partitionWorker) Work() bool {
 	start := time.Now()
-	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers)
+	var pickupBatchSizeGauge stats.Gauge = stats.Default.NewTaggedStat("router_pickup_batch_size_gauge", stats.GaugeType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition})
+	pw.pickupCount, pw.limitsReached = pw.rt.pickup(pw.ctx, pw.partition, pw.workers, pickupBatchSizeGauge)
 	// the following stats are used to track the total time taken for the pickup process and the number of jobs picked up
 	stats.Default.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": pw.rt.destType}).Since(start)
 	stats.Default.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": pw.rt.destType, "partition": pw.partition}).Count(pw.pickupCount)

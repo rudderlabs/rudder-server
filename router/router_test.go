@@ -179,6 +179,10 @@ func (m *mockThrottlerFactory) GetPickupThrottler(destName, destID, eventType st
 	return throttler.NewNoOpThrottlerFactory().GetPickupThrottler(destName, destID, eventType)
 }
 
+func (m *mockThrottlerFactory) GetActivePickupThrottlers(destinationID string) []throttler.PickupThrottler {
+	return nil
+}
+
 func (m *mockThrottlerFactory) GetDeliveryThrottler(destName, destID, endpointPath string) throttler.DeliveryThrottler {
 	m.count.Add(1)
 	return throttler.NewNoOpThrottlerFactory().GetDeliveryThrottler(destName, destID, endpointPath)
