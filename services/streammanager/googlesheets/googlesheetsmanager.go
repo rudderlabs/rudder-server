@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 
@@ -48,8 +47,9 @@ type Credentials struct {
 }
 
 type Client struct {
-	service *sheets.Service
-	opts    common.Opts
+	service      *sheets.Service
+	serviceOpts  []option.ClientOption
+	producerOpts common.Opts
 }
 
 var pkgLogger logger.Logger
@@ -62,8 +62,18 @@ type GoogleSheetsProducer struct {
 	client *Client
 }
 
+func newClient(serviceOpts []option.ClientOption, producerOpts common.Opts) (*Client, error) {
+	service, err := generateService(serviceOpts...)
+	// If err is not nil then retrun
+	if err != nil {
+		pkgLogger.Errorn("[Googlesheets] error", obskit.Error(err))
+		return nil, err
+	}
+	return &Client{service, serviceOpts, producerOpts}, nil
+}
+
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GoogleSheetsProducer, error) {
+func NewProducer(destination *backendconfig.DestinationT, producerOpts common.Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
@@ -75,22 +85,19 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		return nil, fmt.Errorf("[GoogleSheets] error  :: error in GoogleSheets while unmarshalling destination config:: %w", err)
 	}
 
-	var opts []option.ClientOption
+	var serviceOpts []option.ClientOption
 	if config.TestConfig.Endpoint != "" { // test configuration
-		opts = testClientOptions(&config)
+		serviceOpts = testClientOptions(&config)
 	} else { // normal configuration
-		if opts, err = clientOptions(&config); err != nil {
+		if serviceOpts, err = clientOptions(&config); err != nil {
 			return nil, fmt.Errorf("[GoogleSheets] error :: %w", err)
 		}
 	}
 
-	service, err := generateService(opts...)
-	// If err is not nil then retrun
+	client, err := newClient(serviceOpts, producerOpts)
 	if err != nil {
-		pkgLogger.Errorn("[Googlesheets] error", obskit.Error(err))
-		return nil, err
+		return nil, fmt.Errorf("[GoogleSheets] error :: %w", err)
 	}
-
 	// ** Preparing the Header Data **
 	// Creating the array of string which are then converted in to an array of interface which are to
 	// be added as header to each of the above spreadsheets.
@@ -101,8 +108,6 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		headerRowStr = append(headerRowStr, eventmap["to"])
 	}
 	headerRow := getSheetsData(headerRowStr)
-
-	client := &Client{service, o}
 	// *** Adding the header ***
 	// Inserting header to the sheet
 	err = insertHeaderDataToSheet(client, config.SheetId, config.SheetName, headerRow)
@@ -117,6 +122,7 @@ func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interf
 		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"
 		return 400, respStatus, responseMessage
 	}
+
 	parsedJSON := gjson.ParseBytes(jsonData)
 	spreadSheetId := parsedJSON.Get("spreadSheetId").String()
 	spreadSheet := parsedJSON.Get("spreadSheet").String()
@@ -132,7 +138,7 @@ func (producer *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interf
 
 	err := insertRowDataToSheet(client, spreadSheetId, spreadSheet, valueList)
 	if err != nil {
-		statCode, serviceMessage := handleServiceError(err)
+		statCode, serviceMessage := producer.handleServiceError(err)
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error :: Failed to insert Payload :: " + serviceMessage
 		pkgLogger.Errorn("[Googlesheets] error while inserting data to sheet", obskit.Error(err))
@@ -164,7 +170,7 @@ func insertHeaderDataToSheet(client *Client, spreadSheetId, spreadSheetTab strin
 	vr.Values = append(vr.Values, data)
 	var err error
 
-	ctx, cancel := context.WithTimeout(context.Background(), client.opts.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), client.producerOpts.Timeout)
 	defer cancel()
 
 	_, err = client.service.Spreadsheets.Values.Update(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Context(ctx).Do()
@@ -183,7 +189,7 @@ func insertRowDataToSheet(client *Client, spreadSheetId, spreadSheetTab string, 
 	}
 	var err error
 
-	ctx, cancel := context.WithTimeout(context.Background(), client.opts.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), client.producerOpts.Timeout)
 	defer cancel()
 
 	_, err = client.service.Spreadsheets.Values.Append(spreadSheetId, spreadSheetTab+"!A1", &vr).ValueInputOption("RAW").Context(ctx).Do()
@@ -272,22 +278,33 @@ func getSheetsData(typedata []string) []interface{} {
 
 // handleServiceError is created for fail safety, if in any case when err type is not googleapi.Error
 // server should not crash with a type error.
-func handleServiceError(err error) (statusCode int, responseMessage string) {
+func (producer *GoogleSheetsProducer) handleServiceError(err error) (statusCode int, responseMessage string) {
 	statusCode = 500
 	responseMessage = err.Error()
 
 	if err != nil && errors.Is(err, context.DeadlineExceeded) {
 		statusCode = 504
 	}
-	if strings.Contains(err.Error(), "token expired and refresh token is not set") {
-		statusCode = 721
-	}
 
-	if reflect.TypeOf(err).String() == "*googleapi.Error" {
-		serviceErr := err.(*googleapi.Error)
+	var serviceErr *googleapi.Error
+	if errors.As(err, &serviceErr) {
 		statusCode = serviceErr.Code
 		responseMessage = serviceErr.Message
 	}
+
+	if strings.Contains(responseMessage, "Quota exceeded") {
+		return 429, responseMessage
+	}
+
+	if strings.Contains(responseMessage, "token expired and refresh token is not set") {
+		newClientInstance, err := newClient(producer.client.serviceOpts, producer.client.producerOpts)
+		if err != nil {
+			return producer.handleServiceError(err)
+		}
+		producer.client = newClientInstance
+		return 500, responseMessage
+	}
+
 	return statusCode, responseMessage
 }
 
