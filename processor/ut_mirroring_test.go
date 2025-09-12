@@ -380,8 +380,9 @@ func TestUTMirroring(t *testing.T) {
 		setupMocksExpectations(t, tc, processor)
 
 		mockTransformerClients.WithDynamicUserTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			copiedEvents := copyClientEvents(t, clientEvents)
 			outputEvents := make([]types.TransformerResponse, 0)
-			for _, event := range clientEvents {
+			for _, event := range copiedEvents {
 				event.Message["user-transform"] = "value"
 				outputEvents = append(outputEvents, types.TransformerResponse{
 					Output:     event.Message,
@@ -397,15 +398,12 @@ func TestUTMirroring(t *testing.T) {
 			return types.Response{Events: outputEvents}
 		})
 		mockTransformerClients.WithDynamicUserMirrorTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			copiedEvents := copyClientEvents(t, clientEvents)
 			outputEvents := make([]types.TransformerResponse, 0)
-			for _, event := range clientEvents {
-				messageCopy := make(map[string]any)
-				for k, v := range event.Message {
-					messageCopy[k] = v
-				}
-				messageCopy["user-transform"] = "value-mirror"
+			for _, event := range copiedEvents {
+				event.Message["user-transform"] = "value-mirror"
 				outputEvents = append(outputEvents, types.TransformerResponse{
-					Output:     messageCopy,
+					Output:     event.Message,
 					StatusCode: 200,
 					Metadata: types.Metadata{
 						SourceID:        SourceIDEnabledOnlyUT,
