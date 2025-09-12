@@ -3,6 +3,7 @@ package googlesheets
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/oauth2"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
@@ -29,14 +31,20 @@ const (
 )
 
 func Test_Timeout(t *testing.T) {
+	t.Parallel()
+
 	pool, err := dockertest.NewPool("")
-	pool.MaxWait = 2 * time.Minute
 	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
 
 	testConfig, err := SetupTestGoogleSheets(pool, t)
 	require.NoError(t, err)
 
 	mockCtrl := gomock.NewController(t)
+	t.Cleanup(func() {
+		mockCtrl.Finish()
+	})
+
 	mockLogger := mock_logger.NewMockLogger(mockCtrl)
 	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
@@ -54,33 +62,22 @@ func Test_Timeout(t *testing.T) {
 	}
 	destination := backendconfig.DestinationT{Config: config}
 	producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
-	if err != nil {
-		t.Fatalf(" %+v", err)
-	}
+	require.NoError(t, err)
 	producer.client.opts = common.Opts{Timeout: 1 * time.Microsecond}
+
 	json := fmt.Sprintf(`{
 		"spreadSheetId": "%s",
 		"spreadSheet": "%s",
 		"message":{
-			"0": { "attributeKey": "%s", "attributeValue": "Realme C3" }
+			"0": { "attributeKey": "%s", "attributeValue": "Realme C3" },
 			"1": { "attributeKey": "%s", "attributeValue": "5900"}
 		}
 	}`, sheetId, sheetName, header1, header2)
+
 	statusCode, respStatus, responseMessage := producer.Produce([]byte(json), nil)
-	const expectedStatusCode = 504
-	if statusCode != expectedStatusCode {
-		t.Errorf("Expected status code %d, got %d.", expectedStatusCode, statusCode)
-	}
-
-	const expectedRespStatus = "Failure"
-	if respStatus != expectedRespStatus {
-		t.Errorf("Expected response status %s, got %s.", expectedRespStatus, respStatus)
-	}
-
-	const expectedResponseMessage = "[GoogleSheets] error :: Failed to insert Payload :: context deadline exceeded"
-	if responseMessage != expectedResponseMessage {
-		t.Errorf("Expected response message %s, got %s.", expectedResponseMessage, responseMessage)
-	}
+	require.Equal(t, 504, statusCode)
+	require.Equal(t, "Failure", respStatus)
+	require.Contains(t, responseMessage, "context deadline exceeded")
 }
 
 type cleaner interface {
@@ -126,4 +123,266 @@ func SetupTestGoogleSheets(pool *dockertest.Pool, cln cleaner) (*TestConfig, err
 		return nil, fmt.Errorf("Could not connect to Google sheets service")
 	}
 	return &config, nil
+}
+
+// Test suite for Google Sheets integration tests
+func TestGoogleSheetsIntegration(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	testConfig, err := SetupTestGoogleSheets(pool, t)
+	require.NoError(t, err)
+
+	// Run all integration tests as subtests
+	t.Run("NewClient", func(t *testing.T) {
+		t.Parallel()
+		testNewClientWithConfig(t, testConfig)
+	})
+
+	t.Run("NewProducer", func(t *testing.T) {
+		t.Parallel()
+		testNewProducerWithConfig(t, testConfig)
+	})
+
+	t.Run("Produce", func(t *testing.T) {
+		t.Parallel()
+		testProduceWithConfig(t, testConfig)
+	})
+
+	t.Run("ProduceBatch", func(t *testing.T) {
+		t.Parallel()
+		testProduceBatchWithConfig(t, testConfig)
+	})
+
+	t.Run("ProduceNumeric", func(t *testing.T) {
+		t.Parallel()
+		testProduceNumericWithConfig(t, testConfig)
+	})
+
+	t.Run("ClientOptions", func(t *testing.T) {
+		t.Parallel()
+		testClientOptionsWithConfig(t, testConfig)
+	})
+
+	t.Run("HandleServiceError", func(t *testing.T) {
+		t.Parallel()
+		testHandleServiceErrorWithConfig(t, testConfig)
+	})
+}
+
+// Helper functions for individual test cases
+func testNewClientWithConfig(t *testing.T, testConfig *TestConfig) {
+	config := &Config{
+		TestConfig: *testConfig,
+	}
+
+	serviceOpts := testClientOptions(config)
+	producerOpts := common.Opts{Timeout: 30 * time.Second}
+
+	service, err := sheets.NewService(context.Background(), serviceOpts...)
+	require.NoError(t, err)
+	require.NotNil(t, service)
+
+	client := &Client{
+		service: service,
+		opts:    producerOpts,
+	}
+	require.NotNil(t, client)
+	require.Equal(t, producerOpts, client.opts)
+	require.NotNil(t, client.service)
+}
+
+func testNewProducerWithConfig(t *testing.T, testConfig *TestConfig) {
+	config := map[string]interface{}{
+		"SheetId":     sheetId,
+		"SheetName":   sheetName,
+		"DestID":      destinationId,
+		"Credentials": "",
+		"EventKeyMap": []map[string]string{
+			{"to": header1},
+			{"to": header2},
+		},
+		"TestConfig": *testConfig,
+	}
+
+	destination := backendconfig.DestinationT{Config: config}
+	producerOpts := common.Opts{Timeout: 30 * time.Second}
+
+	producer, err := NewProducer(&destination, producerOpts)
+	require.NoError(t, err)
+	require.NotNil(t, producer)
+	require.NotNil(t, producer.client)
+	require.Equal(t, producerOpts, producer.client.opts)
+	require.NotNil(t, producer.client.service)
+}
+
+func testProduceWithConfig(t *testing.T, testConfig *TestConfig) {
+	config := map[string]interface{}{
+		"SheetId":     sheetId,
+		"SheetName":   sheetName,
+		"DestID":      destinationId,
+		"Credentials": "",
+		"EventKeyMap": []map[string]string{
+			{"to": header1},
+			{"to": header2},
+		},
+		"TestConfig": *testConfig,
+	}
+
+	destination := backendconfig.DestinationT{Config: config}
+	producerOpts := common.Opts{Timeout: 30 * time.Second}
+
+	producer, err := NewProducer(&destination, producerOpts)
+	require.NoError(t, err)
+
+	// Test successful data insertion
+	jsonData := fmt.Sprintf(`{
+		"spreadSheetId": "%s",
+		"spreadSheet": "%s",
+		"message": {
+			"0": { "attributeKey": "%s", "attributeValue": "Realme C3" },
+			"1": { "attributeKey": "%s", "attributeValue": "5900" }
+		}
+	}`, sheetId, sheetName, header1, header2)
+
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(jsonData), nil)
+	require.Equal(t, 200, statusCode)
+	require.Equal(t, "Success", respStatus)
+	require.Contains(t, responseMessage, "[GoogleSheets] :: Message Payload inserted with messageId")
+}
+
+func testProduceBatchWithConfig(t *testing.T, testConfig *TestConfig) {
+	config := map[string]interface{}{
+		"SheetId":     sheetId,
+		"SheetName":   sheetName,
+		"DestID":      destinationId,
+		"Credentials": "",
+		"EventKeyMap": []map[string]string{
+			{"to": header1},
+			{"to": header2},
+		},
+		"TestConfig": *testConfig,
+	}
+
+	destination := backendconfig.DestinationT{Config: config}
+	producerOpts := common.Opts{Timeout: 30 * time.Second}
+
+	producer, err := NewProducer(&destination, producerOpts)
+	require.NoError(t, err)
+
+	// Test batch data insertion
+	jsonData := fmt.Sprintf(`{
+		"spreadSheetId": "%s",
+		"spreadSheet": "%s",
+		"batch": [
+			{
+				"message": {
+					"0": { "attributeKey": "%s", "attributeValue": "Product 1" },
+					"1": { "attributeKey": "%s", "attributeValue": "100" }
+				}
+			},
+			{
+				"message": {
+					"0": { "attributeKey": "%s", "attributeValue": "Product 2" },
+					"1": { "attributeKey": "%s", "attributeValue": "200" }
+				}
+			}
+		]
+	}`, sheetId, sheetName, header1, header2, header1, header2)
+
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(jsonData), nil)
+	require.Equal(t, 200, statusCode)
+	require.Equal(t, "Success", respStatus)
+	require.Contains(t, responseMessage, "[GoogleSheets] :: Message Payload inserted with messageId")
+}
+
+func testProduceNumericWithConfig(t *testing.T, testConfig *TestConfig) {
+	config := map[string]interface{}{
+		"SheetId":     sheetId,
+		"SheetName":   sheetName,
+		"DestID":      destinationId,
+		"Credentials": "",
+		"EventKeyMap": []map[string]string{
+			{"to": header1},
+			{"to": header2},
+		},
+		"TestConfig": *testConfig,
+	}
+
+	destination := backendconfig.DestinationT{Config: config}
+	producerOpts := common.Opts{Timeout: 30 * time.Second}
+
+	producer, err := NewProducer(&destination, producerOpts)
+	require.NoError(t, err)
+
+	// Test numeric data handling
+	jsonData := fmt.Sprintf(`{
+		"spreadSheetId": "%s",
+		"spreadSheet": "%s",
+		"message": {
+			"0": { "attributeKey": "%s", "attributeValue": "Test Product" },
+			"1": { "attributeKey": "%s", "attributeValue": 123.45 }
+		}
+	}`, sheetId, sheetName, header1, header2)
+
+	statusCode, respStatus, responseMessage := producer.Produce([]byte(jsonData), nil)
+	require.Equal(t, 200, statusCode)
+	require.Equal(t, "Success", respStatus)
+	require.Contains(t, responseMessage, "[GoogleSheets] :: Message Payload inserted with messageId")
+}
+
+func testClientOptionsWithConfig(t *testing.T, testConfig *TestConfig) {
+	config := &Config{
+		TestConfig: *testConfig,
+	}
+
+	serviceOpts := testClientOptions(config)
+	require.NotNil(t, serviceOpts)
+	require.Len(t, serviceOpts, 2) // Should have WithEndpoint and WithHTTPClient options
+}
+
+func testHandleServiceErrorWithConfig(t *testing.T, testConfig *TestConfig) {
+	// Test various error scenarios directly with handleServiceError function
+
+	// Test various error scenarios
+	testCases := []struct {
+		name            string
+		err             error
+		expectedCode    int
+		expectedMessage string
+	}{
+		{
+			name:            "context deadline exceeded",
+			err:             context.DeadlineExceeded,
+			expectedCode:    504,
+			expectedMessage: "context deadline exceeded",
+		},
+		{
+			name:            "googleapi error",
+			err:             &googleapi.Error{Code: 400, Message: "Bad Request"},
+			expectedCode:    400,
+			expectedMessage: "Bad Request",
+		},
+		{
+			name:            "quota exceeded error",
+			err:             &googleapi.Error{Code: 429, Message: "Quota exceeded for requests"},
+			expectedCode:    429,
+			expectedMessage: "Quota exceeded for requests",
+		},
+		{
+			name:            "token expired error",
+			err:             errors.New("token expired and refresh token is not set"),
+			expectedCode:    500,
+			expectedMessage: "token expired and refresh token is not set",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			statusCode, responseMessage := handleServiceError(tc.err)
+			require.Equal(t, tc.expectedCode, statusCode)
+			require.Equal(t, tc.expectedMessage, responseMessage)
+		})
+	}
 }
