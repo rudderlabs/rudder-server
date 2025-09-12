@@ -482,8 +482,9 @@ func TestUTMirroring(t *testing.T) {
 				if mirror {
 					defer close(done)
 				}
+				copiedEvents := copyClientEvents(t, clientEvents)
 				outputEvents := make([]types.TransformerResponse, 0)
-				for _, event := range clientEvents {
+				for _, event := range copiedEvents {
 					event.Message["user-transform"] = "value"
 					outputEvents = append(outputEvents, types.TransformerResponse{
 						Output:     event.Message,
