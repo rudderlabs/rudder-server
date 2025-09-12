@@ -327,6 +327,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.skipRtAbortAlertForTransformation = config.GetReloadableBoolVar(false, getRouterConfigKeys("skipRtAbortAlertForTf", rt.destType)...)
 	rt.reloadableConfig.skipRtAbortAlertForDelivery = config.GetReloadableBoolVar(false, getRouterConfigKeys("skipRtAbortAlertForDelivery", rt.destType)...)
 	rt.reloadableConfig.jobQueryBatchSize = config.GetReloadableIntVar(10000, 1, getRouterConfigKeys("jobQueryBatchSize", rt.destType)...)
+	rt.reloadableConfig.maxJobQueryBatchSize = config.GetReloadableIntVar(10000, 1, getRouterConfigKeys("maxJobQueryBatchSize", rt.destType)...)
 	rt.reloadableConfig.updateStatusBatchSize = config.GetReloadableIntVar(1000, 1, getRouterConfigKeys("updateStatusBatchSize", rt.destType)...)
 	rt.reloadableConfig.readSleep = config.GetReloadableDurationVar(1000, time.Millisecond, getRouterConfigKeys("readSleep", rt.destType)...)
 	rt.reloadableConfig.jobsBatchTimeout = config.GetReloadableDurationVar(5, time.Second, getRouterConfigKeys("jobsBatchTimeout", rt.destType)...)

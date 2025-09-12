@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -431,7 +432,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 		})
 	})
 
-	t.Run("GetLimit", func(t *testing.T) {
+	t.Run("GetLimitPerSecond", func(t *testing.T) {
 		t.Run("ReturnsLimitBasedOnAlgorithmFactor", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -448,7 +449,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			// Expected: 100 * 0.6 = 60
-			require.Equal(t, int64(60), throttler.GetLimit())
+			require.Equal(t, int64(60), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("EnforcesMinimumLimit", func(t *testing.T) {
@@ -467,7 +468,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			// Expected: max(10, 100 * 0.05) = max(10, 5) = 10
-			require.Equal(t, int64(10), throttler.GetLimit())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("UpdatesWithAlgorithmChanges", func(t *testing.T) {
@@ -485,11 +486,30 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(50), throttler.GetLimit())
+			require.Equal(t, int64(50), throttler.GetLimitPerSecond())
 
 			// Update algorithm factor
 			mockAlgorithm.LimitFactorValue = 0.8
-			require.Equal(t, int64(80), throttler.GetLimit())
+			require.Equal(t, int64(80), throttler.GetLimitPerSecond())
+		})
+
+		t.Run("RoundsUp", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 1.0}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
+			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 15)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", 2*time.Second)
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
+
+			require.Equal(t, int64(8), throttler.GetLimitPerSecond())
 		})
 	})
 
@@ -530,6 +550,29 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			throttler.Shutdown()
 
 			require.True(t, mockAlgorithm.ShutdownCalled)
+		})
+	})
+
+	t.Run("GetEventType", func(t *testing.T) {
+		t.Run("ReturnsAllForAllEventTypesThrottler", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			// Set valid configuration
+			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
+			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
+
+			eventType := throttler.GetEventType()
+			require.Equal(t, "all", eventType)
 		})
 	})
 

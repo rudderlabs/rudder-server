@@ -39,7 +39,7 @@ func (t *throttler) CheckLimitReached(ctx context.Context, cost int64) (limited 
 	}
 	t.updateGauges()
 
-	allowed, _, err := t.limiter.Allow(ctx, t.costFn(cost), t.GetLimit(), t.getTimeWindowInSeconds(), t.key)
+	allowed, _, err := t.limiter.Allow(ctx, t.costFn(cost), t.getLimit(), t.getTimeWindowInSeconds(), t.key)
 	if err != nil {
 		return false, fmt.Errorf("throttling failed for %s: %w", t.key, err)
 	}
@@ -66,9 +66,20 @@ func (t *throttler) getMaxLimit() int64 {
 	return t.maxLimit()
 }
 
-func (t *throttler) GetLimit() int64 {
+func (t *throttler) getLimit() int64 {
 	limit := int64(float64(t.getMaxLimit()) * t.getLimitFactor())
 	return max(t.getMinLimit(), limit)
+}
+
+func (t *throttler) GetLimitPerSecond() int64 {
+	if window := t.getTimeWindowInSeconds(); window > 0 {
+		return (t.getLimit() + window - 1) / window // ceiling division
+	}
+	return 0
+}
+
+func (t *throttler) GetEventType() string {
+	return t.eventType
 }
 
 func (t *throttler) getTimeWindowInSeconds() int64 {
@@ -78,7 +89,7 @@ func (t *throttler) getTimeWindowInSeconds() int64 {
 func (t *throttler) updateGauges() {
 	t.everyGauge.Do(func() {
 		if window := t.getTimeWindowInSeconds(); window > 0 {
-			t.rateLimitGauge.Gauge(t.GetLimit() / window)
+			t.rateLimitGauge.Gauge(t.getLimit() / window)
 		}
 		t.limitFactorGauge.Gauge(t.getLimitFactor())
 	})
