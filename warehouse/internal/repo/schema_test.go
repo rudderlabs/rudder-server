@@ -73,7 +73,7 @@ func TestWHSchemasRepo(t *testing.T) {
 				require.NoError(t, err)
 
 				var (
-					now = time.Now().Truncate(time.Second).UTC()
+					now = time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 					r   = repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 						return now
 					}))
@@ -286,7 +286,7 @@ func TestWHSchemasRepo(t *testing.T) {
 				require.NoError(t, err)
 
 				var (
-					now = time.Now().Truncate(time.Second).UTC()
+					now = time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 					r   = repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 						return now
 					}))
@@ -450,7 +450,7 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 		conf.Set("Warehouse.enableTableLevelSchema", true)
 
 		db, ctx := setupDB(t), context.Background()
-		now := time.Now().Truncate(time.Second).UTC()
+		now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 		r := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
@@ -504,7 +504,7 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 		conf.Set("Warehouse.enableTableLevelSchema", true)
 
 		db, ctx := setupDB(t), context.Background()
-		now := time.Now().Truncate(time.Second).UTC()
+		now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 		r := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
 			return now
 		}))
@@ -594,6 +594,57 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 				"column_name_3": "boolean",
 			},
 		}, expectedSchema.Schema)
+	})
+
+	t.Run("Populate CreatedAt and UpdatedAt", func(t *testing.T) {
+		db, ctx := setupDB(t), context.Background()
+		now1 := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+		r1 := repo.NewWHSchemas(db, config.New(), logger.NOP, repo.WithNow(func() time.Time {
+			return now1
+		}))
+
+		require.NoError(t, r1.Insert(ctx, &model.WHSchema{
+			SourceID:        "source_id",
+			Namespace:       "namespace",
+			DestinationID:   "destination_id",
+			DestinationType: "destination_type",
+			Schema: model.Schema{
+				"table_name": {
+					"column_name_1": "string",
+					"column_name_2": "int",
+					"column_name_3": "boolean",
+				},
+			},
+		}))
+
+		conf := config.New()
+		conf.Set("Warehouse.enableTableLevelSchema", true)
+
+		now2 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		r2 := repo.NewWHSchemas(db, conf, logger.NOP, repo.WithNow(func() time.Time {
+			return now2
+		}))
+		expectedSchema, err := r2.GetForNamespace(ctx, "destination_id", "namespace")
+		require.NoError(t, err)
+		require.Equal(t, "source_id", expectedSchema.SourceID)
+		require.Equal(t, "namespace", expectedSchema.Namespace)
+		require.Equal(t, "destination_id", expectedSchema.DestinationID)
+		require.Equal(t, "destination_type", expectedSchema.DestinationType)
+		require.Equal(t, model.Schema{
+			"table_name": {
+				"column_name_1": "string",
+				"column_name_2": "int",
+				"column_name_3": "boolean",
+			},
+		}, expectedSchema.Schema)
+		require.Equal(t, now1, expectedSchema.CreatedAt)
+		require.Equal(t, now1, expectedSchema.UpdatedAt)
+
+		var tableLevelSchemaCreatedAt, tableLevelSchemaUpdatedAt time.Time
+		err = db.QueryRowContext(ctx, "SELECT created_at, updated_at FROM wh_schemas WHERE source_id = $1 AND destination_id = $2 AND table_name = $3;", "source_id", "destination_id", "table_name").Scan(&tableLevelSchemaCreatedAt, &tableLevelSchemaUpdatedAt)
+		require.NoError(t, err)
+		require.Equal(t, now2, tableLevelSchemaCreatedAt.UTC())
+		require.Equal(t, now2, tableLevelSchemaUpdatedAt.UTC())
 	})
 }
 

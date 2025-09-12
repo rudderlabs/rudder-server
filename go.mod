@@ -53,11 +53,11 @@ require (
 	github.com/go-chi/chi/v5 v5.2.2
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/go-cmp v0.7.0
-	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/jsonparser v0.0.0-20250430123630-2a684464cca1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1
