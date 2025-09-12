@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -34,7 +35,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.Equal(t, destinationID, throttler.destinationID)
 			require.Equal(t, eventType, throttler.eventType)
 			require.Equal(t, mockLimiter, throttler.limiter)
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.getLimit())
 		})
 
 		t.Run("UsesConfigurationFallbacks", func(t *testing.T) {
@@ -53,7 +54,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(75), throttler.GetLimit())
+			require.Equal(t, int64(75), throttler.getLimit())
 		})
 
 		t.Run("CreatesStatsGaugeWithCorrectTags", func(t *testing.T) {
@@ -304,10 +305,11 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			eventType := "track"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 250)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", time.Second)
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(250), throttler.GetLimit())
+			require.Equal(t, int64(250), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("UpdatesWithConfigChanges", func(t *testing.T) {
@@ -321,15 +323,34 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			eventType := "track"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 100)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", time.Second)
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.GetLimitPerSecond())
 
 			// Update config
 			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 200)
 
-			require.Equal(t, int64(200), throttler.GetLimit())
+			require.Equal(t, int64(200), throttler.GetLimitPerSecond())
+		})
+
+		t.Run("Rounds up", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+			eventType := "track"
+
+			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 15)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", 2*time.Second)
+
+			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
+
+			require.Equal(t, int64(8), throttler.GetLimitPerSecond())
 		})
 	})
 
@@ -512,7 +533,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(300), throttler.GetLimit())
+			require.Equal(t, int64(300), throttler.getLimit())
 			require.Equal(t, int64(30), throttler.getTimeWindowInSeconds())
 		})
 
@@ -537,7 +558,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(200), throttler.GetLimit())
+			require.Equal(t, int64(200), throttler.getLimit())
 			require.Equal(t, int64(20), throttler.getTimeWindowInSeconds())
 		})
 
@@ -560,7 +581,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(150), throttler.GetLimit())
+			require.Equal(t, int64(150), throttler.getLimit())
 			require.Equal(t, int64(15), throttler.getTimeWindowInSeconds())
 		})
 
@@ -580,7 +601,7 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.getLimit())
 			require.Equal(t, int64(10), throttler.getTimeWindowInSeconds())
 		})
 	})

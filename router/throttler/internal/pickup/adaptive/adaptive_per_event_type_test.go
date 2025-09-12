@@ -343,7 +343,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 		})
 	})
 
-	t.Run("GetLimit", func(t *testing.T) {
+	t.Run("GetLimitPerSecond", func(t *testing.T) {
 		t.Run("ReturnsLimitBasedOnAlgorithmFactor", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -361,7 +361,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			// Expected: 100 * 0.6 = 60
-			require.Equal(t, int64(60), throttler.GetLimit())
+			require.Equal(t, int64(60), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("EnforcesMinimumLimit", func(t *testing.T) {
@@ -381,7 +381,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			// Expected: max(10, 100 * 0.05) = max(10, 5) = 10
-			require.Equal(t, int64(10), throttler.GetLimit())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("UpdatesWithAlgorithmChanges", func(t *testing.T) {
@@ -400,11 +400,11 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(50), throttler.GetLimit())
+			require.Equal(t, int64(50), throttler.GetLimitPerSecond())
 
 			// Update algorithm factor
 			mockAlgorithm.LimitFactorValue = 0.8
-			require.Equal(t, int64(80), throttler.GetLimit())
+			require.Equal(t, int64(80), throttler.GetLimitPerSecond())
 		})
 	})
 

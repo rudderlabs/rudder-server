@@ -38,6 +38,9 @@ func TestIsolationStrategy(t *testing.T) {
 			require.False(t, strategy.StopQueries(types.ErrBarrierExists, destinationID))
 			require.False(t, strategy.StopQueries(types.ErrDestinationThrottled, destinationID))
 		})
+		t.Run("supports pickup query throttling", func(t *testing.T) {
+			require.False(t, strategy.SupportsPickupQueryThrottling())
+		})
 	})
 	t.Run("workspace", func(r *testing.T) {
 		strategy, err := isolation.GetStrategy(isolation.ModeWorkspace, "", func(_ string) bool { return true }, c)
@@ -59,6 +62,10 @@ func TestIsolationStrategy(t *testing.T) {
 		t.Run("stop queries", func(t *testing.T) {
 			require.False(t, strategy.StopQueries(types.ErrBarrierExists, destinationID))
 			require.False(t, strategy.StopQueries(types.ErrDestinationThrottled, destinationID))
+		})
+
+		t.Run("supports pickup query throttling", func(t *testing.T) {
+			require.False(t, strategy.SupportsPickupQueryThrottling())
 		})
 	})
 	t.Run("destination", func(r *testing.T) {
@@ -102,6 +109,16 @@ func TestIsolationStrategy(t *testing.T) {
 				c.Set("Router.throttler.throttlerPerEventType", true)
 				require.True(t, strategy.StopQueries(types.ErrDestinationThrottled, anotherDestID))
 			})
+		})
+
+		t.Run("supports pickup query throttling when enabled", func(t *testing.T) {
+			c.Set("Router.WEBHOOK.pickupQueryThrottlingEnabled", true)
+			require.True(t, strategy.SupportsPickupQueryThrottling())
+		})
+
+		t.Run("doesn't support pickup query throttling when not enabled", func(t *testing.T) {
+			c.Set("Router.WEBHOOK.pickupQueryThrottlingEnabled", false)
+			require.False(t, strategy.SupportsPickupQueryThrottling())
 		})
 	})
 }
