@@ -29,7 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
-	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -50,7 +50,7 @@ const module = "router"
 type Handle struct {
 	// external dependencies
 	jobsDB                     jobsdb.JobsDB
-	throttlerFactory           rtThrottler.Factory
+	throttlerFactory           throttler.Factory
 	backendConfig              backendconfig.BackendConfig
 	Reporting                  reporter
 	transientSources           transientsource.Service
@@ -181,8 +181,28 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		"Router."+rt.destType+".jobIterator.discardedPercentageTolerance",
 		"Router.jobIterator.discardedPercentageTolerance")
 
+	jobQueryBatchSize := rt.reloadableConfig.jobQueryBatchSize.Load()
+	if rt.isolationStrategy.SupportsPickupQueryThrottling() {
+		totalLimit := lo.Reduce(rt.throttlerFactory.GetActivePickupThrottlers(partition), func(totalLimit int, throttler throttler.PickupThrottler, index int) int {
+			if index == 0 {
+				return int(throttler.GetLimitPerSecond())
+			}
+			if throttler.GetEventType() == "all" {
+				// global throttler, total limit is the limit of the first throttler
+				return totalLimit
+			}
+			// throttler per event type, total limit is the sum of all throttler per event type limits
+			return totalLimit + int(throttler.GetLimitPerSecond())
+		}, 0)
+		if totalLimit > 0 {
+			readSleep := rt.reloadableConfig.readSleep.Load()
+			readSleepSeconds := int((readSleep + time.Second - 1) / time.Second) // rounding up to the nearest second
+			jobQueryBatchSize = totalLimit * readSleepSeconds
+		}
+	}
+
 	iterator := jobiterator.New(
-		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize.Load()),
+		rt.getQueryParams(partition, jobQueryBatchSize),
 		rt.getJobsFn(ctx),
 		jobiterator.WithDiscardedPercentageTolerance(jobIteratorDiscardedPercentageTolerance),
 		jobiterator.WithMaxQueries(jobIteratorMaxQueries),

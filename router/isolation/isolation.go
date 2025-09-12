@@ -30,10 +30,11 @@ func GetStrategy(mode Mode, destType string, partitionFilter func(destinationID 
 		return workspaceStrategy{customVal: destType}, nil
 	case ModeDestination:
 		return &destinationStrategy{
-			config:                      c,
-			destinationFilter:           partitionFilter,
-			destType:                    destType,
-			throttlerPerEventTypeConfig: make(map[string]config.ValueLoader[bool]),
+			config:                       c,
+			pickupQueryThrottlingEnabled: c.GetReloadableBoolVar(false, "Router."+destType+".pickupQueryThrottlingEnabled", "Router.pickupQueryThrottlingEnabled"),
+			destinationFilter:            partitionFilter,
+			destType:                     destType,
+			throttlerPerEventTypeConfig:  make(map[string]config.ValueLoader[bool]),
 		}, nil
 	default:
 		return noneStrategy{}, errors.New("unsupported isolation mode")
@@ -50,6 +51,8 @@ type Strategy interface {
 	StopIteration(err error, destinationID string) bool
 	// StopQueries returns true if the iterator should stop fetching more jobs from jobsDB
 	StopQueries(err error, destinationID string) bool
+	// SupportsPickupQueryThrottling returns true if the strategy supports pickup query throttling, i.e., if it can throttle queries to jobsDB based on the throttling limits set at destination level
+	SupportsPickupQueryThrottling() bool
 }
 
 // noneStrategy implements isolation at no level
@@ -68,6 +71,10 @@ func (noneStrategy) StopIteration(_ error, _ string) bool {
 }
 
 func (noneStrategy) StopQueries(_ error, _ string) bool {
+	return false
+}
+
+func (noneStrategy) SupportsPickupQueryThrottling() bool {
 	return false
 }
 
@@ -93,9 +100,14 @@ func (workspaceStrategy) StopQueries(_ error, _ string) bool {
 	return false
 }
 
+func (workspaceStrategy) SupportsPickupQueryThrottling() bool {
+	return false
+}
+
 // destinationStrategy implements isolation at destination level
 type destinationStrategy struct {
 	config                        *config.Config
+	pickupQueryThrottlingEnabled  config.ValueLoader[bool]
 	destinationFilter             func(destinationID string) bool
 	destType                      string
 	throttlerPerEventTypeConfigMu sync.RWMutex
@@ -126,6 +138,10 @@ func (ds *destinationStrategy) StopIteration(err error, destinationID string) bo
 // StopQueries returns true if the error is ErrDestinationThrottled and throttlerPerEventType is enabled for the destination
 func (ds *destinationStrategy) StopQueries(err error, destinationID string) bool {
 	return errors.Is(err, types.ErrDestinationThrottled) && ds.hasDestinationThrottlerPerEventType(destinationID)
+}
+
+func (ds *destinationStrategy) SupportsPickupQueryThrottling() bool {
+	return ds.pickupQueryThrottlingEnabled.Load()
 }
 
 func (ds *destinationStrategy) hasDestinationThrottlerPerEventType(destinationID string) bool {
