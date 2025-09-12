@@ -34,9 +34,13 @@ type (
 )
 
 type Factory interface {
+	// GetPickupThrottler returns a PickupThrottler for the given destination type, ID, and event type.
 	GetPickupThrottler(destType, destID, eventType string) PickupThrottler
+	// GetActivePickupThrottlers returns all instantiated PickupThrottlers for the given destination ID.
 	GetActivePickupThrottlers(destinationID string) []PickupThrottler
+	// GetDeliveryThrottler returns a DeliveryThrottler for the given destination type, ID, and endpoint path.
 	GetDeliveryThrottler(destType, destID, endpointPath string) DeliveryThrottler
+	// Shutdown gracefully shuts down the factory and all its throttlers.
 	Shutdown()
 }
 

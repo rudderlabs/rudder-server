@@ -158,6 +158,99 @@ func TestFactory(t *testing.T) {
 		})
 	})
 
+	t.Run("GetActivePickupThrottlers", func(t *testing.T) {
+		config := config.New()
+		config.Set("Router.throttler.adaptiveEnabled", true)
+		config.Set("Router.throttler.throttlerPerEventType", true)
+
+		f, err := NewFactory(config, stats.NOP, logger.NOP)
+		require.NoError(t, err)
+		defer f.Shutdown()
+
+		t.Run("should return all throttlers for a destination", func(t *testing.T) {
+			// Create throttlers for the same destination with different event types
+			ta1 := f.GetPickupThrottler("destName", "destID1", "track")
+			ta2 := f.GetPickupThrottler("destName", "destID1", "identify")
+			ta3 := f.GetPickupThrottler("destName", "destID1", "page")
+
+			// Get active throttlers for destID1
+			activeThrottlers := f.GetActivePickupThrottlers("destID1")
+			require.NotNil(t, activeThrottlers)
+			require.Len(t, activeThrottlers, 3)
+
+			// Verify all created throttlers are in the active list
+			throttlerMap := make(map[PickupThrottler]bool)
+			for _, t := range activeThrottlers {
+				throttlerMap[t] = true
+			}
+
+			require.True(t, throttlerMap[ta1], "track throttler should be in active list")
+			require.True(t, throttlerMap[ta2], "identify throttler should be in active list")
+			require.True(t, throttlerMap[ta3], "page throttler should be in active list")
+		})
+
+		t.Run("should return only throttlers for specific destination", func(t *testing.T) {
+			// Create throttlers for different destinations
+			_ = f.GetPickupThrottler("destName", "destID2", "track")
+			_ = f.GetPickupThrottler("destName", "destID2", "identify")
+			_ = f.GetPickupThrottler("destName", "destID3", "track")
+
+			// Get active throttlers for destID2
+			activeThrottlers2 := f.GetActivePickupThrottlers("destID2")
+			require.NotNil(t, activeThrottlers2)
+			require.Len(t, activeThrottlers2, 2)
+
+			// Get active throttlers for destID3
+			activeThrottlers3 := f.GetActivePickupThrottlers("destID3")
+			require.NotNil(t, activeThrottlers3)
+			require.Len(t, activeThrottlers3, 1)
+		})
+
+		t.Run("should return empty slice if destination has no throttlers", func(t *testing.T) {
+			// Check for a destination that doesn't exist yet
+			activeThrottlers := f.GetActivePickupThrottlers("destID4")
+			require.Nil(t, activeThrottlers)
+
+			// Create a throttler for this destination
+			_ = f.GetPickupThrottler("destName", "destID4", "track")
+
+			// Now it should return the throttler
+			activeThrottlers = f.GetActivePickupThrottlers("destID4")
+			require.NotNil(t, activeThrottlers)
+			require.Len(t, activeThrottlers, 1)
+		})
+
+		t.Run("should handle concurrent access to GetActivePickupThrottlers", func(t *testing.T) {
+			const numGoroutines = 10
+			const destID = "concurrentDestID"
+
+			// Create some throttlers first
+			_ = f.GetPickupThrottler("destName", destID, "track")
+			_ = f.GetPickupThrottler("destName", destID, "identify")
+
+			results := make([][]PickupThrottler, numGoroutines)
+			done := make(chan struct{}, numGoroutines)
+
+			// Launch multiple goroutines to get active throttlers
+			for i := range numGoroutines {
+				go func(index int) {
+					results[index] = f.GetActivePickupThrottlers(destID)
+					done <- struct{}{}
+				}(i)
+			}
+
+			// Wait for all goroutines
+			for range numGoroutines {
+				<-done
+			}
+
+			// All results should be consistent
+			for i := 1; i < numGoroutines; i++ {
+				require.Len(t, results[i], len(results[0]), "All goroutines should return same number of throttlers")
+			}
+		})
+	})
+
 	t.Run("factory shutdown", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.adaptiveEnabled", true)
