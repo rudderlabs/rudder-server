@@ -13,8 +13,7 @@
             "rudderId": "some-rudder-id",
             "sentAt": "2000-01-02T01:23:00.000Z",
             "some-property": "property-1",
-            "timestamp": "2001-01-02T02:24:30.000Z",
-            "user-transform": "value"
+            "timestamp": "2001-01-02T02:24:30.000Z"
         },
         "metadata": {
             "sourceId": "enabled-source-only-ut",
@@ -78,8 +77,7 @@
             "rudderId": "some-rudder-id",
             "sentAt": "2000-03-02T01:23:15.000Z",
             "some-property": "property-3",
-            "timestamp": "2003-11-04T03:24:15.000Z",
-            "user-transform": "value"
+            "timestamp": "2003-11-04T03:24:15.000Z"
         },
         "metadata": {
             "sourceId": "enabled-source-only-ut",
@@ -141,8 +139,7 @@
             "rudderId": "some-rudder-id",
             "sentAt": "2002-01-02T02:23:45.000Z",
             "some-property": "property-4",
-            "timestamp": "2000-04-02T02:23:15.000Z",
-            "user-transform": "value"
+            "timestamp": "2000-04-02T02:23:15.000Z"
         },
         "metadata": {
             "sourceId": "enabled-source-only-ut",
