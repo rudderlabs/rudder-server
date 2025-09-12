@@ -327,8 +327,9 @@ func TestUTMirroring(t *testing.T) {
 		setupMocksExpectations(t, tc, processor)
 
 		userTransformation := func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			copiedEvents := copyClientEvents(t, clientEvents)
 			outputEvents := make([]types.TransformerResponse, 0)
-			for _, event := range clientEvents {
+			for _, event := range copiedEvents {
 				event.Message["user-transform"] = "value"
 				outputEvents = append(outputEvents, types.TransformerResponse{
 					Output:     event.Message,
@@ -577,4 +578,12 @@ func TestShouldSample(t *testing.T) {
 
 func requireTimeCirca(t require.TestingT, expected, actual time.Time, difference time.Duration) {
 	require.InDelta(t, float64(expected.UnixMilli()), float64(actual.UnixMilli()), float64(difference))
+}
+
+func copyClientEvents(t *testing.T, clientEvents []types.TransformerEvent) []types.TransformerEvent {
+	marshalledEvents, err := jsonrs.Marshal(clientEvents)
+	require.NoError(t, err)
+	var copiedEvents []types.TransformerEvent
+	require.NoError(t, jsonrs.Unmarshal(marshalledEvents, &copiedEvents))
+	return copiedEvents
 }
