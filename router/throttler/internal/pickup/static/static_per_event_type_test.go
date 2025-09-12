@@ -3,6 +3,7 @@ package static
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -427,6 +428,34 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.NotPanics(t, func() {
 				throttler.Shutdown()
 			})
+		})
+	})
+
+	t.Run("GetEventType", func(t *testing.T) {
+		t.Run("ReturnsCorrectEventTypeForDifferentTypes", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			// Test with different event types
+			eventTypes := []string{"track", "identify", "page", "screen", "group", "alias"}
+
+			for _, eventType := range eventTypes {
+				t.Run(fmt.Sprintf("EventType_%s", eventType), func(t *testing.T) {
+					// Set minimal valid configuration
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.limit", destType, destinationID, eventType), 50)
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.timeWindow", destType, destinationID, eventType), "5s")
+
+					throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, &MockLogger{})
+
+					returnedEventType := throttler.GetEventType()
+					require.Equal(t, eventType, returnedEventType, "Event type should match the provided event type")
+				})
+			}
 		})
 	})
 

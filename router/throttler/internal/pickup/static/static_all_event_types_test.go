@@ -387,6 +387,27 @@ func TestAllEventTypesThrottler(t *testing.T) {
 		})
 	})
 
+	t.Run("GetEventType", func(t *testing.T) {
+		t.Run("ReturnsAllForAllEventTypesThrottler", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			// Set valid configuration
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
+
+			throttler := NewAllEventTypesThrottler(destType, destinationID, mockLimiter, config, statsStore, &MockLogger{})
+
+			eventType := throttler.GetEventType()
+			require.Equal(t, "all", eventType)
+		})
+	})
+
 	t.Run("updateGauges", func(t *testing.T) {
 		t.Run("UpdatesRateLimitGauge", func(t *testing.T) {
 			config := config.New()
