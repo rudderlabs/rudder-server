@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -58,7 +59,7 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	fileFormat := result.Get("fileFormat").String()
 
 	// Generate temporary file based on the destination's file format
-	jsonOrCSVFilePath, err := generateFile(textFilePath, fileFormat)
+	jsonOrCSVFilePath, err := generateFile(textFilePath, fileFormat, d.config.SortColumnNames)
 	if err != nil {
 		return generateErrorOutput(fmt.Sprintf("error generating temporary file: %v", err.Error()), asyncDestStruct.ImportingJobIDs, destinationID)
 	}
@@ -98,16 +99,21 @@ func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) 
 	}
 }
 
-func newDefaultManager(logger logger.Logger, statsFactory stats.Stats, fileManager sftp.FileManager) *defaultManager {
+func newDefaultManager(logger logger.Logger, statsFactory stats.Stats, fileManager sftp.FileManager, config destConfig) *defaultManager {
 	return &defaultManager{
 		FileManager:  fileManager,
 		logger:       logger.Child("SFTP").Child("Manager"),
 		statsFactory: statsFactory,
+		config:       config,
 	}
 }
 
 func newInternalManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (common.AsyncUploadAndTransformManager, error) {
-	sshConfig, err := createSSHConfig(destination)
+	var config destConfig
+	if err := mapstructure.Decode(destination.Config, &config); err != nil {
+		return nil, fmt.Errorf("unmarshalling destination config: %w", err)
+	}
+	sshConfig, err := createSSHConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("creating SSH config: %w", err)
 	}
@@ -117,7 +123,8 @@ func newInternalManager(logger logger.Logger, statsFactory stats.Stats, destinat
 		return nil, fmt.Errorf("creating file manager: %w", err)
 	}
 
-	return newDefaultManager(logger, statsFactory, fileManager), nil
+	manager := newDefaultManager(logger, statsFactory, fileManager, config)
+	return manager, nil
 }
 
 func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT) (common.AsyncDestinationManager, error) {
