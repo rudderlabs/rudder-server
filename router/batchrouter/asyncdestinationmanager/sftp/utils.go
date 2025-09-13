@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/sftp"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -26,16 +26,7 @@ import (
 var re = regexp.MustCompile(`{([^}]+)}`)
 
 // createSSHConfig creates SSH configuration based on destination
-func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, error) {
-	destinationConfigJson, err := jsonrs.Marshal(destination.Config)
-	if err != nil {
-		return nil, fmt.Errorf("marshalling destination config: %w", err)
-	}
-	var config destConfig
-	if err := jsonrs.Unmarshal(destinationConfigJson, &config); err != nil {
-		return nil, fmt.Errorf("unmarshalling destination config: %w", err)
-	}
-
+func createSSHConfig(config destConfig) (*sftp.SSHConfig, error) {
 	if err := validate(config); err != nil {
 		return nil, fmt.Errorf("invalid sftp configuration: %w", err)
 	}
@@ -53,7 +44,7 @@ func createSSHConfig(destination *backendconfig.DestinationT) (*sftp.SSHConfig, 
 }
 
 // getFieldNames extracts the field names from the first JSON record.
-func getFieldNames(records []record) ([]string, error) {
+func getFieldNames(records []record, sortColumnNames bool) ([]string, error) {
 	if len(records) == 0 {
 		return nil, errors.New("no records found")
 	}
@@ -67,6 +58,9 @@ func getFieldNames(records []record) ([]string, error) {
 	}
 	header := lo.Keys(fields)
 	header = append(header, "action")
+	if sortColumnNames {
+		sort.Strings(header)
+	}
 	return header, nil
 }
 
@@ -93,12 +87,12 @@ func parseRecords(filePath string) ([]record, error) {
 	return records, nil
 }
 
-func generateFile(filePath, format string) (string, error) {
+func generateFile(filePath, format string, sortColumnNames bool) (string, error) {
 	switch strings.ToLower(format) {
 	case "json":
 		return generateJSONFile(filePath)
 	case "csv":
-		return generateCSVFile(filePath)
+		return generateCSVFile(filePath, sortColumnNames)
 	default:
 		return "", errors.New("unsupported file format")
 	}
@@ -135,7 +129,7 @@ func generateJSONFile(filePath string) (string, error) {
 	return tmpFilePath, nil
 }
 
-func generateCSVFile(filePath string) (string, error) {
+func generateCSVFile(filePath string, sortColumnNames bool) (string, error) {
 	// Parse JSON records
 	records, err := parseRecords(filePath)
 	if err != nil {
@@ -143,7 +137,7 @@ func generateCSVFile(filePath string) (string, error) {
 	}
 
 	// Extract field names
-	fieldNames, err := getFieldNames(records)
+	fieldNames, err := getFieldNames(records, sortColumnNames)
 	if err != nil {
 		return "", err
 	}
