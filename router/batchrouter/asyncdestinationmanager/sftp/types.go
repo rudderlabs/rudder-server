@@ -12,17 +12,19 @@ type defaultManager struct {
 	statsFactory   stats.Stats
 	FileManager    sftp.FileManager
 	filePathPrefix string
+	config         destConfig
 }
 
 type destConfig struct {
-	AuthMethod string `json:"authMethod"`
-	Username   string `json:"username"`
-	Host       string `json:"host"`
-	Port       string `json:"port"`
-	Password   string `json:"password"`
-	PrivateKey string `json:"privateKey"`
-	FileFormat string `json:"fileFormat"`
-	FilePath   string `json:"filePath"`
+	AuthMethod      string `mapstructure:"authMethod"`
+	Username        string `mapstructure:"username"`
+	Host            string `mapstructure:"host"`
+	Port            string `mapstructure:"port"`
+	Password        string `mapstructure:"password"`
+	PrivateKey      string `mapstructure:"privateKey"`
+	FileFormat      string `mapstructure:"fileFormat"`
+	FilePath        string `mapstructure:"filePath"`
+	SortColumnNames bool   `mapstructure:"sortColumnNames"`
 }
 
 // Record represents a single JSON record.

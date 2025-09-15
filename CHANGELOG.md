@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.3](https://github.com/rudderlabs/rudder-server/compare/v1.58.2...v1.58.3) (2025-09-15)
+
+
+### Bug Fixes
+
+* **batchrouter:** support configurable column ordering in CSVs in sftp ([#6342](https://github.com/rudderlabs/rudder-server/issues/6342)) ([1c0cf56](https://github.com/rudderlabs/rudder-server/commit/1c0cf56395a071b588c8d67400acff4bd6eb05fa))
+
 ## [1.58.2](https://github.com/rudderlabs/rudder-server/compare/v1.58.1...v1.58.2) (2025-09-11)
 
 
