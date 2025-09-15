@@ -57,6 +57,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/go-cmp v0.7.0
+	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana/jsonparser v0.0.0-20250430123630-2a684464cca1
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.1
@@ -220,7 +221,6 @@ require (
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-reflect v1.2.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
