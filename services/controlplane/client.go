@@ -162,7 +162,7 @@ func (c *AdminClient) GetDestinationSSHKeyPair(ctx context.Context, destID strin
 		return nil
 	})
 
-	return
+	return kp, err
 }
 
 func (c *Client) SendFeatures(ctx context.Context, component string, features []string) error {

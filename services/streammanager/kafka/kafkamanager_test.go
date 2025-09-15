@@ -1046,7 +1046,7 @@ func registerSchema(t *testing.T, schemaName, schemaPath string, c schemaregistr
 	}, 30*time.Second, 100*time.Millisecond, "failed to register schema %s: %v", schemaName, err)
 
 	schema = string(buf)
-	return
+	return schema, schemaID
 }
 
 func requireEqualMessage(t testing.TB, topic, key, value string, actual client.Message) {

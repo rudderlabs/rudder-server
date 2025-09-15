@@ -62,7 +62,6 @@ type Handle struct {
 	application     app.App
 	backendConfig   backendconfig.BackendConfig
 	jobsDB          jobsdb.JobsDB
-	errorDB         jobsdb.JobsDB
 	rateLimiter     throttler.Throttler
 	versionHandler  func(w http.ResponseWriter, r *http.Request)
 	rsourcesService rsources.JobService
@@ -131,7 +130,6 @@ type Handle struct {
 		enableInternalBatchValidator         config.ValueLoader[bool]
 		enableInternalBatchEnrichment        config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
-		errorDBEnabled                       config.ValueLoader[bool]
 	}
 
 	// additional internal http handlers
@@ -325,7 +323,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	jobData = &jobFromReq{}
 	if !gjson.ValidBytes(body) {
 		err = errors.New((response.InvalidJSON))
-		return
+		return jobData, err
 	}
 
 	gw.requestSizeStat.Observe(float64(len(body)))
@@ -333,7 +331,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
 			err = errors.New((response.NotRudderEvent))
-			return
+			return jobData, err
 		}
 		body, _ = sjson.SetRawBytes(batchEvent, "batch.0", body)
 	}
@@ -361,7 +359,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		toSet, ok := v.Value().(map[string]interface{})
 		if !ok {
 			err = errors.New((response.NotRudderEvent))
-			return
+			return jobData, err
 		}
 
 		anonIDFromReq := strings.TrimSpace(sanitize.Unicode(stringify.Any(toSet["anonymousId"])))
@@ -373,7 +371,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 		if gw.isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
 			err = errors.New((response.NonIdentifiableRequest))
-			return
+			return jobData, err
 		}
 
 		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
@@ -465,12 +463,12 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	if len(out) == 0 && suppressed {
 		err = errRequestSuppressed
-		return
+		return jobData, err
 	}
 
 	if len(body) > gw.conf.maxReqSize.Load() && !containsAudienceList {
 		err = errors.New((response.RequestBodyTooLarge))
-		return
+		return jobData, err
 	}
 
 	params := map[string]any{
@@ -524,7 +522,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			payload, err = jsonrs.Marshal(singularEventBatch)
 			if err != nil {
 				err = errors.New((response.InvalidJSON))
-				return
+				return jobData, err
 			}
 			eventCount = len(userEvent.events)
 		}
@@ -541,7 +539,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 	}
 	err = nil
 	jobData.jobs = jobs
-	return
+	return jobData, err
 }
 
 func (gw *Handle) isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
@@ -1021,6 +1019,13 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			BotURL:              msg.Properties.BotURL,
 			BotIsInvalidBrowser: msg.Properties.BotIsInvalidBrowser,
 			BotAction:           msg.Properties.BotAction,
+		}
+
+		if msg.Properties.SourceJobRunID != "" && src.SourceDefinition.Category == "" {
+			gw.logger.Warnn("event stream source found for event with sourceJobRunID",
+				logger.NewStringField("messageId", messageID),
+				logger.NewStringField("sourceJobRunId", msg.Properties.SourceJobRunID),
+				obskit.SourceID(msg.Properties.SourceID))
 		}
 
 		eventName := gjson.GetBytes(msg.Payload, "event").String()

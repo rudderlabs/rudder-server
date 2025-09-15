@@ -81,7 +81,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 	var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
 	err = txn.QueryRow(sqlStatement).Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
 	if err != nil {
-		return
+		return totalRowsModified, err
 	}
 
 	var rudderIDs []string
@@ -97,7 +97,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 			logger.NewStringField(logfield.Query, sqlStatement),
 			obskit.Error(err),
 		)
-		return
+		return totalRowsModified, err
 	}
 
 	currentTimeString := time.Now().Format(misc.RFC3339Milli)
@@ -132,7 +132,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 			pkgLogger.Errorn("IDR: Error inserting properties from merge_rule into mappings table",
 				obskit.Error(err),
 			)
-			return
+			return totalRowsModified, err
 		}
 	} else {
 		// generate new one and update all
@@ -156,7 +156,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 		var tableRows *sqlmiddleware.Rows
 		tableRows, err = txn.Query(sqlStatement)
 		if err != nil {
-			return
+			return totalRowsModified, err
 		}
 		defer func() { _ = tableRows.Close() }()
 
@@ -164,20 +164,20 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 			var mergePropType, mergePropVal string
 			err = tableRows.Scan(&mergePropType, &mergePropVal)
 			if err != nil {
-				return
+				return totalRowsModified, err
 			}
 			row := []string{mergePropType, mergePropVal, newID, currentTimeString}
 			rows = append(rows, row)
 		}
 		if err = tableRows.Err(); err != nil {
-			return
+			return totalRowsModified, err
 		}
 
 		sqlStatement = fmt.Sprintf(`UPDATE %s SET rudder_id='%s', updated_at='%s' WHERE rudder_id IN (%v)`, idr.mappingsTable(), newID, currentTimeString, misc.SingleQuoteLiteralJoin(rudderIDs[1:]))
 		var res sql.Result
 		res, err = txn.Exec(sqlStatement)
 		if err != nil {
-			return
+			return totalRowsModified, err
 		}
 		affectedRowCount, _ := res.RowsAffected()
 		pkgLogger.Debugn("IDR: Updated rudder_id for all properties in mapping table",
@@ -190,7 +190,7 @@ func (idr *Identity) applyRule(txn *sqlmiddleware.Tx, ruleID int64, gzWriter *mi
 			logger.NewStringField(logfield.Query, sqlStatement))
 		_, err = txn.Exec(sqlStatement)
 		if err != nil {
-			return
+			return totalRowsModified, err
 		}
 	}
 	columnNames := []string{"merge_property_type", "merge_property_value", "rudder_id", "updated_at"}
@@ -226,7 +226,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			logger.NewStringField("tempTable", mergeRulesStagingTable),
 			obskit.Error(err),
 		)
-		return
+		return ids, err
 	}
 
 	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
@@ -235,7 +235,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 		pkgLogger.Errorn("IDR: Error starting bulk copy using CopyIn",
 			obskit.Error(err),
 		)
-		return
+		return ids, err
 	}
 	defer func() {
 		_ = stmt.Close()
@@ -251,7 +251,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 				logger.NewStringField("loadFileName", loadFileName),
 				obskit.Error(err),
 			)
-			return
+			return ids, err
 		}
 		defer gzipFile.Close()
 
@@ -262,7 +262,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 				logger.NewStringField("loadFileName", loadFileName),
 				obskit.Error(err),
 			)
-			return
+			return ids, err
 		}
 		defer gzipReader.Close()
 
@@ -280,7 +280,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 					logger.NewStringField("stagingTable", mergeRulesStagingTable),
 					obskit.Error(err),
 				)
-				return
+				return ids, err
 			}
 			var recordInterface [5]interface{}
 			for idx, value := range record {
@@ -296,7 +296,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 				pkgLogger.Errorn("IDR: Error while adding rowID to merge_rules table",
 					obskit.Error(err),
 				)
-				return
+				return ids, err
 			}
 		}
 	}
@@ -307,7 +307,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			obskit.Error(err),
 			obskit.UploadID(idr.uploadID),
 		)
-		return
+		return ids, err
 	}
 
 	sqlStatement = fmt.Sprintf(`DELETE FROM %s AS staging
@@ -333,7 +333,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			logger.NewStringField("sourceTable", idr.mergeRulesTable()),
 			obskit.Error(err),
 		)
-		return
+		return ids, err
 	}
 
 	// write merge rules to file to be uploaded to warehouse in later steps
@@ -343,7 +343,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			logger.NewStringField("stagingTable", mergeRulesStagingTable),
 			obskit.Error(err),
 		)
-		return
+		return ids, err
 	}
 
 	// select and insert distinct combination of merge rules and sort them by order in which they were added
@@ -369,7 +369,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			logger.NewStringField("stagingTable", mergeRulesStagingTable),
 			obskit.Error(err),
 		)
-		return
+		return ids, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
@@ -381,7 +381,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 				logger.NewStringField("stagingTable", mergeRulesStagingTable),
 				obskit.Error(err),
 			)
-			return
+			return ids, err
 		}
 		ids = append(ids, id)
 	}
@@ -391,7 +391,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 			logger.NewStringField("stagingTable", mergeRulesStagingTable),
 			obskit.Error(err),
 		)
-		return
+		return ids, err
 	}
 	pkgLogger.Debugn("IDR: Number of merge rules inserted for uploadID", logger.NewIntField("uploadID", idr.uploadID), logger.NewIntField("count", int64(len(ids))))
 	return ids, nil
@@ -403,7 +403,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 	var totalRows int64
 	err = txn.QueryRow(sqlStatement).Scan(&totalRows)
 	if err != nil {
-		return
+		return err
 	}
 
 	var offset int64
@@ -413,7 +413,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 		var rows *sqlmiddleware.Rows
 		rows, err = txn.Query(sqlStatement)
 		if err != nil {
-			return
+			return err
 		}
 		defer func() { _ = rows.Close() }()
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
@@ -428,7 +428,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 				&prop2Val,
 			)
 			if err != nil {
-				return
+				return err
 			}
 			rowData = append(rowData, prop1Type.String, prop1Val.String, prop2Type.String, prop2Val.String)
 			for i, columnName := range columnNames {
@@ -439,7 +439,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 			_ = gzWriter.WriteGZ(rowString)
 		}
 		if err = rows.Err(); err != nil {
-			return
+			return err
 		}
 
 		offset += batchSize
@@ -447,7 +447,7 @@ func (idr *Identity) writeTableToFile(tableName string, txn *sqlmiddleware.Tx, g
 			break
 		}
 	}
-	return
+	return err
 }
 
 func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmiddleware.Tx, tableName string, totalRecords int) (err error) {
@@ -474,7 +474,7 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 	}
 	output, err := uploader.Upload(ctx, outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.warehouse.Source.ID, tableName)
 	if err != nil {
-		return
+		return err
 	}
 
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET location='%s', total_events=%d WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, output.Location, totalRecords, idr.uploadID, warehouseutils.ToProviderCase(idr.warehouse.Destination.DestinationDefinition.Name, tableName))
@@ -507,7 +507,7 @@ func (idr *Identity) createTempGzFile(dirName string) (gzWriter misc.GZipWriter,
 	if err != nil {
 		panic(err)
 	}
-	return
+	return gzWriter, path
 }
 
 func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) (err error) {
@@ -526,7 +526,7 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 			logger.NewStringField(logfield.TableName, idr.mergeRulesTable()),
 			obskit.Error(err),
 		)
-		return
+		return err
 	}
 	_ = mergeRulesFileGzWriter.CloseGZ()
 	pkgLogger.Infon("IDR: Added unique rules to table and file",
@@ -548,7 +548,7 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 				logger.NewStringField(logfield.TableName, idr.mergeRulesTable()),
 				obskit.Error(err),
 			)
-			return
+			return err
 		}
 		totalMappingRecords += count
 		if idx%1000 == 0 {
@@ -573,7 +573,7 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 			logger.NewStringField("filePath", mergeRulesFilePath),
 			obskit.Error(err),
 		)
-		return
+		return err
 	}
 
 	// upload new/changed identity mappings to object storage
@@ -584,7 +584,7 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 			logger.NewStringField("mergeRulesFilePath", mergeRulesFilePath),
 			obskit.Error(err),
 		)
-		return
+		return err
 	}
 
 	err = txn.Commit()
@@ -592,9 +592,9 @@ func (idr *Identity) processMergeRules(ctx context.Context, fileNames []string) 
 		pkgLogger.Errorn("IDR: Error committing transaction",
 			obskit.Error(err),
 		)
-		return
+		return err
 	}
-	return
+	return err
 }
 
 // Resolve does the below things in a single pg txn
@@ -609,7 +609,7 @@ func (idr *Identity) Resolve(ctx context.Context) (err error) {
 	if err != nil {
 		pkgLogger.Errorn("IDR: Failed to download load files",
 			logger.NewStringField(logfield.TableName, idr.mergeRulesTable()), obskit.Error(err))
-		return
+		return err
 	}
 
 	return idr.processMergeRules(ctx, loadFileNames)
@@ -623,7 +623,7 @@ func (idr *Identity) ResolveHistoricIdentities(ctx context.Context) (err error) 
 	_ = gzWriter.CloseGZ()
 	if err != nil {
 		pkgLogger.Errorn("IDR: Failed to download identity information from warehouse", obskit.Error(err))
-		return
+		return err
 	}
 	loadFileNames = append(loadFileNames, path)
 

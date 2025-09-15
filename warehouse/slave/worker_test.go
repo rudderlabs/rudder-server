@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"strings"
@@ -348,7 +349,8 @@ func TestSlaveWorker(t *testing.T) {
 				ef,
 				workerIdx,
 			)
-
+			destConfTest := maps.Clone(destConf)
+			destConfTest["endPoint"] = fmt.Sprintf("http://%s", minioResource.Endpoint)
 			p := payloadV2{
 				basePayload: basePayload{
 					UploadID:                     1,
@@ -362,7 +364,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationNamespace:         namespace,
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
-					DestinationConfig:            destConf,
+					DestinationConfig:            destConfTest,
 					StagingDestinationConfig:     map[string]interface{}{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
@@ -783,7 +785,8 @@ func TestSlaveWorker(t *testing.T) {
 				{ID: 2, Location: jobLocation2},
 				{ID: 1, Location: jobLocation3},
 			}
-
+			destConfTest := maps.Clone(destConf)
+			destConfTest["endPoint"] = fmt.Sprintf("http://%s", minioResource.Endpoint)
 			p := payloadV2{
 				basePayload: basePayload{
 					UploadID:                     1,
@@ -797,7 +800,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationNamespace:         namespace,
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
-					DestinationConfig:            destConf,
+					DestinationConfig:            destConfTest,
 					StagingDestinationConfig:     map[string]interface{}{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),

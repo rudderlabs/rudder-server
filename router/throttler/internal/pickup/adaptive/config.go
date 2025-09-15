@@ -11,6 +11,7 @@ func GetAllEventsWindowConfig(config *config.Config, destType, destinationID str
 	return config.GetReloadableDurationVar(1, time.Second,
 		fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destType),
+		// TODO: delete the following deprecated keys in the future
 		`Router.throttler.adaptive.timeWindow`,
 	)
 }
@@ -21,6 +22,7 @@ func GetPerEventWindowConfig(config *config.Config, destType, destinationID, eve
 		fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, eventType),
 		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destType),
+		// TODO: delete the following deprecated keys in the future
 		`Router.throttler.adaptive.timeWindow`,
 	)
 }
@@ -28,6 +30,10 @@ func GetPerEventWindowConfig(config *config.Config, destType, destinationID, eve
 func maxLimitFunc(config *config.Config, destType, destinationID string, maxLimitKeys []string) func() int64 {
 	maxLimit := config.GetReloadableInt64Var(0, 1, maxLimitKeys...)
 	limitMultiplier := config.GetReloadableFloat64Var(1.5,
+		fmt.Sprintf(`Router.throttler.%s.%s.limitMultiplier`, destType, destinationID),
+		fmt.Sprintf(`Router.throttler.%s.limitMultiplier`, destType),
+		`Router.throttler.limitMultiplier`,
+		// TODO: delete the following deprecated keys in the future
 		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.limitMultiplier`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.adaptive.%s.limitMultiplier`, destType),
 		`Router.throttler.adaptive.limitMultiplier`,
@@ -36,7 +42,10 @@ func maxLimitFunc(config *config.Config, destType, destinationID string, maxLimi
 		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 	)
-	defaultMaxLimit := config.GetReloadableInt64Var(DefaultMaxThrottlingLimit, 1, `Router.throttler.adaptive.defaultMaxLimit`)
+	defaultMaxLimit := config.GetReloadableInt64Var(DefaultMaxThrottlingLimit, 1,
+		`Router.throttler.defaultMaxLimit`,
+		// TODO: delete the following deprecated keys in the future
+		`Router.throttler.adaptive.defaultMaxLimit`)
 	return func() int64 {
 		maxLimit := maxLimit.Load()
 		if maxLimit > 0 {

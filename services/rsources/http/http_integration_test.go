@@ -48,7 +48,7 @@ func prepare(
 	require.NoError(t, err)
 	handler = handlerFunc(service, logger.NOP)
 	dbResource = postgresContainer
-	return
+	return handler, service, dbResource
 }
 
 func addFailedRecords(

@@ -129,14 +129,14 @@ func TestThrottlePerEventType(t *testing.T) {
 			config.Set("Router.noOfWorkers", 1)
 
 			// throttling config
-			config.Set("Router.throttler.adaptive.enabled", false)
+			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.WEBHOOK.throttlerPerEventType", true)
 			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".limit", rpsForIdentify)
-			config.Set("Router.throttler.adaptive.WEBHOOK."+identifyEventType+".maxLimit", rpsForIdentify)
-			config.Set("Router.throttler.adaptive.WEBHOOK."+identifyEventType+".minLimit", rpsForIdentify)
+			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".maxLimit", rpsForIdentify)
+			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".minLimit", rpsForIdentify)
 			config.Set("Router.throttler.WEBHOOK."+trackEventType+".limit", rpsForTrack)
-			config.Set("Router.throttler.adaptive.WEBHOOK."+trackEventType+".maxLimit", rpsForTrack)
-			config.Set("Router.throttler.adaptive.WEBHOOK."+trackEventType+".minLimit", rpsForTrack)
+			config.Set("Router.throttler.WEBHOOK."+trackEventType+".maxLimit", rpsForTrack)
+			config.Set("Router.throttler.WEBHOOK."+trackEventType+".minLimit", rpsForTrack)
 			config.Set("Router.throttler.WEBHOOK.limit", rpsForTrack) // use the higher limit as a fallback
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "1s")
 			throttlingConfigOverrides()
@@ -248,7 +248,7 @@ func TestThrottlePerEventType(t *testing.T) {
 	// when throttling per event type is disabled, then we expect track events to be processed after identify events, because iteration will be stopping
 	t.Run("throttling per event type disabled", testScenario(false, func() {
 		config.Set("Router.isolationMode", "destination")
-		config.Set("Router.throttler.adaptive.enabled", false)
+		config.Set("Router.throttler.adaptiveEnabled", false)
 		config.Set("Router.throttler.WEBHOOK.throttlerPerEventType", false)
 	}))
 
@@ -256,15 +256,15 @@ func TestThrottlePerEventType(t *testing.T) {
 	// and the rate limit for track events is higher than that for identify events
 	t.Run("static throttling with destination level isolation", testScenario(true, func() {
 		config.Set("Router.isolationMode", "destination")
-		config.Set("Router.throttler.adaptive.enabled", false)
+		config.Set("Router.throttler.adaptiveEnabled", false)
 	}))
 	t.Run("adaptive throttling with destination level isolation", testScenario(true, func() {
 		config.Set("Router.isolationMode", "destination")
-		config.Set("Router.throttler.adaptive.enabled", true)
+		config.Set("Router.throttler.adaptiveEnabled", true)
 	}))
 	t.Run("static throttling with workspace level isolation", testScenario(true, func() {
 		config.Set("Router.isolationMode", "workspace")
-		config.Set("Router.throttler.adaptive.enabled", false)
+		config.Set("Router.throttler.adaptiveEnabled", false)
 	}))
 }
 

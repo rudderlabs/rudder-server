@@ -97,8 +97,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.warehouseTransformations.enable = conf.GetReloadableBoolVar(false, "Processor.enableWarehouseTransformations")
 	handle.config.warehouseTransformations.verify = conf.GetReloadableBoolVar(true, "Processor.verifyWarehouseTransformations")
 
-	handle.config.compactionEnabled = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.compactionEnabled", "Transformer.compactionEnabled")
-
 	for _, opt := range opts {
 		opt(handle)
 	}
@@ -117,7 +115,6 @@ type Client struct {
 
 		maxLoggedEvents config.ValueLoader[int]
 
-		compactionEnabled        config.ValueLoader[bool]
 		warehouseTransformations struct {
 			enable config.ValueLoader[bool]
 			verify config.ValueLoader[bool]
@@ -137,7 +134,7 @@ type Client struct {
 	}
 
 	loggedEvents        atomic.Int64
-	samplingFileManager filemanager.S3Manager
+	samplingFileManager *filemanager.S3Manager
 }
 
 func (d *Client) transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -232,7 +229,7 @@ func (d *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 		return nil, nil
 	}
 	start := time.Now()
-	compactRequestPayloads := d.compactRequestPayloads() // consistent state for the entire request
+	compactRequestPayloads := d.config.compactionSupported // consistent state for the entire request
 	// Call remote transformation
 	rawJSON, err := d.getRequestPayload(data, compactRequestPayloads)
 	if err != nil {
@@ -293,7 +290,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	retryStrategy.MaxInterval = d.config.maxRetryBackoffInterval.Load()
 
 	err := backoff.RetryNotify(
-		func() error {
+		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()
 
@@ -317,9 +314,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
-
 			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			d.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr
@@ -335,7 +330,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				// We'll count response events after unmarshaling in the request method
 			}
 			return reqErr
-		},
+		}, d.stat, labels),
 		backoff.WithMaxRetries(retryStrategy, uint64(d.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++
@@ -436,10 +431,6 @@ func (c *Client) canRunWarehouseTransformations(destType string) bool {
 	return false
 }
 
-func (d *Client) compactRequestPayloads() bool {
-	return (d.config.compactionSupported && d.config.compactionEnabled.Load())
-}
-
 func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequestPayloads bool) ([]byte, error) {
 	if compactRequestPayloads {
 		ctr := types.CompactedTransformRequest{
@@ -449,10 +440,8 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 		}
 		for i := range data {
 			ctr.Input = append(ctr.Input, types.CompactedTransformerEvent{
-				Message:     data[i].Message,
-				Metadata:    data[i].Metadata,
-				Libraries:   data[i].Libraries,
-				Credentials: data[i].Credentials,
+				Message:  data[i].Message,
+				Metadata: data[i].Metadata,
 			})
 			if _, ok := ctr.Destinations[data[i].Metadata.DestinationID]; !ok {
 				ctr.Destinations[data[i].Metadata.DestinationID] = data[i].Destination
@@ -468,7 +457,7 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 	return jsonrs.Marshal(data)
 }
 
-func getSamplingUploader(conf *config.Config, log logger.Logger) (filemanager.S3Manager, error) {
+func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
 		bucket           = conf.GetString("DTSampling.Bucket", "processor-dt-sampling")
 		endpoint         = conf.GetString("DTSampling.Endpoint", "")

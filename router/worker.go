@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -51,6 +52,10 @@ type worker struct {
 	deliveryTimeStat          stats.Measurement
 	routerDeliveryLatencyStat stats.Measurement
 	routerProxyStat           stats.Measurement
+
+	// Cache for transformer outgoing request metrics using StatsCache
+	deliveryLatencyStatsCache *cache.StatsCache[deliveryMetricLabels]
+	deliveryCountStatsCache   *cache.StatsCache[deliveryMetricLabels]
 }
 
 type workerJob struct {
@@ -525,6 +530,10 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
 								cancel()
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
+
+								// Record the new transformer_outgoing_request metrics
+								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp, time.Since(rdlTime))
+
 								w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
 
 								if isSuccessStatus(respStatusCode) {
@@ -1196,5 +1205,61 @@ func (w *worker) countTransformedJobStatuses(transformType string, transformedJo
 			"workspaceId":   counterKey.workspaceID,
 			"destinationId": counterKey.destinationID,
 		}).Count(count)
+	}
+}
+
+// recordTransformerOutgoingRequestMetrics records both transformer_outgoing_request_latency and transformer_outgoing_request_count metrics
+// for router deliveries to match transformer's metric structure
+func (w *worker) recordTransformerOutgoingRequestMetrics(
+	postParams integrations.PostParametersT,
+	destinationJob types.DestinationJobT,
+	resp *routerutils.SendPostResponse,
+	duration time.Duration,
+) {
+	// Only emit metrics if EndpointPath is present
+	if postParams.EndpointPath == "" {
+		return
+	}
+
+	labels := deliveryMetricLabels{
+		DestType:      w.rt.destType,
+		EndpointPath:  postParams.EndpointPath,
+		StatusCode:    strconv.Itoa(resp.StatusCode),
+		RequestMethod: postParams.RequestMethod,
+		Module:        "router",
+		WorkspaceID:   destinationJob.Destination.WorkspaceID,
+		DestinationID: destinationJob.Destination.ID,
+	}
+
+	// Get or create cached stats objects using StatsCache
+	latencyStat := w.deliveryLatencyStatsCache.Get(labels)
+	countStat := w.deliveryCountStatsCache.Get(labels)
+
+	// Record metrics using cached stats
+	latencyStat.SendTiming(duration)
+	countStat.Increment()
+}
+
+// deliveryMetricLabels represents a unique key for caching stats based on labels
+type deliveryMetricLabels struct {
+	DestType      string
+	EndpointPath  string
+	StatusCode    string
+	RequestMethod string
+	Module        string
+	WorkspaceID   string
+	DestinationID string
+}
+
+// ToStatTags converts deliveryMetricLabels to stats.Tags for StatsCacheKey interface
+func (l deliveryMetricLabels) ToStatTags() stats.Tags {
+	return stats.Tags{
+		"destType":      l.DestType,
+		"endpointPath":  l.EndpointPath,
+		"statusCode":    l.StatusCode,
+		"requestMethod": l.RequestMethod,
+		"module":        l.Module,
+		"workspaceId":   l.WorkspaceID,
+		"destinationId": l.DestinationID,
 	}
 }

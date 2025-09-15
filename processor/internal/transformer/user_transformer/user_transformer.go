@@ -284,7 +284,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	retryStrategy.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
 	err := backoff.RetryNotify(
-		func() error {
+		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()
 
@@ -305,9 +305,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
 			u.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
-
 			u.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
-			u.stat.NewTaggedStat("processor_transformer_request_time", stats.TimerType, labels.ToStatsTag()).SendTiming(duration)
 
 			if reqErr != nil {
 				return reqErr
@@ -336,7 +334,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				// We'll count response events after unmarshaling in the request method
 			}
 			return reqErr
-		},
+		}, u.stat, labels),
 		backoff.WithMaxRetries(retryStrategy, uint64(u.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
 			retryCount++

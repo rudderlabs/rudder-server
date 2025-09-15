@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 
-	awsutil "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	"github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -29,7 +29,7 @@ type EventBridgeClient interface {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
-	sessionConfig, err := awsutils.NewSessionConfigForDestinationV2(destination, o.Timeout, "eventbridge")
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, "eventbridge")
 	if err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/glue/types"
 
-	awsutils "github.com/rudderlabs/rudder-go-kit/awsutil_v2"
+	awsutils "github.com/rudderlabs/rudder-go-kit/awsutil"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -46,7 +46,7 @@ type GlueSchemaRepository struct {
 }
 
 func NewGlueSchemaRepository(conf *config.Config, logger logger.Logger, wh model.Warehouse) (*GlueSchemaRepository, error) {
-	sessionConfig, err := utils.NewSimpleSessionConfigForDestinationV2(&wh.Destination, "glue")
+	sessionConfig, err := utils.NewSimpleSessionConfigForDestination(&wh.Destination, "glue")
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (g *GlueSchemaRepository) CreateSchema(ctx context.Context) (err error) {
 		g.logger.Infon("Skipping database creation: database already exists", logger.NewStringField("database", g.Namespace))
 		err = nil
 	}
-	return
+	return err
 }
 
 func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string, columnMap model.TableSchema) (err error) {
@@ -112,7 +112,7 @@ func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string
 			err = nil
 		}
 	}
-	return
+	return err
 }
 
 func (g *GlueSchemaRepository) AddColumns(ctx context.Context, tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
@@ -311,7 +311,7 @@ func (g *GlueSchemaRepository) partitionColumns() (columns []types.Column, err e
 	)
 
 	if layout = g.Warehouse.GetStringDestinationConfig(g.conf, model.TimeWindowLayoutSetting); layout == "" {
-		return
+		return columns, err
 	}
 
 	if partitionGroups, err = warehouseutils.CaptureRegexGroup(partitionWindowRegex, layout); err != nil {
@@ -319,7 +319,7 @@ func (g *GlueSchemaRepository) partitionColumns() (columns []types.Column, err e
 	}
 
 	columns = append(columns, types.Column{Name: aws.String(partitionGroups["name"]), Type: aws.String("date")})
-	return
+	return columns, err
 }
 
 func (g *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap model.TableSchema) *types.StorageDescriptor {

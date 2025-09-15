@@ -113,7 +113,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		a.log.Errorn("[Archiver]: Failed to create tmp DIR", obskit.Error(err))
-		return
+		return backupLocation, err
 	}
 	backupPathDirName := "/" + misc.RudderArchives + "/"
 	pathPrefix := strcase.ToKebab(warehouseutils.WarehouseStagingFilesTable)
@@ -137,7 +137,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w",
 			a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err,
 		)
-		return
+		return backupLocation, err
 	}
 
 	tmpl := fmt.Sprintf(`
@@ -177,7 +177,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		logger.NewStringField(logfield.TableName, args.tableName),
 	)
 
-	return
+	return backupLocation, err
 }
 
 func (a *Archiver) deleteFilesInStorage(ctx context.Context, locations []string) error {
