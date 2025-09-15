@@ -23,9 +23,8 @@ import (
 )
 
 const (
-	STREAM              = "stream"
-	KV                  = "kv"
-	CLIENT_EXPIRED_CODE = 721
+	STREAM = "stream"
+	KV     = "kv"
 )
 
 var (
@@ -192,19 +191,6 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 
 	respStatusCode, respBody := customManager.send(jsonData, customDestination.client, customDestination.config)
 
-	if respStatusCode == CLIENT_EXPIRED_CODE {
-		clientLock.Lock()
-		err := customManager.refreshClient(destID)
-		clientLock.Unlock()
-		if err != nil {
-			return 400, fmt.Sprintf("[CDM %s] Unable to refresh client for %s %s", customManager.destType, destID, err.Error())
-		}
-		clientLock.RLock()
-		customDestination = customManager.client[destID]
-		clientLock.RUnlock()
-		respStatusCode, respBody = customManager.send(jsonData, customDestination.client, customDestination.config)
-	}
-
 	return respStatusCode, respBody
 }
 
@@ -219,38 +205,6 @@ func (customManager *CustomManagerT) close(destID string) {
 		_ = kvManager.Close()
 	}
 	delete(customManager.client, destID)
-}
-
-func (customManager *CustomManagerT) refreshClient(destID string) error {
-	startTime := time.Now()
-	log := pkgLogger.Withn(
-		obskit.DestinationType(customManager.destType),
-		obskit.DestinationID(destID),
-	)
-	defer func() {
-		log.Infon("[CDM]", logger.NewDurationField("refreshTime", time.Since(startTime)))
-	}()
-
-	customDestination, ok := customManager.client[destID]
-
-	if ok {
-		log.Infon("[CDM] [Token Expired] Closing Existing client")
-		switch customManager.managerType {
-		case STREAM:
-			streamProducer, _ := customDestination.client.(common.StreamProducer)
-			streamProducer.Close()
-		case KV:
-			kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
-			_ = kvManager.Close()
-		}
-	}
-	err := customManager.newClient(destID)
-	if err != nil {
-		log.Errorn("[CDM] [Token Expired] Error while creating new client", obskit.Error(err))
-		return err
-	}
-	log.Infon("[CDM] [Token Expired] Created new client")
-	return nil
 }
 
 func (customManager *CustomManagerT) onNewDestination(destination backendconfig.DestinationT) error { // skipcq: CRT-P0003
