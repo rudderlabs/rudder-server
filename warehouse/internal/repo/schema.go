@@ -329,6 +329,7 @@ func (sh *WHSchema) getForNamespace(ctx context.Context, destID, namespace strin
 // populateTableLevelSchemasWithTx inserts table-level schemas for each table in the parent schema
 // that don't already exist as separate table-level schemas, using the provided transaction.
 func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sqlmiddleware.Tx, destID, namespace string) error {
+	now := sh.now()
 	query := `
 		INSERT INTO wh_schemas (
 			source_id,
@@ -348,8 +349,8 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 			s.destination_type,
 			j.value AS schema,
 			j.key AS table_name,
-			s.created_at,
-			s.updated_at,
+			$3,
+			$3,
 			s.expires_at
 		FROM wh_schemas s
 		CROSS JOIN LATERAL jsonb_each(s.schema::jsonb) AS j
@@ -365,7 +366,7 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 					s2.table_name = j.key
 			)
 	`
-	_, err := tx.ExecContext(ctx, query, destID, namespace)
+	_, err := tx.ExecContext(ctx, query, destID, namespace, now.UTC())
 	if err != nil {
 		return fmt.Errorf("populating table-level schemas: %w", err)
 	}
