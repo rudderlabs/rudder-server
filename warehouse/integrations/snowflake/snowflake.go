@@ -27,6 +27,7 @@ import (
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -287,6 +288,21 @@ func (sf *Snowflake) authString() string {
 		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
 	}
 	return auth
+}
+
+func (sf *Snowflake) authStringWithError() (string, error) {
+	var auth string
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
+		var tempAccessKeyId, tempSecretAccessKey, token string
+		tempAccessKeyId, tempSecretAccessKey, token, err := whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate temporary S3 credentials: %w", err)
+		}
+		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
+	} else {
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
+	}
+	return auth, nil
 }
 
 func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) error {
@@ -1440,16 +1456,21 @@ func (sf *Snowflake) TestLoadTable(
 ) error {
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
+
+	authString, err := sf.authStringWithError()
+	if err != nil {
+		return fmt.Errorf("getting auth string: %w", err)
+	}
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE )
 		TRUNCATECOLUMNS = TRUE`,
 		fmt.Sprintf(`%s.%q`, schemaIdentifier, tableName),
 		fmt.Sprintf(`%q, %q`, "id", "val"),
 		loadFolder,
-		sf.authString(),
+		authString,
 	)
 
-	_, err := sf.DB.ExecContext(ctx, sqlStatement)
+	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return err
 }
 
