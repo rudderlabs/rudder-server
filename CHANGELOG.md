@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.59.0](https://github.com/rudderlabs/rudder-server/compare/v1.58.0...v1.59.0) (2025-09-15)
+
+
+### Features
+
+* **router:** add request latency and count metrics for router deliveries ([#6288](https://github.com/rudderlabs/rudder-server/issues/6288)) ([c8dd8ef](https://github.com/rudderlabs/rudder-server/commit/c8dd8efd98a41072123b17cdf21e4148ad86542e))
+
+
+### Bug Fixes
+
+* avoid running migrations for notifier from slaves ([#6303](https://github.com/rudderlabs/rudder-server/issues/6303)) ([761eb46](https://github.com/rudderlabs/rudder-server/commit/761eb463b8de26e7add78c8bf2632b4342b43d8e))
+* **batchrouter:** support configurable column ordering in CSVs in sftp ([#6342](https://github.com/rudderlabs/rudder-server/issues/6342)) ([652215b](https://github.com/rudderlabs/rudder-server/commit/652215b2f983e87169f449ec1f39010877330ca1))
+* populate table level schemas createdAt updatedAt ([#6344](https://github.com/rudderlabs/rudder-server/issues/6344)) ([a76a509](https://github.com/rudderlabs/rudder-server/commit/a76a5090cb51576bcaa7414de2a868a305ea90f8))
+* remove unwanted table level schemas ([#6296](https://github.com/rudderlabs/rudder-server/issues/6296)) ([761eb46](https://github.com/rudderlabs/rudder-server/commit/761eb463b8de26e7add78c8bf2632b4342b43d8e))
+* **router:** kinesis rate exceeded errors are being aborted with http 400 ([#6329](https://github.com/rudderlabs/rudder-server/issues/6329)) ([f739d7f](https://github.com/rudderlabs/rudder-server/commit/f739d7fe48d6934db8b425fcb941197a7c093700))
+* update ID regex to include underscores in error cleanup ([#6315](https://github.com/rudderlabs/rudder-server/issues/6315)) ([bc1a751](https://github.com/rudderlabs/rudder-server/commit/bc1a751be8f986e9ff7f35bef038579c5e2f4039))
+
+
+### Miscellaneous
+
+* add logs for events coming with an incorrect source and sourceRunId ([#6309](https://github.com/rudderlabs/rudder-server/issues/6309)) ([17afa60](https://github.com/rudderlabs/rudder-server/commit/17afa605cce039be3e3489f81d549e0527c751b8))
+* add readme for OAuth module ([#6335](https://github.com/rudderlabs/rudder-server/issues/6335)) ([3c9f251](https://github.com/rudderlabs/rudder-server/commit/3c9f251ec2508ad0897dcb1553e3d9f619c8c403))
+* bump go-kit ([#6321](https://github.com/rudderlabs/rudder-server/issues/6321)) ([87499e0](https://github.com/rudderlabs/rudder-server/commit/87499e04caf0fb7c3935827153ca715f99cd3a4c))
+* bump mvdan.cc/gofumpt to v0.9.1 ([#6328](https://github.com/rudderlabs/rudder-server/issues/6328)) ([cf9f653](https://github.com/rudderlabs/rudder-server/commit/cf9f65324f98dc910498a1cebc89b2618a8c299f))
+* capture stats for failed transformer client requests ([#6300](https://github.com/rudderlabs/rudder-server/issues/6300)) ([e10d5c1](https://github.com/rudderlabs/rudder-server/commit/e10d5c18c0667f79e7128ad6846e02dba965f9b0))
+* clean up legacy MTU logic ([#6314](https://github.com/rudderlabs/rudder-server/issues/6314)) ([a2e753d](https://github.com/rudderlabs/rudder-server/commit/a2e753dd8b84514afa0d61c08b049f4e161fc83d))
+* clean up logs to trace double-encoded HLL value issue ([#6310](https://github.com/rudderlabs/rudder-server/issues/6310)) ([c707aea](https://github.com/rudderlabs/rudder-server/commit/c707aea03c0be2dcdd72c7ade0f028b13fc6c861))
+* drop unused services/oauth v1 and minor v2 tidy-ups  ([#6275](https://github.com/rudderlabs/rudder-server/issues/6275)) ([c1b84c1](https://github.com/rudderlabs/rudder-server/commit/c1b84c10694226769f1217ce2f77be6139b0eb62))
+* improve googlesheets oauth flow and error handling ([#6340](https://github.com/rudderlabs/rudder-server/issues/6340)) ([738d420](https://github.com/rudderlabs/rudder-server/commit/738d4204b2233eee33cfa9db77452154ee76d1f6))
+* optimize dtransform payloads and have compaction always enabled ([#6331](https://github.com/rudderlabs/rudder-server/issues/6331)) ([63af856](https://github.com/rudderlabs/rudder-server/commit/63af856b77cf74284b9ba22a57c395ca198371fa))
+* remove proc_error jobsdb ([#6287](https://github.com/rudderlabs/rudder-server/issues/6287)) ([5b92665](https://github.com/rudderlabs/rudder-server/commit/5b92665758b20fdf2d18ed623b906012aebf05b5))
+* renaming mirroring modes ([#6325](https://github.com/rudderlabs/rudder-server/issues/6325)) ([84687fb](https://github.com/rudderlabs/rudder-server/commit/84687fbabafef62cf57d19dd222602a7f8d93284))
+* **router:** ignore throttling costs in pickup throttler ([#6316](https://github.com/rudderlabs/rudder-server/issues/6316)) ([af85b92](https://github.com/rudderlabs/rudder-server/commit/af85b92589e96748b5068442f1b31f342378d1c9))
+* sync release v1.58.0 to main branch ([#6294](https://github.com/rudderlabs/rudder-server/issues/6294)) ([565630e](https://github.com/rudderlabs/rudder-server/commit/565630e42d6d164a5771277e7e71eab1eb0938e3))
+* unify adaptive and static throttling configuration ([#6327](https://github.com/rudderlabs/rudder-server/issues/6327)) ([077b0fb](https://github.com/rudderlabs/rudder-server/commit/077b0fbfa7c0b5b353d5f1c0ff490d014822204e))
+* update rudderlabs/build-scan-push-action to 1.7.0 ([#6320](https://github.com/rudderlabs/rudder-server/issues/6320)) ([edb02d3](https://github.com/rudderlabs/rudder-server/commit/edb02d33a305721d7d0fbebf409384b653a7f460))
+* updating keydb client ([#6301](https://github.com/rudderlabs/rudder-server/issues/6301)) ([0f9e3ec](https://github.com/rudderlabs/rudder-server/commit/0f9e3ec0d8b5ea9693986f0c4c8f394da574ef70))
+
 ## [1.58.3](https://github.com/rudderlabs/rudder-server/compare/v1.58.2...v1.58.3) (2025-09-15)
 
 
