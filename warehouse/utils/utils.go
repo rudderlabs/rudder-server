@@ -628,10 +628,12 @@ func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
+	region := misc.GetRegionHint()
 	return &awsutil.SessionConfig{
 		AccessKeyID: accessKeyID,
 		AccessKey:   accessKey,
 		Service:     serviceName,
+		Region:      region,
 	}, nil
 }
 
