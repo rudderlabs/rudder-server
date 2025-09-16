@@ -52,6 +52,9 @@ type testCredentials struct {
 	AccountName   string `json:"accountName"`
 	AccountKey    string `json:"accountKey"`
 	ContainerName string `json:"containerName"`
+	AccessKeyID   string `json:"accessKeyID"`
+	AccessKey     string `json:"accessKey"`
+	BucketName    string `json:"bucketName"`
 }
 
 const testKey = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
@@ -139,6 +142,7 @@ func TestIntegration(t *testing.T) {
 			warehouseEventsMap2            whth.EventsCountMap
 			useParquetLoadFiles            bool
 			configOverride                 map[string]any
+			additionalEnvs                 func(destinationID string) map[string]string
 			eventFilePath1, eventFilePath2 string
 			useSameUserID                  bool
 			verifyRecords                  func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string)
@@ -150,6 +154,49 @@ func TestIntegration(t *testing.T) {
 				useSameUserID:  true,
 				configOverride: map[string]any{
 					"preferAppend": false,
+				},
+				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
+					t.Helper()
+					identifiesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, %s, context_traits_logins, _as, name, logins, email, original_timestamp, context_ip, context_traits_as, timestamp, received_at, context_destination_type, sent_at, context_source_type, context_traits_between, context_source_id, context_traits_name, context_request_ip, _between, context_traits_email, context_destination_id, id FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "identifies"))
+					require.ElementsMatch(t, identifiesRecords, whth.UploadJobIdentifiesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					usersRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_type, context_request_ip, context_traits_name, context_traits_between, _as, logins, sent_at, context_traits_logins, context_ip, _between, context_traits_email, timestamp, context_destination_id, email, context_traits_as, context_source_type, substring(id, 1, 16), %s, received_at, name, original_timestamp FROM %s.%s ORDER BY id;`, uuidTSSQL, namespace, "users"))
+					require.ElementsMatch(t, usersRecords, whth.UploadJobUsersMergeRecord(userIDFormat, sourceID, destinationID, destType))
+					tracksRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT original_timestamp, context_destination_id, context_destination_type, %s, context_source_type, timestamp, id, event, sent_at, context_ip, event_text, context_source_id, context_request_ip, received_at, %s FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "tracks"))
+					require.ElementsMatch(t, tracksRecords, whth.UploadJobTracksMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					productTrackRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT timestamp, %s, product_id, received_at, context_source_id, sent_at, context_source_type, context_ip, context_destination_type, original_timestamp, context_request_ip, context_destination_id, %s, _as, review_body, _between, review_id, event_text, id, event, rating FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "product_track"))
+					require.ElementsMatch(t, productTrackRecords, whth.UploadJobProductTrackMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					pagesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT %s, context_source_id, id, title, timestamp, context_source_type, _as, received_at, context_destination_id, context_ip, context_destination_type, name, original_timestamp, _between, context_request_ip, sent_at, url, %s FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "pages"))
+					require.ElementsMatch(t, pagesRecords, whth.UploadJobPagesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					screensRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, url, context_source_type, title, original_timestamp, %s, _between, context_ip, name, context_request_ip, %s, context_source_id, id, received_at, context_destination_id, timestamp, sent_at, _as FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "screens"))
+					require.ElementsMatch(t, screensRecords, whth.UploadJobScreensMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					aliasesRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_source_id, context_destination_id, context_ip, sent_at, id, %s, %s, previous_id, original_timestamp, context_source_type, received_at, context_destination_type, context_request_ip, timestamp FROM %s.%s ORDER BY id;`, userIDSQL, uuidTSSQL, namespace, "aliases"))
+					require.ElementsMatch(t, aliasesRecords, whth.UploadJobAliasesMergeRecords(userIDFormat, sourceID, destinationID, destType))
+					groupsRecords := whth.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT context_destination_type, id, _between, plan, original_timestamp, %s, context_source_id, sent_at, %s, group_id, industry, context_request_ip, context_source_type, timestamp, employees, _as, context_destination_id, received_at, name, context_ip FROM %s.%s ORDER BY id;`, uuidTSSQL, userIDSQL, namespace, "groups"))
+					require.ElementsMatch(t, groupsRecords, whth.UploadJobGroupsMergeRecords(userIDFormat, sourceID, destinationID, destType))
+				},
+			},
+			{
+				name:           "Merge Mode with use rudder storage",
+				eventFilePath1: "../testdata/upload-job.events-1.json",
+				eventFilePath2: "../testdata/upload-job.events-1.json",
+				useSameUserID:  true,
+				configOverride: map[string]any{
+					"useRudderStorage": true,
+					"useSTSTokens":     true,
+					"bucketName":       "",
+					"accessKeyID":      "",
+					"accessKey":        "",
+					"accountName":      "",
+					"accountKey":       "",
+					"containerName":    "",
+					"bucketProvider":   "S3",
+				},
+				additionalEnvs: func(destinationID string) map[string]string {
+					return map[string]string{
+						"RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID": credentials.AccessKeyID,
+						"RUDDER_AWS_S3_COPY_USER_ACCESS_KEY":    credentials.AccessKey,
+						"RUDDER_WAREHOUSE_BUCKET":               credentials.BucketName,
+					}
 				},
 				verifyRecords: func(t *testing.T, db *sql.DB, sourceID, destinationID, namespace string) {
 					t.Helper()
@@ -306,6 +353,11 @@ func TestIntegration(t *testing.T) {
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_MAX_PARALLEL_LOADS", "8")
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_SLOW_QUERY_THRESHOLD", "0s")
 				t.Setenv("RSERVER_WAREHOUSE_DELTALAKE_USE_PARQUET_LOAD_FILES", strconv.FormatBool(tc.useParquetLoadFiles))
+				if tc.additionalEnvs != nil {
+					for envKey, envValue := range tc.additionalEnvs(destinationID) {
+						t.Setenv(envKey, envValue)
+					}
+				}
 
 				whth.BootstrapSvc(t, workspaceConfig, httpPort, jobsDBPort)
 
@@ -343,6 +395,9 @@ func TestIntegration(t *testing.T) {
 					"enableSSE":      false,
 					"accountName":    credentials.AccountName,
 					"accountKey":     credentials.AccountKey,
+				}
+				for k, v := range tc.configOverride {
+					conf[k] = v
 				}
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
