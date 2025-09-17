@@ -503,10 +503,14 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 							if err != nil && waitCtx.Err() == nil {
 								w.logger.Errorn("delivery throttler wait error", obskit.Error(err))
 							}
+							rdlTime := time.Now()
 							if transformerProxy {
 								attemptedRequests++
 								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.proxyRequest(ctx, destinationJob, val)
+								// Record the new transformer_outgoing_request metrics
+								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp.ProxyRequestStatusCode, time.Since(rdlTime))
+
 								for k, v := range resp.DontBatchDirectives {
 									dontBatchDirectives[k] = v
 								}
@@ -524,7 +528,6 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								}
 							} else {
 								sendCtx, cancel := context.WithTimeout(ctx, w.rt.netClientTimeout)
-								rdlTime := time.Now()
 								attemptedRequests++
 								attemptedJobs += len(destinationJob.JobMetadataArray)
 								resp := w.rt.netHandle.SendPost(sendCtx, val)
@@ -532,7 +535,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								respStatusCode, respBodyTemp, respContentType = resp.StatusCode, string(resp.ResponseBody), resp.ResponseContentType
 
 								// Record the new transformer_outgoing_request metrics
-								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp, time.Since(rdlTime))
+								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, respStatusCode, time.Since(rdlTime))
 
 								w.routerDeliveryLatencyStat.SendTiming(time.Since(rdlTime))
 
@@ -1213,7 +1216,7 @@ func (w *worker) countTransformedJobStatuses(transformType string, transformedJo
 func (w *worker) recordTransformerOutgoingRequestMetrics(
 	postParams integrations.PostParametersT,
 	destinationJob types.DestinationJobT,
-	resp *routerutils.SendPostResponse,
+	respStatus int,
 	duration time.Duration,
 ) {
 	// Only emit metrics if EndpointPath is present
@@ -1222,13 +1225,14 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 	}
 
 	labels := deliveryMetricLabels{
-		DestType:      w.rt.destType,
-		EndpointPath:  postParams.EndpointPath,
-		StatusCode:    strconv.Itoa(resp.StatusCode),
-		RequestMethod: postParams.RequestMethod,
-		Module:        "router",
-		WorkspaceID:   destinationJob.Destination.WorkspaceID,
-		DestinationID: destinationJob.Destination.ID,
+		DestType:         w.rt.destType,
+		TransformerProxy: w.rt.reloadableConfig.transformerProxy.Load(),
+		EndpointPath:     postParams.EndpointPath,
+		StatusCode:       respStatus,
+		RequestMethod:    postParams.RequestMethod,
+		Module:           "router",
+		WorkspaceID:      destinationJob.Destination.WorkspaceID,
+		DestinationID:    destinationJob.Destination.ID,
 	}
 
 	// Get or create cached stats objects using StatsCache
@@ -1242,24 +1246,26 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 
 // deliveryMetricLabels represents a unique key for caching stats based on labels
 type deliveryMetricLabels struct {
-	DestType      string
-	EndpointPath  string
-	StatusCode    string
-	RequestMethod string
-	Module        string
-	WorkspaceID   string
-	DestinationID string
+	DestType         string
+	TransformerProxy bool
+	EndpointPath     string
+	StatusCode       int
+	RequestMethod    string
+	Module           string
+	WorkspaceID      string
+	DestinationID    string
 }
 
 // ToStatTags converts deliveryMetricLabels to stats.Tags for StatsCacheKey interface
 func (l deliveryMetricLabels) ToStatTags() stats.Tags {
 	return stats.Tags{
-		"destType":      l.DestType,
-		"endpointPath":  l.EndpointPath,
-		"statusCode":    l.StatusCode,
-		"requestMethod": l.RequestMethod,
-		"module":        l.Module,
-		"workspaceId":   l.WorkspaceID,
-		"destinationId": l.DestinationID,
+		"destType":         l.DestType,
+		"endpointPath":     l.EndpointPath,
+		"transformerProxy": strconv.FormatBool(l.TransformerProxy),
+		"statusCode":       strconv.Itoa(l.StatusCode),
+		"requestMethod":    l.RequestMethod,
+		"module":           l.Module,
+		"workspaceId":      l.WorkspaceID,
+		"destinationId":    l.DestinationID,
 	}
 }
