@@ -30,7 +30,8 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 	if len(nodeAddresses) == 0 {
 		return nil, fmt.Errorf("keydb dedup: no node addresses provided")
 	}
-	c, err := client.NewClient(client.Config{
+
+	clientConfig := client.Config{
 		Addresses:       strings.Split(nodeAddresses, ","),
 		TotalHashRanges: uint32(conf.GetInt("KeyDB.Dedup.TotalHashRanges", 128)),
 		RetryPolicy: client.RetryPolicy{
@@ -42,7 +43,9 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 			// To detect issues monitor the client metrics:
 			// https://github.com/rudderlabs/keydb/blob/v0.4.2-alpha/client/client.go#L160
 		},
-	}, log.Child("keydb"))
+	}
+
+	c, err := client.NewClient(clientConfig, log.Child("keydb"), client.WithStats(stat))
 	if err != nil {
 		return nil, err
 	}
