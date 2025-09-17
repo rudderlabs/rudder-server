@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
-	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/utils/cache"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -41,10 +40,13 @@ import (
 )
 
 // createTestWorker creates a worker instance for testing with properly initialized StatsCache instances
-func createTestWorker(destType string, stat stats.Stats) *worker {
+func createTestWorker(destType string, transformProxy bool, stat stats.Stats) *worker {
 	return &worker{
 		rt: &Handle{
 			destType: destType,
+			reloadableConfig: &reloadableConfig{
+				transformerProxy: config.SingleValueLoader(transformProxy),
+			},
 		},
 		deliveryLatencyStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
 			return stat.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels.ToStatTags())
@@ -647,141 +649,255 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 	worker.transform(routerJobs)
 }
 
+// Helper function to create test destination job
+func createTestDestinationJob(destID, workspaceID string, jobMetadata []types.JobMetadataT) types.DestinationJobT {
+	return types.DestinationJobT{
+		Destination: backendconfig.DestinationT{
+			ID:          destID,
+			WorkspaceID: workspaceID,
+		},
+		JobMetadataArray: jobMetadata,
+	}
+}
+
+// Helper function to create test post parameters
+func createTestPostParams(endpointPath, requestMethod string) integrations.PostParametersT {
+	return integrations.PostParametersT{
+		EndpointPath:  endpointPath,
+		RequestMethod: requestMethod,
+	}
+}
+
+// Helper function to find metric by name and tags
+func findMetricByNameAndTags(metrics []memstats.Metric, name string, expectedTags stats.Tags) (memstats.Metric, bool) {
+	for _, metric := range metrics {
+		if metric.Name == name {
+			tagsMatch := true
+			for key, expectedValue := range expectedTags {
+				if metric.Tags[key] != expectedValue {
+					tagsMatch = false
+					break
+				}
+			}
+			if tagsMatch {
+				return metric, true
+			}
+		}
+	}
+	return memstats.Metric{}, false
+}
+
+// Helper function to verify metrics are recorded
+func verifyMetricsRecorded(t *testing.T, allMetrics []memstats.Metric, expectedLabels stats.Tags) {
+	t.Helper()
+
+	latencyMetric, foundLatency := findMetricByNameAndTags(allMetrics, "transformer_outgoing_request_latency", expectedLabels)
+	countMetric, foundCount := findMetricByNameAndTags(allMetrics, "transformer_outgoing_request_count", expectedLabels)
+
+	require.True(t, foundLatency, "Expected metric 'transformer_outgoing_request_latency' with matching tags to be recorded. Available metrics: %+v", allMetrics)
+	require.True(t, foundCount, "Expected metric 'transformer_outgoing_request_count' with matching tags to be recorded. Available metrics: %+v", allMetrics)
+
+	require.Equal(t, "transformer_outgoing_request_latency", latencyMetric.Name)
+	require.Equal(t, expectedLabels, latencyMetric.Tags)
+	require.Equal(t, "transformer_outgoing_request_count", countMetric.Name)
+	require.Equal(t, expectedLabels, countMetric.Tags)
+}
+
+// Helper function to verify no metrics are recorded
+func verifyNoMetricsRecorded(t *testing.T, allMetrics []memstats.Metric) {
+	t.Helper()
+
+	var foundLatencyMetric, foundCountMetric bool
+	for _, metric := range allMetrics {
+		if metric.Name == "transformer_outgoing_request_latency" {
+			foundLatencyMetric = true
+		}
+		if metric.Name == "transformer_outgoing_request_count" {
+			foundCountMetric = true
+		}
+	}
+	require.False(t, foundLatencyMetric, "Expected no 'transformer_outgoing_request_latency' metric to be recorded")
+	require.False(t, foundCountMetric, "Expected no 'transformer_outgoing_request_count' metric to be recorded")
+}
+
 func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 	testCases := []struct {
-		name           string
-		postParams     integrations.PostParametersT
-		destinationJob types.DestinationJobT
-		resp           *routerutils.SendPostResponse
-		duration       time.Duration
-		expectedLabels stats.Tags
-		shouldEmit     bool
+		name             string
+		postParams       integrations.PostParametersT
+		destinationJob   types.DestinationJobT
+		statusCode       int
+		duration         time.Duration
+		transformerProxy bool
+		expectedLabels   stats.Tags
+		shouldEmit       bool
 	}{
 		{
-			name: "complete data with endpoint path",
-			postParams: integrations.PostParametersT{
-				EndpointPath:  "/api/track",
-				RequestMethod: "POST",
-			},
-			destinationJob: types.DestinationJobT{
-				Destination: backendconfig.DestinationT{
-					ID:          "dest-123",
-					WorkspaceID: "ws-456",
-				},
-				JobMetadataArray: []types.JobMetadataT{
-					{
-						WorkspaceID: "ws-456",
-					},
-				},
-			},
-			resp: &routerutils.SendPostResponse{
-				StatusCode: 200,
-			},
-			duration: 150 * time.Millisecond,
+			name:       "complete data with endpoint path and transformer proxy disabled",
+			postParams: createTestPostParams("/api/track", "POST"),
+			destinationJob: createTestDestinationJob("dest-123", "ws-456", []types.JobMetadataT{
+				{WorkspaceID: "ws-456"},
+			}),
+			statusCode:       200,
+			duration:         150 * time.Millisecond,
+			transformerProxy: false,
 			expectedLabels: stats.Tags{
-				"destType":      "TEST_DEST",
-				"endpointPath":  "/api/track",
-				"statusCode":    "200",
-				"requestMethod": "POST",
-				"module":        "router",
-				"workspaceId":   "ws-456",
-				"destinationId": "dest-123",
+				"destType":         "TEST_DEST",
+				"endpointPath":     "/api/track",
+				"statusCode":       "200",
+				"transformerProxy": "false",
+				"requestMethod":    "POST",
+				"module":           "router",
+				"workspaceId":      "ws-456",
+				"destinationId":    "dest-123",
 			},
 			shouldEmit: true,
 		},
 		{
-			name: "empty endpoint path should not emit metric",
-			postParams: integrations.PostParametersT{
-				EndpointPath:  "",
-				RequestMethod: "GET",
+			name:       "complete data with endpoint path and transformer proxy enabled",
+			postParams: createTestPostParams("/api/track", "POST"),
+			destinationJob: createTestDestinationJob("dest-123", "ws-456", []types.JobMetadataT{
+				{WorkspaceID: "ws-456"},
+			}),
+			statusCode:       201,
+			duration:         200 * time.Millisecond,
+			transformerProxy: true,
+			expectedLabels: stats.Tags{
+				"destType":         "TEST_DEST",
+				"endpointPath":     "/api/track",
+				"statusCode":       "201",
+				"transformerProxy": "true",
+				"requestMethod":    "POST",
+				"module":           "router",
+				"workspaceId":      "ws-456",
+				"destinationId":    "dest-123",
 			},
-			destinationJob: types.DestinationJobT{
-				Destination: backendconfig.DestinationT{
-					ID:          "dest-456",
-					WorkspaceID: "ws-789",
-				},
-				JobMetadataArray: []types.JobMetadataT{
-					{
-						WorkspaceID: "ws-789",
-					},
-				},
-			},
-			resp: &routerutils.SendPostResponse{
-				StatusCode: 400,
-			},
-			duration:   200 * time.Millisecond,
-			shouldEmit: false,
+			shouldEmit: true,
 		},
 		{
-			name: "empty job metadata array with endpoint path",
-			postParams: integrations.PostParametersT{
-				EndpointPath:  "/api/identify",
-				RequestMethod: "PUT",
-			},
-			destinationJob: types.DestinationJobT{
-				Destination: backendconfig.DestinationT{
-					ID:          "dest-789",
-					WorkspaceID: "",
-				},
-				JobMetadataArray: []types.JobMetadataT{},
-			},
-			resp: &routerutils.SendPostResponse{
-				StatusCode: 500,
-			},
-			duration: 100 * time.Millisecond,
+			name:       "empty endpoint path should not emit metric",
+			postParams: createTestPostParams("", "GET"),
+			destinationJob: createTestDestinationJob("dest-456", "ws-789", []types.JobMetadataT{
+				{WorkspaceID: "ws-789"},
+			}),
+			statusCode:       400,
+			duration:         200 * time.Millisecond,
+			transformerProxy: false,
+			shouldEmit:       false,
+		},
+		{
+			name:             "empty job metadata array with endpoint path",
+			postParams:       createTestPostParams("/api/identify", "PUT"),
+			destinationJob:   createTestDestinationJob("dest-789", "", []types.JobMetadataT{}),
+			statusCode:       500,
+			duration:         100 * time.Millisecond,
+			transformerProxy: false,
 			expectedLabels: stats.Tags{
-				"destType":      "TEST_DEST",
-				"endpointPath":  "/api/identify",
-				"statusCode":    "500",
-				"requestMethod": "PUT",
-				"module":        "router",
-				"workspaceId":   "",
-				"destinationId": "dest-789",
+				"destType":         "TEST_DEST",
+				"endpointPath":     "/api/identify",
+				"statusCode":       "500",
+				"transformerProxy": "false",
+				"requestMethod":    "PUT",
+				"module":           "router",
+				"workspaceId":      "",
+				"destinationId":    "dest-789",
+			},
+			shouldEmit: true,
+		},
+		{
+			name:       "different HTTP methods and status codes",
+			postParams: createTestPostParams("/api/page", "PATCH"),
+			destinationJob: createTestDestinationJob("dest-patch", "ws-patch", []types.JobMetadataT{
+				{WorkspaceID: "ws-patch"},
+			}),
+			statusCode:       422,
+			duration:         75 * time.Millisecond,
+			transformerProxy: true,
+			expectedLabels: stats.Tags{
+				"destType":         "TEST_DEST",
+				"endpointPath":     "/api/page",
+				"statusCode":       "422",
+				"transformerProxy": "true",
+				"requestMethod":    "PATCH",
+				"module":           "router",
+				"workspaceId":      "ws-patch",
+				"destinationId":    "dest-patch",
 			},
 			shouldEmit: true,
 		},
 	}
 
 	// Test the convertDeliveryMetricLabelToStatTags method
-	t.Run("convertDeliveryMetricLabelToStatTags", func(t *testing.T) {
-		labels := deliveryMetricLabels{
-			DestType:      "TEST_DEST",
-			EndpointPath:  "/api/test",
-			StatusCode:    "200",
-			RequestMethod: "POST",
-			Module:        "router",
-			WorkspaceID:   "ws-123",
-			DestinationID: "dest-456",
-		}
+	t.Run("ToStatTags conversion", func(t *testing.T) {
+		t.Run("basic conversion", func(t *testing.T) {
+			labels := deliveryMetricLabels{
+				DestType:         "TEST_DEST",
+				EndpointPath:     "/api/test",
+				StatusCode:       200,
+				TransformerProxy: false,
+				RequestMethod:    "POST",
+				Module:           "router",
+				WorkspaceID:      "ws-123",
+				DestinationID:    "dest-456",
+			}
 
-		expectedTags := stats.Tags{
-			"destType":      "TEST_DEST",
-			"endpointPath":  "/api/test",
-			"statusCode":    "200",
-			"requestMethod": "POST",
-			"module":        "router",
-			"workspaceId":   "ws-123",
-			"destinationId": "dest-456",
-		}
+			expectedTags := stats.Tags{
+				"destType":         "TEST_DEST",
+				"endpointPath":     "/api/test",
+				"statusCode":       "200",
+				"transformerProxy": "false",
+				"requestMethod":    "POST",
+				"module":           "router",
+				"workspaceId":      "ws-123",
+				"destinationId":    "dest-456",
+			}
 
-		result := labels.ToStatTags()
-		require.Equal(t, expectedTags, result)
+			result := labels.ToStatTags()
+			require.Equal(t, expectedTags, result)
+		})
+
+		t.Run("with transformer proxy enabled", func(t *testing.T) {
+			labels := deliveryMetricLabels{
+				DestType:         "TEST_DEST",
+				EndpointPath:     "/api/proxy",
+				StatusCode:       201,
+				TransformerProxy: true,
+				RequestMethod:    "PUT",
+				Module:           "router",
+				WorkspaceID:      "ws-proxy",
+				DestinationID:    "dest-proxy",
+			}
+
+			expectedTags := stats.Tags{
+				"destType":         "TEST_DEST",
+				"endpointPath":     "/api/proxy",
+				"statusCode":       "201",
+				"transformerProxy": "true",
+				"requestMethod":    "PUT",
+				"module":           "router",
+				"workspaceId":      "ws-proxy",
+				"destinationId":    "dest-proxy",
+			}
+
+			result := labels.ToStatTags()
+			require.Equal(t, expectedTags, result)
+		})
 	})
 
 	// Test caching behavior
 	t.Run("caching behavior", func(t *testing.T) {
 		stat, err := memstats.New()
 		require.NoError(t, err)
-		worker := createTestWorker("TEST_DEST", stat)
+		worker := createTestWorker("TEST_DEST", true, stat)
 
 		labels := deliveryMetricLabels{
-			DestType:      "TEST_DEST",
-			EndpointPath:  "/api/cache",
-			StatusCode:    "200",
-			RequestMethod: "GET",
-			Module:        "router",
-			WorkspaceID:   "ws-cache",
-			DestinationID: "dest-cache",
+			DestType:         "TEST_DEST",
+			EndpointPath:     "/api/cache",
+			TransformerProxy: true,
+			StatusCode:       200,
+			RequestMethod:    "GET",
+			Module:           "router",
+			WorkspaceID:      "ws-cache",
+			DestinationID:    "dest-cache",
 		}
 
 		// First call should create new stats
@@ -801,13 +917,14 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 
 		// Test that different labels create different cache entries
 		differentLabels := deliveryMetricLabels{
-			DestType:      "TEST_DEST",
-			EndpointPath:  "/api/different",
-			StatusCode:    "404",
-			RequestMethod: "PUT",
-			Module:        "router",
-			WorkspaceID:   "ws-diff",
-			DestinationID: "dest-diff",
+			DestType:         "TEST_DEST",
+			EndpointPath:     "/api/different",
+			TransformerProxy: true,
+			StatusCode:       404,
+			RequestMethod:    "PUT",
+			Module:           "router",
+			WorkspaceID:      "ws-diff",
+			DestinationID:    "dest-diff",
 		}
 
 		worker.deliveryLatencyStatsCache.Get(differentLabels)
@@ -826,24 +943,17 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 	// Test ToStatTags method with edge cases
 	t.Run("ToStatTags edge cases", func(t *testing.T) {
 		// Test with empty strings
-		emptyLabels := deliveryMetricLabels{
-			DestType:      "",
-			EndpointPath:  "",
-			StatusCode:    "",
-			RequestMethod: "",
-			Module:        "",
-			WorkspaceID:   "",
-			DestinationID: "",
-		}
+		emptyLabels := deliveryMetricLabels{}
 
 		expectedEmptyTags := stats.Tags{
-			"destType":      "",
-			"endpointPath":  "",
-			"statusCode":    "",
-			"requestMethod": "",
-			"module":        "",
-			"workspaceId":   "",
-			"destinationId": "",
+			"destType":         "",
+			"endpointPath":     "",
+			"transformerProxy": "false",
+			"statusCode":       "0",
+			"requestMethod":    "",
+			"module":           "",
+			"workspaceId":      "",
+			"destinationId":    "",
 		}
 
 		result := emptyLabels.ToStatTags()
@@ -851,23 +961,25 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 
 		// Test with special characters in strings
 		specialLabels := deliveryMetricLabels{
-			DestType:      "test-dest_with.special:chars",
-			EndpointPath:  "/api/test?param=value&other=123",
-			StatusCode:    "200",
-			RequestMethod: "POST",
-			Module:        "router",
-			WorkspaceID:   "ws-123_456",
-			DestinationID: "dest-789",
+			DestType:         "test-dest_with.special:chars",
+			EndpointPath:     "/api/test?param=value&other=123",
+			StatusCode:       200,
+			TransformerProxy: false,
+			RequestMethod:    "POST",
+			Module:           "router",
+			WorkspaceID:      "ws-123_456",
+			DestinationID:    "dest-789",
 		}
 
 		expectedSpecialTags := stats.Tags{
-			"destType":      "test-dest_with.special:chars",
-			"endpointPath":  "/api/test?param=value&other=123",
-			"statusCode":    "200",
-			"requestMethod": "POST",
-			"module":        "router",
-			"workspaceId":   "ws-123_456",
-			"destinationId": "dest-789",
+			"destType":         "test-dest_with.special:chars",
+			"endpointPath":     "/api/test?param=value&other=123",
+			"statusCode":       "200",
+			"transformerProxy": "false",
+			"requestMethod":    "POST",
+			"module":           "router",
+			"workspaceId":      "ws-123_456",
+			"destinationId":    "dest-789",
 		}
 
 		result = specialLabels.ToStatTags()
@@ -881,70 +993,18 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			require.NoError(t, err)
 
 			// Create worker with mock router
-			worker := createTestWorker("TEST_DEST", stat)
+			worker := createTestWorker("TEST_DEST", tc.transformerProxy, stat)
 
 			// Call the method under test
-			worker.recordTransformerOutgoingRequestMetrics(tc.postParams, tc.destinationJob, tc.resp, tc.duration)
+			worker.recordTransformerOutgoingRequestMetrics(tc.postParams, tc.destinationJob, tc.statusCode, tc.duration)
 
 			// Get all recorded metrics
 			allMetrics := stat.GetAll()
 
 			if tc.shouldEmit {
-				// Verify both metrics were recorded by checking the memstats store
-				// Find latency metric
-				var foundLatencyMetric memstats.Metric
-				var foundCountMetric memstats.Metric
-
-				for _, metric := range allMetrics {
-					if metric.Name == "transformer_outgoing_request_latency" {
-						// Check if tags match
-						tagsMatch := true
-						for key, expectedValue := range tc.expectedLabels {
-							if metric.Tags[key] != expectedValue {
-								tagsMatch = false
-								break
-							}
-						}
-						if tagsMatch {
-							foundLatencyMetric = metric
-						}
-					}
-					if metric.Name == "transformer_outgoing_request_count" {
-						// Check if tags match
-						tagsMatch := true
-						for key, expectedValue := range tc.expectedLabels {
-							if metric.Tags[key] != expectedValue {
-								tagsMatch = false
-								break
-							}
-						}
-						if tagsMatch {
-							foundCountMetric = metric
-						}
-					}
-				}
-
-				require.NotEmpty(t, foundLatencyMetric.Name, "Expected metric 'transformer_outgoing_request_latency' with matching tags to be recorded. Available metrics: %+v", allMetrics)
-				require.Equal(t, "transformer_outgoing_request_latency", foundLatencyMetric.Name)
-				require.Equal(t, tc.expectedLabels, foundLatencyMetric.Tags)
-
-				require.NotEmpty(t, foundCountMetric.Name, "Expected metric 'transformer_outgoing_request_count' with matching tags to be recorded. Available metrics: %+v", allMetrics)
-				require.Equal(t, "transformer_outgoing_request_count", foundCountMetric.Name)
-				require.Equal(t, tc.expectedLabels, foundCountMetric.Tags)
+				verifyMetricsRecorded(t, allMetrics, tc.expectedLabels)
 			} else {
-				// Verify no metrics were recorded
-				var foundLatencyMetric bool
-				var foundCountMetric bool
-				for _, metric := range allMetrics {
-					if metric.Name == "transformer_outgoing_request_latency" {
-						foundLatencyMetric = true
-					}
-					if metric.Name == "transformer_outgoing_request_count" {
-						foundCountMetric = true
-					}
-				}
-				require.False(t, foundLatencyMetric, "Expected no 'transformer_outgoing_request_latency' metric to be recorded when EndpointPath is empty")
-				require.False(t, foundCountMetric, "Expected no 'transformer_outgoing_request_count' metric to be recorded when EndpointPath is empty")
+				verifyNoMetricsRecorded(t, allMetrics)
 			}
 		})
 	}
