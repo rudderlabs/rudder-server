@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.2](https://github.com/rudderlabs/rudder-server/compare/v1.59.1...v1.59.2) (2025-09-17)
+
+
+### Bug Fixes
+
+* missing keydb client stats ([#6360](https://github.com/rudderlabs/rudder-server/issues/6360)) ([5e395ad](https://github.com/rudderlabs/rudder-server/commit/5e395ad48376152f9ba7d7758b98ffd31a860667))
+
 ## [1.59.1](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.59.1) (2025-09-17)
 
 
