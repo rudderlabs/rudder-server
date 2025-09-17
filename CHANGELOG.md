@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.59.1](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.59.1) (2025-09-17)
+
+
+### Bug Fixes
+
+* add outgoing metrics to proxy flow ([#6355](https://github.com/rudderlabs/rudder-server/issues/6355)) ([b2e5c8d](https://github.com/rudderlabs/rudder-server/commit/b2e5c8dac7f3a2c8be794094d642841cc62078eb))
+* aws session config region ([#6354](https://github.com/rudderlabs/rudder-server/issues/6354)) ([44110a1](https://github.com/rudderlabs/rudder-server/commit/44110a1a8253ad8e9975761f05802510858ce2b8))
+
 ## [1.59.0](https://github.com/rudderlabs/rudder-server/compare/v1.58.0...v1.59.0) (2025-09-15)
 
 
