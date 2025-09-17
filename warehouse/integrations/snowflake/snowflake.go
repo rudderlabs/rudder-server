@@ -27,6 +27,7 @@ import (
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -277,16 +278,19 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 	return true
 }
 
-func (sf *Snowflake) authString() string {
+func (sf *Snowflake) authString() (string, error) {
 	var auth string
 	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting) == "") {
 		var tempAccessKeyId, tempSecretAccessKey, token string
-		tempAccessKeyId, tempSecretAccessKey, token, _ = whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
+		tempAccessKeyId, tempSecretAccessKey, token, err := whutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
+		if err != nil {
+			return "", fmt.Errorf("getting temporary s3 credentials: %w", err)
+		}
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
 		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, sf.Warehouse.GetStringDestinationConfig(sf.conf, model.StorageIntegrationSetting))
 	}
-	return auth
+	return auth, nil
 }
 
 func (sf *Snowflake) DeleteBy(ctx context.Context, tableNames []string, params whutils.DeleteByParams) error {
@@ -596,6 +600,10 @@ func (sf *Snowflake) copyInto(
 		sf.ObjectStorage,
 		csvObjectLocation,
 	)
+	authString, err := sf.authString()
+	if err != nil {
+		return nil, fmt.Errorf("getting auth string: %w", err)
+	}
 
 	copyStmt := fmt.Sprintf(
 		`COPY INTO
@@ -608,7 +616,7 @@ func (sf *Snowflake) copyInto(
 		schemaIdentifier, copyTargetTable,
 		sortedColumnNames,
 		loadFolder,
-		sf.authString(),
+		authString,
 	)
 
 	rows, err := db.QueryContext(ctx, copyStmt)
@@ -682,6 +690,11 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		return fmt.Errorf("cannot connect to snowflake with namespace %q: %w", sf.Namespace, err)
 	}
 
+	authString, err := sf.authString()
+	if err != nil {
+		return fmt.Errorf("getting auth string: %w", err)
+	}
+
 	sortedColumnNames := strings.Join([]string{
 		"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE",
 	}, ",")
@@ -696,7 +709,7 @@ func (sf *Snowflake) LoadIdentityMergeRulesTable(ctx context.Context) error {
 		TRUNCATECOLUMNS = TRUE;`,
 		schemaIdentifier, identityMergeRulesTable, sortedColumnNames,
 		loadLocation,
-		sf.authString(),
+		authString,
 	)
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
@@ -766,6 +779,11 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		return fmt.Errorf("cannot add autoincrement column to %s.%q: %w", schemaIdentifier, stagingTableName, err)
 	}
 
+	authString, err := sf.authString()
+	if err != nil {
+		return fmt.Errorf("getting auth string: %w", err)
+	}
+
 	loadLocation := whutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(
 		`COPY INTO %s.%q("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT")
@@ -774,7 +792,7 @@ func (sf *Snowflake) LoadIdentityMappingsTable(ctx context.Context) error {
 		TRUNCATECOLUMNS = TRUE`,
 		schemaIdentifier, stagingTableName,
 		loadLocation,
-		sf.authString(),
+		authString,
 	)
 
 	log.Infon("Copying identity mappings for table", logger.NewStringField(lf.Query, sqlStatement))
@@ -1438,6 +1456,11 @@ func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (cl
 func (sf *Snowflake) TestLoadTable(
 	ctx context.Context, location, tableName string, _ map[string]interface{}, _ string,
 ) error {
+	authString, err := sf.authString()
+	if err != nil {
+		return fmt.Errorf("getting auth string: %w", err)
+	}
+
 	loadFolder := whutils.GetObjectFolder(sf.ObjectStorage, location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
@@ -1446,10 +1469,10 @@ func (sf *Snowflake) TestLoadTable(
 		fmt.Sprintf(`%s.%q`, schemaIdentifier, tableName),
 		fmt.Sprintf(`%q, %q`, "id", "val"),
 		loadFolder,
-		sf.authString(),
+		authString,
 	)
 
-	_, err := sf.DB.ExecContext(ctx, sqlStatement)
+	_, err = sf.DB.ExecContext(ctx, sqlStatement)
 	return err
 }
 

@@ -1036,20 +1036,25 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 func TestCreateAWSSessionConfig(t *testing.T) {
 	rudderAccessKeyID := "rudderAccessKeyID"
 	rudderAccessKey := "rudderAccessKey"
-	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
-	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+	rudderRegion := "us-east-1"
 
 	someAccessKeyID := "someAccessKeyID"
 	someAccessKey := "someAccessKey"
 	someIAMRoleARN := "someIAMRoleARN"
 	someWorkspaceID := "someWorkspaceID"
 
-	inputs := []struct {
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+	t.Setenv("AWS_S3_REGION_HINT", rudderRegion)
+
+	testCases := []struct {
+		name           string
 		destination    *backendconfig.DestinationT
 		service        string
 		expectedConfig *awsutil.SessionConfig
 	}{
 		{
+			name: "with useRudderStorage true",
 			destination: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"useRudderStorage": true,
@@ -1060,9 +1065,11 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "s3",
+				Region:      "us-east-1",
 			},
 		},
 		{
+			name: "with accessKeyID and accessKey",
 			destination: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"accessKeyID": someAccessKeyID,
@@ -1077,6 +1084,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "with iamRoleARN",
 			destination: &backendconfig.DestinationT{
 				Config: map[string]interface{}{
 					"iamRoleARN": someIAMRoleARN,
@@ -1092,6 +1100,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "with no config",
 			destination: &backendconfig.DestinationT{
 				Config:      map[string]interface{}{},
 				WorkspaceID: someWorkspaceID,
@@ -1101,13 +1110,16 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				AccessKeyID: rudderAccessKeyID,
 				AccessKey:   rudderAccessKey,
 				Service:     "redshift",
+				Region:      "us-east-1",
 			},
 		},
 	}
-	for _, input := range inputs {
-		config, err := CreateAWSSessionConfig(input.destination, input.service)
-		require.Nil(t, err)
-		require.Equal(t, config, input.expectedConfig)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			sessionConfig, err := CreateAWSSessionConfig(tc.destination, tc.service)
+			require.Nil(t, err)
+			require.Equal(t, sessionConfig, tc.expectedConfig)
+		})
 	}
 }
 
