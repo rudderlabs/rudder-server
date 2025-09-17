@@ -79,7 +79,7 @@ func NewDB(conf *config.Config, s stats.Stats, log logger.Logger) (types.DB, err
 		modeGauge("keydb", "badger")
 		return NewMirrorDB(primary, mirror, mirrorToBadger, conf, s, log), nil
 	default:
-		modeGauge("keydb", "none")
+		modeGauge("badger", "none")
 		log.Warnn("Invalid mirror mode, falling back to badger only")
 		// Default to badger only
 		return badger.NewBadgerDB(conf, s, badger.DefaultPath())
