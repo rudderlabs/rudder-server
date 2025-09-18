@@ -380,7 +380,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with adaptive throttling enabled", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.maxLimit", int64(100))
 			config.Set("Router.throttler.minLimit", int64(10))
@@ -413,7 +413,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with static throttling", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(50))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
@@ -430,7 +430,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("should work with multiple destinations", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID1.limit", int64(30))
 			config.Set("Router.throttler.destName.destID2.limit", int64(60))
@@ -462,7 +462,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with adaptive throttling enabled", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-sorted-set")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.maxLimit", int64(200))
 			config.Set("Router.throttler.minLimit", int64(20))
@@ -504,7 +504,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with static throttling", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-sorted-set")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(75))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
@@ -545,9 +545,9 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("should handle redis with credentials", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.redis.username", "")
-			config.Set("Router.throttler.redis.password", "")
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.username", "")
+			config.Set("Router.throttler.redisThrottler.password", "")
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.maxLimit", int64(100))
 			config.Set("Router.throttler.minLimit", int64(10))
@@ -572,7 +572,7 @@ func TestFactoryWithRedis(t *testing.T) {
 
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-gcra")
-		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.maxLimit", int64(120))
 		config.Set("Router.throttler.minLimit", int64(12))
@@ -601,7 +601,7 @@ func TestFactoryWithRedis(t *testing.T) {
 	t.Run("redis performance under load", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-gcra")
-		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", false)
 		config.Set("Router.throttler.destName.destID.limit", int64(1000))
 		config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
@@ -625,7 +625,7 @@ func TestFactoryWithRedis(t *testing.T) {
 	t.Run("redis per-event type throttling", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-sorted-set")
-		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
 		config.Set("Router.throttler.destName.destID.track.maxLimit", int64(80))
