@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.3](https://github.com/rudderlabs/rudder-server/compare/v1.59.2...v1.59.3) (2025-09-19)
+
+
+### Bug Fixes
+
+* naming collision in redis throttling configuration ([#6365](https://github.com/rudderlabs/rudder-server/issues/6365)) ([c8cedd5](https://github.com/rudderlabs/rudder-server/commit/c8cedd5fab633bb5770afda2e98657c2bf0e5988))
+
 ## [1.59.2](https://github.com/rudderlabs/rudder-server/compare/v1.59.1...v1.59.2) (2025-09-17)
 
 
