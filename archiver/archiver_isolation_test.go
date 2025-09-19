@@ -183,10 +183,8 @@ func ArchivalScenario(
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		c := r.Run(ctx, []string{"brt-isolation-test-rudder-server"})
-		if c != 0 {
-			t.Errorf("rudder-server exited with a non-0 exit code: %d", c)
-		}
+		ec := r.Run(ctx, []string{"brt-isolation-test-rudder-server"})
+		require.Equalf(t, 0, ec, "rudder-server exited with a non-0 exit code: %d", ec)
 		close(svcDone)
 	}()
 	health.WaitUntilReady(ctx, t,
@@ -197,12 +195,17 @@ func ArchivalScenario(
 	)
 	t.Logf("Rudder server started")
 
-	g, _ := errgroup.WithContext(ctx)
+	g := errgroup.Group{}
 	g.Go(func() error {
 		t.Logf("Waiting for all gw jobs to be successfully processed")
 		require.Eventually(t, func() bool {
 			var processedJobCount int
-			require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',20) WHERE job_state = 'succeeded'").Scan(&processedJobCount))
+			row := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('gw',20) WHERE job_state = 'succeeded'")
+			err := row.Scan(&processedJobCount)
+			if err != nil {
+				t.Logf("processedJobCount: failed to scan the row: %v", err)
+				return false
+			}
 			return processedJobCount == numJobs
 		}, 5*time.Minute, 1*time.Second, "all gw jobs should be successfully processed")
 		return nil
@@ -211,7 +214,12 @@ func ArchivalScenario(
 	g.Go(func() error {
 		require.Eventually(t, func() bool {
 			var archivedJobCount int
-			require.NoError(t, postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('arc',20) WHERE job_state = 'succeeded'").Scan(&archivedJobCount))
+			row := postgresContainer.DB.QueryRow("SELECT count(*) FROM unionjobsdbmetadata('arc',20) WHERE job_state = 'succeeded'")
+			err := row.Scan(&archivedJobCount)
+			if err != nil {
+				t.Logf("archivedJobCount: failed to scan the row: %v", err)
+				return false
+			}
 			return archivedJobCount == numJobs
 		}, 5*time.Minute, 1*time.Second, "all jobs should be successfully archived")
 		return nil
