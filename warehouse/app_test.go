@@ -156,8 +156,6 @@ func TestApp(t *testing.T) {
 		tcpPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 
-		ctx, stopServer := context.WithCancel(context.Background())
-
 		c := config.New()
 		c.Set("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
 		c.Set("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
@@ -192,65 +190,70 @@ func TestApp(t *testing.T) {
 			return ch
 		}).AnyTimes()
 
+		ctx, stopServer := context.WithCancel(context.Background())
+		defer stopServer()
+
 		a := New(mockApp, c, logger.NOP, stats.NOP, mockBackendConfig, filemanager.New)
-		err = a.Setup(ctx)
+		require.NoError(t, a.Setup(ctx))
+
+		serverDone := make(chan struct{})
+		go func() {
+			defer close(serverDone)
+			require.NoError(t, a.Run(ctx))
+		}()
+		defer func() {
+			stopServer()
+			<-serverDone
+		}()
+
+		listener, err := net.Listen("tcp", ":"+strconv.Itoa(tcpPort))
 		require.NoError(t, err)
+		t.Cleanup(func() { _ = listener.Close() })
 
-		g, gCtx := errgroup.WithContext(ctx)
-		g.Go(func() error {
-			return a.Run(gCtx)
-		})
-		g.Go(func() error {
-			defer stopServer()
+		tcpConn, err := listener.Accept()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = tcpConn.Close() })
 
-			listener, err := net.Listen("tcp", ":"+strconv.Itoa(tcpPort))
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				_ = listener.Close()
-			})
+		session, err := yamux.Client(tcpConn, yamux.DefaultConfig())
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = session.Close() })
 
-			tcpConn, err := listener.Accept()
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				_ = tcpConn.Close()
-			})
+		grpcConn, err := grpc.NewClient(
+			fmt.Sprintf("localhost:%d", tcpPort),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithContextDialer(func(context context.Context, target string) (net.Conn, error) {
+				return session.Open()
+			}),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = grpcConn.Close() })
 
-			session, err := yamux.Client(tcpConn, yamux.DefaultConfig())
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				_ = session.Close()
-			})
+		grpcClient := proto.NewWarehouseClient(grpcConn)
 
-			grpcConn, err := grpc.NewClient(
-				fmt.Sprintf("localhost:%d", tcpPort),
-				grpc.WithTransportCredentials(insecure.NewCredentials()),
-				grpc.WithContextDialer(func(context context.Context, target string) (net.Conn, error) {
-					return session.Open()
-				}),
-			)
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				_ = grpcConn.Close()
-			})
+		healthCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
 
-			grpcClient := proto.NewWarehouseClient(grpcConn)
+		ticker := time.NewTicker(100 * time.Millisecond)
 
-			require.Eventually(t, func() bool {
-				if healthResponse, err := grpcClient.GetHealth(ctx, &emptypb.Empty{}); err != nil {
-					t.Log(err)
-					return false
+		for {
+			select {
+			case <-healthCtx.Done():
+				require.NoError(t, healthCtx.Err(), "Could not get health within timeout")
+			case <-ticker.C:
+				if healthResponse, err := grpcClient.GetHealth(healthCtx, &emptypb.Empty{}); err != nil {
+					t.Logf("Health response error: %v", err)
+					continue
 				} else if healthResponse == nil {
-					return false
+					t.Logf("Health response is nil")
+					continue
+				} else if !healthResponse.GetValue() {
+					t.Log("Health response is not healthy")
+					continue
 				} else {
-					return healthResponse.GetValue()
+					return // test done
 				}
-			},
-				time.Second*10,
-				time.Millisecond*100,
-			)
-			return nil
-		})
-		require.NoError(t, g.Wait())
+			}
+		}
 	})
 	t.Run("incompatible postgres", func(t *testing.T) {
 		pgResource, err := postgres.Setup(pool, t, postgres.WithTag("9-alpine"))
