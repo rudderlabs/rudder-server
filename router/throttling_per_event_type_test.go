@@ -129,8 +129,10 @@ func TestThrottlePerEventType(t *testing.T) {
 			config.Set("Router.noOfWorkers", 1)
 
 			// throttling config
+
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.WEBHOOK.throttlerPerEventType", true)
+			config.Set("Router.throttler.WEBHOOK.pickupQueryThrottlingEnabled", true)
 			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".limit", rpsForIdentify)
 			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".maxLimit", rpsForIdentify)
 			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".minLimit", rpsForIdentify)
