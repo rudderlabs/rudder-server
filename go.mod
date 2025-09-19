@@ -126,6 +126,8 @@ require (
 	google.golang.org/protobuf v1.36.9
 )
 
+require go.yaml.in/yaml/v2 v2.4.2 // indirect
+
 require (
 	cel.dev/expr v0.24.0 // indirect
 	cloud.google.com/go v0.121.4 // indirect
