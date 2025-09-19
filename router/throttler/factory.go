@@ -153,11 +153,22 @@ func (f *factory) Shutdown() {
 
 func (f *factory) initThrottlerFactory() error {
 	var redisClient *redis.Client
-	if f.config.IsSet("Router.throttler.redis.addr") {
+	if f.config.IsSet("Router.throttler.redisThrottler.addr") ||
+		// TODO: remove the following deprecated key in the future
+		f.config.IsSet("Router.throttler.redis.addr") {
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     f.config.GetString("Router.throttler.redis.addr", "localhost:6379"),
-			Username: f.config.GetString("Router.throttler.redis.username", ""),
-			Password: f.config.GetString("Router.throttler.redis.password", ""),
+			Addr: f.config.GetStringVar("localhost:6379",
+				"Router.throttler.redisThrottler.addr",
+				"Router.throttler.redis.addr", // TODO: remove this deprecated key in the future
+			),
+			Username: f.config.GetStringVar("",
+				"Router.throttler.redisThrottler.username",
+				"Router.throttler.redis.username", // TODO: remove this deprecated key in the future
+			),
+			Password: f.config.GetStringVar("",
+				"Router.throttler.redisThrottler.password",
+				"Router.throttler.redis.password", // TODO: remove this deprecated key in the future
+			),
 		})
 	}
 
