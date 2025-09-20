@@ -302,8 +302,8 @@ func (sh *WHSchema) getForNamespace(ctx context.Context, destID, namespace strin
 		namespace = $2 AND
 		table_name = ''
 	ORDER BY
-		source_id DESC;
-	`
+		source_id DESC
+	LIMIT 1;`
 
 	rows, err := sh.db.QueryContext(
 		ctx,
