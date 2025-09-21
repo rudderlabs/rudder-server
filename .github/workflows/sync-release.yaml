@@ -7,16 +7,26 @@ on:
     branches:
       - "release/*"
 
+permissions:
+  contents: read
+
 jobs:
   sync:
+    permissions:
+      contents: write  # for Git to git push
     env:
       GH_TOKEN: ${{ secrets.PAT }}
     if: "${{ github.event.pull_request.merged && startsWith(github.event.pull_request.title, 'chore: release ')}}"
     runs-on: ubuntu-latest
 
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         with:
           fetch-depth: 0
 

@@ -31,3 +31,28 @@ updates:
         update-types:
           - "minor"
           - "patch"
+
+  - package-ecosystem: docker
+    directory: /cmd/benchmark
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /processor/internal/transformer/destination_transformer/embedded/warehouse/benchmark
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /services/streammanager/kafka/testdata/aiokafka
+    schedule:
+      interval: daily
+
+  - package-ecosystem: pip
+    directory: /services/streammanager/kafka/testdata/aiokafka
+    schedule:
+      interval: daily
+
+  - package-ecosystem: docker
+    directory: /suppression-backup-service
+    schedule:
+      interval: daily

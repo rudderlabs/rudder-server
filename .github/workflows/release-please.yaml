@@ -3,15 +3,23 @@ on:
     branches:
       - "release/*"
 name: release-please
+permissions:
+  contents: read
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Extract branch name
         shell: bash
         run: echo "branch=$(echo "${GITHUB_REF#refs/heads/}")" >> $GITHUB_OUTPUT
         id: extract_branch
-      - uses: google-github-actions/release-please-action@v3
+      - uses: google-github-actions/release-please-action@db8f2c60ee802b3748b512940dde88eabd7b7e01 # v3.7.13
         id: release
         with:
           token: ${{ secrets.PAT }}
@@ -29,7 +37,7 @@ jobs:
           echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
       - name: Trigger dispatch event - Enterprise
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
@@ -42,7 +50,7 @@ jobs:
                 "deployment": "enterprise"
             }
       - name: Trigger dispatch event - Multitenant
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
@@ -55,7 +63,7 @@ jobs:
                 "deployment": "multitenant"
             }
       - name: Trigger dispatch event - hosted
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
