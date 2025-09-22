@@ -15,8 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/dedup"
-
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -32,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -47,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/dedup"
 	deduptypes "github.com/rudderlabs/rudder-server/services/dedup/types"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
@@ -3097,8 +3095,13 @@ func (proc *Handle) userTransformAndFilter(
 					proc.logger.Warnn("Cannot create copy of transformer response", obskit.Error(err))
 				}
 
-				go func(responseCopy []byte) {
-					if len(responseCopy) == 0 {
+				eventListCopy, err := jsonrs.Marshal(eventList)
+				if err != nil {
+					proc.logger.Warnn("Cannot create copy of transformer events", obskit.Error(err))
+				}
+
+				go func(responseCopy, eventListCopy []byte) {
+					if len(responseCopy) == 0 || len(eventListCopy) == 0 {
 						return
 					}
 
@@ -3140,15 +3143,11 @@ func (proc *Handle) userTransformAndFilter(
 						return
 					}
 
-					// Upload clientEvents using jsonrs.Marshal
+					// Upload the diff file and the eventListCopy via the file manager
+					// * eventListCopy is the original eventList that was passed to the transformer
+					// * diff contains the difference between the transformer response and the mirrored response
 					objNameSuffix := uuid.New().String()
 					clientEventsObjName := objNameSuffix + "-events"
-					clientEventsJSON, err := jsonrs.Marshal(eventList)
-					if err != nil {
-						log.Errorn("UserTransform sanity check failed (cannot encode clientEvents)", obskit.Error(err))
-						return
-					}
-
 					diffObjName := objNameSuffix + "-diff"
 					diffFile, err := proc.utSamplingFileManager.UploadReader(ctx, diffObjName, strings.NewReader(diff))
 					if err != nil {
@@ -3156,7 +3155,7 @@ func (proc *Handle) userTransformAndFilter(
 						return
 					}
 
-					clientEventsFile, err := proc.utSamplingFileManager.UploadReader(ctx, clientEventsObjName, bytes.NewReader(clientEventsJSON))
+					clientEventsFile, err := proc.utSamplingFileManager.UploadReader(ctx, clientEventsObjName, bytes.NewReader(eventListCopy))
 					if err != nil {
 						log.Errorn("Error uploading UserTransform clientEvents file",
 							obskit.Error(err),
@@ -3172,7 +3171,7 @@ func (proc *Handle) userTransformAndFilter(
 						logger.NewStringField("clientEventsLocation", clientEventsFile.Location),
 						logger.NewStringField("clientEventsObjectName", clientEventsFile.ObjectName),
 					)
-				}(responseCopy)
+				}(responseCopy, eventListCopy)
 			}
 
 			var successMetrics []*reportingtypes.PUReportedMetric
