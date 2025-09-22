@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.4](https://github.com/rudderlabs/rudder-server/compare/v1.59.3...v1.59.4) (2025-09-22)
+
+
+### Bug Fixes
+
+* keydb grpc config ([#6370](https://github.com/rudderlabs/rudder-server/issues/6370)) ([e497ce6](https://github.com/rudderlabs/rudder-server/commit/e497ce6a3da83e188ae9c13b243917fd62528b6a))
+
 ## [1.59.3](https://github.com/rudderlabs/rudder-server/compare/v1.59.2...v1.59.3) (2025-09-19)
 
 
