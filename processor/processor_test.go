@@ -1014,6 +1014,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 						},
 					},
 				},
+				0,
 			)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
@@ -1097,6 +1098,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 						},
 					},
 				},
+				0,
 			)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
@@ -1305,6 +1307,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
+				0,
 			)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
@@ -1492,6 +1495,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
+				0,
 			)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
@@ -1644,6 +1648,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				subJob{
 					subJobs: unprocessedJobsList,
 				},
+				0,
 			)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
@@ -2004,6 +2009,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			err := processor.Setup(
+				context.Background(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -2034,6 +2040,7 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			err := processor.Setup(
+				context.Background(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -2069,6 +2076,7 @@ var _ = Describe("Processor", Ordered, func() {
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
 			err := processor.Setup(
+				context.Background(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3074,6 +3082,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			err := processor.Setup(
+				context.Background(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -3129,6 +3138,7 @@ var _ = Describe("Processor", Ordered, func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			err := processor.Setup(
+				context.Background(),
 				c.mockBackendConfig,
 				c.mockGatewayJobsDB,
 				c.mockRouterJobsDB,
@@ -5146,6 +5156,7 @@ func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
 func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool, t ...testing.TB) {
 	setDisableDedupFeature(processor, enableDedup)
 	err := processor.Setup(
+		context.Background(),
 		c.mockBackendConfig,
 		c.mockGatewayJobsDB,
 		c.mockRouterJobsDB,
