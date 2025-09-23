@@ -24,7 +24,7 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, eventType),
 			fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 		),
-		window: c.GetReloadableDurationVar(0, time.Second,
+		window: c.GetReloadableDurationVar(1, time.Second,
 			fmt.Sprintf(`Router.throttler.%s.%s.%s.timeWindow`, destType, destinationID, eventType),
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, destinationID),
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, eventType),
