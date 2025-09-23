@@ -20,6 +20,8 @@ replace (
 	k8s.io/kubernetes => k8s.io/kubernetes v1.32.1
 )
 
+
+
 require (
 	cloud.google.com/go/bigquery v1.69.0
 	cloud.google.com/go/pubsub v1.49.0
