@@ -9,6 +9,9 @@ on:
       - ready_for_review
       - synchronize
 
+permissions:
+  pull-requests: read
+
 jobs:
   main:
     name: Validate PR title

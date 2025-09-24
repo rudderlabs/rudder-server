@@ -25,6 +25,10 @@ jobs:
   branches:
       name: Cleanup old branches
       runs-on: ubuntu-latest
+      
+      permissions:
+        contents: write # Required for delete-old-branches-action
+        
       steps:
         - name: Checkout repository
           uses: actions/checkout@v4

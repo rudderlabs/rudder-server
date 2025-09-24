@@ -7,6 +7,10 @@ on:
     branches:
       - "release/*"
 
+permissions:
+  contents: write # Required for creating branches and accessing repository
+  pull-requests: write # Required for creating PRs
+
 jobs:
   sync:
     env:
