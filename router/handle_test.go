@@ -14,6 +14,7 @@ import (
 type MockPickupThrottler struct {
 	limitPerSecond int64
 	eventType      string
+	lastUsed       time.Time
 }
 
 func (m *MockPickupThrottler) CheckLimitReached(ctx context.Context, cost int64) (bool, error) {
@@ -30,6 +31,10 @@ func (m *MockPickupThrottler) GetLimitPerSecond() int64 {
 
 func (m *MockPickupThrottler) GetEventType() string {
 	return m.eventType
+}
+
+func (m *MockPickupThrottler) GetLastUsed() time.Time {
+	return m.lastUsed
 }
 
 func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
@@ -81,13 +86,14 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		require.Equal(t, input, result)
 	})
 
-	t.Run("multiple throttlers of different eventTypes should return the sum", func(t *testing.T) {
+	t.Run("multiple throttlers of different eventTypes should return the sum of recently active throttlers", func(t *testing.T) {
 		input := 100
 		pickupThrottlers := func() []throttler.PickupThrottler {
 			return []throttler.PickupThrottler{
-				&MockPickupThrottler{limitPerSecond: 20, eventType: "track"},
-				&MockPickupThrottler{limitPerSecond: 30, eventType: "identify"},
-				&MockPickupThrottler{limitPerSecond: 25, eventType: "page"},
+				&MockPickupThrottler{limitPerSecond: 20, eventType: "track", lastUsed: time.Now()},
+				&MockPickupThrottler{limitPerSecond: 30, eventType: "identify", lastUsed: time.Now()},
+				&MockPickupThrottler{limitPerSecond: 25, eventType: "page", lastUsed: time.Now()},
+				&MockPickupThrottler{limitPerSecond: 50, eventType: "alias", lastUsed: time.Time{}},
 			}
 		}
 		readSleep := 1 * time.Second
@@ -103,9 +109,9 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		input := 100
 		pickupThrottlers := func() []throttler.PickupThrottler {
 			return []throttler.PickupThrottler{
-				&MockPickupThrottler{limitPerSecond: 400, eventType: "track"},
-				&MockPickupThrottler{limitPerSecond: 300, eventType: "identify"},
-				&MockPickupThrottler{limitPerSecond: 500, eventType: "page"},
+				&MockPickupThrottler{limitPerSecond: 400, eventType: "track", lastUsed: time.Now()},
+				&MockPickupThrottler{limitPerSecond: 300, eventType: "identify", lastUsed: time.Now()},
+				&MockPickupThrottler{limitPerSecond: 500, eventType: "page", lastUsed: time.Now()},
 			}
 		}
 		readSleep := 1 * time.Second
@@ -121,7 +127,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		input := 100
 		pickupThrottlers := func() []throttler.PickupThrottler {
 			return []throttler.PickupThrottler{
-				&MockPickupThrottler{limitPerSecond: 50, eventType: "track"},
+				&MockPickupThrottler{limitPerSecond: 50, eventType: "track", lastUsed: time.Now()},
 			}
 		}
 		readSleep := 300 * time.Millisecond // Less than 1 second
@@ -137,7 +143,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		input := 100
 		pickupThrottlers := func() []throttler.PickupThrottler {
 			return []throttler.PickupThrottler{
-				&MockPickupThrottler{limitPerSecond: 30, eventType: "track"},
+				&MockPickupThrottler{limitPerSecond: 30, eventType: "track", lastUsed: time.Now()},
 			}
 		}
 		readSleep := 2 * time.Second
@@ -153,7 +159,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		input := 100
 		pickupThrottlers := func() []throttler.PickupThrottler {
 			return []throttler.PickupThrottler{
-				&MockPickupThrottler{limitPerSecond: 40, eventType: "track"},
+				&MockPickupThrottler{limitPerSecond: 40, eventType: "track", lastUsed: time.Now()},
 			}
 		}
 		readSleep := 1500 * time.Millisecond // 1.5 seconds

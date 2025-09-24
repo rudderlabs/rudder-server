@@ -266,6 +266,10 @@ func (t *noOpThrottler) GetEventType() string {
 	return "all"
 }
 
+func (t *noOpThrottler) GetLastUsed() time.Time {
+	return time.Time{}
+}
+
 type noOpDeliveryThrottler struct{}
 
 func (*noOpDeliveryThrottler) Wait(ctx context.Context) (time.Duration, error) {

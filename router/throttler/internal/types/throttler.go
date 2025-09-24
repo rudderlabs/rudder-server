@@ -18,6 +18,8 @@ type PickupThrottler interface {
 	GetLimitPerSecond() int64
 	// GetEventType returns the event type this throttler is associated with, or [all] if it applies to all event types.
 	GetEventType() string
+	// GetLastUsed returns the last time this throttler was used.
+	GetLastUsed() time.Time
 }
 
 type DeliveryThrottler interface {

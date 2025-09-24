@@ -576,6 +576,30 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 		})
 	})
 
+	t.Run("GetLastUsed", func(t *testing.T) {
+		config := config.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		mockLimiter := &MockLimiter{AllowResult: true}
+		mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.8}
+
+		destType := "WEBHOOK"
+		destinationID := "dest123"
+
+		// Set valid configuration
+		config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
+		config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+		config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
+
+		throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
+
+		lastUsed := throttler.GetLastUsed()
+		require.Zero(t, lastUsed, "Last used should be zero before any access")
+		_, _ = throttler.CheckLimitReached(context.Background(), 1)
+		lastUsed = throttler.GetLastUsed()
+		require.NotZero(t, lastUsed, "Last used should be updated after access")
+	})
+
 	t.Run("updateGauges", func(t *testing.T) {
 		t.Run("UpdatesBothGauges", func(t *testing.T) {
 			config := config.New()

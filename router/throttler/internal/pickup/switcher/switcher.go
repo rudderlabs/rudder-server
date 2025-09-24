@@ -2,6 +2,7 @@ package switcher
 
 import (
 	"context"
+	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/types"
@@ -50,6 +51,11 @@ func (t *throttlerSwitcher) GetLimitPerSecond() int64 {
 // GetEventType returns the event type of the currently active throttler.
 func (t *throttlerSwitcher) GetEventType() string {
 	return t.throttler().GetEventType()
+}
+
+// GetLastUsed returns the last used time of the currently active throttler.
+func (t *throttlerSwitcher) GetLastUsed() time.Time {
+	return t.throttler().GetLastUsed()
 }
 
 // throttler returns the currently active throttler based on the useAlternative config.

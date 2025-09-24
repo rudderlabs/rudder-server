@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.uber.org/atomic"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -15,6 +17,7 @@ type throttler struct {
 	eventType     string
 	key           string
 
+	lastUsed  atomic.Time
 	limiter   Limiter
 	algorithm Algorithm
 	log       Logger
@@ -24,7 +27,7 @@ type throttler struct {
 	maxLimit   func() int64
 	staticCost config.ValueLoader[bool]
 
-	everyGauge       *kitsync.OnceEvery
+	everyStats       *kitsync.OnceEvery
 	limitFactorGauge stats.Gauge
 	rateLimitGauge   stats.Gauge
 }
@@ -37,7 +40,7 @@ func (t *throttler) CheckLimitReached(ctx context.Context, cost int64) (limited 
 	if !t.enabled() {
 		return false, nil
 	}
-	t.updateGauges()
+	t.updateStats()
 
 	allowed, _, err := t.limiter.Allow(ctx, t.costFn(cost), t.getLimit(), t.getTimeWindowInSeconds(), t.key)
 	if err != nil {
@@ -82,12 +85,17 @@ func (t *throttler) GetEventType() string {
 	return t.eventType
 }
 
+func (t *throttler) GetLastUsed() time.Time {
+	return t.lastUsed.Load()
+}
+
 func (t *throttler) getTimeWindowInSeconds() int64 {
 	return int64(t.window.Load().Seconds())
 }
 
-func (t *throttler) updateGauges() {
-	t.everyGauge.Do(func() {
+func (t *throttler) updateStats() {
+	t.everyStats.Do(func() {
+		t.lastUsed.Store(time.Now())
 		if window := t.getTimeWindowInSeconds(); window > 0 {
 			t.rateLimitGauge.Gauge(t.getLimit() / window)
 		}

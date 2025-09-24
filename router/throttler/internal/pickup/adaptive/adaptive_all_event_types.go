@@ -47,7 +47,7 @@ func NewAllEventTypesThrottler(destType, destinationID string, algorithm Algorit
 			`Router.throttler.ignoreThrottlingCosts`,
 		),
 
-		everyGauge: kitsync.NewOnceEvery(time.Second),
+		everyStats: kitsync.NewOnceEvery(200 * time.Millisecond),
 		limitFactorGauge: stat.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

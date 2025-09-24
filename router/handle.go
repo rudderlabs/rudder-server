@@ -349,20 +349,26 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 // getAdaptedJobQueryBatchSize returns the adapted job query batch size based on the throttling limits
 func (*Handle) getAdaptedJobQueryBatchSize(input int, pickupThrottlers func() []throttler.PickupThrottler, readSleep time.Duration, maxLimit int) int {
 	jobQueryBatchSize := input
+	readSleepSeconds := int((readSleep + time.Second - 1) / time.Second) // rounding up to the nearest second
 	// Calculate the total limit of all active throttlers:
 	//
 	//   - if there is a global throttler, use its limit
 	//   - if there are event type specific throttlers, use the sum of their limits
 	totalLimit := lo.Reduce(pickupThrottlers(), func(totalLimit int, throttler throttler.PickupThrottler, index int) int {
-		if index == 0 {
-			return int(throttler.GetLimitPerSecond())
-		}
-		if throttler.GetEventType() == "all" {
+		switch throttler.GetEventType() {
+		case "all":
 			// global throttler, total limit is the limit of the first throttler
+			if index == 0 {
+				return int(throttler.GetLimitPerSecond())
+			}
+			return totalLimit
+		default:
+			// throttler per event type, total limit is the sum of all recently used throttler per event type limits
+			if int(time.Since(throttler.GetLastUsed()).Seconds()) <= readSleepSeconds*2 {
+				return totalLimit + int(throttler.GetLimitPerSecond())
+			}
 			return totalLimit
 		}
-		// throttler per event type, total limit is the sum of all throttler per event type limits
-		return totalLimit + int(throttler.GetLimitPerSecond())
 	}, 0)
 	// If throttling is enabled then we need to adapt job query batch size:
 	//

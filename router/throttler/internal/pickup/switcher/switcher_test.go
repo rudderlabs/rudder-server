@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -326,6 +327,10 @@ func (m *mockThrottler) GetLimitPerSecond() int64 {
 
 func (m *mockThrottler) GetEventType() string {
 	return "all"
+}
+
+func (m *mockThrottler) GetLastUsed() time.Time {
+	return time.Now()
 }
 
 func (m *mockThrottler) setLimitReached(limitReached bool) {

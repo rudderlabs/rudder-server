@@ -481,6 +481,37 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 		})
 	})
 
+	t.Run("GetLastUsed", func(t *testing.T) {
+		config := config.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		mockLimiter := &MockLimiter{AllowResult: true}
+		mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.5}
+
+		destType := "WEBHOOK"
+		destinationID := "dest123"
+
+		// Test with different event types
+		eventTypes := []string{"track", "identify", "page", "screen", "group", "alias"}
+
+		for _, eventType := range eventTypes {
+			t.Run(fmt.Sprintf("EventType_%s", eventType), func(t *testing.T) {
+				// Set minimal valid configuration
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.minLimit", destType, destinationID, eventType), 1)
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.maxLimit", destType, destinationID, eventType), 10)
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.timeWindow", destType, destinationID, eventType), "5s")
+
+				throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
+
+				lastUsed := throttler.GetLastUsed()
+				require.Zero(t, lastUsed, "Last used should be zero before any access")
+				_, _ = throttler.CheckLimitReached(context.Background(), 1)
+				lastUsed = throttler.GetLastUsed()
+				require.NotZero(t, lastUsed, "Last used should be updated after access")
+			})
+		}
+	})
+
 	t.Run("updateGauges", func(t *testing.T) {
 		t.Run("UpdatesBothGauges", func(t *testing.T) {
 			config := config.New()
