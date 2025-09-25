@@ -9,6 +9,10 @@ on:
       - ready_for_review
       - synchronize
 
+permissions:
+  pull-requests: read
+  statuses: write # Required for to create commit statuses that report whether the PR title validation passed or failed.
+
 jobs:
   main:
     name: Validate PR title
