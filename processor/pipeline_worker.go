@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/tracing"
 )
@@ -81,6 +83,8 @@ func (w *pipelineWorker) start() {
 	// Common span tags
 	spanTags := stats.Tags{"partition": w.partition}
 
+	partitionProcessingDelay := w.handle.config().partitionProcessingDelay(w.partition)
+
 	// Preprocessing goroutine
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
@@ -89,7 +93,10 @@ func (w *pipelineWorker) start() {
 		defer w.logger.Debugn("preprocessing routine stopped")
 
 		for jobs := range w.channel.preprocess {
-			val, err := w.handle.preprocessStage(w.partition, jobs)
+			val, err := w.handle.preprocessStage(w.partition, jobs, partitionProcessingDelay.Load())
+			if errors.Is(err, types.ErrProcessorStopping) {
+				continue
+			}
 			if err != nil {
 				w.logger.Errorn("Error preprocessing jobs", obskit.Error(err))
 				panic(err)
@@ -109,6 +116,9 @@ func (w *pipelineWorker) start() {
 
 		for processedMessage := range w.channel.preTransform {
 			val, err := w.handle.pretransformStage(w.partition, processedMessage)
+			if errors.Is(err, types.ErrProcessorStopping) {
+				continue
+			}
 			if err != nil {
 				w.logger.Errorn("Error generating transformation message", obskit.Error(err))
 				panic(err)

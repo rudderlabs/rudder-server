@@ -1,6 +1,9 @@
 package processor
 
 import (
+	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 )
@@ -23,6 +26,9 @@ func (h *workerHandleAdapter) config() workerHandleConfig {
 		readLoopSleep:         h.Handle.config.readLoopSleep,
 		maxLoopSleep:          h.Handle.config.maxLoopSleep,
 		pipelinesPerPartition: h.Handle.config.pipelinesPerPartition,
+		partitionProcessingDelay: func(partition string) config.ValueLoader[time.Duration] {
+			return h.conf.GetReloadableDurationVar(0, time.Second, "Processor.preprocessDelay."+partition)
+		},
 	}
 }
 
