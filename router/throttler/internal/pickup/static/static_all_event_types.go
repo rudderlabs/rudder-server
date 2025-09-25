@@ -28,7 +28,7 @@ func NewAllEventTypesThrottler(destType, destinationID string, limiter Limiter, 
 		),
 		staticCost: c.GetReloadableBoolVar(true, `Router.throttler.ignoreThrottlingCosts`),
 
-		onceEveryGauge: kitsync.NewOnceEvery(time.Second),
+		everyStats: kitsync.NewOnceEvery(200 * time.Millisecond),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

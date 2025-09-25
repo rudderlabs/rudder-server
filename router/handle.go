@@ -29,7 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	"github.com/rudderlabs/rudder-server/router/internal/partition"
 	"github.com/rudderlabs/rudder-server/router/isolation"
-	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -50,7 +50,7 @@ const module = "router"
 type Handle struct {
 	// external dependencies
 	jobsDB                     jobsdb.JobsDB
-	throttlerFactory           rtThrottler.Factory
+	throttlerFactory           throttler.Factory
 	backendConfig              backendconfig.BackendConfig
 	Reporting                  reporter
 	transientSources           transientsource.Service
@@ -151,7 +151,7 @@ func (rt *Handle) activePartitions(ctx context.Context) []string {
 
 // pickup picks up jobs from the jobsDB for the provided partition and returns the number of jobs picked up and whether the limits were reached or not
 // picked up jobs are distributed to the workers
-func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker) (pickupCount int, limitsReached bool) {
+func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker, pickupBatchSizeGauge stats.Gauge) (pickupCount int, limitsReached bool) {
 	// pickup limiter with dynamic priority
 	start := time.Now()
 	var discardedCount int
@@ -181,8 +181,21 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		"Router."+rt.destType+".jobIterator.discardedPercentageTolerance",
 		"Router.jobIterator.discardedPercentageTolerance")
 
+	jobQueryBatchSize := rt.reloadableConfig.jobQueryBatchSize.Load()
+	if rt.isolationStrategy.SupportsPickupQueryThrottling() {
+		jobQueryBatchSize = rt.getAdaptedJobQueryBatchSize(
+			jobQueryBatchSize,
+			func() []throttler.PickupThrottler {
+				return rt.throttlerFactory.GetActivePickupThrottlers(partition)
+			},
+			rt.reloadableConfig.readSleep.Load(),
+			rt.reloadableConfig.maxJobQueryBatchSize.Load(),
+		)
+	}
+	pickupBatchSizeGauge.Gauge(jobQueryBatchSize)
+
 	iterator := jobiterator.New(
-		rt.getQueryParams(partition, rt.reloadableConfig.jobQueryBatchSize.Load()),
+		rt.getQueryParams(partition, jobQueryBatchSize),
 		rt.getJobsFn(ctx),
 		jobiterator.WithDiscardedPercentageTolerance(jobIteratorDiscardedPercentageTolerance),
 		jobiterator.WithMaxQueries(jobIteratorMaxQueries),
@@ -331,6 +344,44 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	return pickupCount, limitsReached
+}
+
+// getAdaptedJobQueryBatchSize returns the adapted job query batch size based on the throttling limits
+func (*Handle) getAdaptedJobQueryBatchSize(input int, pickupThrottlers func() []throttler.PickupThrottler, readSleep time.Duration, maxLimit int) int {
+	jobQueryBatchSize := input
+	readSleepSeconds := int((readSleep + time.Second - 1) / time.Second) // rounding up to the nearest second
+	// Calculate the total limit of all active throttlers:
+	//
+	//   - if there is a global throttler, use its limit
+	//   - if there are event type specific throttlers, use the sum of their limits
+	totalLimit := lo.Reduce(pickupThrottlers(), func(totalLimit int, throttler throttler.PickupThrottler, index int) int {
+		switch throttler.GetEventType() {
+		case "all":
+			// global throttler, total limit is the limit of the first throttler
+			if index == 0 {
+				return int(throttler.GetLimitPerSecond())
+			}
+			return totalLimit
+		default:
+			// throttler per event type, total limit is the sum of all recently used throttler per event type limits
+			if int(time.Since(throttler.GetLastUsed()).Seconds()) <= readSleepSeconds*2 {
+				return totalLimit + int(throttler.GetLimitPerSecond())
+			}
+			return totalLimit
+		}
+	}, 0)
+	// If throttling is enabled then we need to adapt job query batch size:
+	//
+	//  - we assume that we will read for more than readSleep seconds (min 1 second)
+	//  - we will be setting the batch size to be min(totalLimit * readSleepSeconds, maxLimit)
+	if totalLimit > 0 {
+		readSleepSeconds := int((readSleep + time.Second - 1) / time.Second) // rounding up to the nearest second
+		jobQueryBatchSize = totalLimit * readSleepSeconds
+		if jobQueryBatchSize > maxLimit {
+			return maxLimit
+		}
+	}
+	return jobQueryBatchSize
 }
 
 func (rt *Handle) stopIteration(err error, destinationID string) bool {

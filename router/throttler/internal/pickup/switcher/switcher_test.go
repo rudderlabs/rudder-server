@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -192,7 +193,7 @@ func TestThrottlerSwitcher(t *testing.T) {
 
 		switcher := NewThrottlerSwitcher(valueLoader, mainThrottler, altThrottler)
 
-		limit := switcher.GetLimit()
+		limit := switcher.GetLimitPerSecond()
 
 		require.Equal(t, int64(100), limit)
 	})
@@ -204,7 +205,7 @@ func TestThrottlerSwitcher(t *testing.T) {
 
 		switcher := NewThrottlerSwitcher(valueLoader, mainThrottler, altThrottler)
 
-		limit := switcher.GetLimit()
+		limit := switcher.GetLimitPerSecond()
 
 		require.Equal(t, int64(200), limit)
 	})
@@ -217,21 +218,21 @@ func TestThrottlerSwitcher(t *testing.T) {
 		switcher := NewThrottlerSwitcher(valueLoader, mainThrottler, altThrottler)
 
 		// Should use main throttler's limit
-		limit := switcher.GetLimit()
+		limit := switcher.GetLimitPerSecond()
 		require.Equal(t, int64(100), limit)
 
 		// Switch to alternative
 		valueLoader.setValue(true)
 
 		// Should use alternative throttler's limit
-		limit = switcher.GetLimit()
+		limit = switcher.GetLimitPerSecond()
 		require.Equal(t, int64(200), limit)
 
 		// Switch back to main
 		valueLoader.setValue(false)
 
 		// Should use main throttler's limit again
-		limit = switcher.GetLimit()
+		limit = switcher.GetLimitPerSecond()
 		require.Equal(t, int64(100), limit)
 	})
 
@@ -257,7 +258,7 @@ func TestThrottlerSwitcher(t *testing.T) {
 		}()
 
 		go func() {
-			_ = switcher.GetLimit()
+			_ = switcher.GetLimitPerSecond()
 			done <- true
 		}()
 
@@ -320,8 +321,16 @@ func (m *mockThrottler) Shutdown() {
 	m.shutdownCalled = true
 }
 
-func (m *mockThrottler) GetLimit() int64 {
+func (m *mockThrottler) GetLimitPerSecond() int64 {
 	return m.limit
+}
+
+func (m *mockThrottler) GetEventType() string {
+	return "all"
+}
+
+func (m *mockThrottler) GetLastUsed() time.Time {
+	return time.Now()
 }
 
 func (m *mockThrottler) setLimitReached(limitReached bool) {

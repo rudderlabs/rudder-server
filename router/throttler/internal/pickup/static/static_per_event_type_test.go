@@ -3,7 +3,9 @@ package static
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -34,7 +36,8 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			require.Equal(t, destinationID, throttler.destinationID)
 			require.Equal(t, eventType, throttler.eventType)
 			require.Equal(t, mockLimiter, throttler.limiter)
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.getLimit())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("UsesConfigurationFallbacks", func(t *testing.T) {
@@ -53,7 +56,8 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(75), throttler.GetLimit())
+			require.Equal(t, int64(75), throttler.getLimit())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("CreatesStatsGaugeWithCorrectTags", func(t *testing.T) {
@@ -304,10 +308,11 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			eventType := "track"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 250)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", time.Second)
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(250), throttler.GetLimit())
+			require.Equal(t, int64(250), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("UpdatesWithConfigChanges", func(t *testing.T) {
@@ -321,15 +326,34 @@ func TestPerEventTypeThrottler(t *testing.T) {
 			eventType := "track"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 100)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", time.Second)
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.GetLimitPerSecond())
 
 			// Update config
 			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 200)
 
-			require.Equal(t, int64(200), throttler.GetLimit())
+			require.Equal(t, int64(200), throttler.GetLimitPerSecond())
+		})
+
+		t.Run("Rounds up", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+			eventType := "track"
+
+			config.Set("Router.throttler.WEBHOOK.dest123.track.limit", 15)
+			config.Set("Router.throttler.WEBHOOK.timeWindow", 2*time.Second)
+
+			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
+
+			require.Equal(t, int64(8), throttler.GetLimitPerSecond())
 		})
 	})
 
@@ -407,6 +431,63 @@ func TestPerEventTypeThrottler(t *testing.T) {
 				throttler.Shutdown()
 			})
 		})
+	})
+
+	t.Run("GetEventType", func(t *testing.T) {
+		t.Run("ReturnsCorrectEventTypeForDifferentTypes", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			// Test with different event types
+			eventTypes := []string{"track", "identify", "page", "screen", "group", "alias"}
+
+			for _, eventType := range eventTypes {
+				t.Run(fmt.Sprintf("EventType_%s", eventType), func(t *testing.T) {
+					// Set minimal valid configuration
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.limit", destType, destinationID, eventType), 50)
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.timeWindow", destType, destinationID, eventType), "5s")
+
+					throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, &MockLogger{})
+
+					returnedEventType := throttler.GetEventType()
+					require.Equal(t, eventType, returnedEventType, "Event type should match the provided event type")
+				})
+			}
+		})
+	})
+
+	t.Run("GetLastUsed", func(t *testing.T) {
+		config := config.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		mockLimiter := &MockLimiter{AllowResult: true}
+
+		destType := "WEBHOOK"
+		destinationID := "dest123"
+
+		// Test with different event types
+		eventTypes := []string{"track", "identify", "page", "screen", "group", "alias"}
+
+		for _, eventType := range eventTypes {
+			t.Run(fmt.Sprintf("EventType_%s", eventType), func(t *testing.T) {
+				// Set minimal valid configuration
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.limit", destType, destinationID, eventType), 50)
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.timeWindow", destType, destinationID, eventType), "5s")
+
+				throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, &MockLogger{})
+
+				lastUsed := throttler.GetLastUsed()
+				require.Zero(t, lastUsed, "Last used should be zero before any access")
+				_, _ = throttler.CheckLimitReached(context.Background(), 1)
+				lastUsed = throttler.GetLastUsed()
+				require.NotZero(t, lastUsed, "Last used should be updated after access")
+			})
+		}
 	})
 
 	t.Run("updateGauges", func(t *testing.T) {
@@ -512,8 +593,9 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(300), throttler.GetLimit())
+			require.Equal(t, int64(300), throttler.getLimit())
 			require.Equal(t, int64(30), throttler.getTimeWindowInSeconds())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond()) // 300/30 = 10
 		})
 
 		t.Run("FallsBackToDestinationConfig", func(t *testing.T) {
@@ -537,8 +619,9 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(200), throttler.GetLimit())
+			require.Equal(t, int64(200), throttler.getLimit())
 			require.Equal(t, int64(20), throttler.getTimeWindowInSeconds())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("FallsBackToDestinationTypeEventConfig", func(t *testing.T) {
@@ -560,8 +643,9 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(150), throttler.GetLimit())
+			require.Equal(t, int64(150), throttler.getLimit())
 			require.Equal(t, int64(15), throttler.getTimeWindowInSeconds())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond()) // 150/15 = 10
 		})
 
 		t.Run("FallsBackToDestinationTypeConfig", func(t *testing.T) {
@@ -580,8 +664,9 @@ func TestPerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(100), throttler.GetLimit())
+			require.Equal(t, int64(100), throttler.getLimit())
 			require.Equal(t, int64(10), throttler.getTimeWindowInSeconds())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond()) // 100/10 = 10
 		})
 	})
 
