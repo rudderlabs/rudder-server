@@ -93,10 +93,7 @@ func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) 
 		fmt.Sprintf(`Router.throttler.%s.%s.adaptiveEnabled`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.%s.adaptiveEnabled`, destType),
 		"Router.throttler.adaptiveEnabled",
-		// TODO: delete the following deprecated keys in the future
-		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.enabled`, destType, destinationID),
-		fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destType),
-		"Router.throttler.adaptive.enabled")
+	)
 
 	log := f.log.Withn(
 		obskit.DestinationType(destType),
@@ -153,21 +150,16 @@ func (f *factory) Shutdown() {
 
 func (f *factory) initThrottlerFactory() error {
 	var redisClient *redis.Client
-	if f.config.IsSet("Router.throttler.redisThrottler.addr") ||
-		// TODO: remove the following deprecated key in the future
-		f.config.IsSet("Router.throttler.redis.addr") {
+	if f.config.IsSet("Router.throttler.redisThrottler.addr") {
 		redisClient = redis.NewClient(&redis.Options{
 			Addr: f.config.GetStringVar("localhost:6379",
 				"Router.throttler.redisThrottler.addr",
-				"Router.throttler.redis.addr", // TODO: remove this deprecated key in the future
 			),
 			Username: f.config.GetStringVar("",
 				"Router.throttler.redisThrottler.username",
-				"Router.throttler.redis.username", // TODO: remove this deprecated key in the future
 			),
 			Password: f.config.GetStringVar("",
 				"Router.throttler.redisThrottler.password",
-				"Router.throttler.redis.password", // TODO: remove this deprecated key in the future
 			),
 		})
 	}
