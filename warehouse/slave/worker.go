@@ -70,7 +70,6 @@ type worker struct {
 		maxStagingFileReadBufferCapacityInK config.ValueLoader[int]
 		maxConcurrentStagingFiles           config.ValueLoader[int]
 		claimRefreshInterval                config.ValueLoader[time.Duration]
-		enableNotifierHeartbeat             config.ValueLoader[bool]
 	}
 	stats struct {
 		workerIdleTime                 stats.Timer
@@ -110,7 +109,6 @@ func newWorker(
 	// Increasing maxConcurrentStagingFiles config would also require increasing the memory requests for the slave pods
 	s.config.maxConcurrentStagingFiles = s.conf.GetReloadableIntVar(10, 1, "Warehouse.maxStagingFilesInUploadV2Job")
 	s.config.claimRefreshInterval = s.conf.GetReloadableDurationVar(30, time.Second, "Warehouse.claimRefreshIntervalInS")
-	s.config.enableNotifierHeartbeat = s.conf.GetReloadableBoolVar(false, "Warehouse.enableNotifierHeartbeat")
 
 	tags := stats.Tags{
 		"module":   "warehouse",
@@ -127,11 +125,9 @@ func newWorker(
 func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.ClaimJob, slaveID string) {
 	workerIdleTimeStart := time.Now()
 
-	if w.config.enableNotifierHeartbeat.Load() {
-		refreshCtx, refreshCancel := context.WithCancel(ctx)
-		defer refreshCancel()
-		go w.runClaimRefresh(refreshCtx)
-	}
+	refreshCtx, refreshCancel := context.WithCancel(ctx)
+	defer refreshCancel()
+	go w.runClaimRefresh(refreshCtx)
 
 	for {
 		select {
@@ -180,6 +176,13 @@ func (w *worker) start(ctx context.Context, notificationChan <-chan *notifier.Cl
 // run claimRefresh periodically to make sure that job is not orphaned
 func (w *worker) runClaimRefresh(ctx context.Context) {
 	baseInterval := w.config.claimRefreshInterval.Load()
+	
+	w.log.Infon("runClaimRefresh debug info",
+		logger.NewStringField("baseInterval", baseInterval.String()),
+		logger.NewStringField("refreshClaimJitter", w.refreshClaimJitter.String()),
+		logger.NewStringField("totalInterval", (baseInterval + w.refreshClaimJitter).String()),
+	)
+	
 	// Distribute claim refresh requests across workers by adding random delay
 	// This will prevent database load spikes from synchronized refresh attempts
 	ticker := time.NewTicker(baseInterval + w.refreshClaimJitter)
