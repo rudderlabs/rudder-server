@@ -1,6 +1,7 @@
 package offline_conversions
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -19,15 +20,16 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, isHashRequired bool) *BingAdsBulkUploader {
+func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, destName string, service bingads.BulkServiceI, isHashRequired bool, initializationError string) *BingAdsBulkUploader {
 	return &BingAdsBulkUploader{
-		isHashRequired: isHashRequired,
-		destName:       destName,
-		service:        service,
-		logger:         logger.Child("BingAds").Child("BingAdsBulkUploader"),
-		statsFactory:   statsFactory,
-		fileSizeLimit:  common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
-		eventsLimit:    common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 1000),
+		initializationError: initializationError,
+		isHashRequired:      isHashRequired,
+		destName:            destName,
+		service:             service,
+		logger:              logger.Child("BingAds").Child("BingAdsBulkUploader"),
+		statsFactory:        statsFactory,
+		fileSizeLimit:       common.GetBatchRouterConfigInt64("MaxUploadLimit", destName, 100*bytesize.MB),
+		eventsLimit:         common.GetBatchRouterConfigInt64("MaxEventsLimit", destName, 1000),
 	}
 }
 
@@ -47,6 +49,9 @@ returns: A string of object in form
 	}
 */
 func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+	if b.initializationError != "" {
+		return "", errors.New(b.initializationError)
+	}
 	// Unmarshal the JSON raw message into the record struct
 	payload := string(job.EventPayload)
 	var event Record
