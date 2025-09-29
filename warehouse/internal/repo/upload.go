@@ -162,20 +162,11 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 		"workspaceId": upload.WorkspaceID,
 	})()
 
-	tx, err := u.db.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return 0, err
-	}
-	rollback := true
-	defer func() {
-		if rollback {
-			_ = tx.Rollback()
-		}
-	}()
-
 	var uploadID int64
-	err = tx.QueryRow(
-		`INSERT INTO `+uploadsTableName+` (
+
+	err = u.db.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
+		err := tx.QueryRow(
+			`INSERT INTO `+uploadsTableName+` (
 			source_id, namespace, workspace_id, destination_id,
 			destination_type, start_staging_file_id,
 			end_staging_file_id, start_load_file_id,
@@ -189,51 +180,48 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 			$11, $12, $13, $14, $15, $16, $17
 			) RETURNING id;`,
 
-		upload.SourceID,
-		upload.Namespace,
-		upload.WorkspaceID,
-		upload.DestinationID,
-		upload.DestinationType,
-		startJSONID,
-		endJSONID,
-		0,
-		0,
-		upload.Status,
-		"{}",
-		"{}",
-		metadata,
-		firstEventAt,
-		lastEventAt,
-		u.now(),
-		u.now(),
-	).Scan(&uploadID)
+			upload.SourceID,
+			upload.Namespace,
+			upload.WorkspaceID,
+			upload.DestinationID,
+			upload.DestinationType,
+			startJSONID,
+			endJSONID,
+			0,
+			0,
+			upload.Status,
+			"{}",
+			"{}",
+			metadata,
+			firstEventAt,
+			lastEventAt,
+			u.now(),
+			u.now(),
+		).Scan(&uploadID)
+		if err != nil {
+			return fmt.Errorf("inserting upload: %w", err)
+		}
+
+		result, err := tx.Exec(
+			`UPDATE `+stagingTableName+` SET upload_id = $1 WHERE id = ANY($2)`,
+			uploadID, pq.Array(stagingFileIDs),
+		)
+		if err != nil {
+			return fmt.Errorf("updating staging files: %w", err)
+		}
+
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("updating staging files: rows affected: %w", err)
+		}
+		if affected != int64(len(stagingFileIDs)) {
+			return fmt.Errorf("updating staging files: not all rows were updated: %d != %d", affected, len(stagingFileIDs))
+		}
+		return nil
+	})
 	if err != nil {
 		return 0, err
 	}
-
-	result, err := tx.Exec(
-		`UPDATE `+stagingTableName+` SET upload_id = $1 WHERE id = ANY($2)`,
-		uploadID, pq.Array(stagingFileIDs),
-	)
-	if err != nil {
-		return 0, err
-	}
-
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	if affected != int64(len(stagingFileIDs)) {
-		return 0, fmt.Errorf("failed to update staging files %d != %d", affected, len(stagingFileIDs))
-	}
-
-	rollback = false
-	err = tx.Commit()
-	if err != nil {
-		return 0, err
-	}
-
 	return uploadID, nil
 }
 
