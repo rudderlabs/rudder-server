@@ -3,6 +3,10 @@ on:
     branches:
       - "prerelease/*"
 name: prerelease
+
+permissions:
+  contents: write # Required for creating releases
+  pull-requests: write # Required for release-please to create/update PRs
 jobs:
   prerelease:
     runs-on: ubuntu-latest

@@ -24,7 +24,7 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, eventType),
 			fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 		),
-		window: c.GetReloadableDurationVar(0, time.Second,
+		window: c.GetReloadableDurationVar(1, time.Second,
 			fmt.Sprintf(`Router.throttler.%s.%s.%s.timeWindow`, destType, destinationID, eventType),
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, destinationID),
 			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destType, eventType),
@@ -33,7 +33,7 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string, limiter
 		// static cost for per-event-type throttler: cost was originally introduced to address rate limit differences between different event types, so not needed when using per-event-type throttler
 		staticCost: config.SingleValueLoader(true),
 
-		onceEveryGauge: kitsync.NewOnceEvery(time.Second),
+		everyStats: kitsync.NewOnceEvery(200 * time.Millisecond),
 		rateLimitGauge: stat.NewTaggedStat("throttling_rate_limit", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"destType":      destType,

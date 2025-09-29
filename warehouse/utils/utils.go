@@ -632,6 +632,7 @@ func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName
 		AccessKeyID: accessKeyID,
 		AccessKey:   accessKey,
 		Service:     serviceName,
+		Region:      misc.GetRegionHint(),
 	}, nil
 }
 

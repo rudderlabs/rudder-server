@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.59.4](https://github.com/rudderlabs/rudder-server/compare/v1.59.3...v1.59.4) (2025-09-22)
+
+
+### Bug Fixes
+
+* keydb grpc config ([#6370](https://github.com/rudderlabs/rudder-server/issues/6370)) ([e497ce6](https://github.com/rudderlabs/rudder-server/commit/e497ce6a3da83e188ae9c13b243917fd62528b6a))
+
+## [1.59.3](https://github.com/rudderlabs/rudder-server/compare/v1.59.2...v1.59.3) (2025-09-19)
+
+
+### Bug Fixes
+
+* naming collision in redis throttling configuration ([#6365](https://github.com/rudderlabs/rudder-server/issues/6365)) ([c8cedd5](https://github.com/rudderlabs/rudder-server/commit/c8cedd5fab633bb5770afda2e98657c2bf0e5988))
+
+## [1.59.2](https://github.com/rudderlabs/rudder-server/compare/v1.59.1...v1.59.2) (2025-09-17)
+
+
+### Bug Fixes
+
+* missing keydb client stats ([#6360](https://github.com/rudderlabs/rudder-server/issues/6360)) ([5e395ad](https://github.com/rudderlabs/rudder-server/commit/5e395ad48376152f9ba7d7758b98ffd31a860667))
+
+## [1.59.1](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.59.1) (2025-09-17)
+
+
+### Bug Fixes
+
+* add outgoing metrics to proxy flow ([#6355](https://github.com/rudderlabs/rudder-server/issues/6355)) ([b2e5c8d](https://github.com/rudderlabs/rudder-server/commit/b2e5c8dac7f3a2c8be794094d642841cc62078eb))
+* aws session config region ([#6354](https://github.com/rudderlabs/rudder-server/issues/6354)) ([44110a1](https://github.com/rudderlabs/rudder-server/commit/44110a1a8253ad8e9975761f05802510858ce2b8))
+
 ## [1.59.0](https://github.com/rudderlabs/rudder-server/compare/v1.58.0...v1.59.0) (2025-09-15)
 
 

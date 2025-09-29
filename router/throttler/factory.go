@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -33,8 +34,13 @@ type (
 )
 
 type Factory interface {
+	// GetPickupThrottler returns a PickupThrottler for the given destination type, ID, and event type.
 	GetPickupThrottler(destType, destID, eventType string) PickupThrottler
+	// GetActivePickupThrottlers returns all instantiated PickupThrottlers for the given destination ID.
+	GetActivePickupThrottlers(destinationID string) []PickupThrottler
+	// GetDeliveryThrottler returns a DeliveryThrottler for the given destination type, ID, and endpoint path.
 	GetDeliveryThrottler(destType, destID, endpointPath string) DeliveryThrottler
+	// Shutdown gracefully shuts down the factory and all its throttlers.
 	Shutdown()
 }
 
@@ -43,7 +49,7 @@ func NewFactory(config *config.Config, stats stats.Stats, log logger.Logger) (Fa
 	f := &factory{
 		config:                   config,
 		Stats:                    stats,
-		pickupThrottlers:         make(map[string]PickupThrottler),
+		pickupThrottlers:         &pickupThrottlers{all: make(map[string]map[string]PickupThrottler)},
 		allEventTypesPickupAlgos: make(map[string]adaptive.Algorithm),
 		deliveryThrottlers:       make(map[string]DeliveryThrottler),
 		log:                      log,
@@ -61,17 +67,16 @@ type factory struct {
 	staticLimiter   limiter // limiter to use when static throttling is enabled
 	adaptiveLimiter limiter // limiter to use when adaptive throttling is enabled
 
-	mu                       sync.RWMutex                  // protects the two maps below
-	pickupThrottlers         map[string]PickupThrottler    // map key is the destinationID:eventType
+	mu                       sync.RWMutex                  // protects the resources below
+	pickupThrottlers         *pickupThrottlers             // map key is the destinationID:eventType
 	allEventTypesPickupAlgos map[string]adaptive.Algorithm // map key is the destinationID
 	deliveryThrottlers       map[string]DeliveryThrottler  // map key is the destinationID:endpointPath
 }
 
 func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) PickupThrottler {
-	key := destinationID + ":" + eventType
 	// Use read lock first for common case
 	f.mu.RLock()
-	if t, ok := f.pickupThrottlers[key]; ok {
+	if t, ok := f.pickupThrottlers.Get(destinationID, eventType); ok {
 		f.mu.RUnlock()
 		return t
 	}
@@ -80,7 +85,7 @@ func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	// Double-check after acquiring write lock
-	if t, ok := f.pickupThrottlers[key]; ok {
+	if t, ok := f.pickupThrottlers.Get(destinationID, eventType); ok {
 		return t
 	}
 	allEventsAlgorithm, ok := f.allEventTypesPickupAlgos[destinationID]
@@ -93,10 +98,7 @@ func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) 
 		fmt.Sprintf(`Router.throttler.%s.%s.adaptiveEnabled`, destType, destinationID),
 		fmt.Sprintf(`Router.throttler.%s.adaptiveEnabled`, destType),
 		"Router.throttler.adaptiveEnabled",
-		// TODO: delete the following deprecated keys in the future
-		fmt.Sprintf(`Router.throttler.adaptive.%s.%s.enabled`, destType, destinationID),
-		fmt.Sprintf(`Router.throttler.adaptive.%s.enabled`, destType),
-		"Router.throttler.adaptive.enabled")
+	)
 
 	log := f.log.Withn(
 		obskit.DestinationType(destType),
@@ -110,8 +112,17 @@ func (f *factory) GetPickupThrottler(destType, destinationID, eventType string) 
 		static.NewThrottler(destType, destinationID, eventType, f.staticLimiter, f.config, f.Stats, log.Withn(logger.NewStringField("throttlerType", "static"))),
 		adaptive.NewThrottler(destType, destinationID, eventType, perEventAlgorithm, allEventsAlgorithm, f.adaptiveLimiter, f.config, f.Stats, log.Withn(logger.NewStringField("throttlerType", "adaptive"))),
 	)
-	f.pickupThrottlers[key] = t
+	f.pickupThrottlers.Set(destinationID, eventType, t)
 	return t
+}
+
+func (f *factory) GetActivePickupThrottlers(destinationID string) []PickupThrottler {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	if destThrottlers, ok := f.pickupThrottlers.all[destinationID]; ok {
+		return lo.Values(destThrottlers)
+	}
+	return nil
 }
 
 func (f *factory) GetDeliveryThrottler(destType, destinationID, endpointPath string) DeliveryThrottler {
@@ -146,18 +157,26 @@ func (f *factory) GetDeliveryThrottler(destType, destinationID, endpointPath str
 func (f *factory) Shutdown() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for _, t := range f.pickupThrottlers {
-		t.Shutdown()
+	for _, m := range f.pickupThrottlers.all {
+		for _, t := range m {
+			t.Shutdown()
+		}
 	}
 }
 
 func (f *factory) initThrottlerFactory() error {
 	var redisClient *redis.Client
-	if f.config.IsSet("Router.throttler.redis.addr") {
+	if f.config.IsSet("Router.throttler.redisThrottler.addr") {
 		redisClient = redis.NewClient(&redis.Options{
-			Addr:     f.config.GetString("Router.throttler.redis.addr", "localhost:6379"),
-			Username: f.config.GetString("Router.throttler.redis.username", ""),
-			Password: f.config.GetString("Router.throttler.redis.password", ""),
+			Addr: f.config.GetStringVar("localhost:6379",
+				"Router.throttler.redisThrottler.addr",
+			),
+			Username: f.config.GetStringVar("",
+				"Router.throttler.redisThrottler.username",
+			),
+			Password: f.config.GetStringVar("",
+				"Router.throttler.redisThrottler.password",
+			),
 		})
 	}
 
@@ -211,6 +230,10 @@ func (f *NewNoOpFactory) GetPickupThrottler(destName, destID, eventType string) 
 	return &noOpThrottler{}
 }
 
+func (f *NewNoOpFactory) GetActivePickupThrottlers(destinationID string) []PickupThrottler {
+	return nil
+}
+
 func (f *NewNoOpFactory) GetDeliveryThrottler(destType, destID, endpointPath string) DeliveryThrottler {
 	return &noOpDeliveryThrottler{}
 }
@@ -227,8 +250,16 @@ func (t *noOpThrottler) ResponseCodeReceived(code int) {}
 
 func (t *noOpThrottler) Shutdown() {}
 
-func (t *noOpThrottler) GetLimit() int64 {
+func (t *noOpThrottler) GetLimitPerSecond() int64 {
 	return 0
+}
+
+func (t *noOpThrottler) GetEventType() string {
+	return "all"
+}
+
+func (t *noOpThrottler) GetLastUsed() time.Time {
+	return time.Time{}
 }
 
 type noOpDeliveryThrottler struct{}
@@ -237,11 +268,29 @@ func (*noOpDeliveryThrottler) Wait(ctx context.Context) (time.Duration, error) {
 	return 0, nil
 }
 
-func (*noOpDeliveryThrottler) GetLimit() int64 {
-	return 0
-}
-
 type limiter interface {
 	Allow(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
 	AllowAfter(ctx context.Context, cost, rate, window int64, key string) (bool, time.Duration, func(context.Context) error, error)
+}
+
+type pickupThrottlers struct {
+	all map[string]map[string]PickupThrottler
+}
+
+func (p *pickupThrottlers) Get(destID, eventType string) (PickupThrottler, bool) {
+	if destThrottlers, ok := p.all[destID]; ok {
+		t, ok := destThrottlers[eventType]
+		return t, ok
+	}
+	return nil, false
+}
+
+func (p *pickupThrottlers) Set(destID, eventType string, throttler PickupThrottler) {
+	var destThrottlers map[string]PickupThrottler
+	var ok bool
+	if destThrottlers, ok = p.all[destID]; !ok {
+		destThrottlers = make(map[string]PickupThrottler)
+		p.all[destID] = destThrottlers
+	}
+	destThrottlers[eventType] = throttler
 }

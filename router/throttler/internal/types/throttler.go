@@ -14,8 +14,12 @@ type PickupThrottler interface {
 	ResponseCodeReceived(code int)
 	// Shutdown is called to clean up resources.
 	Shutdown()
-	// GetLimit returns the current limit.
-	GetLimit() int64
+	// GetLimitPerSecond returns the current limit per second.
+	GetLimitPerSecond() int64
+	// GetEventType returns the event type this throttler is associated with, or [all] if it applies to all event types.
+	GetEventType() string
+	// GetLastUsed returns the last time this throttler was used.
+	GetLastUsed() time.Time
 }
 
 type DeliveryThrottler interface {

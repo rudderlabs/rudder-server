@@ -30,12 +30,6 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string,
 			fmt.Sprintf(`Router.throttler.%s.%s.minLimit`, destType, eventType),
 			fmt.Sprintf(`Router.throttler.%s.minLimit`, destType),
 			`Router.throttler.minLimit`,
-			// TODO: delete the following deprecated keys in the future
-			fmt.Sprintf(`Router.throttler.adaptive.%s.%s.%s.minLimit`, destType, destinationID, eventType),
-			fmt.Sprintf(`Router.throttler.adaptive.%s.%s.minLimit`, destType, destinationID),
-			fmt.Sprintf(`Router.throttler.adaptive.%s.%s.minLimit`, destType, eventType),
-			fmt.Sprintf(`Router.throttler.adaptive.%s.minLimit`, destType),
-			`Router.throttler.adaptive.minLimit`,
 		),
 		maxLimit: maxLimitFunc(c, destType, destinationID,
 			[]string{
@@ -44,18 +38,12 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string,
 				fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, eventType),
 				fmt.Sprintf(`Router.throttler.%s.maxLimit`, destType),
 				`Router.throttler.maxLimit`,
-				// TODO: delete the following deprecated keys in the future
-				fmt.Sprintf(`Router.throttler.adaptive.%s.%s.%s.maxLimit`, destType, destinationID, eventType),
-				fmt.Sprintf(`Router.throttler.adaptive.%s.%s.maxLimit`, destType, destinationID),
-				fmt.Sprintf(`Router.throttler.adaptive.%s.%s.maxLimit`, destType, eventType),
-				fmt.Sprintf(`Router.throttler.adaptive.%s.maxLimit`, destType),
-				`Router.throttler.adaptive.maxLimit`,
 			},
 		),
 		// static cost for per-event-type throttler: cost was originally introduced to address rate limit differences between different event types, so not needed when using per-event-type throttler
 		staticCost: config.SingleValueLoader(true),
 
-		everyGauge: kitsync.NewOnceEvery(time.Second),
+		everyStats: kitsync.NewOnceEvery(200 * time.Millisecond),
 		limitFactorGauge: stat.NewTaggedStat("adaptive_throttler_limit_factor", stats.GaugeType, stats.Tags{
 			"destinationId": destinationID,
 			"eventType":     eventType,

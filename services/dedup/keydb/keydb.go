@@ -30,7 +30,8 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 	if len(nodeAddresses) == 0 {
 		return nil, fmt.Errorf("keydb dedup: no node addresses provided")
 	}
-	c, err := client.NewClient(client.Config{
+
+	clientConfig := client.Config{
 		Addresses:       strings.Split(nodeAddresses, ","),
 		TotalHashRanges: uint32(conf.GetInt("KeyDB.Dedup.TotalHashRanges", 128)),
 		RetryPolicy: client.RetryPolicy{
@@ -42,7 +43,34 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 			// To detect issues monitor the client metrics:
 			// https://github.com/rudderlabs/keydb/blob/v0.4.2-alpha/client/client.go#L160
 		},
-	}, log.Child("keydb"))
+		GrpcConfig: client.GrpcConfig{
+			// After a duration of this time if the client doesn't see any activity it
+			// pings the server to see if the transport is still alive.
+			KeepAliveTime: conf.GetDuration("KeyDB.Dedup.GrpcConfig.KeepAliveTime", 10, time.Second),
+			// After having pinged for keepalive check, the client waits for a duration
+			// of Timeout and if no activity is seen even after that the connection is
+			// closed.
+			KeepAliveTimeout: conf.GetDuration("KeyDB.Dedup.GrpcConfig.KeepAliveTimeout", 2, time.Second),
+			// If false, client sends keepalive pings even with no active RPCs. If true,
+			// when there are no active RPCs, KeepAliveTime and KeepAliveTimeout will be ignored and no
+			// keepalive pings will be sent.
+			DisableKeepAlivePermitWithoutStream: conf.GetBool("KeyDB.Dedup.GrpcConfig.DisableKeepAlivePermitWithoutStream", false),
+			// BackoffBaseDelay is the amount of time to backoff after the first failure.
+			BackoffBaseDelay: conf.GetDuration("KeyDB.Dedup.GrpcConfig.BackoffBaseDelay", 1, time.Second),
+			// BackoffMultiplier is the factor with which to multiply backoffs after a
+			// failed retry. Should ideally be greater than 1.
+			BackoffMultiplier: conf.GetFloat64("KeyDB.Dedup.GrpcConfig.BackoffMultiplier", 1.6),
+			// BackoffJitter is the factor with which backoffs are randomized.
+			BackoffJitter: conf.GetFloat64("KeyDB.Dedup.GrpcConfig.BackoffJitter", 0.2),
+			// BackoffMaxDelay is the upper bound of backoff delay.
+			BackoffMaxDelay: conf.GetDuration("KeyDB.Dedup.GrpcConfig.BackoffMaxDelay", 2, time.Minute),
+			// MinConnectTimeout is the minimum amount of time we are willing to give a
+			// connection to complete.
+			MinConnectTimeout: conf.GetDuration("KeyDB.Dedup.GrpcConfig.MinConnectTimeout", 20, time.Second),
+		},
+	}
+
+	c, err := client.NewClient(clientConfig, log.Child("keydb"), client.WithStats(stat))
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package adaptive
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -343,7 +344,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 		})
 	})
 
-	t.Run("GetLimit", func(t *testing.T) {
+	t.Run("GetLimitPerSecond", func(t *testing.T) {
 		t.Run("ReturnsLimitBasedOnAlgorithmFactor", func(t *testing.T) {
 			config := config.New()
 			statsStore, err := memstats.New()
@@ -361,7 +362,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			// Expected: 100 * 0.6 = 60
-			require.Equal(t, int64(60), throttler.GetLimit())
+			require.Equal(t, int64(60), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("EnforcesMinimumLimit", func(t *testing.T) {
@@ -381,7 +382,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
 			// Expected: max(10, 100 * 0.05) = max(10, 5) = 10
-			require.Equal(t, int64(10), throttler.GetLimit())
+			require.Equal(t, int64(10), throttler.GetLimitPerSecond())
 		})
 
 		t.Run("UpdatesWithAlgorithmChanges", func(t *testing.T) {
@@ -400,11 +401,11 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
-			require.Equal(t, int64(50), throttler.GetLimit())
+			require.Equal(t, int64(50), throttler.GetLimitPerSecond())
 
 			// Update algorithm factor
 			mockAlgorithm.LimitFactorValue = 0.8
-			require.Equal(t, int64(80), throttler.GetLimit())
+			require.Equal(t, int64(80), throttler.GetLimitPerSecond())
 		})
 	})
 
@@ -448,6 +449,67 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			require.True(t, mockAlgorithm.ShutdownCalled)
 		})
+	})
+
+	t.Run("GetEventType", func(t *testing.T) {
+		t.Run("ReturnsCorrectEventTypeForDifferentTypes", func(t *testing.T) {
+			config := config.New()
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+			mockLimiter := &MockLimiter{AllowResult: true}
+			mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.5}
+
+			destType := "WEBHOOK"
+			destinationID := "dest123"
+
+			// Test with different event types
+			eventTypes := []string{"track", "identify", "page", "screen", "group", "alias"}
+
+			for _, eventType := range eventTypes {
+				t.Run(fmt.Sprintf("EventType_%s", eventType), func(t *testing.T) {
+					// Set minimal valid configuration
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.minLimit", destType, destinationID, eventType), 1)
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.maxLimit", destType, destinationID, eventType), 10)
+					config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.timeWindow", destType, destinationID, eventType), "5s")
+
+					throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
+
+					returnedEventType := throttler.GetEventType()
+					require.Equal(t, eventType, returnedEventType, "Event type should match the provided event type")
+				})
+			}
+		})
+	})
+
+	t.Run("GetLastUsed", func(t *testing.T) {
+		config := config.New()
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		mockLimiter := &MockLimiter{AllowResult: true}
+		mockAlgorithm := &MockAlgorithm{LimitFactorValue: 0.5}
+
+		destType := "WEBHOOK"
+		destinationID := "dest123"
+
+		// Test with different event types
+		eventTypes := []string{"track", "identify", "page", "screen", "group", "alias"}
+
+		for _, eventType := range eventTypes {
+			t.Run(fmt.Sprintf("EventType_%s", eventType), func(t *testing.T) {
+				// Set minimal valid configuration
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.minLimit", destType, destinationID, eventType), 1)
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.maxLimit", destType, destinationID, eventType), 10)
+				config.Set(fmt.Sprintf("Router.throttler.%s.%s.%s.timeWindow", destType, destinationID, eventType), "5s")
+
+				throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
+
+				lastUsed := throttler.GetLastUsed()
+				require.Zero(t, lastUsed, "Last used should be zero before any access")
+				_, _ = throttler.CheckLimitReached(context.Background(), 1)
+				lastUsed = throttler.GetLastUsed()
+				require.NotZero(t, lastUsed, "Last used should be updated after access")
+			})
+		}
 	})
 
 	t.Run("updateGauges", func(t *testing.T) {

@@ -63,6 +63,8 @@ func (p Route) URL(baseURL string) (url.URL, error) {
 type Client struct {
 	route               Route
 	reportingServiceURL string
+	userName            string
+	password            string
 
 	httpClient *http.Client
 	stats      stats.Stats
@@ -100,6 +102,8 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Transport: &http.Transport{},
 		},
 		reportingServiceURL: reportingServiceURL,
+		userName:            conf.GetString("REPORTING_USERNAME", ""),
+		password:            conf.GetString("REPORTING_PASSWORD", ""),
 		route:               path,
 		instanceID:          conf.GetString("INSTANCE_ID", "1"),
 		moduleName:          conf.GetString("clientName", ""),
@@ -126,6 +130,7 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 			return fmt.Errorf("constructing HTTP request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.SetBasicAuth(c.userName, c.password)
 		httpRequestStart := time.Now()
 		resp, err := c.httpClient.Do(req)
 		if err != nil {

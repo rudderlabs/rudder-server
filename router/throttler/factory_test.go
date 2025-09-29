@@ -33,21 +33,21 @@ func TestFactory(t *testing.T) {
 		t.Run("when there is a 429s in the last decrease limit counter window", func(t *testing.T) {
 			ta.ResponseCodeReceived(429)
 			require.Eventually(t, func() bool {
-				return floatCheck(ta.GetLimit(), maxLimit*7/10) // reduces by 30% since there is an error in the last 1 second
-			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimit(), maxLimit*7/10)
+				return floatCheck(ta.GetLimitPerSecond(), maxLimit*7/10) // reduces by 30% since there is an error in the last 1 second
+			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimitPerSecond(), maxLimit*7/10)
 		})
 
 		t.Run("when there are no 429s in the last increase limit counter window", func(t *testing.T) {
 			require.Eventually(t, func() bool {
-				return floatCheck(ta.GetLimit(), maxLimit*8/10) // increases by 10% since there is no error in the last 2 seconds
-			}, 4*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimit(), maxLimit*8/10)
+				return floatCheck(ta.GetLimitPerSecond(), maxLimit*8/10) // increases by 10% since there is no error in the last 2 seconds
+			}, 4*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimitPerSecond(), maxLimit*8/10)
 		})
 
 		t.Run("adaptive rate limit back to disabled", func(t *testing.T) {
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			require.Eventually(t, func() bool {
-				return floatCheck(ta.GetLimit(), 0) // should be 0 since adaptive rate limiter is disabled
-			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimit(), maxLimit*8/10)
+				return floatCheck(ta.GetLimitPerSecond(), 0) // should be 0 since adaptive rate limiter is disabled
+			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimitPerSecond(), maxLimit*8/10)
 			config.Set("Router.throttler.adaptiveEnabled", true)
 		})
 
@@ -55,8 +55,8 @@ func TestFactory(t *testing.T) {
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			ta.ResponseCodeReceived(429)
 			require.Eventually(t, func() bool {
-				return floatCheck(ta.GetLimit(), maxLimit*5/10) // reduces by 30% since there is an error in the last 1 second
-			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimit(), maxLimit*5/10)
+				return floatCheck(ta.GetLimitPerSecond(), maxLimit*5/10) // reduces by 30% since there is an error in the last 1 second
+			}, 2*time.Second, 100*time.Millisecond, "limit: %d, expectedLimit: %d", ta.GetLimitPerSecond(), maxLimit*5/10)
 		})
 	})
 
@@ -97,7 +97,7 @@ func TestFactory(t *testing.T) {
 		require.NoError(t, err)
 		defer f.Shutdown()
 		ta := f.GetPickupThrottler("destName", "destID", "eventType")
-		require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimit())
+		require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimitPerSecond())
 	})
 
 	t.Run("when adaptive throttling is disabled", func(t *testing.T) {
@@ -114,7 +114,7 @@ func TestFactory(t *testing.T) {
 
 		t.Run("should use static throttler", func(t *testing.T) {
 			// Static throttler should return configured limit
-			require.EqualValues(t, 100, ta.GetLimit())
+			require.EqualValues(t, 100, ta.GetLimitPerSecond())
 		})
 
 		t.Run("should handle response codes", func(t *testing.T) {
@@ -158,6 +158,99 @@ func TestFactory(t *testing.T) {
 		})
 	})
 
+	t.Run("GetActivePickupThrottlers", func(t *testing.T) {
+		config := config.New()
+		config.Set("Router.throttler.adaptiveEnabled", true)
+		config.Set("Router.throttler.throttlerPerEventType", true)
+
+		f, err := NewFactory(config, stats.NOP, logger.NOP)
+		require.NoError(t, err)
+		defer f.Shutdown()
+
+		t.Run("should return all throttlers for a destination", func(t *testing.T) {
+			// Create throttlers for the same destination with different event types
+			ta1 := f.GetPickupThrottler("destName", "destID1", "track")
+			ta2 := f.GetPickupThrottler("destName", "destID1", "identify")
+			ta3 := f.GetPickupThrottler("destName", "destID1", "page")
+
+			// Get active throttlers for destID1
+			activeThrottlers := f.GetActivePickupThrottlers("destID1")
+			require.NotNil(t, activeThrottlers)
+			require.Len(t, activeThrottlers, 3)
+
+			// Verify all created throttlers are in the active list
+			throttlerMap := make(map[PickupThrottler]bool)
+			for _, t := range activeThrottlers {
+				throttlerMap[t] = true
+			}
+
+			require.True(t, throttlerMap[ta1], "track throttler should be in active list")
+			require.True(t, throttlerMap[ta2], "identify throttler should be in active list")
+			require.True(t, throttlerMap[ta3], "page throttler should be in active list")
+		})
+
+		t.Run("should return only throttlers for specific destination", func(t *testing.T) {
+			// Create throttlers for different destinations
+			_ = f.GetPickupThrottler("destName", "destID2", "track")
+			_ = f.GetPickupThrottler("destName", "destID2", "identify")
+			_ = f.GetPickupThrottler("destName", "destID3", "track")
+
+			// Get active throttlers for destID2
+			activeThrottlers2 := f.GetActivePickupThrottlers("destID2")
+			require.NotNil(t, activeThrottlers2)
+			require.Len(t, activeThrottlers2, 2)
+
+			// Get active throttlers for destID3
+			activeThrottlers3 := f.GetActivePickupThrottlers("destID3")
+			require.NotNil(t, activeThrottlers3)
+			require.Len(t, activeThrottlers3, 1)
+		})
+
+		t.Run("should return empty slice if destination has no throttlers", func(t *testing.T) {
+			// Check for a destination that doesn't exist yet
+			activeThrottlers := f.GetActivePickupThrottlers("destID4")
+			require.Nil(t, activeThrottlers)
+
+			// Create a throttler for this destination
+			_ = f.GetPickupThrottler("destName", "destID4", "track")
+
+			// Now it should return the throttler
+			activeThrottlers = f.GetActivePickupThrottlers("destID4")
+			require.NotNil(t, activeThrottlers)
+			require.Len(t, activeThrottlers, 1)
+		})
+
+		t.Run("should handle concurrent access to GetActivePickupThrottlers", func(t *testing.T) {
+			const numGoroutines = 10
+			const destID = "concurrentDestID"
+
+			// Create some throttlers first
+			_ = f.GetPickupThrottler("destName", destID, "track")
+			_ = f.GetPickupThrottler("destName", destID, "identify")
+
+			results := make([][]PickupThrottler, numGoroutines)
+			done := make(chan struct{}, numGoroutines)
+
+			// Launch multiple goroutines to get active throttlers
+			for i := range numGoroutines {
+				go func(index int) {
+					results[index] = f.GetActivePickupThrottlers(destID)
+					done <- struct{}{}
+				}(i)
+			}
+
+			// Wait for all goroutines
+			for range numGoroutines {
+				<-done
+			}
+
+			// All results should be consistent
+			for i := 1; i < numGoroutines; i++ {
+				require.Len(t, results[i], len(results[0]), "All goroutines should return same number of throttlers")
+			}
+		})
+	})
+
 	t.Run("factory shutdown", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.adaptiveEnabled", true)
@@ -192,7 +285,7 @@ func TestFactory(t *testing.T) {
 
 		t.Run("should use per-event configuration", func(t *testing.T) {
 			// Should use the configured max limit as starting point
-			require.EqualValues(t, 50, ta.GetLimit())
+			require.EqualValues(t, 50, ta.GetLimitPerSecond())
 		})
 	})
 
@@ -210,7 +303,7 @@ func TestFactory(t *testing.T) {
 
 			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			// Should still use adaptive because destination-specific config takes precedence
-			require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimit())
+			require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimitPerSecond())
 		})
 
 		t.Run("destination-type-specific adaptive enabled", func(t *testing.T) {
@@ -223,7 +316,7 @@ func TestFactory(t *testing.T) {
 
 			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			// Should use adaptive because destination-type config takes precedence
-			require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimit())
+			require.EqualValues(t, adaptive.DefaultMaxThrottlingLimit, ta.GetLimitPerSecond())
 		})
 	})
 
@@ -241,7 +334,7 @@ func TestFactory(t *testing.T) {
 
 			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
-			require.EqualValues(t, 100, ta.GetLimit())
+			require.EqualValues(t, 100, ta.GetLimitPerSecond())
 		})
 
 		t.Run("invalid algorithm should return error", func(t *testing.T) {
@@ -268,7 +361,7 @@ func TestFactory(t *testing.T) {
 			require.False(t, limited)
 
 			// Should return 0 limit
-			require.EqualValues(t, 0, ta.GetLimit())
+			require.EqualValues(t, 0, ta.GetLimitPerSecond())
 
 			// Should not panic on response codes
 			ta.ResponseCodeReceived(429)
@@ -380,7 +473,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with adaptive throttling enabled", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.maxLimit", int64(100))
 			config.Set("Router.throttler.minLimit", int64(10))
@@ -400,7 +493,7 @@ func TestFactoryWithRedis(t *testing.T) {
 				require.False(t, limited)
 
 				// Should use adaptive limit
-				require.EqualValues(t, 100, ta.GetLimit())
+				require.EqualValues(t, 100, ta.GetLimitPerSecond())
 			})
 
 			t.Run("should handle response codes", func(t *testing.T) {
@@ -413,7 +506,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with static throttling", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(50))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
@@ -424,13 +517,13 @@ func TestFactoryWithRedis(t *testing.T) {
 
 			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
-			require.EqualValues(t, 50, ta.GetLimit())
+			require.EqualValues(t, 50, ta.GetLimitPerSecond())
 		})
 
 		t.Run("should work with multiple destinations", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID1.limit", int64(30))
 			config.Set("Router.throttler.destName.destID2.limit", int64(60))
@@ -444,8 +537,8 @@ func TestFactoryWithRedis(t *testing.T) {
 			ta1 := f.GetPickupThrottler("destName", "destID1", "eventType")
 			ta2 := f.GetPickupThrottler("destName", "destID2", "eventType")
 
-			require.EqualValues(t, 30, ta1.GetLimit())
-			require.EqualValues(t, 60, ta2.GetLimit())
+			require.EqualValues(t, 30, ta1.GetLimitPerSecond())
+			require.EqualValues(t, 60, ta2.GetLimitPerSecond())
 
 			// Both should be able to process events independently
 			limited1, err := ta1.CheckLimitReached(context.Background(), 1)
@@ -462,7 +555,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with adaptive throttling enabled", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-sorted-set")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.maxLimit", int64(200))
 			config.Set("Router.throttler.minLimit", int64(20))
@@ -480,11 +573,11 @@ func TestFactoryWithRedis(t *testing.T) {
 				require.NoError(t, err)
 				require.False(t, limited)
 
-				require.EqualValues(t, 200, ta.GetLimit())
+				require.EqualValues(t, 200, ta.GetLimitPerSecond())
 			})
 
 			t.Run("should adapt limits based on response codes", func(t *testing.T) {
-				initialLimit := ta.GetLimit()
+				initialLimit := ta.GetLimitPerSecond()
 
 				// Send 429 to trigger adaptation
 				ta.ResponseCodeReceived(429)
@@ -504,7 +597,7 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("with static throttling", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-sorted-set")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 			config.Set("Router.throttler.adaptiveEnabled", false)
 			config.Set("Router.throttler.destName.destID.limit", int64(75))
 			config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
@@ -515,7 +608,7 @@ func TestFactoryWithRedis(t *testing.T) {
 
 			ta := f.GetPickupThrottler("destName", "destID", "eventType")
 			require.NotNil(t, ta)
-			require.EqualValues(t, 75, ta.GetLimit())
+			require.EqualValues(t, 75, ta.GetLimitPerSecond())
 		})
 	})
 
@@ -545,9 +638,9 @@ func TestFactoryWithRedis(t *testing.T) {
 		t.Run("should handle redis with credentials", func(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.limiter.type", "redis-gcra")
-			config.Set("Router.throttler.redis.addr", redisContainer.Addr)
-			config.Set("Router.throttler.redis.username", "")
-			config.Set("Router.throttler.redis.password", "")
+			config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
+			config.Set("Router.throttler.redisThrottler.username", "")
+			config.Set("Router.throttler.redisThrottler.password", "")
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.maxLimit", int64(100))
 			config.Set("Router.throttler.minLimit", int64(10))
@@ -572,7 +665,7 @@ func TestFactoryWithRedis(t *testing.T) {
 
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-gcra")
-		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.maxLimit", int64(120))
 		config.Set("Router.throttler.minLimit", int64(12))
@@ -601,7 +694,7 @@ func TestFactoryWithRedis(t *testing.T) {
 	t.Run("redis performance under load", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-gcra")
-		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", false)
 		config.Set("Router.throttler.destName.destID.limit", int64(1000))
 		config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
@@ -625,7 +718,7 @@ func TestFactoryWithRedis(t *testing.T) {
 	t.Run("redis per-event type throttling", func(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.limiter.type", "redis-sorted-set")
-		config.Set("Router.throttler.redis.addr", redisContainer.Addr)
+		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
 		config.Set("Router.throttler.destName.destID.track.maxLimit", int64(80))
@@ -642,8 +735,8 @@ func TestFactoryWithRedis(t *testing.T) {
 		identifyThrottler := f.GetPickupThrottler("destName", "destID", "identify")
 
 		// Different event types should have different limits
-		require.EqualValues(t, 80, trackThrottler.GetLimit())
-		require.EqualValues(t, 40, identifyThrottler.GetLimit())
+		require.EqualValues(t, 80, trackThrottler.GetLimitPerSecond())
+		require.EqualValues(t, 40, identifyThrottler.GetLimitPerSecond())
 
 		// Both should be able to process events independently
 		trackLimited, err := trackThrottler.CheckLimitReached(context.Background(), 1)

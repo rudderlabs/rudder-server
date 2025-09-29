@@ -2,6 +2,9 @@ name: Dispatch deploy event
 
 on: workflow_dispatch
 
+permissions:
+  contents: read # Required for basic repository access
+
 jobs:
   dispatch:
     runs-on: ubuntu-latest

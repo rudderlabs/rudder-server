@@ -3,6 +3,10 @@ on:
     branches:
       - "release/*"
 name: release-please
+
+permissions:
+  contents: write # Required for creating releases
+  pull-requests: write # Required for release-please to create/update PRs
 jobs:
   release-please:
     runs-on: ubuntu-latest

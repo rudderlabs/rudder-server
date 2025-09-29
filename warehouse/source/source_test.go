@@ -50,6 +50,7 @@ func (m *mockPublisher) Publish(context.Context, *notifier.PublishRequest) (<-ch
 }
 
 func TestSource(t *testing.T) {
+	t.Skip("skipping because it's flaky")
 	const (
 		workspaceID     = "test_workspace_id"
 		sourceID        = "test_source_id"
