@@ -17,20 +17,20 @@ type HttpClientOptionalArgs struct {
 	Transport          http.RoundTripper
 	Augmenter          oauthexts.Augmenter
 	Locker             *sync.PartitionRWLocker
-	OAuthHandler       *oauth.OAuthHandler
+	OAuthHandler       oauth.OAuthHandler
 	ExpirationTimeDiff time.Duration
 	Logger             logger.Logger
 }
 
 // NewOAuthHttpClient returns a http client that will add the appropriate authorization information to oauth requests.
-func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCache *oauth.Cache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
+func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCache *oauth.OauthTokenCache, backendConfig backendconfig.BackendConfig, getAuthErrorCategory func([]byte) (string, error), opArgs *HttpClientOptionalArgs) *http.Client {
 	oauthHandler := opArgs.OAuthHandler
 	originalTransport := opArgs.Transport
 	if oauthHandler == nil {
 		oauthHandler = oauth.NewOAuthHandler(backendConfig,
 			oauth.WithCache(*tokenCache),
 			oauth.WithLocker(opArgs.Locker),
-			oauth.WithExpirationTimeDiff(opArgs.ExpirationTimeDiff),
+			oauth.WithRefreshBeforeExpiry(opArgs.ExpirationTimeDiff),
 			oauth.WithLogger(opArgs.Logger),
 			oauth.WithStats(stats.Default),
 		)

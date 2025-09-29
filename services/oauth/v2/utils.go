@@ -4,13 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var (
@@ -18,29 +15,14 @@ var (
 	ErrPermissionOrTokenRevoked = errors.New("problem with user permission or access/refresh token have been revoked")
 )
 
-func GetOAuthActionStatName(stat string) string {
-	return fmt.Sprintf("oauth_action_%v", stat)
-}
-
-func checkIfTokenExpired(secret AccountSecret, oldSecret json.RawMessage, expiryTimeDiff time.Duration, statsHandler OAuthStatsHandler) bool {
-	if secret.ExpirationDate != "" && isTokenExpired(secret.ExpirationDate, expiryTimeDiff, &statsHandler) {
-		return true
-	}
-	if !routerutils.IsNotEmptyString(string(oldSecret)) {
-		return false
-	}
-	return bytes.Equal(secret.Secret, oldSecret)
-}
-
-func isTokenExpired(expirationDate string, expirationTimeDiff time.Duration, statsHandler *OAuthStatsHandler) bool {
-	date, err := time.Parse(misc.RFC3339Milli, expirationDate)
+// isOauthTokenExpired checks if the token is expired or is about to expire within the refreshBeforeExpiry duration.
+// If the token is not expired, but its secret is the same as the previous secret, it is also considered to be expired.
+func isOauthTokenExpired(oauthToken OAuthToken, previousSecret json.RawMessage, refreshBeforeExpiry time.Duration, statsHandler OAuthStatsHandler) bool {
+	expires, err := oauthToken.Expires(refreshBeforeExpiry)
 	if err != nil {
-		statsHandler.Increment("proactive_token_refresh", stats.Tags{
-			"errorMessage": "parsing failed",
-		})
-		return false
+		statsHandler.Increment("proactive_token_refresh", stats.Tags{"errorMessage": "parsing failed"})
 	}
-	return date.Before(time.Now().Add(expirationTimeDiff))
+	return expires || bytes.Equal(oauthToken.Secret, previousSecret)
 }
 
 func IsValidAuthErrorCategory(category string) bool {

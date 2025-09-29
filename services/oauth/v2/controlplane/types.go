@@ -14,9 +14,9 @@ type Request struct {
 	ContentType    string
 	URL            string
 	Method         string
-	DestName       string
+	DestType       string
 	RequestType    string // This is to add more refined stat tags
-	BasicAuthUser  identity.Identifier
+	AuthIdentity   identity.Identifier
 	rudderFlowType common.RudderFlow
 }
 

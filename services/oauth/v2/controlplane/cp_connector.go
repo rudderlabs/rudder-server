@@ -93,11 +93,11 @@ func WithCpClientTimeout(timeout time.Duration) func(*connector) {
 // processResponse is a helper function to process the response from the control plane
 func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var respData []byte
-	var ioUtilReadErr error
+	var err error
 	if resp != nil && resp.Body != nil {
-		respData, ioUtilReadErr = io.ReadAll(resp.Body)
-		if ioUtilReadErr != nil {
-			return http.StatusInternalServerError, ioUtilReadErr.Error()
+		respData, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return http.StatusInternalServerError, err.Error()
 		}
 	}
 	// Detecting content type of the respData
@@ -115,7 +115,7 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	cpStatTags := stats.Tags{
 		"url":          cpReq.URL,
 		"requestType":  cpReq.RequestType,
-		"destType":     cpReq.DestName,
+		"destType":     cpReq.DestType,
 		"method":       cpReq.Method,
 		"flowType":     string(cpReq.rudderFlowType),
 		"oauthVersion": "v2",
@@ -137,7 +137,7 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 		return http.StatusBadRequest, err.Error()
 	}
 	// Authorisation setting
-	req.SetBasicAuth(cpReq.BasicAuthUser.BasicAuth())
+	req.SetBasicAuth(cpReq.AuthIdentity.BasicAuth())
 
 	// Set content-type in order to send the body in request correctly
 	if cpReq.ContentType != "" {
@@ -145,24 +145,24 @@ func (c *connector) CpApiCall(cpReq *Request) (int, string) {
 	}
 
 	cpApiDoTimeStart := time.Now()
-	res, doErr := c.client.Do(req)
+	res, err := c.client.Do(req)
 	defer func() { httputil.CloseResponse(res) }()
 	c.stats.NewTaggedStat("oauth_v2_cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
 	c.logger.Debugn("[request] :: destination request sent")
-	if doErr != nil {
+	if err != nil {
 		// Abort on receiving an error
 		c.logger.Errorn("[request] :: destination request failed",
-			obskit.Error(doErr))
-		errorType := GetErrorType(doErr)
+			obskit.Error(err))
+		errorType := GetErrorType(err)
 		cpStatTags["error"] = errorType
 		c.stats.NewTaggedStat("oauth_v2_cp_requests", stats.CountType, cpStatTags).Count(1)
 
-		resp := doErr.Error()
+		resp := err.Error()
 		if errorType != common.None {
 			resp = fmt.Sprintf(`{
 				%q: %q,
 				"message": 	%q
-			}`, common.ErrorType, errorType, doErr.Error())
+			}`, common.ErrorType, errorType, err.Error())
 		}
 		return http.StatusInternalServerError, resp
 	}
