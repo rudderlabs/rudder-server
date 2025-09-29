@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	utils "github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
@@ -93,6 +94,7 @@ func (g *GlueSchemaRepository) CreateTable(ctx context.Context, tableName string
 	tableInput := &types.TableInput{
 		Name:          aws.String(tableName),
 		PartitionKeys: partitionKeys,
+		TableType:     aws.String("EXTERNAL_TABLE"),
 	}
 
 	// create table request
@@ -271,7 +273,8 @@ func (g *GlueSchemaRepository) updateTable(ctx context.Context, tableName string
 	glueInput := &glue.UpdateTableInput{
 		DatabaseName: aws.String(g.Namespace),
 		TableInput: &types.TableInput{
-			Name: aws.String(tableName),
+			Name:      aws.String(tableName),
+			TableType: aws.String("EXTERNAL_TABLE"),
 		},
 	}
 
