@@ -1,29 +1,23 @@
 package flusher
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"time"
 
 	"github.com/lib/pq"
 
-	"github.com/cenkalti/backoff"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher/aggregator"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 type Flusher struct {
@@ -32,10 +26,8 @@ type Flusher struct {
 	db                 *sql.DB
 	maxOpenConnections int
 
-	aggregator      aggregator.Aggregator
-	httpClient      *http.Client
-	useCommonClient config.ValueLoader[bool]
-	commonClient    *client.Client
+	aggregator   aggregator.Aggregator
+	commonClient *client.Client
 
 	instanceId string
 	table      string
@@ -65,18 +57,12 @@ type Flusher struct {
 	deleteReportsTimer      stats.Measurement
 	vacuumReportsTimer      stats.Measurement
 	concurrentRequests      stats.Measurement
-	reqLatency              stats.Measurement
-	reqCount                stats.Measurement
-	sentBytes               stats.Measurement
 	flushLag                stats.Measurement
 
 	commonTags stats.Tags
-
-	// DEPRECATED: Remove this after migration to commonClient.
-	reportingURL string
 }
 
-func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table, reportingURL string, commonClient *client.Client, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
+func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.Config, table string, commonClient *client.Client, aggregator aggregator.Aggregator, module string) (*Flusher, error) {
 	maxOpenConns := conf.GetIntVar(4, 1, "Reporting.flusher.maxOpenConnections")
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
 	flushWindow := conf.GetReloadableDurationVar(60, time.Second, "Reporting.flusher.flushWindow")
@@ -90,10 +76,6 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	vacuumThresholdDeletedRows := conf.GetReloadableIntVar(100000, 1, "Reporting.flusher.vacuumThresholdDeletedRows")
 	vacuumInterval := conf.GetReloadableDurationVar(15, time.Minute, "Reporting.flusher.vacuumInterval", "Reporting.vacuumInterval")
 	vacuumThresholdBytes := conf.GetReloadableInt64Var(10*bytesize.GB, 1, "Reporting.flusher.vacuumThresholdBytes", "Reporting.vacuumThresholdBytes")
-
-	tr := &http.Transport{}
-	httpClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-	useCommonClient := conf.GetReloadableBoolVar(false, "Reporting.flusher.useCommonClient")
 
 	f := Flusher{
 		db:                         db,
@@ -117,13 +99,8 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 		maxOpenConnections:                  maxOpenConns,
 		aggressiveFlushEnabled:              aggressiveFlushEnabled,
 		lagThresholdForAggresiveFlushInMins: lagThresholdForAggresiveFlushInMins,
-		httpClient:                          httpClient,
 		module:                              module,
-		useCommonClient:                     useCommonClient,
 		commonClient:                        commonClient,
-
-		// DEPRECATED: Remove this after migration to commonClient.
-		reportingURL: reportingURL,
 	}
 
 	f.initCommonTags()
@@ -157,9 +134,6 @@ func (f *Flusher) initStats(tags map[string]string) {
 	f.vacuumReportsTimer = f.stats.NewTaggedStat("reporting_flusher_vacuum_reports_duration_seconds", stats.TimerType, tags)
 
 	f.concurrentRequests = f.stats.NewTaggedStat("reporting_flusher_concurrent_requests_in_progress", stats.GaugeType, tags)
-	f.reqLatency = f.stats.NewTaggedStat("reporting_flusher_http_request_duration_seconds", stats.TimerType, tags)
-	f.reqCount = f.stats.NewTaggedStat("reporting_flusher_http_requests_total", stats.CountType, tags)
-	f.sentBytes = f.stats.NewTaggedStat("reporting_flusher_sent_bytes", stats.HistogramType, tags)
 
 	f.flushLag = f.stats.NewTaggedStat("reporting_flusher_lag_seconds", stats.GaugeType, tags)
 }
@@ -318,7 +292,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 		batch := aggReports[i:end]
 
 		g.Go(func() error {
-			if err := f.makePOSTRequest(ctx, f.reportingURL, batch); err != nil {
+			if err := f.commonClient.Send(ctx, batch); err != nil {
 				return err
 			}
 			return nil
@@ -382,55 +356,4 @@ func (f *Flusher) vacuum(ctx context.Context) error {
 	f.lastVacuum = time.Now()
 	f.deletedRows = 0
 	return nil
-}
-
-// DEPRECATED: Remove this after migration to commonClient, use f.commonClient.Send instead.
-func (f *Flusher) makePOSTRequest(ctx context.Context, url string, payload interface{}) error {
-	if f.useCommonClient.Load() {
-		return f.commonClient.Send(ctx, payload)
-	}
-
-	payloadBytes, err := jsonrs.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	o := func() error {
-		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(payloadBytes))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		start := time.Now()
-		resp, err := f.httpClient.Do(req)
-		if err != nil {
-			return err
-		}
-		f.reqLatency.Since(start)
-		f.reqCount.Count(1)
-		f.sentBytes.Observe(float64(len(payloadBytes)))
-
-		defer func() { httputil.CloseResponse(resp) }()
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("error response body from reporting %w", err)
-		}
-
-		if !f.isHTTPRequestSuccessful(resp.StatusCode) {
-			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
-		}
-		return err
-	}
-
-	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
-	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
-		f.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
-	})
-	if err != nil {
-		f.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
-	}
-	return err
-}
-
-func (f *Flusher) isHTTPRequestSuccessful(status int) bool {
-	return status >= 200 && status < 300
 }
