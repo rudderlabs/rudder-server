@@ -124,7 +124,6 @@ func NewErrorDetailReporter(
 	statsInstance stats.Stats,
 	conf *config.Config,
 ) *ErrorDetailReporter {
-
 	mainLoopSleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := conf.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
 	maxConcurrentRequests := conf.GetReloadableIntVar(32, 1, "Reporting.maxConcurrentRequests")
