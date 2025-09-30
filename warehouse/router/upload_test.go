@@ -786,11 +786,10 @@ func TestUploadJob_GetLoadFilesMetadata(t *testing.T) {
 			conf := config.New()
 
 			job := &UploadJob{
-				ctx:            ctx,
-				db:             db,
-				upload:         model.Upload{},
-				stagingFileIDs: []int64{1, 2, 3},
-				logger:         logger.NOP,
+				ctx:    ctx,
+				db:     db,
+				upload: model.Upload{},
+				logger: logger.NOP,
 			}
 			job.upload.ID = createUpload(t, ctx, db)
 			loadFiles := []model.LoadFile{
@@ -871,12 +870,11 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			fileManagerFactory: func(settings *filemanager.Settings) (filemanager.FileManager, error) {
 				return mockFileManager, nil
 			},
-			loadFilesRepo:  mockLoadFilesRepo,
-			stagingFiles:   stagingFiles,
-			stagingFileIDs: lo.Map(stagingFiles, func(f *model.StagingFile, _ int) int64 { return f.ID }),
-			statsFactory:   stats.NOP,
-			now:            time.Now,
-			logger:         logger.NOP,
+			loadFilesRepo: mockLoadFilesRepo,
+			stagingFiles:  stagingFiles,
+			statsFactory:  stats.NOP,
+			now:           time.Now,
+			logger:        logger.NOP,
 		}
 		job.stats.objectsDeleted = stats.NOP.NewStat("objects_deleted_count", stats.GaugeType)
 		job.stats.objectsDeletionTime = stats.NOP.NewStat("objects_deletion_time", stats.GaugeType)
