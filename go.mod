@@ -87,7 +87,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/keydb v1.1.0
+	github.com/rudderlabs/keydb v1.2.0
 	github.com/rudderlabs/rudder-go-kit v0.62.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.5
 	github.com/rudderlabs/rudder-schemas v0.7.0
@@ -183,6 +183,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
+	github.com/buraksezer/consistent v0.10.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
