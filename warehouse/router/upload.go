@@ -96,12 +96,11 @@ type UploadJob struct {
 	logger               logger.Logger
 	statsFactory         stats.Stats
 
-	upload         model.Upload
-	warehouse      model.Warehouse
-	stagingFiles   []*model.StagingFile
-	stagingFileIDs []int64
-	alertSender    alerta.AlertSender
-	now            func() time.Time
+	upload       model.Upload
+	warehouse    model.Warehouse
+	stagingFiles []*model.StagingFile
+	alertSender  alerta.AlertSender
+	now          func() time.Time
 
 	pendingTableUploads      []model.PendingTableUpload
 	pendingTableUploadsRepo  pendingTableUploadsRepo
@@ -192,7 +191,6 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		upload:               dto.Upload,
 		warehouse:            dto.Warehouse,
 		stagingFiles:         dto.StagingFiles,
-		stagingFileIDs:       repo.StagingFileIDs(dto.StagingFiles),
 
 		pendingTableUploadsRepo: repo.NewUploads(f.db, repo.WithStats(f.statsFactory)),
 		pendingTableUploads:     []model.PendingTableUpload{},

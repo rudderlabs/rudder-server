@@ -14,7 +14,6 @@ import (
 // parquetLoader is used for generating parquet load files.
 type parquetLoader struct {
 	destType string
-	Schema   []string
 	Values   []interface{}
 	writer   LoadFileWriter
 }
