@@ -354,17 +354,16 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 			s.expires_at
 		FROM wh_schemas s
 		CROSS JOIN LATERAL jsonb_each(s.schema::jsonb) AS j
-		WHERE
-			s.destination_id = $1 AND
-			s.namespace = $2 AND
-			s.table_name = '' AND
-			NOT EXISTS (
-				SELECT 1 FROM wh_schemas s2
-				WHERE s2.source_id = s.source_id AND
-					s2.namespace = s.namespace AND
-					s2.destination_id = s.destination_id AND
-					s2.table_name = j.key
-			)
+		LEFT JOIN wh_schemas s2
+		  ON s2.source_id = s.source_id
+		  AND s2.namespace = s.namespace
+		  AND s2.destination_id = s.destination_id
+		  AND s2.table_name = j.key
+		WHERE s.destination_id = $1
+		  AND s.namespace = $2
+		  AND s.table_name = ''
+		  AND s2.id IS NULL
+		ON CONFLICT (source_id, destination_id, namespace, table_name) DO NOTHING;
 	`
 	_, err := tx.ExecContext(ctx, query, destID, namespace, now.UTC())
 	if err != nil {
