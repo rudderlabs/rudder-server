@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
@@ -360,16 +359,6 @@ func (a *App) Run(ctx context.Context) error {
 		a.bcManager.Start(gCtx)
 		return nil
 	})
-	g.Go(func() error {
-		sqlutil.MonitorDatabase(
-			gCtx,
-			a.conf,
-			a.statsFactory,
-			a.db.DB,
-			"warehouse",
-		)
-		return nil
-	})
 
 	if mode.IsDegraded(a.config.runningMode) {
 		a.logger.Infon("Running warehouse service in degraded mode...")
@@ -463,10 +452,6 @@ func (a *App) Run(ctx context.Context) error {
 
 	g.Go(func() error {
 		return a.api.Start(gCtx)
-	})
-	g.Go(func() error {
-		a.notifier.Monitor(gCtx)
-		return nil
 	})
 	g.Go(func() error {
 		<-gCtx.Done()
