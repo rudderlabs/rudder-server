@@ -1,6 +1,12 @@
 package salesforcebulk
 
-import backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+import (
+	"context"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/backend-config/identity"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
+)
 
 // MockSalesforceAPIService is a mock implementation of SalesforceAPIServiceInterface
 type MockSalesforceAPIService struct {
@@ -91,23 +97,23 @@ func (m *MockBackendConfig) AccessToken() string {
 	return ""
 }
 
-func (m *MockBackendConfig) Get(ctx interface{}) (map[string]backendconfig.ConfigT, error) {
+func (m *MockBackendConfig) Get(ctx context.Context) (map[string]backendconfig.ConfigT, error) {
 	return nil, nil
 }
 
-func (m *MockBackendConfig) Identity() interface{} {
+func (m *MockBackendConfig) Identity() identity.Identifier {
+	return &identity.EmptyIdentifier{}
+}
+
+func (m *MockBackendConfig) WaitForConfig(ctx context.Context) {}
+
+func (m *MockBackendConfig) Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 	return nil
 }
 
-func (m *MockBackendConfig) WaitForConfig(ctx interface{}) {}
-
-func (m *MockBackendConfig) Subscribe(ctx interface{}, topic interface{}) interface{} {
-	return nil
-}
+func (m *MockBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {}
 
 func (m *MockBackendConfig) Stop() {}
-
-func (m *MockBackendConfig) StartWithIDs(ctx interface{}, workspaces string) {}
 
 // NewMockBackendConfig creates a new mock backend config
 func NewMockBackendConfig() *MockBackendConfig {
