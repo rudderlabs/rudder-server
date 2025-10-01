@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.60.0](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.60.0) (2025-09-30)
+
+
+### Features
+
+* **router:** jobsdb pickup query batch size adapting to throttling limit ([#6338](https://github.com/rudderlabs/rudder-server/issues/6338)) ([c38b971](https://github.com/rudderlabs/rudder-server/commit/c38b9717dfa2beca4fc79675e3a5abe7b0e90725))
+
+
+### Bug Fixes
+
+* add outgoing metrics to proxy flow ([#6355](https://github.com/rudderlabs/rudder-server/issues/6355)) ([23a5c81](https://github.com/rudderlabs/rudder-server/commit/23a5c813b8c2d6c71b776260a5e687bf8e3e5abb))
+* aws session config region ([#6354](https://github.com/rudderlabs/rudder-server/issues/6354)) ([23a5c81](https://github.com/rudderlabs/rudder-server/commit/23a5c813b8c2d6c71b776260a5e687bf8e3e5abb))
+* dedup gauge ([#6359](https://github.com/rudderlabs/rudder-server/issues/6359)) ([a562df4](https://github.com/rudderlabs/rudder-server/commit/a562df4fc63c99850864a188298d51696c0038e9))
+* keydb consistent hashing ([#6403](https://github.com/rudderlabs/rudder-server/issues/6403)) ([3ee79b2](https://github.com/rudderlabs/rudder-server/commit/3ee79b243c9524267da6cff620f95cc9d6d6cb24))
+* keydb grpc config ([#6370](https://github.com/rudderlabs/rudder-server/issues/6370)) ([cf04743](https://github.com/rudderlabs/rudder-server/commit/cf04743ccb7be76648aa9493b4e9b21f9844dcfe))
+* missing keydb client stats ([#6360](https://github.com/rudderlabs/rudder-server/issues/6360)) ([c42e5c8](https://github.com/rudderlabs/rudder-server/commit/c42e5c86a9215dd5e929f17faff885d917c92313))
+* naming collision in redis throttling configuration ([#6365](https://github.com/rudderlabs/rudder-server/issues/6365)) ([4f87afb](https://github.com/rudderlabs/rudder-server/commit/4f87afbeab52464f247a8b6eda8f368fe46d16b9))
+* set table type to external for glue ([#6386](https://github.com/rudderlabs/rudder-server/issues/6386)) ([9017582](https://github.com/rudderlabs/rudder-server/commit/901758283a5f3e6d562f3509214302d37a2841f9))
+* ut mirroring tests ([#6341](https://github.com/rudderlabs/rudder-server/issues/6341)) ([51dd4f7](https://github.com/rudderlabs/rudder-server/commit/51dd4f7821503cd7277114fbdbabbe7fe444eb6b))
+* **warehouse:** alter namespace col size ([#6379](https://github.com/rudderlabs/rudder-server/issues/6379)) ([fbba498](https://github.com/rudderlabs/rudder-server/commit/fbba498f6fcf04f376b635de741dcd0d4270b4ac))
+* **warehouse:** skip extract async job failing test ([#6378](https://github.com/rudderlabs/rudder-server/issues/6378)) ([89a4d1e](https://github.com/rudderlabs/rudder-server/commit/89a4d1e5f2f6d1e84e24b8cc4ee3f580b40c04ff))
+
+
+### Miscellaneous
+
+* add authentication to reporting client ([#6384](https://github.com/rudderlabs/rudder-server/issues/6384)) ([502d2b0](https://github.com/rudderlabs/rudder-server/commit/502d2b0acbbd12a37801a97cd12598ec5dc1990c))
+* add explicit permissions for workflows ([#6381](https://github.com/rudderlabs/rudder-server/issues/6381)) ([1d22623](https://github.com/rudderlabs/rudder-server/commit/1d22623505e2a1c759c8cd5a7dd84c82996e3deb))
+* add readme for async destinaiton module ([#6356](https://github.com/rudderlabs/rudder-server/issues/6356)) ([cc80333](https://github.com/rudderlabs/rudder-server/commit/cc8033316a83c0eb0b69763e523d1b1c9f2b01c6))
+* configurable event name trimming for reporting ([#6394](https://github.com/rudderlabs/rudder-server/issues/6394)) ([7628efa](https://github.com/rudderlabs/rudder-server/commit/7628efaac005d3c8e1a7efa37456e1f8b3608ccd))
+* remove deprecated throttling configuration keys ([#6377](https://github.com/rudderlabs/rudder-server/issues/6377)) ([8d667b7](https://github.com/rudderlabs/rudder-server/commit/8d667b7307c16f959d46cc345bc1be3784ab58b9))
+* upgrade build-scan-push-action to v1.8.0 ([#6350](https://github.com/rudderlabs/rudder-server/issues/6350)) ([51dd4f7](https://github.com/rudderlabs/rudder-server/commit/51dd4f7821503cd7277114fbdbabbe7fe444eb6b))
+
 ## [1.59.4](https://github.com/rudderlabs/rudder-server/compare/v1.59.3...v1.59.4) (2025-09-22)
 
 
