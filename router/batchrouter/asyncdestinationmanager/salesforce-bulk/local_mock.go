@@ -4,7 +4,7 @@ import (
 	"context"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/backend-config/identity"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -102,7 +102,7 @@ func (m *MockBackendConfig) Get(ctx context.Context) (map[string]backendconfig.C
 }
 
 func (m *MockBackendConfig) Identity() identity.Identifier {
-	return &identity.EmptyIdentifier{}
+	return &identity.NOOP{}
 }
 
 func (m *MockBackendConfig) WaitForConfig(ctx context.Context) {}
