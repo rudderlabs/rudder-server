@@ -495,10 +495,12 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				apiService: mockAPI,
 			}
 
-			pollInput := common.AsyncPoll{ImportId: tc.jobStatus.ID}
-			if tc.jobStatus == nil {
-				pollInput.ImportId = "job-456"
+			// Get job ID from test case
+			jobID := "job-456" // default
+			if tc.jobStatus != nil {
+				jobID = tc.jobStatus.ID
 			}
+			pollInput := common.AsyncPoll{ImportId: jobID}
 
 			result := uploader.Poll(pollInput)
 
