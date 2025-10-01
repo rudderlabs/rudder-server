@@ -33,7 +33,7 @@ func NewKeyDB(conf *config.Config, stat stats.Stats, log logger.Logger) (types.D
 
 	clientConfig := client.Config{
 		Addresses:       strings.Split(nodeAddresses, ","),
-		TotalHashRanges: uint32(conf.GetInt("KeyDB.Dedup.TotalHashRanges", 128)),
+		TotalHashRanges: uint32(conf.GetInt("KeyDB.Dedup.TotalHashRanges", int(client.DefaultTotalHashRanges))),
 		RetryPolicy: client.RetryPolicy{
 			Disabled:        conf.GetBool("KeyDB.Dedup.RetryPolicy.Disabled", false),
 			InitialInterval: conf.GetDuration("KeyDB.Dedup.RetryPolicy.InitialInterval", 100, time.Millisecond),
