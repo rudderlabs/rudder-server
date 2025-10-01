@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
