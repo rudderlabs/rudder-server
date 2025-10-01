@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -418,12 +417,14 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				NumberRecordsFailed:    0,
 			},
 			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.EXPECT().GetJobStatus("job-123").Return(&JobResponse{
-					ID:                     "job-123",
-					State:                  "JobComplete",
-					NumberRecordsProcessed: 100,
-					NumberRecordsFailed:    0,
-				}, nil)
+				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
+					return &JobResponse{
+						ID:                     "job-123",
+						State:                  "JobComplete",
+						NumberRecordsProcessed: 100,
+						NumberRecordsFailed:    0,
+					}, nil
+				}
 			},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
@@ -434,10 +435,12 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		{
 			name: "job in progress",
 			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.EXPECT().GetJobStatus("job-456").Return(&JobResponse{
-					ID:    "job-456",
-					State: "InProgress",
-				}, nil)
+				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
+					return &JobResponse{
+						ID:    "job-456",
+						State: "InProgress",
+					}, nil
+				}
 			},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
@@ -447,12 +450,14 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		{
 			name: "job complete with failures",
 			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.EXPECT().GetJobStatus("job-789").Return(&JobResponse{
-					ID:                     "job-789",
-					State:                  "JobComplete",
-					NumberRecordsProcessed: 100,
-					NumberRecordsFailed:    10,
-				}, nil)
+				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
+					return &JobResponse{
+						ID:                     "job-789",
+						State:                  "JobComplete",
+						NumberRecordsProcessed: 100,
+						NumberRecordsFailed:    10,
+					}, nil
+				}
 			},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
@@ -463,11 +468,13 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		{
 			name: "job failed",
 			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.EXPECT().GetJobStatus("job-failed").Return(&JobResponse{
-					ID:           "job-failed",
-					State:        "Failed",
-					ErrorMessage: "Invalid object type",
-				}, nil)
+				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
+					return &JobResponse{
+						ID:           "job-failed",
+						State:        "Failed",
+						ErrorMessage: "Invalid object type",
+					}, nil
+				}
 			},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
@@ -481,10 +488,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockAPI := NewMockSalesforceAPIServiceInterface(ctrl)
+			mockAPI := &MockSalesforceAPIService{}
 			tc.setupMock(mockAPI)
 
 			uploader := &SalesforceBulkUploader{
@@ -608,10 +612,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 			},
 		}
 
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-
-		mockBackendConfig := NewMockBackendConfig(ctrl)
+		mockBackendConfig := NewMockBackendConfig()
 
 		manager, err := NewManager(
 			logger.NOP,
@@ -638,10 +639,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 			},
 		}
 
-		ctrl := gomock.NewController(t)
-		defer ctrl.Finish()
-
-		mockBackendConfig := NewMockBackendConfig(ctrl)
+		mockBackendConfig := NewMockBackendConfig()
 
 		manager, err := NewManager(
 			logger.NOP,

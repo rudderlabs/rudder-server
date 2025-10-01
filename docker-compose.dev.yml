@@ -1,0 +1,23 @@
+version: "3.7"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=rudder
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=jobsdb
+    ports:
+      - "5432:5432"  # Changed from 6432 to standard PostgreSQL port for local development
+    shm_size: 128mb
+
+  transformer:
+    image: "rudderstack/rudder-transformer:latest"
+    ports:
+      - "9090:9090"
+  # Optional: Include if you need metrics
+  metrics-exporter:
+    image: prom/statsd-exporter:v0.22.4
+    ports:
+      - "9125:9125/udp"
+      - "9102:9102"
