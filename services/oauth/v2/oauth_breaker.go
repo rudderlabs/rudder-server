@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/sony/gobreaker"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
 // OAuthBreakerOptions contains configuration options for the OAuth breaker.
@@ -16,11 +18,10 @@ import (
 //
 // Different accounts have different breakers.
 type OAuthBreakerOptions struct {
-
 	// number of consecutive errors to trip the error breaker
 	ConsecutiveErrorsThreshold int
 
-	// Time duration that needs to elapse to switch the error breaker to half-open state
+	// Time duration that needs to elapse to switch an open error breaker to half-open state
 	ErrorsTimeout time.Duration
 
 	// number of successful (new) token generations within the interval to trip the success breaker
@@ -29,7 +30,7 @@ type OAuthBreakerOptions struct {
 	// Time duration that needs to elapse to reset the success counter
 	SuccessesInterval time.Duration
 
-	// Time duration that needs to elapse to switch the success breaker to half-open state
+	// Time duration that needs to elapse to switch an open success breaker to half-open state
 	SuccessesTimeout time.Duration
 }
 
@@ -182,7 +183,7 @@ func (b *accountBreaker) withErrBreaker(fn func() (json.RawMessage, StatusCodeEr
 func (b *accountBreaker) withSuccessBreaker(fn func() (json.RawMessage, StatusCodeError)) (json.RawMessage, StatusCodeError) {
 	var result json.RawMessage
 	var err StatusCodeError
-	var newTokenErr = errors.New("got different token")
+	newTokenErr := errors.New("got different token")
 	if _, sbErr := b.successBreaker.Execute(func() (any, error) {
 		result, err = fn()
 		b.mu.Lock()
@@ -194,7 +195,7 @@ func (b *accountBreaker) withSuccessBreaker(fn func() (json.RawMessage, StatusCo
 		if err == nil && (previousValue == nil || string(previousValue) != string(result)) {
 			return nil, newTokenErr
 		}
-		return nil, nil
+		return result, nil
 	}); sbErr != nil { // need to return the last value if the success breaker is open
 		if errors.Is(sbErr, gobreaker.ErrOpenState) || errors.Is(sbErr, gobreaker.ErrTooManyRequests) {
 			b.mu.RLock()
@@ -203,4 +204,24 @@ func (b *accountBreaker) withSuccessBreaker(fn func() (json.RawMessage, StatusCo
 		}
 	}
 	return result, err
+}
+
+// ConfigToOauthBreakerOptions converts configuration variables to OAuthBreakerOptions. If breaker is disabled, it returns nil.
+func ConfigToOauthBreakerOptions(prefix string, c *config.Config) *OAuthBreakerOptions {
+	if enabled := c.GetBoolVar(true, prefix+".OauthBreaker.enabled", "OauthBreaker.enabled"); !enabled {
+		return nil
+	}
+	configKeys := func(s string) []string {
+		if prefix == "" {
+			return []string{"OauthBreaker." + s}
+		}
+		return []string{prefix + ".OauthBreaker." + s, "OauthBreaker." + s}
+	}
+	return &OAuthBreakerOptions{
+		ConsecutiveErrorsThreshold: c.GetIntVar(5, 1, configKeys("consecutiveErrorsThreshold")...),
+		ErrorsTimeout:              c.GetDurationVar(5, time.Minute, configKeys("errorsTimeout")...),
+		SuccessesThreshold:         c.GetIntVar(5, 1, configKeys("successesThreshold")...),
+		SuccessesInterval:          c.GetDurationVar(1, time.Minute, configKeys("successesInterval")...),
+		SuccessesTimeout:           c.GetDurationVar(1, time.Minute, configKeys("successesTimeout")...),
+	}
 }

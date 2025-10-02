@@ -11,9 +11,9 @@ import (
 )
 
 func TestOauthBreaker(t *testing.T) {
-	var token1 = json.RawMessage(`{"access_token":"token1"}`)
-	var token2 = json.RawMessage(`{"access_token":"token2"}`)
-	var err1 = NewStatusCodeError(500, errors.New("error 1"))
+	token1 := json.RawMessage(`{"access_token":"token1"}`)
+	token2 := json.RawMessage(`{"access_token":"token2"}`)
+	err1 := NewStatusCodeError(500, errors.New("error 1"))
 	// var err2 = NewStatusCodeError(502, errors.New("error 2"))
 
 	const refresh = "refresh"
@@ -189,7 +189,6 @@ func TestOauthBreaker(t *testing.T) {
 		require.Equal(t, 1*time.Minute, opts.SuccessesInterval)
 		require.Equal(t, 1*time.Minute, opts.SuccessesTimeout)
 	})
-
 }
 
 type mockOAuthHandler struct {
@@ -201,6 +200,7 @@ type mockOAuthHandler struct {
 func (m *mockOAuthHandler) FetchToken(*OAuthTokenParams) (json.RawMessage, StatusCodeError) {
 	return m.call()
 }
+
 func (m *mockOAuthHandler) RefreshToken(*OAuthTokenParams, json.RawMessage) (json.RawMessage, StatusCodeError) {
 	return m.call()
 }

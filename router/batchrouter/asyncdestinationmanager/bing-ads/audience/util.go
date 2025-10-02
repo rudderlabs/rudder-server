@@ -144,9 +144,6 @@ func (b *BingAdsBulkUploader) createZipFile(filePath, audienceId string) ([]*Act
 	}
 	defer textFile.Close()
 
-	if err != nil {
-		return nil, err
-	}
 	actionFiles := map[string]*ActionFileInfo{}
 	for _, actionType := range actionTypes {
 		actionFiles[actionType], err = createActionFile(audienceId, actionType)

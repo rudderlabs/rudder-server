@@ -20,6 +20,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -89,7 +90,7 @@ type YandexMetricaBulkUploader struct {
 	destinationInfo *oauthv2.DestinationInfo
 }
 
-func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
+func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
 	destinationInfo := &oauthv2.DestinationInfo{
 		Config:           destination.Config,
 		DefinitionConfig: destination.DestinationDefinition.Config,
@@ -104,8 +105,9 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 	}
 	cache := oauthv2.NewOauthTokenCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
-		Logger:    yandexUploadManager.logger,
-		Augmenter: augmenter.YandexReqAugmenter,
+		Logger:              yandexUploadManager.logger,
+		Augmenter:           augmenter.YandexReqAugmenter,
+		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("BatchRouter.YANDEX_METRICA_OFFLINE_EVENTS", conf),
 	}
 	originalHttpClient := &http.Client{Transport: &http.Transport{}}
 	// This client is used for uploading data to yandex metrica
