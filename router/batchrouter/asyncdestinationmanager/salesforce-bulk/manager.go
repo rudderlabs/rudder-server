@@ -89,9 +89,13 @@ func parseDestinationConfig(destination *backendconfig.DestinationT) (Destinatio
 	// Extract API version (optional)
 	apiVersion, _ := configMap["apiVersion"].(string)
 
+	// Extract object type (optional - used for event streams, RETL gets from context)
+	objectType, _ := configMap["objectType"].(string)
+
 	config = DestinationConfig{
 		RudderAccountID: rudderAccountID,
 		Operation:       operation,
+		ObjectType:      objectType,
 		APIVersion:      apiVersion,
 	}
 

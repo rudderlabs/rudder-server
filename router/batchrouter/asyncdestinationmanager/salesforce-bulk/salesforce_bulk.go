@@ -42,9 +42,10 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	// Extract object type and external ID field from first job's context
-	// In VDM/RETL flow, these come from context.externalId
-	objectInfo, err := extractObjectInfo(input)
+	// Extract object type and external ID field
+	// RETL: from context.externalId (VDM provides)
+	// Event streams: from config.ObjectType
+	objectInfo, err := extractObjectInfo(input, s.config)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),

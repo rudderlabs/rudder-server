@@ -49,20 +49,35 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	return jobs, nil
 }
 
-// extractObjectInfo extracts Salesforce object type and external ID from VDM context
-// For RETL/VDM, this comes from context.externalId[0]
-func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
+// extractObjectInfo extracts Salesforce object type and external ID
+// For RETL/VDM: Reads from context.externalId (provided by VDM)
+// For event streams: Uses config.ObjectType (defaults to Lead)
+func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
 	}
 
-	// Get externalId from first job's metadata
-	// VDM sets this as: { type: "Salesforce-Contact", id: "email@example.com", identifierType: "Email" }
 	firstJob := jobs[0]
-	externalIDRaw, ok := firstJob.Metadata["externalId"]
-	if !ok {
-		return nil, fmt.Errorf("externalId not found in job metadata (required for VDM/RETL)")
+
+	// Try VDM/RETL path first (has externalId from VDM)
+	if externalIDRaw, ok := firstJob.Metadata["externalId"]; ok {
+		return extractFromVDM(externalIDRaw)
 	}
+
+	// Event stream path - use config
+	objectType := config.ObjectType
+	if objectType == "" {
+		objectType = "Lead" // Salesforce default for event streams
+	}
+
+	return &ObjectInfo{
+		ObjectType:      objectType,
+		ExternalIDField: "Email", // Default for upsert operations
+	}, nil
+}
+
+// extractFromVDM extracts object info from VDM's externalId structure
+func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
 
 	// externalId is an array, get first element
 	externalIDArray, ok := externalIDRaw.([]interface{})

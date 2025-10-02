@@ -7,10 +7,12 @@ import (
 )
 
 // DestinationConfig holds Salesforce Bulk Upload configuration
-// For RETL use case, field mapping comes from VDM, not config
+// For RETL: field mapping comes from VDM, objectType from context.externalId
+// For event streams: field mapping from transformer, objectType from config
 type DestinationConfig struct {
 	RudderAccountID string `json:"rudderAccountId"` // OAuth account ID from Control Plane
 	Operation       string `json:"operation"`       // insert, update, upsert, delete
+	ObjectType      string `json:"objectType"`      // Lead, Contact, etc. (for event streams, optional for RETL)
 	APIVersion      string `json:"apiVersion"`      // Salesforce API version (default: v57.0)
 }
 
