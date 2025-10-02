@@ -37,7 +37,7 @@ func newRegularManager(
 	case "ELOQUA":
 		return eloqua.NewManager(logger, statsFactory, destination)
 	case "YANDEX_METRICA_OFFLINE_EVENTS":
-		return yandexmetrica.NewManager(logger, statsFactory, destination, backendConfig)
+		return yandexmetrica.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	case "KLAVIYO_BULK_UPLOAD":
 		return klaviyobulkupload.NewManager(logger, statsFactory, destination)
 	case "LYTICS_BULK_UPLOAD":

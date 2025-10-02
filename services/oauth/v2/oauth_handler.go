@@ -88,6 +88,19 @@ func WithCpClient(cpClient controlplane.Connector) func(*oauthHandler) {
 	}
 }
 
+// WithOauthBreakerOptions sets the OAuth breaker options for the OAuthHandler
+func WithOauthBreakerOptions(options *OAuthBreakerOptions) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.breakerOptions = options
+	}
+}
+
+func WithConfigBackendURL(url string) func(*oauthHandler) {
+	return func(h *oauthHandler) {
+		h.cbeURL = url
+	}
+}
+
 // NewOAuthHandler returns a new instance of OAuthHandler
 func NewOAuthHandler(provider AuthIdentityProvider, options ...func(*oauthHandler)) OAuthHandler {
 	h := &oauthHandler{
@@ -124,6 +137,15 @@ func NewOAuthHandler(provider AuthIdentityProvider, options ...func(*oauthHandle
 	if h.refreshBeforeExpiry.Seconds() == 0 {
 		h.refreshBeforeExpiry = 1 * time.Minute // default refresh before expiry duration
 	}
+
+	// If breaker options are provided, wrap the handler with the breaker decorator
+	if h.breakerOptions != nil {
+		if h.breakerOptions.Stats == nil {
+			h.breakerOptions.Stats = h.stats
+		}
+		return newOAuthBreaker(h, *h.breakerOptions)
+	}
+
 	return h
 }
 
@@ -144,6 +166,7 @@ type oauthHandler struct {
 	refreshBeforeExpiry time.Duration
 	cbeURL              string
 	cpClientTimeout     time.Duration
+	breakerOptions      *OAuthBreakerOptions
 }
 
 // FetchToken fetches the OAuth token for a given account ID
