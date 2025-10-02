@@ -64,6 +64,7 @@ func NewManager(
 		oauthv2.WithLogger(logger),
 		oauthv2.WithCPClientTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
 		oauthv2.WithStats(statsFactory),
+		oauthv2.WithOauthBreakerOptions(oauthv2.ConfigToOauthBreakerOptions("BatchRouter.BING_ADS", conf)),
 	)
 	return newManagerInternal(logger, statsFactory, destination, oauthClientV2)
 }
