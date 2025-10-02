@@ -238,7 +238,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			errorMsg: "no jobs to process",
 		},
 		{
-			name: "missing externalId",
+			name: "missing externalId - falls back to config",
 			jobs: []common.AsyncJob{
 				{
 					Message: map[string]interface{}{
@@ -249,8 +249,11 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 					},
 				},
 			},
-			wantErr:  true,
-			errorMsg: "externalId not found",
+			expected: &ObjectInfo{
+				ObjectType:      "Lead", // Defaults to Lead
+				ExternalIDField: "Email",
+			},
+			wantErr: false,
 		},
 		{
 			name: "empty externalId array",
@@ -265,13 +268,56 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			wantErr:  true,
 			errorMsg: "at least one element",
 		},
+		{
+			name: "event stream without externalId - uses config",
+			jobs: []common.AsyncJob{
+				{
+					Message: map[string]interface{}{
+						"Email": "stream@example.com",
+					},
+					Metadata: map[string]interface{}{
+						"job_id": float64(10),
+						// No externalId - event stream
+					},
+				},
+			},
+			expected: &ObjectInfo{
+				ObjectType:      "Contact",
+				ExternalIDField: "Email",
+			},
+			wantErr: false,
+		},
+		{
+			name: "event stream with default object type",
+			jobs: []common.AsyncJob{
+				{
+					Message: map[string]interface{}{
+						"Email": "default@example.com",
+					},
+					Metadata: map[string]interface{}{
+						"job_id": float64(11),
+					},
+				},
+			},
+			expected: &ObjectInfo{
+				ObjectType:      "Lead", // Should default to Lead
+				ExternalIDField: "Email",
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			result, err := extractObjectInfo(tc.jobs)
+			// Use config for event stream tests, empty for RETL tests
+			testConfig := DestinationConfig{}
+			if tc.name == "event stream without externalId - uses config" {
+				testConfig.ObjectType = "Contact"
+			}
+
+			result, err := extractObjectInfo(tc.jobs, testConfig)
 
 			if tc.wantErr {
 				require.Error(t, err)
