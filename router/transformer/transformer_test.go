@@ -339,7 +339,7 @@ func TestProxyRequest(t *testing.T) {
 				defer srv.Close()
 
 				expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-				tr := NewTransformer(tc.rtTimeout, httpClientTimeout, nil, expTimeDiff, nil)
+				tr := NewTransformer("destType", tc.rtTimeout, httpClientTimeout, nil, expTimeDiff, nil, config.Default)
 				ctx := context.TODO()
 				reqParams := &ProxyRequestParams{
 					ResponseData: tc.postParameters,
@@ -368,10 +368,10 @@ func TestProxyRequest(t *testing.T) {
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 			// Logic for executing test-cases not manipulating test-cases
 			if tc.rtTimeout.Milliseconds() > 0 {
-				tr = NewTransformer(tc.rtTimeout, httpClientTimeout, nil, expTimeDiff, nil)
+				tr = NewTransformer("destType", tc.rtTimeout, httpClientTimeout, nil, expTimeDiff, nil, config.Default)
 			} else {
 				// Just a default value
-				tr = NewTransformer(2*time.Millisecond, httpClientTimeout, nil, expTimeDiff, nil)
+				tr = NewTransformer("destType", 2*time.Millisecond, httpClientTimeout, nil, expTimeDiff, nil, config.Default)
 			}
 			// Logic to include context timing out
 			ctx := context.TODO()
@@ -651,7 +651,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
-			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil)
+			tr := NewTransformer("destType", time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil, config.Default)
 
 			transformMsg := types.TransformMessageT{
 				Data: tc.inputEvents,
@@ -1688,7 +1688,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
 
-			tr := NewTransformer(time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil)
+			tr := NewTransformer("destType", time.Minute, time.Minute, mockBackendConfig, expTimeDiff, nil, config.Default)
 
 			var adapter transformerProxyAdapter
 			adapter = NewTransformerProxyAdapter("v1", loggerOverride)
@@ -1752,7 +1752,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
+	tr := NewTransformer("destType", time.Minute, time.Minute, nil, expTimeDiff, nil, config.Default)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1784,7 +1784,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
+	tr := NewTransformer("destType", time.Minute, time.Minute, nil, expTimeDiff, nil, config.Default)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1825,7 +1825,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
+	tr := NewTransformer("destType", time.Minute, time.Minute, nil, expTimeDiff, nil, config.Default)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1865,7 +1865,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	defer svr.Close()
 	t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
+	tr := NewTransformer("destType", time.Minute, time.Minute, nil, expTimeDiff, nil, config.Default)
 
 	transformMessage := types.TransformMessageT{
 		Data: []types.RouterJobT{
@@ -1913,7 +1913,7 @@ func TestDehydrateHydrate(t *testing.T) {
 	}))
 	config.Set("DEST_TRANSFORM_URL", srv.URL)
 	expTimeDiff := config.SingleValueLoader(1 * time.Minute)
-	tr := NewTransformer(time.Minute, time.Minute, nil, expTimeDiff, nil)
+	tr := NewTransformer("destType", time.Minute, time.Minute, nil, expTimeDiff, nil, config.Default)
 
 	transformerResponse := tr.Transform(BATCH, &transformMessage)
 

@@ -14,12 +14,13 @@ import (
 )
 
 type HttpClientOptionalArgs struct {
-	Transport          http.RoundTripper
-	Augmenter          oauthexts.Augmenter
-	Locker             *sync.PartitionRWLocker
-	OAuthHandler       oauth.OAuthHandler
-	ExpirationTimeDiff time.Duration
-	Logger             logger.Logger
+	Transport           http.RoundTripper
+	Augmenter           oauthexts.Augmenter
+	Locker              *sync.PartitionRWLocker
+	OAuthHandler        oauth.OAuthHandler
+	ExpirationTimeDiff  time.Duration
+	Logger              logger.Logger
+	OAuthBreakerOptions *oauth.OAuthBreakerOptions
 }
 
 // NewOAuthHttpClient returns a http client that will add the appropriate authorization information to oauth requests.
@@ -33,6 +34,7 @@ func NewOAuthHttpClient(client *http.Client, flowType common.RudderFlow, tokenCa
 			oauth.WithRefreshBeforeExpiry(opArgs.ExpirationTimeDiff),
 			oauth.WithLogger(opArgs.Logger),
 			oauth.WithStats(stats.Default),
+			oauth.WithOauthBreakerOptions(opArgs.OAuthBreakerOptions),
 		)
 	}
 	if originalTransport == nil {
