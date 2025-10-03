@@ -12,7 +12,7 @@ COPY . .
 
 RUN go build -o throttling ./cmd/benchmark/throttling/
 
-FROM alpine:3.21.3
+FROM alpine:3.22.1
 
 COPY --from=builder workdir/throttling .
 
