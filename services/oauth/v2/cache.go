@@ -1,19 +1,41 @@
 package v2
 
-import "sync"
+import (
+	"sync"
+)
 
-type Cache interface {
-	// Load retrieves a value for the given key from the cache.
-	// If the value doesn't exist, it returns (nil, false).
-	Load(key any) (any, bool)
-
-	// Store stores a key-value pair in the cache.
-	Store(key, value any)
-
-	// Delete removes a key-value pair from the cache.
-	Delete(key any)
+// NewOauthTokenCache returns a new cache for storing OAuth tokens.
+func NewOauthTokenCache() OauthTokenCache {
+	return &syncMapCache[OAuthToken]{}
 }
 
-func NewCache() Cache {
-	return &sync.Map{}
+// OauthTokenCache is an interface for a cache that stores OAuth tokens.
+type OauthTokenCache interface {
+	// Load retrieves the OAuth token associated with the given key.
+	Load(key string) (OAuthToken, bool)
+	// Store saves the OAuth token with the associated key.
+	Store(key string, value OAuthToken)
+	// Delete removes the OAuth token associated with the given key.
+	Delete(key string)
+}
+
+type syncMapCache[T any] struct {
+	m sync.Map
+}
+
+func (c *syncMapCache[T]) Load(key string) (T, bool) {
+	value, ok := c.m.Load(key)
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	return value.(T), true
+}
+
+func (c *syncMapCache[T]) Store(key string, value T) {
+	c.m.Store(key, value)
+}
+
+func (c *syncMapCache[T]) Delete(key string) {
+	c.m.Delete(key)
 }

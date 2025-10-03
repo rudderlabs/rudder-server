@@ -22,7 +22,7 @@ type TokenSource struct {
 	WorkspaceID        string
 	DestinationDefName string
 	AccountID          string
-	OauthClientV2      oauthv2.Authorizer
+	OauthHandler       oauthv2.OAuthHandler
 	DestinationID      string
 	CurrentTime        func() time.Time
 }
@@ -30,56 +30,19 @@ type TokenSource struct {
 // authentication related utils
 
 func (ts *TokenSource) GenerateTokenV2() (*SecretStruct, error) {
-	refreshTokenParams := oauthv2.RefreshTokenParams{
-		WorkspaceID:   ts.WorkspaceID,
-		DestDefName:   ts.DestinationDefName,
+	tokenParams := oauthv2.OAuthTokenParams{
 		AccountID:     ts.AccountID,
+		WorkspaceID:   ts.WorkspaceID,
+		DestType:      ts.DestinationDefName,
 		DestinationID: ts.DestinationID,
 	}
-	statusCode, authResponse, err := ts.OauthClientV2.FetchToken(&refreshTokenParams)
-	if err != nil && authResponse != nil {
-		return nil, fmt.Errorf("fetching access token: %v, %d", authResponse.Err, statusCode)
+	rawSecret, scErr := ts.OauthHandler.FetchToken(&tokenParams)
+	if scErr != nil {
+		return nil, fmt.Errorf("fetching access token: %w", scErr)
 	}
-	if err != nil {
-		return nil, fmt.Errorf("fetching access token resulted in an error: %v,%d", err, statusCode)
-	}
-
-	/*
-		How bing-ads works?
-		1. It fetches the token using the fetchToken method
-		2. It checks if the token is expired or not
-		3. If the token is expired, it refreshes the token using the refreshToken method
-		4. If the token is not expired, it returns the token
-
-
-		step 1: fetchToken
-
-		step 2: use the token to make the request and return the response in []byte along with the function to extract the oauthError category
-		        func myFunc(string token)(string)
-
-
-		step 3: depending on the oauthErrorCategory we will refresh the token and return the new token
-	*/
 
 	var secret SecretStruct
-	if err = jsonrs.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
-		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
-	}
-	currentTime := ts.CurrentTime()
-	expirationTime, err := time.Parse(misc.RFC3339Milli, secret.ExpirationDate)
-	if err != nil {
-		return nil, fmt.Errorf("error in parsing expirationDate: %w", err)
-	}
-	if currentTime.Before(expirationTime) {
-		return &secret, nil
-	}
-	refreshTokenParams.Secret = authResponse.Account.Secret
-	statusCode, authResponse, err = ts.OauthClientV2.RefreshToken(&refreshTokenParams)
-	// TODO: check if the error is not nil working verify during unit test
-	if err != nil {
-		return nil, fmt.Errorf("error in refreshing access token with this error: %w. StatusCode: %d", err, statusCode)
-	}
-	if err = jsonrs.Unmarshal(authResponse.Account.Secret, &secret); err != nil {
+	if err := jsonrs.Unmarshal(rawSecret, &secret); err != nil {
 		return nil, fmt.Errorf("error in unmarshalling secret: %w", err)
 	}
 	return &secret, nil

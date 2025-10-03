@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,6 +20,10 @@ import (
 )
 
 var _ = Describe("CpConnector", func() {
+	timeoutError := "connection timed out"
+	if runtime.GOOS == "darwin" {
+		timeoutError = "operation timed out"
+	}
 	It("Test CpApiCall function to test success scenario", func() {
 		ctrl := gomock.NewController(GinkgoT())
 		mockHttpClient := mockhttp.NewMockHttpClient(ctrl)
@@ -33,9 +38,9 @@ var _ = Describe("CpConnector", func() {
 			WithStats(stats.Default),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&Request{
-			Method:        http.MethodGet,
-			URL:           "https://www.google.com",
-			BasicAuthUser: &testutils.BasicAuthMock{},
+			Method:       http.MethodGet,
+			URL:          "https://www.google.com",
+			AuthIdentity: &testutils.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusOK))
 		Expect(respBody).To(Equal("test"))
@@ -59,12 +64,12 @@ var _ = Describe("CpConnector", func() {
 			WithStats(stats.Default),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&Request{
-			Method:        http.MethodGet,
-			URL:           "https://www.google.com",
-			BasicAuthUser: &testutils.BasicAuthMock{},
+			Method:       http.MethodGet,
+			URL:          "https://www.google.com",
+			AuthIdentity: &testutils.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))
-		Expect(`{"errorType":"timeout","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection timed out"}`).To(MatchJSON(respBody))
+		Expect(`{"errorType":"timeout","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: ` + timeoutError + `"}`).To(MatchJSON(respBody))
 	})
 
 	It("Test CpApiCall function to test connection reset by peer", func() {
@@ -85,9 +90,9 @@ var _ = Describe("CpConnector", func() {
 			WithStats(stats.Default),
 		)
 		statusCode, respBody := cpConnector.CpApiCall(&Request{
-			Method:        http.MethodGet,
-			URL:           "https://www.google.com",
-			BasicAuthUser: &testutils.BasicAuthMock{},
+			Method:       http.MethodGet,
+			URL:          "https://www.google.com",
+			AuthIdentity: &testutils.BasicAuthMock{},
 		})
 		Expect(statusCode).To(Equal(http.StatusInternalServerError))
 		Expect(`{"errorType":"econnreset","message":"mock mock 127.0.0.1:1234->127.0.0.1:12340: read: connection reset by peer"}`).To(MatchJSON(respBody))

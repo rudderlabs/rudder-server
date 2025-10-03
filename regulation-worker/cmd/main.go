@@ -145,7 +145,7 @@ func createHTTPClient(conf *config.Config, httpTimeout time.Duration) *http.Clie
 		},
 	}
 
-	cache := oauthv2.NewCache()
+	cache := oauthv2.NewOauthTokenCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	optionalArgs := oauthv2http.HttpClientOptionalArgs{
 		Augmenter: extensions.HeaderAugmenter,

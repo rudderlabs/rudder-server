@@ -97,35 +97,35 @@ func TestDelete(t *testing.T) {
 			name:                 "test deleter API client with expected status failed: error returned 429",
 			destName:             "amplitude",
 			respCode:             429,
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 429, body: [{  }]")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 429, body: [{Status: Error: AuthErrorCategory:}]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed-error returned 408",
 			destName:             "amplitude",
 			respCode:             408,
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 408, body: [{  }]")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 408, body: [{Status: Error: AuthErrorCategory:}]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 504",
 			destName:             "amplitude",
 			respCode:             504,
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 504, body: [{  }]")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 504, body: [{Status: Error: AuthErrorCategory:}]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 400",
 			destName:             "amplitude",
 			respCode:             400,
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 400, body: [{  }]")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 400, body: [{Status: Error: AuthErrorCategory:}]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 401",
 			destName:             "amplitude",
 			respCode:             401,
-			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 401, body: [{  }]")},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 401, body: [{Status: Error: AuthErrorCategory:}]")},
 			expectedPayload:      `[{"jobId":"0","destType":"amplitude","config":null,"userAttributes":[]}]`,
 		},
 		{
@@ -428,7 +428,7 @@ var oauthTests = []oauthTestCases{
 		},
 		deleteResponses:              []deleteResponseParams{{}},
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA][FetchToken] Error in Token Fetch statusCode: 500\t error: Unmarshal of response unsuccessful: Internal Server Error")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Internal Server Error")},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse autherrorcategory from response: status 500: type: unmarshallableresponse, message: unmarshal of response unsuccessful: internal server error")},
 		expectedPayload:              "", // since request has not gone to transformer at all!
 	},
 	{
@@ -473,7 +473,7 @@ var oauthTests = []oauthTestCases{
 		deleteResponses:              []deleteResponseParams{{}},
 		oauthHttpClientTimeout:       1 * time.Second,
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Client.Timeout exceeded while awaiting headers")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: error occurred while fetching/refreshing account info from CP: Post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)")},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse autherrorcategory from response: status 500: type: timeout, message: post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (client.timeout exceeded while awaiting headers)")},
 		expectedPayload:              "", // since request has not gone to transformer at all!
 	},
 	{
@@ -614,10 +614,13 @@ var oauthTests = []oauthTestCases{
 				status:      500,
 				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN","error":"[GA] invalid credentials"}]`,
 			},
+			{
+				status:      200,
+				jobResponse: `[{"status":"successful"}]`,
+			},
 		},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Failed to refresh token for destination in workspace(1001) & account(xyz) with Unmarshal of response unsuccessful: Post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)")},
-		expectedPayload:              `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
+		expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
+		expectedPayload:      `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
 	},
 	{
 		name: "when AUTH_STATUS_INACTIVE error happens & authStatus/toggle success, fail the job with Failed status",
@@ -741,6 +744,12 @@ var oauthTests = []oauthTestCases{
 			DestDefConfig: defaultDestDefConfig,
 		},
 		deleteResponses: []deleteResponseParams{
+			// first attempt
+			{
+				status:      500,
+				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
+			},
+			// second attempt
 			{
 				status:      500,
 				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
@@ -762,10 +771,24 @@ var oauthTests = []oauthTestCases{
 			{
 				Code: 200,
 			},
+			// 2nd fetch token http request
+			{
+				Code:     200,
+				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+			},
+			// 2nd refresh token http request
+			{
+				Code:     403,
+				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+			},
+			// 2nd authStatus inactive http request
+			{
+				Code: 200,
+			},
 		},
 
 		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
+		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 500, body: [{status:failed error:[ga] invalid credentials autherrorcategory:refresh_token}]")},
 		expectedPayload:              `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
 	},
 }
@@ -780,11 +803,6 @@ func (m *mockIdentifier) BasicAuth() (string, string) { return m.token, "" }
 func (*mockIdentifier) Type() deployment.Type         { return "mockType" }
 
 func TestOAuth(t *testing.T) {
-	for _, tc := range oauthTests {
-		tc.name = fmt.Sprintf("[OAuthV2] %s", tc.name)
-		oauthTests = append(oauthTests, tc)
-		// oauthTests[i] = tc
-	}
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 
@@ -818,7 +836,7 @@ func TestOAuth(t *testing.T) {
 				},
 			}
 
-			cache := oauthV2.NewCache()
+			cache := oauthV2.NewOauthTokenCache()
 			oauthLock := rudderSync.NewPartitionRWLocker()
 
 			if tt.oauthHttpClientTimeout.Seconds() > 0 {
@@ -875,7 +893,7 @@ func (s *deleteResponseProducer) GetCurrent() *deleteResponseParams {
 
 func (s *deleteResponseProducer) GetNext() *deleteResponseParams {
 	if s.callCount >= len(s.responses) {
-		panic("ran out of responses")
+		panic("deleteResponseProducer ran out of responses")
 	}
 	deleteResp := &s.responses[s.callCount]
 	s.callCount++

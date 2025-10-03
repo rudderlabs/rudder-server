@@ -66,9 +66,6 @@ func (m *APIManager) GetSupportedDestinations() []string {
 }
 
 func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {
-	if currentOauthRetryAttempt > m.MaxOAuthRefreshRetryAttempts {
-		return job.Status
-	}
 	pkgLogger.Debugn("Deleting job from API destination",
 		logger.NewIntField("jobID", int64(job.ID)),
 		obskit.DestinationType(destination.Name))
@@ -95,12 +92,12 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	// check if OAuth destination
 	dest := &oauthv2.DestinationInfo{
 		WorkspaceID:      job.WorkspaceID,
-		DefinitionName:   destination.Name,
+		DestType:         destination.Name,
 		ID:               destination.DestinationID,
 		Config:           destination.Config,
 		DefinitionConfig: destination.DestDefConfig,
 	}
-	isOAuth, err := dest.IsOAuthDestination(common.RudderFlowDelete)
+	isOAuth, err := oauthv2.IsOAuthDestination(dest.DefinitionConfig, common.RudderFlowDelete)
 	if err != nil {
 		pkgLogger.Errorn("deleteWithRetry IsOAuthDestination error", obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
@@ -156,7 +153,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		if transportResponse.InterceptorResponse.Response != "" {
 			pkgLogger.Debugn("Actual response received", logger.NewStringField("response", string(respBodyBytes)))
 			// Update the same error response to all as the response received would be []JobRespSchema
-			respBodyBytes, err = sjson.SetRawBytes(respBodyBytes, "#.error", []byte(transportResponse.InterceptorResponse.Response))
+			respBodyBytes, err = sjson.SetBytes(respBodyBytes, "#.error", []byte(transportResponse.InterceptorResponse.Response))
 			if err != nil {
 				return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 			}
@@ -166,9 +163,9 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		destination:              destination,
 		job:                      job,
 		isOAuthEnabled:           isOAuth,
-		currentOAuthRetryAttempt: currentOauthRetryAttempt,
 		responseBodyBytes:        respBodyBytes,
 		responseStatusCode:       respStatusCode,
+		currentOAuthRetryAttempt: currentOauthRetryAttempt,
 	})
 }
 
@@ -185,7 +182,7 @@ func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("destination not supported by transformer")}
 	default:
-		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: %d, body: %s", statusCode, jobResp)}
+		return model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: %d, body: %+v", statusCode, jobResp)}
 	}
 }
 
@@ -244,7 +241,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 	}
 	// new oauth handling
 	if params.isOAuthEnabled {
-		if authErrorCategory == common.CategoryRefreshToken {
+		if authErrorCategory == common.CategoryRefreshToken && params.currentOAuthRetryAttempt < m.MaxOAuthRefreshRetryAttempts {
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
 			pkgLogger.Infon("Retrying deleteRequest for the whole batch",

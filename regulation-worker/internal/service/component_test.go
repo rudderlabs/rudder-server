@@ -57,7 +57,7 @@ func runIntegrationTest(
 			IdleConnTimeout: 300 * time.Second,
 		},
 	}
-	cache := oauthv2.NewCache()
+	cache := oauthv2.NewOauthTokenCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	optionalArgs := oauthv2_http.HttpClientOptionalArgs{
 		Augmenter: extensions.HeaderAugmenter,

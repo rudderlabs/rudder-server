@@ -22,7 +22,7 @@ type OAuthStats struct {
 	statName        string
 	isCallToCpApi   bool   // is a call being made to control-plane APIs
 	authErrCategory string // for action=refresh_token -> REFRESH_TOKEN, for action=fetch_token -> "", for action=auth_status_inactive -> auth_status_inactive
-	destDefName     string
+	destType        string
 	flowType        common.RudderFlow // delivery, delete
 	action          string            // refresh_token, fetch_token, auth_status_inactive
 }
@@ -32,14 +32,14 @@ type OAuthStatsHandler struct {
 	defaultTags stats.Tags
 }
 
-func GetDefaultTagsFromOAuthStats(oauthStats *OAuthStats) stats.Tags {
+func (oauthStats *OAuthStats) ToStatsTags() stats.Tags {
 	return stats.Tags{
 		"id":              oauthStats.id,
 		"workspaceId":     oauthStats.workspaceID,
 		"rudderCategory":  "destination",
 		"isCallToCpApi":   strconv.FormatBool(oauthStats.isCallToCpApi),
 		"authErrCategory": oauthStats.authErrCategory,
-		"destType":        oauthStats.destDefName,
+		"destType":        oauthStats.destType,
 		"flowType":        string(oauthStats.flowType),
 		"action":          oauthStats.action,
 		"oauthVersion":    "v2",
@@ -47,21 +47,18 @@ func GetDefaultTagsFromOAuthStats(oauthStats *OAuthStats) stats.Tags {
 }
 
 func NewStatsHandlerFromOAuthStats(oauthStats *OAuthStats) OAuthStatsHandler {
-	defaultTags := GetDefaultTagsFromOAuthStats(oauthStats)
 	return OAuthStatsHandler{
 		stats:       oauthStats.stats,
-		defaultTags: defaultTags,
+		defaultTags: oauthStats.ToStatsTags(),
 	}
 }
 
 func (m *OAuthStatsHandler) Increment(statSuffix string, tags stats.Tags) {
 	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
-	allTags := lo.Assign(m.defaultTags, tags)
-	m.stats.NewTaggedStat(statName, stats.CountType, allTags).Increment()
+	m.stats.NewTaggedStat(statName, stats.CountType, lo.Assign(m.defaultTags, tags)).Increment()
 }
 
 func (m *OAuthStatsHandler) SendTiming(startTime time.Time, statSuffix string, tags stats.Tags) {
 	statName := strings.Join([]string{OAUTH_V2_STAT_PREFIX, statSuffix}, "_")
-	allTags := lo.Assign(m.defaultTags, tags)
-	m.stats.NewTaggedStat(statName, stats.TimerType, allTags).SendTiming(time.Since(startTime))
+	m.stats.NewTaggedStat(statName, stats.TimerType, lo.Assign(m.defaultTags, tags)).SendTiming(time.Since(startTime))
 }

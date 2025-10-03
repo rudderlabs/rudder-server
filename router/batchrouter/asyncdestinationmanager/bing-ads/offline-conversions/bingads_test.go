@@ -25,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	MockAuthorizer "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -486,31 +485,17 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 		It("TestNewManagerInternal", func() {
 			initBingads()
 			ctrl := gomock.NewController(GinkgoT())
-			oauthV2Service := MockAuthorizer.NewMockAuthorizer(ctrl)
-			oauthV2Service.EXPECT().FetchToken(gomock.Any()).Return(200, &v2.AuthResponse{
-				Account: v2.AccountSecret{
-					ExpirationDate: "",
-					Secret: []byte(`
+			oauthV2Service := MockAuthorizer.NewMockOAuthHandler(ctrl)
+			oauthV2Service.EXPECT().FetchToken(gomock.Any()).Return(
+				json.RawMessage(`
 							{
 							"AccessToken": "dummyacesstoken",
 							"RefreshToken": "dummyRefreshToken",
 							"Developer_token": "dummyDeveloperToken",
 							"ExpirationDate": "2023-01-31T23:59:59.999Z"
 							}`),
-				},
-			}, nil)
-			oauthV2Service.EXPECT().RefreshToken(gomock.Any()).Return(200, &v2.AuthResponse{
-				Account: v2.AccountSecret{
-					ExpirationDate: "",
-					Secret: []byte(`
-							{
-							"AccessToken": "dummyacesstoken",
-							"RefreshToken": "dummyRefreshToken",
-							"Developer_token": "dummyDeveloperToken",
-							"ExpirationDate": "2023-01-31T23:59:59.999Z"
-							}`),
-				},
-			}, nil)
+				nil,
+			)
 
 			bingAdsUploader, err := newManagerInternal(logger.NOP, stats.NOP, &destination, oauthV2Service)
 			Expect(err).To(BeNil())

@@ -787,7 +787,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			Config:           destinationJob.Destination.Config,
 			DefinitionConfig: destinationJob.Destination.DestinationDefinition.Config,
 			WorkspaceID:      destinationJob.Destination.WorkspaceID,
-			DefinitionName:   destinationJob.Destination.DestinationDefinition.Name,
+			DestType:         destinationJob.Destination.DestinationDefinition.Name,
 			ID:               destinationJob.Destination.ID,
 		},
 		Connection: destinationJob.Connection,

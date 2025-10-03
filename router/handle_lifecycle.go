@@ -142,14 +142,8 @@ func (rt *Handle) Setup(
 		rt.transformerFeaturesService,
 	)
 
-	destinationInfo := oauthv2.DestinationInfo{
-		DefinitionConfig: destinationDefinition.Config,
-		DefinitionName:   destinationDefinition.Name,
-	}
-
 	var err error
-
-	rt.isOAuthDestination, err = destinationInfo.IsOAuthDestination(common.RudderFlowDelivery)
+	rt.isOAuthDestination, err = oauthv2.IsOAuthDestination(destinationDefinition.Config, common.RudderFlowDelivery)
 	if err != nil {
 		panic(fmt.Errorf("checking if destination is OAuth destination: %w", err))
 	}
