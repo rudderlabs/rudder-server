@@ -82,7 +82,6 @@ type DefaultReporter struct {
 	eventSamplingDuration config.ValueLoader[time.Duration]
 	eventSampler          event_sampler.EventSampler
 
-	eventNameMaxLength    config.ValueLoader[int]
 	eventNamePrefixLength config.ValueLoader[int]
 	eventNameSuffixLength config.ValueLoader[int]
 
@@ -110,7 +109,6 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	eventSamplingDuration := conf.GetReloadableDurationVar(60, time.Minute, "Reporting.eventSampling.durationInMinutes")
 	eventSamplerType := conf.GetReloadableStringVar("badger", "Reporting.eventSampling.type")
 	eventSamplingCardinality := conf.GetReloadableIntVar(100000, 1, "Reporting.eventSampling.cardinality")
-	eventNameMaxLength := conf.GetReloadableIntVar(50, 1, "Reporting.eventNameTrimming.maxLength")
 	eventNamePrefixLength := conf.GetReloadableIntVar(40, 1, "Reporting.eventNameTrimming.prefixLength")
 	eventNameSuffixLength := conf.GetReloadableIntVar(10, 1, "Reporting.eventNameTrimming.suffixLength")
 	// only send reports for wh actions sources if whActionsOnly is configured
@@ -152,7 +150,6 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		eventSamplingEnabled:                 eventSamplingEnabled,
 		eventSamplingDuration:                eventSamplingDuration,
 		eventSampler:                         eventSampler,
-		eventNameMaxLength:                   eventNameMaxLength,
 		eventNamePrefixLength:                eventNamePrefixLength,
 		eventNameSuffixLength:                eventNameSuffixLength,
 		useCommonClient:                      useCommonClient,
@@ -678,11 +675,11 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		return nil
 	}
 
-	maxLength := r.eventNameMaxLength.Load()
 	prefixLength := r.eventNamePrefixLength.Load()
 	suffixLength := r.eventNameSuffixLength.Load()
-	if prefixLength <= 0 || suffixLength <= 0 || prefixLength >= maxLength || suffixLength >= maxLength || prefixLength+suffixLength != maxLength {
-		err := fmt.Errorf("invalid event name trimming configuration: prefixLength=%d, suffixLength=%d, maxLength=%d. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength", prefixLength, suffixLength, maxLength)
+	maxLength := prefixLength + suffixLength
+	if prefixLength <= 0 || suffixLength <= 0 {
+		err := fmt.Errorf("invalid event name trimming configuration: prefixLength=%d, suffixLength=%d. prefixLength and suffixLength must be > 0", prefixLength, suffixLength)
 		r.log.Errorn(`[ Reporting ]: Invalid event name trimming configuration`, obskit.Error(err))
 		return err
 	}
