@@ -410,6 +410,7 @@ func (w *worker) processSingleStagingFile(
 
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
 				newColumnVal, convError := HandleSchemaChange(
+					w.log,
 					dataTypeInSchema,
 					columnType,
 					columnVal,
@@ -637,7 +638,7 @@ func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId strin
 }
 
 // HandleSchemaChange checks if the existing data type (from warehouse schema) is compatible with the inferred data type (from event data)
-func HandleSchemaChange(existingDataType, inferredDataType model.SchemaType, value any) (any, error) {
+func HandleSchemaChange(log logger.Logger, existingDataType, inferredDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any
 		err          error
@@ -666,11 +667,19 @@ func HandleSchemaChange(existingDataType, inferredDataType model.SchemaType, val
 			newColumnVal = v
 		default:
 			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, inferredDataType)
+			log.Warnn("Failed int to float conversion - incompatible type",
+				logger.NewStringField("valueType", reflect.TypeOf(value).String()),
+				obskit.Error(err),
+			)
 		}
 	} else if inferredDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
 		floatVal, ok := value.(float64)
 		if !ok {
 			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, inferredDataType)
+			log.Warnn("Failed float to int conversion - not a float64",
+				logger.NewStringField("valueType", reflect.TypeOf(value).String()),
+				obskit.Error(err),
+			)
 		} else {
 			newColumnVal = int(floatVal)
 		}

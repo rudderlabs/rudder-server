@@ -1428,6 +1428,7 @@ func TestHandleSchemaChange(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			newColumnVal, convError := HandleSchemaChange(
+				logger.NOP,
 				tc.existingDatatype,
 				tc.currentDataType,
 				tc.value,
