@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.60.1](https://github.com/rudderlabs/rudder-server/compare/v1.60.0...v1.60.1) (2025-10-07)
+
+
+### Bug Fixes
+
+* reporting event name trimming configuration ([#6417](https://github.com/rudderlabs/rudder-server/issues/6417)) ([0b82f6c](https://github.com/rudderlabs/rudder-server/commit/0b82f6ca754b7889f9c527274aa0f9ce05987295))
+* **warehouse:** int to float datatype handling ([#6416](https://github.com/rudderlabs/rudder-server/issues/6416)) ([721d186](https://github.com/rudderlabs/rudder-server/commit/721d186c1c6d10f36f27ddc85e502cd4a5cba72d))
+
 ## [1.60.0](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.60.0) (2025-09-30)
 
 
