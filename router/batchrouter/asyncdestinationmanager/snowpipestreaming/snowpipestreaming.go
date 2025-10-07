@@ -358,7 +358,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	formattedTS := m.Now().Format(misc.RFC3339Milli)
 	var discardInfos []discardInfo
 	for _, tableEvent := range info.events {
-		discardInfos = append(discardInfos, getDiscardedRecordsFromEvent(tableEvent, channelResponse.SnowpipeSchema, info.tableName, formattedTS)...)
+		discardInfos = append(discardInfos, getDiscardedRecordsFromEvent(m.logger, tableEvent, channelResponse.SnowpipeSchema, info.tableName, formattedTS)...)
 	}
 
 	/*
