@@ -1369,6 +1369,13 @@ func TestHandleSchemaChange(t *testing.T) {
 			expectedError:    errors.New("incompatible schema conversion from float to boolean"),
 		},
 		{
+			name:             "existing datatype is float, new datatype is int, value incompatible",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            false,
+			expectedError:    errors.New("incompatible schema conversion from float to int"),
+		},
+		{
 			name:             "existing datatype is float, new datatype is string",
 			existingDatatype: "float",
 			currentDataType:  "string",
