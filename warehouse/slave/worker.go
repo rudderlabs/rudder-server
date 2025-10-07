@@ -410,6 +410,7 @@ func (w *worker) processSingleStagingFile(
 
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
 				newColumnVal, convError := HandleSchemaChange(
+					w.log,
 					dataTypeInSchema,
 					columnType,
 					columnVal,
@@ -636,8 +637,8 @@ func (w *worker) destinationFromSlaveConnectionMap(destinationId, sourceId strin
 	return conn, nil
 }
 
-// HandleSchemaChange checks if the existing column type is compatible with the new column type
-func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+// HandleSchemaChange checks if the existing data type (from warehouse schema) is compatible with the inferred data type (from event data)
+func HandleSchemaChange(log logger.Logger, existingDataType, inferredDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any
 		err          error
@@ -645,28 +646,46 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 
 	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
 		// only stringify if the previous type is non-string/text/json
-		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
+		if inferredDataType != model.StringDataType && inferredDataType != model.TextDataType && inferredDataType != model.JSONDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
 		} else {
 			newColumnVal = value
 		}
-	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
-		intVal, ok := value.(int)
-		if !ok {
-			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
-		} else {
-			newColumnVal = float64(intVal)
+	} else if (inferredDataType == model.IntDataType || inferredDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
+		// All warehouse destinations currently support int to float coercion.
+		// value should be float (go json unmarshals all numbers as float64), unless explicitly converted to int. Keeping logic agnostic in this function.
+		switch v := value.(type) {
+		case int:
+			newColumnVal = float64(v)
+		case int32:
+			newColumnVal = float64(v)
+		case int64:
+			newColumnVal = float64(v)
+		case float32:
+			newColumnVal = float64(v)
+		case float64:
+			newColumnVal = v
+		default:
+			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, inferredDataType)
+			log.Warnn("Failed int to float conversion - incompatible type",
+				logger.NewStringField("valueType", reflect.TypeOf(value).String()),
+				obskit.Error(err),
+			)
 		}
-	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
+	} else if inferredDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
 		floatVal, ok := value.(float64)
 		if !ok {
-			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
+			err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, inferredDataType)
+			log.Warnn("Failed float to int conversion - not a float64",
+				logger.NewStringField("valueType", reflect.TypeOf(value).String()),
+				obskit.Error(err),
+			)
 		} else {
 			newColumnVal = int(floatVal)
 		}
 	} else if existingDataType == model.JSONDataType {
 		var interfaceSliceSample []any
-		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
+		if inferredDataType == model.IntDataType || inferredDataType == model.FloatDataType || inferredDataType == model.BooleanDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
 		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
 			newColumnVal = value
@@ -674,7 +693,7 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 			newColumnVal = strconv.Quote(fmt.Sprintf("%v", value))
 		}
 	} else {
-		err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, currentDataType)
+		err = fmt.Errorf("incompatible schema conversion from %v to %v", existingDataType, inferredDataType)
 	}
 
 	return newColumnVal, err
