@@ -84,7 +84,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		},
 		expected: isOAuthResult{
 			isOAuth: false,
-			err:     fmt.Errorf("1 in auth.rudderScopes should be string"),
+			err:     fmt.Errorf("1 in auth.rudderScopes should be string but got int"),
 		},
 	},
 	{
@@ -98,7 +98,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 		},
 		expected: isOAuthResult{
 			isOAuth: false,
-			err:     fmt.Errorf("rudderScopes should be a interface[]"),
+			err:     fmt.Errorf("rudderScopes should be a []any but got string"),
 		},
 	},
 	{
@@ -116,10 +116,10 @@ var _ = Describe("DestinationInfo tests", func() {
 		for _, tc := range isOAuthDestTestCases {
 			It(tc.description, func() {
 				d := &v2.DestinationInfo{
-					DefinitionName: "dest_def_name",
+					DestType: "dest_def_name",
 				}
 				d.DefinitionConfig = tc.inputDefConfig
-				isOAuth, err := d.IsOAuthDestination(tc.flow)
+				isOAuth, err := v2.IsOAuthDestination(d.DefinitionConfig, tc.flow)
 
 				Expect(isOAuth).To(Equal(tc.expected.isOAuth))
 				if tc.expected.err != nil {

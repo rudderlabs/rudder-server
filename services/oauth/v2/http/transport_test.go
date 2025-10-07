@@ -64,7 +64,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for handling errors when reading response body
 		It("should handle errors when reading response body", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -80,27 +80,27 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a destination info
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the OAuth client
@@ -134,7 +134,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for transport errors in RoundTrip
 		It("should handle transport errors in OAuthTransport.RoundTrip", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -144,27 +144,27 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a destination info
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the transport directly to test its RoundTrip method
@@ -196,7 +196,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for transport round trip error logging with valid destination info
 		It("should log transport round trip errors with destination details", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -206,27 +206,27 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a destination info with valid account ID
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the transport directly to test its RoundTrip method
@@ -261,7 +261,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for errors from getAuthErrorCategory
 		It("should handle errors from getAuthErrorCategory in postRoundTrip", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -277,27 +277,27 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a destination info
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create a custom getAuthErrorCategory function that always returns an error
@@ -340,7 +340,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for Bad Request errors
 		It("should convert Bad Request errors to 500 errors", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -356,27 +356,27 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a destination info
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the OAuth client with a custom GetAuthErrorCategory function
@@ -423,7 +423,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for getting secret from context error
 		It("should handle errors when getting secret from context", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -441,9 +441,9 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			// Create a destination info with auth config but missing secret
 			// This will cause getAccountID to succeed but getting secret from context to fail
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 					"auth": map[string]interface{}{
@@ -453,8 +453,8 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			// Setup mock for GetAuthErrorCategory to return "refresh_token"
 			getAuthErrorCategory := func(respData []byte) (string, error) {
@@ -464,12 +464,12 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the transport directly to test its RoundTrip method
@@ -512,7 +512,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for Bad Request errors with JSON body
 		It("should convert Bad Request errors to 500 errors in interceptor response", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -528,27 +528,27 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a destination info
 			destination := &v2.DestinationInfo{
-				ID:             "test-destination-id",
-				WorkspaceID:    "test-workspace-id",
-				DefinitionName: "test-definition-name",
+				ID:          "test-destination-id",
+				WorkspaceID: "test-workspace-id",
+				DestType:    "test-definition-name",
 				Config: map[string]interface{}{
 					"rudderAccountId": "test-account-id",
 				},
 			}
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the OAuth client with the actual GetAuthErrorCategory function
@@ -590,7 +590,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for missing destination info in request context
 		It("should handle missing destination info in request context", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -598,18 +598,18 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			// when destination info is missing from context
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the transport directly to test its RoundTrip method
@@ -648,7 +648,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 		// Test for nil destination info in request context
 		It("should handle nil destination info in request context", func() {
 			// Setup
-			cache := v2.NewCache()
+			cache := v2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 
@@ -656,18 +656,18 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			// when destination info is nil
 
 			// Create a mock token provider and connector
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil).AnyTimes()
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil).AnyTimes()
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 
 			// Create the OAuth handler
-			oauthHandler := v2.NewOAuthHandler(mockTokenProvider,
-				v2.WithCache(v2.NewCache()),
+			oauthHandler := v2.NewOAuthHandler(mockAuthIdentityProvider,
+				v2.WithCache(v2.NewOauthTokenCache()),
 				v2.WithLocker(kitsync.NewPartitionRWLocker()),
 				v2.WithStats(stats.Default),
 				v2.WithLogger(logger.NewLogger().Child("MockOAuthHandler")),
-				v2.WithCpConnector(mockCpConnector),
+				v2.WithCpClient(mockCpConnector),
 			)
 
 			// Create the transport directly to test its RoundTrip method

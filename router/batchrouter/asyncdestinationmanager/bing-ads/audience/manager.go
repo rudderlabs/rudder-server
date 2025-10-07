@@ -16,7 +16,7 @@ import (
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthClientV2 oauthv2.Authorizer) (*BingAdsBulkUploader, error) {
+func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, oauthHandler oauthv2.OAuthHandler) (*BingAdsBulkUploader, error) {
 	destConfig := DestinationConfig{}
 	jsonConfig, err := jsonrs.Marshal(destination.Config)
 	if err != nil {
@@ -31,7 +31,7 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 		WorkspaceID:        destination.WorkspaceID,
 		DestinationDefName: destination.DestinationDefinition.Name,
 		AccountID:          destConfig.RudderAccountID,
-		OauthClientV2:      oauthClientV2,
+		OauthHandler:       oauthHandler,
 		DestinationID:      destination.ID,
 		CurrentTime:        time.Now,
 	}
@@ -62,7 +62,7 @@ func NewManager(
 ) (*BingAdsBulkUploader, error) {
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
 		oauthv2.WithLogger(logger),
-		oauthv2.WithCPConnectorTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
+		oauthv2.WithCPClientTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
 		oauthv2.WithStats(statsFactory),
 	)
 	return newManagerInternal(logger, statsFactory, destination, oauthClientV2)
