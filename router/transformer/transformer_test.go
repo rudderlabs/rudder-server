@@ -565,9 +565,9 @@ var oauthV2RtTcs = []oauthV2TestCase{
 		},
 		expected: []types.DestinationJobT{
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 1, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Error: "Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 2, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 			{Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 3, WorkspaceID: "wsp"}}, StatusCode: http.StatusOK, Message: []byte("{}")},
-			{Error: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
+			{Error: "Unmarshal of response unsuccessful: Bad Gateway", Destination: oauthDests[0], JobMetadataArray: []types.JobMetadataT{{JobID: 4, WorkspaceID: "wsp"}}, StatusCode: http.StatusInternalServerError, AuthErrorCategory: common.CategoryRefreshToken, Message: []byte("{}")},
 		},
 		inputEvents: []types.RouterJobT{
 			{JobMetadata: types.JobMetadataT{JobID: 1, WorkspaceID: "wsp"}, Destination: oauthDests[0]},
@@ -862,11 +862,11 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				2: false,
 			},
 			RespBodys: map[int64]string{
-				1: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service",
-				2: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service",
+				1: "Unmarshal of response unsuccessful: Error occurred in downstream rudder service",
+				2: "Unmarshal of response unsuccessful: Error occurred in downstream rudder service",
 			},
 			RespContentType:          "application/json",
-			ProxyRequestResponseBody: `error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: Error occurred in downstream rudder service`,
+			ProxyRequestResponseBody: `Unmarshal of response unsuccessful: Error occurred in downstream rudder service`,
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes: map[int64]int{
 				1: http.StatusInternalServerError,
@@ -1612,13 +1612,13 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				46: false,
 			},
 			RespBodys: map[int64]string{
-				12: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
-				21: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
-				34: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
-				46: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+				12: "Unmarshal of response unsuccessful: internal error",
+				21: "Unmarshal of response unsuccessful: internal error",
+				34: "Unmarshal of response unsuccessful: internal error",
+				46: "Unmarshal of response unsuccessful: internal error",
 			},
 			RespContentType:          "application/json",
-			ProxyRequestResponseBody: "error occurred while fetching/refreshing account info from CP: Unmarshal of response unsuccessful: internal error",
+			ProxyRequestResponseBody: "Unmarshal of response unsuccessful: internal error",
 			ProxyRequestStatusCode:   http.StatusInternalServerError,
 			RespStatusCodes: map[int64]int{
 				12: http.StatusInternalServerError,
@@ -1700,7 +1700,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				Config:           tc.destination.Config,
 				DefinitionConfig: tc.destination.DestinationDefinition.Config,
 				WorkspaceID:      tc.reqPayload.Metadata[0].WorkspaceID,
-				DefinitionName:   tc.destination.DestinationDefinition.Name,
+				DestType:         tc.destination.DestinationDefinition.Name,
 				ID:               tc.destination.DestinationDefinition.ID,
 			}
 			reqParams := &ProxyRequestParams{

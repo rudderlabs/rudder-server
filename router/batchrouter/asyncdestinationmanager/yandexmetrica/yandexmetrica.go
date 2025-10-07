@@ -94,7 +94,7 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 		Config:           destination.Config,
 		DefinitionConfig: destination.DestinationDefinition.Config,
 		WorkspaceID:      destination.WorkspaceID,
-		DefinitionName:   destination.DestinationDefinition.Name,
+		DestType:         destination.DestinationDefinition.Name,
 		ID:               destination.ID,
 	}
 	yandexUploadManager := &YandexMetricaBulkUploader{
@@ -102,7 +102,7 @@ func NewManager(logger logger.Logger, statsFactory stats.Stats, destination *bac
 		logger:          logger.Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
 		statsFactory:    statsFactory,
 	}
-	cache := oauthv2.NewCache()
+	cache := oauthv2.NewOauthTokenCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Logger:    yandexUploadManager.logger,
 		Augmenter: augmenter.YandexReqAugmenter,
@@ -261,7 +261,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err error, importingJobIds []int64) common.AsyncUploadOutput {
 	eventsAbortedStat := ym.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
-		"destType": ym.destinationInfo.DefinitionName,
+		"destType": ym.destinationInfo.DestType,
 	})
 	eventsAbortedStat.Count(len(importingJobIds))
 	return common.AsyncUploadOutput{

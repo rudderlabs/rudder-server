@@ -56,8 +56,9 @@ func (proc *LifecycleManager) Start() error {
 	if proc.TransformerClients != nil {
 		proc.Handle.transformerClients = proc.TransformerClients
 	}
-
+	currentCtx, cancel := context.WithCancel(context.Background())
 	if err := proc.Handle.Setup(
+		currentCtx,
 		proc.BackendConfig,
 		proc.gatewayDB,
 		proc.routerDB,
@@ -75,12 +76,11 @@ func (proc *LifecycleManager) Start() error {
 		proc.trackedUsersReporter,
 		proc.pendingEventsRegistry,
 	); err != nil {
+		cancel()
 		return err
 	}
 
-	currentCtx, cancel := context.WithCancel(context.Background())
 	proc.currentCancel = cancel
-
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
 

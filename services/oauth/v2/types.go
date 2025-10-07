@@ -1,57 +1,65 @@
 package v2
 
-//go:generate mockgen -destination=../../../mocks/services/oauthV2/mock_oauthV2.go -package=mock_oauthV2 github.com/rudderlabs/rudder-server/services/oauth/v2 TokenProvider
+//go:generate mockgen -destination=../../../mocks/services/oauthV2/mock_oauthV2.go -package=mock_oauthV2 github.com/rudderlabs/rudder-server/services/oauth/v2 AuthIdentityProvider
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-// AccountSecret is the access token returned by the oauth server
-type AccountSecret struct {
+// OAuthToken is the access token returned by the oauth server
+type OAuthToken struct {
 	ExpirationDate string          `json:"expirationDate"`
 	Secret         json.RawMessage `json:"secret"`
 }
 
-type CacheKey struct {
-	WorkspaceID string
-	AccountID   string
+func (at *OAuthToken) IsEmpty() bool {
+	return at.Secret == nil || string(at.Secret) == `{}` || string(at.Secret) == "\"\"" || string(at.Secret) == "null"
 }
 
-type TokenProvider interface {
+// Expires returns true if the token expiration date is not empty, it is a valid RFC3339 timestamp and will expire after the given duration
+func (at *OAuthToken) Expires(after time.Duration) (bool, error) {
+	if at.ExpirationDate == "" {
+		return false, nil
+	}
+	expirationDate, err := time.Parse(misc.RFC3339Milli, at.ExpirationDate)
+	if err != nil {
+		return false, err
+	}
+	return expirationDate.Before(time.Now().Add(after)), nil
+}
+
+type AuthIdentityProvider interface {
 	Identity() identity.Identifier
 }
 
-type AuthResponse struct {
-	Account      AccountSecret
+type OAuthResponse struct {
+	OauthToken   OAuthToken
 	Err          string
 	ErrorMessage string
 }
-type RefreshTokenParams struct {
+type OAuthTokenParams struct {
 	AccountID     string
 	WorkspaceID   string
-	DestDefName   string
-	WorkerID      int
-	Secret        json.RawMessage
+	DestType      string
 	DestinationID string
 }
 
-type RefreshTokenBodyParams struct {
+type OauthTokenRequestBody struct {
 	HasExpired    bool            `json:"hasExpired"`
 	ExpiredSecret json.RawMessage `json:"expiredSecret"`
 }
 
-type AuthStatusToggleParams struct {
-	Destination     *DestinationInfo
-	WorkspaceID     string
-	RudderAccountID string
-	AuthStatus      string
-	StatPrefix      string
-}
+type StatusRequestParams struct {
+	AccountID     string
+	WorkspaceID   string
+	DestType      string
+	DestinationID string
 
-type authStatusToggleResponse struct {
-	Message string `json:"message,omitempty"`
+	Status string
 }
 
 type OAuthInterceptorResponse struct {
