@@ -1201,6 +1201,13 @@ func TestHandleSchemaChange(t *testing.T) {
 			expectedColumnVal: 1.0,
 		},
 		{
+			name:              "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype:  "float",
+			currentDataType:   "int",
+			value:             1.0,
+			expectedColumnVal: 1.0,
+		},
+		{
 			name:              "should send string values if existing datatype is string, new datatype is boolean",
 			existingDatatype:  "string",
 			currentDataType:   "boolean",
@@ -1360,13 +1367,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			currentDataType:  "boolean",
 			value:            false,
 			expectedError:    errors.New("incompatible schema conversion from float to boolean"),
-		},
-		{
-			name:             "existing datatype is float, new datatype is int",
-			existingDatatype: "float",
-			currentDataType:  "int",
-			value:            1.0,
-			expectedError:    errors.New("incompatible schema conversion from float to int"),
 		},
 		{
 			name:             "existing datatype is float, new datatype is string",
