@@ -337,15 +337,18 @@ func (w *worker) processSingleStagingFile(
 		eventLoader := w.encodingFactory.NewEventLoader(writer, job.LoadFileType, job.DestinationType)
 
 		// Duplicate detection by id column
-		iDVal, ok := columnData[job.columnName("id")]
-		if ok {
-			iDStr, ok := iDVal.(string)
+		// skip duplicate detection for users table as multiple identifies events can be present for same user	id
+		if tableName != warehouseutils.UsersTable {
+			iDVal, ok := columnData[job.columnName("id")]
 			if ok {
-				dedupKey := dedupKey{tableName: tableName, idValue: iDStr}
-				if _, exists := tableIDColumnSet[dedupKey]; exists {
-					duplicateCount++
-				} else {
-					tableIDColumnSet[dedupKey] = struct{}{}
+				iDStr, ok := iDVal.(string)
+				if ok {
+					dedupKey := dedupKey{tableName: tableName, idValue: iDStr}
+					if _, exists := tableIDColumnSet[dedupKey]; exists {
+						duplicateCount++
+					} else {
+						tableIDColumnSet[dedupKey] = struct{}{}
+					}
 				}
 			}
 		}
