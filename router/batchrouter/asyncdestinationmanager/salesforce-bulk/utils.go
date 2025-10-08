@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,7 +24,6 @@ type ObjectInfo struct {
 	ExternalIDField string
 }
 
-// readJobsFromFile reads and unmarshals jobs from the file created by batch router
 func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -49,9 +49,8 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	return jobs, nil
 }
 
-// extractObjectInfo extracts Salesforce object type and external ID
-// For RETL/VDM: Reads from context.externalId (provided by VDM)
-// For event streams: Uses config.ObjectType (defaults to Lead)
+// extractObjectInfo extracts Salesforce object type and external ID field
+// RETL: reads from context.externalId (VDM), event streams: uses config.ObjectType
 func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
@@ -59,27 +58,22 @@ func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*Objec
 
 	firstJob := jobs[0]
 
-	// Try VDM/RETL path first (has externalId from VDM)
 	if externalIDRaw, ok := firstJob.Metadata["externalId"]; ok {
 		return extractFromVDM(externalIDRaw)
 	}
 
-	// Event stream path - use config
 	objectType := config.ObjectType
 	if objectType == "" {
-		objectType = "Lead" // Salesforce default for event streams
+		objectType = "Lead"
 	}
 
 	return &ObjectInfo{
 		ObjectType:      objectType,
-		ExternalIDField: "Email", // Default for upsert operations
+		ExternalIDField: "Email",
 	}, nil
 }
 
-// extractFromVDM extracts object info from VDM's externalId structure
 func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
-
-	// externalId is an array, get first element
 	externalIDArray, ok := externalIDRaw.([]interface{})
 	if !ok || len(externalIDArray) == 0 {
 		return nil, fmt.Errorf("externalId must be an array with at least one element")
@@ -90,17 +84,14 @@ func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
 		return nil, fmt.Errorf("externalId[0] must be an object")
 	}
 
-	// Extract type (e.g., "Salesforce-Contact")
 	typeStr, _ := externalIDMap["type"].(string)
 	if typeStr == "" {
 		return nil, fmt.Errorf("externalId type is required")
 	}
 
-	// Remove "Salesforce-" prefix to get object type
 	objectType := strings.Replace(typeStr, "Salesforce-", "", 1)
 	objectType = strings.Replace(objectType, "salesforce-", "", 1)
 
-	// Extract identifierType (e.g., "Email") - used as external ID field for upsert
 	identifierType, _ := externalIDMap["identifierType"].(string)
 
 	return &ObjectInfo{
@@ -109,16 +100,15 @@ func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
 	}, nil
 }
 
-// createCSVFile generates a CSV file from transformed Salesforce payloads
 func createCSVFile(
 	destinationID string,
 	input []common.AsyncJob,
 	dataHashToJobID map[string]int64,
-) (string, []int64, []int64, error) {
+) (string, []string, []int64, []int64, error) {
 	csvFilePath := fmt.Sprintf("/tmp/salesforce_%s_%d.csv", destinationID, time.Now().Unix())
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("creating CSV file: %w", err)
+		return "", nil, nil, nil, fmt.Errorf("creating CSV file: %w", err)
 	}
 	defer csvFile.Close()
 
@@ -128,78 +118,71 @@ func createCSVFile(
 	var insertedJobIDs []int64
 	var overflowedJobIDs []int64
 
-	// Collect all field names from first job to build headers
 	if len(input) == 0 {
-		return "", nil, nil, fmt.Errorf("no jobs to process")
+		return "", nil, nil, nil, fmt.Errorf("no jobs to process")
 	}
 
-	// Build headers from first job's message keys
-	var headers []string
-	headerIndex := make(map[string]int)
+	// Sort headers for consistent CSV structure (Go map iteration is non-deterministic)
+	headers := make([]string, 0, len(input[0].Message))
 	for key := range input[0].Message {
-		headerIndex[key] = len(headers)
 		headers = append(headers, key)
 	}
-
-	// Write header row
-	if err := writer.Write(headers); err != nil {
-		return "", nil, nil, fmt.Errorf("writing CSV header: %w", err)
+	sort.Strings(headers)
+	
+	headerIndex := make(map[string]int)
+	for i, key := range headers {
+		headerIndex[key] = i
 	}
 
-	currentSize := int64(len(strings.Join(headers, ",")) + 1) // Header size
+	if err := writer.Write(headers); err != nil {
+		return "", nil, nil, nil, fmt.Errorf("writing CSV header: %w", err)
+	}
 
-	// Write data rows
+	currentSize := int64(len(strings.Join(headers, ",")) + 1)
+
 	for _, job := range input {
 		row := make([]string, len(headers))
 
-		// Fill row with values from message
 		for key, value := range job.Message {
 			if idx, ok := headerIndex[key]; ok {
 				row[idx] = fmt.Sprintf("%v", value)
 			}
 		}
 
-		// Calculate row size
 		rowSize := int64(len(strings.Join(row, ",")) + 1)
-
 		jobID := int64(job.Metadata["job_id"].(float64))
 
-		// Check file size limit
 		if currentSize+rowSize > maxFileSize {
 			overflowedJobIDs = append(overflowedJobIDs, jobID)
 			continue
 		}
 
-		// Write row
 		if err := writer.Write(row); err != nil {
-			return "", nil, nil, fmt.Errorf("writing CSV row: %w", err)
+			return "", nil, nil, nil, fmt.Errorf("writing CSV row: %w", err)
 		}
 
 		currentSize += rowSize
 		insertedJobIDs = append(insertedJobIDs, jobID)
 
-		// Track hash for result matching
 		hash := calculateHashCode(row)
 		dataHashToJobID[hash] = jobID
 	}
 
-	return csvFilePath, insertedJobIDs, overflowedJobIDs, nil
+	return csvFilePath, headers, insertedJobIDs, overflowedJobIDs, nil
 }
 
-// calculateHashCode generates a hash from CSV row for tracking
-func calculateHashCode(row []string) string {
+func calculateHashCode(row []string) string{
 	joined := strings.Join(row, ",")
 	hash := sha256.Sum256([]byte(joined))
 	return fmt.Sprintf("%x", hash)
 }
 
-// calculateHashFromRecord generates hash from Salesforce result record
-func calculateHashFromRecord(record map[string]string) string {
-	// Salesforce returns records with same fields as CSV
-	// Build same row structure for matching
-	var values []string
-	for _, value := range record {
-		values = append(values, value)
+// calculateHashFromRecord generates hash using only the original CSV headers,
+// ignoring any additional columns Salesforce returns (like sf__Id, sf__Created, etc.)
+func calculateHashFromRecord(record map[string]string, csvHeaders []string) string {
+	values := make([]string, 0, len(csvHeaders))
+	for _, header := range csvHeaders {
+		values = append(values, record[header])
 	}
 	return calculateHashCode(values)
 }

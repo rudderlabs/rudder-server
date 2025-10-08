@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
-// NewSalesforceAPIService creates a new Salesforce Bulk API 2.0 client
 func NewSalesforceAPIService(
 	authService SalesforceAuthServiceInterface,
 	logger logger.Logger,
@@ -26,7 +25,6 @@ func NewSalesforceAPIService(
 	}
 }
 
-// CreateJob creates a new Bulk API 2.0 ingest job
 func (s *SalesforceAPIService) CreateJob(
 	objectName, operation, externalIDField string,
 ) (string, *APIError) {
@@ -37,7 +35,6 @@ func (s *SalesforceAPIService) CreateJob(
 		LineEnding:  "LF",
 	}
 
-	// Add external ID field for upsert operations
 	if operation == "upsert" && externalIDField != "" {
 		reqBody.ExternalIDFieldName = externalIDField
 	}
@@ -73,7 +70,6 @@ func (s *SalesforceAPIService) CreateJob(
 	return jobResp.ID, nil
 }
 
-// UploadData uploads CSV data to an existing Bulk API job
 func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
@@ -98,7 +94,6 @@ func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 	return nil
 }
 
-// CloseJob closes a Bulk API job to trigger processing
 func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 	reqBody := map[string]string{"state": "UploadComplete"}
 	body, _ := jsonrs.Marshal(reqBody)
@@ -116,7 +111,6 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 	return nil
 }
 
-// GetJobStatus retrieves the status of a Bulk API job
 func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
 	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s",
 		s.authService.GetInstanceURL(), s.apiVersion, jobID)
@@ -138,23 +132,18 @@ func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIErr
 	return &jobResp, nil
 }
 
-// GetFailedRecords retrieves failed records from a completed job
 func (s *SalesforceAPIService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
 	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/failedResults",
 		s.authService.GetInstanceURL(), s.apiVersion, jobID)
-
 	return s.getCSVRecords(endpoint)
 }
 
-// GetSuccessfulRecords retrieves successful records from a completed job
 func (s *SalesforceAPIService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
 	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/successfulResults",
 		s.authService.GetInstanceURL(), s.apiVersion, jobID)
-
 	return s.getCSVRecords(endpoint)
 }
 
-// DeleteJob deletes a Bulk API job
 func (s *SalesforceAPIService) DeleteJob(jobID string) *APIError {
 	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s",
 		s.authService.GetInstanceURL(), s.apiVersion, jobID)
@@ -163,7 +152,6 @@ func (s *SalesforceAPIService) DeleteJob(jobID string) *APIError {
 	return apiErr
 }
 
-// getCSVRecords fetches and parses CSV results from Salesforce
 func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]string, *APIError) {
 	respBody, apiErr := s.makeRequest("GET", endpoint, nil, "")
 	if apiErr != nil {
@@ -172,10 +160,8 @@ func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]stri
 
 	reader := csv.NewReader(bytes.NewReader(respBody))
 
-	// Read header row
 	headers, err := reader.Read()
 	if err == io.EOF {
-		// Empty results
 		return []map[string]string{}, nil
 	}
 	if err != nil {
@@ -186,7 +172,6 @@ func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]stri
 		}
 	}
 
-	// Read all records
 	var records []map[string]string
 	for {
 		row, err := reader.Read()
@@ -213,13 +198,11 @@ func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]stri
 	return records, nil
 }
 
-// makeRequest makes an HTTP request to Salesforce with OAuth authentication
 func (s *SalesforceAPIService) makeRequest(
 	method, endpoint string,
 	body io.Reader,
 	contentType string,
 ) ([]byte, *APIError) {
-	// Get OAuth access token
 	token, err := s.authService.GetAccessToken()
 	if err != nil {
 		return nil, &APIError{
@@ -229,7 +212,6 @@ func (s *SalesforceAPIService) makeRequest(
 		}
 	}
 
-	// Create HTTP request
 	req, err := http.NewRequest(method, endpoint, body)
 	if err != nil {
 		return nil, &APIError{
@@ -239,13 +221,11 @@ func (s *SalesforceAPIService) makeRequest(
 		}
 	}
 
-	// Set headers
 	req.Header.Set("Authorization", "Bearer "+token)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	// Make request
 	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -257,7 +237,6 @@ func (s *SalesforceAPIService) makeRequest(
 	}
 	defer resp.Body.Close()
 
-	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, &APIError{
@@ -267,7 +246,6 @@ func (s *SalesforceAPIService) makeRequest(
 		}
 	}
 
-	// Handle error status codes
 	if resp.StatusCode >= 400 {
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
@@ -279,7 +257,6 @@ func (s *SalesforceAPIService) makeRequest(
 	return respBody, nil
 }
 
-// categorizeError categorizes API errors for proper retry/abort handling
 func categorizeError(statusCode int, body []byte) string {
 	switch statusCode {
 	case 401:

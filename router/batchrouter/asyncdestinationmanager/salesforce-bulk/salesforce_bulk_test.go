@@ -382,7 +382,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			t.Parallel()
 
 			dataHashToJobID := make(map[string]int64)
-			csvFilePath, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
+			csvFilePath, headers, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
 				"test-dest-123",
 				tc.jobs,
 				dataHashToJobID,
@@ -395,6 +395,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotEmpty(t, csvFilePath)
+			require.NotEmpty(t, headers)
 			require.Len(t, insertedJobIDs, tc.expectedInserted)
 			require.Len(t, overflowedJobIDs, tc.expectedOverflow)
 
@@ -445,6 +446,140 @@ func TestSalesforceBulk_calculateHashCode(t *testing.T) {
 			require.Equal(t, result, result2)
 		})
 	}
+}
+
+func TestSalesforceBulk_calculateHashFromRecord(t *testing.T) {
+	testCases := []struct {
+		name       string
+		record     map[string]string
+		csvHeaders []string
+		expected   string
+		shouldMatch bool
+		compareWith []string
+	}{
+		{
+			name: "match original CSV row - ignores Salesforce columns",
+			record: map[string]string{
+				"Email":      "test@example.com",
+				"FirstName":  "John",
+				"LastName":   "Doe",
+				"sf__Id":     "003xx000004TmiQAAS", // Salesforce added
+				"sf__Created": "true",                // Salesforce added
+				"sf__Error":  "",                     // Salesforce added
+			},
+			csvHeaders:  []string{"Email", "FirstName", "LastName"},
+			shouldMatch: true,
+			compareWith: []string{"test@example.com", "John", "Doe"},
+		},
+		{
+			name: "handles user's sf__ fields correctly",
+			record: map[string]string{
+				"Email":             "user@example.com",
+				"sf__AccountStatus": "Active", // User's actual field
+				"FirstName":         "Jane",
+				"sf__Id":            "003xx000005TmiQBBT", // Salesforce added
+			},
+			csvHeaders:  []string{"Email", "FirstName", "sf__AccountStatus"},
+			shouldMatch: true,
+			compareWith: []string{"user@example.com", "Jane", "Active"},
+		},
+		{
+			name: "consistent hash with sorted headers",
+			record: map[string]string{
+				"LastName":  "Smith",
+				"Email":     "smith@example.com",
+				"FirstName": "Bob",
+			},
+			csvHeaders:  []string{"Email", "FirstName", "LastName"}, // Already sorted
+			shouldMatch: true,
+			compareWith: []string{"smith@example.com", "Bob", "Smith"},
+		},
+		{
+			name: "handles missing fields with empty strings",
+			record: map[string]string{
+				"Email":     "partial@example.com",
+				"FirstName": "Only",
+				// LastName missing
+			},
+			csvHeaders:  []string{"Email", "FirstName", "LastName"},
+			shouldMatch: true,
+			compareWith: []string{"partial@example.com", "Only", ""},
+		},
+		{
+			name: "empty record",
+			record: map[string]string{},
+			csvHeaders: []string{"Email", "FirstName"},
+			shouldMatch: true,
+			compareWith: []string{"", ""},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			hash := calculateHashFromRecord(tc.record, tc.csvHeaders)
+
+			require.NotEmpty(t, hash)
+
+			if tc.shouldMatch {
+				expectedHash := calculateHashCode(tc.compareWith)
+				require.Equal(t, expectedHash, hash,
+					"Hash from record should match hash from original CSV values")
+			}
+
+			// Hash should be deterministic
+			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders)
+			require.Equal(t, hash, hash2, "Hash should be consistent across multiple calls")
+		})
+	}
+}
+
+func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
+	t.Run("upload and result matching flow", func(t *testing.T) {
+		t.Parallel()
+
+		// Simulate upload: Create CSV row
+		csvHeaders := []string{"Email", "FirstName", "LastName"}
+		uploadRow := []string{"integration@example.com", "Test", "User"}
+		uploadHash := calculateHashCode(uploadRow)
+
+		// Simulate Salesforce result: Same data plus extra columns
+		salesforceResult := map[string]string{
+			"Email":       "integration@example.com",
+			"FirstName":   "Test",
+			"LastName":    "User",
+			"sf__Id":      "003xx000006TmiQCCU",
+			"sf__Created": "true",
+			"sf__Error":   "",
+		}
+		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders)
+
+		// Hashes should match!
+		require.Equal(t, uploadHash, resultHash,
+			"Upload hash and result hash should match for same data")
+	})
+
+	t.Run("different data produces different hashes", func(t *testing.T) {
+		t.Parallel()
+
+		csvHeaders := []string{"Email", "FirstName"}
+
+		record1 := map[string]string{
+			"Email":     "user1@example.com",
+			"FirstName": "User",
+		}
+		record2 := map[string]string{
+			"Email":     "user2@example.com",
+			"FirstName": "User",
+		}
+
+		hash1 := calculateHashFromRecord(record1, csvHeaders)
+		hash2 := calculateHashFromRecord(record2, csvHeaders)
+
+		require.NotEqual(t, hash1, hash2,
+			"Different records should produce different hashes")
+	})
 }
 
 func TestSalesforceBulk_Poll(t *testing.T) {
@@ -676,7 +811,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		uploader, ok := manager.(*SalesforceBulkUploader)
 		require.True(t, ok)
 		require.Equal(t, "insert", uploader.config.Operation)
-		require.Equal(t, "v57.0", uploader.config.APIVersion) // Should default to v57.0
+		require.Equal(t, "v62.0", uploader.config.APIVersion) // Should default to v62.0
 	})
 
 	t.Run("invalid config", func(t *testing.T) {

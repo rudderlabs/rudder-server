@@ -10,7 +10,6 @@ import (
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-// NewManager creates a new Salesforce Bulk Upload destination manager
 func NewManager(
 	logger logger.Logger,
 	statsFactory stats.Stats,
@@ -22,20 +21,16 @@ func NewManager(
 		return nil, fmt.Errorf("parsing destination config: %w", err)
 	}
 
-	// Set default API version
 	if config.APIVersion == "" {
-		config.APIVersion = "v57.0"
+		config.APIVersion = "v62.0"
 	}
 
-	// Set default operation
 	if config.Operation == "" {
 		config.Operation = "insert"
 	}
 
-	// Initialize OAuth v2 client
 	oauthClient := oauthv2.NewOAuthHandler(backendConfig)
 
-	// Initialize auth service (handles token fetching/caching)
 	authService := &SalesforceAuthService{
 		logger:      logger,
 		oauthClient: oauthClient,
@@ -45,7 +40,6 @@ func NewManager(
 		apiVersion:  config.APIVersion,
 	}
 
-	// Initialize API service
 	apiService := NewSalesforceAPIService(authService, logger, config.APIVersion)
 
 	return &SalesforceBulkUploader{
@@ -61,19 +55,14 @@ func NewManager(
 
 func parseDestinationConfig(destination *backendconfig.DestinationT) (DestinationConfig, error) {
 	var config DestinationConfig
-
 	configMap := destination.Config
 
-	// Extract rudderAccountId (required for OAuth)
 	rudderAccountID, _ := configMap["rudderAccountId"].(string)
 	if rudderAccountID == "" {
-		return config, fmt.Errorf("rudderAccountId is required (OAuth account ID)")
+		return config, fmt.Errorf("rudderAccountId is required")
 	}
 
-	// Extract operation (optional, defaults to insert)
 	operation, _ := configMap["operation"].(string)
-
-	// Validate operation if provided
 	if operation != "" {
 		validOps := map[string]bool{
 			"insert": true,
@@ -86,10 +75,7 @@ func parseDestinationConfig(destination *backendconfig.DestinationT) (Destinatio
 		}
 	}
 
-	// Extract API version (optional)
 	apiVersion, _ := configMap["apiVersion"].(string)
-
-	// Extract object type (optional - used for event streams, RETL gets from context)
 	objectType, _ := configMap["objectType"].(string)
 
 	config = DestinationConfig{

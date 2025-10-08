@@ -1,22 +1,20 @@
 package salesforcebulk
 
 import (
+	"sync"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
-// DestinationConfig holds Salesforce Bulk Upload configuration
-// For RETL: field mapping comes from VDM, objectType from context.externalId
-// For event streams: field mapping from transformer, objectType from config
 type DestinationConfig struct {
-	RudderAccountID string `json:"rudderAccountId"` // OAuth account ID from Control Plane
-	Operation       string `json:"operation"`       // insert, update, upsert, delete
-	ObjectType      string `json:"objectType"`      // Lead, Contact, etc. (for event streams, optional for RETL)
-	APIVersion      string `json:"apiVersion"`      // Salesforce API version (default: v57.0)
+	RudderAccountID string `json:"rudderAccountId"`
+	Operation       string `json:"operation"`
+	ObjectType      string `json:"objectType"`
+	APIVersion      string `json:"apiVersion"`
 }
 
-// SalesforceBulkUploader implements AsyncDestinationManager interface
 type SalesforceBulkUploader struct {
 	destName        string
 	config          DestinationConfig
@@ -24,16 +22,16 @@ type SalesforceBulkUploader struct {
 	statsFactory    stats.Stats
 	apiService      SalesforceAPIServiceInterface
 	authService     SalesforceAuthServiceInterface
-	dataHashToJobID map[string]int64 // Maps CSV row hash to job ID for result tracking
+	dataHashToJobID map[string]int64
+	csvHeaders      []string
+	hashMapMutex    sync.RWMutex
 }
 
-// SalesforceAuthServiceInterface handles OAuth token management
 type SalesforceAuthServiceInterface interface {
 	GetAccessToken() (string, error)
 	GetInstanceURL() string
 }
 
-// SalesforceAuthService manages OAuth tokens via RudderStack's OAuth v2 service
 type SalesforceAuthService struct {
 	logger       logger.Logger
 	oauthClient  oauthv2.Authorizer
@@ -43,10 +41,9 @@ type SalesforceAuthService struct {
 	apiVersion   string
 	accessToken  string
 	instanceURL  string
-	tokenExpiry  int64 // Unix timestamp
+	tokenExpiry  int64
 }
 
-// SalesforceAPIServiceInterface defines Salesforce Bulk API operations
 type SalesforceAPIServiceInterface interface {
 	CreateJob(objectName, operation, externalIDField string) (string, *APIError)
 	UploadData(jobID, csvFilePath string) *APIError
@@ -57,14 +54,12 @@ type SalesforceAPIServiceInterface interface {
 	DeleteJob(jobID string) *APIError
 }
 
-// SalesforceAPIService handles Salesforce Bulk API 2.0 calls
 type SalesforceAPIService struct {
 	authService SalesforceAuthServiceInterface
 	logger      logger.Logger
 	apiVersion  string
 }
 
-// JobResponse represents Salesforce Bulk API job status
 type JobResponse struct {
 	ID                     string  `json:"id"`
 	State                  string  `json:"state"`
@@ -79,7 +74,6 @@ type JobResponse struct {
 	ErrorMessage           string  `json:"errorMessage,omitempty"`
 }
 
-// JobCreateRequest is the request body for creating a Bulk API job
 type JobCreateRequest struct {
 	Object              string `json:"object"`
 	ContentType         string `json:"contentType"`
@@ -88,11 +82,10 @@ type JobCreateRequest struct {
 	ExternalIDFieldName string `json:"externalIdFieldName,omitempty"`
 }
 
-// APIError represents errors from Salesforce API
 type APIError struct {
 	StatusCode int
 	Message    string
-	Category   string // "RefreshToken", "RateLimit", "BadRequest", "ServerError"
+	Category   string
 }
 
 const (
