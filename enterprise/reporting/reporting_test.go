@@ -694,28 +694,14 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 			eventName:    "long_event_name_that_should_cause_error",
 			prefixLength: 0,
 			suffixLength: 30,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=0, suffixLength=30. prefixLength and suffixLength must be > 0",
+			expectedErr:  "invalid event name trimming configuration prefixLength and suffixLength must be > 0",
 		},
 		{
 			name:         "zero suffixLength",
 			eventName:    "long_event_name_that_should_cause_error",
 			prefixLength: 30,
 			suffixLength: 0,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=30, suffixLength=0. prefixLength and suffixLength must be > 0",
-		},
-		{
-			name:         "prefixLength equals maxLength",
-			eventName:    "long_event_name_that_should_cause_error",
-			prefixLength: 30,
-			suffixLength: 0,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=30, suffixLength=0. prefixLength and suffixLength must be > 0",
-		},
-		{
-			name:         "suffixLength equals maxLength",
-			eventName:    "long_event_name_that_should_cause_error",
-			prefixLength: 0,
-			suffixLength: 30,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=0, suffixLength=30. prefixLength and suffixLength must be > 0",
+			expectedErr:  "invalid event name trimming configuration prefixLength and suffixLength must be > 0",
 		},
 	}
 
