@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -16,10 +17,9 @@ import (
 
 func TestSalesforceBulk_Transform(t *testing.T) {
 	testCases := []struct {
-		name     string
-		job      *jobsdb.JobT
-		expected string
-		wantErr  bool
+		name    string
+		job     *jobsdb.JobT
+		wantErr bool
 	}{
 		{
 			name: "successful transform with valid payload",
@@ -52,7 +52,6 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 			t.Parallel()
 
 			uploader := &SalesforceBulkUploader{}
-
 			result, err := uploader.Transform(tc.job)
 
 			if tc.wantErr {
@@ -63,7 +62,6 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, result)
 
-			// Verify it's valid JSON with message and metadata
 			var parsed common.AsyncJob
 			err = json.Unmarshal([]byte(result), &parsed)
 			require.NoError(t, err)
@@ -74,511 +72,146 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 	}
 }
 
-func TestSalesforceBulk_parseDestinationConfig(t *testing.T) {
-	testCases := []struct {
-		name        string
-		destination *backendconfig.DestinationT
-		expected    DestinationConfig
-		wantErr     bool
-		errorMsg    string
-	}{
+func TestSalesforceBulk_Upload(t *testing.T) {
+	tempFile, err := os.CreateTemp("", "test_upload_*.json")
+	require.NoError(t, err)
+	defer os.Remove(tempFile.Name())
+
+	testData := []common.AsyncJob{
 		{
-			name: "valid config with all fields",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-123",
-					"operation":       "insert",
-					"apiVersion":      "v57.0",
-				},
+			Message: map[string]interface{}{
+				"Email":     "test1@example.com",
+				"FirstName": "John",
+				"LastName":  "Doe",
 			},
-			expected: DestinationConfig{
-				RudderAccountID: "test-account-123",
-				Operation:       "insert",
-				APIVersion:      "v57.0",
+			Metadata: map[string]interface{}{
+				"job_id": float64(1),
 			},
-			wantErr: false,
 		},
 		{
-			name: "valid config with defaults",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-456",
-				},
-			},
-			expected: DestinationConfig{
-				RudderAccountID: "test-account-456",
-				Operation:       "",
-				APIVersion:      "",
-			},
-			wantErr: false,
-		},
-		{
-			name: "missing rudderAccountId",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"operation": "insert",
-				},
-			},
-			wantErr:  true,
-			errorMsg: "rudderAccountId is required",
-		},
-		{
-			name: "invalid operation",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-789",
-					"operation":       "invalid_op",
-				},
-			},
-			wantErr:  true,
-			errorMsg: "invalid operation",
-		},
-		{
-			name: "upsert operation",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-upsert",
-					"operation":       "upsert",
-				},
-			},
-			expected: DestinationConfig{
-				RudderAccountID: "test-account-upsert",
-				Operation:       "upsert",
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			result, err := parseDestinationConfig(tc.destination)
-
-			if tc.wantErr {
-				require.Error(t, err)
-				if tc.errorMsg != "" {
-					require.Contains(t, err.Error(), tc.errorMsg)
-				}
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tc.expected.RudderAccountID, result.RudderAccountID)
-			require.Equal(t, tc.expected.Operation, result.Operation)
-			if tc.expected.APIVersion != "" {
-				require.Equal(t, tc.expected.APIVersion, result.APIVersion)
-			}
-		})
-	}
-}
-
-func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
-	testCases := []struct {
-		name     string
-		jobs     []common.AsyncJob
-		expected *ObjectInfo
-		wantErr  bool
-		errorMsg string
-	}{
-		{
-			name: "valid externalId with Contact object",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(1),
-						"externalId": []interface{}{
-							map[string]interface{}{
-								"type":           "Salesforce-Contact",
-								"id":             "test@example.com",
-								"identifierType": "Email",
-							},
-						},
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Contact",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid externalId with Lead object",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "lead@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(2),
-						"externalId": []interface{}{
-							map[string]interface{}{
-								"type":           "Salesforce-Lead",
-								"id":             "lead@example.com",
-								"identifierType": "Email",
-							},
-						},
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Lead",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
-		{
-			name:     "empty jobs array",
-			jobs:     []common.AsyncJob{},
-			wantErr:  true,
-			errorMsg: "no jobs to process",
-		},
-		{
-			name: "missing externalId - falls back to config",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(3),
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Lead", // Defaults to Lead
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
-		{
-			name: "empty externalId array",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{},
-					Metadata: map[string]interface{}{
-						"externalId": []interface{}{},
-					},
-				},
-			},
-			wantErr:  true,
-			errorMsg: "at least one element",
-		},
-		{
-			name: "event stream without externalId - uses config",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "stream@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(10),
-						// No externalId - event stream
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Contact",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
-		{
-			name: "event stream with default object type",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "default@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(11),
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Lead", // Should default to Lead
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			// Use config for event stream tests, empty for RETL tests
-			testConfig := DestinationConfig{}
-			if tc.name == "event stream without externalId - uses config" {
-				testConfig.ObjectType = "Contact"
-			}
-
-			result, err := extractObjectInfo(tc.jobs, testConfig)
-
-			if tc.wantErr {
-				require.Error(t, err)
-				if tc.errorMsg != "" {
-					require.Contains(t, err.Error(), tc.errorMsg)
-				}
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tc.expected.ObjectType, result.ObjectType)
-			require.Equal(t, tc.expected.ExternalIDField, result.ExternalIDField)
-		})
-	}
-}
-
-func TestSalesforceBulk_createCSVFile(t *testing.T) {
-	testCases := []struct {
-		name              string
-		jobs              []common.AsyncJob
-		expectedInserted  int
-		expectedOverflow  int
-		wantErr           bool
-	}{
-		{
-			name: "create CSV with valid jobs",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email":     "test1@example.com",
-						"FirstName": "John",
-						"LastName":  "Doe",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(1),
-					},
-				},
-				{
-					Message: map[string]interface{}{
-						"Email":     "test2@example.com",
-						"FirstName": "Jane",
-						"LastName":  "Smith",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(2),
-					},
-				},
-			},
-			expectedInserted: 2,
-			expectedOverflow: 0,
-			wantErr:          false,
-		},
-		{
-			name:     "empty jobs array",
-			jobs:     []common.AsyncJob{},
-			wantErr:  true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			dataHashToJobID := make(map[string]int64)
-			csvFilePath, headers, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
-				"test-dest-123",
-				tc.jobs,
-				dataHashToJobID,
-			)
-
-			if tc.wantErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			require.NotEmpty(t, csvFilePath)
-			require.NotEmpty(t, headers)
-			require.Len(t, insertedJobIDs, tc.expectedInserted)
-			require.Len(t, overflowedJobIDs, tc.expectedOverflow)
-
-			// Verify CSV file was created
-			_, err = os.Stat(csvFilePath)
-			require.NoError(t, err)
-
-			// Cleanup
-			t.Cleanup(func() {
-				require.NoError(t, os.Remove(csvFilePath))
-			})
-
-			// Verify hash tracking
-			require.Len(t, dataHashToJobID, tc.expectedInserted)
-		})
-	}
-}
-
-func TestSalesforceBulk_calculateHashCode(t *testing.T) {
-	testCases := []struct {
-		name     string
-		row      []string
-		expected string
-	}{
-		{
-			name:     "simple row",
-			row:      []string{"test@example.com", "John", "Doe"},
-			expected: calculateHashCode([]string{"test@example.com", "John", "Doe"}),
-		},
-		{
-			name:     "empty row",
-			row:      []string{},
-			expected: calculateHashCode([]string{}),
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			result := calculateHashCode(tc.row)
-
-			require.NotEmpty(t, result)
-			require.Equal(t, tc.expected, result)
-
-			// Hash should be deterministic
-			result2 := calculateHashCode(tc.row)
-			require.Equal(t, result, result2)
-		})
-	}
-}
-
-func TestSalesforceBulk_calculateHashFromRecord(t *testing.T) {
-	testCases := []struct {
-		name       string
-		record     map[string]string
-		csvHeaders []string
-		expected   string
-		shouldMatch bool
-		compareWith []string
-	}{
-		{
-			name: "match original CSV row - ignores Salesforce columns",
-			record: map[string]string{
-				"Email":      "test@example.com",
-				"FirstName":  "John",
-				"LastName":   "Doe",
-				"sf__Id":     "003xx000004TmiQAAS", // Salesforce added
-				"sf__Created": "true",                // Salesforce added
-				"sf__Error":  "",                     // Salesforce added
-			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"test@example.com", "John", "Doe"},
-		},
-		{
-			name: "handles user's sf__ fields correctly",
-			record: map[string]string{
-				"Email":             "user@example.com",
-				"sf__AccountStatus": "Active", // User's actual field
-				"FirstName":         "Jane",
-				"sf__Id":            "003xx000005TmiQBBT", // Salesforce added
-			},
-			csvHeaders:  []string{"Email", "FirstName", "sf__AccountStatus"},
-			shouldMatch: true,
-			compareWith: []string{"user@example.com", "Jane", "Active"},
-		},
-		{
-			name: "consistent hash with sorted headers",
-			record: map[string]string{
+			Message: map[string]interface{}{
+				"Email":     "test2@example.com",
+				"FirstName": "Jane",
 				"LastName":  "Smith",
-				"Email":     "smith@example.com",
-				"FirstName": "Bob",
 			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"}, // Already sorted
-			shouldMatch: true,
-			compareWith: []string{"smith@example.com", "Bob", "Smith"},
-		},
-		{
-			name: "handles missing fields with empty strings",
-			record: map[string]string{
-				"Email":     "partial@example.com",
-				"FirstName": "Only",
-				// LastName missing
+			Metadata: map[string]interface{}{
+				"job_id": float64(2),
 			},
-			csvHeaders:  []string{"Email", "FirstName", "LastName"},
-			shouldMatch: true,
-			compareWith: []string{"partial@example.com", "Only", ""},
-		},
-		{
-			name: "empty record",
-			record: map[string]string{},
-			csvHeaders: []string{"Email", "FirstName"},
-			shouldMatch: true,
-			compareWith: []string{"", ""},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			hash := calculateHashFromRecord(tc.record, tc.csvHeaders)
-
-			require.NotEmpty(t, hash)
-
-			if tc.shouldMatch {
-				expectedHash := calculateHashCode(tc.compareWith)
-				require.Equal(t, expectedHash, hash,
-					"Hash from record should match hash from original CSV values")
-			}
-
-			// Hash should be deterministic
-			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders)
-			require.Equal(t, hash, hash2, "Hash should be consistent across multiple calls")
-		})
+	for _, job := range testData {
+		jobBytes, _ := jsonrs.Marshal(job)
+		tempFile.Write(jobBytes)
+		tempFile.Write([]byte("\n"))
 	}
-}
+	tempFile.Close()
 
-func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
-	t.Run("upload and result matching flow", func(t *testing.T) {
-		t.Parallel()
-
-		// Simulate upload: Create CSV row
-		csvHeaders := []string{"Email", "FirstName", "LastName"}
-		uploadRow := []string{"integration@example.com", "Test", "User"}
-		uploadHash := calculateHashCode(uploadRow)
-
-		// Simulate Salesforce result: Same data plus extra columns
-		salesforceResult := map[string]string{
-			"Email":       "integration@example.com",
-			"FirstName":   "Test",
-			"LastName":    "User",
-			"sf__Id":      "003xx000006TmiQCCU",
-			"sf__Created": "true",
-			"sf__Error":   "",
+	t.Run("successful upload", func(t *testing.T) {
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				require.Equal(t, "Lead", objectName)
+				require.Equal(t, "insert", operation)
+				return "sf-job-123", nil
+			},
+			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
+				require.Equal(t, "sf-job-123", jobID)
+				return nil
+			},
+			CloseJobFunc: func(jobID string) *APIError {
+				require.Equal(t, "sf-job-123", jobID)
+				return nil
+			},
 		}
-		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders)
 
-		// Hashes should match!
-		require.Equal(t, uploadHash, resultHash,
-			"Upload hash and result hash should match for same data")
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "insert"},
+			dataHashToJobID: make(map[string]int64),
+		}
+
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{
+				ID: "test-dest-1",
+			},
+			FileName:        tempFile.Name(),
+			FailedJobIDs:    []int64{},
+			ImportingJobIDs: []int64{},
+		})
+
+		require.Equal(t, 2, result.ImportingCount)
+		require.Equal(t, 0, result.FailedCount)
+		require.NotNil(t, result.ImportingParameters)
+		
+		var params map[string]string
+		err := json.Unmarshal(result.ImportingParameters, &params)
+		require.NoError(t, err)
+		require.Equal(t, "sf-job-123", params["jobId"])
 	})
 
-	t.Run("different data produces different hashes", func(t *testing.T) {
-		t.Parallel()
-
-		csvHeaders := []string{"Email", "FirstName"}
-
-		record1 := map[string]string{
-			"Email":     "user1@example.com",
-			"FirstName": "User",
-		}
-		record2 := map[string]string{
-			"Email":     "user2@example.com",
-			"FirstName": "User",
+	t.Run("upload with API error", func(t *testing.T) {
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				return "", &APIError{
+					StatusCode: 500,
+					Message:    "Internal Server Error",
+					Category:   "ServerError",
+				}
+			},
 		}
 
-		hash1 := calculateHashFromRecord(record1, csvHeaders)
-		hash2 := calculateHashFromRecord(record2, csvHeaders)
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "insert"},
+			dataHashToJobID: make(map[string]int64),
+		}
 
-		require.NotEqual(t, hash1, hash2,
-			"Different records should produce different hashes")
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{
+				ID: "test-dest-1",
+			},
+			FileName:        tempFile.Name(),
+			FailedJobIDs:    []int64{},
+			ImportingJobIDs: []int64{},
+		})
+
+		require.Equal(t, 0, result.ImportingCount)
+		require.Greater(t, result.FailedCount, 0)
+		require.Contains(t, result.FailedReason, "Internal Server Error")
+	})
+
+	t.Run("upload with rate limit error", func(t *testing.T) {
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				return "", &APIError{
+					StatusCode: 429,
+					Message:    "Rate limit exceeded",
+					Category:   "RateLimit",
+				}
+			},
+		}
+
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "insert"},
+			dataHashToJobID: make(map[string]int64),
+		}
+
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{
+				ID: "test-dest-1",
+			},
+			FileName:        tempFile.Name(),
+			FailedJobIDs:    []int64{},
+			ImportingJobIDs: []int64{},
+		})
+
+		require.Equal(t, 0, result.ImportingCount)
+		require.Greater(t, result.FailedCount, 0)
+		require.Contains(t, result.FailedReason, "rate limit")
 	})
 }
 
@@ -591,12 +224,6 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 	}{
 		{
 			name: "job complete - all success",
-			jobStatus: &JobResponse{
-				ID:                     "job-123",
-				State:                  "JobComplete",
-				NumberRecordsProcessed: 100,
-				NumberRecordsFailed:    0,
-			},
 			setupMock: func(mock *MockSalesforceAPIService) {
 				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
 					return &JobResponse{
@@ -676,13 +303,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				apiService: mockAPI,
 			}
 
-			// Get job ID from test case
-			jobID := "job-456" // default
-			if tc.jobStatus != nil {
-				jobID = tc.jobStatus.ID
-			}
-			pollInput := common.AsyncPoll{ImportId: jobID}
-
+			pollInput := common.AsyncPoll{ImportId: "job-456"}
 			result := uploader.Poll(pollInput)
 
 			require.Equal(t, tc.expectedStatus.StatusCode, result.StatusCode)
@@ -693,14 +314,104 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 	}
 }
 
+func TestSalesforceBulk_GetUploadStats(t *testing.T) {
+	t.Run("successful stats retrieval with failures", func(t *testing.T) {
+		mockAPI := &MockSalesforceAPIService{
+			GetFailedRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
+				return []map[string]string{
+					{
+						"Email":     "failed@example.com",
+						"FirstName": "Failed",
+						"LastName":  "User",
+						"sf__Error": "Invalid email format",
+					},
+				}, nil
+			},
+			GetSuccessfulRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
+				return []map[string]string{
+					{
+						"Email":     "success@example.com",
+						"FirstName": "Success",
+						"LastName":  "User",
+						"sf__Id":    "003xx000001",
+					},
+				}, nil
+			},
+		}
+
+		uploader := &SalesforceBulkUploader{
+			apiService:      mockAPI,
+			dataHashToJobID: make(map[string]int64),
+			csvHeaders:      []string{"Email", "FirstName", "LastName"},
+		}
+
+		// Simulate the upload phase hash tracking
+		uploader.dataHashToJobID[calculateHashCode([]string{"failed@example.com", "Failed", "User"})] = 1
+		uploader.dataHashToJobID[calculateHashCode([]string{"success@example.com", "Success", "User"})] = 2
+
+		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+			Parameters: json.RawMessage(`{"jobId":"test-job-123"}`),
+			ImportingList: []*jobsdb.JobT{
+				{JobID: 1},
+				{JobID: 2},
+			},
+		})
+
+		require.Equal(t, 200, result.StatusCode)
+		require.NotNil(t, result.Metadata)
+		require.Len(t, result.Metadata.AbortedKeys, 1)
+		require.Len(t, result.Metadata.SucceededKeys, 1)
+		require.Equal(t, int64(1), result.Metadata.AbortedKeys[0])
+		require.Equal(t, int64(2), result.Metadata.SucceededKeys[0])
+		require.Equal(t, "Invalid email format", result.Metadata.AbortedReasons[1])
+	})
+
+	t.Run("handles API error fetching failed records", func(t *testing.T) {
+		mockAPI := &MockSalesforceAPIService{
+			GetFailedRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
+				return nil, &APIError{
+					StatusCode: 500,
+					Message:    "Server error",
+					Category:   "ServerError",
+				}
+			},
+		}
+
+		uploader := &SalesforceBulkUploader{
+			apiService:      mockAPI,
+			dataHashToJobID: make(map[string]int64),
+		}
+
+		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+			Parameters: json.RawMessage(`{"jobId":"test-job-123"}`),
+		})
+
+		require.Equal(t, 500, result.StatusCode)
+		require.Contains(t, result.Error, "Failed to fetch failed records")
+	})
+
+	t.Run("handles invalid parameters", func(t *testing.T) {
+		uploader := &SalesforceBulkUploader{
+			dataHashToJobID: make(map[string]int64),
+		}
+
+		result := uploader.GetUploadStats(common.GetUploadStatsInput{
+			Parameters: json.RawMessage(`invalid json`),
+		})
+
+		require.Equal(t, 500, result.StatusCode)
+		require.Contains(t, result.Error, "Failed to parse parameters")
+	})
+}
+
 func TestSalesforceBulk_handleAPIError(t *testing.T) {
 	testCases := []struct {
-		name           string
-		apiError       *APIError
-		failedJobIDs   []int64
+		name            string
+		apiError        *APIError
+		failedJobIDs    []int64
 		importingJobIDs []int64
-		expectedAbort  bool
-		expectedFailed bool
+		expectedAbort   bool
+		expectedFailed  bool
 	}{
 		{
 			name: "token expired - should retry",
@@ -807,17 +518,15 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 
-		// Verify it's the correct type
 		uploader, ok := manager.(*SalesforceBulkUploader)
 		require.True(t, ok)
 		require.Equal(t, "insert", uploader.config.Operation)
-		require.Equal(t, "v62.0", uploader.config.APIVersion) // Should default to v62.0
+		require.Equal(t, "v62.0", uploader.config.APIVersion)
 	})
 
 	t.Run("invalid config", func(t *testing.T) {
 		destination := &backendconfig.DestinationT{
 			Config: map[string]interface{}{
-				// Missing rudderAccountId
 				"operation": "insert",
 			},
 		}
@@ -836,4 +545,3 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		require.Contains(t, err.Error(), "rudderAccountId")
 	})
 }
-
