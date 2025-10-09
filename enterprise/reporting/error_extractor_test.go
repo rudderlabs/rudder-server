@@ -17,7 +17,7 @@ func TestNewErrorDetailExtractor(t *testing.T) {
 
 	extractor := NewErrorDetailExtractor(logger.NOP, conf)
 	require.NotNil(t, extractor)
-	require.Equal(t, 200000, extractor.maxMessageLength.Load())
+	require.Equal(t, 20000, extractor.maxMessageLength.Load())
 	require.Contains(t, extractor.ErrorMessageKeys, "error_message")
 	require.Contains(t, extractor.ErrorMessageKeys, "message")
 }
@@ -79,6 +79,11 @@ func TestExtractorHandle_GetErrorMessage(t *testing.T) {
 			name:           "HTML response",
 			sampleResponse: `<body><h1>Error</h1><p>HTML error message</p></body>`,
 			expected:       "body Error p HTML error message p body",
+		},
+		{
+			name:           "unicode-escaped HTML in JSON response field",
+			sampleResponse: `{"response":"\u003c!DOCTYPE html\u003e\n\u003chtml\u003e\n\u003ctitle\u003eError 411\u003c/title\u003e\n\u003cp\u003ePOST requests require a Content-length header\u003c/p\u003e\n\u003c/html\u003e"}`,
+			expected:       "Error POST requests require a Content length header",
 		},
 		{
 			name:           "warehouse error with internal_processing_failed",
@@ -195,6 +200,68 @@ func TestExtractorHandle_HandleKey(t *testing.T) {
 	}
 }
 
+func TestIsHTMLString(t *testing.T) {
+	testCases := []struct {
+		name     string
+		input    string
+		expected bool
+	}{
+		{
+			name:     "HTML with DOCTYPE and html tags",
+			input:    `<!DOCTYPE html><html><title>Error</title></html>`,
+			expected: true,
+		},
+		{
+			name:     "HTML with body tags",
+			input:    `<body><p>Error</p></body>`,
+			expected: true,
+		},
+		{
+			name:     "HTML with html and title tags",
+			input:    `<html><title>Error 411</title><p>Content</p></html>`,
+			expected: true,
+		},
+		{
+			name:     "HTML with html and head tags",
+			input:    `<html><head><meta charset="utf-8"></head></html>`,
+			expected: true,
+		},
+		{
+			name:     "Case insensitive DOCTYPE",
+			input:    `<!doctype HTML><HTML><TITLE>Error</TITLE></HTML>`,
+			expected: true,
+		},
+		{
+			name:     "Plain text",
+			input:    "This is a plain error message",
+			expected: false,
+		},
+		{
+			name:     "JSON string",
+			input:    `{"error": "message"}`,
+			expected: false,
+		},
+		{
+			name:     "Incomplete HTML - only html tag",
+			input:    `<html>Some content`,
+			expected: false,
+		},
+		{
+			name:     "Incomplete HTML - only doctype",
+			input:    `<!DOCTYPE html>`,
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result := isHTMLString(tc.input)
+			require.Equal(t, tc.expected, result)
+		})
+	}
+}
+
 func TestExtractorHandle_HandleResponseOrErrorKey(t *testing.T) {
 	extractor := NewErrorDetailExtractor(logger.NOP, config.New())
 
@@ -212,6 +279,16 @@ func TestExtractorHandle_HandleResponseOrErrorKey(t *testing.T) {
 			name:     "HTML string",
 			valueStr: `<body><h1>Error</h1><p>HTML content</p></body>`,
 			expected: "Error\r\n\r\nHTML content\r\n\r\n",
+		},
+		{
+			name:     "HTML with DOCTYPE and no explicit body tag",
+			valueStr: `<!DOCTYPE html><html><title>Error 411</title><p>POST requests require a Content-length header.</p></html>`,
+			expected: "Error 411\r\n\r\nPOST requests require a Content-length header.\r\n\r\n",
+		},
+		{
+			name:     "HTML with html and title tags",
+			valueStr: `<html><title>Error 404</title><p>Page not found</p></html>`,
+			expected: "Error 404\r\n\r\nPage not found\r\n\r\n",
 		},
 		{
 			name:     "plain string",
@@ -295,13 +372,13 @@ func TestExtractorHandle_TruncateMessage(t *testing.T) {
 		},
 		{
 			name:     "message at limit",
-			message:  "Exactly 10!",
-			expected: "Exactly 10!",
+			message:  "Exactly 10",
+			expected: "Exactly 10",
 		},
 		{
 			name:     "message exceeds limit",
 			message:  "This message is too long",
-			expected: "This message is too long",
+			expected: "This messa...",
 		},
 		{
 			name:     "empty message",

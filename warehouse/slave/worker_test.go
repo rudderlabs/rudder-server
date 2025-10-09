@@ -1201,6 +1201,13 @@ func TestHandleSchemaChange(t *testing.T) {
 			expectedColumnVal: 1.0,
 		},
 		{
+			name:              "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype:  "float",
+			currentDataType:   "int",
+			value:             1.0,
+			expectedColumnVal: 1.0,
+		},
+		{
 			name:              "should send string values if existing datatype is string, new datatype is boolean",
 			existingDatatype:  "string",
 			currentDataType:   "boolean",
@@ -1362,10 +1369,10 @@ func TestHandleSchemaChange(t *testing.T) {
 			expectedError:    errors.New("incompatible schema conversion from float to boolean"),
 		},
 		{
-			name:             "existing datatype is float, new datatype is int",
+			name:             "existing datatype is float, new datatype is int, value incompatible",
 			existingDatatype: "float",
 			currentDataType:  "int",
-			value:            1.0,
+			value:            false,
 			expectedError:    errors.New("incompatible schema conversion from float to int"),
 		},
 		{
@@ -1428,6 +1435,7 @@ func TestHandleSchemaChange(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			newColumnVal, convError := HandleSchemaChange(
+				logger.NOP,
 				tc.existingDatatype,
 				tc.currentDataType,
 				tc.value,
@@ -1573,6 +1581,27 @@ func TestStagingFileDuplicateEventsMetric(t *testing.T) {
 			return nil
 		}
 		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 2, Location: stagingFilePath}, "")
+		require.NoError(t, err)
+		m := statsStore.Get(metricName, jr.buildTags())
+		require.EqualValues(t, 0, m.LastValue()) // no duplicates
+	})
+
+	t.Run("does not increment duplicate metric for users table", func(t *testing.T) {
+		events := []string{
+			fmt.Sprintf(eventTemplate, "users", "id1"),
+			fmt.Sprintf(eventTemplate, "users", "id2"),
+			fmt.Sprintf(eventTemplate, "users", "id2"),
+		}
+		stagingFilePath := createStagingFile(events, "staging4.json.gz")
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		w := newWorker(config.New(), logger.NOP, statsStore, nil, nil, nil, nil, workerId)
+		jr := newJobRun(basePayload{}, workerId, config.New(), logger.NOP, statsStore, w.encodingFactory)
+		jr.downloadStagingFile = func(ctx context.Context, stagingFileInfo stagingFileInfo) error {
+			jr.stagingFilePaths = map[int64]string{1: stagingFilePath}
+			return nil
+		}
+		err = w.processSingleStagingFile(context.Background(), jr, &jr.job, stagingFileInfo{ID: 1, Location: stagingFilePath}, "")
 		require.NoError(t, err)
 		m := statsStore.Get(metricName, jr.buildTags())
 		require.EqualValues(t, 0, m.LastValue()) // no duplicates

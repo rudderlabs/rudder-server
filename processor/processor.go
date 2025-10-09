@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/delayed"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/internal/preprocessdelay"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -113,6 +114,7 @@ type Handle struct {
 	dedup                      deduptypes.Dedup
 	reporting                  reportingtypes.Reporting
 	reportingEnabled           bool
+	backgroundCtx              context.Context
 	backgroundWait             func() error
 	backgroundCancel           context.CancelFunc
 	statsFactory               stats.Stats
@@ -377,6 +379,7 @@ func (proc *Handle) newEventFilterStat(sourceID, workspaceID string, destination
 
 // Setup initializes the module
 func (proc *Handle) Setup(
+	ctx context.Context,
 	backendConfig backendconfig.BackendConfig,
 	gatewayDB, routerDB, batchRouterDB,
 	eventSchemaDB, archivalDB jobsdb.JobsDB,
@@ -567,9 +570,10 @@ func (proc *Handle) Setup(
 		}
 	}
 	proc.sourceObservers = []sourceObserver{delayed.NewEventStats(proc.statsFactory, proc.conf)}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)
 
+	proc.backgroundCtx = ctx
 	proc.backgroundWait = g.Wait
 	proc.backgroundCancel = cancel
 
@@ -1668,17 +1672,21 @@ type preTransformationMessage struct {
 	dedupKeys                     map[string]struct{}
 }
 
-func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
+func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*preTransformationMessage, error) {
 	start := time.Now()
 	spanTags := stats.Tags{"partition": partition}
 	ctx, processJobsSpan := proc.tracer.Trace(subJobs.ctx, "preprocessStage", tracing.WithTraceTags(spanTags))
 	defer processJobsSpan.End()
 
+	var preprocessdelaySleeper preprocessdelay.Sleeper
 	if proc.limiter.preprocess != nil {
-		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+		limiterExec := proc.limiter.preprocess.BeginWithSleepAndPriority(partition, proc.getLimiterPriority(partition))
+		preprocessdelaySleeper = limiterExec.Sleep
+		defer limiterExec.End()
 		defer proc.stats.statPreprocessStageCount(partition).Count(len(subJobs.subJobs))
 	}
 
+	delayHandler := preprocessdelay.NewHandle(delay, preprocessdelaySleeper)
 	jobList := subJobs.subJobs
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
@@ -1849,6 +1857,12 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob) (*preTrans
 			})
 			dedupBatchKeys = append(dedupBatchKeys, dedupBatchKey)
 		}
+		delayHandler.JobReceivedAt(receivedAt)
+	}
+
+	if err := delayHandler.Sleep(proc.backgroundCtx); err != nil {
+		proc.logger.Infon("preprocess delay sleep interrupted", logger.NewStringField("partition", partition), obskit.Error(err))
+		return nil, types.ErrProcessorStopping
 	}
 
 	var allowedBatchKeys map[dedup.BatchKey]bool
@@ -3774,6 +3788,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 			hasMore:       false,
 			rsourcesStats: rsourcesStats,
 		},
+		proc.conf.GetReloadableDurationVar(0, time.Second, "Processor.preprocessDelay."+partition).Load(),
 	)
 	if err != nil {
 		panic(err)

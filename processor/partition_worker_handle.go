@@ -21,7 +21,7 @@ type workerHandle interface {
 	getJobsStage(ctx context.Context, partition string) jobsdb.JobsResult
 	markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
-	preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error)
+	preprocessStage(partition string, subJobs subJob, delay time.Duration) (*preTransformationMessage, error)
 	pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error)
 	userTransformStage(partition string, in *transformationMessage) *userTransformData
 	destinationTransformStage(partition string, in *userTransformData) *storeMessage
@@ -37,6 +37,7 @@ type workerHandleConfig struct {
 	subJobSize            int
 	pipelinesPerPartition int
 
-	readLoopSleep config.ValueLoader[time.Duration]
-	maxLoopSleep  config.ValueLoader[time.Duration]
+	readLoopSleep            config.ValueLoader[time.Duration]
+	maxLoopSleep             config.ValueLoader[time.Duration]
+	partitionProcessingDelay func(partition string) config.ValueLoader[time.Duration]
 }

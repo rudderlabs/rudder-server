@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -15,6 +16,8 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
+
+var ErrProcessorStopping = errors.New("processor is stopping")
 
 // SingularEventT single event structure
 type SingularEventT map[string]interface{}

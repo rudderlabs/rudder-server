@@ -32,11 +32,15 @@ var update = flag.Bool("update", false, "update golden files")
 func TestClientSendMetric(t *testing.T) {
 	// Create a channel to capture the request payload
 	var receivedPayload []byte
+	var capturedRequest *http.Request
 	payloadChan := make(chan []byte, 1)
 
 	// Create a test server to mock the reporting service
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
+
+		// Capture the request for authentication verification
+		capturedRequest = r
 
 		if r.URL.Path != "/metrics" {
 			w.WriteHeader(http.StatusNotFound)
@@ -67,6 +71,8 @@ func TestClientSendMetric(t *testing.T) {
 	conf.Set("clientName", "test-client")
 	conf.Set("REPORTING_URL", server.URL)
 	conf.Set("Reporting.httpClient.backoff.maxRetries", 1)
+	conf.Set("REPORTING_USERNAME", "test_user")
+	conf.Set("REPORTING_PASSWORD", "test_pass")
 
 	// Create the client
 	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
@@ -149,6 +155,12 @@ func TestClientSendMetric(t *testing.T) {
 
 	require.Equal(t, expectedJSON, actualJSON, "payload does not match golden file")
 
+	// Verify authentication using Go's built-in BasicAuth
+	username, password, ok := capturedRequest.BasicAuth()
+	require.True(t, ok, "should be able to parse basic auth header")
+	require.Equal(t, "test_user", username, "username should match")
+	require.Equal(t, "test_pass", password, "password should match")
+
 	t.Run("ensure metrics are recorded", func(t *testing.T) {
 		// Expected tags for all metrics
 		expectedTags := stats.Tags{
@@ -187,11 +199,16 @@ func TestClientSendMetric(t *testing.T) {
 func TestClientSendErrorMetric(t *testing.T) {
 	// Create a channel to capture the request payload
 	var receivedPayload []byte
+	var capturedRequest *http.Request
 	payloadChan := make(chan []byte, 1)
 
 	// Create a test server to mock the reporting service
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var err error
+
+		// Capture the request for authentication verification
+		capturedRequest = r
+
 		receivedPayload, err = io.ReadAll(r.Body)
 		require.NoError(t, err)
 		payloadChan <- receivedPayload
@@ -208,6 +225,8 @@ func TestClientSendErrorMetric(t *testing.T) {
 	conf.Set("INSTANCE_ID", "test-instance")
 	conf.Set("clientName", "test-client")
 	conf.Set("REPORTING_URL", server.URL)
+	conf.Set("REPORTING_USERNAME", "error_user")
+	conf.Set("REPORTING_PASSWORD", "error_pass")
 
 	// Create the client
 	c := client.New(client.RouteMetrics, conf, logger.NOP, statsStore)
@@ -269,6 +288,12 @@ func TestClientSendErrorMetric(t *testing.T) {
 	require.NoError(t, err, "failed to unmarshal actual JSON")
 
 	require.Equal(t, expectedJSON, actualJSON, "payload does not match golden file")
+
+	// Verify authentication using Go's built-in BasicAuth
+	username, password, ok := capturedRequest.BasicAuth()
+	require.True(t, ok, "should be able to parse basic auth header")
+	require.Equal(t, "error_user", username, "username should match")
+	require.Equal(t, "error_pass", password, "password should match")
 
 	// Expected tags for all metrics
 	expectedTags := stats.Tags{

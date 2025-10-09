@@ -17,7 +17,7 @@ import (
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	oauth "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 	oauthexts "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
@@ -28,7 +28,7 @@ type TransportArgs struct {
 	BackendConfig backendconfig.BackendConfig
 	FlowType      common.RudderFlow
 	// TokenCache is a cache for storing OAuth tokens.
-	TokenCache *oauth.Cache
+	TokenCache *v2.OauthTokenCache
 	// Locker provides synchronization mechanisms.
 	Locker *kitsync.PartitionRWLocker
 	// GetAuthErrorCategory is a function to get the auth error category from the response body. It can be REFRESH_TOKEN or AUTH_STATUS_INACTIVE.
@@ -36,7 +36,7 @@ type TransportArgs struct {
 	// Augmenter is an interface for augmenting requests with OAuth tokens.
 	oauthexts.Augmenter
 	// OAuthHandler handles refreshToken and fetchToken requests.
-	OAuthHandler *oauth.OAuthHandler
+	OAuthHandler v2.OAuthHandler
 	// OriginalTransport is the underlying HTTP transport.
 	OriginalTransport http.RoundTripper
 	logger            logger.Logger
@@ -46,7 +46,7 @@ type TransportArgs struct {
 // OAuthTransport is a http.RoundTripper that adds the appropriate authorization information to oauth requests.
 // Also, it makes the calls to the actual endpoint and handles the response by refreshing the token if required or by updating the authStatus to "inactive".
 type OAuthTransport struct {
-	oauthHandler oauth.OAuthHandler
+	oauthHandler v2.OAuthHandler
 	oauthexts.Augmenter
 	Transport            http.RoundTripper
 	log                  logger.Logger
@@ -57,11 +57,11 @@ type OAuthTransport struct {
 
 // This struct is used to transport common information across the pre and post round trip methods.
 type roundTripState struct {
-	destination        *oauth.DestinationInfo
-	accountID          string
-	refreshTokenParams *oauth.RefreshTokenParams
-	res                *http.Response
-	req                *http.Request
+	destination *v2.DestinationInfo
+	accountID   string
+	tokenParams *v2.OAuthTokenParams
+	res         *http.Response
+	req         *http.Request
 }
 
 func httpResponseCreator(statusCode int, body []byte) *http.Response {
@@ -74,7 +74,7 @@ func httpResponseCreator(statusCode int, body []byte) *http.Response {
 
 func NewOAuthTransport(args *TransportArgs) *OAuthTransport {
 	t := &OAuthTransport{
-		oauthHandler:         *args.OAuthHandler,
+		oauthHandler:         args.OAuthHandler,
 		Augmenter:            args.Augmenter,
 		Transport:            args.OriginalTransport,
 		log:                  args.logger,
@@ -101,35 +101,35 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] reading request body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DefinitionName),
+			obskit.DestinationType(rts.destination.DestType),
 			logger.NewStringField("flow", string(t.flow)))
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("reading request body pre roundTrip: %w", err).Error()))
 	}
-	statusCode, authResponse, err := t.oauthHandler.FetchToken(rts.refreshTokenParams)
-	if statusCode == http.StatusOK {
-		rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), authResponse.Account.Secret))
-		err = t.Augment(rts.req, body, authResponse.Account.Secret)
-		if err != nil {
-			t.log.Errorn("[OAuthPlatformError] secret augmentation",
-				obskit.DestinationID(rts.destination.ID),
-				obskit.WorkspaceID(rts.destination.WorkspaceID),
-				obskit.DestinationType(rts.destination.DefinitionName),
-				logger.NewStringField("flow", string(t.flow)),
-				obskit.Error(err))
-			return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("augmenting the secret pre roundTrip: %w", err).Error()))
+	secret, scErr := t.oauthHandler.FetchToken(rts.tokenParams)
+	if scErr != nil {
+		if errors.Is(scErr, common.ErrInvalidGrant) {
+			_ = t.oauthHandler.AuthStatusToggle(&v2.StatusRequestParams{
+				AccountID:     rts.accountID,
+				WorkspaceID:   rts.destination.WorkspaceID,
+				DestType:      rts.destination.DestType,
+				DestinationID: rts.destination.ID,
+				Status:        common.AuthStatusInactive,
+			})
 		}
-		return nil
-	} else if authResponse != nil && authResponse.Err == common.RefTokenInvalidGrant {
-		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-			Destination:     rts.destination,
-			WorkspaceID:     rts.destination.WorkspaceID,
-			RudderAccountID: rts.accountID,
-			StatPrefix:      common.AuthStatusInActive,
-			AuthStatus:      common.CategoryAuthStatusInactive,
-		})
-		return httpResponseCreator(http.StatusBadRequest, []byte(err.Error()))
+		return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
 	}
-	return httpResponseCreator(statusCode, []byte(err.Error()))
+	rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), secret))
+
+	if err := t.Augment(rts.req, body, secret); err != nil {
+		t.log.Errorn("[OAuthPlatformError] secret augmentation",
+			obskit.DestinationID(rts.destination.ID),
+			obskit.WorkspaceID(rts.destination.WorkspaceID),
+			obskit.DestinationType(rts.destination.DestType),
+			logger.NewStringField("flow", string(t.flow)),
+			obskit.Error(err))
+		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("augmenting the secret pre roundTrip: %w", err).Error()))
+	}
+	return nil
 }
 
 func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
@@ -138,18 +138,18 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] reading response body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DefinitionName),
+			obskit.DestinationType(rts.destination.DestType),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
 		// Create a new response with a 500 status code
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[postRoundTrip]Error reading response body: %v", err)))
 	}
-	interceptorResp := oauth.OAuthInterceptorResponse{}
+	interceptorResp := v2.OAuthInterceptorResponse{}
 	// internal function
 	applyInterceptorRespToHttpResp := func() {
 		var interceptorRespBytes []byte
-		transResp := oauth.TransportResponse{
+		transResp := v2.TransportResponse{
 			OriginalResponse:    string(respData),
 			InterceptorResponse: interceptorResp,
 		}
@@ -161,7 +161,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] get authErrorCategory",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DefinitionName),
+			obskit.DestinationType(rts.destination.DestType),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(errors.New(string(respData))),
 		)
@@ -176,13 +176,13 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 	switch authErrorCategory {
 	case common.CategoryRefreshToken:
 		// since same token that was used to make the http call needs to be refreshed, we need the current token information
-		var oldSecret json.RawMessage
-		oldSecret, ok := cntx.SecretFromCtx(rts.req.Context())
+		var previousSecret json.RawMessage
+		previousSecret, ok := cntx.SecretFromCtx(rts.req.Context())
 		if !ok {
 			t.log.Errorn("[OAuthPlatformError] get secret from context",
 				obskit.DestinationID(rts.destination.ID),
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
-				obskit.DestinationType(rts.destination.DefinitionName),
+				obskit.DestinationType(rts.destination.DestType),
 				logger.NewStringField("flow", string(t.flow)))
 			// Instead of returning an error, set a 500 status code in the interceptor response
 			interceptorResp.StatusCode = http.StatusInternalServerError
@@ -190,41 +190,35 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			applyInterceptorRespToHttpResp()
 			return rts.res
 		}
-		rts.refreshTokenParams.Secret = oldSecret
-		rts.refreshTokenParams.DestinationID = rts.destination.ID
-		_, authResponse, refErr := t.oauthHandler.RefreshToken(rts.refreshTokenParams)
-		if refErr != nil {
-			interceptorResp.Response = refErr.Error()
-		}
-		// refresh token success(retry)
-		// refresh token failed
-		// It can be failed due to the following reasons
-		// 1. invalid grant(abort)
-		// 2. control plan api call failed(retry)
-		// 3. some error happened while returning from RefreshToken function(retry)
-		if authResponse != nil && authResponse.Err == common.RefTokenInvalidGrant {
-			// Setting the response we obtained from trying to Refresh the token
-			interceptorResp.StatusCode = http.StatusBadRequest
-			t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-				Destination:     rts.destination,
-				WorkspaceID:     rts.destination.WorkspaceID,
-				RudderAccountID: rts.accountID,
-				StatPrefix:      common.AuthStatusInActive,
-				AuthStatus:      common.AuthStatusInActive,
-			})
-			// rts.res.Body = errorInRefToken
-			interceptorResp.Response = authResponse.ErrorMessage
+		_, scErr := t.oauthHandler.RefreshToken(rts.tokenParams, previousSecret)
+		if scErr != nil {
+			if errors.Is(scErr, common.ErrInvalidGrant) {
+				_ = t.oauthHandler.AuthStatusToggle(&v2.StatusRequestParams{
+					AccountID:     rts.accountID,
+					WorkspaceID:   rts.destination.WorkspaceID,
+					DestType:      rts.destination.DestType,
+					DestinationID: rts.destination.ID,
+					Status:        common.AuthStatusInactive,
+				})
+			}
+			interceptorResp.StatusCode = scErr.StatusCode()
+			interceptorResp.Response = scErr.Error()
+			var typeMessageError *v2.TypeMessageError
+			if errors.As(scErr, &typeMessageError) { // use the message from the underlying TypeMessageError if possible
+				interceptorResp.Response = typeMessageError.Message
+			}
 			applyInterceptorRespToHttpResp()
 			return rts.res
 		}
+		// token refresh was successful, so we return a 500 to the caller to retry the request
 		interceptorResp.StatusCode = http.StatusInternalServerError
 	case common.CategoryAuthStatusInactive:
-		t.oauthHandler.AuthStatusToggle(&oauth.AuthStatusToggleParams{
-			Destination:     rts.destination,
-			WorkspaceID:     rts.destination.WorkspaceID,
-			RudderAccountID: rts.accountID,
-			StatPrefix:      common.AuthStatusInActive,
-			AuthStatus:      common.AuthStatusInActive,
+		_ = t.oauthHandler.AuthStatusToggle(&v2.StatusRequestParams{
+			AccountID:     rts.accountID,
+			WorkspaceID:   rts.destination.WorkspaceID,
+			DestType:      rts.destination.DestType,
+			DestinationID: rts.destination.ID,
+			Status:        common.AuthStatusInactive,
 		})
 		interceptorResp.StatusCode = http.StatusBadRequest
 	}
@@ -259,17 +253,17 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		"flow":           string(t.flow),
 		"destinationId":  destination.ID,
 		"workspaceId":    destination.WorkspaceID,
-		"destType":       destination.DefinitionName,
+		"destType":       destination.DestType,
 		"origRequestURL": req.URL.Path,
 	}
 	startTime := time.Now()
 	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
-	isOauthDestination, err := destination.IsOAuthDestination(t.flow)
+	isOauthDestination, err := v2.IsOAuthDestination(destination.DefinitionConfig, t.flow)
 	if err != nil {
 		t.log.Errorn("[OAuthPlatformError]checking if destination is oauth destination",
 			obskit.DestinationID(destination.ID),
 			obskit.WorkspaceID(destination.WorkspaceID),
-			obskit.DestinationType(destination.DefinitionName),
+			obskit.DestinationType(destination.DestType),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
@@ -285,16 +279,16 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.log.Errorn("[OAuthPlatformError]accountId not found or empty for destination",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DefinitionName),
+			obskit.DestinationType(rts.destination.DestType),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
 		return httpResponseCreator(http.StatusInternalServerError, []byte(err.Error())), nil
 	}
-	rts.refreshTokenParams = &oauth.RefreshTokenParams{
+	rts.tokenParams = &v2.OAuthTokenParams{
 		AccountID:     rts.accountID,
 		WorkspaceID:   rts.destination.WorkspaceID,
-		DestDefName:   rts.destination.DefinitionName,
+		DestType:      rts.destination.DestType,
 		DestinationID: rts.destination.ID,
 	}
 	rts.req = req
@@ -310,7 +304,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.log.Errorn("[RoundTrip]transport round trip",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DefinitionName),
+			obskit.DestinationType(rts.destination.DestType),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err))
 		// Return a 500 error response instead of propagating the error

@@ -67,10 +67,10 @@ func (t *headerAugmenter) Augment(r *http.Request, body []byte, secret json.RawM
 	if secret == nil {
 		return errors.New("secret is nil")
 	}
-	actSecret := v2.AccountSecret{
+	oauthToken := v2.OAuthToken{
 		Secret: secret,
 	}
-	secretJson, err := jsonrs.Marshal(actSecret)
+	secretJson, err := jsonrs.Marshal(oauthToken)
 	if err != nil {
 		return fmt.Errorf("marshalling secret: %w", err)
 	}

@@ -427,10 +427,9 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 
 func (edr *ErrorDetailReporter) extractErrorDetails(sampleResponse string, statTags map[string]string, destType string) types.ErrorDetails {
 	errMsg := edr.errorDetailExtractor.GetErrorMessage(sampleResponse)
-	cleanedErrMsg := edr.errorDetailExtractor.CleanUpErrorMessage(errMsg)
-	errorCode := edr.errorDetailExtractor.GetErrorCode(cleanedErrMsg, statTags, destType)
+	errorCode := edr.errorDetailExtractor.GetErrorCode(errMsg, statTags, destType)
 	return types.ErrorDetails{
-		Message: cleanedErrMsg,
+		Message: errMsg,
 		Code:    errorCode,
 	}
 }

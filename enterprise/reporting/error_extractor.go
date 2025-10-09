@@ -104,7 +104,7 @@ func NewErrorDetailExtractor(log logger.Logger, conf *config.Config) *ExtractorH
 	extractor := &ExtractorHandle{
 		ErrorMessageKeys: defaultErrorMessageKeys,
 		log:              log.Child("ErrorDetailExtractor"),
-		maxMessageLength: conf.GetReloadableIntVar(100, 10, "Reporting.errorReporting.maxErrorMessageLength"),
+		maxMessageLength: conf.GetReloadableIntVar(200, 1, "Reporting.errorReporting.maxErrorMessageLength"),
 	}
 	return extractor
 }
@@ -195,13 +195,21 @@ func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
 		return result
 	}
 
-	lowerStr := strings.ToLower(valueStr)
-	if strings.Contains(lowerStr, "<body") && strings.Contains(lowerStr, "</body>") {
+	if isHTMLString(valueStr) {
 		result := getHTMLErrorMessage(valueStr)
 		return result
 	}
 
 	return valueStr
+}
+
+// isHTMLString checks if a string contains HTML content
+func isHTMLString(s string) bool {
+	lowerStr := strings.ToLower(s)
+	// Check for common HTML patterns
+	return (strings.Contains(lowerStr, "<!doctype") && strings.Contains(lowerStr, "<html")) ||
+		(strings.Contains(lowerStr, "<body") && strings.Contains(lowerStr, "</body>")) ||
+		(strings.Contains(lowerStr, "<html") && (strings.Contains(lowerStr, "<title>") || strings.Contains(lowerStr, "<head>")))
 }
 
 func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) string {
