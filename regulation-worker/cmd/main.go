@@ -148,9 +148,10 @@ func createHTTPClient(conf *config.Config, httpTimeout time.Duration) *http.Clie
 	cache := oauthv2.NewOauthTokenCache()
 	oauthLock := kitsync.NewPartitionRWLocker()
 	optionalArgs := oauthv2http.HttpClientOptionalArgs{
-		Augmenter: extensions.HeaderAugmenter,
-		Locker:    oauthLock,
-		Logger:    logger.NewLogger().Child("RegulationWorker"),
+		Augmenter:           extensions.HeaderAugmenter,
+		Locker:              oauthLock,
+		Logger:              logger.NewLogger().Child("RegulationWorker"),
+		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("RegulationWorker", conf),
 	}
 	return oauthv2http.NewOAuthHttpClient(
 		cli,

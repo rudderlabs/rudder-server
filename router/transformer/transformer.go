@@ -118,17 +118,19 @@ type Transformer interface {
 // NewTransformer creates a new transformer.
 // If a nil [featuresService] is provided, the transformer will not use message compaction, even though transformation service might support it.
 func NewTransformer(
+	destType string,
 	destinationTimeout, transformTimeout time.Duration,
 	backendConfig backendconfig.BackendConfig,
 	expirationTimeDiff config.ValueLoader[time.Duration],
 	featuresService transformerfs.FeaturesService,
+	conf *config.Config,
 ) Transformer {
 	cache := oauthv2.NewOauthTokenCache()
 	oauthLock := sync.NewPartitionRWLocker()
 	handle := &handle{
 		expirationTimeDiff: expirationTimeDiff,
 	}
-	handle.setup(destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig, featuresService)
+	handle.setup(destType, destinationTimeout, transformTimeout, &cache, oauthLock, backendConfig, featuresService, conf)
 	return handle
 }
 
@@ -557,7 +559,7 @@ func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequ
 	}
 }
 
-func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, cache *oauthv2.OauthTokenCache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, featuresService transformerfs.FeaturesService) {
+func (trans *handle) setup(destType string, destinationTimeout, transformTimeout time.Duration, cache *oauthv2.OauthTokenCache, locker *sync.PartitionRWLocker, backendConfig backendconfig.BackendConfig, featuresService transformerfs.FeaturesService, conf *config.Config) {
 	if loggerOverride == nil {
 		trans.logger = logger.NewLogger().Child("router").Child("transformer")
 	} else {
@@ -579,18 +581,20 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration, c
 	// This client is used for Router Transformation
 	trans.client = transformerclient.NewClient(trans.transformerClientConfig())
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
-		Locker:             locker,
-		Augmenter:          extensions.RouterHeaderAugmenter,
-		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
-		Logger:             logger.NewLogger().Child("TransformerHttpClient"),
+		Locker:              locker,
+		Augmenter:           extensions.RouterHeaderAugmenter,
+		ExpirationTimeDiff:  trans.expirationTimeDiff.Load(),
+		Logger:              logger.NewLogger().Child("TransformerHttpClient"),
+		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("Router."+destType, conf),
 	}
 	// This client is used for Router Transformation using oauthV2
 	trans.clientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformResponse, optionalArgs)
 
 	proxyClientOptionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
-		Locker:             locker,
-		ExpirationTimeDiff: trans.expirationTimeDiff.Load(),
-		Logger:             logger.NewLogger().Child("TransformerProxyHttpClient"),
+		Locker:              locker,
+		ExpirationTimeDiff:  trans.expirationTimeDiff.Load(),
+		Logger:              logger.NewLogger().Child("TransformerProxyHttpClient"),
+		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("Router."+destType, conf),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = transformerclient.NewClient(trans.transformerClientConfig())
