@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/webhook/model"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -433,10 +435,25 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
 			}
+			failedWebhookPayloads := make([]*model.FailedWebhookPayload, len(webRequests))
+			for i, webRequest := range webRequests {
+				failedWebhookPayloads[i] = &model.FailedWebhookPayload{
+					RequestContext: webRequest.authContext,
+					Payload:        payloadArr[i],
+					SourceType:     breq.sourceType,
+					Reason:         batchResponse.batchError.Error(),
+				}
+			}
+			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
+				bt.webhook.logger.Errorn("Saving webhook failures of sourceType failed",
+					obskit.SourceType(breq.sourceType),
+					obskit.Error(err))
+			}
 			continue
 		}
 
 		bt.stats.sourceStats[breq.sourceType].numOutputEvents.Count(len(batchResponse.responses))
+		failedWebhookPayloads := make([]*model.FailedWebhookPayload, 0)
 
 		for idx, resp := range batchResponse.responses {
 			webRequest := webRequests[idx]
@@ -455,14 +472,25 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 						obskit.SourceType(breq.sourceType),
 						logger.NewStringField("errorMessage", errMessage))
 					bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, bt.getWebhookFailureReason(errMessage, reason), response.GetErrorStatusCode(errMessage), 1)
+					failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: errMessage})
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
+				failureReason := resp.Err
+				if failureReason == "" {
+					failureReason = response.SourceTransformerNonSuccessResponse
+				}
+				failedWebhookPayloads = append(failedWebhookPayloads, &model.FailedWebhookPayload{RequestContext: webRequest.authContext, Payload: payloadArr[idx], SourceType: breq.sourceType, Reason: failureReason})
 				bt.webhook.logger.Errorn("webhook source transformation failed", obskit.SourceType(breq.sourceType), logger.NewStringField("errorMsg", resp.Err), logger.NewIntField("statusCode", int64(resp.StatusCode)))
 				bt.webhook.countWebhookErrors(breq.sourceType, webRequest.authContext, getWebhookFailureReason(resp.Err, resp.StatusCode), resp.StatusCode, 1)
 			}
 			webRequest.done <- resp
+		}
+		if len(failedWebhookPayloads) > 0 {
+			if err := bt.webhook.gwHandle.SaveWebhookFailures(failedWebhookPayloads); err != nil {
+				bt.webhook.logger.Errorn("Saving webhook failures of sourceType", obskit.SourceType(breq.sourceType), obskit.Error(err))
+			}
 		}
 	}
 }

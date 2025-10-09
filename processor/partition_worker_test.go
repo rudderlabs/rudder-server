@@ -209,6 +209,9 @@ func (m *mockWorkerHandle) config() workerHandleConfig {
 		readLoopSleep:         config.SingleValueLoader(1 * time.Millisecond),
 		maxLoopSleep:          config.SingleValueLoader(100 * time.Millisecond),
 		pipelinesPerPartition: 3,
+		partitionProcessingDelay: func(partition string) config.ValueLoader[time.Duration] {
+			return config.SingleValueLoader(0 * time.Millisecond)
+		},
 	}
 }
 
@@ -226,7 +229,7 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 	for _, subJob := range m.jobSplitter(ctx, jobs.Jobs, rsourcesStats) {
 		var dest *transformationMessage
 		var err error
-		preTransMessage, err := m.preprocessStage(partition, subJob)
+		preTransMessage, err := m.preprocessStage(partition, subJob, time.Duration(0))
 		if err != nil {
 			return false
 		}
@@ -332,7 +335,7 @@ func (m *mockWorkerHandle) jobSplitter(ctx context.Context, jobs []*jobsdb.JobT,
 	}
 }
 
-func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob) (*preTransformationMessage, error) {
+func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob, _ time.Duration) (*preTransformationMessage, error) {
 	if m.limiters.process != nil {
 		defer m.limiters.process.Begin("")()
 	}

@@ -142,6 +142,14 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			err = g.CreateTable(ctx, testTable, testColumns)
 			require.NoError(t, err)
 
+			tableOutput, err := g.GlueClient.GetTable(ctx, &glue.GetTableInput{
+				Name:         &testTable,
+				DatabaseName: &testNamespace,
+			})
+			require.NoError(t, err)
+			require.NotNil(t, tableOutput.Table)
+			require.Equal(t, "EXTERNAL_TABLE", *tableOutput.Table.TableType)
+
 			t.Log("Creating already existing table should not fail")
 			err = g.CreateTable(ctx, testTable, testColumns)
 			require.NoError(t, err)
@@ -154,6 +162,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 				{Name: "alter_test_float", Type: "float"},
 				{Name: "alter_test_datetime", Type: "datetime"},
 			})
+			require.NoError(t, err)
 
 			t.Log("Preparing load files metadata")
 			f, err := os.Open(testFile)

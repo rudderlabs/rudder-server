@@ -57,7 +57,7 @@ var _ = Describe("Antisymmetric", func() {
 	})
 	Describe("Upload function test", func() {
 		It("Testing a successful scenario", func() {
-			cache := oauthv2.NewCache()
+			cache := oauthv2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
@@ -67,16 +67,16 @@ var _ = Describe("Antisymmetric", func() {
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"dummyID","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"dummyWorkspaceID","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"dummyUserID","metadata":{"userId":"dummyUserID","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"accessToken":"correctAccessToken","refreshToken":"dummyRefreshToken"}}`)
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil)
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test
-			oauthHandler := oauthv2.NewOAuthHandler(mockTokenProvider,
-				oauthv2.WithCache(oauthv2.NewCache()),
+			oauthHandler := oauthv2.NewOAuthHandler(mockAuthIdentityProvider,
+				oauthv2.WithCache(oauthv2.NewOauthTokenCache()),
 				oauthv2.WithLocker(kitsync.NewPartitionRWLocker()),
 				oauthv2.WithStats(stats.NOP),
 				oauthv2.WithLogger(logger.NOP),
-				oauthv2.WithCpConnector(mockCpConnector),
+				oauthv2.WithCpClient(mockCpConnector),
 			)
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,
@@ -98,7 +98,7 @@ var _ = Describe("Antisymmetric", func() {
 			Expect(res.SucceededJobIDs).To(Equal([]int64{1, 2, 3, 4}))
 		})
 		It("Testing a failure scenario when the accessToken is invalid", func() {
-			cache := oauthv2.NewCache()
+			cache := oauthv2.NewOauthTokenCache()
 			ctrl := gomock.NewController(GinkgoT())
 			mockRoundTrip := mockoauthv2.NewMockRoundTripper(ctrl)
 			mockRoundTrip.EXPECT().RoundTrip(gomock.Any()).Return(&http.Response{
@@ -109,16 +109,16 @@ var _ = Describe("Antisymmetric", func() {
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"dummyID","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"dummyWorkspaceID","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"dummyUserID","metadata":{"userId":"dummyUserID","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"accessToken":"expiredAccessToken","refreshToken":"dummyRefreshToken"}}`)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"dummyID","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"dummyWorkspaceID","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"dummyUserID","metadata":{"userId":"dummyUserID","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"accessToken":"newAccessToken","refreshToken":"dummyRefreshToken"}}`)
-			mockTokenProvider := mockoauthv2.NewMockTokenProvider(ctrl)
-			mockTokenProvider.EXPECT().Identity().Return(nil)
-			mockTokenProvider.EXPECT().Identity().Return(nil)
+			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil)
+			mockAuthIdentityProvider.EXPECT().Identity().Return(nil)
 			// Invoke code under test
-			oauthHandler := oauthv2.NewOAuthHandler(mockTokenProvider,
-				oauthv2.WithCache(oauthv2.NewCache()),
+			oauthHandler := oauthv2.NewOAuthHandler(mockAuthIdentityProvider,
+				oauthv2.WithCache(oauthv2.NewOauthTokenCache()),
 				oauthv2.WithLocker(kitsync.NewPartitionRWLocker()),
 				oauthv2.WithStats(stats.NOP),
 				oauthv2.WithLogger(logger.NOP),
-				oauthv2.WithCpConnector(mockCpConnector),
+				oauthv2.WithCpClient(mockCpConnector),
 			)
 			optionalArgs := httpClient.HttpClientOptionalArgs{
 				Transport:    mockRoundTrip,

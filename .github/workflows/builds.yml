@@ -55,6 +55,7 @@ env:
 jobs:
   docker-oss-meta:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     outputs:
       labels: ${{ steps.meta.outputs.labels }}
       build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
@@ -128,6 +129,7 @@ jobs:
             REVISION=${{ needs.docker-oss-meta.outputs.revision }}
   docker-ent-meta:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     outputs:
       labels: ${{ steps.meta.outputs.labels }}
       build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
@@ -204,6 +206,7 @@ jobs:
             ${{ matrix.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
   docker-sbsvc-meta:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     outputs:
       labels: ${{ steps.meta.outputs.labels }}
       build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}

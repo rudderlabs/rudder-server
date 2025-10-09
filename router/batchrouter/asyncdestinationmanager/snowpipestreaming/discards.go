@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/slave"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -70,6 +71,7 @@ func discardsSchema() whutils.ModelTableSchema {
 // If the conversion fails, the value is discarded
 // If the value is a slice, it is marshalled to a string
 func getDiscardedRecordsFromEvent(
+	log logger.Logger,
 	event *event,
 	snowpipeSchema whutils.ModelTableSchema,
 	tableName string,
@@ -79,7 +81,7 @@ func getDiscardedRecordsFromEvent(
 	for columnName, actualType := range event.Message.Metadata.Columns {
 		if expectedType, exists := snowpipeSchema[columnName]; exists && actualType != expectedType {
 			currentValue := event.Message.Data[columnName]
-			convertedVal, err := slave.HandleSchemaChange(expectedType, actualType, currentValue)
+			convertedVal, err := slave.HandleSchemaChange(log, expectedType, actualType, currentValue)
 			if err != nil {
 				event.Message.Data[columnName] = nil // Discard value if conversion fails
 

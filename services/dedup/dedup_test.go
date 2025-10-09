@@ -169,7 +169,7 @@ func Test_KeyDB(t *testing.T) {
 		found, err := d.Allowed(kvs...)
 		require.NoError(t, err)
 		for _, kv := range kvs {
-			require.True(t, found[kv])
+			require.True(t, found[kv], kv)
 		}
 		err = d.Commit([]string{"e", "f", "g"})
 		require.NoError(t, err)
@@ -570,6 +570,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 	address := "localhost:" + strconv.Itoa(freePort)
 	conf.Set("KeyDB.Dedup.Addresses", address)
 	conf.Set("KeyDB.Dedup.RetryCount", 3)
+	conf.Set("BadgerDB.Dedup.Path", t.TempDir())
 
 	nodeConfig := keydb.Config{
 		NodeID:           0,
