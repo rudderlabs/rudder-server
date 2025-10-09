@@ -127,10 +127,6 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func isMetricPosted(status int) bool {
-	return status >= 200 && status < 300
-}
-
 func getPIIColumnsToExclude() []string {
 	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event,sample_response"), ",")
 	for i := range piiColumnsToExclude {

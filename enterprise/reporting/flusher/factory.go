@@ -5,8 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"path"
 	"slices"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -47,17 +45,8 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 
 		commonClient := client.New(client.RouteTrackedUsers, conf, log, stats)
 
-		// DEPRECATED: Remove this after migration to commonClient.
-		reportingBaseURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
-		parsedURL, err := url.Parse(reportingBaseURL)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing reporting url %w", err)
-		}
-		parsedURL.Path = path.Join(parsedURL.Path, "trackedUser")
-		reportingURL := parsedURL.String()
-
 		a := aggregator.NewTrackedUsersInAppAggregator(db, stats, conf, module)
-		f, err := NewFlusher(db, log, stats, conf, table, reportingURL, commonClient, a, module)
+		f, err := NewFlusher(db, log, stats, conf, table, commonClient, a, module)
 		if err != nil {
 			return nil, fmt.Errorf("error creating flusher %w", err)
 		}
