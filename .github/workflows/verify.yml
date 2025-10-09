@@ -18,6 +18,11 @@ jobs:
     name: Correct generated files
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -73,6 +78,11 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:

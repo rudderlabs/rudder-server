@@ -21,6 +21,11 @@ jobs:
       matrix:
         FEATURES: [ oss ,enterprise ]
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Disable IPv6 (temporary fix)
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -76,6 +81,11 @@ jobs:
           - package: warehouse/integrations/snowflake
             destination: snowflake
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Disable IPv6 (temporary fix)
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -124,6 +134,11 @@ jobs:
     name: Unit
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Disable IPv6 (temporary fix)
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -179,6 +194,11 @@ jobs:
           - package: warehouse
             race: true
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Disable IPv6 (temporary fix)
         if: matrix.package != 'services/dedup'
         run: |
@@ -231,6 +251,11 @@ jobs:
       - unit
       - package-unit
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Go
@@ -258,6 +283,11 @@ jobs:
       - unit
       - package-unit
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
       - uses: re-actors/alls-green@v1.2.2
         with:
           jobs: ${{ toJSON(needs) }}
