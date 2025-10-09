@@ -112,12 +112,12 @@ func TestIsolationStrategy(t *testing.T) {
 		})
 
 		t.Run("supports pickup query throttling when enabled", func(t *testing.T) {
-			c.Set("Router.WEBHOOK.pickupQueryThrottlingEnabled", true)
+			c.Set("Router.throttler.WEBHOOK.pickupQueryThrottlingEnabled", true)
 			require.True(t, strategy.SupportsPickupQueryThrottling())
 		})
 
 		t.Run("doesn't support pickup query throttling when not enabled", func(t *testing.T) {
-			c.Set("Router.WEBHOOK.pickupQueryThrottlingEnabled", false)
+			c.Set("Router.throttler.WEBHOOK.pickupQueryThrottlingEnabled", false)
 			require.False(t, strategy.SupportsPickupQueryThrottling())
 		})
 	})
