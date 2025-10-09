@@ -108,7 +108,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3.6.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -183,7 +183,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3.6.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -259,7 +259,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3.6.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -284,7 +284,7 @@ jobs:
     needs: [ docker-oss, docker-oss-meta ]
     steps:
       - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3.6.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -307,7 +307,7 @@ jobs:
     needs: [ docker-ent, docker-ent-meta ]
     steps:
       - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3.6.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -331,7 +331,7 @@ jobs:
     needs: [ docker-suppression-backup-service, docker-sbsvc-meta ]
     steps:
       - name: Login to DockerHub
-        uses: docker/login-action@v3.4.0
+        uses: docker/login-action@v3.6.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
