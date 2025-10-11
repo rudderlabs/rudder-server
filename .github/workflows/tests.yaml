@@ -91,8 +91,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v3.4.0
         with:
-          username: rudderlabs
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
       - name: Set Redshift Ginkgo AWS Credentials
         if: matrix.destination == 'redshift'
         run: |
@@ -193,8 +193,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v3.4.0
         with:
-          username: rudderlabs
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
