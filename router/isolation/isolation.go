@@ -30,11 +30,17 @@ func GetStrategy(mode Mode, destType string, partitionFilter func(destinationID 
 		return workspaceStrategy{customVal: destType}, nil
 	case ModeDestination:
 		return &destinationStrategy{
-			config:                       c,
-			pickupQueryThrottlingEnabled: c.GetReloadableBoolVar(false, "Router."+destType+".pickupQueryThrottlingEnabled", "Router.pickupQueryThrottlingEnabled"),
-			destinationFilter:            partitionFilter,
-			destType:                     destType,
-			throttlerPerEventTypeConfig:  make(map[string]config.ValueLoader[bool]),
+			config: c,
+			pickupQueryThrottlingEnabled: c.GetReloadableBoolVar(false,
+				"Router.throttler."+destType+".pickupQueryThrottlingEnabled",
+				"Router.throttler.pickupQueryThrottlingEnabled",
+				// TODO: remove the below deprecated config keys in the next release
+				"Router."+destType+".pickupQueryThrottlingEnabled",
+				"Router.pickupQueryThrottlingEnabled",
+			),
+			destinationFilter:           partitionFilter,
+			destType:                    destType,
+			throttlerPerEventTypeConfig: make(map[string]config.ValueLoader[bool]),
 		}, nil
 	default:
 		return noneStrategy{}, errors.New("unsupported isolation mode")
