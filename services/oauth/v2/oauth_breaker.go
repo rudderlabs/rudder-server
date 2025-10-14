@@ -188,8 +188,7 @@ func (b *accountBreaker) withErrBreaker(fn func() (json.RawMessage, StatusCodeEr
 		}
 		return nil, err
 	}); ebErr != nil && // need to return the last error if the breaker is open
-		errors.Is(ebErr, gobreaker.ErrOpenState) ||
-		errors.Is(ebErr, gobreaker.ErrTooManyRequests) {
+		(errors.Is(ebErr, gobreaker.ErrOpenState) || errors.Is(ebErr, gobreaker.ErrTooManyRequests)) {
 		b.mu.RLock()
 		defer b.mu.RUnlock()
 		b.errorBreakerCounter.Increment()
@@ -215,13 +214,12 @@ func (b *accountBreaker) withSuccessBreaker(fn func() (json.RawMessage, StatusCo
 			return nil, newTokenErr
 		}
 		return result, nil
-	}); sbErr != nil { // need to return the last value if the success breaker is open
-		if errors.Is(sbErr, gobreaker.ErrOpenState) || errors.Is(sbErr, gobreaker.ErrTooManyRequests) {
-			b.mu.RLock()
-			defer b.mu.RUnlock()
-			b.successBreakerCounter.Increment()
-			return b.lastValue, nil
-		}
+	}); sbErr != nil && // need to return the last value if the success breaker is open
+		(errors.Is(sbErr, gobreaker.ErrOpenState) || errors.Is(sbErr, gobreaker.ErrTooManyRequests)) {
+		b.mu.RLock()
+		defer b.mu.RUnlock()
+		b.successBreakerCounter.Increment()
+		return b.lastValue, nil
 	}
 	return result, err
 }
