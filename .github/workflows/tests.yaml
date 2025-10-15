@@ -32,9 +32,12 @@ jobs:
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
 
@@ -92,10 +95,13 @@ jobs:
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: Login to DockerHub
@@ -144,9 +150,12 @@ jobs:
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: tests
@@ -205,9 +214,12 @@ jobs:
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - run: go version
       - run: go mod download
       - name: Login to DockerHub
@@ -258,10 +270,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - name: Download coverage reports
         uses: actions/download-artifact@v4
       - name: Merge Coverage

@@ -12,14 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: true
 permissions:
-  id-token: write # allows the JWT to be requested from GitHub's OIDC provider
   contents: read  # This is required for actions/checkout
 env:
   arch_amd64: amd64
   arch_arm64: arm64
   docker_oss_images: |
     name=rudderlabs/develop-rudder-server
-    name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+    name=rudderlabs/rudder-server,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
   docker_oss_tags: |
     type=ref,event=branch
     type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
@@ -30,7 +29,7 @@ env:
     type=semver,pattern={{major}}
   docker_ent_images: |
     name=rudderstack/develop-rudder-server-enterprise
-    name=rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+    name=rudderstack/rudder-server-enterprise,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
   docker_ent_tags: |
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
@@ -43,7 +42,7 @@ env:
     type=semver,pattern={{major}}
   docker_sbsvc_images: |
     name=rudderstack/develop-suppression-backup-service
-    name=rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+    name=rudderstack/suppression-backup-service,enable=${{ github.ref == 'refs/heads/master' || github.event_name == 'release' }}
   docker_sbsvc_tags: |
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
@@ -95,6 +94,8 @@ jobs:
           flavor: |
             suffix=-${{env.arch_amd64}},onlatest=true
   docker-oss:
+    permissions:
+      id-token: write # allows the JWT to be requested from GitHub's OIDC provider
     needs:
       - docker-oss-meta
     strategy:
@@ -117,6 +118,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Login to DockerHub
         uses: docker/login-action@v3.4.0
         with:
@@ -179,6 +182,8 @@ jobs:
           flavor: |
             suffix=-${{env.arch_amd64}},onlatest=true
   docker-ent:
+    permissions:
+      id-token: write # allows the JWT to be requested from GitHub's OIDC provider
     needs:
       - docker-ent-meta
     strategy:
@@ -202,6 +207,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Login to DockerHub
         uses: docker/login-action@v3.4.0
         with:
@@ -288,6 +295,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Login to DockerHub
         uses: docker/login-action@v3.4.0
         with:
@@ -330,13 +339,17 @@ jobs:
           while read -r tag; do
             echo "$tag"
 
-            arm_tag=$(echo "${{ needs.docker-oss-meta.outputs.arm64_tags }}" | grep "$tag")
+            arm_tag=$(echo "${NEEDS_DOCKER_OSS_META_OUTPUTS_ARM64_TAGS}" | grep "$tag")
 
-            amd_tag=$(echo "${{ needs.docker-oss-meta.outputs.amd64_tags }}" | grep "$tag")
+            amd_tag=$(echo "${NEEDS_DOCKER_OSS_META_OUTPUTS_AMD64_TAGS}" | grep "$tag")
 
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
-          done <<< "${{ needs.docker-oss-meta.outputs.tags }}"
+          done <<< "${NEEDS_DOCKER_OSS_META_OUTPUTS_TAGS}"
+        env:
+          NEEDS_DOCKER_OSS_META_OUTPUTS_ARM64_TAGS: ${{ needs.docker-oss-meta.outputs.arm64_tags }}
+          NEEDS_DOCKER_OSS_META_OUTPUTS_AMD64_TAGS: ${{ needs.docker-oss-meta.outputs.amd64_tags }}
+          NEEDS_DOCKER_OSS_META_OUTPUTS_TAGS: ${{ needs.docker-oss-meta.outputs.tags }}
   create-manifest-docker-ent:
     runs-on: ubuntu-latest
     needs: [ docker-ent, docker-ent-meta ]
@@ -358,13 +371,17 @@ jobs:
           while read -r tag; do
             echo "$tag"
 
-            arm_tag=$(echo "${{ needs.docker-ent-meta.outputs.arm64_tags }}" | grep "$tag")
+            arm_tag=$(echo "${NEEDS_DOCKER_ENT_META_OUTPUTS_ARM64_TAGS}" | grep "$tag")
 
-            amd_tag=$(echo "${{ needs.docker-ent-meta.outputs.amd64_tags }}" | grep "$tag")
+            amd_tag=$(echo "${NEEDS_DOCKER_ENT_META_OUTPUTS_AMD64_TAGS}" | grep "$tag")
 
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
-          done <<< "${{ needs.docker-ent-meta.outputs.tags }}"
+          done <<< "${NEEDS_DOCKER_ENT_META_OUTPUTS_TAGS}"
+        env:
+          NEEDS_DOCKER_ENT_META_OUTPUTS_ARM64_TAGS: ${{ needs.docker-ent-meta.outputs.arm64_tags }}
+          NEEDS_DOCKER_ENT_META_OUTPUTS_AMD64_TAGS: ${{ needs.docker-ent-meta.outputs.amd64_tags }}
+          NEEDS_DOCKER_ENT_META_OUTPUTS_TAGS: ${{ needs.docker-ent-meta.outputs.tags }}
 
   create-manifest-docker-sbsvc:
     runs-on: ubuntu-latest
@@ -387,10 +404,14 @@ jobs:
           while read -r tag; do
             echo "$tag"
 
-            arm_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.arm64_tags }}" | grep "$tag")
+            arm_tag=$(echo "${NEEDS_DOCKER_SBSVC_META_OUTPUTS_ARM64_TAGS}" | grep "$tag")
 
-            amd_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.amd64_tags }}" | grep "$tag")
+            amd_tag=$(echo "${NEEDS_DOCKER_SBSVC_META_OUTPUTS_AMD64_TAGS}" | grep "$tag")
 
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
-          done <<< "${{ needs.docker-sbsvc-meta.outputs.tags }}"
+          done <<< "${NEEDS_DOCKER_SBSVC_META_OUTPUTS_TAGS}"
+        env:
+          NEEDS_DOCKER_SBSVC_META_OUTPUTS_ARM64_TAGS: ${{ needs.docker-sbsvc-meta.outputs.arm64_tags }}
+          NEEDS_DOCKER_SBSVC_META_OUTPUTS_AMD64_TAGS: ${{ needs.docker-sbsvc-meta.outputs.amd64_tags }}
+          NEEDS_DOCKER_SBSVC_META_OUTPUTS_TAGS: ${{ needs.docker-sbsvc-meta.outputs.tags }}

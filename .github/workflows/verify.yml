@@ -24,9 +24,12 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - run: go version
 
       - run: go mod tidy
@@ -84,9 +87,12 @@ jobs:
           egress-policy: audit
 
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version-file: 'go.mod'
+          cache: false
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:

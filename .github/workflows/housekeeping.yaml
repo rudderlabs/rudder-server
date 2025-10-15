@@ -42,6 +42,8 @@ jobs:
 
         - name: Checkout repository
           uses: actions/checkout@v4
+          with:
+            persist-credentials: false
         - name: Run delete-old-branches-action
           uses: beatlabs/delete-old-branches-action@4eeeb8740ff8b3cb310296ddd6b43c3387734588
           with:
