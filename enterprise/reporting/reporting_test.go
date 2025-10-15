@@ -515,7 +515,6 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 	testCases := []struct {
 		name              string
 		eventName         string
-		maxLength         int
 		prefixLength      int
 		suffixLength      int
 		expectedEventName string
@@ -523,7 +522,6 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 		{
 			name:              "short event name - no trimming",
 			eventName:         "track",
-			maxLength:         50,
 			prefixLength:      40,
 			suffixLength:      10,
 			expectedEventName: "track",
@@ -531,7 +529,6 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 		{
 			name:              "long event name - default config",
 			eventName:         "very_long_event_name_that_exceeds_the_maximum_length_limit_and_should_be_trimmed",
-			maxLength:         50,
 			prefixLength:      40,
 			suffixLength:      10,
 			expectedEventName: "very_long_event_name_that_exceeds_the_ma...be_trimmed",
@@ -539,7 +536,6 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 		{
 			name:              "custom config - smaller limits",
 			eventName:         "another_very_long_event_name_for_testing",
-			maxLength:         20,
 			prefixLength:      15,
 			suffixLength:      5,
 			expectedEventName: "another_very_lo...sting",
@@ -610,7 +606,6 @@ func TestDefaultReporter_Report_EventNameTrimming(t *testing.T) {
 
 			// Setup config with test values
 			conf := config.New()
-			conf.Set("Reporting.eventNameTrimming.maxLength", tc.maxLength)
 			conf.Set("Reporting.eventNameTrimming.prefixLength", tc.prefixLength)
 			conf.Set("Reporting.eventNameTrimming.suffixLength", tc.suffixLength)
 
@@ -690,7 +685,6 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 	testCases := []struct {
 		name         string
 		eventName    string
-		maxLength    int
 		prefixLength int
 		suffixLength int
 		expectedErr  string
@@ -698,50 +692,30 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 		{
 			name:         "zero prefixLength",
 			eventName:    "long_event_name_that_should_cause_error",
-			maxLength:    30,
 			prefixLength: 0,
 			suffixLength: 30,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=0, suffixLength=30, maxLength=30. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength",
+			expectedErr:  "invalid event name trimming configuration: prefixLength=0, suffixLength=30. prefixLength and suffixLength must be > 0",
 		},
 		{
 			name:         "zero suffixLength",
 			eventName:    "long_event_name_that_should_cause_error",
-			maxLength:    30,
 			prefixLength: 30,
 			suffixLength: 0,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=30, suffixLength=0, maxLength=30. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength",
+			expectedErr:  "invalid event name trimming configuration: prefixLength=30, suffixLength=0. prefixLength and suffixLength must be > 0",
 		},
 		{
 			name:         "prefixLength equals maxLength",
 			eventName:    "long_event_name_that_should_cause_error",
-			maxLength:    30,
 			prefixLength: 30,
 			suffixLength: 0,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=30, suffixLength=0, maxLength=30. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength",
+			expectedErr:  "invalid event name trimming configuration: prefixLength=30, suffixLength=0. prefixLength and suffixLength must be > 0",
 		},
 		{
 			name:         "suffixLength equals maxLength",
 			eventName:    "long_event_name_that_should_cause_error",
-			maxLength:    30,
 			prefixLength: 0,
 			suffixLength: 30,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=0, suffixLength=30, maxLength=30. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength",
-		},
-		{
-			name:         "prefixLength + suffixLength does not equal maxLength",
-			eventName:    "long_event_name_that_should_cause_error",
-			maxLength:    30,
-			prefixLength: 15,
-			suffixLength: 10,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=15, suffixLength=10, maxLength=30. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength",
-		},
-		{
-			name:         "prefixLength + suffixLength exceeds maxLength",
-			eventName:    "long_event_name_that_should_cause_error",
-			maxLength:    30,
-			prefixLength: 20,
-			suffixLength: 15,
-			expectedErr:  "invalid event name trimming configuration: prefixLength=20, suffixLength=15, maxLength=30. prefixLength and suffixLength must be > 0, prefixLength < maxLength, suffixLength < maxLength, and prefixLength + suffixLength = maxLength",
+			expectedErr:  "invalid event name trimming configuration: prefixLength=0, suffixLength=30. prefixLength and suffixLength must be > 0",
 		},
 	}
 
@@ -809,7 +783,6 @@ func TestDefaultReporter_Report_EventNameTrimming_InvalidConfig(t *testing.T) {
 
 			// Setup config with test values
 			conf := config.New()
-			conf.Set("Reporting.eventNameTrimming.maxLength", tc.maxLength)
 			conf.Set("Reporting.eventNameTrimming.prefixLength", tc.prefixLength)
 			conf.Set("Reporting.eventNameTrimming.suffixLength", tc.suffixLength)
 
