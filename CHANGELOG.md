@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.61.0](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.61.0) (2025-10-15)
+
+
+### Features
+
+* **processor:** configurable delay option for event processing ([#6376](https://github.com/rudderlabs/rudder-server/issues/6376)) ([8321864](https://github.com/rudderlabs/rudder-server/commit/8321864ed9a60aaeff65a679137644c201564264))
+
+
+### Bug Fixes
+
+* improve HTML error extractration and truncation limits ([#6421](https://github.com/rudderlabs/rudder-server/issues/6421)) ([9611096](https://github.com/rudderlabs/rudder-server/commit/96110967762e4db3a57bc31a21b00b5426fc08ce))
+* save webhook failures ([#6409](https://github.com/rudderlabs/rudder-server/issues/6409)) ([27d3de3](https://github.com/rudderlabs/rudder-server/commit/27d3de357df854d4a93e5d6f0b4ea678f79d7ad2))
+* **warehouse:** skip users table for duplicates check in staging file ([#6422](https://github.com/rudderlabs/rudder-server/issues/6422)) ([8315e4e](https://github.com/rudderlabs/rudder-server/commit/8315e4eb00a586350dc1e36f297f056561c51078))
+
+
+### Miscellaneous
+
+* apply security best practices ([#6428](https://github.com/rudderlabs/rudder-server/issues/6428)) ([49b1288](https://github.com/rudderlabs/rudder-server/commit/49b128851a437d5c40c2f822ee1344943f55a662))
+* change config key for pickupQueryThrottlingEnabled ([#6427](https://github.com/rudderlabs/rudder-server/issues/6427)) ([b82ec25](https://github.com/rudderlabs/rudder-server/commit/b82ec25013a8dc8acbc896a5adce8d16bbda988c))
+* change release to 1.61.0 ([#6437](https://github.com/rudderlabs/rudder-server/issues/6437)) ([20f7879](https://github.com/rudderlabs/rudder-server/commit/20f78799136f9481619755e39322061fec1d7f96))
+* cleanup enableOptimizedConnectionDetailsKey flag from processor ([#6383](https://github.com/rudderlabs/rudder-server/issues/6383)) ([770c3fe](https://github.com/rudderlabs/rudder-server/commit/770c3fec043f98da4bb5c3c5b2970e1f9c5cdd55))
+* cleanup unused reporting client code after migrating to commonclient ([#6385](https://github.com/rudderlabs/rudder-server/issues/6385)) ([2dd4c49](https://github.com/rudderlabs/rudder-server/commit/2dd4c4917079f63b053103f5ede66c2c17a76f74))
+* oauth service ([#6387](https://github.com/rudderlabs/rudder-server/issues/6387)) ([caba16d](https://github.com/rudderlabs/rudder-server/commit/caba16ded3bddfd047ac53d8eb6ab16fa2ee4fe9))
+* release 1.60.0 ([#6390](https://github.com/rudderlabs/rudder-server/issues/6390)) ([c461070](https://github.com/rudderlabs/rudder-server/commit/c4610707041a796498b75b034a7035523f717d41))
+* skip building images for debendabot ([#6425](https://github.com/rudderlabs/rudder-server/issues/6425)) ([3cbc422](https://github.com/rudderlabs/rudder-server/commit/3cbc422282077e5544c731cc4038bd3f77e134a2))
+
 ## [1.60.1](https://github.com/rudderlabs/rudder-server/compare/v1.60.0...v1.60.1) (2025-10-07)
 
 
