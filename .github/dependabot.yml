@@ -1,9 +1,11 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 2
     groups:
       frequent:
         patterns:
@@ -17,13 +19,17 @@ updates:
           - "minor"
           - "patch"
   - package-ecosystem: "github-actions"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 2
   - package-ecosystem: "docker"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 2
     groups:
       docker-deps:
         patterns:
