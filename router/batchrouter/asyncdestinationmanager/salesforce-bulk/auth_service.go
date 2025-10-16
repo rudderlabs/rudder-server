@@ -14,19 +14,16 @@ func (s *SalesforceAuthService) GetAccessToken() (string, error) {
 		return s.accessToken, nil
 	}
 
-	refreshTokenParams := oauthv2.RefreshTokenParams{
-		WorkspaceID:   s.workspaceID,
-		DestDefName:   destName,
+	tokenParams := &oauthv2.OAuthTokenParams{
 		AccountID:     s.accountID,
+		WorkspaceID:   s.workspaceID,
+		DestType:      destName,
 		DestinationID: s.destID,
 	}
 
-	statusCode, authResponse, err := s.oauthClient.FetchToken(&refreshTokenParams)
-	if err != nil && authResponse != nil {
-		return "", fmt.Errorf("fetching access token: %v, status: %d", authResponse.Err, statusCode)
-	}
-	if err != nil {
-		return "", fmt.Errorf("fetching access token: %w, status: %d", err, statusCode)
+	rawSecret, scErr := s.oauthClient.FetchToken(tokenParams)
+	if scErr != nil {
+		return "", fmt.Errorf("fetching access token: %w", scErr)
 	}
 
 	var tokenResp struct {
@@ -36,7 +33,7 @@ func (s *SalesforceAuthService) GetAccessToken() (string, error) {
 		ExpiresIn   int    `json:"expires_in"`
 	}
 
-	if err := jsonrs.Unmarshal(authResponse.Account.Secret, &tokenResp); err != nil {
+	if err := jsonrs.Unmarshal(rawSecret, &tokenResp); err != nil {
 		return "", fmt.Errorf("unmarshalling OAuth secret: %w", err)
 	}
 
@@ -64,3 +61,9 @@ func (s *SalesforceAuthService) GetInstanceURL() string {
 	return s.instanceURL
 }
 
+// clearToken clears the cached token to force a refresh on next GetAccessToken call
+func (s *SalesforceAuthService) clearToken() {
+	s.accessToken = ""
+	s.instanceURL = ""
+	s.tokenExpiry = 0
+}

@@ -1,6 +1,7 @@
 package salesforcebulk
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -35,51 +36,91 @@ func TestSalesforceAuthService_GetAccessToken(t *testing.T) {
 		url := service.GetInstanceURL()
 		require.Equal(t, "https://test.salesforce.com", url)
 	})
+
+	t.Run("handles OAuth error and clears token", func(t *testing.T) {
+		callCount := 0
+		mockClient := &mockOAuthClient{
+			fetchTokenFunc: func(params *oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError) {
+				callCount++
+				if callCount == 1 {
+					// First call returns a token that will be "expired" (simulating 401)
+					return json.RawMessage(`{
+						"access_token": "expired-token",
+						"instance_url": "https://test.salesforce.com",
+						"expires_in": 3600
+					}`), nil
+				}
+				// Second call after clearToken returns fresh token
+				return json.RawMessage(`{
+					"access_token": "fresh-token",
+					"instance_url": "https://test.salesforce.com",
+					"expires_in": 3600
+				}`), nil
+			},
+		}
+
+		service := &SalesforceAuthService{
+			logger:      logger.NOP,
+			oauthClient: mockClient,
+			workspaceID: "test-workspace",
+			accountID:   "test-account",
+			destID:      "test-dest",
+			tokenExpiry: 0,
+		}
+
+		// Get initial token
+		token1, err := service.GetAccessToken()
+		require.NoError(t, err)
+		require.Equal(t, "expired-token", token1)
+
+		// Clear token (simulating 401 error handler)
+		service.clearToken()
+
+		// Get fresh token - should call OAuth again
+		token2, err := service.GetAccessToken()
+		require.NoError(t, err)
+		require.Equal(t, "fresh-token", token2)
+		require.Equal(t, 2, callCount, "Should have called FetchToken twice")
+	})
 }
 
 type mockOAuthClient struct {
-	fetchTokenFunc func(*oauthv2.RefreshTokenParams) (int, *oauthv2.AuthResponse, error)
+	fetchTokenFunc func(*oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError)
 }
 
-func (m *mockOAuthClient) FetchToken(params *oauthv2.RefreshTokenParams) (int, *oauthv2.AuthResponse, error) {
+func (m *mockOAuthClient) FetchToken(params *oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError) {
 	if m.fetchTokenFunc != nil {
 		return m.fetchTokenFunc(params)
 	}
-	return 200, &oauthv2.AuthResponse{
-		Account: oauthv2.AccountSecret{
-			Secret: []byte(`{
-				"access_token": "new-token",
-				"instance_url": "https://instance.salesforce.com",
-				"expires_in": 7200
-			}`),
-		},
-	}, nil
+	return json.RawMessage(`{
+		"access_token": "new-token",
+		"instance_url": "https://instance.salesforce.com",
+		"expires_in": 7200
+	}`), nil
 }
 
-func (m *mockOAuthClient) RefreshToken(params *oauthv2.RefreshTokenParams) (int, *oauthv2.AuthResponse, error) {
-	return 0, nil, fmt.Errorf("not implemented")
+func (m *mockOAuthClient) RefreshToken(params *oauthv2.OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, oauthv2.StatusCodeError) {
+	return nil, oauthv2.NewStatusCodeError(500, fmt.Errorf("not implemented"))
 }
 
-func (m *mockOAuthClient) AuthStatusToggle(params *oauthv2.AuthStatusToggleParams) (int, string) {
-	return 0, "not implemented"
+func (m *mockOAuthClient) AuthStatusToggle(params *oauthv2.StatusRequestParams) oauthv2.StatusCodeError {
+	return oauthv2.NewStatusCodeError(500, fmt.Errorf("not implemented"))
 }
 
 func TestSalesforceAuthService_FetchNewToken(t *testing.T) {
 	t.Run("successfully fetches new token", func(t *testing.T) {
 		mockClient := &mockOAuthClient{
-			fetchTokenFunc: func(params *oauthv2.RefreshTokenParams) (int, *oauthv2.AuthResponse, error) {
+			fetchTokenFunc: func(params *oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError) {
 				require.Equal(t, "test-workspace", params.WorkspaceID)
 				require.Equal(t, "test-account", params.AccountID)
+				require.Equal(t, destName, params.DestType)
+				require.Equal(t, "test-dest", params.DestinationID)
 
-				return 200, &oauthv2.AuthResponse{
-					Account: oauthv2.AccountSecret{
-						Secret: []byte(`{
-							"access_token": "fresh-token",
-							"instance_url": "https://fresh.salesforce.com",
-							"expires_in": 3600
-						}`),
-					},
-				}, nil
+				return json.RawMessage(`{
+					"access_token": "fresh-token",
+					"instance_url": "https://fresh.salesforce.com",
+					"expires_in": 3600
+				}`), nil
 			},
 		}
 
@@ -101,15 +142,11 @@ func TestSalesforceAuthService_FetchNewToken(t *testing.T) {
 
 	t.Run("handles missing access token in response", func(t *testing.T) {
 		mockClient := &mockOAuthClient{
-			fetchTokenFunc: func(params *oauthv2.RefreshTokenParams) (int, *oauthv2.AuthResponse, error) {
-				return 200, &oauthv2.AuthResponse{
-					Account: oauthv2.AccountSecret{
-						Secret: []byte(`{
-							"access_token": "",
-							"instance_url": "https://test.salesforce.com"
-						}`),
-					},
-				}, nil
+			fetchTokenFunc: func(params *oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError) {
+				return json.RawMessage(`{
+					"access_token": "",
+					"instance_url": "https://test.salesforce.com"
+				}`), nil
 			},
 		}
 
@@ -129,15 +166,11 @@ func TestSalesforceAuthService_FetchNewToken(t *testing.T) {
 
 	t.Run("handles missing instance URL in response", func(t *testing.T) {
 		mockClient := &mockOAuthClient{
-			fetchTokenFunc: func(params *oauthv2.RefreshTokenParams) (int, *oauthv2.AuthResponse, error) {
-				return 200, &oauthv2.AuthResponse{
-					Account: oauthv2.AccountSecret{
-						Secret: []byte(`{
-							"access_token": "test-token",
-							"instance_url": ""
-						}`),
-					},
-				}, nil
+			fetchTokenFunc: func(params *oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError) {
+				return json.RawMessage(`{
+					"access_token": "test-token",
+					"instance_url": ""
+				}`), nil
 			},
 		}
 
@@ -155,4 +188,3 @@ func TestSalesforceAuthService_FetchNewToken(t *testing.T) {
 		require.Contains(t, err.Error(), "instance URL is empty")
 	})
 }
-

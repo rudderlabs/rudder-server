@@ -2,6 +2,7 @@ package salesforcebulk
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -107,7 +108,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 	}
 	tempFile.Close()
 
-	t.Run("successful upload", func(t *testing.T) {
+	t.Run("successful upload - single operation", func(t *testing.T) {
 		mockAPI := &MockSalesforceAPIService{
 			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
 				require.Equal(t, "Lead", objectName)
@@ -143,11 +144,110 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
 		require.NotNil(t, result.ImportingParameters)
-		
-		var params map[string]string
-		err := json.Unmarshal(result.ImportingParameters, &params)
+
+		var params struct {
+			JobIDs []string `json:"jobIds"`
+		}
+		err := jsonrs.Unmarshal(result.ImportingParameters, &params)
 		require.NoError(t, err)
-		require.Equal(t, "sf-job-123", params["jobId"])
+		require.Len(t, params.JobIDs, 1)
+		require.Equal(t, "sf-job-123", params.JobIDs[0])
+	})
+
+	t.Run("successful upload - multiple operations", func(t *testing.T) {
+		// Create temp file with mixed operations
+		tempFileMulti, err := os.CreateTemp("", "test_multi_op_*.json")
+		require.NoError(t, err)
+		defer os.Remove(tempFileMulti.Name())
+
+		multiOpData := []common.AsyncJob{
+			{
+				Message: map[string]interface{}{
+					"Email":           "insert1@example.com",
+					"FirstName":       "Insert",
+					"LastName":        "One",
+					"rudderOperation": "insert",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(1),
+				},
+			},
+			{
+				Message: map[string]interface{}{
+					"Email":           "update1@example.com",
+					"FirstName":       "Update",
+					"LastName":        "One",
+					"rudderOperation": "update",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(2),
+				},
+			},
+			{
+				Message: map[string]interface{}{
+					"Email":           "delete1@example.com",
+					"FirstName":       "Delete",
+					"LastName":        "One",
+					"rudderOperation": "delete",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(3),
+				},
+			},
+		}
+
+		for _, job := range multiOpData {
+			jobBytes, _ := jsonrs.Marshal(job)
+			tempFileMulti.Write(jobBytes)
+			tempFileMulti.Write([]byte("\n"))
+		}
+		tempFileMulti.Close()
+
+		jobCalls := 0
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				require.Equal(t, "Lead", objectName)
+				require.Contains(t, []string{"insert", "update", "delete"}, operation)
+				jobCalls++
+				return fmt.Sprintf("sf-job-%d", jobCalls), nil
+			},
+			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
+				require.Contains(t, jobID, "sf-job-")
+				return nil
+			},
+			CloseJobFunc: func(jobID string) *APIError {
+				require.Contains(t, jobID, "sf-job-")
+				return nil
+			},
+		}
+
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "insert"}, // Default fallback
+			dataHashToJobID: make(map[string]int64),
+		}
+
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{
+				ID: "test-dest-multi",
+			},
+			FileName:        tempFileMulti.Name(),
+			FailedJobIDs:    []int64{},
+			ImportingJobIDs: []int64{},
+		})
+
+		require.Equal(t, 3, result.ImportingCount, "All 3 jobs should be importing")
+		require.Equal(t, 0, result.FailedCount, "No jobs should have failed")
+		require.NotNil(t, result.ImportingParameters)
+
+		var params struct {
+			JobIDs []string `json:"jobIds"`
+		}
+		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
+		require.NoError(t, err)
+		require.Len(t, params.JobIDs, 3, "Should have created 3 separate Salesforce jobs")
+		require.Equal(t, 3, jobCalls, "Should have called CreateJob 3 times")
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
@@ -179,7 +279,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "Internal Server Error")
+		require.Contains(t, result.FailedReason, "All operations failed")
 	})
 
 	t.Run("upload with rate limit error", func(t *testing.T) {
@@ -211,7 +311,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "rate limit")
+		require.Contains(t, result.FailedReason, "All operations failed")
 	})
 }
 
@@ -375,9 +475,13 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 					Category:   "ServerError",
 				}
 			},
+			GetSuccessfulRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
+				return nil, nil
+			},
 		}
 
 		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string]int64),
 		}
@@ -386,8 +490,8 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			Parameters: json.RawMessage(`{"jobId":"test-job-123"}`),
 		})
 
-		require.Equal(t, 500, result.StatusCode)
-		require.Contains(t, result.Error, "Failed to fetch failed records")
+		require.Equal(t, 200, result.StatusCode)
+		require.NotNil(t, result.Metadata)
 	})
 
 	t.Run("handles invalid parameters", func(t *testing.T) {

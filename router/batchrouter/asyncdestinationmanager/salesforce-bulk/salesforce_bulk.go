@@ -3,6 +3,7 @@ package salesforcebulk
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/tidwall/gjson"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-// Transform extracts the Salesforce-formatted payload created by the transformer
 func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(
 		gjson.GetBytes(job.EventPayload, "body.JSON").String(),
@@ -19,7 +19,6 @@ func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	)
 }
 
-// Upload handles the bulk upload to Salesforce Bulk API 2.0
 func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
@@ -37,7 +36,6 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	// Extract object type: RETL uses context.externalId, event streams use config.ObjectType
 	objectInfo, err := extractObjectInfo(input, s.config)
 	if err != nil {
 		return common.AsyncUploadOutput{
@@ -48,127 +46,213 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	s.hashMapMutex.Lock()
-	csvFilePath, csvHeaders, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
-		destinationID,
-		input,
-		s.dataHashToJobID,
-	)
-	s.csvHeaders = csvHeaders // Store for result matching
-	s.hashMapMutex.Unlock()
-	
-	if err != nil {
+	jobsByOperation := groupJobsByOperation(input, s.config.Operation)
+
+	var allImportingJobIDs []int64
+	var allFailedJobIDs []int64
+	var sfJobIDs []string
+
+	allFailedJobIDs = append(allFailedJobIDs, failedJobIDs...)
+
+	for operation, jobs := range jobsByOperation {
+		s.logger.Infof("Processing %d jobs for operation: %s", len(jobs), operation)
+
+		s.hashMapMutex.Lock()
+		csvFilePath, csvHeaders, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
+			destinationID,
+			jobs,
+			s.dataHashToJobID,
+		)
+		s.csvHeaders = csvHeaders
+		s.hashMapMutex.Unlock()
+
+		if err != nil {
+			s.logger.Errorf("Error creating CSV for operation %s: %v", operation, err)
+			for _, job := range jobs {
+				if jobID, ok := job.Metadata["job_id"].(float64); ok {
+					allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
+				}
+			}
+			continue
+		}
+
+		allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+
+		s.logger.Infof("Created CSV with %d jobs for operation: %s", len(insertedJobIDs), operation)
+
+		sfJobID, apiError := s.apiService.CreateJob(
+			objectInfo.ObjectType,
+			operation,
+			objectInfo.ExternalIDField,
+		)
+		if apiError != nil {
+			s.logger.Errorf("Error creating Salesforce job for operation %s: %v", operation, apiError)
+			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+			continue
+		}
+
+		apiError = s.apiService.UploadData(sfJobID, csvFilePath)
+		if apiError != nil {
+			s.logger.Errorf("Error uploading data for operation %s: %v", operation, apiError)
+			_ = s.apiService.DeleteJob(sfJobID)
+			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+			continue
+		}
+
+		apiError = s.apiService.CloseJob(sfJobID)
+		if apiError != nil {
+			s.logger.Errorf("Error closing job for operation %s: %v", operation, apiError)
+			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+			continue
+		}
+
+		s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation: %s", sfJobID, operation)
+
+		allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
+		sfJobIDs = append(sfJobIDs, sfJobID)
+	}
+
+	if len(allImportingJobIDs) == 0 {
 		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
-			FailedReason:  fmt.Sprintf("Error creating CSV file: %v", err),
-			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+			FailedJobIDs:  append(allFailedJobIDs, importingJobIDs...),
+			FailedReason:  "All operations failed to create Salesforce Bulk jobs",
+			FailedCount:   len(allFailedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
 	}
 
-	importingJobIDs = insertedJobIDs
-	failedJobIDs = append(failedJobIDs, overflowedJobIDs...)
-
-	s.logger.Infof("Created CSV with %d jobs for Salesforce Bulk Upload", len(insertedJobIDs))
-
-	jobID, apiError := s.apiService.CreateJob(
-		objectInfo.ObjectType,
-		s.config.Operation,
-		objectInfo.ExternalIDField,
-	)
-	if apiError != nil {
-		return s.handleAPIError(apiError, failedJobIDs, importingJobIDs, destinationID)
-	}
-
-	apiError = s.apiService.UploadData(jobID, csvFilePath)
-	if apiError != nil {
-		_ = s.apiService.DeleteJob(jobID) // Clean up failed job
-		return s.handleAPIError(apiError, failedJobIDs, importingJobIDs, destinationID)
-	}
-
-	apiError = s.apiService.CloseJob(jobID)
-	if apiError != nil {
-		return s.handleAPIError(apiError, failedJobIDs, importingJobIDs, destinationID)
-	}
-
-	s.logger.Infof("Successfully created and closed Salesforce Bulk job %s", jobID)
+	jobIDsJSON := fmt.Sprintf(`{"jobIds":["%s"]}`, strings.Join(sfJobIDs, `","`))
 
 	return common.AsyncUploadOutput{
-		ImportingJobIDs:     importingJobIDs,
-		ImportingParameters: json.RawMessage(`{"jobId":"` + jobID + `"}`),
-		FailedJobIDs:        failedJobIDs,
-		ImportingCount:      len(importingJobIDs),
-		FailedCount:         len(failedJobIDs),
+		ImportingJobIDs:     allImportingJobIDs,
+		ImportingParameters: json.RawMessage(jobIDsJSON),
+		FailedJobIDs:        allFailedJobIDs,
+		ImportingCount:      len(allImportingJobIDs),
+		FailedCount:         len(allFailedJobIDs),
 		DestinationID:       destinationID,
 	}
 }
 
-// Poll checks the status of an ongoing Salesforce Bulk API job
 func (s *SalesforceBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
-	jobStatus, apiError := s.apiService.GetJobStatus(pollInput.ImportId)
-	if apiError != nil {
-		return s.handlePollError(apiError)
+	var params struct {
+		JobIDs []string `json:"jobIds"`
 	}
 
-	switch jobStatus.State {
-	case "JobComplete":
-		return common.PollStatusResponse{
-			StatusCode: 200,
-			Complete:   true,
-			HasFailed:  jobStatus.NumberRecordsFailed > 0,
-			FailedJobParameters: pollInput.ImportId,
+	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &params)
+	var jobIDs []string
+
+	if err != nil || len(params.JobIDs) == 0 {
+		jobIDs = []string{pollInput.ImportId}
+	} else {
+		jobIDs = params.JobIDs
+	}
+
+	allComplete := true
+	anyInProgress := false
+	anyFailed := false
+	var errors []string
+
+	for _, jobID := range jobIDs {
+		jobStatus, apiError := s.apiService.GetJobStatus(jobID)
+		if apiError != nil {
+			return s.handlePollError(apiError)
 		}
-	case "InProgress", "UploadComplete":
+
+		switch jobStatus.State {
+		case "JobComplete":
+			if jobStatus.NumberRecordsFailed > 0 {
+				anyFailed = true
+			}
+		case "InProgress", "UploadComplete":
+			allComplete = false
+			anyInProgress = true
+		case "Failed", "Aborted":
+			anyFailed = true
+			if jobStatus.ErrorMessage != "" {
+				errors = append(errors, fmt.Sprintf("Job %s: %s", jobID, jobStatus.ErrorMessage))
+			}
+		default:
+			return common.PollStatusResponse{
+				StatusCode: 500,
+				Complete:   false,
+				Error:      fmt.Sprintf("Unknown job state for %s: %s", jobID, jobStatus.State),
+			}
+		}
+	}
+
+	if allComplete {
+		errorMsg := ""
+		if len(errors) > 0 {
+			errorMsg = strings.Join(errors, "; ")
+		}
+
+		return common.PollStatusResponse{
+			StatusCode:          200,
+			Complete:            true,
+			HasFailed:           anyFailed,
+			FailedJobParameters: pollInput.ImportId,
+			Error:               errorMsg,
+		}
+	}
+
+	if anyInProgress {
 		return common.PollStatusResponse{
 			StatusCode: 200,
 			InProgress: true,
 		}
-	case "Failed", "Aborted":
-		return common.PollStatusResponse{
-			StatusCode: 200,
-			Complete:   true,
-			HasFailed:  true,
-			Error:      jobStatus.ErrorMessage,
-		}
-	default:
-		return common.PollStatusResponse{
-			StatusCode: 500,
-			Complete:   false,
-			Error:      fmt.Sprintf("Unknown job state: %s", jobStatus.State),
-		}
+	}
+
+	return common.PollStatusResponse{
+		StatusCode: 200,
+		InProgress: true,
 	}
 }
 
-// GetUploadStats retrieves detailed statistics about the upload
 func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	var params struct {
-		JobID string `json:"jobId"`
-	}
-	err := jsonrs.Unmarshal(input.Parameters, &params)
-	if err != nil {
-		return common.GetUploadStatsResponse{
-			StatusCode: 500,
-			Error:      fmt.Sprintf("Failed to parse parameters: %v", err),
-		}
+	var paramsMulti struct {
+		JobIDs []string `json:"jobIds"`
 	}
 
-	failedRecords, apiError := s.apiService.GetFailedRecords(params.JobID)
-	if apiError != nil {
-		return common.GetUploadStatsResponse{
-			StatusCode: apiError.StatusCode,
-			Error:      fmt.Sprintf("Failed to fetch failed records: %s", apiError.Message),
+	err := jsonrs.Unmarshal(input.Parameters, &paramsMulti)
+	var jobIDs []string
+
+	if err != nil || len(paramsMulti.JobIDs) == 0 {
+		var paramsSingle struct {
+			JobID string `json:"jobId"`
 		}
+		err = jsonrs.Unmarshal(input.Parameters, &paramsSingle)
+		if err != nil || paramsSingle.JobID == "" {
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+				Error:      fmt.Sprintf("Failed to parse parameters: %v", err),
+			}
+		}
+		jobIDs = []string{paramsSingle.JobID}
+	} else {
+		jobIDs = paramsMulti.JobIDs
 	}
 
-	successRecords, apiError := s.apiService.GetSuccessfulRecords(params.JobID)
-	if apiError != nil {
-		return common.GetUploadStatsResponse{
-			StatusCode: apiError.StatusCode,
-			Error:      fmt.Sprintf("Failed to fetch successful records: %s", apiError.Message),
+	var allFailedRecords []map[string]string
+	var allSuccessRecords []map[string]string
+
+	for _, jobID := range jobIDs {
+		failedRecords, apiError := s.apiService.GetFailedRecords(jobID)
+		if apiError != nil {
+			s.logger.Errorf("Failed to fetch failed records for job %s: %s", jobID, apiError.Message)
+			continue
 		}
+
+		successRecords, apiError := s.apiService.GetSuccessfulRecords(jobID)
+		if apiError != nil {
+			s.logger.Errorf("Failed to fetch successful records for job %s: %s", jobID, apiError.Message)
+			continue
+		}
+
+		allFailedRecords = append(allFailedRecords, failedRecords...)
+		allSuccessRecords = append(allSuccessRecords, successRecords...)
 	}
 
-	metadata := s.matchRecordsToJobs(input.ImportingList, failedRecords, successRecords)
+	metadata := s.matchRecordsToJobs(input.ImportingList, allFailedRecords, allSuccessRecords)
 	s.clearHashToJobID()
 
 	return common.GetUploadStatsResponse{
@@ -177,7 +261,6 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 	}
 }
 
-// handleAPIError handles API errors and returns appropriate AsyncUploadOutput
 func (s *SalesforceBulkUploader) handleAPIError(
 	apiError *APIError,
 	failedJobIDs, importingJobIDs []int64,
@@ -217,7 +300,6 @@ func (s *SalesforceBulkUploader) handleAPIError(
 	}
 }
 
-// handlePollError handles errors during polling
 func (s *SalesforceBulkUploader) handlePollError(apiError *APIError) common.PollStatusResponse {
 	if apiError.Category == "RefreshToken" {
 		return common.PollStatusResponse{
@@ -250,7 +332,6 @@ func (s *SalesforceBulkUploader) handlePollError(apiError *APIError) common.Poll
 	}
 }
 
-// matchRecordsToJobs matches Salesforce results back to original job IDs
 func (s *SalesforceBulkUploader) matchRecordsToJobs(
 	importingList []*jobsdb.JobT,
 	failedRecords, successRecords []map[string]string,
@@ -267,12 +348,11 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 
 	s.hashMapMutex.RLock()
 	csvHeaders := s.csvHeaders
-	
+
 	for _, failedRecord := range failedRecords {
 		hash := calculateHashFromRecord(failedRecord, csvHeaders)
 		if jobID, exists := s.dataHashToJobID[hash]; exists && jobID != 0 {
 			metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
-			// Salesforce may use different error column names
 			if errorMsg, ok := failedRecord["sf__Error"]; ok && errorMsg != "" {
 				metadata.AbortedReasons[jobID] = errorMsg
 			} else if errorMsg, ok := failedRecord["Error"]; ok && errorMsg != "" {
@@ -280,7 +360,7 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 			}
 		}
 	}
-	
+
 	s.hashMapMutex.RUnlock()
 
 	failedJobIDSet := make(map[int64]bool)
@@ -300,9 +380,8 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 func (s *SalesforceBulkUploader) clearHashToJobID() {
 	s.hashMapMutex.Lock()
 	defer s.hashMapMutex.Unlock()
-	
+
 	for k := range s.dataHashToJobID {
 		delete(s.dataHashToJobID, k)
 	}
 }
-

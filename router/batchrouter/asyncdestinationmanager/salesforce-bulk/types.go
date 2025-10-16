@@ -33,15 +33,15 @@ type SalesforceAuthServiceInterface interface {
 }
 
 type SalesforceAuthService struct {
-	logger       logger.Logger
-	oauthClient  oauthv2.Authorizer
-	workspaceID  string
-	accountID    string
-	destID       string
-	apiVersion   string
-	accessToken  string
-	instanceURL  string
-	tokenExpiry  int64
+	logger      logger.Logger
+	oauthClient oauthv2.OAuthHandler
+	workspaceID string
+	accountID   string
+	destID      string
+	apiVersion  string
+	accessToken string
+	instanceURL string
+	tokenExpiry int64
 }
 
 type SalesforceAPIServiceInterface interface {
@@ -91,4 +91,3 @@ type APIError struct {
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 )
-

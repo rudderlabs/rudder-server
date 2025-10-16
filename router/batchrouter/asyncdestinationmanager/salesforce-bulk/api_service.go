@@ -203,6 +203,85 @@ func (s *SalesforceAPIService) makeRequest(
 	body io.Reader,
 	contentType string,
 ) ([]byte, *APIError) {
+	// Buffer small bodies (JSON) so we can retry them
+	// Large bodies (CSV files) are passed as *os.File and should not be buffered
+	var bodyBytes []byte
+	var canRetry bool
+
+	if body != nil {
+		// Check if it's a file (don't buffer large files)
+		if _, isFile := body.(*os.File); isFile {
+			canRetry = false
+		} else {
+			// Buffer the body so we can retry
+			var err error
+			bodyBytes, err = io.ReadAll(body)
+			if err != nil {
+				return nil, &APIError{
+					StatusCode: 500,
+					Message:    fmt.Sprintf("reading request body: %v", err),
+					Category:   "ServerError",
+				}
+			}
+			canRetry = true
+		}
+	} else {
+		canRetry = true
+	}
+
+	// Create body reader for initial attempt
+	var bodyReader io.Reader
+	if bodyBytes != nil {
+		bodyReader = bytes.NewReader(bodyBytes)
+	} else {
+		bodyReader = body
+	}
+
+	// Initial attempt
+	respBody, apiError := s.attemptRequest(method, endpoint, bodyReader, contentType)
+	if apiError == nil {
+		return respBody, nil
+	}
+
+	// Retry logic for token refresh errors
+	const maxRetries = 2
+	if canRetry && apiError.Category == "RefreshToken" {
+		for retryCount := 0; retryCount < maxRetries; retryCount++ {
+			s.logger.Infof("Retrying Salesforce API request after token error (attempt %d/%d)", retryCount+1, maxRetries)
+
+			// Clear cached token to force refresh on next GetAccessToken call
+			if authSvc, ok := s.authService.(*SalesforceAuthService); ok {
+				authSvc.clearToken()
+			}
+
+			// Small backoff
+			time.Sleep(time.Duration((retryCount+1)*2) * time.Second)
+
+			// Recreate body reader from buffered bytes
+			if bodyBytes != nil {
+				bodyReader = bytes.NewReader(bodyBytes)
+			}
+
+			respBody, apiError = s.attemptRequest(method, endpoint, bodyReader, contentType)
+			if apiError == nil {
+				return respBody, nil
+			}
+
+			// If it's not a token error anymore, stop retrying
+			if apiError.Category != "RefreshToken" {
+				break
+			}
+		}
+	}
+
+	return nil, apiError
+}
+
+func (s *SalesforceAPIService) attemptRequest(
+	method, endpoint string,
+	body io.Reader,
+	contentType string,
+) ([]byte, *APIError) {
 	token, err := s.authService.GetAccessToken()
 	if err != nil {
 		return nil, &APIError{
@@ -271,4 +350,3 @@ func categorizeError(statusCode int, body []byte) string {
 		return "Unknown"
 	}
 }
-

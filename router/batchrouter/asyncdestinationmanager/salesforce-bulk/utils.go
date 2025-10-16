@@ -15,10 +15,9 @@ import (
 )
 
 const (
-	maxFileSize = 100 * 1024 * 1024 // 100MB - Salesforce Bulk API 2.0 limit
+	maxFileSize = 100 * 1024 * 1024
 )
 
-// ObjectInfo contains object type and external ID field extracted from VDM context
 type ObjectInfo struct {
 	ObjectType      string
 	ExternalIDField string
@@ -49,8 +48,6 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	return jobs, nil
 }
 
-// extractObjectInfo extracts Salesforce object type and external ID field
-// RETL: reads from context.externalId (VDM), event streams: uses config.ObjectType
 func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
@@ -122,13 +119,14 @@ func createCSVFile(
 		return "", nil, nil, nil, fmt.Errorf("no jobs to process")
 	}
 
-	// Sort headers for consistent CSV structure (Go map iteration is non-deterministic)
 	headers := make([]string, 0, len(input[0].Message))
 	for key := range input[0].Message {
-		headers = append(headers, key)
+		if key != "rudderOperation" {
+			headers = append(headers, key)
+		}
 	}
 	sort.Strings(headers)
-	
+
 	headerIndex := make(map[string]int)
 	for i, key := range headers {
 		headerIndex[key] = i
@@ -171,14 +169,12 @@ func createCSVFile(
 	return csvFilePath, headers, insertedJobIDs, overflowedJobIDs, nil
 }
 
-func calculateHashCode(row []string) string{
+func calculateHashCode(row []string) string {
 	joined := strings.Join(row, ",")
 	hash := sha256.Sum256([]byte(joined))
 	return fmt.Sprintf("%x", hash)
 }
 
-// calculateHashFromRecord generates hash using only the original CSV headers,
-// ignoring any additional columns Salesforce returns (like sf__Id, sf__Created, etc.)
 func calculateHashFromRecord(record map[string]string, csvHeaders []string) string {
 	values := make([]string, 0, len(csvHeaders))
 	for _, header := range csvHeaders {
@@ -187,3 +183,20 @@ func calculateHashFromRecord(record map[string]string, csvHeaders []string) stri
 	return calculateHashCode(values)
 }
 
+func extractOperationFromJob(job common.AsyncJob, defaultOperation string) string {
+	if operation, ok := job.Message["rudderOperation"].(string); ok && operation != "" {
+		return operation
+	}
+	return defaultOperation
+}
+
+func groupJobsByOperation(jobs []common.AsyncJob, defaultOperation string) map[string][]common.AsyncJob {
+	grouped := make(map[string][]common.AsyncJob)
+
+	for _, job := range jobs {
+		operation := extractOperationFromJob(job, defaultOperation)
+		grouped[operation] = append(grouped[operation], job)
+	}
+
+	return grouped
+}
