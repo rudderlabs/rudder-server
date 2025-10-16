@@ -110,7 +110,7 @@ jobs:
           echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_REDSHIFT_GINKGO_ACCESS_KEY_ID }}" >> $GITHUB_ENV
           echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_REDSHIFT_GINKGO_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
       - name: Warehouse Service Integration [ ${{ matrix.destination }} ]
-        run: RACE_ENABLED=true FORCE_RUN_INTEGRATION_TESTS=true make test-warehouse package=${{ matrix.package }}
+        run: make test-warehouse package=${{ matrix.package }}
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
           DATABRICKS_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.DATABRICKS_INTEGRATION_TEST_CREDENTIALS }}
@@ -125,6 +125,8 @@ jobs:
           DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
           DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
           DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
+          RACE_ENABLED: "true"
+          FORCE_RUN_INTEGRATION_TESTS: "true"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -150,12 +152,13 @@ jobs:
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
       - name: tests
-        run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
+        run: make test exclude="/rudder-server/(jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
           DOCKER_REGISTRY_MIRROR_USERNAME: ${{ secrets.DOCKER_REGISTRY_MIRROR_USERNAME }}
           DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
           DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
+          FORCE_RUN_INTEGRATION_TESTS: "true"
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -233,7 +236,9 @@ jobs:
           DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
           DOCKER_REGISTRY_MIRROR: ${{ secrets.DOCKER_REGISTRY_MIRROR }}
           RACE_ENABLED: ${{ matrix.race || false }}
-        run: FORCE_RUN_INTEGRATION_TESTS=true make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
+          RSERVER_OAUTH_TEST_CREDENTIALS: ${{ secrets.RSERVER_OAUTH_TEST_CREDENTIALS }}
+          FORCE_RUN_INTEGRATION_TESTS: "true"
+        run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
       - name: Sanitize name for Artifact
         run: |
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')

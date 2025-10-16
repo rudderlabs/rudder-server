@@ -148,7 +148,7 @@ func TestInvalidCredentials(t *testing.T) {
 	_, err = bqstream.NewProducer(&destination, common.Opts{Timeout: 1 * time.Microsecond})
 
 	assert.NotNil(t, err)
-	assert.EqualError(t, err, "bigquery: constructing client: credentials: unsupported filetype '\\x00'")
+	assert.EqualError(t, err, "bigquery: constructing client: credentials: unsupported unidentified file type")
 }
 
 func TestProduceWithInvalidClient(t *testing.T) {
