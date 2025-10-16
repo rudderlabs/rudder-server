@@ -3,6 +3,7 @@ package salesforcebulk
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -75,6 +76,12 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 			}
 			continue
 		}
+
+		defer func(path string) {
+			if err := os.Remove(path); err != nil {
+				s.logger.Debugf("Failed to remove CSV file %s: %v", path, err)
+			}
+		}(csvFilePath)
 
 		allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
 

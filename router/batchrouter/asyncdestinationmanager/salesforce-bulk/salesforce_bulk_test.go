@@ -109,6 +109,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 	tempFile.Close()
 
 	t.Run("successful upload - single operation", func(t *testing.T) {
+		var capturedCSVPath string
 		mockAPI := &MockSalesforceAPIService{
 			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
 				require.Equal(t, "Lead", objectName)
@@ -117,6 +118,10 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			},
 			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
 				require.Equal(t, "sf-job-123", jobID)
+				capturedCSVPath = csvFilePath
+				// Verify CSV file exists during upload
+				_, err := os.Stat(csvFilePath)
+				require.NoError(t, err)
 				return nil
 			},
 			CloseJobFunc: func(jobID string) *APIError {
@@ -152,6 +157,10 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, params.JobIDs, 1)
 		require.Equal(t, "sf-job-123", params.JobIDs[0])
+
+		// Verify CSV file was cleaned up after upload
+		_, err = os.Stat(capturedCSVPath)
+		require.True(t, os.IsNotExist(err), "CSV file should be cleaned up after upload")
 	})
 
 	t.Run("successful upload - multiple operations", func(t *testing.T) {
@@ -204,6 +213,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		tempFileMulti.Close()
 
 		jobCalls := 0
+		var capturedCSVPaths []string
 		mockAPI := &MockSalesforceAPIService{
 			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
 				require.Equal(t, "Lead", objectName)
@@ -213,6 +223,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			},
 			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
 				require.Contains(t, jobID, "sf-job-")
+				capturedCSVPaths = append(capturedCSVPaths, csvFilePath)
 				return nil
 			},
 			CloseJobFunc: func(jobID string) *APIError {
@@ -248,6 +259,11 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, params.JobIDs, 3, "Should have created 3 separate Salesforce jobs")
 		require.Equal(t, 3, jobCalls, "Should have called CreateJob 3 times")
+		require.Len(t, capturedCSVPaths, 3)
+		for _, csvPath := range capturedCSVPaths {
+			_, err := os.Stat(csvPath)
+			require.True(t, os.IsNotExist(err), "CSV file should be cleaned up")
+		}
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
