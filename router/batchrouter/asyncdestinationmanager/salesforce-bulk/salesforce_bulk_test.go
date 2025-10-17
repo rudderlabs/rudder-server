@@ -431,6 +431,74 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 	}
 }
 
+func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
+	t.Run("creates multiple Salesforce jobs when CSV exceeds 100MB", func(t *testing.T) {
+		tempFile, err := os.CreateTemp("", "test_overflow_*.json")
+		require.NoError(t, err)
+		defer os.Remove(tempFile.Name())
+
+		largeData := make([]byte, 200*1024)
+		for i := 0; i < 200*1024; i++ {
+			largeData[i] = 'x'
+		}
+
+		var jobCount int
+		testData := make([]common.AsyncJob, 0)
+		for i := 1; i <= 600; i++ {
+			testData = append(testData, common.AsyncJob{
+				Message: map[string]interface{}{
+					"Email":     fmt.Sprintf("user%d@example.com", i),
+					"LargeData": string(largeData),
+				},
+				Metadata: map[string]interface{}{"job_id": float64(i)},
+			})
+		}
+
+		for _, job := range testData {
+			jobBytes, _ := jsonrs.Marshal(job)
+			tempFile.Write(jobBytes)
+			tempFile.Write([]byte("\n"))
+		}
+		tempFile.Close()
+
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				jobCount++
+				return fmt.Sprintf("sf-job-%d", jobCount), nil
+			},
+			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
+				return nil
+			},
+			CloseJobFunc: func(jobID string) *APIError {
+				return nil
+			},
+		}
+
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "insert"},
+			dataHashToJobID: make(map[string][]int64),
+		}
+
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{ID: "test-dest"},
+			FileName:    tempFile.Name(),
+		})
+
+		require.Greater(t, jobCount, 1, "Should create multiple Salesforce jobs for overflow")
+		require.Equal(t, 600, result.ImportingCount, "All jobs should be imported")
+		require.Equal(t, 0, result.FailedCount, "No jobs should fail due to overflow")
+
+		var params struct {
+			Jobs []SalesforceJobInfo `json:"jobs"`
+		}
+		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
+		require.NoError(t, err)
+		require.Len(t, params.Jobs, jobCount, "Should have job info for each Salesforce job")
+	})
+}
+
 func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 	t.Run("successful stats retrieval with failures", func(t *testing.T) {
 		mockAPI := &MockSalesforceAPIService{

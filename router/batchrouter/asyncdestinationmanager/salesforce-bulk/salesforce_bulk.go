@@ -58,69 +58,85 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 	for operation, jobs := range jobsByOperation {
 		s.logger.Infof("Processing %d jobs for operation: %s", len(jobs), operation)
 
-		s.hashMapMutex.Lock()
-		csvFilePath, csvHeaders, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
-			destinationID,
-			jobs,
-			s.dataHashToJobID,
-			operation,
-		)
-		s.hashMapMutex.Unlock()
+		remainingJobs := jobs
 
-		if err != nil {
-			s.logger.Errorf("Error creating CSV for operation %s: %v", operation, err)
-			for _, job := range jobs {
-				if jobID, ok := job.Metadata["job_id"].(float64); ok {
-					allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
+		for len(remainingJobs) > 0 {
+			s.hashMapMutex.Lock()
+			csvFilePath, csvHeaders, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
+				destinationID,
+				remainingJobs,
+				s.dataHashToJobID,
+				operation,
+			)
+			s.hashMapMutex.Unlock()
+
+			if err != nil {
+				s.logger.Errorf("Error creating CSV for operation %s: %v", operation, err)
+				for _, job := range remainingJobs {
+					if jobID, ok := job.Metadata["job_id"].(float64); ok {
+						allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
+					}
+				}
+				break
+			}
+
+			defer func(path string) {
+				if err := os.Remove(path); err != nil {
+					s.logger.Debugf("Failed to remove CSV file %s: %v", path, err)
+				}
+			}(csvFilePath)
+
+			s.logger.Infof("Created CSV with %d jobs for operation %s (batch %d of %d total)",
+				len(insertedJobIDs), operation, len(allImportingJobIDs)/100+1, len(jobs))
+
+			sfJobID, apiError := s.apiService.CreateJob(
+				objectInfo.ObjectType,
+				operation,
+				objectInfo.ExternalIDField,
+			)
+			if apiError != nil {
+				s.logger.Errorf("Error creating Salesforce job for operation %s: %v", operation, apiError)
+				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+				allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+				break
+			}
+
+			apiError = s.apiService.UploadData(sfJobID, csvFilePath)
+			if apiError != nil {
+				s.logger.Errorf("Error uploading data for operation %s: %v", operation, apiError)
+				_ = s.apiService.DeleteJob(sfJobID)
+				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+				allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+				break
+			}
+
+			apiError = s.apiService.CloseJob(sfJobID)
+			if apiError != nil {
+				s.logger.Errorf("Error closing job for operation %s: %v", operation, apiError)
+				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+				allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+				break
+			}
+
+			s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation: %s", sfJobID, operation)
+
+			allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
+			sfJobs = append(sfJobs, SalesforceJobInfo{
+				ID:        sfJobID,
+				Operation: operation,
+				Headers:   csvHeaders,
+			})
+
+			remainingJobs = make([]common.AsyncJob, len(overflowedJobIDs))
+			for i, jobID := range overflowedJobIDs {
+				for _, job := range jobs {
+					if int64(job.Metadata["job_id"].(float64)) == jobID {
+						remainingJobs[i] = job
+						break
+					}
 				}
 			}
-			continue
 		}
-
-		defer func(path string) {
-			if err := os.Remove(path); err != nil {
-				s.logger.Debugf("Failed to remove CSV file %s: %v", path, err)
-			}
-		}(csvFilePath)
-
-		allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
-
-		s.logger.Infof("Created CSV with %d jobs for operation: %s", len(insertedJobIDs), operation)
-
-		sfJobID, apiError := s.apiService.CreateJob(
-			objectInfo.ObjectType,
-			operation,
-			objectInfo.ExternalIDField,
-		)
-		if apiError != nil {
-			s.logger.Errorf("Error creating Salesforce job for operation %s: %v", operation, apiError)
-			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-			continue
-		}
-
-		apiError = s.apiService.UploadData(sfJobID, csvFilePath)
-		if apiError != nil {
-			s.logger.Errorf("Error uploading data for operation %s: %v", operation, apiError)
-			_ = s.apiService.DeleteJob(sfJobID)
-			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-			continue
-		}
-
-		apiError = s.apiService.CloseJob(sfJobID)
-		if apiError != nil {
-			s.logger.Errorf("Error closing job for operation %s: %v", operation, apiError)
-			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-			continue
-		}
-
-		s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation: %s", sfJobID, operation)
-
-		allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
-		sfJobs = append(sfJobs, SalesforceJobInfo{
-			ID:        sfJobID,
-			Operation: operation,
-			Headers:   csvHeaders,
-		})
 	}
 
 	if len(allImportingJobIDs) == 0 {
