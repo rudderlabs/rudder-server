@@ -5,7 +5,10 @@ updates:
     schedule:
       interval: "daily"
     cooldown:
-      default-days: 2
+      default-days: 4
+      semver-patch-days: 2
+      exclude:
+        - "github.com/rudderlabs/*"
     groups:
       frequent:
         patterns:
@@ -23,13 +26,20 @@ updates:
     schedule:
       interval: "daily"
     cooldown:
-      default-days: 2
+      default-days: 4
+      semver-patch-days: 2
+      exclude:
+        - "rudderlabs/*"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "daily"
     cooldown:
-      default-days: 2
+      default-days: 4
+      semver-patch-days: 2
+      exclude:
+        - "rudderstack/*"
+        - "rudderlabs/*"
     groups:
       docker-deps:
         patterns:
