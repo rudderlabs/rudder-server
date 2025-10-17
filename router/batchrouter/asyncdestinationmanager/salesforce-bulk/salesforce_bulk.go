@@ -13,11 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func mustMarshal(v interface{}) []byte {
-	b, _ := jsonrs.Marshal(v)
-	return b
-}
-
 func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(
 		gjson.GetBytes(job.EventPayload, "body.JSON").String(),
@@ -85,13 +80,10 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 				break
 			}
 
-			defer func(path string) {
-				if err := os.Remove(path); err != nil {
-					s.logger.Debugf("Failed to remove CSV file %s: %v", path, err)
-				}
-			}(csvFilePath)
-
 			if len(insertedJobIDs) == 0 {
+				if err := os.Remove(csvFilePath); err != nil {
+					s.logger.Debugf("Failed to remove empty CSV file %s: %v", csvFilePath, err)
+				}
 				s.logger.Errorf("No jobs fit in CSV for operation %s, marking as failed", operation)
 				for _, job := range remainingJobs {
 					if jobID, ok := job.Metadata["job_id"].(float64); ok {
@@ -148,6 +140,10 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 				Headers:   csvHeaders,
 			})
 
+			if err := os.Remove(csvFilePath); err != nil {
+				s.logger.Debugf("Failed to remove CSV file %s: %v", csvFilePath, err)
+			}
+
 			remainingJobs = overflowedJobs
 		}
 	}
@@ -161,10 +157,14 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	jobsJSON, _ := jsonrs.Marshal(map[string]interface{}{
-		"importId": fmt.Sprintf(`{"jobs":%s}`, string(mustMarshal(sfJobs))),
+	importData := map[string]interface{}{"jobs": sfJobs}
+	importID, _ := jsonrs.Marshal(importData)
+
+	paramsWithImportID := map[string]interface{}{
+		"importId": string(importID),
 		"jobs":     sfJobs,
-	})
+	}
+	jobsJSON, _ := jsonrs.Marshal(paramsWithImportID)
 
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     allImportingJobIDs,
@@ -271,11 +271,13 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 
 	var allFailedRecords []map[string]string
 	var allSuccessRecords []map[string]string
+	var fetchErrors int
 
 	for _, job := range params.Jobs {
 		failedRecords, apiError := s.apiService.GetFailedRecords(job.ID)
 		if apiError != nil {
 			s.logger.Errorf("Failed to fetch failed records for job %s: %s", job.ID, apiError.Message)
+			fetchErrors++
 			continue
 		}
 
@@ -287,6 +289,7 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 		successRecords, apiError := s.apiService.GetSuccessfulRecords(job.ID)
 		if apiError != nil {
 			s.logger.Errorf("Failed to fetch successful records for job %s: %s", job.ID, apiError.Message)
+			fetchErrors++
 			continue
 		}
 
@@ -300,7 +303,6 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 	}
 
 	metadata := s.matchRecordsToJobs(input.ImportingList, allFailedRecords, allSuccessRecords)
-	s.clearHashToJobID()
 
 	return common.GetUploadStatsResponse{
 		StatusCode: 200,
@@ -390,11 +392,3 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 	return metadata
 }
 
-func (s *SalesforceBulkUploader) clearHashToJobID() {
-	s.hashMapMutex.Lock()
-	defer s.hashMapMutex.Unlock()
-
-	for k := range s.dataHashToJobID {
-		delete(s.dataHashToJobID, k)
-	}
-}
