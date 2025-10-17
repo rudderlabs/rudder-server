@@ -29,7 +29,7 @@ type SalesforceBulkUploader struct {
 
 type SalesforceAuthServiceInterface interface {
 	GetAccessToken() (string, error)
-	GetInstanceURL() string
+	GetInstanceURL() (string, error)
 }
 
 type SalesforceAuthService struct {

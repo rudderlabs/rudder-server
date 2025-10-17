@@ -82,8 +82,11 @@ func (m *MockSalesforceAuthService) GetAccessToken() (string, error) {
 	return m.AccessToken, nil
 }
 
-func (m *MockSalesforceAuthService) GetInstanceURL() string {
-	return m.InstanceURL
+func (m *MockSalesforceAuthService) GetInstanceURL() (string, error) {
+	if m.Error != nil {
+		return "", m.Error
+	}
+	return m.InstanceURL, nil
 }
 
 // MockBackendConfig is a mock implementation of backendconfig.BackendConfig

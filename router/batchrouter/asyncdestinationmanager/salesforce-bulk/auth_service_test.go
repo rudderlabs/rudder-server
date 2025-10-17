@@ -33,7 +33,8 @@ func TestSalesforceAuthService_GetAccessToken(t *testing.T) {
 			instanceURL: "https://test.salesforce.com",
 		}
 
-		url := service.GetInstanceURL()
+		url, err := service.GetInstanceURL()
+		require.NoError(t, err)
 		require.Equal(t, "https://test.salesforce.com", url)
 	})
 
@@ -105,6 +106,34 @@ func (m *mockOAuthClient) RefreshToken(params *oauthv2.OAuthTokenParams, previou
 
 func (m *mockOAuthClient) AuthStatusToggle(params *oauthv2.StatusRequestParams) oauthv2.StatusCodeError {
 	return oauthv2.NewStatusCodeError(500, fmt.Errorf("not implemented"))
+}
+
+func TestSalesforceAuthService_GetInstanceURL_ColdStart(t *testing.T) {
+	t.Run("GetInstanceURL should return instance URL for endpoint construction", func(t *testing.T) {
+		mockClient := &mockOAuthClient{
+			fetchTokenFunc: func(params *oauthv2.OAuthTokenParams) (json.RawMessage, oauthv2.StatusCodeError) {
+				return json.RawMessage(`{
+					"access_token": "test-token-123",
+					"instance_url": "https://na123.salesforce.com",
+					"expires_in": 3600
+				}`), nil
+			},
+		}
+
+		service := &SalesforceAuthService{
+			logger:      logger.NOP,
+			oauthClient: mockClient,
+			workspaceID: "test-workspace",
+			accountID:   "test-account",
+			destID:      "test-dest",
+		}
+
+		instanceURL, err := service.GetInstanceURL()
+
+		require.NoError(t, err)
+		require.NotEmpty(t, instanceURL)
+		require.Equal(t, "https://na123.salesforce.com", instanceURL)
+	})
 }
 
 func TestSalesforceAuthService_FetchNewToken(t *testing.T) {

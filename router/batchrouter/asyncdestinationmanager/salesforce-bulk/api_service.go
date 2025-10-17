@@ -48,8 +48,16 @@ func (s *SalesforceAPIService) CreateJob(
 		}
 	}
 
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest",
-		s.authService.GetInstanceURL(), s.apiVersion)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return "", &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest", instanceURL, s.apiVersion)
 
 	respBody, apiErr := s.makeRequest("POST", endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
@@ -81,8 +89,16 @@ func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 	}
 	defer file.Close()
 
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/batches",
-		s.authService.GetInstanceURL(), s.apiVersion, jobID)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/batches", instanceURL, s.apiVersion, jobID)
 
 	_, apiErr := s.makeRequest("PUT", endpoint, file, "text/csv")
 	if apiErr != nil {
@@ -98,8 +114,16 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 	reqBody := map[string]string{"state": "UploadComplete"}
 	body, _ := jsonrs.Marshal(reqBody)
 
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s",
-		s.authService.GetInstanceURL(), s.apiVersion, jobID)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s", instanceURL, s.apiVersion, jobID)
 
 	_, apiErr := s.makeRequest("PATCH", endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
@@ -112,8 +136,16 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 }
 
 func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s",
-		s.authService.GetInstanceURL(), s.apiVersion, jobID)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return nil, &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s", instanceURL, s.apiVersion, jobID)
 
 	respBody, apiErr := s.makeRequest("GET", endpoint, nil, "")
 	if apiErr != nil {
@@ -133,20 +165,44 @@ func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIErr
 }
 
 func (s *SalesforceAPIService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/failedResults",
-		s.authService.GetInstanceURL(), s.apiVersion, jobID)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return nil, &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/failedResults", instanceURL, s.apiVersion, jobID)
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *SalesforceAPIService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/successfulResults",
-		s.authService.GetInstanceURL(), s.apiVersion, jobID)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return nil, &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/successfulResults", instanceURL, s.apiVersion, jobID)
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *SalesforceAPIService) DeleteJob(jobID string) *APIError {
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s",
-		s.authService.GetInstanceURL(), s.apiVersion, jobID)
+	instanceURL, err := s.authService.GetInstanceURL()
+	if err != nil {
+		return &APIError{
+			StatusCode: 500,
+			Message:    fmt.Sprintf("getting instance URL: %v", err),
+			Category:   "RefreshToken",
+		}
+	}
+
+	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s", instanceURL, s.apiVersion, jobID)
 
 	_, apiErr := s.makeRequest("DELETE", endpoint, nil, "")
 	return apiErr

@@ -57,11 +57,16 @@ func (s *SalesforceAuthService) GetAccessToken() (string, error) {
 	return s.accessToken, nil
 }
 
-func (s *SalesforceAuthService) GetInstanceURL() string {
-	return s.instanceURL
+func (s *SalesforceAuthService) GetInstanceURL() (string, error) {
+	if s.instanceURL == "" {
+		_, err := s.GetAccessToken()
+		if err != nil {
+			return "", err
+		}
+	}
+	return s.instanceURL, nil
 }
 
-// clearToken clears the cached token to force a refresh on next GetAccessToken call
 func (s *SalesforceAuthService) clearToken() {
 	s.accessToken = ""
 	s.instanceURL = ""
