@@ -120,11 +120,18 @@ func createCSVFile(
 		return "", nil, nil, nil, fmt.Errorf("no jobs to process")
 	}
 
-	headers := make([]string, 0, len(input[0].Message))
-	for key := range input[0].Message {
-		if key != "rudderOperation" {
-			headers = append(headers, key)
+	headerSet := make(map[string]bool)
+	for _, job := range input {
+		for key := range job.Message {
+			if key != "rudderOperation" {
+				headerSet[key] = true
+			}
 		}
+	}
+
+	headers := make([]string, 0, len(headerSet))
+	for key := range headerSet {
+		headers = append(headers, key)
 	}
 	sort.Strings(headers)
 

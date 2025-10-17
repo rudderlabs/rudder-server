@@ -65,7 +65,6 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 			s.dataHashToJobID,
 			operation,
 		)
-		s.csvHeaders = csvHeaders
 		s.hashMapMutex.Unlock()
 
 		if err != nil {
@@ -117,7 +116,11 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation: %s", sfJobID, operation)
 
 		allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
-		sfJobs = append(sfJobs, SalesforceJobInfo{ID: sfJobID, Operation: operation})
+		sfJobs = append(sfJobs, SalesforceJobInfo{
+			ID:        sfJobID,
+			Operation: operation,
+			Headers:   csvHeaders,
+		})
 	}
 
 	if len(allImportingJobIDs) == 0 {
@@ -241,6 +244,7 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 
 		for i := range failedRecords {
 			failedRecords[i]["_operation"] = job.Operation
+			failedRecords[i]["_headers"] = strings.Join(job.Headers, ",")
 		}
 
 		successRecords, apiError := s.apiService.GetSuccessfulRecords(job.ID)
@@ -251,6 +255,7 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 
 		for i := range successRecords {
 			successRecords[i]["_operation"] = job.Operation
+			successRecords[i]["_headers"] = strings.Join(job.Headers, ",")
 		}
 
 		allFailedRecords = append(allFailedRecords, failedRecords...)
@@ -352,11 +357,13 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 	}
 
 	s.hashMapMutex.RLock()
-	csvHeaders := s.csvHeaders
+	defer s.hashMapMutex.RUnlock()
 
 	for _, failedRecord := range failedRecords {
 		operation := failedRecord["_operation"]
-		hash := calculateHashFromRecord(failedRecord, csvHeaders, operation)
+		headersStr := failedRecord["_headers"]
+		headers := strings.Split(headersStr, ",")
+		hash := calculateHashFromRecord(failedRecord, headers, operation)
 		if jobIDs, exists := s.dataHashToJobID[hash]; exists {
 			for _, jobID := range jobIDs {
 				if jobID != 0 {
@@ -370,8 +377,6 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 			}
 		}
 	}
-
-	s.hashMapMutex.RUnlock()
 
 	failedJobIDSet := make(map[int64]bool)
 	for _, jobID := range metadata.AbortedKeys {

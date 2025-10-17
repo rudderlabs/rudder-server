@@ -61,8 +61,9 @@ type SalesforceAPIService struct {
 }
 
 type SalesforceJobInfo struct {
-	ID        string `json:"id"`
-	Operation string `json:"operation"`
+	ID        string   `json:"id"`
+	Operation string   `json:"operation"`
+	Headers   []string `json:"headers"`
 }
 
 type JobResponse struct {

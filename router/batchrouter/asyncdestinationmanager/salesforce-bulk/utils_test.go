@@ -1,6 +1,7 @@
 package salesforcebulk
 
 import (
+	"encoding/csv"
 	"os"
 	"testing"
 
@@ -505,6 +506,71 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 
 		require.NotEqual(t, hash1, hash2,
 			"Different records should produce different hashes")
+	})
+}
+
+func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
+	t.Run("jobs with different fields get union of all fields in CSV", func(t *testing.T) {
+		jobs := []common.AsyncJob{
+			{
+				Message: map[string]interface{}{
+					"Email":     "user1@example.com",
+					"FirstName": "John",
+				},
+				Metadata: map[string]interface{}{"job_id": float64(1)},
+			},
+			{
+				Message: map[string]interface{}{
+					"Email":    "user2@example.com",
+					"LastName": "Smith",
+					"Phone":    "555-1234",
+				},
+				Metadata: map[string]interface{}{"job_id": float64(2)},
+			},
+			{
+				Message: map[string]interface{}{
+					"Email":     "user3@example.com",
+					"FirstName": "Jane",
+					"LastName":  "Doe",
+					"Company":   "Acme Inc",
+				},
+				Metadata: map[string]interface{}{"job_id": float64(3)},
+			},
+		}
+
+		dataHashToJobID := make(map[string][]int64)
+		csvFilePath, headers, insertedJobIDs, _, err := createCSVFile(
+			"test-dest",
+			jobs,
+			dataHashToJobID,
+			"update",
+		)
+
+		require.NoError(t, err)
+		defer os.Remove(csvFilePath)
+
+		require.Len(t, insertedJobIDs, 3)
+		require.Contains(t, headers, "Email")
+		require.Contains(t, headers, "FirstName")
+		require.Contains(t, headers, "LastName")
+		require.Contains(t, headers, "Phone")
+		require.Contains(t, headers, "Company")
+
+		file, err := os.Open(csvFilePath)
+		require.NoError(t, err)
+		defer file.Close()
+
+		reader := csv.NewReader(file)
+		records, err := reader.ReadAll()
+		require.NoError(t, err)
+		require.Len(t, records, 4)
+
+		headerRow := records[0]
+		require.Len(t, headerRow, 5)
+
+		for i, row := range records[1:] {
+			require.Len(t, row, 5, "Row %d should have 5 columns", i+1)
+		}
 	})
 }
 

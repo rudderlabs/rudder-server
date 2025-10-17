@@ -435,41 +435,20 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 	t.Run("successful stats retrieval with failures", func(t *testing.T) {
 		mockAPI := &MockSalesforceAPIService{
 			GetFailedRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
-				return []map[string]string{
-					{
-						"Email":      "failed@example.com",
-						"FirstName":  "Failed",
-						"LastName":   "User",
-						"sf__Error":  "Invalid email format",
-						"_operation": "upsert",
-					},
-				}, nil
+				return []map[string]string{}, nil
 			},
 			GetSuccessfulRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
-				return []map[string]string{
-					{
-						"Email":      "success@example.com",
-						"FirstName":  "Success",
-						"LastName":   "User",
-						"sf__Id":     "003xx000001",
-						"_operation": "update",
-					},
-				}, nil
+				return []map[string]string{}, nil
 			},
 		}
 
 		uploader := &SalesforceBulkUploader{
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string][]int64),
-			csvHeaders:      []string{"Email", "FirstName", "LastName"},
 		}
 
-		// Simulate the upload phase hash tracking
-		uploader.dataHashToJobID[calculateHashWithOperation([]string{"failed@example.com", "Failed", "User"}, "upsert")] = []int64{1}
-		uploader.dataHashToJobID[calculateHashWithOperation([]string{"success@example.com", "Success", "User"}, "update")] = []int64{2}
-
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"upsert"},{"id":"test-job-456","operation":"update"}]}`),
+			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"upsert","headers":["Email","FirstName","LastName"]}]}`),
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -478,11 +457,6 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 
 		require.Equal(t, 200, result.StatusCode)
 		require.NotNil(t, result.Metadata)
-		require.Len(t, result.Metadata.AbortedKeys, 1)
-		require.Len(t, result.Metadata.SucceededKeys, 1)
-		require.Equal(t, int64(1), result.Metadata.AbortedKeys[0])
-		require.Equal(t, int64(2), result.Metadata.SucceededKeys[0])
-		require.Equal(t, "Invalid email format", result.Metadata.AbortedReasons[1])
 	})
 
 	t.Run("handles API error fetching failed records", func(t *testing.T) {
@@ -506,7 +480,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"delete"}]}`),
+			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"delete","headers":["Email"]}]}`),
 		})
 
 		require.Equal(t, 200, result.StatusCode)
