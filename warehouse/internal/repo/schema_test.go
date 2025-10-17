@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -13,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -650,67 +650,53 @@ func TestWHSchemasRepo_GetForNamespace(t *testing.T) {
 
 func TestWHSchemasRepo_GetDestinationNamespaces(t *testing.T) {
 	destinationID := "test_destination_id"
-	conf := config.New()
+	now := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	db, ctx := setupDB(t), context.Background()
-	now := timeutil.Now()
-	r := repo.NewWHSchemas(db, conf, logger.NOP)
+	r := repo.NewWHSchemas(db, config.New(), logger.NOP, repo.WithNow(func() time.Time {
+		return now
+	}))
+	updatedRepo := repo.NewWHSchemas(db, config.New(), logger.NOP, repo.WithNow(func() time.Time {
+		return now.Add(time.Hour)
+	}))
 
-	// Insert test data with multiple sources and timestamps
-	schemas := []model.WHSchema{
-		{
-			SourceID:      "source_1",
-			DestinationID: destinationID,
-			Namespace:     "namespace_1",
-			UpdatedAt:     now.Add(-time.Hour),
-		},
-		{
-			SourceID:      "source_1",
-			DestinationID: destinationID,
-			Namespace:     "namespace_1_updated",
-			UpdatedAt:     now,
-		},
-		{
-			SourceID:      "source_2",
-			DestinationID: destinationID,
-			Namespace:     "namespace_2",
-		},
-		{
-			SourceID:      "source_3",
-			DestinationID: destinationID,
-			Namespace:     "namespace_3",
-		},
-		{
-			SourceID:      "source_4",
-			DestinationID: "destination_id_2",
-			Namespace:     "namespace_4",
-		},
+	initialSchemas := []model.WHSchema{
+		{SourceID: "source_1", DestinationID: destinationID, Namespace: "namespace_1"},
+		{SourceID: "source_2", DestinationID: destinationID, Namespace: "namespace_2"},
+		{SourceID: "source_3", DestinationID: destinationID, Namespace: "namespace_3"},
+		{SourceID: "source_4", DestinationID: "destination_id_2", Namespace: "namespace_4"},
 	}
-
-	for _, schema := range schemas {
+	for _, schema := range initialSchemas {
 		err := r.Insert(ctx, &schema)
 		require.NoError(t, err)
 	}
 
-	// Test GetDestinationNamespaces
-	mappings, err := r.GetDestinationNamespaces(ctx, destinationID)
-	require.NoError(t, err)
-
-	// Should return 3 mappings (one per source)
-	require.Len(t, mappings, 3)
-
-	// Create a map for easier assertion
-	mappingMap := make(map[string]string)
-	for _, mapping := range mappings {
-		mappingMap[mapping.SourceID] = mapping.Namespace
+	updatedSchema := model.WHSchema{
+		SourceID:      "source_1",
+		DestinationID: destinationID,
+		Namespace:     "namespace_1_updated",
 	}
-
-	// Verify the most recent namespace for each source is returned
-	require.Equal(t, "namespace_1_updated", mappingMap["source_1"])
-	require.Equal(t, "namespace_2", mappingMap["source_2"])
-	require.Equal(t, "namespace_3", mappingMap["source_3"])
-
-	// Test with non-existent destination ID
-	emptyMappings, err := r.GetDestinationNamespaces(ctx, "non_existent_destination")
+	err := updatedRepo.Insert(ctx, &updatedSchema)
 	require.NoError(t, err)
-	require.Empty(t, emptyMappings)
+
+	t.Run("Existing destination ID", func(t *testing.T) {
+		mappings, err := r.GetDestinationNamespaces(ctx, destinationID)
+		require.NoError(t, err)
+		require.Len(t, mappings, 3, "expected 3 mappings (one per source) but got %d", len(mappings))
+		require.Equal(t,
+			map[string]string{
+				"source_1": "namespace_1_updated",
+				"source_2": "namespace_2",
+				"source_3": "namespace_3",
+			}, lo.SliceToMap(mappings, func(mapping model.NamespaceMapping) (string, string) {
+				return mapping.SourceID, mapping.Namespace
+			}),
+		)
+	})
+
+	t.Run("Non-existent destination ID", func(t *testing.T) {
+		emptyMappings, err := r.GetDestinationNamespaces(ctx, "non_existent_destination")
+		require.NoError(t, err)
+		require.Empty(t, emptyMappings)
+	})
 }

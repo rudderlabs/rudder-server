@@ -597,14 +597,14 @@ func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID 
 			namespace
 		FROM ` + whSchemaTableName + `
 		WHERE destination_id = $1
+		AND table_name = ''
 		ORDER BY source_id, updated_at DESC;
 	`
-
 	rows, err := sh.db.QueryContext(ctx, query, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying destination namespaces: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var mappings []model.NamespaceMapping
 	for rows.Next() {
@@ -615,10 +615,8 @@ func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID 
 		}
 		mappings = append(mappings, mapping)
 	}
-
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating over namespace mappings: %w", err)
 	}
-
 	return mappings, nil
 }
