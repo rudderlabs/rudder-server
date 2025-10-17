@@ -13,6 +13,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
+func mustMarshal(v interface{}) []byte {
+	b, _ := jsonrs.Marshal(v)
+	return b
+}
+
 func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(
 		gjson.GetBytes(job.EventPayload, "body.JSON").String(),
@@ -86,6 +91,16 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 				}
 			}(csvFilePath)
 
+			if len(insertedJobIDs) == 0 {
+				s.logger.Errorf("No jobs fit in CSV for operation %s, marking as failed", operation)
+				for _, job := range remainingJobs {
+					if jobID, ok := job.Metadata["job_id"].(float64); ok {
+						allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
+					}
+				}
+				break
+			}
+
 			s.logger.Infof("Created CSV with %d jobs for operation %s (batch %d of %d total)",
 				len(insertedJobIDs), operation, len(allImportingJobIDs)/100+1, len(jobs))
 
@@ -146,7 +161,10 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	jobsJSON, _ := jsonrs.Marshal(map[string]interface{}{"jobs": sfJobs})
+	jobsJSON, _ := jsonrs.Marshal(map[string]interface{}{
+		"importId": fmt.Sprintf(`{"jobs":%s}`, string(mustMarshal(sfJobs))),
+		"jobs":     sfJobs,
+	})
 
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     allImportingJobIDs,
@@ -160,16 +178,21 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 
 func (s *SalesforceBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	var params struct {
-		JobIDs []string `json:"jobIds"`
+		Jobs []SalesforceJobInfo `json:"jobs"`
 	}
 
 	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &params)
-	var jobIDs []string
+	if err != nil || len(params.Jobs) == 0 {
+		return common.PollStatusResponse{
+			StatusCode: 500,
+			Complete:   false,
+			Error:      fmt.Sprintf("Failed to parse poll parameters: %v", err),
+		}
+	}
 
-	if err != nil || len(params.JobIDs) == 0 {
-		jobIDs = []string{pollInput.ImportId}
-	} else {
-		jobIDs = params.JobIDs
+	jobIDs := make([]string, len(params.Jobs))
+	for i, job := range params.Jobs {
+		jobIDs[i] = job.ID
 	}
 
 	allComplete := true

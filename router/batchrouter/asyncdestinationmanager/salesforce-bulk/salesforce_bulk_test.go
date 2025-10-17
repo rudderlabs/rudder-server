@@ -420,7 +420,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				apiService: mockAPI,
 			}
 
-			pollInput := common.AsyncPoll{ImportId: "job-456"}
+			pollInput := common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-456","operation":"insert","headers":["Email"]}]}`}
 			result := uploader.Poll(pollInput)
 
 			require.Equal(t, tc.expectedStatus.StatusCode, result.StatusCode)
@@ -429,6 +429,54 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 			require.Equal(t, tc.expectedStatus.HasFailed, result.HasFailed)
 		})
 	}
+}
+
+func TestSalesforceBulk_Upload_ImportIdPresent(t *testing.T) {
+	t.Run("ImportingParameters includes importId for batch router polling", func(t *testing.T) {
+		tempFile, err := os.CreateTemp("", "test_importid_*.json")
+		require.NoError(t, err)
+		defer os.Remove(tempFile.Name())
+
+		testData := []common.AsyncJob{
+			{
+				Message:  map[string]interface{}{"Email": "test@example.com"},
+				Metadata: map[string]interface{}{"job_id": float64(1)},
+			},
+		}
+
+		for _, job := range testData {
+			jobBytes, _ := jsonrs.Marshal(job)
+			tempFile.Write(jobBytes)
+			tempFile.Write([]byte("\n"))
+		}
+		tempFile.Close()
+
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				return "sf-job-123", nil
+			},
+			UploadDataFunc: func(jobID, csvFilePath string) *APIError { return nil },
+			CloseJobFunc:   func(jobID string) *APIError { return nil },
+		}
+
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "insert"},
+			dataHashToJobID: make(map[string][]int64),
+		}
+
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{ID: "test-dest"},
+			FileName:    tempFile.Name(),
+		})
+
+		var params map[string]interface{}
+		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
+		require.NoError(t, err)
+		require.Contains(t, params, "importId", "ImportingParameters must have importId for batch router")
+		require.NotEmpty(t, params["importId"], "importId should not be empty")
+	})
 }
 
 func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
