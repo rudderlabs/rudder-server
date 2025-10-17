@@ -3,6 +3,7 @@ package salesforcebulk
 import (
 	"encoding/csv"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -571,6 +572,40 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 		for i, row := range records[1:] {
 			require.Len(t, row, 5, "Row %d should have 5 columns", i+1)
 		}
+	})
+}
+
+func TestSalesforceBulk_createCSVFile_SingleRowTooLarge(t *testing.T) {
+	t.Run("returns empty insertedJobIDs when single row exceeds limit", func(t *testing.T) {
+		hugeData := strings.Repeat("x", 101*1024*1024)
+
+		jobs := []common.AsyncJob{
+			{
+				Message: map[string]interface{}{
+					"Email": "test@example.com",
+					"Data":  hugeData,
+				},
+				Metadata: map[string]interface{}{"job_id": float64(1)},
+			},
+		}
+
+		dataHashToJobID := make(map[string][]int64)
+		csvFilePath, headers, insertedJobIDs, overflowedJobs, err := createCSVFile(
+			"test-dest",
+			jobs,
+			dataHashToJobID,
+			"insert",
+		)
+
+		require.NoError(t, err)
+		if csvFilePath != "" {
+			defer os.Remove(csvFilePath)
+		}
+
+		require.Empty(t, insertedJobIDs, "No jobs should fit when row exceeds 100MB")
+		require.Len(t, overflowedJobs, 1, "Job should be in overflow")
+		require.Equal(t, int64(1), int64(overflowedJobs[0].Metadata["job_id"].(float64)))
+		require.NotEmpty(t, headers, "Headers should still be created")
 	})
 }
 
