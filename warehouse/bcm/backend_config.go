@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -40,7 +41,6 @@ func New(
 	}
 	bcm := &BackendConfigManager{
 		conf:                 c,
-		db:                   db,
 		schema:               repo.NewWHSchemas(db, c, log, repo.WithStats(stats)),
 		tenantManager:        tenantManager,
 		logger:               log,
@@ -63,7 +63,6 @@ func New(
 // BackendConfigManager is used to handle the backend configuration in the Warehouse
 type BackendConfigManager struct {
 	conf                       *config.Config
-	db                         *sqlquerywrapper.DB
 	schema                     *repo.WHSchema
 	tenantManager              *multitenant.Manager
 	internalControlPlaneClient cpclient.InternalControlPlane
