@@ -391,4 +391,3 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 
 	return metadata
 }
-
