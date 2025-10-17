@@ -62,7 +62,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 
 		for len(remainingJobs) > 0 {
 			s.hashMapMutex.Lock()
-			csvFilePath, csvHeaders, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
+			csvFilePath, csvHeaders, insertedJobIDs, overflowedJobs, err := createCSVFile(
 				destinationID,
 				remainingJobs,
 				s.dataHashToJobID,
@@ -97,7 +97,9 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 			if apiError != nil {
 				s.logger.Errorf("Error creating Salesforce job for operation %s: %v", operation, apiError)
 				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-				allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+				for _, job := range overflowedJobs {
+					allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
+				}
 				break
 			}
 
@@ -106,7 +108,9 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 				s.logger.Errorf("Error uploading data for operation %s: %v", operation, apiError)
 				_ = s.apiService.DeleteJob(sfJobID)
 				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-				allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+				for _, job := range overflowedJobs {
+					allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
+				}
 				break
 			}
 
@@ -114,7 +118,9 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 			if apiError != nil {
 				s.logger.Errorf("Error closing job for operation %s: %v", operation, apiError)
 				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-				allFailedJobIDs = append(allFailedJobIDs, overflowedJobIDs...)
+				for _, job := range overflowedJobs {
+					allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
+				}
 				break
 			}
 
@@ -127,15 +133,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 				Headers:   csvHeaders,
 			})
 
-			remainingJobs = make([]common.AsyncJob, len(overflowedJobIDs))
-			for i, jobID := range overflowedJobIDs {
-				for _, job := range jobs {
-					if int64(job.Metadata["job_id"].(float64)) == jobID {
-						remainingJobs[i] = job
-						break
-					}
-				}
-			}
+			remainingJobs = overflowedJobs
 		}
 	}
 

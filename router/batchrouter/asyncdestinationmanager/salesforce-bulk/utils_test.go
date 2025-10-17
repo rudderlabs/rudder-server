@@ -317,7 +317,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			t.Parallel()
 
 			dataHashToJobID := make(map[string][]int64)
-			csvFilePath, headers, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
+			csvFilePath, headers, insertedJobIDs, overflowedJobs, err := createCSVFile(
 				"test-dest-123",
 				tc.jobs,
 				dataHashToJobID,
@@ -333,7 +333,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			require.NotEmpty(t, csvFilePath)
 			require.NotEmpty(t, headers)
 			require.Len(t, insertedJobIDs, tc.expectedInserted)
-			require.Len(t, overflowedJobIDs, tc.expectedOverflow)
+			require.Len(t, overflowedJobs, tc.expectedOverflow)
 
 			_, err = os.Stat(csvFilePath)
 			require.NoError(t, err)

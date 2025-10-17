@@ -2,6 +2,7 @@ package salesforcebulk
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/csv"
 	"fmt"
@@ -103,7 +104,7 @@ func createCSVFile(
 	input []common.AsyncJob,
 	dataHashToJobID map[string][]int64,
 	operation string,
-) (string, []string, []int64, []int64, error) {
+) (string, []string, []int64, []common.AsyncJob, error) {
 	csvFilePath := fmt.Sprintf("/tmp/salesforce_%s_%d.csv", destinationID, time.Now().Unix())
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
@@ -115,7 +116,7 @@ func createCSVFile(
 	defer writer.Flush()
 
 	var insertedJobIDs []int64
-	var overflowedJobIDs []int64
+	var overflowedJobs []common.AsyncJob
 
 	if len(input) == 0 {
 		return "", nil, nil, nil, fmt.Errorf("no jobs to process")
@@ -156,11 +157,18 @@ func createCSVFile(
 			}
 		}
 
-		rowSize := int64(len(strings.Join(row, ",")) + 1)
 		jobID := int64(job.Metadata["job_id"].(float64))
 
+		buf := &bytes.Buffer{}
+		tempWriter := csv.NewWriter(buf)
+		if err := tempWriter.Write(row); err != nil {
+			return "", nil, nil, nil, fmt.Errorf("calculating row size: %w", err)
+		}
+		tempWriter.Flush()
+		rowSize := int64(buf.Len())
+
 		if currentSize+rowSize > maxFileSize {
-			overflowedJobIDs = append(overflowedJobIDs, jobID)
+			overflowedJobs = append(overflowedJobs, job)
 			continue
 		}
 
@@ -175,7 +183,7 @@ func createCSVFile(
 		dataHashToJobID[hash] = append(dataHashToJobID[hash], jobID)
 	}
 
-	return csvFilePath, headers, insertedJobIDs, overflowedJobIDs, nil
+	return csvFilePath, headers, insertedJobIDs, overflowedJobs, nil
 }
 
 func calculateHashCode(row []string) string {
