@@ -32,6 +32,7 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 
 	var jobs []common.AsyncJob
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(nil, 50000*1024)
 
 	for scanner.Scan() {
 		var job common.AsyncJob
