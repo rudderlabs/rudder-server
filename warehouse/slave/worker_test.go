@@ -1465,7 +1465,6 @@ func TestSlaveWorkerClaimRefresh(t *testing.T) {
 
 	conf := config.New()
 	conf.Set("Warehouse.claimRefreshIntervalInS", "1")
-	conf.Set("Warehouse.enableNotifierHeartbeat", true)
 
 	worker := newWorker(
 		conf,
