@@ -271,45 +271,6 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 	}
 }
 
-func (s *SalesforceBulkUploader) handleAPIError(
-	apiError *APIError,
-	failedJobIDs, importingJobIDs []int64,
-	destinationID string,
-) common.AsyncUploadOutput {
-	allFailedJobs := append(failedJobIDs, importingJobIDs...)
-
-	switch apiError.Category {
-	case "RefreshToken":
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  allFailedJobs,
-			FailedReason:  fmt.Sprintf("OAuth token expired: %s", apiError.Message),
-			FailedCount:   len(allFailedJobs),
-			DestinationID: destinationID,
-		}
-	case "RateLimit":
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  allFailedJobs,
-			FailedReason:  fmt.Sprintf("Salesforce API rate limit: %s", apiError.Message),
-			FailedCount:   len(allFailedJobs),
-			DestinationID: destinationID,
-		}
-	case "BadRequest":
-		return common.AsyncUploadOutput{
-			AbortJobIDs:   allFailedJobs,
-			AbortReason:   fmt.Sprintf("Invalid request: %s", apiError.Message),
-			AbortCount:    len(allFailedJobs),
-			DestinationID: destinationID,
-		}
-	default:
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  allFailedJobs,
-			FailedReason:  apiError.Message,
-			FailedCount:   len(allFailedJobs),
-			DestinationID: destinationID,
-		}
-	}
-}
-
 func (s *SalesforceBulkUploader) handlePollError(apiError *APIError) common.PollStatusResponse {
 	if apiError.Category == "RefreshToken" {
 		return common.PollStatusResponse{
