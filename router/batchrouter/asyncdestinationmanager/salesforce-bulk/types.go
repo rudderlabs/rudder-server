@@ -22,7 +22,7 @@ type SalesforceBulkUploader struct {
 	statsFactory    stats.Stats
 	apiService      SalesforceAPIServiceInterface
 	authService     SalesforceAuthServiceInterface
-	dataHashToJobID map[string]int64
+	dataHashToJobID map[string][]int64
 	csvHeaders      []string
 	hashMapMutex    sync.RWMutex
 }
@@ -58,6 +58,11 @@ type SalesforceAPIService struct {
 	authService SalesforceAuthServiceInterface
 	logger      logger.Logger
 	apiVersion  string
+}
+
+type SalesforceJobInfo struct {
+	ID        string `json:"id"`
+	Operation string `json:"operation"`
 }
 
 type JobResponse struct {

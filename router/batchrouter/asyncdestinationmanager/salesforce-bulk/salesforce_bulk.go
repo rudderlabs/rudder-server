@@ -51,7 +51,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 
 	var allImportingJobIDs []int64
 	var allFailedJobIDs []int64
-	var sfJobIDs []string
+	var sfJobs []SalesforceJobInfo
 
 	allFailedJobIDs = append(allFailedJobIDs, failedJobIDs...)
 
@@ -63,6 +63,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 			destinationID,
 			jobs,
 			s.dataHashToJobID,
+			operation,
 		)
 		s.csvHeaders = csvHeaders
 		s.hashMapMutex.Unlock()
@@ -116,7 +117,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation: %s", sfJobID, operation)
 
 		allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
-		sfJobIDs = append(sfJobIDs, sfJobID)
+		sfJobs = append(sfJobs, SalesforceJobInfo{ID: sfJobID, Operation: operation})
 	}
 
 	if len(allImportingJobIDs) == 0 {
@@ -128,11 +129,11 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	jobIDsJSON := fmt.Sprintf(`{"jobIds":["%s"]}`, strings.Join(sfJobIDs, `","`))
+	jobsJSON, _ := jsonrs.Marshal(map[string]interface{}{"jobs": sfJobs})
 
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     allImportingJobIDs,
-		ImportingParameters: json.RawMessage(jobIDsJSON),
+		ImportingParameters: json.RawMessage(jobsJSON),
 		FailedJobIDs:        allFailedJobIDs,
 		ImportingCount:      len(allImportingJobIDs),
 		FailedCount:         len(allFailedJobIDs),
@@ -216,43 +217,40 @@ func (s *SalesforceBulkUploader) Poll(pollInput common.AsyncPoll) common.PollSta
 }
 
 func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
-	var paramsMulti struct {
-		JobIDs []string `json:"jobIds"`
+	var params struct {
+		Jobs []SalesforceJobInfo `json:"jobs"`
 	}
 
-	err := jsonrs.Unmarshal(input.Parameters, &paramsMulti)
-	var jobIDs []string
-
-	if err != nil || len(paramsMulti.JobIDs) == 0 {
-		var paramsSingle struct {
-			JobID string `json:"jobId"`
+	err := jsonrs.Unmarshal(input.Parameters, &params)
+	if err != nil || len(params.Jobs) == 0 {
+		return common.GetUploadStatsResponse{
+			StatusCode: 500,
+			Error:      fmt.Sprintf("Failed to parse parameters: %v", err),
 		}
-		err = jsonrs.Unmarshal(input.Parameters, &paramsSingle)
-		if err != nil || paramsSingle.JobID == "" {
-			return common.GetUploadStatsResponse{
-				StatusCode: 500,
-				Error:      fmt.Sprintf("Failed to parse parameters: %v", err),
-			}
-		}
-		jobIDs = []string{paramsSingle.JobID}
-	} else {
-		jobIDs = paramsMulti.JobIDs
 	}
 
 	var allFailedRecords []map[string]string
 	var allSuccessRecords []map[string]string
 
-	for _, jobID := range jobIDs {
-		failedRecords, apiError := s.apiService.GetFailedRecords(jobID)
+	for _, job := range params.Jobs {
+		failedRecords, apiError := s.apiService.GetFailedRecords(job.ID)
 		if apiError != nil {
-			s.logger.Errorf("Failed to fetch failed records for job %s: %s", jobID, apiError.Message)
+			s.logger.Errorf("Failed to fetch failed records for job %s: %s", job.ID, apiError.Message)
 			continue
 		}
 
-		successRecords, apiError := s.apiService.GetSuccessfulRecords(jobID)
+		for i := range failedRecords {
+			failedRecords[i]["_operation"] = job.Operation
+		}
+
+		successRecords, apiError := s.apiService.GetSuccessfulRecords(job.ID)
 		if apiError != nil {
-			s.logger.Errorf("Failed to fetch successful records for job %s: %s", jobID, apiError.Message)
+			s.logger.Errorf("Failed to fetch successful records for job %s: %s", job.ID, apiError.Message)
 			continue
+		}
+
+		for i := range successRecords {
+			successRecords[i]["_operation"] = job.Operation
 		}
 
 		allFailedRecords = append(allFailedRecords, failedRecords...)
@@ -357,13 +355,18 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 	csvHeaders := s.csvHeaders
 
 	for _, failedRecord := range failedRecords {
-		hash := calculateHashFromRecord(failedRecord, csvHeaders)
-		if jobID, exists := s.dataHashToJobID[hash]; exists && jobID != 0 {
-			metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
-			if errorMsg, ok := failedRecord["sf__Error"]; ok && errorMsg != "" {
-				metadata.AbortedReasons[jobID] = errorMsg
-			} else if errorMsg, ok := failedRecord["Error"]; ok && errorMsg != "" {
-				metadata.AbortedReasons[jobID] = errorMsg
+		operation := failedRecord["_operation"]
+		hash := calculateHashFromRecord(failedRecord, csvHeaders, operation)
+		if jobIDs, exists := s.dataHashToJobID[hash]; exists {
+			for _, jobID := range jobIDs {
+				if jobID != 0 {
+					metadata.AbortedKeys = append(metadata.AbortedKeys, jobID)
+					if errorMsg, ok := failedRecord["sf__Error"]; ok && errorMsg != "" {
+						metadata.AbortedReasons[jobID] = errorMsg
+					} else if errorMsg, ok := failedRecord["Error"]; ok && errorMsg != "" {
+						metadata.AbortedReasons[jobID] = errorMsg
+					}
+				}
 			}
 		}
 	}

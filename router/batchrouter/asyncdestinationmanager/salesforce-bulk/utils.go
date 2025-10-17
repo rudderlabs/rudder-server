@@ -100,7 +100,8 @@ func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
 func createCSVFile(
 	destinationID string,
 	input []common.AsyncJob,
-	dataHashToJobID map[string]int64,
+	dataHashToJobID map[string][]int64,
+	operation string,
 ) (string, []string, []int64, []int64, error) {
 	csvFilePath := fmt.Sprintf("/tmp/salesforce_%s_%d.csv", destinationID, time.Now().Unix())
 	csvFile, err := os.Create(csvFilePath)
@@ -162,8 +163,8 @@ func createCSVFile(
 		currentSize += rowSize
 		insertedJobIDs = append(insertedJobIDs, jobID)
 
-		hash := calculateHashCode(row)
-		dataHashToJobID[hash] = jobID
+		hash := calculateHashWithOperation(row, operation)
+		dataHashToJobID[hash] = append(dataHashToJobID[hash], jobID)
 	}
 
 	return csvFilePath, headers, insertedJobIDs, overflowedJobIDs, nil
@@ -175,12 +176,18 @@ func calculateHashCode(row []string) string {
 	return fmt.Sprintf("%x", hash)
 }
 
-func calculateHashFromRecord(record map[string]string, csvHeaders []string) string {
+func calculateHashWithOperation(row []string, operation string) string {
+	joined := strings.Join(append([]string{operation}, row...), ",")
+	hash := sha256.Sum256([]byte(joined))
+	return fmt.Sprintf("%x", hash)
+}
+
+func calculateHashFromRecord(record map[string]string, csvHeaders []string, operation string) string {
 	values := make([]string, 0, len(csvHeaders))
 	for _, header := range csvHeaders {
 		values = append(values, record[header])
 	}
-	return calculateHashCode(values)
+	return calculateHashWithOperation(values, operation)
 }
 
 func extractOperationFromJob(job common.AsyncJob, defaultOperation string) string {

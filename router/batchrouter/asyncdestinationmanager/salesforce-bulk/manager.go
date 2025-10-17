@@ -49,7 +49,7 @@ func NewManager(
 		statsFactory:    statsFactory,
 		apiService:      apiService,
 		authService:     authService,
-		dataHashToJobID: make(map[string]int64),
+		dataHashToJobID: make(map[string][]int64),
 	}, nil
 }
 

@@ -134,7 +134,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			config:          DestinationConfig{Operation: "insert"},
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 		}
 
 		result := uploader.Upload(&common.AsyncDestinationStruct{
@@ -151,12 +151,13 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.NotNil(t, result.ImportingParameters)
 
 		var params struct {
-			JobIDs []string `json:"jobIds"`
+			Jobs []SalesforceJobInfo `json:"jobs"`
 		}
 		err := jsonrs.Unmarshal(result.ImportingParameters, &params)
 		require.NoError(t, err)
-		require.Len(t, params.JobIDs, 1)
-		require.Equal(t, "sf-job-123", params.JobIDs[0])
+		require.Len(t, params.Jobs, 1)
+		require.Equal(t, "sf-job-123", params.Jobs[0].ID)
+		require.Equal(t, "insert", params.Jobs[0].Operation)
 
 		// Verify CSV file was cleaned up after upload
 		_, err = os.Stat(capturedCSVPath)
@@ -236,7 +237,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			config:          DestinationConfig{Operation: "insert"}, // Default fallback
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 		}
 
 		result := uploader.Upload(&common.AsyncDestinationStruct{
@@ -253,11 +254,11 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.NotNil(t, result.ImportingParameters)
 
 		var params struct {
-			JobIDs []string `json:"jobIds"`
+			Jobs []SalesforceJobInfo `json:"jobs"`
 		}
 		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
 		require.NoError(t, err)
-		require.Len(t, params.JobIDs, 3, "Should have created 3 separate Salesforce jobs")
+		require.Len(t, params.Jobs, 3, "Should have created 3 separate Salesforce jobs")
 		require.Equal(t, 3, jobCalls, "Should have called CreateJob 3 times")
 		require.Len(t, capturedCSVPaths, 3)
 		for _, csvPath := range capturedCSVPaths {
@@ -281,7 +282,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			config:          DestinationConfig{Operation: "insert"},
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 		}
 
 		result := uploader.Upload(&common.AsyncDestinationStruct{
@@ -313,7 +314,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			config:          DestinationConfig{Operation: "insert"},
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 		}
 
 		result := uploader.Upload(&common.AsyncDestinationStruct{
@@ -436,20 +437,22 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			GetFailedRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
 				return []map[string]string{
 					{
-						"Email":     "failed@example.com",
-						"FirstName": "Failed",
-						"LastName":  "User",
-						"sf__Error": "Invalid email format",
+						"Email":      "failed@example.com",
+						"FirstName":  "Failed",
+						"LastName":   "User",
+						"sf__Error":  "Invalid email format",
+						"_operation": "upsert",
 					},
 				}, nil
 			},
 			GetSuccessfulRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
 				return []map[string]string{
 					{
-						"Email":     "success@example.com",
-						"FirstName": "Success",
-						"LastName":  "User",
-						"sf__Id":    "003xx000001",
+						"Email":      "success@example.com",
+						"FirstName":  "Success",
+						"LastName":   "User",
+						"sf__Id":     "003xx000001",
+						"_operation": "update",
 					},
 				}, nil
 			},
@@ -457,16 +460,16 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 
 		uploader := &SalesforceBulkUploader{
 			apiService:      mockAPI,
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 			csvHeaders:      []string{"Email", "FirstName", "LastName"},
 		}
 
 		// Simulate the upload phase hash tracking
-		uploader.dataHashToJobID[calculateHashCode([]string{"failed@example.com", "Failed", "User"})] = 1
-		uploader.dataHashToJobID[calculateHashCode([]string{"success@example.com", "Success", "User"})] = 2
+		uploader.dataHashToJobID[calculateHashWithOperation([]string{"failed@example.com", "Failed", "User"}, "upsert")] = []int64{1}
+		uploader.dataHashToJobID[calculateHashWithOperation([]string{"success@example.com", "Success", "User"}, "update")] = []int64{2}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobId":"test-job-123"}`),
+			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"upsert"},{"id":"test-job-456","operation":"update"}]}`),
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -499,11 +502,11 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		uploader := &SalesforceBulkUploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobId":"test-job-123"}`),
+			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"delete"}]}`),
 		})
 
 		require.Equal(t, 200, result.StatusCode)
@@ -512,7 +515,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 
 	t.Run("handles invalid parameters", func(t *testing.T) {
 		uploader := &SalesforceBulkUploader{
-			dataHashToJobID: make(map[string]int64),
+			dataHashToJobID: make(map[string][]int64),
 		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{

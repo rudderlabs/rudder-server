@@ -315,11 +315,12 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			dataHashToJobID := make(map[string]int64)
+			dataHashToJobID := make(map[string][]int64)
 			csvFilePath, headers, insertedJobIDs, overflowedJobIDs, err := createCSVFile(
 				"test-dest-123",
 				tc.jobs,
 				dataHashToJobID,
+				"upsert",
 			)
 
 			if tc.wantErr {
@@ -447,17 +448,17 @@ func TestSalesforceBulk_calculateHashFromRecord(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			hash := calculateHashFromRecord(tc.record, tc.csvHeaders)
+			hash := calculateHashFromRecord(tc.record, tc.csvHeaders, "delete")
 
 			require.NotEmpty(t, hash)
 
 			if tc.shouldMatch {
-				expectedHash := calculateHashCode(tc.compareWith)
+				expectedHash := calculateHashWithOperation(tc.compareWith, "delete")
 				require.Equal(t, expectedHash, hash,
 					"Hash from record should match hash from original CSV values")
 			}
 
-			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders)
+			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders, "delete")
 			require.Equal(t, hash, hash2, "Hash should be consistent across multiple calls")
 		})
 	}
@@ -469,7 +470,7 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 
 		csvHeaders := []string{"Email", "FirstName", "LastName"}
 		uploadRow := []string{"integration@example.com", "Test", "User"}
-		uploadHash := calculateHashCode(uploadRow)
+		uploadHash := calculateHashWithOperation(uploadRow, "update")
 
 		salesforceResult := map[string]string{
 			"Email":       "integration@example.com",
@@ -479,7 +480,7 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 			"sf__Created": "true",
 			"sf__Error":   "",
 		}
-		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders)
+		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders, "update")
 
 		require.Equal(t, uploadHash, resultHash,
 			"Upload hash and result hash should match for same data")
@@ -499,8 +500,8 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 			"FirstName": "User",
 		}
 
-		hash1 := calculateHashFromRecord(record1, csvHeaders)
-		hash2 := calculateHashFromRecord(record2, csvHeaders)
+		hash1 := calculateHashFromRecord(record1, csvHeaders, "upsert")
+		hash2 := calculateHashFromRecord(record2, csvHeaders, "upsert")
 
 		require.NotEqual(t, hash1, hash2,
 			"Different records should produce different hashes")
