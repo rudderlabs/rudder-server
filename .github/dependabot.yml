@@ -27,7 +27,6 @@ updates:
       interval: "daily"
     cooldown:
       default-days: 4
-      semver-patch-days: 2
       exclude:
         - "rudderlabs/*"
   - package-ecosystem: "docker"
@@ -36,7 +35,6 @@ updates:
       interval: "daily"
     cooldown:
       default-days: 4
-      semver-patch-days: 2
       exclude:
         - "rudderstack/*"
         - "rudderlabs/*"
