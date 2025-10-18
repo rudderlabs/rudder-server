@@ -18,25 +18,27 @@ import (
 
 func TestSalesforceBulk_Transform(t *testing.T) {
 	testCases := []struct {
-		name    string
-		job     *jobsdb.JobT
-		wantErr bool
+		name             string
+		job              *jobsdb.JobT
+		wantErr          bool
+		defaultOperation string
 	}{
 		{
 			name: "successful transform with valid payload",
 			job: &jobsdb.JobT{
 				JobID: 123,
 				EventPayload: []byte(`{
-					"body": {
-						"JSON": {
-							"Email": "test@example.com",
-							"FirstName": "John",
-							"LastName": "Doe"
-						}
-					}
-				}`),
+                                        "body": {
+                                                "JSON": {
+                                                        "Email": "test@example.com",
+                                                        "FirstName": "John",
+                                                        "LastName": "Doe"
+                                                }
+                                        }
+                                }`),
 			},
-			wantErr: false,
+			wantErr:          false,
+			defaultOperation: "update",
 		},
 		{
 			name: "transform with empty body.JSON",
@@ -44,7 +46,8 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 				JobID:        456,
 				EventPayload: []byte(`{"body": {"JSON": {}}}`),
 			},
-			wantErr: false,
+			wantErr:          false,
+			defaultOperation: "insert",
 		},
 	}
 
@@ -52,7 +55,7 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			uploader := &SalesforceBulkUploader{}
+			uploader := &SalesforceBulkUploader{config: DestinationConfig{Operation: tc.defaultOperation}}
 			result, err := uploader.Transform(tc.job)
 
 			if tc.wantErr {
@@ -69,8 +72,231 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 			require.NotNil(t, parsed.Message)
 			require.NotNil(t, parsed.Metadata)
 			require.Equal(t, float64(tc.job.JobID), parsed.Metadata["job_id"])
+
+			require.Equal(t, tc.defaultOperation, parsed.Message["rudderOperation"])
 		})
 	}
+}
+
+func TestSalesforceBulk_TransformExternalIDHandling(t *testing.T) {
+	t.Parallel()
+
+	type expectedExternalID struct {
+		Type           string
+		ID             string
+		IdentifierType string
+	}
+
+	testCases := []struct {
+		name                  string
+		payload               string
+		defaultOperation      string
+		expectedOperation     string
+		expectedExternalIDs   []expectedExternalID
+		expectedIdentifierKey string
+		expectedIdentifierVal string
+		expectedObjectType    string
+		expectedExternalField string
+	}{
+		{
+			name: "no externalId falls back to default operation",
+			payload: `{
+                                "body": {
+                                        "JSON": {
+                                                "Email": "no-external@example.com"
+                                        }
+                                }
+                        }`,
+			defaultOperation:  "update",
+			expectedOperation: "update",
+		},
+		{
+			name: "type only externalId uses configured default",
+			payload: `{
+                               "body": {
+                                       "JSON": {
+                                               "Email": "type-only@example.com",
+                                               "context": {
+                                                       "externalId": [
+                                                               {"type": "Salesforce-Lead"}
+                                                       ]
+                                               }
+                                       }
+                               }
+                       }`,
+			defaultOperation:  "upsert",
+			expectedOperation: "upsert",
+			expectedExternalIDs: []expectedExternalID{
+				{Type: "Salesforce-Lead", ID: "", IdentifierType: ""},
+			},
+		},
+		{
+			name: "identifierType without id infers upsert",
+			payload: `{
+                               "body": {
+                                       "JSON": {
+                                               "Email": "identifier-only@example.com",
+                                               "context": {
+                                                       "externalId": [
+                                                               {"type": "Salesforce-Lead", "identifierType": "External_Id__c"}
+                                                       ]
+                                               }
+                                       }
+                               }
+                       }`,
+			defaultOperation:  "insert",
+			expectedOperation: "upsert",
+			expectedExternalIDs: []expectedExternalID{
+				{Type: "Salesforce-Lead", ID: "", IdentifierType: "External_Id__c"},
+			},
+		},
+		{
+			name: "id without identifierType defaults to Id and upsert",
+			payload: `{
+                                "body": {
+                                        "JSON": {
+                                                "Email": "id-only@example.com",
+                                                "externalId": [
+                                                        {"type": "Salesforce-Lead", "id": "001ABC"}
+                                                ]
+                                        }
+                                }
+                        }`,
+			defaultOperation:      "insert",
+			expectedOperation:     "upsert",
+			expectedExternalIDs:   []expectedExternalID{{Type: "Salesforce-Lead", ID: "001ABC", IdentifierType: "Id"}},
+			expectedIdentifierKey: "Id",
+			expectedIdentifierVal: "001ABC",
+		},
+		{
+			name: "multiple externalIds prefer identifier from entry with id",
+			payload: `{
+                                "body": {
+                                        "JSON": {
+                                                "Email": "multi@example.com",
+                                                "context": {
+                                                        "externalId": [
+                                                                {"type": "Salesforce-Lead"}
+                                                        ]
+                                                },
+                                                "externalId": [
+                                                        {"type": "Salesforce-Account", "id": "ACC123", "identifierType": "External_Id__c"}
+                                                ]
+                                        }
+                                }
+                        }`,
+			defaultOperation:  "delete",
+			expectedOperation: "upsert",
+			expectedExternalIDs: []expectedExternalID{
+				{Type: "Salesforce-Lead", ID: "", IdentifierType: ""},
+				{Type: "Salesforce-Account", ID: "ACC123", IdentifierType: "External_Id__c"},
+			},
+			expectedIdentifierKey: "External_Id__c",
+			expectedIdentifierVal: "ACC123",
+			expectedObjectType:    "Account",
+			expectedExternalField: "External_Id__c",
+		},
+		{
+			name: "single payload externalId array mixes types",
+			payload: `{
+                                "body": {
+                                        "JSON": {
+                                                "Name": "mixed-array", 
+                                                "externalId": [
+                                                        {"type": "Salesforce-Contact", "identifierType": "Email"},
+                                                        {"type": "Salesforce-Account", "id": "ACC789", "identifierType": "External_Id__c"}
+                                                ]
+                                        }
+                                }
+                        }`,
+			defaultOperation:  "insert",
+			expectedOperation: "upsert",
+			expectedExternalIDs: []expectedExternalID{
+				{Type: "Salesforce-Contact", ID: "", IdentifierType: "Email"},
+				{Type: "Salesforce-Account", ID: "ACC789", IdentifierType: "External_Id__c"},
+			},
+			expectedIdentifierKey: "External_Id__c",
+			expectedIdentifierVal: "ACC789",
+			expectedObjectType:    "Account",
+			expectedExternalField: "External_Id__c",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			job := &jobsdb.JobT{
+				JobID:        789,
+				EventPayload: []byte(tc.payload),
+			}
+
+			uploader := &SalesforceBulkUploader{config: DestinationConfig{Operation: tc.defaultOperation}}
+			result, err := uploader.Transform(job)
+			require.NoError(t, err)
+
+			var parsed common.AsyncJob
+			err = json.Unmarshal([]byte(result), &parsed)
+			require.NoError(t, err)
+
+			expectedMessage := messageFromPayload(t, tc.payload)
+			expectedMessage["rudderOperation"] = tc.expectedOperation
+
+			if tc.expectedIdentifierKey != "" {
+				expectedMessage[tc.expectedIdentifierKey] = tc.expectedIdentifierVal
+				require.Equal(t, tc.expectedIdentifierVal, parsed.Message[tc.expectedIdentifierKey])
+			} else {
+				require.NotContains(t, parsed.Message, "Id")
+			}
+
+			require.Equal(t, expectedMessage, parsed.Message)
+
+			externalIDRaw, ok := parsed.Metadata["externalId"]
+			if len(tc.expectedExternalIDs) == 0 {
+				require.False(t, ok)
+				return
+			}
+
+			require.True(t, ok)
+			externalIDSlice, ok := externalIDRaw.([]interface{})
+			require.True(t, ok)
+			require.Len(t, externalIDSlice, len(tc.expectedExternalIDs))
+
+			for idx, expected := range tc.expectedExternalIDs {
+				entry, ok := externalIDSlice[idx].(map[string]interface{})
+				require.True(t, ok)
+				require.Equal(t, expected.Type, entry["type"])
+				require.Equal(t, expected.ID, entry["id"])
+				require.Equal(t, expected.IdentifierType, entry["identifierType"])
+			}
+
+			if tc.expectedObjectType != "" {
+				objectInfo, err := extractFromVDM(externalIDRaw, parsed.Message)
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedObjectType, objectInfo.ObjectType)
+				require.Equal(t, tc.expectedExternalField, objectInfo.ExternalIDField)
+			}
+		})
+	}
+}
+
+func messageFromPayload(t *testing.T, payload string) map[string]interface{} {
+	t.Helper()
+
+	var envelope struct {
+		Body struct {
+			JSON map[string]interface{} `json:"JSON"`
+		} `json:"body"`
+	}
+
+	require.NoError(t, json.Unmarshal([]byte(payload), &envelope))
+
+	if envelope.Body.JSON == nil {
+		return map[string]interface{}{}
+	}
+
+	return envelope.Body.JSON
 }
 
 func TestSalesforceBulk_Upload(t *testing.T) {
@@ -162,6 +388,92 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		// Verify CSV file was cleaned up after upload
 		_, err = os.Stat(capturedCSVPath)
 		require.True(t, os.IsNotExist(err), "CSV file should be cleaned up after upload")
+	})
+
+	t.Run("mixed object types split into separate Salesforce jobs", func(t *testing.T) {
+		tempFileMixed, err := os.CreateTemp("", "test_mixed_object_*.json")
+		require.NoError(t, err)
+		defer os.Remove(tempFileMixed.Name())
+
+		mixedJobs := []common.AsyncJob{
+			{
+				Message: map[string]interface{}{
+					"Email":           "lead@example.com",
+					"rudderOperation": "upsert",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(101),
+					"externalId": []interface{}{
+						map[string]interface{}{
+							"type":           "Salesforce-Lead",
+							"id":             "lead@example.com",
+							"identifierType": "Email",
+						},
+					},
+				},
+			},
+			{
+				Message: map[string]interface{}{
+					"External_Id__c":  "ACC-123",
+					"rudderOperation": "upsert",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(102),
+					"externalId": []interface{}{
+						map[string]interface{}{
+							"type":           "Salesforce-Account",
+							"id":             "ACC-123",
+							"identifierType": "External_Id__c",
+						},
+					},
+				},
+			},
+		}
+
+		for _, job := range mixedJobs {
+			jobBytes, _ := jsonrs.Marshal(job)
+			tempFileMixed.Write(jobBytes)
+			tempFileMixed.Write([]byte("\n"))
+		}
+		tempFileMixed.Close()
+
+		type createCall struct {
+			Object    string
+			Field     string
+			Operation string
+		}
+
+		var calls []createCall
+		mockAPI := &MockSalesforceAPIService{
+			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
+				calls = append(calls, createCall{Object: objectName, Field: externalIDField, Operation: operation})
+				return fmt.Sprintf("mixed-job-%d", len(calls)), nil
+			},
+			UploadDataFunc: func(jobID, csvFilePath string) *APIError { return nil },
+			CloseJobFunc:   func(jobID string) *APIError { return nil },
+		}
+
+		uploader := &SalesforceBulkUploader{
+			logger:          logger.NOP,
+			apiService:      mockAPI,
+			config:          DestinationConfig{Operation: "upsert"},
+			dataHashToJobID: make(map[string][]int64),
+		}
+
+		result := uploader.Upload(&common.AsyncDestinationStruct{
+			Destination: &backendconfig.DestinationT{ID: "mixed-dest"},
+			FileName:    tempFileMixed.Name(),
+		})
+
+		require.Equal(t, 2, len(calls))
+		require.Equal(t, "Lead", calls[0].Object)
+		require.Equal(t, "Email", calls[0].Field)
+		require.Equal(t, "upsert", calls[0].Operation)
+		require.Equal(t, "Account", calls[1].Object)
+		require.Equal(t, "External_Id__c", calls[1].Field)
+		require.Equal(t, "upsert", calls[1].Operation)
+		require.Equal(t, 2, result.ImportingCount)
+		require.Equal(t, 0, result.FailedCount)
 	})
 
 	t.Run("successful upload - multiple operations", func(t *testing.T) {

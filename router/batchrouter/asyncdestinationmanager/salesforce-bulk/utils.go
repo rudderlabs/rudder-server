@@ -50,15 +50,77 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	return jobs, nil
 }
 
-func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*ObjectInfo, error) {
-	if len(jobs) == 0 {
-		return nil, fmt.Errorf("no jobs to process")
+func extractFromVDM(externalIDRaw interface{}, message map[string]interface{}) (*ObjectInfo, error) {
+	externalIDArray, ok := externalIDRaw.([]interface{})
+	if !ok || len(externalIDArray) == 0 {
+		return nil, fmt.Errorf("externalId must be an array with at least one element")
 	}
 
-	firstJob := jobs[0]
+	var firstEntry map[string]interface{}
 
-	if externalIDRaw, ok := firstJob.Metadata["externalId"]; ok {
-		return extractFromVDM(externalIDRaw)
+	for idx, rawEntry := range externalIDArray {
+		entry, ok := rawEntry.(map[string]interface{})
+		if !ok {
+			if idx == 0 {
+				return nil, fmt.Errorf("externalId[0] must be an object")
+			}
+			return nil, fmt.Errorf("externalId[%d] must be an object", idx)
+		}
+
+		if firstEntry == nil {
+			firstEntry = entry
+		}
+
+		typeStr, _ := entry["type"].(string)
+		if typeStr == "" {
+			return nil, fmt.Errorf("externalId type is required")
+		}
+
+		identifierType, _ := entry["identifierType"].(string)
+		if identifierType == "" {
+			identifierType = "Id"
+		}
+
+		idValue := ""
+		if rawID, ok := entry["id"]; ok {
+			idValue = fmt.Sprint(rawID)
+		}
+
+		if idValue != "" {
+			if messageValue, ok := message[identifierType]; ok {
+				if fmt.Sprint(messageValue) == idValue {
+					return buildObjectInfo(typeStr, identifierType), nil
+				}
+			} else {
+				return buildObjectInfo(typeStr, identifierType), nil
+			}
+		}
+
+		if messageValue, ok := message[identifierType]; ok && fmt.Sprint(messageValue) != "" {
+			return buildObjectInfo(typeStr, identifierType), nil
+		}
+	}
+
+	if firstEntry == nil {
+		return nil, fmt.Errorf("externalId must contain at least one object entry")
+	}
+
+	typeStr, _ := firstEntry["type"].(string)
+	identifierType, _ := firstEntry["identifierType"].(string)
+	if identifierType == "" {
+		identifierType = "Id"
+	}
+
+	return buildObjectInfo(typeStr, identifierType), nil
+}
+
+func extractObjectInfoFromJob(job common.AsyncJob, config DestinationConfig) (*ObjectInfo, error) {
+	if externalIDRaw, ok := job.Metadata["externalId"]; ok {
+		return extractFromVDM(externalIDRaw, job.Message)
+	}
+
+	if externalIDRaw, ok := job.Message["externalId"]; ok {
+		return extractFromVDM(externalIDRaw, job.Message)
 	}
 
 	objectType := config.ObjectType
@@ -72,31 +134,14 @@ func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*Objec
 	}, nil
 }
 
-func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
-	externalIDArray, ok := externalIDRaw.([]interface{})
-	if !ok || len(externalIDArray) == 0 {
-		return nil, fmt.Errorf("externalId must be an array with at least one element")
-	}
-
-	externalIDMap, ok := externalIDArray[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("externalId[0] must be an object")
-	}
-
-	typeStr, _ := externalIDMap["type"].(string)
-	if typeStr == "" {
-		return nil, fmt.Errorf("externalId type is required")
-	}
-
+func buildObjectInfo(typeStr, identifierType string) *ObjectInfo {
 	objectType := strings.Replace(typeStr, "Salesforce-", "", 1)
 	objectType = strings.Replace(objectType, "salesforce-", "", 1)
-
-	identifierType, _ := externalIDMap["identifierType"].(string)
 
 	return &ObjectInfo{
 		ObjectType:      objectType,
 		ExternalIDField: identifierType,
-	}, nil
+	}
 }
 
 func createCSVFile(

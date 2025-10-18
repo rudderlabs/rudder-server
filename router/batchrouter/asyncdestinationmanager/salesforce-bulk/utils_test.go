@@ -111,29 +111,28 @@ func TestSalesforceBulk_parseDestinationConfig(t *testing.T) {
 	}
 }
 
-func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
+func TestSalesforceBulk_extractObjectInfoFromJob(t *testing.T) {
 	testCases := []struct {
 		name     string
-		jobs     []common.AsyncJob
+		job      common.AsyncJob
+		config   DestinationConfig
 		expected *ObjectInfo
 		wantErr  bool
 		errorMsg string
 	}{
 		{
 			name: "valid externalId with Contact object",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(1),
-						"externalId": []interface{}{
-							map[string]interface{}{
-								"type":           "Salesforce-Contact",
-								"id":             "test@example.com",
-								"identifierType": "Email",
-							},
+			job: common.AsyncJob{
+				Message: map[string]interface{}{
+					"Email": "test@example.com",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(1),
+					"externalId": []interface{}{
+						map[string]interface{}{
+							"type":           "Salesforce-Contact",
+							"id":             "test@example.com",
+							"identifierType": "Email",
 						},
 					},
 				},
@@ -142,23 +141,20 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 				ObjectType:      "Contact",
 				ExternalIDField: "Email",
 			},
-			wantErr: false,
 		},
 		{
 			name: "valid externalId with Lead object",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "lead@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(2),
-						"externalId": []interface{}{
-							map[string]interface{}{
-								"type":           "Salesforce-Lead",
-								"id":             "lead@example.com",
-								"identifierType": "Email",
-							},
+			job: common.AsyncJob{
+				Message: map[string]interface{}{
+					"Email": "lead@example.com",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(2),
+					"externalId": []interface{}{
+						map[string]interface{}{
+							"type":           "Salesforce-Lead",
+							"id":             "lead@example.com",
+							"identifierType": "Email",
 						},
 					},
 				},
@@ -167,80 +163,73 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 				ObjectType:      "Lead",
 				ExternalIDField: "Email",
 			},
-			wantErr: false,
-		},
-		{
-			name:     "empty jobs array",
-			jobs:     []common.AsyncJob{},
-			wantErr:  true,
-			errorMsg: "no jobs to process",
 		},
 		{
 			name: "missing externalId - falls back to config",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "test@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(3),
-					},
+			job: common.AsyncJob{
+				Message: map[string]interface{}{
+					"Email": "test@example.com",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(3),
+				},
+			},
+			config: DestinationConfig{ObjectType: "Contact"},
+			expected: &ObjectInfo{
+				ObjectType:      "Contact",
+				ExternalIDField: "Email",
+			},
+		},
+		{
+			name: "missing externalId - defaults to Lead when config empty",
+			job: common.AsyncJob{
+				Message: map[string]interface{}{
+					"Email": "default@example.com",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(4),
 				},
 			},
 			expected: &ObjectInfo{
 				ObjectType:      "Lead",
 				ExternalIDField: "Email",
 			},
-			wantErr: false,
 		},
 		{
 			name: "empty externalId array",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{},
-					Metadata: map[string]interface{}{
-						"externalId": []interface{}{},
-					},
+			job: common.AsyncJob{
+				Message: map[string]interface{}{},
+				Metadata: map[string]interface{}{
+					"externalId": []interface{}{},
 				},
 			},
 			wantErr:  true,
 			errorMsg: "at least one element",
 		},
 		{
-			name: "event stream without externalId - uses config",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "stream@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(10),
+			name: "metadata matches identifier injected into message",
+			job: common.AsyncJob{
+				Message: map[string]interface{}{
+					"External_Id__c": "ACC123",
+				},
+				Metadata: map[string]interface{}{
+					"job_id": float64(12),
+					"externalId": []interface{}{
+						map[string]interface{}{
+							"type": "Salesforce-Lead",
+						},
+						map[string]interface{}{
+							"type":           "Salesforce-Account",
+							"id":             "ACC123",
+							"identifierType": "External_Id__c",
+						},
 					},
 				},
 			},
 			expected: &ObjectInfo{
-				ObjectType:      "Contact",
-				ExternalIDField: "Email",
+				ObjectType:      "Account",
+				ExternalIDField: "External_Id__c",
 			},
-			wantErr: false,
-		},
-		{
-			name: "event stream with default object type",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "default@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(11),
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Lead",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
 		},
 	}
 
@@ -248,12 +237,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			testConfig := DestinationConfig{}
-			if tc.name == "event stream without externalId - uses config" {
-				testConfig.ObjectType = "Contact"
-			}
-
-			result, err := extractObjectInfo(tc.jobs, testConfig)
+			result, err := extractObjectInfoFromJob(tc.job, tc.config)
 
 			if tc.wantErr {
 				require.Error(t, err)
@@ -268,6 +252,87 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			require.Equal(t, tc.expected.ExternalIDField, result.ExternalIDField)
 		})
 	}
+}
+
+func TestSalesforceBulk_extractFromVDM_DefaultIdentifierType(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name             string
+		externalIDRaw    interface{}
+		expectedObject   string
+		expectedField    string
+		expectError      bool
+		expectedErrorMsg string
+	}{
+		{
+			name: "identifierType defaults to Id when empty",
+			externalIDRaw: []interface{}{
+				map[string]interface{}{
+					"type":           "Salesforce-Account",
+					"id":             "001XYZ",
+					"identifierType": "",
+				},
+			},
+			expectedObject: "Account",
+			expectedField:  "Id",
+		},
+		{
+			name: "identifierType defaults to Id when missing",
+			externalIDRaw: []interface{}{
+				map[string]interface{}{
+					"type": "Salesforce-Contact",
+					"id":   "003XYZ",
+				},
+			},
+			expectedObject: "Contact",
+			expectedField:  "Id",
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			objectInfo, err := extractFromVDM(tc.externalIDRaw, map[string]interface{}{})
+			if tc.expectError {
+				require.Error(t, err)
+				if tc.expectedErrorMsg != "" {
+					require.Contains(t, err.Error(), tc.expectedErrorMsg)
+				}
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedObject, objectInfo.ObjectType)
+			require.Equal(t, tc.expectedField, objectInfo.ExternalIDField)
+		})
+	}
+}
+
+func TestSalesforceBulk_extractFromVDM_SelectsMatchingEntry(t *testing.T) {
+	t.Parallel()
+
+	metadata := []interface{}{
+		map[string]interface{}{
+			"type": "Salesforce-Lead",
+		},
+		map[string]interface{}{
+			"type":           "Salesforce-Account",
+			"id":             "ACC123",
+			"identifierType": "External_Id__c",
+		},
+	}
+
+	message := map[string]interface{}{
+		"External_Id__c": "ACC123",
+	}
+
+	objectInfo, err := extractFromVDM(metadata, message)
+	require.NoError(t, err)
+	require.Equal(t, "Account", objectInfo.ObjectType)
+	require.Equal(t, "External_Id__c", objectInfo.ExternalIDField)
 }
 
 func TestSalesforceBulk_createCSVFile(t *testing.T) {
