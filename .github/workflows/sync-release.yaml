@@ -28,6 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: parse commit
         run: |
@@ -73,7 +74,9 @@ jobs:
           --body "$(cat body)" \
           --base master \
           --head $PR_BRANCH \
-          --assignee '${{ github.event.pull_request.merged_by.login }}'
+          --assignee '${GITHUB_EVENT_PULL_REQUEST_MERGED_BY_LOGIN}'
+        env:
+          GITHUB_EVENT_PULL_REQUEST_MERGED_BY_LOGIN: ${{ github.event.pull_request.merged_by.login }}
 
       - name: create pull request for patch release
         if: ${{ ! endsWith(env.RELEASE_TAG, '.0') }}
@@ -95,4 +98,7 @@ jobs:
           --body "$(cat body)" \
           --base master \
           --head $PR_BRANCH \
-          --assignee '${{ github.event.pull_request.merged_by.login }}'
+          --assignee '${GITHUB_EVENT_PULL_REQUEST_MERGED_BY_LOGIN}'
+
+        env:
+          GITHUB_EVENT_PULL_REQUEST_MERGED_BY_LOGIN: ${{ github.event.pull_request.merged_by.login }}
