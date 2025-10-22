@@ -555,10 +555,6 @@ func (n *repo) refreshClaim(ctx context.Context, jobId int64) error {
 
 // timerStat returns a function that records the duration of a database action.
 func (n *repo) timerStat(action string, extraTags stats.Tags) func() {
-	statName := "notifier_repo_query_duration_seconds"
-	tags := stats.Tags{"action": action, "repoType": notifierTableName}
-	for k, v := range extraTags {
-		tags[k] = v
-	}
-	return n.statsFactory.NewTaggedStat(statName, stats.TimerType, tags).RecordDuration()
+	statName := "notifier_repo_query_" + notifierTableName + "_" + action + "_duration_seconds"
+	return n.statsFactory.NewTaggedStat(statName, stats.TimerType, extraTags).RecordDuration()
 }

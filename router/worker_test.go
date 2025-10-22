@@ -774,15 +774,25 @@ func TestWorker_recordTransformerOutgoingRequestMetrics(t *testing.T) {
 			shouldEmit: true,
 		},
 		{
-			name:       "empty endpoint path should not emit metric",
-			postParams: createTestPostParams("", "GET"),
-			destinationJob: createTestDestinationJob("dest-456", "ws-789", []types.JobMetadataT{
-				{WorkspaceID: "ws-789"},
+			name:       "empty endpoint path",
+			postParams: createTestPostParams("", "PATCH"),
+			destinationJob: createTestDestinationJob("dest-patch", "ws-patch", []types.JobMetadataT{
+				{WorkspaceID: "ws-patch"},
 			}),
-			statusCode:       400,
-			duration:         200 * time.Millisecond,
-			transformerProxy: false,
-			shouldEmit:       false,
+			statusCode:       422,
+			duration:         75 * time.Millisecond,
+			transformerProxy: true,
+			expectedLabels: stats.Tags{
+				"destType":         "TEST_DEST",
+				"endpointPath":     "default",
+				"statusCode":       "422",
+				"transformerProxy": "true",
+				"requestMethod":    "PATCH",
+				"module":           "router",
+				"workspaceId":      "ws-patch",
+				"destinationId":    "dest-patch",
+			},
+			shouldEmit: true,
 		},
 		{
 			name:             "empty job metadata array with endpoint path",

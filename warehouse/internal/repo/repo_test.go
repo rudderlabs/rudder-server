@@ -60,9 +60,7 @@ func TestStatsEmission(t *testing.T) {
 				UploadID:        uploadID,
 			},
 		}))
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":   "insert",
-			"repoType": "wh_load_files",
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_load_files_insert_duration_seconds", stats.Tags{
 			"sourceId": "source_id",
 			"destId":   "destination_id",
 			"destType": "destination_type",
@@ -75,9 +73,7 @@ func TestStatsEmission(t *testing.T) {
 			DestinationType: "destination_type",
 		})
 		require.NoError(t, err)
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":   "insert",
-			"repoType": "wh_schemas",
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_schemas_insert_duration_seconds", stats.Tags{
 			"sourceId": "source_id",
 			"destId":   "destination_id",
 			"destType": "destination_type",
@@ -85,9 +81,7 @@ func TestStatsEmission(t *testing.T) {
 
 		_, err = repoStagingFileSchemaSnapshots.Insert(ctx, "source_id", "destination_id", "workspace_id", json.RawMessage(`{}`))
 		require.NoError(t, err)
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":      "insert",
-			"repoType":    "wh_staging_file_schema_snapshots",
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_staging_file_schema_snapshots_insert_duration_seconds", stats.Tags{
 			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"workspaceId": "workspace_id",
@@ -99,9 +93,7 @@ func TestStatsEmission(t *testing.T) {
 			WorkspaceID:   "workspace_id",
 		}).WithSchema(json.RawMessage(`{}`))))
 		require.NoError(t, err)
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":      "insert",
-			"repoType":    "wh_staging_files",
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_staging_files_insert_duration_seconds", stats.Tags{
 			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"workspaceId": "workspace_id",
@@ -109,10 +101,7 @@ func TestStatsEmission(t *testing.T) {
 
 		err = repoTableUploads.Insert(ctx, 1, []string{"table1", "table2"})
 		require.NoError(t, err)
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":   "insert",
-			"repoType": "wh_table_uploads",
-		}).LastDuration(), time.Duration(0))
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_table_uploads_insert_duration_seconds", stats.Tags{}).LastDuration(), time.Duration(0))
 
 		_, err = repoSources.Insert(ctx, []model.SourceJob{
 			{
@@ -125,17 +114,13 @@ func TestStatsEmission(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":      "insert",
-			"repoType":    "wh_async_jobs",
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_async_jobs_insert_duration_seconds", stats.Tags{
 			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
 
-		require.Greater(t, statsStore.Get("warehouse_repo_query_duration_seconds", stats.Tags{
-			"action":      "create_with_staging_files",
-			"repoType":    "wh_uploads",
+		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_uploads_create_with_staging_files_duration_seconds", stats.Tags{
 			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"destType":    "destination_type",

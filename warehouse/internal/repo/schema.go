@@ -302,7 +302,8 @@ func (sh *WHSchema) getForNamespace(ctx context.Context, destID, namespace strin
 		namespace = $2 AND
 		table_name = ''
 	ORDER BY
-		source_id DESC;
+		source_id DESC
+    LIMIT 1;
 	`
 
 	rows, err := sh.db.QueryContext(
@@ -354,17 +355,16 @@ func (sh *WHSchema) populateTableLevelSchemasWithTx(ctx context.Context, tx *sql
 			s.expires_at
 		FROM wh_schemas s
 		CROSS JOIN LATERAL jsonb_each(s.schema::jsonb) AS j
-		WHERE
-			s.destination_id = $1 AND
-			s.namespace = $2 AND
-			s.table_name = '' AND
-			NOT EXISTS (
-				SELECT 1 FROM wh_schemas s2
-				WHERE s2.source_id = s.source_id AND
-					s2.namespace = s.namespace AND
-					s2.destination_id = s.destination_id AND
-					s2.table_name = j.key
-			)
+		LEFT JOIN wh_schemas s2
+		  ON s2.source_id = s.source_id
+		  AND s2.namespace = s.namespace
+		  AND s2.destination_id = s.destination_id
+		  AND s2.table_name = j.key
+		WHERE s.destination_id = $1
+		  AND s.namespace = $2
+		  AND s.table_name = ''
+		  AND s2.id IS NULL
+		ON CONFLICT (source_id, destination_id, namespace, table_name) DO NOTHING;
 	`
 	_, err := tx.ExecContext(ctx, query, destID, namespace, now.UTC())
 	if err != nil {
@@ -597,14 +597,14 @@ func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID 
 			namespace
 		FROM ` + whSchemaTableName + `
 		WHERE destination_id = $1
+		AND table_name = ''
 		ORDER BY source_id, updated_at DESC;
 	`
-
 	rows, err := sh.db.QueryContext(ctx, query, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying destination namespaces: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var mappings []model.NamespaceMapping
 	for rows.Next() {
@@ -615,10 +615,8 @@ func (sh *WHSchema) GetDestinationNamespaces(ctx context.Context, destinationID 
 		}
 		mappings = append(mappings, mapping)
 	}
-
 	if err = rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating over namespace mappings: %w", err)
 	}
-
 	return mappings, nil
 }
