@@ -111,9 +111,7 @@ func TestRepo(t *testing.T) {
 
 					err := r.insert(ctx, &publishRequest, workspaceIdentifier, batchID)
 					require.NoError(t, err)
-					require.Greater(t, statsStore.Get("notifier_repo_query_duration_seconds", stats.Tags{
-						"action":              "insert",
-						"repoType":            "pg_notifier_queue",
+					require.Greater(t, statsStore.Get("notifier_repo_query_pg_notifier_queue_insert_duration_seconds", stats.Tags{
 						"workspaceIdentifier": workspaceIdentifier,
 						"jobType":             string(publishRequest.JobType),
 					}).LastDuration(), time.Duration(0))
