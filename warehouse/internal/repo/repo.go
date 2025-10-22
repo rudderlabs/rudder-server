@@ -42,12 +42,8 @@ func (r *repo) WithTx(ctx context.Context, f func(tx *sqlmiddleware.Tx) error) e
 
 // TimerStat returns a function that records the duration of a database action.
 func (r *repo) TimerStat(action string, extraTags stats.Tags) func() {
-	statName := "warehouse_repo_query_duration_seconds"
-	tags := stats.Tags{"action": action, "repoType": r.getRepoType()}
-	for k, v := range extraTags {
-		tags[k] = v
-	}
-	return r.statsFactory.NewTaggedStat(statName, stats.TimerType, tags).RecordDuration()
+	statName := "warehouse_repo_query_" + r.getRepoType() + "_" + action + "_duration_seconds"
+	return r.statsFactory.NewTaggedStat(statName, stats.TimerType, extraTags).RecordDuration()
 }
 
 func (r *repo) getRepoType() string {
