@@ -1219,9 +1219,9 @@ func (w *worker) recordTransformerOutgoingRequestMetrics(
 	respStatus int,
 	duration time.Duration,
 ) {
-	// Only emit metrics if EndpointPath is present
+	// if EndpointPath is missing, set it to "default" to avoid an empty label value
 	if postParams.EndpointPath == "" {
-		return
+		postParams.EndpointPath = "default"
 	}
 
 	labels := deliveryMetricLabels{
