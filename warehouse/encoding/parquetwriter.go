@@ -70,7 +70,6 @@ var rudderDataTypeToParquetDataType = map[string]map[string]string{
 type parquetWriter struct {
 	writer     *writer.CSVWriter
 	fileWriter misc.BufferedWriter
-	schema     []string
 }
 
 func createParquetWriter(outputFilePath string, schema model.TableSchema, destType string, maxParallelWriters int64, disableParquetColumnIndex bool) (LoadFileWriter, error) {
@@ -92,7 +91,6 @@ func createParquetWriter(outputFilePath string, schema model.TableSchema, destTy
 
 	return &parquetWriter{
 		writer:     w,
-		schema:     pSchema,
 		fileWriter: bufWriter,
 	}, nil
 }
