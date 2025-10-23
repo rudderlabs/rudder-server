@@ -597,8 +597,10 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	suffixLength := r.eventNameSuffixLength.Load()
 	maxLength := prefixLength + suffixLength
 	if prefixLength <= 0 || suffixLength <= 0 {
-		err := fmt.Errorf("invalid event name trimming configuration: prefixLength=%d, suffixLength=%d. prefixLength and suffixLength must be > 0", prefixLength, suffixLength)
-		r.log.Errorn(`[ Reporting ]: Invalid event name trimming configuration`, obskit.Error(err))
+		err := errors.New("invalid event name trimming configuration prefixLength and suffixLength must be > 0")
+		r.log.Errorn(`[ Reporting ]: Invalid event name trimming configuration`, obskit.Error(err),
+			logger.NewIntField("prefixLength", int64(prefixLength)),
+			logger.NewIntField("suffixLength", int64(suffixLength)))
 		return err
 	}
 
