@@ -22,32 +22,3 @@ func GetPerEventWindowConfig(config *config.Config, destType, destinationID, eve
 		fmt.Sprintf(`Router.throttler.%s.timeWindow`, destType),
 	)
 }
-
-func maxLimitFunc(config *config.Config, destType, destinationID string, maxLimitKeys []string) func() int64 {
-	maxLimit := config.GetReloadableInt64Var(0, 1, maxLimitKeys...)
-	limitMultiplier := config.GetReloadableFloat64Var(1.5,
-		fmt.Sprintf(`Router.throttler.%s.%s.limitMultiplier`, destType, destinationID),
-		fmt.Sprintf(`Router.throttler.%s.limitMultiplier`, destType),
-		`Router.throttler.limitMultiplier`,
-	)
-	staticLimit := config.GetReloadableInt64Var(0, 1,
-		fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
-		fmt.Sprintf(`Router.throttler.%s.limit`, destType),
-	)
-	defaultMaxLimit := config.GetReloadableInt64Var(DefaultMaxThrottlingLimit, 1,
-		`Router.throttler.defaultMaxLimit`,
-	)
-	return func() int64 {
-		maxLimit := maxLimit.Load()
-		if maxLimit > 0 {
-			return maxLimit
-		} else {
-			staticLimit := staticLimit.Load()
-			staticLimitMultiplier := limitMultiplier.Load()
-			if staticLimit > 0 && staticLimitMultiplier > 0 {
-				return int64(float64(staticLimit) * staticLimitMultiplier)
-			}
-		}
-		return defaultMaxLimit.Load()
-	}
-}
