@@ -23,6 +23,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -404,31 +405,62 @@ func (d *Deltalake) sendStatForMissingDatatype(missingDatatype string) {
 
 // fetchTableAttributes fetches the attributes of a table
 func (d *Deltalake) fetchTableAttributes(ctx context.Context, tableName string) (model.TableSchema, error) {
-	tableSchema := make(model.TableSchema)
-
 	query := fmt.Sprintf(`DESCRIBE QUERY TABLE %s.%s;`, d.Namespace, tableName)
 
 	rows, err := d.DB.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("executing fetching table attributes: %w", err)
+		return nil, fmt.Errorf("executing describe query table: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	for rows.Next() {
-		var (
-			colName, datatype string
-			comment           sql.NullString
-		)
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("getting rows columns: %w", err)
+	}
+	columnsMap := make(map[string]int)
+	for i, col := range columns {
+		columnsMap[col] = i
+	}
 
-		if err = rows.Scan(&colName, &datatype, &comment); err != nil {
-			return nil, fmt.Errorf("processing fetched table attributes: %w", err)
+	columnNameIndex, ok := columnsMap["col_name"]
+	if !ok {
+		return nil, errors.New("column name index not found")
+	}
+	datatypeIndex, ok := columnsMap["data_type"]
+	if !ok {
+		return nil, errors.New("datatype index not found")
+	}
+
+	scanDest := make([]any, len(columns))
+	scanPtrs := make([]any, len(columns))
+	for i := range scanDest {
+		scanPtrs[i] = &scanDest[i]
+	}
+
+	tableSchema := make(model.TableSchema)
+
+	for rows.Next() {
+		if err := rows.Scan(scanPtrs...); err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		colName, ok := scanDest[columnNameIndex].(string)
+		if !ok {
+			return nil, fmt.Errorf("column name is not a string: %v", scanDest[columnNameIndex])
+		}
+
+		datatype, ok := scanDest[datatypeIndex].(string)
+		if !ok {
+			return nil, fmt.Errorf("datatype is not a string: %v", scanDest[datatypeIndex])
 		}
 
 		tableSchema[colName] = datatype
 	}
+
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("processing fetched table attributes: %w", err)
+		return nil, fmt.Errorf("iterating rows: %w", err)
 	}
+
 	return tableSchema, nil
 }
 
