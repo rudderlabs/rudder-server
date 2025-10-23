@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.1](https://github.com/rudderlabs/rudder-server/compare/v1.61.0...v1.61.1) (2025-10-23)
+
+
+### Bug Fixes
+
+* deltalake fetch table attributes ([#6455](https://github.com/rudderlabs/rudder-server/issues/6455)) ([c34b061](https://github.com/rudderlabs/rudder-server/commit/c34b0619ac593e168782a012c5dbb5d6d468d855))
+
 ## [1.61.0](https://github.com/rudderlabs/rudder-server/compare/v1.59.0...v1.61.0) (2025-10-15)
 
 
