@@ -31,10 +31,9 @@ func GetStrategy(mode Mode, destType string, partitionFilter func(destinationID 
 	case ModeDestination:
 		return &destinationStrategy{
 			config: c,
-			pickupQueryThrottlingEnabled: c.GetReloadableBoolVar(false,
+			pickupQueryThrottlingEnabled: c.GetReloadableBoolVar(true,
 				"Router.throttler."+destType+".pickupQueryThrottlingEnabled",
 				"Router.throttler.pickupQueryThrottlingEnabled",
-				// TODO: remove the below deprecated config keys in the next release
 				"Router."+destType+".pickupQueryThrottlingEnabled",
 				"Router.pickupQueryThrottlingEnabled",
 			),
