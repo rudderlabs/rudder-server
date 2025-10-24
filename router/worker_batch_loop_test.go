@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -28,6 +30,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		var mu sync.Mutex
 
 		wl := &workerBatchLoop{
+			ctx:                      context.Background(),
 			jobsBatchTimeout:         config.SingleValueLoader(50 * time.Millisecond),
 			noOfJobsToBatchInAWorker: config.SingleValueLoader(batchSize),
 			inputCh:                  inputCh,
@@ -53,6 +56,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 				// Always return nil to simulate accepting no jobs
 				return nil
 			},
+			throughputStat: metric.NewSimpleMovingAverage(1),
 		}
 
 		// Start the worker loop in a goroutine
@@ -112,6 +116,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		jobCount := 0
 
 		wl := &workerBatchLoop{
+			ctx:                      context.Background(),
 			jobsBatchTimeout:         config.SingleValueLoader(50 * time.Millisecond),
 			noOfJobsToBatchInAWorker: config.SingleValueLoader(batchSize),
 			inputCh:                  inputCh,
@@ -160,6 +165,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 				}
 				return nil
 			},
+			throughputStat: metric.NewSimpleMovingAverage(1),
 		}
 
 		// Start the worker loop in a goroutine
@@ -229,6 +235,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		var mu sync.Mutex
 
 		wl := &workerBatchLoop{
+			ctx:                      context.Background(),
 			jobsBatchTimeout:         config.SingleValueLoader(50 * time.Millisecond),
 			noOfJobsToBatchInAWorker: config.SingleValueLoader(batchSize),
 			inputCh:                  inputCh,
@@ -266,6 +273,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 					},
 				}
 			},
+			throughputStat: metric.NewSimpleMovingAverage(1),
 		}
 
 		// Start the worker loop in a goroutine
@@ -338,6 +346,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		var mu sync.Mutex
 
 		wl := &workerBatchLoop{
+			ctx:                      context.Background(),
 			jobsBatchTimeout:         config.SingleValueLoader(50 * time.Millisecond), // Shorter timeout for testing
 			noOfJobsToBatchInAWorker: config.SingleValueLoader(batchSize),
 			inputCh:                  inputCh,
@@ -372,6 +381,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 				}
 				return nil
 			},
+			throughputStat: metric.NewSimpleMovingAverage(1),
 		}
 
 		// Start the worker loop in a goroutine
@@ -430,6 +440,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		var mu sync.Mutex
 
 		wl := &workerBatchLoop{
+			ctx:                      context.Background(),
 			jobsBatchTimeout:         config.SingleValueLoader(1 * time.Second), // Long timeout so it doesn't interfere
 			noOfJobsToBatchInAWorker: config.SingleValueLoader(batchSize),
 			inputCh:                  inputCh,
@@ -463,6 +474,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 					},
 				}
 			},
+			throughputStat: metric.NewSimpleMovingAverage(1),
 		}
 
 		// Start the worker loop in a goroutine
