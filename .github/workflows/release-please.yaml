@@ -33,10 +33,12 @@ jobs:
       - name: Extract release version
         shell: bash
         run: |
-          tag_name=$(echo "${{ steps.release.outputs.tag_name }}")
+          tag_name=$(echo "${STEPS_RELEASE_OUTPUTS_TAG_NAME}")
           version=$(echo "${tag_name#v}")
           echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
+        env:
+          STEPS_RELEASE_OUTPUTS_TAG_NAME: ${{ steps.release.outputs.tag_name }}
       - name: Trigger dispatch event - Enterprise
         uses: peter-evans/repository-dispatch@v3
         # release please run 2 times, first for creating the PR and second for creating the release
