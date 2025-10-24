@@ -662,7 +662,6 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 	httpReqStTime := time.Now()
 	var resp *http.Response
-	trans.logger.Debugn("[router delivery]", logger.NewBoolField("oauthV2Enabled", true))
 	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
 	req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 	resp, err = trans.proxyClientOAuthV2.Do(req)
