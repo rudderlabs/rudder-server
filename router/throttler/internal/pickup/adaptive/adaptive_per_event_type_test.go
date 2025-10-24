@@ -721,7 +721,7 @@ func TestAdaptivePerEventTypeThrottler(t *testing.T) {
 
 			// Set only global configs
 			config.Set("Router.throttler.minLimit", 5)
-			config.Set("Router.throttler.maxLimit", 50)
+			config.Set("Router.throttler.defaultMaxLimit", 50)
 
 			throttler := NewPerEventTypeThrottler(destType, destinationID, eventType, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
