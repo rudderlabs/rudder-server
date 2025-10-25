@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: '42 1 * * *'
 
+permissions:
+  contents: read
+
 jobs:
   prs:
     name: Clean up stale prs
@@ -18,7 +21,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: actions/stale@v9
+      - uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639 # v9.1.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           operations-per-run: 200
@@ -41,7 +44,7 @@ jobs:
             egress-policy: audit
 
         - name: Checkout repository
-          uses: actions/checkout@v4
+          uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
         - name: Run delete-old-branches-action
           uses: beatlabs/delete-old-branches-action@4eeeb8740ff8b3cb310296ddd6b43c3387734588
           with:
