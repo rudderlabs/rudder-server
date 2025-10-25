@@ -73,7 +73,8 @@ type Handle struct {
 	eventOrderHalfEnabledStateDuration config.ValueLoader[time.Duration]
 	deliveryThrottlerTimeout           config.ValueLoader[time.Duration]
 	drainConcurrencyLimit              config.ValueLoader[int]
-	workerInputBufferSize              int
+	maxNoOfJobsPerChannel              int // maximum capacity of each worker channel
+	noOfJobsPerChannel                 int // requested capacity of each worker channel (in standard mode)
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
@@ -117,6 +118,7 @@ type Handle struct {
 	backgroundWait                 func() error
 	startEnded                     chan struct{}
 	barrier                        *eventorder.Barrier
+	lastJobQueryBatchSize          atomic.Int64 // jobQueryBatchSize used in the last pickup iteration (batch size may change dynamically if pickup query throttling is enabled)
 
 	eventOrderingDisabledForWorkspace   func(workspaceID string) bool
 	eventOrderingDisabledForDestination func(destinationID string) bool
@@ -192,6 +194,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			rt.reloadableConfig.maxJobQueryBatchSize.Load(),
 		)
 	}
+	rt.lastJobQueryBatchSize.Store(int64(jobQueryBatchSize))
 	pickupBatchSizeGauge.Gauge(jobQueryBatchSize)
 
 	iterator := jobiterator.New(
@@ -210,7 +213,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	type reservedJob struct {
-		slot        *workerSlot
+		slot        *reservedSlot
 		job         *jobsdb.JobT
 		drainReason string
 		parameters  routerutils.JobParameters
@@ -599,7 +602,7 @@ func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQu
 }
 
 type workerJobSlot struct {
-	slot        *workerSlot
+	slot        *reservedSlot
 	drainReason string
 }
 

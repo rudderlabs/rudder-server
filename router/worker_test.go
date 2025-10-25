@@ -254,7 +254,7 @@ var _ = Describe("Proxy Request", func() {
 				logger:          router.logger.Child("w-0"),
 				partition:       "partition",
 				id:              1,
-				inputCh:         make(chan workerJob, 1),
+				workerBuffer:    newSimpleWorkerBuffer(1),
 				rt:              router,
 				routerProxyStat: stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
 			}
@@ -357,7 +357,7 @@ var _ = Describe("Proxy Request", func() {
 				logger:          router.logger.Child("w-0"),
 				partition:       "partition",
 				id:              1,
-				inputCh:         make(chan workerJob, 1),
+				workerBuffer:    newSimpleWorkerBuffer(1),
 				rt:              router,
 				routerProxyStat: stats.NOP.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": "ga"}),
 			}

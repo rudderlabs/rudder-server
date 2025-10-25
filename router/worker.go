@@ -42,12 +42,13 @@ type worker struct {
 	rt     *Handle // handle to router
 	logger logger.Logger
 
-	ctx        context.Context    // context for the worker
-	cancelFunc context.CancelFunc // cancel function for the worker context
-	inputCh    chan workerJob     // the worker's input channel
+	workLoopThroughput stats.Histogram // stat to record throughput of the worker's processing loop
 
-	inputReservations int                 // number of slots reserved in the input channel
-	barrier           *eventorder.Barrier // barrier to ensure ordering of events
+	ctx          context.Context    // context for the worker
+	cancelFunc   context.CancelFunc // cancel function for the worker context
+	workerBuffer *workerBuffer      // the worker's input buffer
+
+	barrier *eventorder.Barrier // barrier to ensure ordering of events
 
 	deliveryTimeStat          stats.Measurement
 	routerDeliveryLatencyStat stats.Measurement
@@ -211,14 +212,16 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 
 func (w *worker) workLoop() {
 	wl := &workerBatchLoop{
+		ctx:                      w.ctx,
 		jobsBatchTimeout:         w.rt.reloadableConfig.jobsBatchTimeout,
 		noOfJobsToBatchInAWorker: w.rt.reloadableConfig.noOfJobsToBatchInAWorker,
-		inputCh:                  w.inputCh,
+		inputCh:                  w.workerBuffer.Jobs(),
 		enableBatching:           w.rt.enableBatching,
 		batchTransform:           w.batchTransform,
 		transform:                w.transform,
 		process:                  w.process,
 		acceptWorkerJob:          w.acceptWorkerJob,
+		throughputStat:           w.workLoopThroughput,
 	}
 	wl.runLoop() // start the worker loop
 }
@@ -1136,29 +1139,12 @@ func (w *worker) sendDestinationResponseToConfigBackend(payload json.RawMessage,
 
 // AvailableSlots returns the number of available slots in the worker's input channel
 func (w *worker) AvailableSlots() int {
-	return cap(w.inputCh) - len(w.inputCh) - w.inputReservations
+	return w.workerBuffer.AvailableSlots()
 }
 
 // Reserve tries to reserve a slot in the worker's input channel, if available
-func (w *worker) ReserveSlot() *workerSlot {
-	if w.AvailableSlots() > 0 {
-		w.inputReservations++
-		return &workerSlot{worker: w}
-	}
-	return nil
-}
-
-// releaseSlot releases a slot from the worker's input channel
-func (w *worker) releaseSlot() {
-	if w.inputReservations > 0 {
-		w.inputReservations--
-	}
-}
-
-// accept accepts a job into the worker's input channel
-func (w *worker) accept(wj workerJob) {
-	w.releaseSlot()
-	w.inputCh <- wj
+func (w *worker) ReserveSlot() *reservedSlot {
+	return w.workerBuffer.ReserveSlot()
 }
 
 func (w *worker) trackStuckDelivery() chan struct{} {

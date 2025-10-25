@@ -20,6 +20,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
@@ -262,7 +263,8 @@ func TestBackoff(t *testing.T) {
 			logger:                logger.NOP,
 			backgroundCtx:         context.Background(),
 			noOfWorkers:           1,
-			workerInputBufferSize: 3,
+			maxNoOfJobsPerChannel: 3,
+			noOfJobsPerChannel:    3,
 			barrier:               barrier,
 			reloadableConfig: &reloadableConfig{
 				maxFailedCountForJob: config.SingleValueLoader(3),
@@ -278,13 +280,14 @@ func TestBackoff(t *testing.T) {
 			},
 		}
 		workers := []*worker{{
-			logger:  logger.NOP,
-			inputCh: make(chan workerJob, 3),
-			barrier: barrier,
+			logger:             logger.NOP,
+			workerBuffer:       newSimpleWorkerBuffer(3),
+			barrier:            barrier,
+			workLoopThroughput: metric.NewSimpleMovingAverage(1),
 		}}
 		t.Run("eventorder disabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = false
-			workers[0].inputReservations = 0
+			workers[0].workerBuffer = newSimpleWorkerBuffer(3)
 
 			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
@@ -317,7 +320,7 @@ func TestBackoff(t *testing.T) {
 
 		t.Run("eventorder enabled", func(t *testing.T) {
 			r.guaranteeUserEventOrder = true
-			workers[0].inputReservations = 0
+			workers[0].workerBuffer = newSimpleWorkerBuffer(3)
 
 			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.Nil(t, slot)
@@ -353,7 +356,7 @@ func TestBackoff(t *testing.T) {
 		t.Run("eventorder enabled with drain job", func(t *testing.T) {
 			r.drainer = &drainer{drain: true, reason: "drain job due to some reason"}
 			r.guaranteeUserEventOrder = true
-			workers[0].inputReservations = 0
+			workers[0].workerBuffer = newSimpleWorkerBuffer(3)
 
 			slot, err := r.findWorkerSlot(context.Background(), workers, backoffJob, parameters, map[eventorder.BarrierKey]struct{}{})
 			require.NotNil(t, slot)
@@ -422,7 +425,7 @@ func TestBackoff(t *testing.T) {
 
 		t.Run("job not blocked after event ordering is disabled(destinationID level)", func(t *testing.T) {
 			r.guaranteeUserEventOrder = true
-			workers[0].inputReservations = 0
+			workers[0].workerBuffer = newSimpleWorkerBuffer(3)
 			job := &jobsdb.JobT{
 				JobID:      1,
 				Parameters: []byte(`{"destination_id": "destination"}`),
@@ -458,7 +461,7 @@ func TestBackoff(t *testing.T) {
 
 		t.Run("job not blocked after event ordering is disabled(workspaceID level)", func(t *testing.T) {
 			r.guaranteeUserEventOrder = true
-			workers[0].inputReservations = 0
+			workers[0].workerBuffer = newSimpleWorkerBuffer(3)
 			job := &jobsdb.JobT{
 				JobID:      1,
 				Parameters: []byte(`{"destination_id": "destination"}`),

@@ -9,6 +9,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,26 +27,54 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 	}
 	pw.g, _ = errgroup.WithContext(context.Background())
 	pw.workers = make([]*worker, rt.noOfWorkers)
+	deliveryTimeStat := stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType})
+	routerDeliveryLatencyStat := stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType})
+	routerProxyStat := stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destType})
+
+	bufferCapacityStat := stats.Default.NewTaggedStat("router_worker_buffer_capacity", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
+	bufferSizeStat := stats.Default.NewTaggedStat("router_worker_buffer_size", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
+
 	for i := 0; i < rt.noOfWorkers; i++ {
 		ctx, cancelFunc := context.WithCancel(context.Background())
+		workLoopThroughput := metric.NewSimpleMovingAverage(10)
+		workLoopThroughputStat := stats.Default.NewTaggedStat("router_worker_work_loop_throughput", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
 		worker := &worker{
-			logger:                    pw.logger.Child("w-" + strconv.Itoa(i)),
-			partition:                 partition,
-			id:                        i,
-			ctx:                       ctx,
-			cancelFunc:                cancelFunc,
-			inputCh:                   make(chan workerJob, rt.workerInputBufferSize),
+			logger:     pw.logger.Child("w-" + strconv.Itoa(i)),
+			partition:  partition,
+			id:         i,
+			ctx:        ctx,
+			cancelFunc: cancelFunc,
+			workerBuffer: newWorkerBuffer(
+				rt.maxNoOfJobsPerChannel,
+				newBufferSizeCalculatorSwitcher(
+					rt.reloadableConfig.enableExperimentalBufferSizeCalculator,
+					&rt.lastJobQueryBatchSize,
+					rt.noOfWorkers,
+					rt.reloadableConfig.noOfJobsToBatchInAWorker,
+					workLoopThroughput,
+					rt.noOfJobsPerChannel,
+				),
+				&workerBufferStats{
+					onceEvery:       kitsync.NewOnceEvery(5 * time.Second),
+					currentCapacity: bufferCapacityStat,
+					currentSize:     bufferSizeStat,
+				}),
 			barrier:                   rt.barrier,
 			rt:                        rt,
-			deliveryTimeStat:          stats.Default.NewTaggedStat("router_delivery_time", stats.TimerType, stats.Tags{"destType": rt.destType}),
-			routerDeliveryLatencyStat: stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
-			routerProxyStat:           stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destType}),
+			deliveryTimeStat:          deliveryTimeStat,
+			routerDeliveryLatencyStat: routerDeliveryLatencyStat,
+			routerProxyStat:           routerProxyStat,
 			deliveryLatencyStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
 				return stats.Default.NewTaggedStat("transformer_outgoing_request_latency", stats.TimerType, labels.ToStatTags())
 			}),
 			deliveryCountStatsCache: cache.NewStatsCache(func(labels deliveryMetricLabels) stats.Measurement {
 				return stats.Default.NewTaggedStat("transformer_outgoing_request_count", stats.CountType, labels.ToStatTags())
 			}),
+			workLoopThroughput: newSmaHistogram(
+				workLoopThroughput,
+				workLoopThroughputStat,
+				kitsync.NewOnceEvery(10*time.Second),
+			),
 		}
 		pw.workers[i] = worker
 
@@ -101,7 +131,7 @@ func (pw *partitionWorker) SleepDurations() (min, max time.Duration) {
 func (pw *partitionWorker) Stop() {
 	for _, worker := range pw.workers {
 		worker.cancelFunc()
-		close(worker.inputCh)
+		worker.workerBuffer.Close()
 	}
 	_ = pw.g.Wait()
 }
