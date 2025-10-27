@@ -970,6 +970,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
+					ctx: ctx,
 					subJobs: []*jobsdb.JobT{
 						{
 							UUID:      uuid.New(),
@@ -1048,6 +1049,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
+					ctx: ctx,
 					subJobs: []*jobsdb.JobT{
 						{
 							UUID:      uuid.New(),
@@ -1305,6 +1307,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
+					ctx:     ctx,
 					subJobs: unprocessedJobsList,
 				},
 				0,
@@ -1317,34 +1320,30 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 	})
 })
 
-var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
+func TestArchival(t *testing.T) {
 	initProcessor()
 
-	var c *testContext
+	testFn := func(archiveInPreProcess bool) {
+		t.Run("process events and write to archival DB", func(t *testing.T) {
+			c := &testContext{}
+			c.Setup(t)
 
-	prepareHandle := func(proc *Handle) *Handle {
-		proc.archivalDB = c.mockArchivalDB
-		proc.config.archivalEnabled = config.SingleValueLoader(true)
-		proc.config.enableConcurrentStore = config.SingleValueLoader(false)
-		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
-		Expect(err).To(BeNil())
-		proc.isolationStrategy = isolationStrategy
-		return proc
-	}
+			// crash recovery check
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-	BeforeEach(func() {
-		c = &testContext{}
-		c.Setup()
-		// crash recovery check
-		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-	})
+			defer c.Finish()
 
-	AfterEach(func() {
-		c.Finish()
-	})
+			prepareHandle := func(proc *Handle) *Handle {
+				proc.archivalDB = c.mockArchivalDB
+				proc.config.archivalEnabled = config.SingleValueLoader(true)
+				proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+				isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+				require.NoError(t, err)
+				proc.isolationStrategy = isolationStrategy
+				proc.config.archiveInPreProcess = archiveInPreProcess
+				return proc
+			}
 
-	Context("archival DB", func() {
-		It("should process events and write to archival DB", func() {
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -1467,6 +1466,7 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 					Parameters: createBatchParametersWithSources(SourceIDEnabledNoUT),
 				},
 			}
+
 			c.mockArchivalDB.EXPECT().
 				WithStoreSafeTx(
 					gomock.Any(),
@@ -1479,30 +1479,55 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 				StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
 				Do(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) {
-					Expect(jobs).To(HaveLen(2))
+					require.Len(t, jobs, 2)
 				})
 
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, false)
+			Setup(processor, c, false, false, t)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-			GinkgoT().Log("Processor setup and init done")
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+			t.Log("Processor setup and init done")
+
 			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
+					ctx:     ctx,
 					subJobs: unprocessedJobsList,
 				},
 				0,
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
+			if archiveInPreProcess {
+				require.Nil(t, preTransMessage.archivalJobs)
+			}
 			_, _ = processor.pretransformStage("", preTransMessage)
 
-			Expect(c.MockObserver.calls).To(HaveLen(1))
+			require.Len(t, c.MockObserver.calls, 1)
 		})
-		It("should skip writing events belonging to transient sources in archival DB", func() {
+
+		t.Run("skip writing events belonging to transient sources in archival DB", func(t *testing.T) {
+			c := &testContext{}
+			c.Setup(t)
+
+			// crash recovery check
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			defer c.Finish()
+
+			prepareHandle := func(proc *Handle) *Handle {
+				proc.archivalDB = c.mockArchivalDB
+				proc.config.archivalEnabled = config.SingleValueLoader(true)
+				proc.config.enableConcurrentStore = config.SingleValueLoader(false)
+				isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+				require.NoError(t, err)
+				proc.isolationStrategy = isolationStrategy
+				proc.config.archiveInPreProcess = archiveInPreProcess
+				return proc
+			}
+
 			messages := map[string]mockEventData{
 				// this message should be delivered only to destination A
 				"message-1": {
@@ -1638,25 +1663,37 @@ var _ = Describe("Processor with ArchivalV2 enabled", Ordered, func() {
 			mockTransformerClients := transformer.NewSimpleClients()
 			processor := prepareHandle(NewHandle(config.Default, mockTransformerClients))
 
-			Setup(processor, c, false, false)
+			Setup(processor, c, false, false, t)
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
-			GinkgoT().Log("Processor setup and init done")
+			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
+			t.Log("Processor setup and init done")
+
 			preTransMessage, err := processor.preprocessStage(
 				"",
 				subJob{
+					ctx:     ctx,
 					subJobs: unprocessedJobsList,
 				},
 				0,
 			)
-			Expect(err).To(BeNil())
+			require.NoError(t, err)
+			if archiveInPreProcess {
+				require.Nil(t, preTransMessage.archivalJobs)
+			}
 			_, _ = processor.pretransformStage("", preTransMessage)
 
-			Expect(c.MockObserver.calls).To(HaveLen(1))
+			require.Len(t, c.MockObserver.calls, 1)
 		})
+	}
+
+	t.Run("archive in preprocess", func(t *testing.T) {
+		testFn(true)
 	})
-})
+	t.Run("archive in preprocess disabled", func(t *testing.T) {
+		testFn(false)
+	})
+}
 
 var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() {
 	initProcessor()
