@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.62.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.61.0...v1.62.0-rc.1) (2025-10-27)
+
+
+### Features
+
+* introduce circuit breakers for oauth ([#6411](https://github.com/rudderlabs/rudder-server/issues/6411)) ([b9ed172](https://github.com/rudderlabs/rudder-server/commit/b9ed172168c00a50a46fa8aa055181c747372e13))
+
+
+### Bug Fixes
+
+* deltalake fetch table attributes ([#6455](https://github.com/rudderlabs/rudder-server/issues/6455)) ([49907dc](https://github.com/rudderlabs/rudder-server/commit/49907dc1c7370450bd0efa9ff5c5e50209d0714f))
+* destination namespaces api to contain tablename filter ([#6388](https://github.com/rudderlabs/rudder-server/issues/6388)) ([61cffa4](https://github.com/rudderlabs/rudder-server/commit/61cffa4d980073327d9b7590eb8fd86ec7fef07c))
+* repo cardinatlity for warehouse queries ([#6451](https://github.com/rudderlabs/rudder-server/issues/6451)) ([ac9adc4](https://github.com/rudderlabs/rudder-server/commit/ac9adc4d25ff7dc7636c6860fbe4967cc8508b0e))
+
+
+### Miscellaneous
+
+* always emit transformer_outgoing_request_latency metric ([#6454](https://github.com/rudderlabs/rudder-server/issues/6454)) ([33b742c](https://github.com/rudderlabs/rudder-server/commit/33b742c59c42120b85e62c1818cb760bf3fcdbb4))
+* avoid scanning all schemas and use limit 1 ([#6396](https://github.com/rudderlabs/rudder-server/issues/6396)) ([8bb69ee](https://github.com/rudderlabs/rudder-server/commit/8bb69eebae77d677fe00c4cc4a6a88445bcb7111))
+* bump rudder-go-kit to 0.63.4 ([#6457](https://github.com/rudderlabs/rudder-server/issues/6457)) ([d499351](https://github.com/rudderlabs/rudder-server/commit/d4993517bfc6d5f17c3458486eca9e9d1b0181b5))
+* cleanup Avoid using beigntx within repo package and instead use WithTx. ([#6389](https://github.com/rudderlabs/rudder-server/issues/6389)) ([21b7129](https://github.com/rudderlabs/rudder-server/commit/21b7129a9113bc879c8453e0eb6b4c90a0335235))
+* improve cron tracker ([#6397](https://github.com/rudderlabs/rudder-server/issues/6397)) ([82407f4](https://github.com/rudderlabs/rudder-server/commit/82407f483b63ee1f143eff0d9318053a9c8310e8))
+* improve logging reporting event name trimming  ([#6424](https://github.com/rudderlabs/rudder-server/issues/6424)) ([ce4d56d](https://github.com/rudderlabs/rudder-server/commit/ce4d56d1e9c996d96740e9b7df8e5d64d3a9312d))
+* improve pending uploads ([#6399](https://github.com/rudderlabs/rudder-server/issues/6399)) ([717f6a6](https://github.com/rudderlabs/rudder-server/commit/717f6a6a6e2bb5e77866748f0e80a70cb27a6343))
+* improve populate table level schemas ([#6395](https://github.com/rudderlabs/rudder-server/issues/6395)) ([a0aa222](https://github.com/rudderlabs/rudder-server/commit/a0aa222c896f5615a8080b10770eb9ceaf39ef0c))
+* improve table level schemas ([#6398](https://github.com/rudderlabs/rudder-server/issues/6398)) ([a2d3786](https://github.com/rudderlabs/rudder-server/commit/a2d3786985515f5010927b14504b7ca3f87265dc))
+* remove monitor database ([#6393](https://github.com/rudderlabs/rudder-server/issues/6393)) ([a02c218](https://github.com/rudderlabs/rudder-server/commit/a02c21868e5e5dfc3e4c669c0c18aed8879952c8))
+* remove unused oauthV2Enabled logger ([#6465](https://github.com/rudderlabs/rudder-server/issues/6465)) ([bf55861](https://github.com/rudderlabs/rudder-server/commit/bf55861c8fd290aa44ada01c9da64896886343d8))
+* retaining both pickup query throttling configuration key options ([#6453](https://github.com/rudderlabs/rudder-server/issues/6453)) ([a51f395](https://github.com/rudderlabs/rudder-server/commit/a51f395c42f7f1daa93e392f63239ce5af729e1a))
+* **router:** pickup query throttling should be enabled by default ([#6447](https://github.com/rudderlabs/rudder-server/issues/6447)) ([ff18dde](https://github.com/rudderlabs/rudder-server/commit/ff18dde9f77e1d6b54dc03a9e904edd68cf002f6))
+* security improvements  ([#6430](https://github.com/rudderlabs/rudder-server/issues/6430)) ([ce4d56d](https://github.com/rudderlabs/rudder-server/commit/ce4d56d1e9c996d96740e9b7df8e5d64d3a9312d))
+* simplify pickup throttling configuration ([#6460](https://github.com/rudderlabs/rudder-server/issues/6460)) ([7fb035b](https://github.com/rudderlabs/rudder-server/commit/7fb035b09e7d50e1bb37830421459539b5e13f58))
+* unused dependencies ([#6392](https://github.com/rudderlabs/rudder-server/issues/6392)) ([8e585b7](https://github.com/rudderlabs/rudder-server/commit/8e585b749258f9304afd89422de0752c23fe7a8a))
+* use org-wide docker registry mirror configuration ([#6444](https://github.com/rudderlabs/rudder-server/issues/6444)) ([f714b32](https://github.com/rudderlabs/rudder-server/commit/f714b322d069831845087dfe2f8c949da383b15b))
+* using go-kit maxprocs ([#6433](https://github.com/rudderlabs/rudder-server/issues/6433)) ([674ab55](https://github.com/rudderlabs/rudder-server/commit/674ab5573fc332fff8bb800405fba841fe51501f))
+
 ## [1.61.1](https://github.com/rudderlabs/rudder-server/compare/v1.61.0...v1.61.1) (2025-10-23)
 
 
