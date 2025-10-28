@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.1](https://github.com/rudderlabs/rudder-server/compare/v1.62.0...v1.62.1) (2025-10-28)
+
+
+### Bug Fixes
+
+* max procs defaults ([#6473](https://github.com/rudderlabs/rudder-server/issues/6473)) ([4422305](https://github.com/rudderlabs/rudder-server/commit/4422305541252b1330a4e898a457331d7fc4097a))
+
 ## [1.62.0](https://github.com/rudderlabs/rudder-server/compare/v1.61.0...v1.62.0) (2025-10-27)
 
 
