@@ -90,7 +90,7 @@
                     "type": "cloud"
                 },
                 "name": "Test",
-                "writeKey": "2Ia21P796M61LiiV4pZoOOfPvln",
+                "writeKey": "myRandomWritekey",
                 "enabled": true,
                 "deleted": false,
                 "createdBy": "26i2MWBQvNqlSjN3Wdi8vaxWf3K",
