@@ -128,7 +128,7 @@ jobs:
           RACE_ENABLED: "true"
           FORCE_RUN_INTEGRATION_TESTS: "true"
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ matrix.destination }}
           path: coverage.txt
@@ -160,7 +160,7 @@ jobs:
           DOCKER_REGISTRY_MIRROR: ${{ vars.DOCKER_REGISTRY_MIRROR }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: unit
           path: coverage.txt
@@ -244,7 +244,7 @@ jobs:
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
           echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ env.ARTIFACT_NAME }}-unit
           path: coverage.txt
