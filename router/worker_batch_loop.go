@@ -26,6 +26,14 @@ type workerBatchLoop struct {
 func (wl *workerBatchLoop) runLoop() {
 	jobsBatchTimeout := time.After(wl.jobsBatchTimeout.Load())
 	var routerJobs []types.RouterJobT
+	captureThroughput := func(start time.Time, jobCount int) {
+		elapsed := time.Since(start).Milliseconds()
+		if elapsed == 0 {
+			elapsed = 1 // prevent division by zero
+		}
+		wl.throughputStat.Observe(float64(jobCount) / (float64(elapsed) / 1000))
+	}
+
 	doProcessRouterJobs := func() {
 		if len(routerJobs) > 0 {
 			start := time.Now()
@@ -36,8 +44,7 @@ func (wl *workerBatchLoop) runLoop() {
 				destinationJobs = wl.transform(routerJobs)
 			}
 			wl.process(destinationJobs)
-			throughputPerSecond := float64(len(routerJobs)) / (float64(time.Since(start).Milliseconds()) / 1000)
-			wl.throughputStat.Observe(throughputPerSecond)
+			captureThroughput(start, len(routerJobs))
 			routerJobs = nil // reset routerJobs for the next batch
 		}
 		jobsBatchTimeout = time.After(wl.jobsBatchTimeout.Load()) // reset the timeout
@@ -61,11 +68,14 @@ func (wl *workerBatchLoop) runLoop() {
 				// (scenario where we are switching from router to processor transformation)
 				doProcessRouterJobs()
 			}
+			start := time.Now()
 			if routerJob := wl.acceptWorkerJob(workerJob); routerJob != nil {
 				routerJobs = append(routerJobs, *routerJob)
 				if wl.noOfJobsToBatchInAWorker.Load() <= len(routerJobs) {
 					doProcessRouterJobs() // process the batch if it reaches the limit
 				}
+			} else { // job was not accepted to enter the batch, but was processed, so we need to capture its throughput
+				captureThroughput(start, 1)
 			}
 		case <-jobsBatchTimeout:
 			doProcessRouterJobs() // process any remaining jobs in the batch

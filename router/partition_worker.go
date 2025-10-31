@@ -37,7 +37,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 
 	for i := 0; i < rt.noOfWorkers; i++ {
 		ctx, cancelFunc := context.WithCancel(context.Background())
-		workLoopThroughput := metric.NewSimpleMovingAverage(10)
+		workLoopThroughput := metric.NewSimpleMovingAverage(20)
 		workLoopThroughputStat := stats.Default.NewTaggedStat("router_worker_work_loop_throughput", stats.HistogramType, stats.Tags{"destType": rt.destType, "partition": partition})
 		worker := &worker{
 			logger:     pw.logger.Child("w-" + strconv.Itoa(i)),
