@@ -16,7 +16,7 @@ jobs:
           egress-policy: audit
 
       - name: Repository dispatch
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         with:
           token: "${{ secrets.PAT }}"
           repository: rudderlabs/rudder-devops

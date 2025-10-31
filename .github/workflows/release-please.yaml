@@ -38,7 +38,7 @@ jobs:
           echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
       - name: Trigger dispatch event - Enterprise
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
@@ -51,7 +51,7 @@ jobs:
                 "deployment": "enterprise"
             }
       - name: Trigger dispatch event - Multitenant
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
@@ -64,7 +64,7 @@ jobs:
                 "deployment": "multitenant"
             }
       - name: Trigger dispatch event - hosted
-        uses: peter-evans/repository-dispatch@v3
+        uses: peter-evans/repository-dispatch@v4
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
