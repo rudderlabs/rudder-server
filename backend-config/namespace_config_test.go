@@ -339,6 +339,52 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	require.Equal(t, 7, requestNumber)
 }
 
+func TestSourceDefinitionOptions(t *testing.T) {
+	var (
+		ctx               = context.Background()
+		namespace         = "dynamic-config-namespace"
+		hostServiceSecret = "service-secret"
+	)
+
+	bcSrv := &backendConfigServer{t: t, token: hostServiceSecret}
+	bcSrv.addNamespace(namespace, "./testdata/namespace_with_source_definition_options.json")
+
+	ts := httptest.NewServer(bcSrv)
+	defer ts.Close()
+	httpSrvURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	client := &namespaceConfig{
+		config: config.New(),
+		logger: logger.NOP,
+
+		client:           ts.Client(),
+		configBackendURL: httpSrvURL,
+
+		namespace:           namespace,
+		hostedServiceSecret: hostServiceSecret,
+	}
+	require.NoError(t, client.SetUp())
+
+	// Get the configuration from the API
+	configs, err := client.Get(ctx)
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+
+	// Get the workspace configuration
+	config, ok := configs["workspace-1"]
+	require.True(t, ok)
+
+	require.Len(t, config.Sources, 2)
+	require.Len(t, config.Sources[0].Destinations, 2)
+
+	// Verify that source definition options are correctly parsed
+	srcMap := config.SourcesMap()
+	require.Equal(t, srcMap["source-1"].SourceDefinition.Name, "Test Source")
+	require.True(t, srcMap["source-1"].SourceDefinition.Options.Hydration.Enabled)
+	require.False(t, srcMap["source-2"].SourceDefinition.Options.Hydration.Enabled)
+}
+
 type backendConfigServer struct {
 	t         *testing.T
 	responses map[string]string
