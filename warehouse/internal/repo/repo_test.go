@@ -61,7 +61,6 @@ func TestStatsEmission(t *testing.T) {
 			},
 		}))
 		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_load_files_insert_duration_seconds", stats.Tags{
-			"sourceId": "source_id",
 			"destId":   "destination_id",
 			"destType": "destination_type",
 		}).LastDuration(), time.Duration(0))
@@ -74,7 +73,6 @@ func TestStatsEmission(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_schemas_insert_duration_seconds", stats.Tags{
-			"sourceId": "source_id",
 			"destId":   "destination_id",
 			"destType": "destination_type",
 		}).LastDuration(), time.Duration(0))
@@ -82,7 +80,6 @@ func TestStatsEmission(t *testing.T) {
 		_, err = repoStagingFileSchemaSnapshots.Insert(ctx, "source_id", "destination_id", "workspace_id", json.RawMessage(`{}`))
 		require.NoError(t, err)
 		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_staging_file_schema_snapshots_insert_duration_seconds", stats.Tags{
-			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
@@ -94,7 +91,6 @@ func TestStatsEmission(t *testing.T) {
 		}).WithSchema(json.RawMessage(`{}`))))
 		require.NoError(t, err)
 		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_staging_files_insert_duration_seconds", stats.Tags{
-			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
@@ -115,13 +111,11 @@ func TestStatsEmission(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_async_jobs_insert_duration_seconds", stats.Tags{
-			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
 
 		require.Greater(t, statsStore.Get("warehouse_repo_query_wh_uploads_create_with_staging_files_duration_seconds", stats.Tags{
-			"sourceId":    "source_id",
 			"destId":      "destination_id",
 			"destType":    "destination_type",
 			"workspaceId": "workspace_id",
