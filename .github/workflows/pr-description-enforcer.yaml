@@ -15,7 +15,7 @@ jobs:
         with:
           egress-policy: audit
 
-      - uses: rudderlabs/pr-description-enforcer@v1.1.0
+      - uses: rudderlabs/pr-description-enforcer@1354172a4395fcfaa645b59cf8ef3cefa19e4f6d # v1.1.0
         with:
           repo-token: '${{ secrets.GITHUB_TOKEN }}'
           placeholder-regex: '< Replace .* >'
