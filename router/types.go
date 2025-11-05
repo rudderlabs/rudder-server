@@ -47,28 +47,30 @@ type JobResponse struct {
 }
 
 type reloadableConfig struct {
-	jobQueryBatchSize                 config.ValueLoader[int]
-	maxJobQueryBatchSize              config.ValueLoader[int] // absolute max limit on job query batch size when adapting based on throttling limits
-	updateStatusBatchSize             config.ValueLoader[int]
-	readSleep                         config.ValueLoader[time.Duration]
-	maxStatusUpdateWait               config.ValueLoader[time.Duration]
-	minRetryBackoff                   config.ValueLoader[time.Duration]
-	maxRetryBackoff                   config.ValueLoader[time.Duration]
-	jobsBatchTimeout                  config.ValueLoader[time.Duration]
-	failingJobsPenaltyThreshold       config.ValueLoader[float64]
-	failingJobsPenaltySleep           config.ValueLoader[time.Duration]
-	noOfJobsToBatchInAWorker          config.ValueLoader[int]
-	jobsDBCommandTimeout              config.ValueLoader[time.Duration]
-	jobdDBMaxRetries                  config.ValueLoader[int]
-	maxFailedCountForJob              config.ValueLoader[int]
-	maxFailedCountForSourcesJob       config.ValueLoader[int]
-	payloadLimit                      config.ValueLoader[int64]
-	retryTimeWindow                   config.ValueLoader[time.Duration]
-	sourcesRetryTimeWindow            config.ValueLoader[time.Duration]
-	pickupFlushInterval               config.ValueLoader[time.Duration]
-	maxDSQuerySize                    config.ValueLoader[int]
-	transformerProxy                  config.ValueLoader[bool]
-	skipRtAbortAlertForTransformation config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
-	skipRtAbortAlertForDelivery       config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
-	oauthV2ExpirationTimeDiff         config.ValueLoader[time.Duration]
+	jobQueryBatchSize                      config.ValueLoader[int]
+	maxJobQueryBatchSize                   config.ValueLoader[int] // absolute max limit on job query batch size when adapting based on throttling limits
+	updateStatusBatchSize                  config.ValueLoader[int]
+	readSleep                              config.ValueLoader[time.Duration]
+	maxStatusUpdateWait                    config.ValueLoader[time.Duration]
+	minRetryBackoff                        config.ValueLoader[time.Duration]
+	maxRetryBackoff                        config.ValueLoader[time.Duration]
+	jobsBatchTimeout                       config.ValueLoader[time.Duration]
+	failingJobsPenaltyThreshold            config.ValueLoader[float64]
+	failingJobsPenaltySleep                config.ValueLoader[time.Duration]
+	noOfJobsToBatchInAWorker               config.ValueLoader[int]
+	jobsDBCommandTimeout                   config.ValueLoader[time.Duration]
+	jobdDBMaxRetries                       config.ValueLoader[int]
+	maxFailedCountForJob                   config.ValueLoader[int]
+	maxFailedCountForSourcesJob            config.ValueLoader[int]
+	payloadLimit                           config.ValueLoader[int64]
+	retryTimeWindow                        config.ValueLoader[time.Duration]
+	sourcesRetryTimeWindow                 config.ValueLoader[time.Duration]
+	pickupFlushInterval                    config.ValueLoader[time.Duration]
+	maxDSQuerySize                         config.ValueLoader[int]
+	transformerProxy                       config.ValueLoader[bool]
+	skipRtAbortAlertForTransformation      config.ValueLoader[bool] // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
+	skipRtAbortAlertForDelivery            config.ValueLoader[bool] // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	oauthV2ExpirationTimeDiff              config.ValueLoader[time.Duration]
+	enableExperimentalBufferSizeCalculator config.ValueLoader[bool]    // whether to use the experimental worker buffer size calculator or not
+	experimentalBufferSizeScalingFactor    config.ValueLoader[float64] // scaling factor to scale up the buffer size in the experimental calculator
 }

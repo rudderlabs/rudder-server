@@ -31,14 +31,16 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string,
 			fmt.Sprintf(`Router.throttler.%s.minLimit`, destType),
 			`Router.throttler.minLimit`,
 		),
-		maxLimit: maxLimitFunc(c, destType, destinationID,
-			[]string{
-				fmt.Sprintf(`Router.throttler.%s.%s.%s.maxLimit`, destType, destinationID, eventType),
-				fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, destinationID),
-				fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, eventType),
-				fmt.Sprintf(`Router.throttler.%s.maxLimit`, destType),
-				`Router.throttler.maxLimit`,
-			},
+		maxLimit: c.GetReloadableInt64Var(DefaultMaxThrottlingLimit, 1,
+			fmt.Sprintf(`Router.throttler.%s.%s.%s.maxLimit`, destType, destinationID, eventType), // TODO: remove in future
+			fmt.Sprintf(`Router.throttler.%s.%s.%s.limit`, destType, destinationID, eventType),
+			fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, destinationID), // TODO: remove in future
+			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
+			fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, eventType), // TODO: remove in future
+			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, eventType),
+			fmt.Sprintf(`Router.throttler.%s.maxLimit`, destType), // TODO: remove in future
+			fmt.Sprintf(`Router.throttler.%s.limit`, destType),
+			"Router.throttler.defaultMaxLimit",
 		),
 		// static cost for per-event-type throttler: cost was originally introduced to address rate limit differences between different event types, so not needed when using per-event-type throttler
 		staticCost: config.SingleValueLoader(true),

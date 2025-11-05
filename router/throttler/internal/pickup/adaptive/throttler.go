@@ -24,7 +24,7 @@ type throttler struct {
 
 	window     config.ValueLoader[time.Duration]
 	minLimit   config.ValueLoader[int64]
-	maxLimit   func() int64
+	maxLimit   config.ValueLoader[int64]
 	staticCost config.ValueLoader[bool]
 
 	everyStats       *kitsync.OnceEvery
@@ -33,7 +33,7 @@ type throttler struct {
 }
 
 func (t *throttler) enabled() bool {
-	return t.minLimit.Load() > 0 && t.maxLimit() > 0 && t.window.Load() > 0 && t.minLimit.Load() <= t.maxLimit()
+	return t.minLimit.Load() > 0 && t.maxLimit.Load() > 0 && t.window.Load() > 0 && t.minLimit.Load() <= t.maxLimit.Load()
 }
 
 func (t *throttler) CheckLimitReached(ctx context.Context, cost int64) (limited bool, retErr error) {
@@ -66,7 +66,7 @@ func (t *throttler) getMinLimit() int64 {
 }
 
 func (t *throttler) getMaxLimit() int64 {
-	return t.maxLimit()
+	return t.maxLimit.Load()
 }
 
 func (t *throttler) getLimit() int64 {

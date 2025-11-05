@@ -176,6 +176,7 @@ type Handle struct {
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
+		archiveInPreProcess                       bool
 	}
 
 	drainConfig struct {
@@ -744,6 +745,7 @@ func (proc *Handle) loadConfig() {
 	proc.config.transformTimesPQLength = proc.conf.GetIntVar(5, 1, "Processor.transformTimesPQLength")
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
+	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -2101,6 +2103,13 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		return nil, fmt.Errorf("len(statusList):%d != len(jobList):%d", len(statusList), len(jobList))
 	}
 
+	if proc.config.archiveInPreProcess {
+		if err := proc.storeArchiveJobs(ctx, archivalJobs); err != nil {
+			return nil, err
+		}
+		archivalJobs = nil
+	}
+
 	return &preTransformationMessage{
 		partition:                     partition,
 		subJobs:                       subJobs,
@@ -2133,7 +2142,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 func (proc *Handle) pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error) {
 	spanTags := stats.Tags{"partition": partition}
-	_, mainSpan := proc.tracer.Trace(preTrans.subJobs.ctx, "pretransformStage", tracing.WithTraceTags(spanTags))
+	ctx, mainSpan := proc.tracer.Trace(preTrans.subJobs.ctx, "pretransformStage", tracing.WithTraceTags(spanTags))
 	defer mainSpan.End()
 
 	if proc.limiter.pretransform != nil {
@@ -2141,56 +2150,24 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		defer proc.stats.statPretransformStageCount(partition).Count(len(preTrans.subJobs.subJobs))
 	}
 
-	g, groupCtx := errgroup.WithContext(context.Background())
+	if !proc.config.archiveInPreProcess {
+		g, groupCtx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
-		if len(preTrans.eventSchemaJobs) == 0 {
-			return nil
-		}
-		err := misc.RetryWithNotify(
-			groupCtx,
-			proc.jobsDBCommandTimeout.Load(),
-			proc.jobdDBMaxRetries.Load(),
-			func(ctx context.Context) error {
-				return proc.eventSchemaDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						return proc.eventSchemaDB.StoreInTx(ctx, tx, preTrans.eventSchemaJobs)
-					},
-				)
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			return fmt.Errorf("store into event schema table failed with error: %v", err)
-		}
-		proc.logger.Debugn("[Processor] Total jobs written to event_schema", logger.NewIntField("jobCount", int64(len(preTrans.eventSchemaJobs))))
-		return nil
-	})
+		g.Go(func() error {
+			return proc.storeEventSchemaJobs(groupCtx, preTrans.eventSchemaJobs)
+		})
 
-	g.Go(func() error {
-		if len(preTrans.archivalJobs) == 0 {
-			return nil
-		}
-		err := misc.RetryWithNotify(
-			groupCtx,
-			proc.jobsDBCommandTimeout.Load(),
-			proc.jobdDBMaxRetries.Load(),
-			func(ctx context.Context) error {
-				return proc.archivalDB.WithStoreSafeTx(
-					ctx,
-					func(tx jobsdb.StoreSafeTx) error {
-						return proc.archivalDB.StoreInTx(ctx, tx, preTrans.archivalJobs)
-					},
-				)
-			}, proc.sendRetryStoreStats)
-		if err != nil {
-			return fmt.Errorf("store into archival table failed with error: %v", err)
-		}
-		proc.logger.Debugn("[Processor] Total jobs written to archiver", logger.NewIntField("jobCount", int64(len(preTrans.archivalJobs))))
-		return nil
-	})
+		g.Go(func() error {
+			return proc.storeArchiveJobs(groupCtx, preTrans.archivalJobs)
+		})
 
-	if err := g.Wait(); err != nil {
-		return nil, err
+		if err := g.Wait(); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := proc.storeEventSchemaJobs(ctx, preTrans.eventSchemaJobs); err != nil {
+			return nil, err
+		}
 	}
 
 	// REPORTING - START
@@ -2383,6 +2360,52 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 		preTrans.subJobs.rsourcesStats,
 		trackedUsersReports,
 	}, nil
+}
+
+func (proc *Handle) storeEventSchemaJobs(ctx context.Context, eventSchemaJobs []*jobsdb.JobT) error {
+	if len(eventSchemaJobs) == 0 {
+		return nil
+	}
+	err := misc.RetryWithNotify(
+		ctx,
+		proc.jobsDBCommandTimeout.Load(),
+		proc.jobdDBMaxRetries.Load(),
+		func(ctx context.Context) error {
+			return proc.eventSchemaDB.WithStoreSafeTx(
+				ctx,
+				func(tx jobsdb.StoreSafeTx) error {
+					return proc.eventSchemaDB.StoreInTx(ctx, tx, eventSchemaJobs)
+				},
+			)
+		}, proc.sendRetryStoreStats)
+	if err != nil {
+		return fmt.Errorf("store into event schema table failed with error: %v", err)
+	}
+	proc.logger.Debugn("[Processor] Total jobs written to event_schema", logger.NewIntField("jobCount", int64(len(eventSchemaJobs))))
+	return nil
+}
+
+func (proc *Handle) storeArchiveJobs(ctx context.Context, archivalJobs []*jobsdb.JobT) error {
+	if len(archivalJobs) == 0 {
+		return nil
+	}
+	err := misc.RetryWithNotify(
+		ctx,
+		proc.jobsDBCommandTimeout.Load(),
+		proc.jobdDBMaxRetries.Load(),
+		func(ctx context.Context) error {
+			return proc.archivalDB.WithStoreSafeTx(
+				ctx,
+				func(tx jobsdb.StoreSafeTx) error {
+					return proc.archivalDB.StoreInTx(ctx, tx, archivalJobs)
+				},
+			)
+		}, proc.sendRetryStoreStats)
+	if err != nil {
+		return fmt.Errorf("store into archival table failed with error: %v", err)
+	}
+	proc.logger.Debugn("[Processor] Total jobs written to archiver", logger.NewIntField("jobCount", int64(len(archivalJobs))))
+	return nil
 }
 
 type transformationMessage struct {
