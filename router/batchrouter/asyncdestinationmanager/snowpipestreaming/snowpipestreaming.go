@@ -676,7 +676,7 @@ func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.
 
 	// Case 3: Flushing in progress - continue polling
 	if latestInsertedOffset > latestCommittedOffset {
-		log.Infon("Flushing in progress, continuing to poll")
+		log.Debugn("Flushing in progress, continuing to poll")
 		return true, nil
 	}
 

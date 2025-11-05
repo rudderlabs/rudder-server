@@ -156,7 +156,6 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 	}
 
 	defer (*repo)(u).TimerStat("create_with_staging_files", stats.Tags{
-		"sourceId":    upload.SourceID,
 		"destId":      upload.DestinationID,
 		"destType":    upload.DestinationType,
 		"workspaceId": upload.WorkspaceID,
@@ -659,8 +658,7 @@ func (u *Uploads) ResetInProgress(ctx context.Context, destType string) error {
 
 func (u *Uploads) LastCreatedAt(ctx context.Context, sourceID, destinationID string) (time.Time, error) {
 	defer (*repo)(u).TimerStat("last_created_at", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destinationID,
+		"destId": destinationID,
 	})()
 
 	row := u.db.QueryRowContext(ctx, `
@@ -1068,8 +1066,7 @@ func (u *Uploads) RetryCount(ctx context.Context, opts model.RetryOptions) (int6
 
 func (u *Uploads) GetLatestUploadInfo(ctx context.Context, sourceID, destinationID string) (*model.LatestUploadInfo, error) {
 	defer (*repo)(u).TimerStat("get_latest_upload_info", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destinationID,
+		"destId": destinationID,
 	})()
 
 	var latestUploadInfo model.LatestUploadInfo
@@ -1309,7 +1306,6 @@ func (u *Uploads) RetryFailedBatches(
 	req model.RetryFailedBatchesRequest,
 ) (int64, error) {
 	defer (*repo)(u).TimerStat("retry_failed_batches", stats.Tags{
-		"sourceId":    req.SourceID,
 		"destId":      req.DestinationID,
 		"workspaceId": req.WorkspaceID,
 		"status":      req.Status,
@@ -1479,7 +1475,6 @@ func (u *Uploads) GetSyncLatencies(ctx context.Context, request model.SyncLatenc
 	defer (*repo)(u).TimerStat("get_sync_latencies", stats.Tags{
 		"destId":      request.DestinationID,
 		"workspaceId": request.WorkspaceID,
-		"sourceId":    request.SourceID,
 	})()
 
 	aggregationSQL := getLatencyAggregationSQL(request.AggregationType)

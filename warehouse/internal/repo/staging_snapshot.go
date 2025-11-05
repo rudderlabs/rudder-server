@@ -44,7 +44,6 @@ func NewStagingFileSchemaSnapshots(db *sqlmiddleware.DB, opts ...Opt) *StagingFi
 // Insert inserts a new schema snapshot into the database and returns its auto-generated ID.
 func (r *StagingFileSchemaSnapshots) Insert(ctx context.Context, sourceID, destinationID, workspaceID string, schemaBytes json.RawMessage) (uuid.UUID, error) {
 	defer (*repo)(r).TimerStat("insert", stats.Tags{
-		"sourceId":    sourceID,
 		"destId":      destinationID,
 		"workspaceId": workspaceID,
 	})()
@@ -75,8 +74,7 @@ func (r *StagingFileSchemaSnapshots) Insert(ctx context.Context, sourceID, desti
 // Returns ErrNoSchemaSnapshot if not found.
 func (r *StagingFileSchemaSnapshots) GetLatest(ctx context.Context, sourceID, destinationID string) (*model.StagingFileSchemaSnapshot, error) {
 	defer (*repo)(r).TimerStat("get_latest", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destinationID,
+		"destId": destinationID,
 	})()
 
 	query := `
