@@ -2,11 +2,14 @@ package types
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
@@ -31,9 +34,14 @@ func GetRudderEventVal(key string, rudderEvent SingularEventT) (interface{}, boo
 	return rudderVal, true
 }
 
-type SingularEventWithReceivedAt struct {
+type SingularEventWithMetadata struct {
 	SingularEvent SingularEventT
 	ReceivedAt    time.Time
+	UUID          uuid.UUID
+	UserID        string
+	CustomVal     string
+	Parameters    json.RawMessage
+	WorkspaceId   string
 }
 
 // GatewayBatchRequest batch request structure

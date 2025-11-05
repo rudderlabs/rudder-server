@@ -3650,19 +3650,19 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
 			commonMetadata := types.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
-			singularEventWithReceivedAt1 := types.SingularEventWithReceivedAt{
+			singularEventWithReceivedAt1 := types.SingularEventWithMetadata{
 				SingularEvent: event1,
 				ReceivedAt:    time.Now(),
 			}
-			singularEventWithReceivedAt2 := types.SingularEventWithReceivedAt{
+			singularEventWithReceivedAt2 := types.SingularEventWithMetadata{
 				SingularEvent: event2,
 				ReceivedAt:    time.Now(),
 			}
-			singularEventWithReceivedAt3 := types.SingularEventWithReceivedAt{
+			singularEventWithReceivedAt3 := types.SingularEventWithMetadata{
 				SingularEvent: event3,
 				ReceivedAt:    time.Now(),
 			}
-			eventsByMessageID := map[string]types.SingularEventWithReceivedAt{
+			eventsByMessageID := map[string]types.SingularEventWithMetadata{
 				"msg1": singularEventWithReceivedAt1,
 				"msg2": singularEventWithReceivedAt2,
 				"msg3": singularEventWithReceivedAt3,

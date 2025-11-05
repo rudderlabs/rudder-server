@@ -135,6 +135,7 @@ type Handle struct {
 	limiter                    struct {
 		read         kitsync.Limiter
 		preprocess   kitsync.Limiter
+		srcHydration kitsync.Limiter
 		pretransform kitsync.Limiter
 		utransform   kitsync.Limiter
 		dtransform   kitsync.Limiter
@@ -198,8 +199,6 @@ type processorStats struct {
 	statDBR                       func(partition string) stats.Measurement
 	statDBW                       func(partition string) stats.Measurement
 	validateEventsTime            func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
-	processJobsTime               func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
-	marshalSingularEvents         func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
 	statNumRequests               func(partition string) stats.Measurement
 	statNumEvents                 func(partition string) stats.Measurement
 	statDBWriteRouterPayloadBytes func(partition string) stats.Measurement // TODO: stop using it in dashboards and delete
@@ -211,6 +210,7 @@ type processorStats struct {
 	statReadStageCount         func(partition string) stats.Measurement
 	statPretransformStageCount func(partition string) stats.Measurement
 	statPreprocessStageCount   func(partition string) stats.Measurement
+	statSrcHydrationStageCount func(partition string) stats.Measurement
 	statUtransformStageCount   func(partition string) stats.Measurement
 	statDtransformStageCount   func(partition string) stats.Measurement
 	statStoreStageCount        func(partition string) stats.Measurement
@@ -471,16 +471,6 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.processJobsTime = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_process_jobs_time", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
-	proc.stats.marshalSingularEvents = func(partition string) stats.Measurement {
-		return proc.statsFactory.NewTaggedStat("processor_marshal_singular_events", stats.TimerType, stats.Tags{
-			"partition": partition,
-		})
-	}
 	proc.stats.statNumRequests = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_num_requests", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -532,6 +522,11 @@ func (proc *Handle) Setup(
 	}
 	proc.stats.statPreprocessStageCount = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("proc_preprocess_jobs", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.statSrcHydrationStageCount = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("proc_src_hydration_jobs", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
 	}
@@ -628,6 +623,10 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.srcHydration = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_src_hydration",
+		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.src_hydration.limit"),
+		s,
+		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.src_hydration.dynamicPeriod", 1, time.Second)))
 	proc.limiter.pretransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pretransform",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pretransform.limit"),
 		s,
@@ -867,6 +866,18 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 	return &source, err
 }
 
+func (proc *Handle) isSourceHydrationSupportedForSource(sourceId string) (bool, error) {
+	var err error
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	source, ok := proc.config.sourceIdSourceMap[sourceId]
+	if !ok {
+		err = errors.New("source not found for sourceId")
+		proc.logger.Errorn("Processor : source not found for sourceId", obskit.SourceID(sourceId))
+	}
+	return source.SourceDefinition.Options.Hydration.Enabled, err
+}
+
 func (proc *Handle) getNonEventStreamSources() map[string]bool {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
@@ -1055,7 +1066,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 func (proc *Handle) getTransformerEvents(
 	response types.Response,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithMetadata,
 	destination *backendconfig.DestinationT,
 	connection backendconfig.Connection,
 	inPU, pu string,
@@ -1178,7 +1189,7 @@ func (proc *Handle) updateMetricMaps(
 	event *types.TransformerResponse,
 	status, stage string,
 	payload func() json.RawMessage,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithMetadata,
 ) {
 	if !proc.isReportingEnabled() {
 		return
@@ -1311,7 +1322,7 @@ func (proc *Handle) getNonSuccessfulMetrics(
 	response types.Response,
 	inputEvents []types.TransformerEvent,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithMetadata,
 	inPU, pu string,
 ) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
@@ -1380,7 +1391,7 @@ func (proc *Handle) getTransformationMetrics(
 	transformerResponses []types.TransformerResponse,
 	state string,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithMetadata,
 	metadataByMessageID map[string]*types.Metadata,
 	inPU, pu string,
 ) ([]*jobsdb.JobT, []*reportingtypes.PUReportedMetric, map[string]int64) {
@@ -1648,7 +1659,7 @@ func (proc *Handle) eventAuditEnabled(workspaceID string) bool {
 type preTransformationMessage struct {
 	partition                     string
 	subJobs                       subJob
-	eventSchemaJobs               []*jobsdb.JobT
+	eventSchemaJobsBySourceId     map[SourceIDT][]*jobsdb.JobT
 	archivalJobs                  []*jobsdb.JobT
 	connectionDetailsMap          map[string]*reportingtypes.ConnectionDetails
 	statusDetailsMap              map[string]map[string]*reportingtypes.StatusDetail
@@ -1658,21 +1669,16 @@ type preTransformationMessage struct {
 	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	totalEvents                   int
-	marshalStart                  time.Time
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
+	eventsByMessageID             map[string]types.SingularEventWithMetadata
 	jobIDToSpecificDestMapOnly    map[int64]string
-	groupedEvents                 map[string][]types.TransformerEvent
-	uniqueMessageIdsBySrcDestKey  map[string]map[string]struct{}
 	statusList                    []*jobsdb.JobStatusT
 	jobList                       []*jobsdb.JobT
-	start                         time.Time
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*preTransformationMessage, error) {
-	start := time.Now()
 	spanTags := stats.Tags{"partition": partition}
 	ctx, processJobsSpan := proc.tracer.Trace(subJobs.ctx, "preprocessStage", tracing.WithTraceTags(spanTags))
 	defer processJobsSpan.End()
@@ -1690,10 +1696,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
 	var statusList []*jobsdb.JobStatusT
-	groupedEvents := make(map[string][]types.TransformerEvent)
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
-	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
-	eventSchemaJobs := make([]*jobsdb.JobT, 0)
+	eventsByMessageID := make(map[string]types.SingularEventWithMetadata)
+	eventSchemaJobsBySourceId := make(map[SourceIDT][]*jobsdb.JobT)
 	archivalJobs := make([]*jobsdb.JobT, 0)
 
 	// Each block we receive from a client has a bunch of
@@ -1708,9 +1713,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 	proc.logger.Debugn("[Processor] Total jobs picked up", logger.NewIntField("jobCount", int64(len(jobList))))
 
-	marshalStart := time.Now()
 	dedupKeys := make(map[string]struct{})
-	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 	sourceDupStats := make(map[dupStatKey]int)
 
 	reportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
@@ -1961,9 +1964,14 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
 		totalEvents++
-		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
+		eventsByMessageID[event.messageID] = types.SingularEventWithMetadata{
 			SingularEvent: event.singularEvent,
 			ReceivedAt:    event.recievedAt,
+			UUID:          event.uuid,
+			UserID:        event.userId,
+			CustomVal:     event.customVal,
+			Parameters:    event.parameters,
+			WorkspaceId:   event.workspaceID,
 		}
 
 		sourceIsTransient := proc.transientSources.Apply(sourceId)
@@ -1973,7 +1981,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			commonMetadataFromSingularEvent.SourceJobRunID == "" &&
 			!sourceIsTransient {
 			if eventPayload := event.payloadFunc(); eventPayload != nil {
-				eventSchemaJobs = append(eventSchemaJobs,
+				eventSchemaJobsBySourceId[SourceIDT(sourceId)] = append(eventSchemaJobsBySourceId[SourceIDT(sourceId)],
 					&jobsdb.JobT{
 						UUID:         event.uuid,
 						UserID:       event.userId,
@@ -2121,7 +2129,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	return &preTransformationMessage{
 		partition:                     partition,
 		subJobs:                       subJobs,
-		eventSchemaJobs:               eventSchemaJobs,
+		eventSchemaJobsBySourceId:     eventSchemaJobsBySourceId,
 		archivalJobs:                  archivalJobs,
 		connectionDetailsMap:          connectionDetailsMap,
 		statusDetailsMap:              statusDetailsMap,
@@ -2131,15 +2139,11 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		reportMetrics:                 reportMetrics,
 		destFilterStatusDetailMap:     destFilterStatusDetailMap,
 		totalEvents:                   totalEvents,
-		marshalStart:                  marshalStart,
 		groupedEventsBySourceId:       groupedEventsBySourceId,
 		eventsByMessageID:             eventsByMessageID,
 		jobIDToSpecificDestMapOnly:    jobIDToSpecificDestMapOnly,
-		groupedEvents:                 groupedEvents,
-		uniqueMessageIdsBySrcDestKey:  uniqueMessageIdsBySrcDestKey,
 		statusList:                    statusList,
 		jobList:                       jobList,
-		start:                         start,
 		sourceDupStats:                sourceDupStats,
 		dedupKeys:                     dedupKeys,
 	}, nil
@@ -2152,14 +2156,23 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 	if proc.limiter.pretransform != nil {
 		defer proc.limiter.pretransform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
-		defer proc.stats.statPretransformStageCount(partition).Count(len(preTrans.subJobs.subJobs))
+		defer proc.stats.statPretransformStageCount(partition).Count(
+			lo.Sum(lo.MapToSlice(preTrans.groupedEventsBySourceId, func(key SourceIDT, jobs []types.TransformerEvent) int {
+				return len(jobs)
+			})))
 	}
+
+	groupedEvents := make(map[string][]types.TransformerEvent)
+	uniqueMessageIdsBySrcDestKey := make(map[string]map[string]struct{})
 
 	if !proc.config.archiveInPreProcess {
 		g, groupCtx := errgroup.WithContext(ctx)
 
 		g.Go(func() error {
-			return proc.storeEventSchemaJobs(groupCtx, preTrans.eventSchemaJobs)
+			return proc.storeEventSchemaJobs(groupCtx,
+				lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
+					return jobs
+				})))
 		})
 
 		g.Go(func() error {
@@ -2170,7 +2183,10 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 			return nil, err
 		}
 	} else {
-		if err := proc.storeEventSchemaJobs(ctx, preTrans.eventSchemaJobs); err != nil {
+		if err := proc.storeEventSchemaJobs(ctx,
+			lo.Flatten(lo.MapToSlice(preTrans.eventSchemaJobsBySourceId, func(_ SourceIDT, jobs []*jobsdb.JobT) []*jobsdb.JobT {
+				return jobs
+			}))); err != nil {
 			return nil, err
 		}
 	}
@@ -2231,9 +2247,6 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// REPORTING - END
 
 	proc.stats.statNumEvents(preTrans.partition).Count(preTrans.totalEvents)
-
-	marshalTime := time.Since(preTrans.marshalStart)
-	defer proc.stats.marshalSingularEvents(preTrans.partition).SendTiming(marshalTime)
 
 	for sourceID, events := range preTrans.groupedEventsBySourceId {
 		source, err := proc.getSourceBySourceID(string(sourceID))
@@ -2312,16 +2325,16 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
-					_, ok := preTrans.groupedEvents[srcAndDestKey]
+					_, ok := groupedEvents[srcAndDestKey]
 					if !ok {
-						preTrans.groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
+						groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
 					}
-					preTrans.groupedEvents[srcAndDestKey] = append(preTrans.groupedEvents[srcAndDestKey],
+					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
 						shallowEventCopy)
-					if _, ok := preTrans.uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
-						preTrans.uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
+					if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
+						uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
 					}
-					preTrans.uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
+					uniqueMessageIdsBySrcDestKey[srcAndDestKey][metadata.MessageID] = struct{}{}
 				}
 			}
 		}
@@ -2330,21 +2343,18 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	trackedUsersReports := proc.trackedUsersReporter.GenerateReportsFromJobs(preTrans.jobList, proc.getNonEventStreamSources())
 	proc.stats.trackedUsersReportGeneration(preTrans.partition).SendTiming(time.Since(trackedUsersReportGenStart))
 
-	processTime := time.Since(preTrans.start)
-	proc.stats.processJobsTime(preTrans.partition).SendTiming(processTime)
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
-		preTrans.groupedEvents,
+		groupedEvents,
 		trackingPlanEnabledMap,
 		preTrans.eventsByMessageID,
-		preTrans.uniqueMessageIdsBySrcDestKey,
+		uniqueMessageIdsBySrcDestKey,
 		preTrans.reportMetrics,
 		preTrans.statusList,
 		preTrans.sourceDupStats,
 		preTrans.dedupKeys,
 
 		preTrans.totalEvents,
-		preTrans.start,
 
 		preTrans.subJobs.hasMore,
 		preTrans.subJobs.rsourcesStats,
@@ -2403,7 +2413,7 @@ type transformationMessage struct {
 	groupedEvents map[string][]types.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
-	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
+	eventsByMessageID            map[string]types.SingularEventWithMetadata
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	reportMetrics                []*reportingtypes.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
@@ -2411,7 +2421,6 @@ type transformationMessage struct {
 	dedupKeys                    map[string]struct{}
 
 	totalEvents int
-	start       time.Time
 
 	hasMore             bool
 	rsourcesStats       rsources.StatsCollector
@@ -2518,7 +2527,6 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 		sourceDupStats:                in.sourceDupStats,
 		dedupKeys:                     in.dedupKeys,
 		totalEvents:                   in.totalEvents,
-		start:                         in.start,
 		hasMore:                       in.hasMore,
 		rsourcesStats:                 in.rsourcesStats,
 		trackedUsersReports:           in.trackedUsersReports,
@@ -2955,7 +2963,7 @@ type userTransformAndFilterOutput struct {
 	reportMetrics         []*reportingtypes.PUReportedMetric
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	droppedJobs           []*jobsdb.JobT
-	eventsByMessageID     map[string]types.SingularEventWithReceivedAt
+	eventsByMessageID     map[string]types.SingularEventWithMetadata
 	srcAndDestKey         string
 	response              types.Response
 	transformAt           string
@@ -2967,7 +2975,7 @@ func (proc *Handle) userTransformAndFilter(
 	srcAndDestKey string,
 	eventList []types.TransformerEvent,
 	trackingPlanEnabledMap map[SourceIDT]bool,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
+	eventsByMessageID map[string]types.SingularEventWithMetadata,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) userTransformAndFilterOutput {
 	if len(eventList) == 0 {

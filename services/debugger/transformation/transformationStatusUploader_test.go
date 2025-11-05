@@ -348,7 +348,7 @@ func TestLimit(t *testing.T) {
 					Metadata: metadata2,
 				},
 			},
-			EventsByMessageID: map[string]types.SingularEventWithReceivedAt{
+			EventsByMessageID: map[string]types.SingularEventWithMetadata{
 				metadata1.MessageID: {
 					SingularEvent: singularEvent1,
 					ReceivedAt:    now,
@@ -429,7 +429,7 @@ func TestLimit(t *testing.T) {
 		)
 		require.Equal(
 			t,
-			map[string]types.SingularEventWithReceivedAt{
+			map[string]types.SingularEventWithMetadata{
 				metadata1.MessageID: {
 					SingularEvent: singularEvent1,
 					ReceivedAt:    now,

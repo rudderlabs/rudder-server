@@ -27,7 +27,7 @@ type TransformationStatusT struct {
 	DestID                string
 	Destination           *backendconfig.DestinationT
 	UserTransformedEvents []types.TransformerEvent
-	EventsByMessageID     map[string]types.SingularEventWithReceivedAt
+	EventsByMessageID     map[string]types.SingularEventWithMetadata
 	FailedEvents          []types.TransformerResponse
 	UniqueMessageIds      map[string]struct{}
 }

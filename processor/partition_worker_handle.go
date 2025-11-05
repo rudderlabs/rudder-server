@@ -26,6 +26,7 @@ type workerHandle interface {
 	userTransformStage(partition string, in *transformationMessage) *userTransformData
 	destinationTransformStage(partition string, in *userTransformData) *storeMessage
 	storeStage(partition string, pipelineIndex int, in *storeMessage)
+	srcHydrationStage(partition string, in *srcHydrationMessage) (*preTransformationMessage, error)
 }
 
 // workerHandleConfig is a struct containing the processor.Handle configuration relevant for workers
@@ -40,4 +41,5 @@ type workerHandleConfig struct {
 	readLoopSleep            config.ValueLoader[time.Duration]
 	maxLoopSleep             config.ValueLoader[time.Duration]
 	partitionProcessingDelay func(partition string) config.ValueLoader[time.Duration]
+	enableSrcHydrationStage  bool
 }

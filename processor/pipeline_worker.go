@@ -30,6 +30,7 @@ func newPipelineWorker(index int, partition string, h workerHandle, t *tracing.T
 
 	bufSize := h.config().pipelineBufferedItems
 	w.channel.preprocess = make(chan subJob, bufSize)
+	w.channel.srcHydration = make(chan *srcHydrationMessage, bufSize)
 	w.channel.preTransform = make(chan *preTransformationMessage, bufSize)
 	w.channel.usertransform = make(chan *transformationMessage, bufSize)
 	w.channel.destinationtransform = make(chan *userTransformData, bufSize)
@@ -63,6 +64,7 @@ type pipelineWorker struct {
 	}
 	channel struct { // worker channels
 		preprocess           chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
+		srcHydration         chan *srcHydrationMessage      // srcHydration channel is used to send jobs to hydrate events via transformer
 		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, event schema and tracking plan validation
 		usertransform        chan *transformationMessage    // userTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		destinationtransform chan *userTransformData        // destinationTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
@@ -101,11 +103,41 @@ func (w *pipelineWorker) start() {
 				w.logger.Errorn("Error preprocessing jobs", obskit.Error(err))
 				panic(err)
 			}
-			waitStart := time.Now()
-			w.channel.preTransform <- val
-			w.tracer.RecordSpan(jobs.ctx, "start.preTransformCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
+			if w.handle.config().enableSrcHydrationStage {
+				waitStart := time.Now()
+				w.channel.srcHydration <- convertToSrcHydrationMessage(val)
+				w.tracer.RecordSpan(jobs.ctx, "start.srcHydration.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
+			} else {
+				waitStart := time.Now()
+				w.channel.preTransform <- val
+				w.tracer.RecordSpan(jobs.ctx, "start.preTransformCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
+			}
 		}
 	})
+
+	// Src hydration goroutine
+	if w.handle.config().enableSrcHydrationStage {
+		w.lifecycle.wg.Add(1)
+		rruntime.Go(func() {
+			defer w.lifecycle.wg.Done()
+			defer close(w.channel.srcHydration)
+			defer w.logger.Debugn("src hydration routine stopped")
+
+			for jobs := range w.channel.srcHydration {
+				preTransformMsg, err := w.handle.srcHydrationStage(w.partition, jobs)
+				if errors.Is(err, types.ErrProcessorStopping) {
+					continue
+				}
+				if err != nil {
+					w.logger.Errorn("Error generating transformation message", obskit.Error(err))
+					panic(err)
+				}
+				waitTime := time.Now()
+				w.channel.preTransform <- preTransformMsg
+				w.tracer.RecordSpan(jobs.subJobs.ctx, "start.preTransformCh.wait", waitTime, tracing.WithRecordSpanTags(spanTags))
+			}
+		})
+	}
 
 	// Pre-transformation goroutine
 	w.lifecycle.wg.Add(1)
@@ -199,6 +231,32 @@ func (w *pipelineWorker) start() {
 			}
 		}
 	})
+}
+
+func convertToSrcHydrationMessage(val *preTransformationMessage) *srcHydrationMessage {
+	return &srcHydrationMessage{
+		partition:                     val.partition,
+		subJobs:                       val.subJobs,
+		eventSchemaJobsBySourceId:     val.eventSchemaJobsBySourceId,
+		connectionDetailsMap:          val.connectionDetailsMap,
+		statusDetailsMap:              val.statusDetailsMap,
+		enricherStatusDetailsMap:      val.enricherStatusDetailsMap,
+		botManagementStatusDetailsMap: val.botManagementStatusDetailsMap,
+		eventBlockingStatusDetailsMap: val.eventBlockingStatusDetailsMap,
+		destFilterStatusDetailMap:     val.destFilterStatusDetailMap,
+		reportMetrics:                 val.reportMetrics,
+		inCountMetadataMap:            val.inCountMetadataMap,
+		inCountMap:                    val.inCountMap,
+		outCountMap:                   val.outCountMap,
+		totalEvents:                   val.totalEvents,
+		groupedEventsBySourceId:       val.groupedEventsBySourceId,
+		eventsByMessageID:             val.eventsByMessageID,
+		jobIDToSpecificDestMapOnly:    val.jobIDToSpecificDestMapOnly,
+		statusList:                    val.statusList,
+		jobList:                       val.jobList,
+		sourceDupStats:                val.sourceDupStats,
+		dedupKeys:                     val.dedupKeys,
+	}
 }
 
 // Stop gracefully terminates the worker by canceling its context and waiting for goroutines to finish
