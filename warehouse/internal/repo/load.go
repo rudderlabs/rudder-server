@@ -76,7 +76,6 @@ func (lf *LoadFiles) Delete(ctx context.Context, uploadID int64) error {
 // Insert loadFiles into the database.
 func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) error {
 	defer lf.TimerStat("insert", stats.Tags{
-		"sourceId": loadFiles[0].SourceID,
 		"destId":   loadFiles[0].DestinationID,
 		"destType": loadFiles[0].DestinationType,
 	})()
@@ -265,8 +264,7 @@ func (lf *LoadFiles) DistinctTableName(
 	endID int64,
 ) ([]string, error) {
 	defer lf.TimerStat("distinct_table_name", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destinationID,
+		"destId": destinationID,
 	})()
 
 	rows, err := lf.db.QueryContext(ctx, `
