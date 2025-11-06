@@ -23,6 +23,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 	"github.com/rudderlabs/rudder-go-kit/sanitize"
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
@@ -1028,8 +1029,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				obskit.SourceID(msg.Properties.SourceID))
 		}
 
-		eventName := gjson.GetBytes(msg.Payload, "event").String()
-		eventType := gjson.GetBytes(msg.Payload, "type").String()
+		eventName := jsonparser.GetStringOrEmpty(msg.Payload, "event")
+		eventType := jsonparser.GetStringOrEmpty(msg.Payload, "type")
 		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, eventType, eventName) {
 			jobsDBParams.IsEventBlocked = true
 		}

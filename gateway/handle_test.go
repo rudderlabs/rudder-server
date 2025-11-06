@@ -457,7 +457,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 
 	gw := createTestGateway(t, backendconfig.EventBlocking{
 		Events: map[string][]string{
-			"track": {"Purchase"},
+			"track": {"Purchase", "batch-request-type-with-type-track", "track-request-type-with-no-type", "batch-request-type-with-no-type"},
 		},
 	})
 
@@ -503,6 +503,39 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 					},
 					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-3","userId":"user1"}`),
 				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "batch",
+						RoutingKey:  "routing-key-3",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+					},
+					Payload: json.RawMessage(`{"type":"track","event":"batch-request-type-with-type-track","messageId":"msg-3","userId":"user1"}`),
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "batch",
+						RoutingKey:  "routing-key-3",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+					},
+					Payload: json.RawMessage(`{"event":"batch-request-type-with-no-type","messageId":"msg-3","userId":"user1"}`), // type is not present
+				},
+				{
+					Properties: stream.MessageProperties{
+						RequestType: "track",
+						RoutingKey:  "routing-key-3",
+						WorkspaceID: "workspace1",
+						SourceID:    "source-id-1", // Event stream source
+						ReceivedAt:  time.Now(),
+						RequestIP:   "1.1.1.1",
+					},
+					Payload: json.RawMessage(`{"event":"track-request-type-with-no-type","messageId":"msg-3","userId":"user1"}`), // type is not present
+				},
 			},
 			expectedJobs: []expectedJob{
 				{
@@ -519,6 +552,24 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 				},
 				{
 					eventName:              "Purchase",
+					isEventBlocked:         false,
+					skipLiveEventRecording: false,
+					shouldBeDropped:        false,
+				},
+				{
+					eventName:              "batch-request-type-with-type-track",
+					isEventBlocked:         true,
+					skipLiveEventRecording: true,
+					shouldBeDropped:        true,
+				},
+				{
+					eventName:              "batch-request-type-with-no-type",
+					isEventBlocked:         false,
+					skipLiveEventRecording: false,
+					shouldBeDropped:        false,
+				},
+				{
+					eventName:              "track-request-type-with-no-type",
 					isEventBlocked:         false,
 					skipLiveEventRecording: false,
 					shouldBeDropped:        false,
