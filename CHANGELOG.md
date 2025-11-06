@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.2](https://github.com/rudderlabs/rudder-server/compare/v1.62.1...v1.62.2) (2025-11-05)
+
+
+### Bug Fixes
+
+* remove source labels in repo query stats ([#6483](https://github.com/rudderlabs/rudder-server/issues/6483)) ([cced7ae](https://github.com/rudderlabs/rudder-server/commit/cced7ae97991e515bbbaf36b0a19e2d2081313b7))
+
 ## [1.62.1](https://github.com/rudderlabs/rudder-server/compare/v1.62.0...v1.62.1) (2025-10-28)
 
 
