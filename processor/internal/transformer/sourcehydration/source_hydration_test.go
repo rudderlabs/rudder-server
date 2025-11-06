@@ -1,20 +1,26 @@
 package sourcehydration_test
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/processor/types"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
@@ -26,7 +32,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Send back the same events with status code 200
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -34,7 +40,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -94,7 +100,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			receivedBatches = append(receivedBatches, req.Batch)
@@ -104,7 +110,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -223,7 +229,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 			// Succeed on third attempt
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -231,7 +237,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -277,7 +283,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			time.Sleep(100 * time.Millisecond)
 
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -285,7 +291,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -334,7 +340,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			receivedURL = r.URL.Path
 
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -342,7 +348,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -578,7 +584,7 @@ func TestSourceHydration_Timeout(t *testing.T) {
 			time.Sleep(200 * time.Millisecond)
 
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -586,7 +592,7 @@ func TestSourceHydration_Timeout(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -636,7 +642,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			receivedBatches = append(receivedBatches, req.Batch)
@@ -646,7 +652,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -698,7 +704,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			receivedBatches = append(receivedBatches, req.Batch)
@@ -708,7 +714,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -780,7 +786,7 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 					receivedURL = r.URL.Path
 
 					var req sourcehydration.Request
-					err := json.NewDecoder(r.Body).Decode(&req)
+					err := jsonrs.NewDecoder(r.Body).Decode(&req)
 					require.NoError(t, err)
 
 					response := sourcehydration.Response{
@@ -788,7 +794,7 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 					}
 
 					w.WriteHeader(http.StatusOK)
-					err = json.NewEncoder(w).Encode(response)
+					err = jsonrs.NewEncoder(w).Encode(response)
 					require.NoError(t, err)
 				}))
 				defer server.Close()
@@ -842,7 +848,7 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 			mu.Unlock()
 
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -850,7 +856,7 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -946,7 +952,7 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 	t.Run("events with empty event data", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var req sourcehydration.Request
-			err := json.NewDecoder(r.Body).Decode(&req)
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			response := sourcehydration.Response{
@@ -954,7 +960,7 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			err = json.NewEncoder(w).Encode(response)
+			err = jsonrs.NewEncoder(w).Encode(response)
 			require.NoError(t, err)
 		}))
 		defer server.Close()
@@ -1003,5 +1009,210 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 		require.Empty(t, resp.Batch[1].Event)
 		require.Equal(t, "3", resp.Batch[2].ID)
 		require.Equal(t, map[string]interface{}{"test": "valid-event"}, resp.Batch[2].Event)
+	})
+}
+
+func TestSourceHydration_MetricsTracking(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("stats are properly recorded", func(t *testing.T) {
+		var mu sync.Mutex
+		requestCounts := make(map[string]int)
+		requestBytes := make(map[string]int)
+		responseBytes := make(map[string]int)
+		requestDurations := make(map[string][]time.Duration)
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			requestCounts[r.URL.Path]++
+			// Read request body to get size
+			body, _ := io.ReadAll(r.Body)
+			requestBytes[r.URL.Path] += len(body)
+			mu.Unlock()
+
+			var req sourcehydration.Request
+			err := jsonrs.NewDecoder(bytes.NewReader(body)).Decode(&req)
+			require.NoError(t, err)
+
+			response := sourcehydration.Response{
+				Batch: req.Batch,
+			}
+
+			// Record response size
+			responseData, _ := jsonrs.Marshal(response)
+			mu.Lock()
+			responseBytes[r.URL.Path] += len(responseData)
+			mu.Unlock()
+
+			start := time.Now()
+			w.WriteHeader(http.StatusOK)
+			err = jsonrs.NewEncoder(w).Encode(response)
+			require.NoError(t, err)
+
+			mu.Lock()
+			requestDurations[r.URL.Path] = append(requestDurations[r.URL.Path], time.Since(start))
+			mu.Unlock()
+		}))
+		defer server.Close()
+
+		// Create a stats store to capture metrics
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("DEST_TRANSFORM_URL", server.URL)
+		conf.Set("Processor.SourceHydration.batchSize", 2)
+		conf.Set("Processor.SourceHydration.maxRetry", 1)
+
+		client := sourcehydration.New(conf, logger.NOP, statsStore)
+
+		// Create 5 events, expect them to be split into batches of 2
+		var events []sourcehydration.HydrationEvent
+		for i := 0; i < 5; i++ {
+			events = append(events, sourcehydration.HydrationEvent{
+				ID: fmt.Sprintf("%d", i),
+				Event: map[string]interface{}{
+					"test": fmt.Sprintf("event%d", i),
+				},
+			})
+		}
+
+		source := sourcehydration.Source{
+			ID:          "source-id",
+			WorkspaceID: "workspace-id",
+			Config:      []byte("{}"),
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "TestSource",
+			},
+		}
+
+		req := sourcehydration.Request{
+			Batch:  events,
+			Source: source,
+		}
+
+		resp, err := client.Hydrate(ctx, req)
+		require.NoError(t, err)
+		require.Len(t, resp.Batch, 5)
+
+		labels := types.TransformerMetricLabels{
+			Stage:       "source_hydration",
+			SourceID:    source.ID,
+			WorkspaceID: source.WorkspaceID,
+			SourceType:  source.SourceDefinition.Name,
+		}
+
+		// Check that stats were recorded
+		// Check request batch count stat
+		batchCountStat := statsStore.Get(
+			"processor_transformer_request_batch_count",
+			labels.ToStatsTag(),
+		)
+		require.NotNil(t, batchCountStat)
+		require.EqualValues(t, 3, batchCountStat.LastValue()) // 3 batches of 2, 2, 1
+
+		// Check sent events stat
+		sentStat := statsStore.Get("processor_transformer_sent", stats.Tags{})
+		require.NotNil(t, sentStat)
+		require.EqualValues(t, 5, sentStat.LastValue()) // 5 events sent
+
+		// Check received events stat
+		receivedStat := statsStore.Get("processor_transformer_received", stats.Tags{})
+		require.NotNil(t, receivedStat)
+		require.EqualValues(t, 5, receivedStat.LastValue()) // 5 events received
+
+		// Check per-request stats
+		totalEventsStat := statsStore.Get(
+			"transformer_client_request_total_events",
+			labels.ToStatsTag(),
+		)
+		require.NotNil(t, totalEventsStat)
+		require.EqualValues(t, 5, totalEventsStat.LastValue()) // Total of 5 events across all requests
+
+		responseEventsStat := statsStore.Get(
+			"transformer_client_response_total_events",
+			labels.ToStatsTag(),
+		)
+		require.NotNil(t, responseEventsStat)
+		require.EqualValues(t, 5, responseEventsStat.LastValue()) // Total of 5 events in responses
+	})
+}
+
+func TestSourceHydration_PartialBatchFailures(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("some batches fail while others succeed", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			var req sourcehydration.Request
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
+			require.NoError(t, err)
+
+			// Fail the batch with 1 event, succeed others
+			if len(req.Batch) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("Internal Server Error"))
+				return
+			}
+
+			response := sourcehydration.Response{
+				Batch: req.Batch,
+			}
+
+			w.WriteHeader(http.StatusOK)
+			err = jsonrs.NewEncoder(w).Encode(response)
+			require.NoError(t, err)
+		}))
+		defer server.Close()
+
+		conf := config.New()
+		conf.Set("DEST_TRANSFORM_URL", server.URL)
+		conf.Set("Processor.SourceHydration.batchSize", 2)
+		conf.Set("Processor.SourceHydration.maxRetry", 2)
+		conf.Set("Processor.SourceHydration.failOnError", true)
+
+		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
+
+		// Create 5 events, split into 3 batches: [0,1], [2,3], [4]
+		var events []sourcehydration.HydrationEvent
+		for i := 0; i < 5; i++ {
+			events = append(events, sourcehydration.HydrationEvent{
+				ID: fmt.Sprintf("%d", i),
+				Event: map[string]interface{}{
+					"test": fmt.Sprintf("event%d", i),
+				},
+			})
+		}
+
+		source := sourcehydration.Source{
+			ID:          "source-id",
+			WorkspaceID: "workspace-id",
+			Config:      []byte("{}"),
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "TestSource",
+			},
+		}
+
+		req := sourcehydration.Request{
+			Batch:  events,
+			Source: source,
+		}
+
+		resp, err := client.Hydrate(ctx, req)
+		require.NoError(t, err)
+
+		// Should have 3 events (from batches 1 and 2), missing the 1 event from batch 3 that failed
+		require.Len(t, resp.Batch, 4)
+
+		// Check that we got events 0, 1, and 4 (first batch and third batch)
+		ids := make([]string, len(resp.Batch))
+		for i, event := range resp.Batch {
+			ids[i] = event.ID
+		}
+		require.Contains(t, ids, "0")
+		require.Contains(t, ids, "1")
+		require.Contains(t, ids, "2")
+		require.Contains(t, ids, "3")
+		require.NotContains(t, ids, "4")
 	})
 }

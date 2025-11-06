@@ -32,11 +32,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
+const srcHydrationStage = "source_hydration"
+
 // HydrationEvent represents a single event in the hydration request/response
 type HydrationEvent struct {
 	ID         string                 `json:"id" required:"true"`
 	Event      map[string]interface{} `json:"event" required:"true"`
 	StatusCode int                    `json:"statusCode,omitempty"`
+	ErrorMsg   string                 `json:"errorMessage,omitempty"`
 }
 
 // Request represents the request format for source hydration API
@@ -115,7 +118,7 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq Request) (Response, e
 	sourceHydrationURL := c.sourceHydrationURL(hydrationReq.Source.SourceDefinition.Name)
 
 	labels := types.TransformerMetricLabels{
-		Stage:       "source_hydration",
+		Stage:       srcHydrationStage,
 		SourceID:    hydrationReq.Source.ID,
 		WorkspaceID: hydrationReq.Source.WorkspaceID,
 		SourceType:  hydrationReq.Source.SourceDefinition.Name,
@@ -129,7 +132,7 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq Request) (Response, e
 	trackWg.Add(1)
 	go func() {
 		l := c.log.Withn(labels.ToLoggerFields()...)
-		transformerutils.TrackLongRunningTransformation(ctx, "source_hydration", c.config.timeoutDuration, l)
+		transformerutils.TrackLongRunningTransformation(ctx, srcHydrationStage, c.config.timeoutDuration, l)
 		trackWg.Done()
 	}()
 
