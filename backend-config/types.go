@@ -132,6 +132,10 @@ func (s *SourceT) IsReplaySource() bool {
 	return s.OriginalID != ""
 }
 
+func (s *SourceT) IsSourceHydrationSupported() bool {
+	return s.SourceDefinition.Options.Hydration.Enabled
+}
+
 type Account struct {
 	ID                    string                 `json:"id"`
 	AccountDefinitionName string                 `json:"accountDefinitionName"`

@@ -3,6 +3,8 @@ package transformer
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
+
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -39,12 +41,22 @@ func (m *SimpleMockTrackingPlanClient) Validate(_ context.Context, _ []types.Tra
 	return m.ValidateOutput
 }
 
+type SimpleMockSrcHydrationClient struct {
+	HydratedOutput sourcehydration.Response
+	err            error
+}
+
+func (m *SimpleMockSrcHydrationClient) Hydrate(_ context.Context, _ sourcehydration.Request) (sourcehydration.Response, error) {
+	return m.HydratedOutput, m.err
+}
+
 // SimpleClients is a minimal implementation of TransformerClients
 type SimpleClients struct {
 	userClient         UserClient
 	userMirrorClient   UserClient
 	destinationClient  DestinationClient
 	trackingPlanClient TrackingPlanClient
+	sycHydrationClient SrcHydrationClient
 }
 
 // NewSimpleClients creates a new instance of SimpleClients with empty responses
@@ -74,6 +86,10 @@ func NewSimpleClients() *SimpleClients {
 				FailedEvents: []types.TransformerResponse{},
 			},
 		},
+		sycHydrationClient: &SimpleMockSrcHydrationClient{
+			HydratedOutput: sourcehydration.Response{},
+			err:            nil,
+		},
 	}
 }
 
@@ -93,6 +109,8 @@ func (s *SimpleClients) Destination() DestinationClient {
 func (s *SimpleClients) TrackingPlan() TrackingPlanClient {
 	return s.trackingPlanClient
 }
+
+func (s *SimpleClients) SrcHydration() SrcHydrationClient { return s.sycHydrationClient }
 
 // SetUserTransformOutput sets the response for the User transformer
 func (s *SimpleClients) SetUserTransformOutput(response types.Response) {

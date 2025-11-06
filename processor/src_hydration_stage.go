@@ -4,6 +4,9 @@ import (
 	"context"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
+
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -53,19 +56,22 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 			})))
 	}
 
-	for source, jobs := range message.groupedEventsBySourceId {
-		supported, err := proc.isSourceHydrationSupportedForSource(string(source))
+	for sourceId, jobs := range message.groupedEventsBySourceId {
+		source, err := proc.getSourceBySourceID(string(sourceId))
 		if err != nil {
 			return nil, err
 		}
-		if !supported {
+		if !source.IsSourceHydrationSupported() {
 			continue
 		}
-		hydratedJobs := proc.hydrate(ctx, source, jobs)
-		message.groupedEventsBySourceId[source] = hydratedJobs
-		if len(message.eventSchemaJobsBySourceId[source]) > 0 {
+		hydratedJobs, err := proc.hydrate(ctx, source, jobs)
+		if err != nil {
+			return nil, err
+		}
+		message.groupedEventsBySourceId[sourceId] = hydratedJobs
+		if len(message.eventSchemaJobsBySourceId[sourceId]) > 0 {
 			if len(hydratedJobs) > 0 {
-				message.eventSchemaJobsBySourceId[source] = make([]*jobsdb.JobT, 0, len(hydratedJobs))
+				message.eventSchemaJobsBySourceId[sourceId] = make([]*jobsdb.JobT, 0, len(hydratedJobs))
 			}
 			for i := 0; i < len(hydratedJobs); i++ {
 				event := hydratedJobs[i]
@@ -74,12 +80,12 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 				marshalledPayload, marshallErr := jsonrs.Marshal(event.Message)
 				if marshallErr != nil {
 					proc.logger.Errorn("failed to marshal hydrated event for event schema",
-						obskit.SourceID(string(source)),
+						obskit.SourceID(string(sourceId)),
 						obskit.Error(marshallErr),
 					)
 				}
 				if marshalledPayload != nil {
-					message.eventSchemaJobsBySourceId[source] = append(message.eventSchemaJobsBySourceId[source], &jobsdb.JobT{
+					message.eventSchemaJobsBySourceId[sourceId] = append(message.eventSchemaJobsBySourceId[sourceId], &jobsdb.JobT{
 						UUID:         originalEventWithMetadata.UUID,
 						UserID:       originalEventWithMetadata.UserID,
 						Parameters:   originalEventWithMetadata.Parameters,
@@ -118,6 +124,31 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 	}, nil
 }
 
-func (proc *Handle) hydrate(_ context.Context, _ SourceIDT, jobs []types.TransformerEvent) []types.TransformerEvent {
-	return jobs
+func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, events []types.TransformerEvent) ([]types.TransformerEvent, error) {
+	req := sourcehydration.Request{
+		Source: sourcehydration.Source{
+			ID:               source.ID,
+			Config:           source.Config,
+			WorkspaceID:      source.WorkspaceID,
+			SourceDefinition: source.SourceDefinition,
+		},
+	}
+	req.Batch = lo.Map(events, func(event types.TransformerEvent, _ int) sourcehydration.HydrationEvent {
+		return sourcehydration.HydrationEvent{
+			ID:    event.Metadata.MessageID,
+			Event: event.Message,
+		}
+	})
+	resp, err := proc.transformerClients.SrcHydration().Hydrate(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	msgIDToEventMap := lo.SliceToMap(events, func(event types.TransformerEvent) (string, types.TransformerEvent) {
+		return event.Metadata.MessageID, event
+	})
+	return lo.Map(resp.Batch, func(event sourcehydration.HydrationEvent, _ int) types.TransformerEvent {
+		originalEvent := msgIDToEventMap[event.ID]
+		originalEvent.Message = event.Event
+		return originalEvent
+	}), nil
 }

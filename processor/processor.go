@@ -866,18 +866,6 @@ func (proc *Handle) getSourceBySourceID(sourceId string) (*backendconfig.SourceT
 	return &source, err
 }
 
-func (proc *Handle) isSourceHydrationSupportedForSource(sourceId string) (bool, error) {
-	var err error
-	proc.config.configSubscriberLock.RLock()
-	defer proc.config.configSubscriberLock.RUnlock()
-	source, ok := proc.config.sourceIdSourceMap[sourceId]
-	if !ok {
-		err = errors.New("source not found for sourceId")
-		proc.logger.Errorn("Processor : source not found for sourceId", obskit.SourceID(sourceId))
-	}
-	return source.SourceDefinition.Options.Hydration.Enabled, err
-}
-
 func (proc *Handle) getNonEventStreamSources() map[string]bool {
 	proc.config.configSubscriberLock.RLock()
 	defer proc.config.configSubscriberLock.RUnlock()
