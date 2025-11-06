@@ -1029,7 +1029,8 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		}
 
 		eventName := gjson.GetBytes(msg.Payload, "event").String()
-		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, msg.Properties.RequestType, eventName) {
+		eventType := gjson.GetBytes(msg.Payload, "type").String()
+		if isEventBlocked(msg.Properties.WorkspaceID, msg.Properties.SourceID, eventType, eventName) {
 			jobsDBParams.IsEventBlocked = true
 		}
 
