@@ -52,26 +52,6 @@ func (cp *CpResponseProducer) MockCpRequests() *chi.Mux {
 		_, _ = w.Write([]byte(cpResp.Response))
 	})
 
-	srvMux.Put("/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle", func(w http.ResponseWriter, req *http.Request) {
-		// iterating over request parameters
-		for _, reqParam := range []string{"workspaceId", "destinationId"} {
-			param := chi.URLParam(req, reqParam)
-			if param == "" {
-				// This case wouldn't occur I guess
-				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusNotFound)
-				return
-			}
-		}
-
-		cpResp := cp.GetNext()
-		// sleep is being used to mimic the waiting in actual transformer response
-		if cpResp.Timeout > 0 {
-			time.Sleep(cpResp.Timeout)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(cpResp.Code)
-		_, _ = w.Write([]byte(cpResp.Response))
-	})
 	return srvMux
 }
 

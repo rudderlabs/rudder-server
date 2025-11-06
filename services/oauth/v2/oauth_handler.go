@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,9 +32,6 @@ type OAuthHandler interface {
 	// RefreshToken refreshes the OAuth token for a given account ID. The previousSecret is used to check if the token has already been rotated or not.
 	// Token refresh is skipped if the token has already been rotated and previous secret is returned instead.
 	RefreshToken(params *OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, StatusCodeError)
-	// AuthStatusToggle toggles the auth status for a given destination ID.
-	// Only one request is allowed at a time per destination ID, concurrent requests will return a 409 conflict error.
-	AuthStatusToggle(params *StatusRequestParams) StatusCodeError
 }
 
 // WithCache sets the cache for the OAuthHandler
@@ -107,8 +102,6 @@ func NewOAuthHandler(provider AuthIdentityProvider, options ...func(*oauthHandle
 		AuthIdentityProvider: provider,
 		rudderFlowType:       common.RudderFlowDelivery,
 		cbeURL:               backendconfig.GetConfigBackendURL(),
-
-		inflightStatusRequests: make(map[string]struct{}), // keeping track of inflight requests for auth status toggle (allow only one at a time per destination)
 	}
 	for _, opt := range options {
 		opt(h)
@@ -156,9 +149,6 @@ type oauthHandler struct {
 	logger         logger.Logger
 	rudderFlowType common.RudderFlow
 	cpClient       controlplane.Connector
-
-	inflightStatusRequestsMu sync.Mutex
-	inflightStatusRequests   map[string]struct{}
 
 	cacheMu *kitsync.PartitionRWLocker
 	cache   OauthTokenCache
@@ -269,95 +259,6 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 		return nil, err
 	}
 	return token.Secret, nil
-}
-
-// AuthStatusToggle toggles the auth status for a given destination ID.
-// Only one request is allowed at a time per destination ID, concurrent requests will return a 409 conflict error.
-func (h *oauthHandler) AuthStatusToggle(params *StatusRequestParams) StatusCodeError {
-	authErrHandlerTimeStart := time.Now()
-	action := fmt.Sprintf("auth_status_%v", params.Status)
-
-	oauthStats := &OAuthStats{
-		id:              params.DestinationID,
-		workspaceID:     params.WorkspaceID,
-		rudderCategory:  "destination",
-		statName:        "",
-		isCallToCpApi:   false,
-		authErrCategory: params.Status,
-		errorMessage:    "",
-		destType:        params.DestType,
-		flowType:        h.rudderFlowType,
-		action:          action,
-		stats:           h.stats,
-	}
-	statsHandler := NewStatsHandlerFromOAuthStats(oauthStats)
-	h.inflightStatusRequestsMu.Lock()
-	if _, ok := h.inflightStatusRequests[params.DestinationID]; ok {
-		h.inflightStatusRequestsMu.Unlock()
-		h.logger.Debugn("[request] :: Received AuthStatusInactive request while another request is active!")
-		return NewStatusCodeError(http.StatusConflict, errors.New("another request for the same destination is active"))
-	}
-	h.inflightStatusRequests[params.DestinationID] = struct{}{}
-	h.inflightStatusRequestsMu.Unlock()
-
-	defer func() {
-		h.inflightStatusRequestsMu.Lock()
-		delete(h.inflightStatusRequests, params.DestinationID)
-		h.inflightStatusRequestsMu.Unlock()
-		h.logger.Debugn("[request] :: AuthStatusInactive request is inactive!")
-		if params.Status == common.CategoryAuthStatusInactive {
-			// After trying to inactivate authStatus for destination, need to remove existing accessToken(from in-memory cache)
-			// This is being done to obtain new token after an update such as re-authorisation is done
-			h.cacheMu.Lock(params.AccountID)
-			h.cache.Delete(params.AccountID)
-			h.cacheMu.Unlock(params.AccountID)
-		}
-	}()
-	defer func() {
-		statsHandler.SendTiming(authErrHandlerTimeStart, "total_latency", stats.Tags{
-			"isCallToCpApi": "false",
-		})
-	}()
-
-	url := fmt.Sprintf("%s/workspaces/%s/destinations/%s/authStatus/toggle", h.cbeURL, params.WorkspaceID, params.DestinationID)
-
-	cpReq := &controlplane.Request{
-		URL:          url,
-		Method:       http.MethodPut,
-		Body:         fmt.Sprintf(`{"authStatus": "%s"}`, params.Status),
-		ContentType:  "application/json",
-		DestType:     params.DestType,
-		RequestType:  action,
-		AuthIdentity: h.Identity(),
-	}
-	statsHandler.Increment("request_sent", stats.Tags{
-		"isCallToCpApi": "true",
-	})
-
-	cpiCallStartTime := time.Now()
-	statusCode, respBody := h.cpClient.CpApiCall(cpReq)
-	statsHandler.SendTiming(cpiCallStartTime, "request_latency", stats.Tags{
-		"isCallToCpApi": "true",
-	})
-	h.logger.Debugn("[request] :: Response from CP for auth status inactive req",
-		logger.NewIntField("StatusCode", int64(statusCode)),
-		logger.NewStringField("response", respBody))
-
-	var err StatusCodeError
-	var errorMessage string
-	if statusCode != http.StatusOK {
-		errorMessage = strconv.Itoa(statusCode)
-		var errorBody struct {
-			Message string `json:"message"`
-		}
-		if unmarshalErr := jsonrs.Unmarshal([]byte(respBody), &errorBody); unmarshalErr == nil && errorBody.Message != "" {
-			err = NewStatusCodeError(statusCode, errors.New("message: "+errorBody.Message))
-		} else {
-			err = NewStatusCodeError(statusCode, errors.New("response: "+respBody))
-		}
-	}
-	statsHandler.Increment("request", stats.Tags{"errorMessage": errorMessage, "isCallToCpApi": "true"})
-	return err
 }
 
 func getRefreshTokenErrResp(response string, oauthToken *OAuthToken, l logger.Logger) (errorType, message string) {

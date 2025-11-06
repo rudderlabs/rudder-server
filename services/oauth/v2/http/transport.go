@@ -107,15 +107,6 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 	}
 	secret, scErr := t.oauthHandler.FetchToken(rts.tokenParams)
 	if scErr != nil {
-		if errors.Is(scErr, common.ErrInvalidGrant) {
-			_ = t.oauthHandler.AuthStatusToggle(&v2.StatusRequestParams{
-				AccountID:     rts.accountID,
-				WorkspaceID:   rts.destination.WorkspaceID,
-				DestType:      rts.destination.DestType,
-				DestinationID: rts.destination.ID,
-				Status:        common.AuthStatusInactive,
-			})
-		}
 		return httpResponseCreator(scErr.StatusCode(), []byte(scErr.Error()))
 	}
 	rts.req = rts.req.WithContext(cntx.CtxWithSecret(rts.req.Context(), secret))
@@ -192,15 +183,6 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		}
 		_, scErr := t.oauthHandler.RefreshToken(rts.tokenParams, previousSecret)
 		if scErr != nil {
-			if errors.Is(scErr, common.ErrInvalidGrant) {
-				_ = t.oauthHandler.AuthStatusToggle(&v2.StatusRequestParams{
-					AccountID:     rts.accountID,
-					WorkspaceID:   rts.destination.WorkspaceID,
-					DestType:      rts.destination.DestType,
-					DestinationID: rts.destination.ID,
-					Status:        common.AuthStatusInactive,
-				})
-			}
 			interceptorResp.StatusCode = scErr.StatusCode()
 			interceptorResp.Response = scErr.Error()
 			var typeMessageError *v2.TypeMessageError
@@ -213,13 +195,6 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		// token refresh was successful, so we return a 500 to the caller to retry the request
 		interceptorResp.StatusCode = http.StatusInternalServerError
 	case common.CategoryAuthStatusInactive:
-		_ = t.oauthHandler.AuthStatusToggle(&v2.StatusRequestParams{
-			AccountID:     rts.accountID,
-			WorkspaceID:   rts.destination.WorkspaceID,
-			DestType:      rts.destination.DestType,
-			DestinationID: rts.destination.ID,
-			Status:        common.AuthStatusInactive,
-		})
 		interceptorResp.StatusCode = http.StatusBadRequest
 	}
 	applyInterceptorRespToHttpResp()

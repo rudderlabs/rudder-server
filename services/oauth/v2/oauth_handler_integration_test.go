@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/rudderauth"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
 func TestOauthHandlerIntegration(t *testing.T) {
@@ -84,17 +83,6 @@ func TestOauthHandlerIntegration(t *testing.T) {
 		require.NoError(t, err, "it should be able to refresh the token")
 		require.NotNil(t, newSecret, "the refreshed token should not be nil")
 		require.NotEqualValues(t, string(secret), string(newSecret), "the refreshed token should be different from the old one")
-	})
-
-	t.Run("AuthStatusToggle", func(t *testing.T) {
-		err := handler.AuthStatusToggle(&v2.StatusRequestParams{
-			AccountID:     fixture.ID,
-			WorkspaceID:   fixture.WorkspaceID,
-			DestType:      "destType",
-			DestinationID: fixture.DestinationID,
-			Status:        common.AuthStatusInactive,
-		})
-		require.NoError(t, err, "it should be able to toggle the auth status to inactive")
 	})
 }
 

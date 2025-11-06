@@ -41,20 +41,6 @@ func (m *MockOAuthHandler) EXPECT() *MockOAuthHandlerMockRecorder {
 	return m.recorder
 }
 
-// AuthStatusToggle mocks base method.
-func (m *MockOAuthHandler) AuthStatusToggle(params *v2.StatusRequestParams) v2.StatusCodeError {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AuthStatusToggle", params)
-	ret0, _ := ret[0].(v2.StatusCodeError)
-	return ret0
-}
-
-// AuthStatusToggle indicates an expected call of AuthStatusToggle.
-func (mr *MockOAuthHandlerMockRecorder) AuthStatusToggle(params any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthStatusToggle", reflect.TypeOf((*MockOAuthHandler)(nil).AuthStatusToggle), params)
-}
-
 // FetchToken mocks base method.
 func (m *MockOAuthHandler) FetchToken(params *v2.OAuthTokenParams) (json.RawMessage, v2.StatusCodeError) {
 	m.ctrl.T.Helper()
