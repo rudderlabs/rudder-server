@@ -112,7 +112,7 @@ func (l *downloaderImpl) downloadSingleObject(ctx context.Context, fileManager f
 	}
 
 	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
-	if tmpDirPath, err = misc.CreateTMPDIR(); err != nil {
+	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
 		return "", fmt.Errorf("creating tmp dir: %w", err)
 	}
 

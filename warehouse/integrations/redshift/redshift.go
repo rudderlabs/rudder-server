@@ -395,7 +395,7 @@ func (rs *Redshift) generateManifest(ctx context.Context, tableName string) (str
 		return "", fmt.Errorf("marshalling manifest: %v", err)
 	}
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(err)
 	}

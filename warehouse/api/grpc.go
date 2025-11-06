@@ -796,7 +796,7 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return fmt.Errorf("unable to close file: \n%w", err)
 	}
 
-	tmpDirectory, err := misc.CreateTMPDIR()
+	tmpDirectory, err := misc.GetTmpDir()
 	if err != nil {
 		return fmt.Errorf("unable to create temp directory: \n%w", err)
 	}

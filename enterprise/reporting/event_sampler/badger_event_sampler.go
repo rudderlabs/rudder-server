@@ -38,7 +38,7 @@ func GetPathName(module string) string {
 }
 
 func DefaultPath(pathName string) (string, error) {
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", err
 	}

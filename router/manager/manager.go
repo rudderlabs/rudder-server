@@ -58,7 +58,7 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 func cleanUpAsyncDestinationsLogsDir() {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return
 	}
