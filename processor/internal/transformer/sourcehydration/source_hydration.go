@@ -34,8 +34,8 @@ import (
 
 // HydrationEvent represents a single event in the hydration request/response
 type HydrationEvent struct {
-	ID         string                 `json:"id"`
-	Event      map[string]interface{} `json:"event"`
+	ID         string                 `json:"id" required:"true"`
+	Event      map[string]interface{} `json:"event" required:"true"`
 	StatusCode int                    `json:"statusCode,omitempty"`
 }
 
@@ -54,7 +54,8 @@ type Source struct {
 
 // Response represents the response format from source hydration API
 type Response struct {
-	Batch      []HydrationEvent `json:"batch"`
+	// Batch is a required field containing hydration events
+	Batch      []HydrationEvent `json:"batch" required:"true"`
 	StatusCode int
 }
 
@@ -213,11 +214,14 @@ func (c *Client) sendBatch(ctx context.Context, url string, source Source, label
 	switch statusCode {
 	case http.StatusOK:
 		var response Response
-		err = jsonrs.Unmarshal(respData, &response)
+		respReader := bytes.NewReader(respData)
+		decoder := jsonrs.NewDecoder(respReader)
+		decoder.DisallowUnknownFields()
+		err = decoder.Decode(&response)
 		if err != nil {
 			c.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
 			c.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
-			panic(err)
+			return response, err
 		}
 		response.StatusCode = statusCode
 		c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
