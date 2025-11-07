@@ -388,7 +388,7 @@ func (brt *Handle) backendConfigSubscriber() {
 			for _, source := range wConfig.Sources {
 				if len(source.Destinations) > 0 {
 					for _, destination := range source.Destinations {
-						if destination.DestinationDefinition.Name == brt.destType && destination.Enabled {
+						if destination.DestinationDefinition.Name == brt.destType {
 							if _, ok := destinationsMap[destination.ID]; !ok {
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								if asynccommon.IsAsyncDestination(brt.destType) {

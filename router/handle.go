@@ -73,7 +73,8 @@ type Handle struct {
 	eventOrderHalfEnabledStateDuration config.ValueLoader[time.Duration]
 	deliveryThrottlerTimeout           config.ValueLoader[time.Duration]
 	drainConcurrencyLimit              config.ValueLoader[int]
-	workerInputBufferSize              int
+	maxNoOfJobsPerChannel              int // maximum capacity of each worker channel (hard capacity limit of the underlying go channel)
+	noOfJobsPerChannel                 int // requested capacity of each worker channel (important when job buffering is being calculated using the standard method)
 	saveDestinationResponse            bool
 	saveDestinationResponseOverride    config.ValueLoader[bool]
 	reportJobsdbPayload                config.ValueLoader[bool]
@@ -151,7 +152,7 @@ func (rt *Handle) activePartitions(ctx context.Context) []string {
 
 // pickup picks up jobs from the jobsDB for the provided partition and returns the number of jobs picked up and whether the limits were reached or not
 // picked up jobs are distributed to the workers
-func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker, pickupBatchSizeGauge stats.Gauge) (pickupCount int, limitsReached bool) {
+func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worker, pickupBatchSizeGauge Gauge[int]) (pickupCount int, limitsReached bool) {
 	// pickup limiter with dynamic priority
 	start := time.Now()
 	var discardedCount int
@@ -210,7 +211,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	}
 
 	type reservedJob struct {
-		slot        *workerSlot
+		slot        *reservedSlot
 		job         *jobsdb.JobT
 		drainReason string
 		parameters  routerutils.JobParameters
@@ -599,7 +600,7 @@ func (rt *Handle) getQueryParams(partition string, pickUpCount int) jobsdb.GetQu
 }
 
 type workerJobSlot struct {
-	slot        *workerSlot
+	slot        *reservedSlot
 	drainReason string
 }
 
