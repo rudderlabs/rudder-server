@@ -21,7 +21,7 @@ import (
 )
 
 func TestWorkerPool(t *testing.T) {
-	run := func(t *testing.T, pipelining, limitsReached, shouldProcessMultipleSubJobs bool) {
+	run := func(t *testing.T, pipelining, limitsReached, shouldProcessMultipleSubJobs, srcHydrationEnabled bool) {
 		wh := &mockWorkerHandle{
 			pipelining: pipelining,
 			log:        logger.NOP,
@@ -35,9 +35,11 @@ func TestWorkerPool(t *testing.T) {
 				stored               int
 				subBatches           int
 				trackedUsers         int
+				sourceHydration      int
 			}{},
 			limitsReached:                limitsReached,
 			shouldProcessMultipleSubJobs: shouldProcessMultipleSubJobs,
+			srcHydrationEnabled:          srcHydrationEnabled,
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -50,6 +52,7 @@ func TestWorkerPool(t *testing.T) {
 			wh.limiters.store = kitsync.NewLimiter(poolCtx, &limiterWg, "store", 2, stats.Default)
 			wh.limiters.usertransform = kitsync.NewLimiter(poolCtx, &limiterWg, "usertransform", 2, stats.Default)
 			wh.limiters.destinationtransform = kitsync.NewLimiter(poolCtx, &limiterWg, "destinationtransform", 2, stats.Default)
+			wh.limiters.srcHydration = kitsync.NewLimiter(poolCtx, &limiterWg, "srcHydration", 2, stats.Default)
 			defer limiterWg.Wait()
 		}
 
@@ -89,71 +92,111 @@ func TestWorkerPool(t *testing.T) {
 		wh.validate(t)
 	}
 
-	t.Run("work without pipelining", func(t *testing.T) {
-		t.Run("limits not reached", func(t *testing.T) {
-			run(t, false, false, false)
+	t.Run("src hydration disabled", func(t *testing.T) {
+		t.Run("work without pipelining", func(t *testing.T) {
+			t.Run("limits not reached", func(t *testing.T) {
+				run(t, false, false, false, false)
+			})
+			t.Run("limits reached", func(t *testing.T) {
+				run(t, false, true, false, false)
+			})
 		})
-		t.Run("limits reached", func(t *testing.T) {
-			run(t, false, true, false)
+
+		t.Run("work with pipelining", func(t *testing.T) {
+			t.Run("limits not reached", func(t *testing.T) {
+				run(t, true, false, false, false)
+			})
+			t.Run("limits reached", func(t *testing.T) {
+				run(t, true, true, false, false)
+			})
+			t.Run("limits reached with multiple sub jobs", func(t *testing.T) {
+				run(t, true, true, true, false)
+			})
+			t.Run("limits not reached with multiple sub jobs", func(t *testing.T) {
+				run(t, true, false, true, false)
+			})
 		})
 	})
 
-	t.Run("work with pipelining", func(t *testing.T) {
-		t.Run("limits not reached", func(t *testing.T) {
-			run(t, true, false, false)
+	t.Run("src hydration enabled", func(t *testing.T) {
+		t.Run("work without pipelining", func(t *testing.T) {
+			t.Run("limits not reached", func(t *testing.T) {
+				run(t, false, false, false, true)
+			})
+			t.Run("limits reached", func(t *testing.T) {
+				run(t, false, true, false, true)
+			})
 		})
-		t.Run("limits reached", func(t *testing.T) {
-			run(t, true, true, false)
-		})
-		t.Run("limits reached with multiple sub jobs", func(t *testing.T) {
-			run(t, true, true, true)
-		})
-		t.Run("limits not reached with multiple sub jobs", func(t *testing.T) {
-			run(t, true, false, true)
+
+		t.Run("work with pipelining", func(t *testing.T) {
+			t.Run("limits not reached", func(t *testing.T) {
+				run(t, true, false, false, true)
+			})
+			t.Run("limits reached", func(t *testing.T) {
+				run(t, true, true, false, true)
+			})
+			t.Run("limits reached with multiple sub jobs", func(t *testing.T) {
+				run(t, true, true, true, true)
+			})
+			t.Run("limits not reached with multiple sub jobs", func(t *testing.T) {
+				run(t, true, false, true, true)
+			})
 		})
 	})
 }
 
 func TestWorkerPoolIdle(t *testing.T) {
-	wh := &mockWorkerHandle{
-		pipelining: true,
-		log:        logger.NewLogger(),
-		loopEvents: 0,
-		partitionStats: map[string]struct {
-			queried              int
-			marked               int
-			processed            int
-			userTransform        int
-			destinationTransform int
-			stored               int
-			subBatches           int
-			trackedUsers         int
-		}{},
+	run := func(t *testing.T, srcHydrationStage bool) {
+		wh := &mockWorkerHandle{
+			pipelining: true,
+			log:        logger.NewLogger(),
+			loopEvents: 0,
+			partitionStats: map[string]struct {
+				queried              int
+				marked               int
+				processed            int
+				userTransform        int
+				destinationTransform int
+				stored               int
+				subBatches           int
+				trackedUsers         int
+				sourceHydration      int
+			}{},
+			srcHydrationEnabled: srcHydrationStage,
+		}
+		poolCtx, poolCancel := context.WithCancel(context.Background())
+		defer poolCancel()
+
+		// create a worker pool
+		wp := workerpool.New(poolCtx,
+			func(partition string) workerpool.Worker {
+				return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
+			},
+			logger.NOP,
+			workerpool.WithCleanupPeriod(200*time.Millisecond),
+			workerpool.WithIdleTimeout(200*time.Millisecond))
+
+		require.Equal(t, 0, wp.Size())
+
+		// start pinging for work for 1 partition
+		wp.PingWorker("p-1")
+
+		require.Equal(t, 1, wp.Size())
+
+		require.Eventually(t, func() bool {
+			return wp.Size() == 0
+		}, 2*time.Second, 10*time.Millisecond, "worker pool should be emptyied since worker will be idle (no jobs to process)")
+
+		wp.Shutdown()
 	}
-	poolCtx, poolCancel := context.WithCancel(context.Background())
-	defer poolCancel()
 
-	// create a worker pool
-	wp := workerpool.New(poolCtx,
-		func(partition string) workerpool.Worker {
-			return newPartitionWorker(partition, wh, stats.NOP.NewTracer(""), stats.NOP)
-		},
-		logger.NOP,
-		workerpool.WithCleanupPeriod(200*time.Millisecond),
-		workerpool.WithIdleTimeout(200*time.Millisecond))
+	t.Run("src hydration disabled", func(t *testing.T) {
+		run(t, false)
+	})
 
-	require.Equal(t, 0, wp.Size())
-
-	// start pinging for work for 1 partition
-	wp.PingWorker("p-1")
-
-	require.Equal(t, 1, wp.Size())
-
-	require.Eventually(t, func() bool {
-		return wp.Size() == 0
-	}, 2*time.Second, 10*time.Millisecond, "worker pool should be emptyied since worker will be idle (no jobs to process)")
-
-	wp.Shutdown()
+	t.Run("src hydration enabled", func(t *testing.T) {
+		run(t, true)
+	})
 }
 
 type mockWorkerHandle struct {
@@ -170,6 +213,7 @@ type mockWorkerHandle struct {
 		stored               int
 		subBatches           int
 		trackedUsers         int
+		sourceHydration      int
 	}
 
 	limiters struct {
@@ -178,10 +222,12 @@ type mockWorkerHandle struct {
 		store                kitsync.Limiter
 		usertransform        kitsync.Limiter
 		destinationtransform kitsync.Limiter
+		srcHydration         kitsync.Limiter
 	}
 
 	limitsReached                bool
 	shouldProcessMultipleSubJobs bool
+	srcHydrationEnabled          bool
 }
 
 func (m *mockWorkerHandle) validate(t *testing.T) {
@@ -193,6 +239,9 @@ func (m *mockWorkerHandle) validate(t *testing.T) {
 		require.Equalf(t, s.processed, s.userTransform, "Partition %s: Processed %d, User Transform %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.userTransform, s.destinationTransform, "Partition %s: User Transform %d, Destination Transform %d", partition, s.queried, s.marked)
 		require.Equalf(t, s.subBatches, s.trackedUsers, "Partition %s: Tracked Users %d, Subjobs %d", partition, s.trackedUsers, s.subBatches)
+		if m.srcHydrationEnabled {
+			require.Equalf(t, s.processed, s.sourceHydration, "Partition %s: processed %d, Source Hydration %d", partition, s.trackedUsers, s.sourceHydration)
+		}
 	}
 }
 
@@ -212,6 +261,7 @@ func (m *mockWorkerHandle) config() workerHandleConfig {
 		partitionProcessingDelay: func(partition string) config.ValueLoader[time.Duration] {
 			return config.SingleValueLoader(0 * time.Millisecond)
 		},
+		enableSrcHydrationStage: m.srcHydrationEnabled,
 	}
 }
 
@@ -232,6 +282,12 @@ func (m *mockWorkerHandle) handlePendingGatewayJobs(partition string) bool {
 		preTransMessage, err := m.preprocessStage(partition, subJob, time.Duration(0))
 		if err != nil {
 			return false
+		}
+		if m.srcHydrationEnabled {
+			preTransMessage, err = m.srcHydrationStage(partition, convertToSrcHydrationMessage(preTransMessage))
+			if err != nil {
+				return false
+			}
 		}
 		dest, err = m.pretransformStage(partition, preTransMessage)
 		if err != nil {
@@ -267,7 +323,8 @@ func (m *mockWorkerHandle) getJobsStage(_ context.Context, partition string) job
 		logger.NewIntField("destinationTransform", int64(s.destinationTransform)),
 		logger.NewIntField("stored", int64(s.stored)),
 		logger.NewIntField("subBatches", int64(s.subBatches)),
-		logger.NewIntField("trackedUsers", int64(s.trackedUsers)))
+		logger.NewIntField("trackedUsers", int64(s.trackedUsers)),
+		logger.NewIntField("sourceHydration", int64(s.sourceHydration)))
 
 	var jobs []*jobsdb.JobT
 	for i := 0; i < m.loopEvents; i++ {
@@ -362,7 +419,15 @@ func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob, _ t
 	}, nil
 }
 
-func (m *mockWorkerHandle) srcHydrationStage(_ string, in *srcHydrationMessage) (*preTransformationMessage, error) {
+func (m *mockWorkerHandle) srcHydrationStage(partition string, in *srcHydrationMessage) (*preTransformationMessage, error) {
+	if m.limiters.srcHydration != nil {
+		defer m.limiters.srcHydration.Begin("")()
+	}
+	m.statsMu.Lock()
+	defer m.statsMu.Unlock()
+	s := m.partitionStats[partition]
+	s.sourceHydration += in.totalEvents
+	m.partitionStats[partition] = s
 	return &preTransformationMessage{
 		totalEvents: len(in.subJobs.subJobs),
 		subJobs:     in.subJobs,

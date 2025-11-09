@@ -91,7 +91,13 @@ func (w *pipelineWorker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.preTransform)
+		defer func() {
+			if w.handle.config().enableSrcHydrationStage {
+				close(w.channel.srcHydration)
+				return
+			}
+			close(w.channel.preTransform)
+		}()
 		defer w.logger.Debugn("preprocessing routine stopped")
 
 		for jobs := range w.channel.preprocess {
@@ -120,7 +126,7 @@ func (w *pipelineWorker) start() {
 		w.lifecycle.wg.Add(1)
 		rruntime.Go(func() {
 			defer w.lifecycle.wg.Done()
-			defer close(w.channel.srcHydration)
+			defer close(w.channel.preTransform)
 			defer w.logger.Debugn("src hydration routine stopped")
 
 			for jobs := range w.channel.srcHydration {

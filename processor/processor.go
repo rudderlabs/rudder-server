@@ -178,6 +178,7 @@ type Handle struct {
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		archiveInPreProcess                       bool
+		enableSrcHydrationStage                   bool
 	}
 
 	drainConfig struct {
@@ -745,6 +746,7 @@ func (proc *Handle) loadConfig() {
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
+	proc.config.enableSrcHydrationStage = proc.conf.GetBoolVar(false, "Processor.enableSrcHydrationStage")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -3767,6 +3769,12 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	)
 	if err != nil {
 		panic(err)
+	}
+	if proc.config.enableSrcHydrationStage {
+		preTransMessage, err = proc.srcHydrationStage(partition, convertToSrcHydrationMessage(preTransMessage))
+		if err != nil {
+			panic(err)
+		}
 	}
 	transMessage, err = proc.pretransformStage(partition, preTransMessage)
 	if err != nil {

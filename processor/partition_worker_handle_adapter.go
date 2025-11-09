@@ -29,6 +29,7 @@ func (h *workerHandleAdapter) config() workerHandleConfig {
 		partitionProcessingDelay: func(partition string) config.ValueLoader[time.Duration] {
 			return h.conf.GetReloadableDurationVar(0, time.Second, "Processor.preprocessDelay."+partition)
 		},
+		enableSrcHydrationStage: h.Handle.config.enableSrcHydrationStage,
 	}
 }
 
