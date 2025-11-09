@@ -399,7 +399,6 @@ func Test_Namespace_FetchInternalSecrets(t *testing.T) {
 	t.Run("without fetchInternalSecrets", func(t *testing.T) {
 		var queryParams url.Values
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			// Capture query parameters for assertion
 			queryParams = r.URL.Query()
 
@@ -451,7 +450,6 @@ func Test_Namespace_FetchInternalSecrets(t *testing.T) {
 	t.Run("with fetchInternalSecrets", func(t *testing.T) {
 		var queryParams url.Values
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			// Capture query parameters for assertion
 			queryParams = r.URL.Query()
 

@@ -65,9 +65,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -133,9 +134,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -187,9 +189,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			}
 
 			source := sourcehydration.Source{
-				ID:          "source-id",
-				WorkspaceID: "workspace-id",
-				Config:      []byte("{}"),
+				ID:             "source-id",
+				WorkspaceID:    "workspace-id",
+				Config:         []byte("{}"),
+				InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name: "TestSource",
 				},
@@ -258,9 +261,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -311,9 +315,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -368,9 +373,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -458,9 +464,10 @@ func TestSourceHydration_ErrorResponses(t *testing.T) {
 			}
 
 			source := sourcehydration.Source{
-				ID:          "source-id",
-				WorkspaceID: "workspace-id",
-				Config:      []byte("{}"),
+				ID:             "source-id",
+				WorkspaceID:    "workspace-id",
+				Config:         []byte("{}"),
+				InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name: "TestSource",
 				},
@@ -512,9 +519,10 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -556,9 +564,10 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -615,9 +624,10 @@ func TestSourceHydration_Timeout(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -675,9 +685,10 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -737,9 +748,10 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -814,9 +826,10 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 				}
 
 				source := sourcehydration.Source{
-					ID:          "source-id",
-					WorkspaceID: "workspace-id",
-					Config:      []byte("{}"),
+					ID:             "source-id",
+					WorkspaceID:    "workspace-id",
+					Config:         []byte("{}"),
+					InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 					SourceDefinition: backendconfig.SourceDefinitionT{
 						Name: tc.sourceName,
 					},
@@ -870,9 +883,10 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 		// Create multiple sources
 		sources := []sourcehydration.Source{
 			{
-				ID:          "source-1",
-				WorkspaceID: "workspace-1",
-				Config:      []byte("{}"),
+				ID:             "source-1",
+				WorkspaceID:    "workspace-1",
+				Config:         []byte("{}"),
+				InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name: "TestSource1",
 				},
@@ -987,9 +1001,10 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -1078,9 +1093,10 @@ func TestSourceHydration_MetricsTracking(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},
@@ -1184,9 +1200,10 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 		}
 
 		source := sourcehydration.Source{
-			ID:          "source-id",
-			WorkspaceID: "workspace-id",
-			Config:      []byte("{}"),
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "TestSource",
 			},

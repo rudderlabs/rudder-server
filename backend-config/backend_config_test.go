@@ -76,7 +76,8 @@ var sampleConfigWithConnection = ConfigT{
 			WriteKey:       "d",
 			Enabled:        false,
 			Config:         json.RawMessage("{}"),
-			InternalSecret: json.RawMessage(`{}`)},
+			InternalSecret: json.RawMessage(`{}`),
+		},
 		{
 			ID:             "2",
 			WriteKey:       "d2",

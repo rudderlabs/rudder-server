@@ -51,6 +51,7 @@ type Request struct {
 type Source struct {
 	ID               string                          `json:"id"`
 	Config           json.RawMessage                 `json:"config"`
+	InternalSecret   json.RawMessage                 `json:"internalSecret"`
 	WorkspaceID      string                          `json:"workspaceId"`
 	SourceDefinition backendconfig.SourceDefinitionT `json:"sourceDefinition"`
 }

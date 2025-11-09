@@ -131,6 +131,7 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 			Config:           source.Config,
 			WorkspaceID:      source.WorkspaceID,
 			SourceDefinition: source.SourceDefinition,
+			InternalSecret:   source.InternalSecret,
 		},
 	}
 	req.Batch = lo.Map(events, func(event types.TransformerEvent, _ int) sourcehydration.HydrationEvent {

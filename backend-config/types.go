@@ -120,7 +120,7 @@ type SourceT struct {
 	GeoEnrichment              struct {
 		Enabled bool
 	}
-	InternalSecret json.RawMessage `json:"internalSecret,omitempty"`
+	InternalSecret json.RawMessage
 }
 
 type Credential struct {
