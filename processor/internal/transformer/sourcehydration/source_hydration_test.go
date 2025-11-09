@@ -1143,7 +1143,6 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 
 	t.Run("some batches fail while others succeed", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			var req sourcehydration.Request
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)

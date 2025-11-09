@@ -8,12 +8,13 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestSrcHydrationStage(t *testing.T) {
