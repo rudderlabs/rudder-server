@@ -217,7 +217,10 @@ func setMainLoopTimeout(proc *Handle, timeout time.Duration) {
 	proc.config.mainLoopTimeout = timeout
 }
 
-var sampleWorkspaceID = "some-workspace-id"
+var (
+	sampleWorkspaceID = "some-workspace-id"
+	fblaSourceId      = "test-fbla-source-id"
+)
 
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
@@ -919,6 +922,18 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Version: 100,
 				},
 			},
+		},
+		{
+			ID: fblaSourceId,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
 		},
 	},
 	Settings: backendconfig.Settings{

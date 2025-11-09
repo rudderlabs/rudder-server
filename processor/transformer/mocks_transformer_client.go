@@ -133,6 +133,14 @@ func (s *SimpleClients) SetTrackingPlanValidateOutput(response types.Response) {
 	}
 }
 
+// SetSrcHydrationOutput sets the response for the Source Hydration client
+func (s *SimpleClients) SetSrcHydrationOutput(response sourcehydration.Response, err error) {
+	s.sycHydrationClient = &SimpleMockSrcHydrationClient{
+		HydratedOutput: response,
+		err:            err,
+	}
+}
+
 // WithDynamicUserTransform sets a custom function for User transformer
 func (s *SimpleClients) WithDynamicUserTransform(transformFn func(context.Context, []types.TransformerEvent) types.Response) {
 	s.userClient = &dynamicUserClient{transformFn: transformFn}
@@ -151,6 +159,11 @@ func (s *SimpleClients) WithDynamicDestinationTransform(transformFn func(context
 // WithDynamicTrackingPlanValidate sets a custom function for TrackingPlan validator
 func (s *SimpleClients) WithDynamicTrackingPlanValidate(validateFn func(context.Context, []types.TransformerEvent) types.Response) {
 	s.trackingPlanClient = &dynamicTrackingPlanClient{validateFn: validateFn}
+}
+
+// WithDynamicSrcHydration sets a custom function for Source Hydration
+func (s *SimpleClients) WithDynamicSrcHydration(hydrateFn func(context.Context, sourcehydration.Request) (sourcehydration.Response, error)) {
+	s.sycHydrationClient = &dynamicSrcHydrationClient{hydrateFn: hydrateFn}
 }
 
 // Helper types for dynamic behavior
@@ -177,6 +190,14 @@ type dynamicTrackingPlanClient struct {
 
 func (d *dynamicTrackingPlanClient) Validate(ctx context.Context, events []types.TransformerEvent) types.Response {
 	return d.validateFn(ctx, events)
+}
+
+type dynamicSrcHydrationClient struct {
+	hydrateFn func(context.Context, sourcehydration.Request) (sourcehydration.Response, error)
+}
+
+func (d *dynamicSrcHydrationClient) Hydrate(ctx context.Context, req sourcehydration.Request) (sourcehydration.Response, error) {
+	return d.hydrateFn(ctx, req)
 }
 
 // Helper functions to create common responses

@@ -362,6 +362,13 @@ func (m *mockWorkerHandle) preprocessStage(partition string, subJobs subJob, _ t
 	}, nil
 }
 
+func (m *mockWorkerHandle) srcHydrationStage(_ string, in *srcHydrationMessage) (*preTransformationMessage, error) {
+	return &preTransformationMessage{
+		totalEvents: len(in.subJobs.subJobs),
+		subJobs:     in.subJobs,
+	}, nil
+}
+
 func (m *mockWorkerHandle) pretransformStage(_ string, in *preTransformationMessage) (*transformationMessage, error) {
 	return &transformationMessage{
 		ctx:         in.subJobs.ctx,

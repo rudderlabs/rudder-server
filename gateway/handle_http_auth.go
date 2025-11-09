@@ -239,7 +239,10 @@ func sourceToRequestContext(s backendconfig.SourceT) *gwtypes.AuthRequestContext
 		ReplaySource:   s.IsReplaySource(),
 		Source:         s,
 	}
-	arctx.SourceDetails.SourceDefinition = s.SourceDefinition
+	arctx.SourceDetails.SourceDefinition.Name = s.SourceDefinition.Name
+	arctx.SourceDetails.SourceDefinition.ID = s.SourceDefinition.ID
+	arctx.SourceDetails.SourceDefinition.Category = s.SourceDefinition.Category
+	arctx.SourceDetails.SourceDefinition.Type = s.SourceDefinition.Type
 	arctx.SourceDetails.ID = s.ID
 	arctx.SourceDetails.OriginalID = s.OriginalID
 	arctx.SourceDetails.Name = s.Name
