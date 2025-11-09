@@ -6,6 +6,10 @@
         "config": {},
         "id": "source-1",
         "name": "Test Source",
+        "internalSecretVersion": 1,
+        "internalSecret": {
+          "pageAccessToken": "some-page-access-token"
+        },
         "sourceDefinition": {
           "name": "Test Source",
           "options": {

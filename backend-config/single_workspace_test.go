@@ -190,13 +190,15 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 					"id": "1",
 					"writeKey": "d",
 					"enabled": false,
-					"config": {}
+					"config": {},
+					"internalSecret": {}
 				},
 				{
 					"id": "2",
 					"writeKey": "d2",
 					"enabled": false,
 					"config": {},
+					"internalSecret": {},
 					"destinations": [
 						{
 							"id": "d1",

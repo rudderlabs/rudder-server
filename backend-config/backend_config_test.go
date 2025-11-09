@@ -40,15 +40,17 @@ var sampleBackendConfig = ConfigT{
 	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
-			ID:       "1",
-			WriteKey: "d",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "1",
+			WriteKey:       "d",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage("{}"),
 		}, {
-			ID:       "2",
-			WriteKey: "d2",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "2",
+			WriteKey:       "d2",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage("{}"),
 			Destinations: []DestinationT{
 				{
 					ID:                 "d1",
@@ -70,15 +72,17 @@ var sampleConfigWithConnection = ConfigT{
 	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
-			ID:       "1",
-			WriteKey: "d",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
-		}, {
-			ID:       "2",
-			WriteKey: "d2",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "1",
+			WriteKey:       "d",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage(`{}`)},
+		{
+			ID:             "2",
+			WriteKey:       "d2",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage(`{}`),
 			Destinations: []DestinationT{
 				{
 					ID:                 "d1",
@@ -116,15 +120,17 @@ var sampleConfigWithConnection = ConfigT{
 var sampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
-			ID:       "1",
-			WriteKey: "d",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "1",
+			WriteKey:       "d",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage("{}"),
 		}, {
-			ID:       "2",
-			WriteKey: "d2",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "2",
+			WriteKey:       "d2",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage("{}"),
 			Destinations: []DestinationT{
 				{
 					ID:                 "d2",
@@ -141,15 +147,17 @@ var sampleBackendConfig2 = ConfigT{
 	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
-			ID:       "3",
-			WriteKey: "d3",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "3",
+			WriteKey:       "d3",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage(`{}`),
 		}, {
-			ID:       "4",
-			WriteKey: "d4",
-			Enabled:  false,
-			Config:   json.RawMessage("{}"),
+			ID:             "4",
+			WriteKey:       "d4",
+			Enabled:        false,
+			Config:         json.RawMessage("{}"),
+			InternalSecret: json.RawMessage(`{}`),
 		},
 	},
 }

@@ -51,6 +51,7 @@ var (
 	Diagnostics              diagnostics.DiagnosticsI
 	cacheOverride            cache.Cache
 	incrementalConfigUpdates bool
+	fetchInternalSecrets     bool
 )
 
 func disableCache() {
@@ -102,6 +103,7 @@ func loadConfig() {
 	configEnvReplacementEnabled = config.GetBoolVar(true, "BackendConfig.envReplacementEnabled")
 	incrementalConfigUpdates = config.GetBoolVar(false, "BackendConfig.incrementalConfigUpdates")
 	dbCacheEnabled = config.GetBoolVar(true, "BackendConfig.dbCacheEnabled")
+	fetchInternalSecrets = config.GetBoolVar(false, "BackendConfig.fetchInternalSecrets")
 }
 
 func Init() {
@@ -297,6 +299,7 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 			cpRouterURL:              cpRouterURL,
 			region:                   region,
 			incrementalConfigUpdates: incrementalConfigUpdates,
+			fetchInternalSecretes:    fetchInternalSecrets,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
