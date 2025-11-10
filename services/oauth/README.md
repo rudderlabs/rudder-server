@@ -23,7 +23,7 @@ Primary consumers: Router Transformer and the Regulation Service.
   - `OAuthTransport (http.RoundTripper)`: request/response interceptor.
     - Detects if the destination is OAuth‑enabled for the current flow.
     - Pre‑roundtrip: fetches token (or uses cache) and augments the request via `extensions.Augmenter`.
-    - Post‑roundtrip: interprets destination responses, handles refresh‑token and auth‑inactive cases, toggles auth status when needed, and emits metrics.
+    - Post‑roundtrip: interprets destination responses, handles refresh‑token and auth‑inactive cases and emits metrics.
 - `v2/oauth.go`:
   - `OAuthHandler`: orchestration for token fetch/refresh, CP calls, cache, locking, and metrics.
 - `v2/controlplane/cp_connector.go`:
@@ -43,14 +43,13 @@ Primary consumers: Router Transformer and the Regulation Service.
 4. If OAuth:
    - Pre‑roundtrip: `OAuthHandler.FetchToken` returns an access token (from cache or CP). The request is augmented via `extensions.Augmenter`.
    - Roundtrip: underlying transport executes the request.
-   - Post‑roundtrip: response is parsed to detect `REFRESH_TOKEN` or `AUTH_STATUS_INACTIVE` categories and react accordingly (refresh token, toggle auth status, return actionable status codes to caller). A structured interceptor payload is set on the response body to communicate outcomes.
+   - Post‑roundtrip: response is parsed to detect `REFRESH_TOKEN` or `AUTH_STATUS_INACTIVE` categories and react accordingly (refresh token, return actionable status codes to caller). A structured interceptor payload is set on the response body to communicate outcomes.
 
 ### Control Plane Contracts
 
 - Token fetch/refresh: `POST {ConfigBEURL}/destination/workspaces/{workspaceId}/accounts/{accountId}/token`
   - Request body may include `{ hasExpired, expiredSecret }` when refreshing.
   - Response includes `secret` with `expirationDate` and provider‑specific token JSON.
-- Auth status toggle: `PUT {ConfigBEURL}/workspaces/{workspaceId}/destinations/{destinationId}/authStatus/toggle` with `{ "authStatus": "inactive" }`.
 
 ### Configuration
 
@@ -65,7 +64,7 @@ Primary consumers: Router Transformer and the Regulation Service.
 - Transport:
   - `OAuthTransport` is injected into `client.Transport` and handles all OAuth logic.
 - OAuth orchestration:
-  - `OAuthHandler` methods: `FetchToken`, `RefreshToken`, `AuthStatusToggle`.
+  - `OAuthHandler` methods: `FetchToken`, `RefreshToken`.
 - Extensions:
   - `extensions.Augmenter` augments requests with provider‑specific auth material from the retrieved `secret`.
 
@@ -100,7 +99,6 @@ resp, err := client.Do(req)
 - Non‑OAuth destination: ensure `definition.auth.type` is absent or not `OAuth` for pass‑through.
 - Missing account ID: `DestinationInfo.GetAccountID` validates expected keys per flow.
 - Token refresh loops: verify `expirationDate` and augmentation; check Control Plane response and interceptor payload.
-- Auth inactive toggles: emitted on `AUTH_STATUS_INACTIVE` or invalid grant during refresh.
 
 ### Maintenance
 

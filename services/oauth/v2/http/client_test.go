@@ -196,9 +196,7 @@ var _ = Describe("Http/Client", func() {
 
 			mockCpConnector := mockoauthv2.NewMockConnector(ctrl)
 			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, `{"options":{},"id":"2BFzzzID8kITtU7AxxWtrn9KQQf","createdAt":"2022-06-29T15:34:47.758Z","updatedAt":"2024-02-12T12:18:35.213Z","workspaceId":"1oVajb9QqG50undaAcokNlYyJQa","name":"dummy user","role":"google_adwords_enhanced_conversions_v1","userId":"1oVadeaoGXN2pataEEoeIaXS3bO","metadata":{"userId":"115538421777182389816","displayName":"dummy user","email":"dummy@testmail.com"},"secretVersion":50,"rudderCategory":"destination","secret":{"access_token":"storedaccesstoken","refresh_token":"dummyRefreshToken","developer_token":"dummyDeveloperToken"}}`)
-			mockCpConnector.EXPECT().CpApiCall(gomock.Any()).Return(http.StatusOK, "")
 			mockAuthIdentityProvider := mockoauthv2.NewMockAuthIdentityProvider(ctrl)
-			mockAuthIdentityProvider.EXPECT().Identity().Return(nil)
 			mockAuthIdentityProvider.EXPECT().Identity().Return(nil)
 
 			// Invoke code under test

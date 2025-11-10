@@ -3,7 +3,6 @@ package api_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -277,522 +276,6 @@ var defaultDestDefConfig = map[string]interface{}{
 	},
 }
 
-var oauthTests = []oauthTestCases{
-	{
-		name: "test with a valid token and successful response",
-		job: model.Job{
-			ID:            1,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine1473336609491897794707338",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane8n285680461479465450293437@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie8221821544021583104106123",
-					Attributes: map[string]string{
-						"email": "dshirilad853601942465969121327991@gmail.com",
-					},
-				},
-				{
-					ID: "Claiborn443446989226249191822329",
-					Attributes: map[string]string{
-						"phone": "8782905113",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		deleteResponses: []deleteResponseParams{
-			{
-				status:      200,
-				jobResponse: `[{"status":"successful"}]`,
-			},
-		},
-		cpResponses: []testutils.CpResponseParams{
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
-			},
-		},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusComplete},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusComplete},
-		expectedPayload:              `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293437@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad853601942465969121327991@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
-	},
-	{
-		name: "when 1st time fails with expired token after refresh, immediate retry of job should pass the job",
-		job: model.Job{
-			ID:            2,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine1473336609491897794707338",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane8n285680461479465450293438@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie8221821544021583104106123",
-					Attributes: map[string]string{
-						"email": "dshirilad8536019424659691213279982@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		deleteResponses: []deleteResponseParams{
-			{
-				status:      500,
-				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
-			},
-			{
-				status:      200,
-				jobResponse: `[{"status":"successful"}]`,
-			},
-		},
-		cpResponses: []testutils.CpResponseParams{
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
-			},
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
-			},
-		},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusComplete},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusComplete},
-		expectedPayload:              `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
-	},
-	{
-		name: "test when fetch token fails(with 500) to respond properly fail the job",
-		job: model.Job{
-			ID:            3,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine1473336609491897794707338",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane8n285680461479465450293448@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie8221821544021583104106123",
-					Attributes: map[string]string{
-						"email": "dshirilad8536019424659691213279983@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		cpResponses: []testutils.CpResponseParams{
-			{
-				Code:     500,
-				Response: `Internal Server Error`,
-			},
-		},
-		deleteResponses:              []deleteResponseParams{{}},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA][FetchToken] Error in Token Fetch statusCode: 500\t error: Unmarshal of response unsuccessful: Internal Server Error")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse autherrorcategory from response: status 500: type: unmarshallableresponse, message: unmarshal of response unsuccessful: internal server error")},
-		expectedPayload:              "", // since request has not gone to transformer at all!
-	},
-	{
-		name: "test when fetch token request times out fail the job",
-		job: model.Job{
-			ID:            3,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine1473336609491897794707338",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane8n285680461479465450293448@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie8221821544021583104106123",
-					Attributes: map[string]string{
-						"email": "dshirilad8536019424659691213279983@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		cpResponses: []testutils.CpResponseParams{
-			{
-				Code:     500,
-				Response: `Internal Server Error`,
-				Timeout:  2 * time.Second,
-			},
-		},
-		deleteResponses:              []deleteResponseParams{{}},
-		oauthHttpClientTimeout:       1 * time.Second,
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Client.Timeout exceeded while awaiting headers")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse autherrorcategory from response: status 500: type: timeout, message: post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (client.timeout exceeded while awaiting headers)")},
-		expectedPayload:              "", // since request has not gone to transformer at all!
-	},
-	{
-		// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
-		name: "when rudderDeleteAccountId is present but is empty string in destination config fail the job",
-		job: model.Job{
-			ID:            1,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine1473336609491897794707338",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane8n285680461479465450293437@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie8221821544021583104106123",
-					Attributes: map[string]string{
-						"email": "dshirilad853601942465969121327991@gmail.com",
-					},
-				},
-				{
-					ID: "Claiborn443446989226249191822329",
-					Attributes: map[string]string{
-						"phone": "8782905113",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		cpResponses:                  []testutils.CpResponseParams{},
-		deleteResponses:              []deleteResponseParams{{}},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: [OAuthPlatformError]accountId is empty for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
-		expectedPayload:              "",
-	},
-	{
-		// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
-		name: "when rudderDeleteAccountId field is not present in destination config fail the job",
-		job: model.Job{
-			ID:            1,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine1473336609491897794707338",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane8n285680461479465450293437@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie8221821544021583104106123",
-					Attributes: map[string]string{
-						"email": "dshirilad853601942465969121327991@gmail.com",
-					},
-				},
-				{
-					ID: "Claiborn443446989226249191822329",
-					Attributes: map[string]string{
-						"phone": "8782905113",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config:        map[string]interface{}{},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		cpResponses:                  []testutils.CpResponseParams{},
-		deleteResponses:              []deleteResponseParams{{}},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[OAuthPlatformError]accountId not found for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
-		expectedPayload:              "",
-	},
-	{
-		name: "test when refresh token request times out, retry once and pass if cfg-be server is up",
-		job: model.Job{
-			ID:            9,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "Jermaine9",
-					Attributes: map[string]string{
-						"phone":     "6463633841",
-						"email":     "dorowane9@gmail.com",
-						"randomKey": "randomValue",
-					},
-				},
-				{
-					ID: "Mercie9",
-					Attributes: map[string]string{
-						"email": "dshirilad9@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-
-		oauthHttpClientTimeout: 1 * time.Second,
-		cpResponses: []testutils.CpResponseParams{
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
-			},
-			{
-				Code:     500,
-				Response: `Internal Server Error`,
-				Timeout:  2 * time.Second,
-			},
-		},
-		deleteResponses: []deleteResponseParams{
-			{
-				status:      500,
-				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN","error":"[GA] invalid credentials"}]`,
-			},
-			{
-				status:      200,
-				jobResponse: `[{"status":"successful"}]`,
-			},
-		},
-		expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
-		expectedPayload:      `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
-	},
-	{
-		name: "when AUTH_STATUS_INACTIVE error happens & authStatus/toggle success, fail the job with Failed status",
-		job: model.Job{
-			ID:            15,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "203984798475",
-					Attributes: map[string]string{
-						"phone": "7463633841",
-						"email": "dreymore@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-				"authStatus":            "active",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		deleteResponses: []deleteResponseParams{
-			{
-				status:      400,
-				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive),
-			},
-		},
-		cpResponses: []testutils.CpResponseParams{
-			// fetch token http request
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
-			},
-			// authStatus inactive http request
-			{
-				Code: 200,
-			},
-		},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("problem with user permission or access/refresh token have been revoked")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("[{\"status\":\"failed\",\"authErrorCategory\": \"AUTH_STATUS_INACTIVE\", \"error\": \"User does not have sufficient permissions\"}]")},
-		expectedPayload:              `[{"jobId":"15","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dreymore@gmail.com","phone":"7463633841","userId":"203984798475"}]}]`,
-	},
-	{
-		name: "when AUTH_STATUS_INACTIVE error happens but authStatus/toggle failed, fail the job with Failed status",
-		job: model.Job{
-			ID:            16,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "203984798476",
-					Attributes: map[string]string{
-						"phone": "8463633841",
-						"email": "greymore@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-				"authStatus":            "active",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		deleteResponses: []deleteResponseParams{
-			{
-				status:      400,
-				jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive),
-			},
-		},
-		cpResponses: []testutils.CpResponseParams{
-			// fetch token http request
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
-			},
-			// authStatus inactive http request
-			{
-				Code:     400,
-				Response: `{"message": "AuthStatus toggle skipped as already request in-progress: (1234, 1001)"}`,
-			},
-		},
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: errors.New("problem with user permission or access/refresh token have been revoked")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive)},
-		expectedPayload:              `[{"jobId":"16","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798476"}]}]`,
-	},
-	{
-		name: "when REFRESH_TOKEN error happens but refreshing token fails due to token revocation, fail the job with Failed status",
-		job: model.Job{
-			ID:            17,
-			WorkspaceID:   "1001",
-			DestinationID: "1234",
-			Status:        model.JobStatus{Status: model.JobStatusPending},
-			Users: []model.User{
-				{
-					ID: "203984798477",
-					Attributes: map[string]string{
-						"phone": "8463633841",
-						"email": "greymore@gmail.com",
-					},
-				},
-			},
-		},
-		dest: model.Destination{
-			DestinationID: "1234",
-			Config: map[string]interface{}{
-				"rudderDeleteAccountId": "xyz",
-				"authStatus":            "active",
-			},
-			Name:          "GA",
-			DestDefConfig: defaultDestDefConfig,
-		},
-		deleteResponses: []deleteResponseParams{
-			// first attempt
-			{
-				status:      500,
-				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
-			},
-			// second attempt
-			{
-				status:      500,
-				jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
-			},
-		},
-
-		cpResponses: []testutils.CpResponseParams{
-			// fetch token http request
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
-			},
-			// refresh token http request
-			{
-				Code:     403,
-				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
-			},
-			// authStatus inactive http request
-			{
-				Code: 200,
-			},
-			// 2nd fetch token http request
-			{
-				Code:     200,
-				Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
-			},
-			// 2nd refresh token http request
-			{
-				Code:     403,
-				Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
-			},
-			// 2nd authStatus inactive http request
-			{
-				Code: 200,
-			},
-		},
-
-		expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
-		expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 500, body: [{status:failed error:[ga] invalid credentials autherrorcategory:refresh_token}]")},
-		expectedPayload:              `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
-	},
-}
-
 type mockIdentifier struct {
 	key   string
 	token string
@@ -808,6 +291,462 @@ func TestOAuth(t *testing.T) {
 
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockBackendConfig.EXPECT().Identity().AnyTimes().Return(&mockIdentifier{})
+
+	oauthTests := []oauthTestCases{
+		{
+			name: "test with a valid token and successful response",
+			job: model.Job{
+				ID:            1,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad853601942465969121327991@gmail.com",
+						},
+					},
+					{
+						ID: "Claiborn443446989226249191822329",
+						Attributes: map[string]string{
+							"phone": "8782905113",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      200,
+					jobResponse: `[{"status":"successful"}]`,
+				},
+			},
+			cpResponses: []testutils.CpResponseParams{
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+			},
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusComplete},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusComplete},
+			expectedPayload:              `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293437@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad853601942465969121327991@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
+		},
+		{
+			name: "when 1st time fails with expired token after refresh, immediate retry of job should pass the job",
+			job: model.Job{
+				ID:            2,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293438@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279982@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      500,
+					jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
+				},
+				{
+					status:      200,
+					jobResponse: `[{"status":"successful"}]`,
+				},
+			},
+			cpResponses: []testutils.CpResponseParams{
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+			},
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusComplete},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusComplete},
+			expectedPayload:              `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
+		},
+		{
+			name: "test when fetch token fails(with 500) to respond properly fail the job",
+			job: model.Job{
+				ID:            3,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293448@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279983@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			cpResponses: []testutils.CpResponseParams{
+				{
+					Code:     500,
+					Response: `Internal Server Error`,
+				},
+			},
+			deleteResponses:              []deleteResponseParams{{}},
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA][FetchToken] Error in Token Fetch statusCode: 500\t error: Unmarshal of response unsuccessful: Internal Server Error")},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse autherrorcategory from response: status 500: type: unmarshallableresponse, message: unmarshal of response unsuccessful: internal server error")},
+			expectedPayload:              "", // since request has not gone to transformer at all!
+		},
+		{
+			name: "test when fetch token request times out fail the job",
+			job: model.Job{
+				ID:            3,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293448@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279983@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			cpResponses: []testutils.CpResponseParams{
+				{
+					Code:     500,
+					Response: `Internal Server Error`,
+					Timeout:  2 * time.Second,
+				},
+			},
+			deleteResponses:              []deleteResponseParams{{}},
+			oauthHttpClientTimeout:       1 * time.Second,
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("Client.Timeout exceeded while awaiting headers")},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse autherrorcategory from response: status 500: type: timeout, message: post \"__cfgBE_server__/destination/workspaces/1001/accounts/xyz/token\": context deadline exceeded (client.timeout exceeded while awaiting headers)")},
+			expectedPayload:              "", // since request has not gone to transformer at all!
+		},
+		{
+			// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
+			name: "when rudderDeleteAccountId is present but is empty string in destination config fail the job",
+			job: model.Job{
+				ID:            1,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad853601942465969121327991@gmail.com",
+						},
+					},
+					{
+						ID: "Claiborn443446989226249191822329",
+						Attributes: map[string]string{
+							"phone": "8782905113",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			cpResponses:                  []testutils.CpResponseParams{},
+			deleteResponses:              []deleteResponseParams{{}},
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("failed to parse authErrorCategory from response: [OAuthPlatformError]accountId is empty for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
+			expectedPayload:              "",
+		},
+		{
+			// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
+			name: "when rudderDeleteAccountId field is not present in destination config fail the job",
+			job: model.Job{
+				ID:            1,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad853601942465969121327991@gmail.com",
+						},
+					},
+					{
+						ID: "Claiborn443446989226249191822329",
+						Attributes: map[string]string{
+							"phone": "8782905113",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config:        map[string]interface{}{},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			cpResponses:                  []testutils.CpResponseParams{},
+			deleteResponses:              []deleteResponseParams{{}},
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[GA] Delete account ID key (rudderDeleteAccountId) is not present for destination: 1234")},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[OAuthPlatformError]accountId not found for destination(%s) in %s flow", "1234", common.RudderFlowDelete)},
+			expectedPayload:              "",
+		},
+		{
+			name: "test when refresh token request times out, retry once and pass if cfg-be server is up",
+			job: model.Job{
+				ID:            9,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "Jermaine9",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane9@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie9",
+						Attributes: map[string]string{
+							"email": "dshirilad9@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+
+			oauthHttpClientTimeout: 1 * time.Second,
+			cpResponses: []testutils.CpResponseParams{
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+				{
+					Code:     500,
+					Response: `Internal Server Error`,
+					Timeout:  2 * time.Second,
+				},
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      500,
+					jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN","error":"[GA] invalid credentials"}]`,
+				},
+				{
+					status:      200,
+					jobResponse: `[{"status":"successful"}]`,
+				},
+			},
+			expectedDeleteStatus: model.JobStatus{Status: model.JobStatusComplete},
+			expectedPayload:      `[{"jobId":"9","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane9@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine9"},{"email":"dshirilad9@gmail.com","userId":"Mercie9"}]}]`,
+		},
+		{
+			name: "when AUTH_STATUS_INACTIVE error happens fail the job with Failed status",
+			job: model.Job{
+				ID:            15,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798475",
+						Attributes: map[string]string{
+							"phone": "7463633841",
+							"email": "dreymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			deleteResponses: []deleteResponseParams{
+				{
+					status:      400,
+					jobResponse: fmt.Sprintf(`[{"status":"failed","authErrorCategory": "%v", "error": "User does not have sufficient permissions"}]`, common.CategoryAuthStatusInactive),
+				},
+			},
+			cpResponses: []testutils.CpResponseParams{
+				// fetch token http request
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+			},
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("problem with user permission or access/refresh token have been revoked")},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusAborted, Error: fmt.Errorf("[{\"status\":\"failed\",\"authErrorCategory\": \"AUTH_STATUS_INACTIVE\", \"error\": \"User does not have sufficient permissions\"}]")},
+			expectedPayload:              `[{"jobId":"15","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dreymore@gmail.com","phone":"7463633841","userId":"203984798475"}]}]`,
+		},
+		{
+			name: "when REFRESH_TOKEN error happens but refreshing token fails due to token revocation, fail the job with Failed status",
+			job: model.Job{
+				ID:            17,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatus{Status: model.JobStatusPending},
+				Users: []model.User{
+					{
+						ID: "203984798477",
+						Attributes: map[string]string{
+							"phone": "8463633841",
+							"email": "greymore@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+					"authStatus":            "active",
+				},
+				Name:          "GA",
+				DestDefConfig: defaultDestDefConfig,
+			},
+			deleteResponses: []deleteResponseParams{
+				// first attempt
+				{
+					status:      500,
+					jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
+				},
+				// second attempt
+				{
+					status:      500,
+					jobResponse: `[{"status":"failed","authErrorCategory":"REFRESH_TOKEN", "error": "[GA] invalid credentials"}]`,
+				},
+			},
+
+			cpResponses: []testutils.CpResponseParams{
+				// fetch token http request
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// refresh token http request
+				{
+					Code:     403,
+					Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+				},
+				// 2nd fetch token http request
+				{
+					Code:     200,
+					Response: `{"secret": {"access_token": "invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token"}}`,
+				},
+				// 2nd refresh token http request
+				{
+					Code:     403,
+					Response: `{"status":403,"body":{"message":"[google_analytics] \"invalid_grant\" error, refresh token has been revoked","status":403,"code":"ref_token_invalid_grant"},"code":"ref_token_invalid_grant","access_token":"invalid_grant_access_token","refresh_token":"invalid_grant_refresh_token","developer_token":"dev_token"}`,
+				},
+			},
+
+			expectedDeleteStatus:         model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("[google_analytics] \"invalid_grant\" error, refresh token has been revoked")},
+			expectedDeleteStatus_OAuthV2: model.JobStatus{Status: model.JobStatusFailed, Error: fmt.Errorf("error: code: 500, body: [{status:failed error:[ga] invalid credentials autherrorcategory:refresh_token}]")},
+			expectedPayload:              `[{"jobId":"17","destType":"ga","config":{"authStatus":"active","rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"greymore@gmail.com","phone":"8463633841","userId":"203984798477"}]}]`,
+		},
+	}
 
 	for _, tt := range oauthTests {
 		t.Run(tt.name, func(t *testing.T) {
