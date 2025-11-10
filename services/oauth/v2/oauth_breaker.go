@@ -85,10 +85,6 @@ func (b *oauthBreaker) RefreshToken(params *OAuthTokenParams, previousSecret jso
 	})
 }
 
-func (b *oauthBreaker) AuthStatusToggle(params *StatusRequestParams) StatusCodeError {
-	return b.delegate.AuthStatusToggle(params)
-}
-
 // accountBreakers manages circuit breakers for different accounts.
 type accountBreakers struct {
 	breakersMu sync.RWMutex

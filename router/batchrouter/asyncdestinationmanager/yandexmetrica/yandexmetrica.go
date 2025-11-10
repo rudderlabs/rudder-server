@@ -354,7 +354,7 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	}
 
 	var transResp oauthv2.TransportResponse
-	// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token or Auth Status Toggle.
+	// We don't need to handle it, as we can receive a string response even before executing OAuth operations like Refresh Token.
 	// It's acceptable if the structure of respData doesn't match the oauthv2.TransportResponse struct.
 	err = jsonrs.Unmarshal(bodyBytes, &transResp)
 	if err == nil && transResp.OriginalResponse != "" {
