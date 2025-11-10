@@ -2078,26 +2078,6 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			continue
 		}
 
-		// REPORTING - DESTINATION_FILTER succeeded metrics - START
-		if proc.isReportingEnabled() {
-			transformerEvent.StatusCode = reportingtypes.SuccessEventCode
-			proc.updateMetricMaps(
-				nil,
-				nil,
-				connectionDetailsMap,
-				destFilterStatusDetailMap,
-				transformerEvent,
-				jobsdb.Succeeded.State,
-				reportingtypes.DESTINATION_FILTER,
-				func() json.RawMessage {
-					return nil
-				},
-				nil,
-			)
-			transformerEvent.StatusCode = 0
-		}
-		// REPORTING - DESTINATION_FILTER succeeded metrics - END
-
 		if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
 			groupedEventsBySourceId[SourceIDT(sourceId)] = make([]types.TransformerEvent, 0)
 		}
