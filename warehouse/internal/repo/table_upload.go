@@ -413,8 +413,7 @@ func (tu *TableUploads) GetByJobRunTaskRun(
 	taskRunID string,
 ) ([]model.TableUpload, error) {
 	defer tu.TimerStat("get_by_job_run_task_run", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destinationID,
+		"destId": destinationID,
 	})()
 
 	rows, err := tu.db.QueryContext(ctx, `

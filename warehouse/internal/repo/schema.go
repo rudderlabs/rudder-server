@@ -72,7 +72,6 @@ func NewWHSchemas(db *sqlmiddleware.DB, conf *config.Config, log logger.Logger, 
 // If Warehouse.enableTableLevelSchema is true in config, it also inserts/updates table-level schemas for each table in the schema.
 func (sh *WHSchema) Insert(ctx context.Context, whSchema *model.WHSchema) error {
 	defer sh.TimerStat("insert", stats.Tags{
-		"sourceId": whSchema.SourceID,
 		"destId":   whSchema.DestinationID,
 		"destType": whSchema.DestinationType,
 	})()
@@ -478,8 +477,7 @@ func parseWHSchemas(rows *sqlmiddleware.Rows) ([]*model.WHSchema, error) {
 
 func (sh *WHSchema) GetNamespace(ctx context.Context, sourceID, destID string) (string, error) {
 	defer sh.TimerStat("get_namespace", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destID,
+		"destId": destID,
 	})()
 
 	query := `SELECT namespace FROM ` + whSchemaTableName + `

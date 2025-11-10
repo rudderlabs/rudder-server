@@ -54,7 +54,6 @@ func (s *Source) Insert(ctx context.Context, sourceJobs []model.SourceJob) ([]in
 		return nil, errors.New("empty sourceJobs")
 	}
 	defer (*repo)(s).TimerStat("insert", stats.Tags{
-		"sourceId":    sourceJobs[0].SourceID,
 		"destId":      sourceJobs[0].DestinationID,
 		"workspaceId": sourceJobs[0].WorkspaceID,
 	})()

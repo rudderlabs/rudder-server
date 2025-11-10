@@ -157,7 +157,6 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	}
 
 	defer sf.TimerStat("insert", stats.Tags{
-		"sourceId":    stagingFile.SourceID,
 		"destId":      stagingFile.DestinationID,
 		"workspaceId": stagingFile.WorkspaceID,
 	})()
@@ -391,8 +390,7 @@ func (sf *StagingFiles) GetForUploadID(ctx context.Context, uploadID int64) ([]*
 
 func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]*model.StagingFile, error) {
 	defer sf.TimerStat("pending", stats.Tags{
-		"sourceId": sourceID,
-		"destId":   destinationID,
+		"destId": destinationID,
 	})()
 
 	var (
@@ -437,9 +435,7 @@ func (sf *StagingFiles) Pending(ctx context.Context, sourceID, destinationID str
 }
 
 func (sf *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
-	defer sf.TimerStat("count_pending_for_source", stats.Tags{
-		"sourceId": sourceID,
-	})()
+	defer sf.TimerStat("count_pending_for_source", nil)()
 
 	return sf.countPending(ctx, `source_id = $1`, sourceID)
 }
