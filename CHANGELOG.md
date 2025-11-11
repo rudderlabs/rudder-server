@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.63.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.62.0...v1.63.0-rc.1) (2025-11-11)
+
+
+### Features
+
+* **router:** dynamic sizing of worker job buffers ([#6463](https://github.com/rudderlabs/rudder-server/issues/6463)) ([5b2e519](https://github.com/rudderlabs/rudder-server/commit/5b2e51942d35e46911dab7174bdbf0b20949c288))
+
+
+### Bug Fixes
+
+* max procs defaults ([#6473](https://github.com/rudderlabs/rudder-server/issues/6473)) ([48f9cfd](https://github.com/rudderlabs/rudder-server/commit/48f9cfde6f51a9d0aef2c047634ec4d658070ff0))
+* max procs defaults ([#6473](https://github.com/rudderlabs/rudder-server/issues/6473)) ([3d2026c](https://github.com/rudderlabs/rudder-server/commit/3d2026ccbfcba1f3ba4d0241e255b8ff84dcdfd4))
+* pending batch router jobs for disabled destinations are not being aborted ([#6477](https://github.com/rudderlabs/rudder-server/issues/6477)) ([8effa78](https://github.com/rudderlabs/rudder-server/commit/8effa783e267f69d589e9e7eba7393ed1317af8e))
+* remove source labels in repo query stats ([#6483](https://github.com/rudderlabs/rudder-server/issues/6483)) ([48f9cfd](https://github.com/rudderlabs/rudder-server/commit/48f9cfde6f51a9d0aef2c047634ec4d658070ff0))
+* use type field from payload to check if event is blocked ([#6487](https://github.com/rudderlabs/rudder-server/issues/6487)) ([5ba053f](https://github.com/rudderlabs/rudder-server/commit/5ba053f3444fc08c46bf45847d674a43453b7348))
+
+
+### Miscellaneous
+
+* apply security best practices from step security ([#6462](https://github.com/rudderlabs/rudder-server/issues/6462)) ([a860128](https://github.com/rudderlabs/rudder-server/commit/a860128cbf714c6551bedee49a8b89451b747d1f))
+* emit filtered metrics from all non-ut stages and clean up diff metrics ([#6485](https://github.com/rudderlabs/rudder-server/issues/6485)) ([399c4c6](https://github.com/rudderlabs/rudder-server/commit/399c4c6ae010b40f7e45dd8569e2dc02c3bb76f9))
+* refactor processor to move archival in a preprocess stage ([#6470](https://github.com/rudderlabs/rudder-server/issues/6470)) ([8634c3f](https://github.com/rudderlabs/rudder-server/commit/8634c3f0d4fc9259e6937d761c1f4c407a9355ba))
+* remove oauth status toggling ([#6492](https://github.com/rudderlabs/rudder-server/issues/6492)) ([45e5dba](https://github.com/rudderlabs/rudder-server/commit/45e5dba66bce1314ba7fb5785671ad6afd683aa2))
+* sync release v1.62.0 to main branch ([#6472](https://github.com/rudderlabs/rudder-server/issues/6472)) ([65db4ee](https://github.com/rudderlabs/rudder-server/commit/65db4ee97365f534c7ae3e7d36ea0c10dd6b1215))
+
 ## [1.62.2](https://github.com/rudderlabs/rudder-server/compare/v1.62.1...v1.62.2) (2025-11-05)
 
 
