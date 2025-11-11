@@ -4,8 +4,9 @@ import (
 	"context"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/samber/lo"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -28,9 +29,6 @@ type srcHydrationMessage struct {
 	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
 	reportMetrics                 []*reportingtypes.PUReportedMetric
-	inCountMetadataMap            map[string]MetricMetadata
-	inCountMap                    map[string]int64
-	outCountMap                   map[string]int64
 	totalEvents                   int
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
 	eventsByMessageID             map[string]types.SingularEventWithMetadata

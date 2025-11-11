@@ -90,6 +90,11 @@ func (b *SourceBuilder) WithSourceCategory(category string) *SourceBuilder {
 	return b
 }
 
+func (b *SourceBuilder) WithSourceDefOptions(opts backendconfig.SourceDefinitionOptions) *SourceBuilder {
+	b.v.SourceDefinition.Options = opts
+	return b
+}
+
 // WithSourceType sets the source type
 func (b *SourceBuilder) WithSourceType(sourceType string) *SourceBuilder {
 	b.v.SourceDefinition.Name = sourceType
