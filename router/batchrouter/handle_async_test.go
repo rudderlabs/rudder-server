@@ -35,7 +35,7 @@ type mockAsyncDestinationManager struct {
 	statsOutput  common.GetUploadStatsResponse
 }
 
-func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT, sourceID string) (string, error) {
+func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 

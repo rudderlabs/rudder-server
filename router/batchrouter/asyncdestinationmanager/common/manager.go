@@ -11,7 +11,7 @@ type InvalidManager struct {
 	Error error
 }
 
-func (*InvalidManager) Transform(job *jobsdb.JobT, sourceID string) (string, error) {
+func (*InvalidManager) Transform(job *jobsdb.JobT) (string, error) {
 	return "", errors.New("invalid job")
 }
 

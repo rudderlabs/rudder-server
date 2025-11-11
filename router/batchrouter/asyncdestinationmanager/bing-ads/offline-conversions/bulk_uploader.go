@@ -46,7 +46,7 @@ returns: A string of object in form
 		}
 	}
 */
-func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT, sourceId string) (string, error) {
+func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Unmarshal the JSON raw message into the record struct
 	payload := string(job.EventPayload)
 	var event Record

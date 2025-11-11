@@ -30,8 +30,8 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
-func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, sourceID string, limit int) (jobsdb.JobsResult, error) {
-	parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: sourceID}}
+func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, limit int) (jobsdb.JobsResult, error) {
+	parameterFilters := []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
 	return misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return brt.jobsDB.GetImporting(
 			ctx,
@@ -155,7 +155,7 @@ func (brt *Handle) updatePollStatusToDB(
 ) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
-	list, err := brt.getImportingJobs(ctx, destinationID, sourceID, brt.maxEventsInABatch)
+	list, err := brt.getImportingJobs(ctx, destinationID, brt.maxEventsInABatch)
 	if err != nil {
 		return statusList, err
 	}
@@ -297,36 +297,33 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 			destinationsMap := brt.destinationsMap
 			brt.configSubscriberMu.RUnlock()
 			for destinationID := range destinationsMap {
-				for _, sourceID := range brt.sourcesPerDestinationMap[destinationID] {
-					brt.logger.Debugn("pollAsyncStatus Started", obskit.DestinationType(brt.destType))
-					job, err := brt.getImportingJobs(ctx, destinationID, sourceID, 1)
-					if err != nil {
-						// TODO: Add metrics
-						brt.logger.Errorn("Error while getting job", obskit.DestinationType(brt.destType), obskit.Error(err))
-						continue
-					}
-					importingJobs := job.Jobs
-					if len(importingJobs) == 0 {
-						continue
-					}
-					importingJob := importingJobs[0]
-					pollInput := getPollInput(importingJob)
-					// sourceID := gjson.GetBytes(importingJob.Parameters, "source_id").String()
-					startPollTime := time.Now()
-					brt.logger.Debugn("[Batch Router] Poll Status Started", obskit.DestinationType(brt.destType))
-					pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
-					brt.logger.Debugn("[Batch Router] Poll Status Finished", obskit.DestinationType(brt.destType))
-					brt.asyncPollTimeStat.Since(startPollTime)
-					if pollResp.InProgress {
-						continue
-					}
-					statusList, err := brt.updatePollStatusToDB(ctx, destinationID, sourceID, importingJob, pollResp)
-					if err == nil {
-						brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
-						brt.asyncStructCleanUp(destinationID)
-					}
+				brt.logger.Debugn("pollAsyncStatus Started", obskit.DestinationType(brt.destType))
+				job, err := brt.getImportingJobs(ctx, destinationID, 1)
+				if err != nil {
+					// TODO: Add metrics
+					brt.logger.Errorn("Error while getting job", obskit.DestinationType(brt.destType), obskit.Error(err))
+					continue
 				}
-
+				importingJobs := job.Jobs
+				if len(importingJobs) == 0 {
+					continue
+				}
+				importingJob := importingJobs[0]
+				pollInput := getPollInput(importingJob)
+				sourceID := gjson.GetBytes(importingJob.Parameters, "source_id").String()
+				startPollTime := time.Now()
+				brt.logger.Debugn("[Batch Router] Poll Status Started", obskit.DestinationType(brt.destType))
+				pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
+				brt.logger.Debugn("[Batch Router] Poll Status Finished", obskit.DestinationType(brt.destType))
+				brt.asyncPollTimeStat.Since(startPollTime)
+				if pollResp.InProgress {
+					continue
+				}
+				statusList, err := brt.updatePollStatusToDB(ctx, destinationID, sourceID, importingJob, pollResp)
+				if err == nil {
+					brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
+					brt.asyncStructCleanUp(destinationID)
+				}
 			}
 		}
 	}

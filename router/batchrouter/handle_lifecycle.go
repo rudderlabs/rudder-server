@@ -401,8 +401,6 @@ func (brt *Handle) backendConfigSubscriber() {
 								for key, connectionConfig := range connectionConfigMap {
 									if key.DestinationID == destination.ID {
 										destinationConnectionConfigMap[key.SourceID] = connectionConfig
-										// track sources per destination, this will be used to poll async destinations for each source
-										brt.sourcesPerDestinationMap[destination.ID] = append(brt.sourcesPerDestinationMap[destination.ID], key.SourceID)
 									}
 								}
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}

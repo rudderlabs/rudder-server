@@ -15,7 +15,7 @@ import (
 
 type AsyncUploadAndTransformManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
-	Transform(job *jobsdb.JobT, sourceID string) (string, error) // needed to store the sourceId in the file, to upload the file per source
+	Transform(job *jobsdb.JobT) (string, error)
 }
 
 type AsyncDestinationManager interface {
@@ -45,8 +45,8 @@ func (m SimpleAsyncDestinationManager) GetUploadStats(GetUploadStatsInput) GetUp
 	}
 }
 
-func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT, sourceID string) (string, error) {
-	return m.UploaderAndTransformer.Transform(job, sourceID)
+func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
+	return m.UploaderAndTransformer.Transform(job)
 }
 
 type PollStatusResponse struct {
