@@ -151,7 +151,7 @@ func checkMatch(currDir string) bool {
 
 func (r *RFP) matches(currDir string) (match bool, err error) {
 	var tmpDirPath string
-	tmpDirPath, err = CreateTMPDIR()
+	tmpDirPath, err = GetTmpDir()
 	if err != nil {
 		return match, err
 	}
@@ -207,14 +207,13 @@ func RemoveEmptyFolderStructureForFilePath(fp string) {
 
 var logOnce sync.Once
 
-// CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
-func CreateTMPDIR() (string, error) {
+// GetTmpDir gets tmp dir at path configured via RUDDER_TMPDIR env var
+func GetTmpDir() (string, error) {
 	tmpdirPath := strings.TrimSuffix(config.GetString("RUDDER_TMPDIR", ""), "/")
 	// second chance: fallback to /tmp if this folder exists
 	if tmpdirPath == "" {
 		fallbackPath := "/tmp"
-		_, err := os.Stat(fallbackPath)
-		if err == nil {
+		if _, err := os.Stat(fallbackPath); err == nil {
 			tmpdirPath = fallbackPath
 			logOnce.Do(func() {
 				fmt.Printf("RUDDER_TMPDIR not found, falling back to %v\n", fallbackPath)

@@ -66,6 +66,9 @@ func Run(ctx context.Context) error {
 	fullExportFile := model.File{Path: path.Join(fullExportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
 	latestExportFile := model.File{Path: path.Join(latestExportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
 
+	if err := exporter.CleanupLingeringTmpExportFiles(); err != nil {
+		pkgLogger.Warnn("could not cleanup lingering export files: %w", obskit.Error(err))
+	}
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		fullExporter := exporter.Exporter{
@@ -134,7 +137,7 @@ func getIdentity(ctx context.Context) (identity.Identifier, error) {
 
 // exportPath creates a tmp dir and returns the path to it
 func exportPath() (baseDir string, err error) {
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}

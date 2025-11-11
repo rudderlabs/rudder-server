@@ -107,7 +107,7 @@ func (*Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 
 // StartServer starts an HTTP server listening on unix socket and serving rpc communication
 func StartServer(ctx context.Context) error {
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(err)
 	}

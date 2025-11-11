@@ -110,7 +110,7 @@ func (a *Archiver) backupRecords(ctx context.Context, args backupRecordsArgs) (b
 		logger.NewStringField(logfield.TableName, args.tableName),
 	)
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		a.log.Errorn("[Archiver]: Failed to create tmp DIR", obskit.Error(err))
 		return backupLocation, err

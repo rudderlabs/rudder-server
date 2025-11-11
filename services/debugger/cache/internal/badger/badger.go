@@ -132,7 +132,7 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 		// TODO : Remove this after badgerdb v2 is completely removed
 		_ = os.RemoveAll(fmt.Sprintf(`%v%v`, e.origin, "/badgerdbv3"))
 	}()
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		e.logger.Errorn("Unable to create tmp directory", obskit.Error(err))
 		return nil, err

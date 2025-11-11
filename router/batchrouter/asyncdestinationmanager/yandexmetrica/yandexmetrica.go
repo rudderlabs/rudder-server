@@ -147,7 +147,7 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 
 	// Open the CSV file for writing
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", "", fmt.Errorf("creating tmp dir: %v", err)
 	}

@@ -39,7 +39,7 @@ contains the template of the uploadable file.
 */
 func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return nil, err
 	}
