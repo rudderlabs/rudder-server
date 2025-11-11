@@ -33,7 +33,6 @@ import (
 )
 
 func TestReportingDroppedEvents(t *testing.T) {
-	// FIXME: destination filter should drop events using a [filtered] status instead of a [diff] status with negative count
 	t.Run("Events dropped in destination filter stage", func(t *testing.T) {
 		config.Reset()
 		defer config.Reset()
@@ -83,11 +82,11 @@ func TestReportingDroppedEvents(t *testing.T) {
 		}, 20*time.Second, 1*time.Second, "all gw events should be successfully processed")
 
 		require.Eventually(t, func() bool {
-			var droppedCount sql.NullInt64
-			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'destination_filter' and status = 'diff' and error_type = ''").Scan(&droppedCount))
-			t.Logf("destination_filter diff count: %d", droppedCount.Int64)
+			var filteredCount sql.NullInt64
+			require.NoError(t, postgresContainer.DB.QueryRow("SELECT sum(count) FROM reports WHERE source_id = 'source-1' and destination_id = '' AND pu = 'destination_filter' and status = 'filtered' and error_type = ''").Scan(&filteredCount))
+			t.Logf("destination_filter filtered count: %d", filteredCount.Int64)
 			logRows(t, postgresContainer.DB, "SELECT * FROM reports")
-			return droppedCount.Int64 == -10
+			return filteredCount.Int64 == 10
 		}, 10*time.Second, 1*time.Second, "all events should be dropped in destination_filter stage")
 
 		cancel()
