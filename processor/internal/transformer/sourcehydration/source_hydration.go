@@ -123,11 +123,11 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 		batches,
 		func(batch []types.SrcHydrationEvent, i int) {
 			g.Go(func() error {
-				resp, err := c.sendBatch(groupCtx, sourceHydrationURL, hydrationReq.Source, labels, batch)
+				resp, statusCode, err := c.sendBatch(groupCtx, sourceHydrationURL, hydrationReq.Source, labels, batch)
 				if err != nil {
 					return err
 				}
-				if resp.StatusCode != http.StatusOK {
+				if statusCode != http.StatusOK {
 					// drop the events and continue
 					c.log.Warnn("source hydration failed for a sub-batch, dropping events in the sub-batch", labels.ToLoggerFields()...)
 					return nil
@@ -160,9 +160,9 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 	}, nil
 }
 
-func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydrationSource, labels types.TransformerMetricLabels, data []types.SrcHydrationEvent) (types.SrcHydrationResponse, error) {
+func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydrationSource, labels types.TransformerMetricLabels, data []types.SrcHydrationEvent) (types.SrcHydrationResponse, int, error) {
 	if len(data) == 0 {
-		return types.SrcHydrationResponse{}, nil
+		return types.SrcHydrationResponse{}, http.StatusOK, nil
 	}
 
 	start := time.Now()
@@ -181,7 +181,7 @@ func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydr
 
 	respData, statusCode, err := c.doPost(ctx, rawJSON, url, labels)
 	if err != nil {
-		return types.SrcHydrationResponse{}, err
+		return types.SrcHydrationResponse{}, 0, err
 	}
 
 	switch statusCode {
@@ -194,19 +194,18 @@ func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydr
 		if err != nil {
 			c.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
 			c.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
-			return response, err
+			return response, statusCode, err
 		}
-		response.StatusCode = statusCode
 		c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 		c.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(response.Batch))
 		c.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
 
-		return response, nil
+		return response, statusCode, nil
 	default:
 		c.log.Errorn("Source hydration returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
 		c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 		c.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
-		return types.SrcHydrationResponse{StatusCode: statusCode}, nil
+		return types.SrcHydrationResponse{}, statusCode, nil
 	}
 }
 

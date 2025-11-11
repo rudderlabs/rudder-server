@@ -334,8 +334,7 @@ type SrcHydrationSource struct {
 // SrcHydrationResponse represents the response format from source hydration API
 type SrcHydrationResponse struct {
 	// Batch is a required field containing hydration events
-	Batch      []SrcHydrationEvent `json:"batch" required:"true"`
-	StatusCode int
+	Batch []SrcHydrationEvent `json:"batch" required:"true"`
 }
 
 func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
