@@ -5,8 +5,6 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
-
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -120,9 +118,6 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		eventBlockingStatusDetailsMap: message.eventBlockingStatusDetailsMap,
 		destFilterStatusDetailMap:     message.destFilterStatusDetailMap,
 		reportMetrics:                 message.reportMetrics,
-		inCountMetadataMap:            message.inCountMetadataMap,
-		inCountMap:                    message.inCountMap,
-		outCountMap:                   message.outCountMap,
 		totalEvents:                   message.totalEvents,
 		groupedEventsBySourceId:       message.groupedEventsBySourceId,
 		eventsByMessageID:             message.eventsByMessageID,
@@ -135,8 +130,8 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 }
 
 func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, events []types.TransformerEvent) ([]types.TransformerEvent, error) {
-	req := sourcehydration.Request{
-		Source: sourcehydration.Source{
+	req := types.SrcHydrationRequest{
+		Source: types.SrcHydrationSource{
 			ID:               source.ID,
 			Config:           source.Config,
 			WorkspaceID:      source.WorkspaceID,
@@ -144,8 +139,8 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 			InternalSecret:   source.InternalSecret,
 		},
 	}
-	req.Batch = lo.Map(events, func(event types.TransformerEvent, _ int) sourcehydration.HydrationEvent {
-		return sourcehydration.HydrationEvent{
+	req.Batch = lo.Map(events, func(event types.TransformerEvent, _ int) types.SrcHydrationEvent {
+		return types.SrcHydrationEvent{
 			ID:    event.Metadata.MessageID,
 			Event: event.Message,
 		}
@@ -157,7 +152,7 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	msgIDToEventMap := lo.SliceToMap(events, func(event types.TransformerEvent) (string, types.TransformerEvent) {
 		return event.Metadata.MessageID, event
 	})
-	return lo.Map(resp.Batch, func(event sourcehydration.HydrationEvent, _ int) types.TransformerEvent {
+	return lo.Map(resp.Batch, func(event types.SrcHydrationEvent, _ int) types.TransformerEvent {
 		originalEvent := msgIDToEventMap[event.ID]
 		originalEvent.Message = event.Event
 		return originalEvent

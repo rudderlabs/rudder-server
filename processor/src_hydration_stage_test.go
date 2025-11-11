@@ -12,7 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -46,7 +45,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Create expected hydrated events
-		hydratedEvents := []sourcehydration.HydrationEvent{
+		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "message-1",
 				Event: map[string]interface{}{
@@ -71,7 +70,7 @@ func TestSrcHydrationStage(t *testing.T) {
 
 		// Setup mock transformer clients
 		transformerClients := transformer.NewSimpleClients()
-		transformerClients.SetSrcHydrationOutput(sourcehydration.Response{
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{
 			Batch: hydratedEvents,
 		}, nil)
 		// Setup test context
@@ -256,7 +255,7 @@ func TestSrcHydrationStage(t *testing.T) {
 
 		// Setup mock transformer clients with error
 		transformerClients := transformer.NewSimpleClients()
-		transformerClients.SetSrcHydrationOutput(sourcehydration.Response{}, errors.New("hydration error"))
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{}, errors.New("hydration error"))
 
 		// Setup test context
 		c := &testContext{}
@@ -317,7 +316,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		circular["self"] = circular
 
 		// Create expected hydrated events
-		hydratedEvents := []sourcehydration.HydrationEvent{
+		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "message-1",
 				Event: map[string]interface{}{
@@ -333,7 +332,7 @@ func TestSrcHydrationStage(t *testing.T) {
 
 		// Setup mock transformer clients
 		transformerClients := transformer.NewSimpleClients()
-		transformerClients.SetSrcHydrationOutput(sourcehydration.Response{
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{
 			Batch: hydratedEvents,
 		}, nil)
 
@@ -396,7 +395,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Create expected hydrated events
-		hydratedEvents := []sourcehydration.HydrationEvent{
+		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "message-1",
 				Event: map[string]interface{}{
@@ -411,7 +410,7 @@ func TestSrcHydrationStage(t *testing.T) {
 
 		// Setup mock transformer clients
 		transformerClients := transformer.NewSimpleClients()
-		transformerClients.SetSrcHydrationOutput(sourcehydration.Response{
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{
 			Batch: hydratedEvents,
 		}, nil)
 
@@ -496,7 +495,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Create expected hydrated events
-		hydratedEvents := []sourcehydration.HydrationEvent{
+		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "message-1",
 				Event: map[string]interface{}{
@@ -511,7 +510,7 @@ func TestSrcHydrationStage(t *testing.T) {
 
 		// Setup mock transformer clients
 		transformerClients := transformer.NewSimpleClients()
-		transformerClients.SetSrcHydrationOutput(sourcehydration.Response{
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{
 			Batch: hydratedEvents,
 		}, nil)
 

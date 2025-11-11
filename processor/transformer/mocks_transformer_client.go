@@ -3,8 +3,6 @@ package transformer
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
-
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -42,11 +40,11 @@ func (m *SimpleMockTrackingPlanClient) Validate(_ context.Context, _ []types.Tra
 }
 
 type SimpleMockSrcHydrationClient struct {
-	HydratedOutput sourcehydration.Response
+	HydratedOutput types.SrcHydrationResponse
 	err            error
 }
 
-func (m *SimpleMockSrcHydrationClient) Hydrate(_ context.Context, _ sourcehydration.Request) (sourcehydration.Response, error) {
+func (m *SimpleMockSrcHydrationClient) Hydrate(_ context.Context, _ types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
 	return m.HydratedOutput, m.err
 }
 
@@ -87,7 +85,7 @@ func NewSimpleClients() *SimpleClients {
 			},
 		},
 		sycHydrationClient: &SimpleMockSrcHydrationClient{
-			HydratedOutput: sourcehydration.Response{},
+			HydratedOutput: types.SrcHydrationResponse{},
 			err:            nil,
 		},
 	}
@@ -134,7 +132,7 @@ func (s *SimpleClients) SetTrackingPlanValidateOutput(response types.Response) {
 }
 
 // SetSrcHydrationOutput sets the response for the Source Hydration client
-func (s *SimpleClients) SetSrcHydrationOutput(response sourcehydration.Response, err error) {
+func (s *SimpleClients) SetSrcHydrationOutput(response types.SrcHydrationResponse, err error) {
 	s.sycHydrationClient = &SimpleMockSrcHydrationClient{
 		HydratedOutput: response,
 		err:            err,
@@ -162,7 +160,7 @@ func (s *SimpleClients) WithDynamicTrackingPlanValidate(validateFn func(context.
 }
 
 // WithDynamicSrcHydration sets a custom function for Source Hydration
-func (s *SimpleClients) WithDynamicSrcHydration(hydrateFn func(context.Context, sourcehydration.Request) (sourcehydration.Response, error)) {
+func (s *SimpleClients) WithDynamicSrcHydration(hydrateFn func(context.Context, types.SrcHydrationRequest) (types.SrcHydrationResponse, error)) {
 	s.sycHydrationClient = &dynamicSrcHydrationClient{hydrateFn: hydrateFn}
 }
 
@@ -193,10 +191,10 @@ func (d *dynamicTrackingPlanClient) Validate(ctx context.Context, events []types
 }
 
 type dynamicSrcHydrationClient struct {
-	hydrateFn func(context.Context, sourcehydration.Request) (sourcehydration.Response, error)
+	hydrateFn func(context.Context, types.SrcHydrationRequest) (types.SrcHydrationResponse, error)
 }
 
-func (d *dynamicSrcHydrationClient) Hydrate(ctx context.Context, req sourcehydration.Request) (sourcehydration.Response, error) {
+func (d *dynamicSrcHydrationClient) Hydrate(ctx context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
 	return d.hydrateFn(ctx, req)
 }
 

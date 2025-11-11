@@ -30,7 +30,7 @@ type TrackingPlanClient interface {
 }
 
 type SrcHydrationClient interface {
-	Hydrate(ctx context.Context, req sourcehydration.Request) (sourcehydration.Response, error)
+	Hydrate(ctx context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error)
 }
 
 type Clients struct {

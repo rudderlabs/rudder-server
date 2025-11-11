@@ -31,11 +31,11 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 	t.Run("successful hydration", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Send back the same events with status code 200
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -49,7 +49,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		conf.Set("DEST_TRANSFORM_URL", server.URL)
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -64,7 +64,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -74,7 +74,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -91,22 +91,22 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 	t.Run("empty batch", func(t *testing.T) {
 		conf := config.New()
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
-		resp, err := client.Hydrate(ctx, sourcehydration.Request{})
+		resp, err := client.Hydrate(ctx, types.SrcHydrationRequest{})
 		require.NoError(t, err)
 		require.Len(t, resp.Batch, 0)
 	})
 
 	t.Run("batching", func(t *testing.T) {
-		var receivedBatches [][]sourcehydration.HydrationEvent
+		var receivedBatches [][]types.SrcHydrationEvent
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			receivedBatches = append(receivedBatches, req.Batch)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -123,9 +123,9 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
 		// Create 5 events, expect them to be split into batches of 2
-		var events []sourcehydration.HydrationEvent
+		var events []types.SrcHydrationEvent
 		for i := 0; i < 5; i++ {
-			events = append(events, sourcehydration.HydrationEvent{
+			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
 				Event: map[string]interface{}{
 					"test": fmt.Sprintf("event%d", i),
@@ -133,7 +133,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			})
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -143,7 +143,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -179,7 +179,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			conf.Set("Processor.SourceHydration.failOnError", failOnError)
 			client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-			events := []sourcehydration.HydrationEvent{
+			events := []types.SrcHydrationEvent{
 				{
 					ID: "1",
 					Event: map[string]interface{}{
@@ -188,7 +188,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 				},
 			}
 
-			source := sourcehydration.Source{
+			source := types.SrcHydrationSource{
 				ID:             "source-id",
 				WorkspaceID:    "workspace-id",
 				Config:         []byte("{}"),
@@ -198,7 +198,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 				},
 			}
 
-			req := sourcehydration.Request{
+			req := types.SrcHydrationRequest{
 				Batch:  events,
 				Source: source,
 			}
@@ -231,11 +231,11 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 				return
 			}
 			// Succeed on third attempt
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -251,7 +251,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		conf.Set("Processor.SourceHydration.maxRetryBackoffInterval", time.Millisecond*10)
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -260,7 +260,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -270,7 +270,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -286,11 +286,11 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			// Simulate slow response
 			time.Sleep(100 * time.Millisecond)
 
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -305,7 +305,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -314,7 +314,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -324,7 +324,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -344,11 +344,11 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			receivedURL = r.URL.Path
 
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -363,7 +363,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -372,7 +372,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -382,7 +382,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -454,7 +454,7 @@ func TestSourceHydration_ErrorResponses(t *testing.T) {
 
 			client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-			events := []sourcehydration.HydrationEvent{
+			events := []types.SrcHydrationEvent{
 				{
 					ID: "1",
 					Event: map[string]interface{}{
@@ -463,7 +463,7 @@ func TestSourceHydration_ErrorResponses(t *testing.T) {
 				},
 			}
 
-			source := sourcehydration.Source{
+			source := types.SrcHydrationSource{
 				ID:             "source-id",
 				WorkspaceID:    "workspace-id",
 				Config:         []byte("{}"),
@@ -473,7 +473,7 @@ func TestSourceHydration_ErrorResponses(t *testing.T) {
 				},
 			}
 
-			req := sourcehydration.Request{
+			req := types.SrcHydrationRequest{
 				Batch:  events,
 				Source: source,
 			}
@@ -509,7 +509,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -518,7 +518,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -528,7 +528,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -554,7 +554,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -563,7 +563,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -573,7 +573,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -592,11 +592,11 @@ func TestSourceHydration_Timeout(t *testing.T) {
 			// Sleep longer than the configured timeout
 			time.Sleep(200 * time.Millisecond)
 
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -614,7 +614,7 @@ func TestSourceHydration_Timeout(t *testing.T) {
 
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
 				Event: map[string]interface{}{
@@ -623,7 +623,7 @@ func TestSourceHydration_Timeout(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -633,7 +633,7 @@ func TestSourceHydration_Timeout(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -648,16 +648,16 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("very large batch", func(t *testing.T) {
-		var receivedBatches [][]sourcehydration.HydrationEvent
+		var receivedBatches [][]types.SrcHydrationEvent
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			receivedBatches = append(receivedBatches, req.Batch)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -674,9 +674,9 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
 		// Create 500 events to test large batch splitting
-		var events []sourcehydration.HydrationEvent
+		var events []types.SrcHydrationEvent
 		for i := 0; i < 500; i++ {
-			events = append(events, sourcehydration.HydrationEvent{
+			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
 				Event: map[string]interface{}{
 					"test": fmt.Sprintf("event%d", i),
@@ -684,7 +684,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 			})
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -694,7 +694,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -711,16 +711,16 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 	})
 
 	t.Run("exact batch size boundaries", func(t *testing.T) {
-		var receivedBatches [][]sourcehydration.HydrationEvent
+		var receivedBatches [][]types.SrcHydrationEvent
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
 			receivedBatches = append(receivedBatches, req.Batch)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -737,9 +737,9 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
 		// Create exactly 10 events - exactly 2 batches
-		var events []sourcehydration.HydrationEvent
+		var events []types.SrcHydrationEvent
 		for i := 0; i < 10; i++ {
-			events = append(events, sourcehydration.HydrationEvent{
+			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
 				Event: map[string]interface{}{
 					"test": fmt.Sprintf("event%d", i),
@@ -747,7 +747,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 			})
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -757,7 +757,7 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -797,11 +797,11 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					receivedURL = r.URL.Path
 
-					var req sourcehydration.Request
+					var req types.SrcHydrationRequest
 					err := jsonrs.NewDecoder(r.Body).Decode(&req)
 					require.NoError(t, err)
 
-					response := sourcehydration.Response{
+					response := types.SrcHydrationResponse{
 						Batch: req.Batch,
 					}
 
@@ -816,7 +816,7 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 
 				client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-				events := []sourcehydration.HydrationEvent{
+				events := []types.SrcHydrationEvent{
 					{
 						ID: "1",
 						Event: map[string]interface{}{
@@ -825,7 +825,7 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 					},
 				}
 
-				source := sourcehydration.Source{
+				source := types.SrcHydrationSource{
 					ID:             "source-id",
 					WorkspaceID:    "workspace-id",
 					Config:         []byte("{}"),
@@ -835,7 +835,7 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 					},
 				}
 
-				req := sourcehydration.Request{
+				req := types.SrcHydrationRequest{
 					Batch:  events,
 					Source: source,
 				}
@@ -860,11 +860,11 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 			requestCounts[r.URL.Path]++
 			mu.Unlock()
 
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -881,7 +881,7 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP, sourcehydration.WithClient(server.Client()))
 
 		// Create multiple sources
-		sources := []sourcehydration.Source{
+		sources := []types.SrcHydrationSource{
 			{
 				ID:             "source-1",
 				WorkspaceID:    "workspace-1",
@@ -910,11 +910,11 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 		}
 
 		// Create events for each source
-		var requests []sourcehydration.Request
+		var requests []types.SrcHydrationRequest
 		for i, source := range sources {
-			var events []sourcehydration.HydrationEvent
+			var events []types.SrcHydrationEvent
 			for j := 0; j < 3; j++ {
-				events = append(events, sourcehydration.HydrationEvent{
+				events = append(events, types.SrcHydrationEvent{
 					ID: fmt.Sprintf("%d-%d", i, j),
 					Event: map[string]interface{}{
 						"source": source.ID,
@@ -922,7 +922,7 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 					},
 				})
 			}
-			requests = append(requests, sourcehydration.Request{
+			requests = append(requests, types.SrcHydrationRequest{
 				Batch:  events,
 				Source: source,
 			})
@@ -930,12 +930,12 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 
 		// Execute concurrent requests
 		var wg sync.WaitGroup
-		results := make([]sourcehydration.Response, len(requests))
+		results := make([]types.SrcHydrationResponse, len(requests))
 		errors := make([]error, len(requests))
 
 		for i, req := range requests {
 			wg.Add(1)
-			go func(index int, request sourcehydration.Request) {
+			go func(index int, request types.SrcHydrationRequest) {
 				defer wg.Done()
 				results[index], errors[index] = client.Hydrate(ctx, request)
 			}(i, req)
@@ -965,11 +965,11 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 
 	t.Run("events with empty event data", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -983,7 +983,7 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 		conf.Set("DEST_TRANSFORM_URL", server.URL)
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
-		events := []sourcehydration.HydrationEvent{
+		events := []types.SrcHydrationEvent{
 			{
 				ID:    "1",
 				Event: nil, // Nil event
@@ -1000,7 +1000,7 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 			},
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -1010,7 +1010,7 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -1045,11 +1045,11 @@ func TestSourceHydration_MetricsTracking(t *testing.T) {
 			requestBytes[r.URL.Path] += len(body)
 			mu.Unlock()
 
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(bytes.NewReader(body)).Decode(&req)
 			require.NoError(t, err)
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -1082,9 +1082,9 @@ func TestSourceHydration_MetricsTracking(t *testing.T) {
 		client := sourcehydration.New(conf, logger.NOP, statsStore)
 
 		// Create 5 events, expect them to be split into batches of 2
-		var events []sourcehydration.HydrationEvent
+		var events []types.SrcHydrationEvent
 		for i := 0; i < 5; i++ {
-			events = append(events, sourcehydration.HydrationEvent{
+			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
 				Event: map[string]interface{}{
 					"test": fmt.Sprintf("event%d", i),
@@ -1092,7 +1092,7 @@ func TestSourceHydration_MetricsTracking(t *testing.T) {
 			})
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -1102,7 +1102,7 @@ func TestSourceHydration_MetricsTracking(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}
@@ -1159,7 +1159,7 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 
 	t.Run("some batches fail while others succeed", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var req sourcehydration.Request
+			var req types.SrcHydrationRequest
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
@@ -1170,7 +1170,7 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 				return
 			}
 
-			response := sourcehydration.Response{
+			response := types.SrcHydrationResponse{
 				Batch: req.Batch,
 			}
 
@@ -1189,9 +1189,9 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
 
 		// Create 5 events, split into 3 batches: [0,1], [2,3], [4]
-		var events []sourcehydration.HydrationEvent
+		var events []types.SrcHydrationEvent
 		for i := 0; i < 5; i++ {
-			events = append(events, sourcehydration.HydrationEvent{
+			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
 				Event: map[string]interface{}{
 					"test": fmt.Sprintf("event%d", i),
@@ -1199,7 +1199,7 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 			})
 		}
 
-		source := sourcehydration.Source{
+		source := types.SrcHydrationSource{
 			ID:             "source-id",
 			WorkspaceID:    "workspace-id",
 			Config:         []byte("{}"),
@@ -1209,7 +1209,7 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 			},
 		}
 
-		req := sourcehydration.Request{
+		req := types.SrcHydrationRequest{
 			Batch:  events,
 			Source: source,
 		}

@@ -3,7 +3,6 @@ package sourcehydration
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,7 +24,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -33,35 +31,6 @@ import (
 )
 
 const srcHydrationStage = "source_hydration"
-
-// HydrationEvent represents a single event in the hydration request/response
-type HydrationEvent struct {
-	ID         string                 `json:"id" required:"true"`
-	Event      map[string]interface{} `json:"event" required:"true"`
-	StatusCode int                    `json:"statusCode,omitempty"`
-	ErrorMsg   string                 `json:"errorMessage,omitempty"`
-}
-
-// Request represents the request format for source hydration API
-type Request struct {
-	Batch  []HydrationEvent `json:"batch"`
-	Source Source           `json:"source"`
-}
-
-type Source struct {
-	ID               string                          `json:"id"`
-	Config           json.RawMessage                 `json:"config"`
-	InternalSecret   json.RawMessage                 `json:"internalSecret"`
-	WorkspaceID      string                          `json:"workspaceId"`
-	SourceDefinition backendconfig.SourceDefinitionT `json:"sourceDefinition"`
-}
-
-// Response represents the response format from source hydration API
-type Response struct {
-	// Batch is a required field containing hydration events
-	Batch      []HydrationEvent `json:"batch" required:"true"`
-	StatusCode int
-}
 
 type Opt func(*Client)
 
@@ -109,11 +78,11 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 }
 
 // Hydrate performs source hydration on the provided events
-func (c *Client) Hydrate(ctx context.Context, hydrationReq Request) (Response, error) {
+func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
 	batchSize := c.config.batchSize.Load()
 	clientEvents := hydrationReq.Batch
 	if len(clientEvents) == 0 {
-		return Response{}, nil
+		return types.SrcHydrationResponse{}, nil
 	}
 
 	sourceHydrationURL := c.sourceHydrationURL(hydrationReq.Source.SourceDefinition.Name)
@@ -145,14 +114,14 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq Request) (Response, e
 		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
 
-	hydratedBatches := make([][]HydrationEvent, len(batches))
+	hydratedBatches := make([][]types.SrcHydrationEvent, len(batches))
 
 	g, groupCtx := errgroup.WithContext(ctx)
 	var wg sync.WaitGroup
 	wg.Add(len(batches))
 	lo.ForEach(
 		batches,
-		func(batch []HydrationEvent, i int) {
+		func(batch []types.SrcHydrationEvent, i int) {
 			g.Go(func() error {
 				resp, err := c.sendBatch(groupCtx, sourceHydrationURL, hydrationReq.Source, labels, batch)
 				if err != nil {
@@ -171,12 +140,12 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq Request) (Response, e
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
-			return Response{}, fmt.Errorf("source hydration cancelled: %w", err)
+			return types.SrcHydrationResponse{}, fmt.Errorf("source hydration cancelled: %w", err)
 		}
 		panic(err)
 	}
 
-	var outClientEvents []HydrationEvent
+	var outClientEvents []types.SrcHydrationEvent
 
 	for _, batch := range hydratedBatches {
 		// Add all events from the batch to the result
@@ -186,20 +155,20 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq Request) (Response, e
 	c.stat.NewStat("processor_transformer_sent", stats.CountType).Count(len(clientEvents))
 	c.stat.NewStat("processor_transformer_received", stats.CountType).Count(len(outClientEvents))
 
-	return Response{
+	return types.SrcHydrationResponse{
 		Batch: outClientEvents,
 	}, nil
 }
 
-func (c *Client) sendBatch(ctx context.Context, url string, source Source, labels types.TransformerMetricLabels, data []HydrationEvent) (Response, error) {
+func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydrationSource, labels types.TransformerMetricLabels, data []types.SrcHydrationEvent) (types.SrcHydrationResponse, error) {
 	if len(data) == 0 {
-		return Response{}, nil
+		return types.SrcHydrationResponse{}, nil
 	}
 
 	start := time.Now()
 
 	// Create request in the format expected by the source hydration API
-	request := Request{
+	request := types.SrcHydrationRequest{
 		Batch:  data,
 		Source: source,
 	}
@@ -212,12 +181,12 @@ func (c *Client) sendBatch(ctx context.Context, url string, source Source, label
 
 	respData, statusCode, err := c.doPost(ctx, rawJSON, url, labels)
 	if err != nil {
-		return Response{}, err
+		return types.SrcHydrationResponse{}, err
 	}
 
 	switch statusCode {
 	case http.StatusOK:
-		var response Response
+		var response types.SrcHydrationResponse
 		respReader := bytes.NewReader(respData)
 		decoder := jsonrs.NewDecoder(respReader)
 		decoder.DisallowUnknownFields()
@@ -237,7 +206,7 @@ func (c *Client) sendBatch(ctx context.Context, url string, source Source, label
 		c.log.Errorn("Source hydration returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
 		c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
 		c.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
-		return Response{StatusCode: statusCode}, nil
+		return types.SrcHydrationResponse{StatusCode: statusCode}, nil
 	}
 }
 
