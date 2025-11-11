@@ -83,6 +83,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 						obskit.SourceID(string(sourceId)),
 						obskit.Error(marshallErr),
 					)
+					panic(marshallErr)
 				}
 				if marshalledPayload != nil {
 					message.eventSchemaJobsBySourceId[sourceId] = append(message.eventSchemaJobsBySourceId[sourceId], &jobsdb.JobT{
@@ -95,6 +96,15 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 						ExpireAt:     time.Now(),
 						WorkspaceId:  originalEventWithMetadata.WorkspaceId,
 					})
+					message.eventsByMessageID[msgId] = types.SingularEventWithMetadata{
+						SingularEvent: event.Message,
+						ReceivedAt:    originalEventWithMetadata.ReceivedAt,
+						UUID:          originalEventWithMetadata.UUID,
+						UserID:        originalEventWithMetadata.UserID,
+						CustomVal:     originalEventWithMetadata.CustomVal,
+						Parameters:    originalEventWithMetadata.Parameters,
+						WorkspaceId:   originalEventWithMetadata.WorkspaceId,
+					}
 				}
 			}
 		}

@@ -374,18 +374,9 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Execute the source hydration stage
-		result, err := proc.srcHydrationStage("test-partition", message)
-
-		// Assertions
-		require.NoError(t, err)
-		require.NotNil(t, result)
-		// Should still have the hydrated events even with marshaling error
-		hydratedTransformerEvents := result.groupedEventsBySourceId[SourceIDT(fblaSourceId)]
-		require.Len(t, hydratedTransformerEvents, 1)
-		require.Equal(t, "Test Product 1", hydratedTransformerEvents[0].Message["productName"])
-
-		// Event schema jobs should be empty due to marshaling error
-		require.Empty(t, message.eventSchemaJobsBySourceId[SourceIDT(fblaSourceId)])
+		require.Panics(t, func() {
+			_, _ = proc.srcHydrationStage("test-partition", message)
+		})
 	})
 
 	t.Run("Test event schema jobs creation", func(t *testing.T) {
@@ -486,5 +477,104 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.Equal(t, originalEventWithMetadata.CustomVal, eventSchemaJobs[0].CustomVal)
 		require.Equal(t, originalEventWithMetadata.WorkspaceId, eventSchemaJobs[0].WorkspaceId)
 		require.Equal(t, jsonparser.GetStringOrEmpty(eventSchemaJobs[0].EventPayload, "productName"), "Test Product 1")
+	})
+
+	t.Run("Test eventsByMessageID updated with hydrated data", func(t *testing.T) {
+		// Create test events
+		events := []types.TransformerEvent{
+			{
+				Message: map[string]interface{}{
+					"type":      "track",
+					"event":     "Product Viewed",
+					"productId": "12345",
+				},
+				Metadata: types.Metadata{
+					MessageID: "message-1",
+					SourceID:  fblaSourceId,
+				},
+			},
+		}
+
+		// Create expected hydrated events
+		hydratedEvents := []sourcehydration.HydrationEvent{
+			{
+				ID: "message-1",
+				Event: map[string]interface{}{
+					"type":        "track",
+					"event":       "Product Viewed",
+					"productId":   "12345",
+					"productName": "Test Product 1",
+					"price":       29.99,
+				},
+			},
+		}
+
+		// Setup mock transformer clients
+		transformerClients := transformer.NewSimpleClients()
+		transformerClients.SetSrcHydrationOutput(sourcehydration.Response{
+			Batch: hydratedEvents,
+		}, nil)
+
+		// Setup test context
+		c := &testContext{}
+		c.Setup(t)
+		defer c.Finish()
+		// Create processor handle
+		conf := config.New()
+		proc := NewHandle(conf, transformerClients)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().AnyTimes()
+		Setup(proc, c, true, true, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := proc.config.asyncInit.WaitContext(ctx)
+		require.NoError(t, err)
+
+		// Create original event with metadata
+		originalEventWithMetadata := types.SingularEventWithMetadata{
+			UserID:      "test-user",
+			Parameters:  []byte(`{"source_id": "test-source"}`),
+			CustomVal:   "GW",
+			WorkspaceId: "test-workspace",
+			UUID:        [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+			ReceivedAt:  time.Now(),
+		}
+
+		// Create test message with event schema jobs
+		message := &srcHydrationMessage{
+			partition: "test-partition",
+			subJobs: subJob{
+				ctx: context.Background(),
+			},
+			eventSchemaJobsBySourceId: map[SourceIDT][]*jobsdb.JobT{
+				SourceIDT(fblaSourceId): {&jobsdb.JobT{}},
+			},
+			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
+				SourceIDT(fblaSourceId): events,
+			},
+			eventsByMessageID: map[string]types.SingularEventWithMetadata{
+				"message-1": originalEventWithMetadata,
+			},
+		}
+
+		// Execute the source hydration stage
+		result, err := proc.srcHydrationStage("test-partition", message)
+
+		// Assertions
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		// Check that eventsByMessageID was updated with hydrated event data
+		updatedEvent, exists := result.eventsByMessageID["message-1"]
+		require.True(t, exists)
+		require.Equal(t, "Test Product 1", updatedEvent.SingularEvent["productName"])
+		require.Equal(t, 29.99, updatedEvent.SingularEvent["price"])
+		// Verify other metadata is preserved
+		require.Equal(t, originalEventWithMetadata.UserID, updatedEvent.UserID)
+		require.Equal(t, originalEventWithMetadata.Parameters, updatedEvent.Parameters)
+		require.Equal(t, originalEventWithMetadata.CustomVal, updatedEvent.CustomVal)
+		require.Equal(t, originalEventWithMetadata.WorkspaceId, updatedEvent.WorkspaceId)
+		require.Equal(t, originalEventWithMetadata.UUID, updatedEvent.UUID)
+		require.Equal(t, originalEventWithMetadata.ReceivedAt, updatedEvent.ReceivedAt)
 	})
 }
