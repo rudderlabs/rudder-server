@@ -15,7 +15,7 @@ import (
 
 type AsyncUploadAndTransformManager interface {
 	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
-	Transform(job *jobsdb.JobT) (string, error)
+	Transform(job *jobsdb.JobT, sourceID string) (string, error) // needed to store the sourceId in the file, to upload the file per source
 }
 
 type AsyncDestinationManager interface {
@@ -45,8 +45,8 @@ func (m SimpleAsyncDestinationManager) GetUploadStats(GetUploadStatsInput) GetUp
 	}
 }
 
-func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
-	return m.UploaderAndTransformer.Transform(job)
+func (m SimpleAsyncDestinationManager) Transform(job *jobsdb.JobT, sourceID string) (string, error) {
+	return m.UploaderAndTransformer.Transform(job, sourceID)
 }
 
 type PollStatusResponse struct {
@@ -98,6 +98,11 @@ type ImportParameters struct {
 	MetaData MetaDataT `json:"metadata"`
 }
 
+type ConnectionConfigMapKey struct {
+	SourceID      string
+	DestinationID string
+}
+
 type AsyncDestinationStruct struct {
 	ImportingJobIDs       []int64
 	FailedJobIDs          []int64
@@ -117,6 +122,7 @@ type AsyncDestinationStruct struct {
 	OriginalJobParameters map[int64]stdjson.RawMessage
 	PartFileNumber        int
 	SourceJobRunID        string
+	ConnectionConfig      map[ConnectionConfigMapKey]interface{}
 }
 
 type GetUploadStatsInput struct {

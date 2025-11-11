@@ -35,7 +35,7 @@ type mockAsyncDestinationManager struct {
 	statsOutput  common.GetUploadStatsResponse
 }
 
-func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error) {
+func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT, sourceID string) (string, error) {
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
@@ -803,7 +803,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			}
 
 			batchRouter := defaultHandle(destType)
-			batchRouter.initAsyncDestinationStruct(&destination)
+			batchRouter.initAsyncDestinationStruct(&destination, nil)
 			mockCtrl := gomock.NewController(t)
 			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			batchRouter.jobsDB = mockJobsDB

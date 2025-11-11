@@ -34,7 +34,7 @@ func NewBingAdsBulkUploader(logger logger.Logger, statsFactory stats.Stats, dest
 	}
 }
 
-func (*BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+func (*BingAdsBulkUploader) Transform(job *jobsdb.JobT, sourceID string) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 

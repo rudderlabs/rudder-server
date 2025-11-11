@@ -136,11 +136,12 @@ type Handle struct {
 	uploadedRawDataJobsCache map[string]map[string]bool
 	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
-	asyncPollTimeStat       stats.Measurement
-	asyncFailedJobsTimeStat stats.Measurement
-	asyncSuccessfulJobCount stats.Measurement
-	asyncFailedJobCount     stats.Measurement
-	asyncAbortedJobCount    stats.Measurement
+	asyncPollTimeStat        stats.Measurement
+	asyncFailedJobsTimeStat  stats.Measurement
+	asyncSuccessfulJobCount  stats.Measurement
+	asyncFailedJobCount      stats.Measurement
+	asyncAbortedJobCount     stats.Measurement
+	sourcesPerDestinationMap map[string][]string // needed to poll async destinations for each source
 }
 
 // mainLoop is responsible for pinging the workers periodically for every active partition

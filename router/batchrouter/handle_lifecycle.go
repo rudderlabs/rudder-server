@@ -257,9 +257,10 @@ func (brt *Handle) Shutdown() {
 	brt.logger.Infon("Batch router shutdown complete")
 }
 
-func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT) {
+func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.DestinationT, connectionConfigMap map[string]interface{}) {
 	_, ok := brt.asyncDestinationStruct[destination.ID]
-	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig)
+	// We are storing the connectionConfigMap to be used by the manager to upload the file per source.
+	manager, err := asyncdestinationmanager.NewManager(brt.conf, brt.logger.Child("asyncdestinationmanager"), stats.Default, destination, brt.backendConfig, connectionConfigMap)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error initializing async destination struct", obskit.DestinationType(destination.Name), obskit.Error(err))
 		destInitFailStat := stats.Default.NewTaggedStat("destination_initialization_fail", stats.CountType, map[string]string{
@@ -278,14 +279,14 @@ func (brt *Handle) initAsyncDestinationStruct(destination *backendconfig.Destina
 	brt.asyncDestinationStruct[destination.ID].Manager = manager
 }
 
-func (brt *Handle) refreshDestination(destination backendconfig.DestinationT) {
+func (brt *Handle) refreshDestination(destination backendconfig.DestinationT, connectionConfigMap map[string]interface{}) {
 	if asynccommon.IsAsyncDestination(destination.DestinationDefinition.Name) {
 		asyncDestStruct, ok := brt.asyncDestinationStruct[destination.ID]
 		if ok && asyncDestStruct.Destination != nil &&
 			asyncDestStruct.Destination.RevisionID == destination.RevisionID {
 			return
 		}
-		brt.initAsyncDestinationStruct(&destination)
+		brt.initAsyncDestinationStruct(&destination, connectionConfigMap)
 	}
 }
 
@@ -385,18 +386,32 @@ func (brt *Handle) backendConfigSubscriber() {
 		uploadIntervalMap := map[string]time.Duration{}
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		for _, wConfig := range config {
+			// map of destinationID and sourceID to connectionConfig
+			connectionConfigMap := map[asynccommon.ConnectionConfigMapKey]interface{}{}
+			for _, connection := range wConfig.Connections {
+				connectionConfigMap[asynccommon.ConnectionConfigMapKey{SourceID: connection.SourceID, DestinationID: connection.DestinationID}] = connection.Config
+			}
 			for _, source := range wConfig.Sources {
 				if len(source.Destinations) > 0 {
 					for _, destination := range source.Destinations {
+						// map of sourceID to connectionConfig for a destination
+						destinationConnectionConfigMap := map[string]interface{}{}
 						if destination.DestinationDefinition.Name == brt.destType {
 							if _, ok := destinationsMap[destination.ID]; !ok {
+								for key, connectionConfig := range connectionConfigMap {
+									if key.DestinationID == destination.ID {
+										destinationConnectionConfigMap[key.SourceID] = connectionConfig
+										// track sources per destination, this will be used to poll async destinations for each source
+										brt.sourcesPerDestinationMap[destination.ID] = append(brt.sourcesPerDestinationMap[destination.ID], key.SourceID)
+									}
+								}
 								destinationsMap[destination.ID] = &routerutils.DestinationWithSources{Destination: destination, Sources: []backendconfig.SourceT{}}
 								if asynccommon.IsAsyncDestination(brt.destType) {
 									uploadIntervalMap[destination.ID] = brt.uploadInterval(destination.Config)
 								}
 							}
 							destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, source)
-							brt.refreshDestination(destination)
+							brt.refreshDestination(destination, destinationConnectionConfigMap)
 
 							// initialize map to track encountered anonymousIds for a warehouse destination
 							if warehouseutils.IDResolutionEnabled() && slices.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
