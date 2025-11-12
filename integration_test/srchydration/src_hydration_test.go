@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
@@ -25,7 +28,6 @@ import (
 
 	proctypes "github.com/rudderlabs/rudder-server/processor/types"
 
-	_ "github.com/marcboeker/go-duckdb"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -34,8 +36,6 @@ import (
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -50,6 +50,83 @@ const (
 )
 
 func TestSrcHydration(t *testing.T) {
+	t.Run("SrcHydrationWithTransformer", func(t *testing.T) {
+		pageAccessToken := os.Getenv("FB_TEST_PAGE_ACCESS_TOKEN")
+		if pageAccessToken == "" {
+			t.Skip("FB_TEST_PAGE_ACCESS_TOKEN is not set, skipping test")
+		}
+
+		webhook := webhookutil.NewRecorder()
+		t.Cleanup(webhook.Close)
+		webhookURL := webhook.Server.URL
+
+		bcServer := backendconfigtest.NewBuilder().
+			WithWorkspaceConfig(backendconfigtest.NewConfigBuilder().
+				WithWorkspaceID(workspaceID).
+				WithSource(
+					backendconfigtest.NewSourceBuilder().
+						WithWorkspaceID(workspaceID).
+						WithID(sourceID).
+						WithWriteKey(writeKey).
+						WithSourceCategory("webhook").
+						WithInternalSecrets(json.RawMessage(fmt.Sprintf(`{"pageAccessToken": "%s"}`, pageAccessToken))).
+						WithSourceType("FACEBOOK_LEAD_ADS_NATIVE").
+						WithSourceDefOptions(backendconfig.SourceDefinitionOptions{
+							Hydration: struct {
+								Enabled bool
+							}{Enabled: true},
+						}).
+						WithConnection(
+							backendconfigtest.NewDestinationBuilder("WEBHOOK").
+								WithID("destination-1").
+								WithConfigOption("webhookMethod", "POST").
+								WithConfigOption("webhookUrl", webhookURL).
+								Build()).
+						Build()).
+				Build()).
+			Build()
+		t.Cleanup(bcServer.Close)
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		postgresContainer, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
+
+		tr, err := transformer.Setup(pool, t)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		gwPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		wg, ctx := errgroup.WithContext(ctx)
+		wg.Go(func() error {
+			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir())
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
+		})
+
+		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		eventsCount := 12
+
+		err = sendEvents(eventsCount, "identify", "writekey-1", url)
+		require.NoError(t, err)
+
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+
+		require.Eventually(t, func() bool {
+			return webhook.RequestsCount() == eventsCount
+		}, 2*time.Minute, 10*time.Second, "unexpected number of events received, count of events: %d", webhook.RequestsCount())
+	})
+
 	t.Run("SrcHydration", func(t *testing.T) {
 		webhook := webhookutil.NewRecorder()
 		t.Cleanup(webhook.Close)
@@ -207,8 +284,8 @@ func sendEvents(
 			{
 			  "batch": [
 				{
-				  "userId": %[1]q,
-				  "type": %[2]q,
+				  "anonymousId": "1201391398519677",
+				  "type": %[1]q,
 				  "context": {
 					"traits": {
 					  "trait1": "new-val"
@@ -222,7 +299,6 @@ func sendEvents(
 				}
 			  ]
 			}`,
-			rand.String(10),
 			eventType,
 		))
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))

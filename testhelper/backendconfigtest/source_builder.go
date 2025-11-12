@@ -1,6 +1,8 @@
 package backendconfigtest
 
 import (
+	"encoding/json"
+
 	"github.com/grafana/jsonparser"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -104,5 +106,10 @@ func (b *SourceBuilder) WithSourceType(sourceType string) *SourceBuilder {
 // WithSourceType sets the source type
 func (b *SourceBuilder) WithWorkspaceID(workspaceID string) *SourceBuilder {
 	b.v.WorkspaceID = workspaceID
+	return b
+}
+
+func (b *SourceBuilder) WithInternalSecrets(secrets json.RawMessage) *SourceBuilder {
+	b.v.InternalSecret = secrets
 	return b
 }
