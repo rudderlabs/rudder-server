@@ -9,8 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 
@@ -34,14 +32,9 @@ func GetRudderEventVal(key string, rudderEvent SingularEventT) (interface{}, boo
 	return rudderVal, true
 }
 
-type SingularEventWithMetadata struct {
+type SingularEventWithReceivedAt struct {
 	SingularEvent SingularEventT
 	ReceivedAt    time.Time
-	UUID          uuid.UUID
-	UserID        string
-	CustomVal     string
-	Parameters    json.RawMessage
-	WorkspaceId   string
 }
 
 // GatewayBatchRequest batch request structure
@@ -311,10 +304,8 @@ func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
 
 // SrcHydrationEvent represents a single event in the hydration request/response
 type SrcHydrationEvent struct {
-	ID         string                 `json:"id" required:"true"`
-	Event      map[string]interface{} `json:"event" required:"true"`
-	StatusCode int                    `json:"statusCode,omitempty"`
-	ErrorMsg   string                 `json:"errorMessage,omitempty"`
+	ID    string                 `json:"id" required:"true"` // JobID of the event we are hydrating
+	Event map[string]interface{} `json:"event" required:"true"`
 }
 
 // SrcHydrationRequest represents the request format for source hydration API

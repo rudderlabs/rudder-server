@@ -45,7 +45,6 @@ type namespaceConfig struct {
 	lastUpdatedAt            time.Time
 	workspacesConfig         map[string]ConfigT
 	dynamicConfigCache       dynamicconfig.Cache
-	fetchInternalSecretes    bool
 
 	httpCallsStat        stats.Counter
 	httpResponseSizeStat stats.Histogram
@@ -117,12 +116,6 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, 
 	if nc.incrementalConfigUpdates && !nc.lastUpdatedAt.IsZero() {
 		values := u.Query()
 		values.Add("updatedAfter", nc.lastUpdatedAt.Format(updatedAfterTimeFormat))
-		u.RawQuery = values.Encode()
-	}
-
-	if nc.fetchInternalSecretes {
-		values := u.Query()
-		values.Add("secrets", "embed")
 		u.RawQuery = values.Encode()
 	}
 

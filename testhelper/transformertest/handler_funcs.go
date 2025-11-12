@@ -16,6 +16,7 @@ type TransformerHandler func(request []proctypes.TransformerEvent) []proctypes.T
 // RouterTransformerHandler is a function that takes a router transformer request and returns a response
 type RouterTransformerHandler func(request types.TransformMessageT) types.DestinationJobs
 
+// SrcHydrationHandler is a function that takes a src hydration request and returns a response
 type SrcHydrationHandler func(request proctypes.SrcHydrationRequest) (response proctypes.SrcHydrationResponse, err error)
 
 // MirroringTransformerHandler mirrors the request payload in the response

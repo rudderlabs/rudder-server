@@ -98,7 +98,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithMetadata),
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
 		}
 
 		// Execute the source hydration stage
@@ -166,7 +166,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(sourceID): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithMetadata),
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
 		}
 
 		// Execute the source hydration stage
@@ -225,7 +225,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT("non-existent-source-id"): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithMetadata),
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
 		}
 
 		// Execute the source hydration stage
@@ -282,7 +282,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: make(map[string]types.SingularEventWithMetadata),
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
 		}
 
 		// Execute the source hydration stage
@@ -352,8 +352,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create test message with event schema jobs
-		originalEventWithMetadata := types.SingularEventWithMetadata{
-			UserID: "test-user",
+		originalEventWithMetadata := types.SingularEventWithReceivedAt{
+			SingularEvent: dummySingularEvent,
 		}
 
 		message := &srcHydrationMessage{
@@ -367,7 +367,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: map[string]types.SingularEventWithMetadata{
+			eventsByMessageID: map[string]types.SingularEventWithReceivedAt{
 				"message-1": originalEventWithMetadata,
 			},
 		}
@@ -430,7 +430,11 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create original event with metadata
-		originalEventWithMetadata := types.SingularEventWithMetadata{
+		originalEventWithMetadata := types.SingularEventWithReceivedAt{
+			SingularEvent: dummySingularEvent,
+		}
+
+		ogEventSchemaJob := &jobsdb.JobT{
 			UserID:      "test-user",
 			Parameters:  []byte(`{"source_id": "test-source"}`),
 			CustomVal:   "GW",
@@ -445,12 +449,12 @@ func TestSrcHydrationStage(t *testing.T) {
 				ctx: context.Background(),
 			},
 			eventSchemaJobsBySourceId: map[SourceIDT][]*jobsdb.JobT{
-				SourceIDT(fblaSourceId): {&jobsdb.JobT{}},
+				SourceIDT(fblaSourceId): {},
 			},
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: map[string]types.SingularEventWithMetadata{
+			eventsByMessageID: map[string]types.SingularEventWithReceivedAt{
 				"message-1": originalEventWithMetadata,
 			},
 		}
@@ -470,11 +474,11 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Check that event schema jobs were created
 		eventSchemaJobs := result.eventSchemaJobsBySourceId[SourceIDT(fblaSourceId)]
 		require.Len(t, eventSchemaJobs, 1)
-		require.Equal(t, originalEventWithMetadata.UUID, eventSchemaJobs[0].UUID)
-		require.Equal(t, originalEventWithMetadata.UserID, eventSchemaJobs[0].UserID)
-		require.Equal(t, originalEventWithMetadata.Parameters, eventSchemaJobs[0].Parameters)
-		require.Equal(t, originalEventWithMetadata.CustomVal, eventSchemaJobs[0].CustomVal)
-		require.Equal(t, originalEventWithMetadata.WorkspaceId, eventSchemaJobs[0].WorkspaceId)
+		require.Equal(t, ogEventSchemaJob.UUID, eventSchemaJobs[0].UUID)
+		require.Equal(t, ogEventSchemaJob.UserID, eventSchemaJobs[0].UserID)
+		require.Equal(t, ogEventSchemaJob.Parameters, eventSchemaJobs[0].Parameters)
+		require.Equal(t, ogEventSchemaJob.CustomVal, eventSchemaJobs[0].CustomVal)
+		require.Equal(t, ogEventSchemaJob.WorkspaceId, eventSchemaJobs[0].WorkspaceId)
 		require.Equal(t, jsonparser.GetStringOrEmpty(eventSchemaJobs[0].EventPayload, "productName"), "Test Product 1")
 	})
 
@@ -530,13 +534,9 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create original event with metadata
-		originalEventWithMetadata := types.SingularEventWithMetadata{
-			UserID:      "test-user",
-			Parameters:  []byte(`{"source_id": "test-source"}`),
-			CustomVal:   "GW",
-			WorkspaceId: "test-workspace",
-			UUID:        [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
-			ReceivedAt:  time.Now(),
+		originalEventWithMetadata := types.SingularEventWithReceivedAt{
+			SingularEvent: dummySingularEvent,
+			ReceivedAt:    time.Now(),
 		}
 
 		// Create test message with event schema jobs
@@ -551,7 +551,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
 			},
-			eventsByMessageID: map[string]types.SingularEventWithMetadata{
+			eventsByMessageID: map[string]types.SingularEventWithReceivedAt{
 				"message-1": originalEventWithMetadata,
 			},
 		}
@@ -569,11 +569,6 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.Equal(t, "Test Product 1", updatedEvent.SingularEvent["productName"])
 		require.Equal(t, 29.99, updatedEvent.SingularEvent["price"])
 		// Verify other metadata is preserved
-		require.Equal(t, originalEventWithMetadata.UserID, updatedEvent.UserID)
-		require.Equal(t, originalEventWithMetadata.Parameters, updatedEvent.Parameters)
-		require.Equal(t, originalEventWithMetadata.CustomVal, updatedEvent.CustomVal)
-		require.Equal(t, originalEventWithMetadata.WorkspaceId, updatedEvent.WorkspaceId)
-		require.Equal(t, originalEventWithMetadata.UUID, updatedEvent.UUID)
 		require.Equal(t, originalEventWithMetadata.ReceivedAt, updatedEvent.ReceivedAt)
 	})
 }

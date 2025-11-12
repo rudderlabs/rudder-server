@@ -178,7 +178,6 @@ type Handle struct {
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		archiveInPreProcess                       bool
-		enableSrcHydrationStage                   bool
 	}
 
 	drainConfig struct {
@@ -624,7 +623,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
-	proc.limiter.srcHydration = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_src_hydration",
+	proc.limiter.srcHydration = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_srchydration",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.src_hydration.limit"),
 		s,
 		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.src_hydration.dynamicPeriod", 1, time.Second)))
@@ -746,7 +745,6 @@ func (proc *Handle) loadConfig() {
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
-	proc.config.enableSrcHydrationStage = proc.conf.GetBoolVar(false, "Processor.enableSrcHydrationStage")
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -1056,7 +1054,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 func (proc *Handle) getTransformerEvents(
 	response types.Response,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithMetadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	destination *backendconfig.DestinationT,
 	connection backendconfig.Connection,
 	inPU, pu string,
@@ -1179,7 +1177,7 @@ func (proc *Handle) updateMetricMaps(
 	event *types.TransformerResponse,
 	status, stage string,
 	payload func() json.RawMessage,
-	eventsByMessageID map[string]types.SingularEventWithMetadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 ) {
 	if !proc.isReportingEnabled() {
 		return
@@ -1312,7 +1310,7 @@ func (proc *Handle) getNonSuccessfulMetrics(
 	response types.Response,
 	inputEvents []types.TransformerEvent,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithMetadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	inPU, pu string,
 ) *NonSuccessfulTransformationMetrics {
 	m := &NonSuccessfulTransformationMetrics{}
@@ -1381,7 +1379,7 @@ func (proc *Handle) getTransformationMetrics(
 	transformerResponses []types.TransformerResponse,
 	state string,
 	commonMetaData *types.Metadata,
-	eventsByMessageID map[string]types.SingularEventWithMetadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	metadataByMessageID map[string]*types.Metadata,
 	inPU, pu string,
 ) ([]*jobsdb.JobT, []*reportingtypes.PUReportedMetric, map[string]int64) {
@@ -1660,7 +1658,7 @@ type preTransformationMessage struct {
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	totalEvents                   int
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID             map[string]types.SingularEventWithMetadata
+	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
 	jobIDToSpecificDestMapOnly    map[int64]string
 	statusList                    []*jobsdb.JobStatusT
 	jobList                       []*jobsdb.JobT
@@ -1668,7 +1666,7 @@ type preTransformationMessage struct {
 	dedupKeys                     map[string]struct{}
 }
 
-func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*preTransformationMessage, error) {
+func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*srcHydrationMessage, error) {
 	spanTags := stats.Tags{"partition": partition}
 	ctx, processJobsSpan := proc.tracer.Trace(subJobs.ctx, "preprocessStage", tracing.WithTraceTags(spanTags))
 	defer processJobsSpan.End()
@@ -1687,7 +1685,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 	var statusList []*jobsdb.JobStatusT
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
-	eventsByMessageID := make(map[string]types.SingularEventWithMetadata)
+	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
 	eventSchemaJobsBySourceId := make(map[SourceIDT][]*jobsdb.JobT)
 	archivalJobs := make([]*jobsdb.JobT, 0)
 
@@ -1954,14 +1952,9 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 		proc.updateSourceEventStatsDetailed(event.singularEvent, sourceId)
 		totalEvents++
-		eventsByMessageID[event.messageID] = types.SingularEventWithMetadata{
+		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
 			SingularEvent: event.singularEvent,
 			ReceivedAt:    event.recievedAt,
-			UUID:          event.uuid,
-			UserID:        event.userId,
-			CustomVal:     event.customVal,
-			Parameters:    event.parameters,
-			WorkspaceId:   event.workspaceID,
 		}
 
 		sourceIsTransient := proc.transientSources.Apply(sourceId)
@@ -2116,7 +2109,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		archivalJobs = nil
 	}
 
-	return &preTransformationMessage{
+	return &srcHydrationMessage{
 		partition:                     partition,
 		subJobs:                       subJobs,
 		eventSchemaJobsBySourceId:     eventSchemaJobsBySourceId,
@@ -2403,7 +2396,7 @@ type transformationMessage struct {
 	groupedEvents map[string][]types.TransformerEvent
 
 	trackingPlanEnabledMap       map[SourceIDT]bool
-	eventsByMessageID            map[string]types.SingularEventWithMetadata
+	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	reportMetrics                []*reportingtypes.PUReportedMetric
 	statusList                   []*jobsdb.JobStatusT
@@ -2953,7 +2946,7 @@ type userTransformAndFilterOutput struct {
 	reportMetrics         []*reportingtypes.PUReportedMetric
 	procErrorJobsByDestID map[string][]*jobsdb.JobT
 	droppedJobs           []*jobsdb.JobT
-	eventsByMessageID     map[string]types.SingularEventWithMetadata
+	eventsByMessageID     map[string]types.SingularEventWithReceivedAt
 	srcAndDestKey         string
 	response              types.Response
 	transformAt           string
@@ -2965,7 +2958,7 @@ func (proc *Handle) userTransformAndFilter(
 	srcAndDestKey string,
 	eventList []types.TransformerEvent,
 	trackingPlanEnabledMap map[SourceIDT]bool,
-	eventsByMessageID map[string]types.SingularEventWithMetadata,
+	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
 ) userTransformAndFilterOutput {
 	if len(eventList) == 0 {
@@ -3757,7 +3750,7 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 
 	var transMessage *transformationMessage
 	var err error
-	preTransMessage, err := proc.preprocessStage(
+	srcHydrationMsg, err := proc.preprocessStage(
 		partition,
 		subJob{
 			ctx:           ctx,
@@ -3770,12 +3763,12 @@ func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	if err != nil {
 		panic(err)
 	}
-	if proc.config.enableSrcHydrationStage {
-		preTransMessage, err = proc.srcHydrationStage(partition, convertToSrcHydrationMessage(preTransMessage))
-		if err != nil {
-			panic(err)
-		}
+
+	preTransMessage, err := proc.srcHydrationStage(partition, srcHydrationMsg)
+	if err != nil {
+		panic(err)
 	}
+
 	transMessage, err = proc.pretransformStage(partition, preTransMessage)
 	if err != nil {
 		panic(err)

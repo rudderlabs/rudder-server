@@ -395,59 +395,7 @@ func Test_Namespace_FetchInternalSecrets(t *testing.T) {
 	responseBodyFromFile, err := os.ReadFile("./testdata/namespace_with_source_definition_options.json")
 	require.NoError(t, err)
 
-	// Test without fetchInternalSecrets (default behavior)
-	t.Run("without fetchInternalSecrets", func(t *testing.T) {
-		var queryParams url.Values
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Capture query parameters for assertion
-			queryParams = r.URL.Query()
-
-			user, _, ok := r.BasicAuth()
-			require.True(t, ok)
-			require.Equal(t, hostServiceSecret, user)
-
-			_, _ = w.Write(responseBodyFromFile)
-		}))
-		defer ts.Close()
-		httpSrvURL, err := url.Parse(ts.URL)
-		require.NoError(t, err)
-		client := &namespaceConfig{
-			config: config.New(),
-			logger: logger.NOP,
-
-			client:           ts.Client(),
-			configBackendURL: httpSrvURL,
-
-			namespace:                namespace,
-			hostedServiceSecret:      hostServiceSecret,
-			cpRouterURL:              cpRouterURL,
-			incrementalConfigUpdates: false,
-			fetchInternalSecretes:    false, // Explicitly set to false
-		}
-		require.NoError(t, client.SetUp())
-
-		configs, err := client.Get(ctx)
-		require.NoError(t, err)
-		require.Len(t, configs, 1)
-
-		require.Empty(t, queryParams.Get("secrets"))
-
-		// Get the workspace configuration
-		c, ok := configs["workspace-1"]
-		require.True(t, ok)
-
-		require.Len(t, c.Sources, 2)
-		require.Len(t, c.Sources[0].Destinations, 2)
-
-		// Verify that source definition options are correctly parsed
-		srcMap := c.SourcesMap()
-		require.Equal(t, srcMap["source-1"].SourceDefinition.Name, "Test Source")
-		require.True(t, srcMap["source-1"].SourceDefinition.Options.Hydration.Enabled)
-		require.False(t, srcMap["source-2"].SourceDefinition.Options.Hydration.Enabled)
-	})
-
-	// Test with fetchInternalSecrets enabled
-	t.Run("with fetchInternalSecrets", func(t *testing.T) {
+	t.Run("with internal secret", func(t *testing.T) {
 		var queryParams url.Values
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Capture query parameters for assertion
@@ -474,7 +422,6 @@ func Test_Namespace_FetchInternalSecrets(t *testing.T) {
 			hostedServiceSecret:      hostServiceSecret,
 			cpRouterURL:              cpRouterURL,
 			incrementalConfigUpdates: false,
-			fetchInternalSecretes:    true, // Enable fetching internal secrets
 		}
 		require.NoError(t, client.SetUp())
 

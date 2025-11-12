@@ -2,7 +2,7 @@ package processor
 
 import (
 	"context"
-	"time"
+	"strconv"
 
 	"github.com/samber/lo"
 
@@ -21,6 +21,7 @@ import (
 type srcHydrationMessage struct {
 	partition                     string
 	subJobs                       subJob
+	archivalJobs                  []*jobsdb.JobT
 	eventSchemaJobsBySourceId     map[SourceIDT][]*jobsdb.JobT
 	connectionDetailsMap          map[string]*reportingtypes.ConnectionDetails
 	statusDetailsMap              map[string]map[string]*reportingtypes.StatusDetail
@@ -31,7 +32,7 @@ type srcHydrationMessage struct {
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	totalEvents                   int
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent
-	eventsByMessageID             map[string]types.SingularEventWithMetadata
+	eventsByMessageID             map[string]types.SingularEventWithReceivedAt
 	jobIDToSpecificDestMapOnly    map[int64]string
 	statusList                    []*jobsdb.JobStatusT
 	jobList                       []*jobsdb.JobT
@@ -69,10 +70,13 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 			if len(hydratedJobs) > 0 {
 				message.eventSchemaJobsBySourceId[sourceId] = make([]*jobsdb.JobT, 0, len(hydratedJobs))
 			}
+			eventSchemaJobsByJobID := lo.SliceToMap(message.eventSchemaJobsBySourceId[sourceId], func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
+				return job.JobID, job
+			})
 			for i := 0; i < len(hydratedJobs); i++ {
 				event := hydratedJobs[i]
 				msgId := event.Metadata.MessageID
-				originalEventWithMetadata := message.eventsByMessageID[msgId]
+				jobId := hydratedJobs[i].Metadata.JobID
 				marshalledPayload, marshallErr := jsonrs.Marshal(event.Message)
 				if marshallErr != nil {
 					proc.logger.Errorn("failed to marshal hydrated event for event schema",
@@ -82,24 +86,20 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					panic(marshallErr)
 				}
 				if marshalledPayload != nil {
+					originalJob := eventSchemaJobsByJobID[jobId]
 					message.eventSchemaJobsBySourceId[sourceId] = append(message.eventSchemaJobsBySourceId[sourceId], &jobsdb.JobT{
-						UUID:         originalEventWithMetadata.UUID,
-						UserID:       originalEventWithMetadata.UserID,
-						Parameters:   originalEventWithMetadata.Parameters,
-						CustomVal:    originalEventWithMetadata.CustomVal,
+						UUID:         originalJob.UUID,
+						UserID:       originalJob.UserID,
+						Parameters:   originalJob.Parameters,
+						CustomVal:    originalJob.CustomVal,
 						EventPayload: marshalledPayload,
-						CreatedAt:    time.Now(),
-						ExpireAt:     time.Now(),
-						WorkspaceId:  originalEventWithMetadata.WorkspaceId,
+						CreatedAt:    originalJob.CreatedAt,
+						ExpireAt:     originalJob.ExpireAt,
+						WorkspaceId:  originalJob.WorkspaceId,
 					})
-					message.eventsByMessageID[msgId] = types.SingularEventWithMetadata{
+					message.eventsByMessageID[msgId] = types.SingularEventWithReceivedAt{
 						SingularEvent: event.Message,
-						ReceivedAt:    originalEventWithMetadata.ReceivedAt,
-						UUID:          originalEventWithMetadata.UUID,
-						UserID:        originalEventWithMetadata.UserID,
-						CustomVal:     originalEventWithMetadata.CustomVal,
-						Parameters:    originalEventWithMetadata.Parameters,
-						WorkspaceId:   originalEventWithMetadata.WorkspaceId,
+						ReceivedAt:    message.eventsByMessageID[msgId].ReceivedAt,
 					}
 				}
 			}
@@ -108,6 +108,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 	return &preTransformationMessage{
 		partition:                     message.partition,
 		subJobs:                       message.subJobs,
+		archivalJobs:                  message.archivalJobs,
 		eventSchemaJobsBySourceId:     message.eventSchemaJobsBySourceId,
 		connectionDetailsMap:          message.connectionDetailsMap,
 		statusDetailsMap:              message.statusDetailsMap,
@@ -139,7 +140,7 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	}
 	req.Batch = lo.Map(events, func(event types.TransformerEvent, _ int) types.SrcHydrationEvent {
 		return types.SrcHydrationEvent{
-			ID:    event.Metadata.MessageID,
+			ID:    strconv.FormatInt(event.Metadata.JobID, 10),
 			Event: event.Message,
 		}
 	})
@@ -147,11 +148,11 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	if err != nil {
 		return nil, err
 	}
-	msgIDToEventMap := lo.SliceToMap(events, func(event types.TransformerEvent) (string, types.TransformerEvent) {
-		return event.Metadata.MessageID, event
+	jobIDToEventMap := lo.SliceToMap(events, func(event types.TransformerEvent) (string, types.TransformerEvent) {
+		return strconv.FormatInt(event.Metadata.JobID, 10), event
 	})
 	return lo.Map(resp.Batch, func(event types.SrcHydrationEvent, _ int) types.TransformerEvent {
-		originalEvent := msgIDToEventMap[event.ID]
+		originalEvent := jobIDToEventMap[event.ID]
 		originalEvent.Message = event.Event
 		return originalEvent
 	}), nil

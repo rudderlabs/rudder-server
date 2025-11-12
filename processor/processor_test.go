@@ -982,7 +982,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx: ctx,
@@ -1033,6 +1033,9 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				0,
 			)
 			Expect(err).To(BeNil())
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+			Expect(err).To(BeNil())
+
 			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
@@ -1061,7 +1064,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx: ctx,
@@ -1117,6 +1120,8 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 				0,
 			)
+			Expect(err).To(BeNil())
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
 
@@ -1319,7 +1324,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx:     ctx,
@@ -1327,6 +1332,8 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				},
 				0,
 			)
+			Expect(err).To(BeNil())
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
 
@@ -1506,7 +1513,7 @@ func TestArchival(t *testing.T) {
 			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 			t.Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx:     ctx,
@@ -1516,8 +1523,11 @@ func TestArchival(t *testing.T) {
 			)
 			require.NoError(t, err)
 			if archiveInPreProcess {
-				require.Nil(t, preTransMessage.archivalJobs)
+				require.Nil(t, srcHydrationMsg.archivalJobs)
 			}
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+			require.NoError(t, err)
+
 			_, _ = processor.pretransformStage("", preTransMessage)
 
 			require.Len(t, c.MockObserver.calls, 1)
@@ -1684,7 +1694,7 @@ func TestArchival(t *testing.T) {
 			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 			t.Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx:     ctx,
@@ -1694,8 +1704,11 @@ func TestArchival(t *testing.T) {
 			)
 			require.NoError(t, err)
 			if archiveInPreProcess {
-				require.Nil(t, preTransMessage.archivalJobs)
+				require.Nil(t, srcHydrationMsg.archivalJobs)
 			}
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+			require.NoError(t, err)
+
 			_, _ = processor.pretransformStage("", preTransMessage)
 
 			require.Len(t, c.MockObserver.calls, 1)
@@ -3665,19 +3678,19 @@ var _ = Describe("Processor", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
 			commonMetadata := types.Metadata{SourceID: SourceIDEnabled, DestinationID: DestinationIDEnabledA}
-			singularEventWithReceivedAt1 := types.SingularEventWithMetadata{
+			singularEventWithReceivedAt1 := types.SingularEventWithReceivedAt{
 				SingularEvent: event1,
 				ReceivedAt:    time.Now(),
 			}
-			singularEventWithReceivedAt2 := types.SingularEventWithMetadata{
+			singularEventWithReceivedAt2 := types.SingularEventWithReceivedAt{
 				SingularEvent: event2,
 				ReceivedAt:    time.Now(),
 			}
-			singularEventWithReceivedAt3 := types.SingularEventWithMetadata{
+			singularEventWithReceivedAt3 := types.SingularEventWithReceivedAt{
 				SingularEvent: event3,
 				ReceivedAt:    time.Now(),
 			}
-			eventsByMessageID := map[string]types.SingularEventWithMetadata{
+			eventsByMessageID := map[string]types.SingularEventWithReceivedAt{
 				"msg1": singularEventWithReceivedAt1,
 				"msg2": singularEventWithReceivedAt2,
 				"msg3": singularEventWithReceivedAt3,

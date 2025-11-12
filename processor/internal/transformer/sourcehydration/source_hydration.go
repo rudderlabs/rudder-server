@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -77,7 +76,14 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	return handle
 }
 
-// Hydrate performs source hydration on the provided events
+// Hydrate sends a batch of source events to the hydration endpoint and returns the hydrated events.
+// It splits the input events into smaller batches (based on configured batch size), sends them
+// concurrently for hydration, and aggregates the results.
+//
+// Error conditions:
+//  1. Returns an error if the context is canceled.
+//  2. Returns an error if all retry attempts fail and the client is configured to fail on errors.
+//  3. Otherwise, if failOnError is disabled, a panic is raised.
 func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
 	batchSize := c.config.batchSize.Load()
 	clientEvents := hydrationReq.Batch
@@ -116,31 +122,24 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 
 	hydratedBatches := make([][]types.SrcHydrationEvent, len(batches))
 
-	g, groupCtx := errgroup.WithContext(ctx)
-	var wg sync.WaitGroup
-	wg.Add(len(batches))
-	lo.ForEach(
-		batches,
-		func(batch []types.SrcHydrationEvent, i int) {
-			g.Go(func() error {
-				resp, statusCode, err := c.sendBatch(groupCtx, sourceHydrationURL, hydrationReq.Source, labels, batch)
-				if err != nil {
-					return err
-				}
-				if statusCode != http.StatusOK {
-					// drop the events and continue
-					c.log.Warnn("source hydration failed for a sub-batch, dropping events in the sub-batch", labels.ToLoggerFields()...)
-					return nil
-				}
-				hydratedBatches[i] = resp.Batch
-				return nil
-			})
-		},
-	)
+	g, ctx := errgroup.WithContext(ctx)
+	for i, batch := range batches {
+		g.Go(func() error {
+			resp, err := c.sendBatch(ctx, sourceHydrationURL, hydrationReq.Source, labels, batch)
+			if err != nil {
+				return err
+			}
+			hydratedBatches[i] = resp.Batch
+			return nil
+		})
+	}
 
 	if err := g.Wait(); err != nil {
 		if errors.Is(err, context.Canceled) {
-			return types.SrcHydrationResponse{}, fmt.Errorf("source hydration cancelled: %w", err)
+			return types.SrcHydrationResponse{}, err
+		}
+		if c.config.failOnError.Load() {
+			return types.SrcHydrationResponse{}, err
 		}
 		panic(err)
 	}
@@ -160,16 +159,16 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 	}, nil
 }
 
-func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydrationSource, labels types.TransformerMetricLabels, data []types.SrcHydrationEvent) (types.SrcHydrationResponse, int, error) {
-	if len(data) == 0 {
-		return types.SrcHydrationResponse{}, http.StatusOK, nil
+func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydrationSource, labels types.TransformerMetricLabels, hydrationEvents []types.SrcHydrationEvent) (types.SrcHydrationResponse, error) {
+	if len(hydrationEvents) == 0 {
+		return types.SrcHydrationResponse{}, nil
 	}
 
 	start := time.Now()
 
 	// Create request in the format expected by the source hydration API
 	request := types.SrcHydrationRequest{
-		Batch:  data,
+		Batch:  hydrationEvents,
 		Source: source,
 	}
 
@@ -179,42 +178,31 @@ func (c *Client) sendBatch(ctx context.Context, url string, source types.SrcHydr
 		panic(err)
 	}
 
-	respData, statusCode, err := c.doPost(ctx, rawJSON, url, labels)
+	respData, err := c.doPost(ctx, rawJSON, url, labels)
 	if err != nil {
-		return types.SrcHydrationResponse{}, 0, err
+		return types.SrcHydrationResponse{}, err
 	}
 
-	switch statusCode {
-	case http.StatusOK:
-		var response types.SrcHydrationResponse
-		respReader := bytes.NewReader(respData)
-		decoder := jsonrs.NewDecoder(respReader)
-		decoder.DisallowUnknownFields()
-		err = decoder.Decode(&response)
-		if err != nil {
-			c.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
-			c.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
-			return response, statusCode, err
-		}
-		c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
-		c.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(response.Batch))
-		c.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
-
-		return response, statusCode, nil
-	default:
-		c.log.Errorn("Source hydration returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
-		c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(data))
-		c.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
-		return types.SrcHydrationResponse{}, statusCode, nil
+	var response types.SrcHydrationResponse
+	err = jsonrs.Unmarshal(respData, &response)
+	if err != nil {
+		return response, err
 	}
+	if len(response.Batch) != len(hydrationEvents) {
+		return response, fmt.Errorf("source hydration response length mismatch: got %d, want %d", len(response.Batch), len(hydrationEvents))
+	}
+	c.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(hydrationEvents))
+	c.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(response.Batch))
+	c.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
+
+	return response, nil
 }
 
-func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int, error) {
+func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, error) {
 	var (
 		retryCount int
 		resp       *http.Response
 		respData   []byte
-		statusCode int
 	)
 
 	retryStrategy := backoff.NewExponentialBackOff()
@@ -223,25 +211,25 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 	err := backoff.RetryNotify(
 		transformerutils.WithProcTransformReqTimeStat(func() error {
-			var reqErr error
+			var err error
 			requestStartTime := time.Now()
 
 			var req *http.Request
-			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
-			if reqErr != nil {
-				return reqErr
+			req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+			if err != nil {
+				return err
 			}
 
 			req.Header.Set("Content-Type", "application/json; charset=utf-8")
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 
-			resp, reqErr = c.client.Do(req)
+			resp, err = c.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()
-			if reqErr != nil {
-				if errors.Is(reqErr, context.Canceled) {
-					return backoff.Permanent(reqErr)
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return backoff.Permanent(err)
 				}
-				return reqErr
+				return err
 			}
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
@@ -249,17 +237,17 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			c.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
 			c.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 
-			statusCode = resp.StatusCode
-			if statusCode != http.StatusOK {
-				return fmt.Errorf("source hydration returned status code: %v", statusCode)
+			respData, err = io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("source hydration returned status code: %v, reponse: %s", resp.StatusCode, respData)
 			}
 
-			respData, reqErr = io.ReadAll(resp.Body)
-			if reqErr == nil {
-				c.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
-				// We'll count response events after unmarshaling in the request method
-			}
-			return reqErr
+			c.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))
+
+			return nil
 		}, c.stat, labels),
 		backoff.WithMaxRetries(retryStrategy, uint64(c.config.maxRetry.Load())),
 		func(err error, t time.Duration) {
@@ -272,14 +260,10 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		},
 	)
 	if err != nil {
-		if c.config.failOnError.Load() {
-			return []byte(fmt.Sprintf("source hydration request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
-		} else {
-			return nil, statusCode, err
-		}
+		return nil, err
 	}
 
-	return respData, statusCode, nil
+	return respData, nil
 }
 
 func (c *Client) sourceHydrationURL(sourceType string) string {
