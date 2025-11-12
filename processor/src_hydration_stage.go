@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"strconv"
+	"sync"
 
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
@@ -57,6 +58,9 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 	// Process sources in parallel using errgroup
 	g, ctx := errgroup.WithContext(ctx)
 
+	// Mutex to protect shared maps
+	var sharedMapsMutex sync.Mutex
+
 	for sourceId, jobs := range message.groupedEventsBySourceId {
 		g.Go(func() error {
 			source, err := proc.getSourceBySourceID(string(sourceId))
@@ -72,6 +76,10 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 				return err
 			}
 
+			// Update shared maps with mutex protection
+			sharedMapsMutex.Lock()
+			defer sharedMapsMutex.Unlock()
+			// Update eventsByMessageID map
 			for _, job := range hydratedJobs {
 				msgID := job.Metadata.MessageID
 				originalJob := message.eventsByMessageID[msgID]
@@ -81,9 +89,10 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 				}
 			}
 
-			// Update the shared data structure
+			// Update the groupedEventsBySourceId map
 			message.groupedEventsBySourceId[sourceId] = hydratedJobs
 
+			// Update eventSchemaJobsBySourceId map if needed
 			if len(message.eventSchemaJobsBySourceId[sourceId]) > 0 {
 				eventSchemaJobsByJobID := lo.SliceToMap(message.eventSchemaJobsBySourceId[sourceId], func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
 					return job.JobID, job

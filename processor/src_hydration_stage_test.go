@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -572,4 +573,189 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Verify other metadata is preserved
 		require.Equal(t, originalEventWithMetadata.ReceivedAt, updatedEvent.ReceivedAt)
 	})
+}
+
+func TestSrcHydrationStageConcurrency(t *testing.T) {
+	// Create multiple sources with events to test concurrent access
+	sources := []string{fblaSourceId, fblaSourceId2, fblaSourceId3, fblaSourceId4, fblaSourceId5}
+
+	// Create test events for each source
+	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
+	eventSchemaJobsBySourceId := make(map[SourceIDT][]*jobsdb.JobT)
+	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
+
+	for i, sourceID := range sources {
+		events := []types.TransformerEvent{
+			{
+				Message: map[string]interface{}{
+					"type":      "track",
+					"event":     "Product Viewed",
+					"productId": "12345",
+				},
+				Metadata: types.Metadata{
+					MessageID: "message-" + sourceID,
+					SourceID:  sourceID,
+					JobID:     int64(i*10 + 1),
+				},
+			},
+			{
+				Message: map[string]interface{}{
+					"type":      "track",
+					"event":     "Product Added",
+					"productId": "67890",
+				},
+				Metadata: types.Metadata{
+					MessageID: "message2-" + sourceID,
+					SourceID:  sourceID,
+					JobID:     int64(i*10 + 2),
+				},
+			},
+		}
+
+		groupedEventsBySourceId[SourceIDT(sourceID)] = events
+
+		// Add event schema jobs
+		eventSchemaJobsBySourceId[SourceIDT(sourceID)] = []*jobsdb.JobT{
+			{
+				JobID:       int64(i*10 + 1),
+				UserID:      "test-user",
+				Parameters:  []byte(`{"source_id": "` + sourceID + `"}`),
+				CustomVal:   "GW",
+				WorkspaceId: "test-workspace",
+				UUID:        [16]byte{byte(i), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+			},
+			{
+				JobID:       int64(i*10 + 2),
+				UserID:      "test-user",
+				Parameters:  []byte(`{"source_id": "` + sourceID + `"}`),
+				CustomVal:   "GW",
+				WorkspaceId: "test-workspace",
+				UUID:        [16]byte{byte(i), 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+			},
+		}
+
+		// Add events to eventsByMessageID
+		eventsByMessageID["message-"+sourceID] = types.SingularEventWithReceivedAt{
+			SingularEvent: map[string]interface{}{
+				"type":      "track",
+				"event":     "Product Viewed",
+				"productId": "12345",
+			},
+			ReceivedAt: time.Now(),
+		}
+
+		eventsByMessageID["message2-"+sourceID] = types.SingularEventWithReceivedAt{
+			SingularEvent: map[string]interface{}{
+				"type":      "track",
+				"event":     "Product Added",
+				"productId": "67890",
+			},
+			ReceivedAt: time.Now(),
+		}
+	}
+
+	// Create expected hydrated events for each source
+	hydratedEvents := make(map[string][]types.SrcHydrationEvent)
+	for i, sourceID := range sources {
+		hydratedEvents[sourceID] = append(hydratedEvents[sourceID], types.SrcHydrationEvent{
+			ID: strconv.FormatInt(int64(i*10+1), 10),
+			Event: map[string]interface{}{
+				"type":        "track",
+				"event":       "Product Viewed",
+				"productId":   "12345",
+				"productName": "Test Product " + sourceID,
+				"price":       float64(i*10) + 29.99,
+			},
+		})
+
+		hydratedEvents[sourceID] = append(hydratedEvents[sourceID], types.SrcHydrationEvent{
+			ID: strconv.FormatInt(int64(i*10+2), 10),
+			Event: map[string]interface{}{
+				"type":        "track",
+				"event":       "Product Added",
+				"productId":   "67890",
+				"productName": "Test Product " + sourceID,
+				"price":       float64(i*10) + 39.99,
+			},
+		})
+	}
+
+	// Setup mock transformer clients
+	transformerClients := transformer.NewSimpleClients()
+	transformerClients.WithDynamicSrcHydration(func(ctx context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
+		return types.SrcHydrationResponse{
+			Batch: hydratedEvents[req.Source.ID],
+		}, nil
+	})
+
+	// Setup test context
+	c := &testContext{}
+	c.Setup(t)
+	defer c.Finish()
+
+	// Create processor handle
+	conf := config.New()
+	proc := NewHandle(conf, transformerClients)
+	c.mockGatewayJobsDB.EXPECT().DeleteExecuting().AnyTimes()
+	Setup(proc, c, true, true, t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := proc.config.asyncInit.WaitContext(ctx)
+	require.NoError(t, err)
+
+	// Create test message
+	message := &srcHydrationMessage{
+		partition: "test-partition",
+		subJobs: subJob{
+			ctx: context.Background(),
+		},
+		eventSchemaJobsBySourceId: eventSchemaJobsBySourceId,
+		groupedEventsBySourceId:   groupedEventsBySourceId,
+		eventsByMessageID:         eventsByMessageID,
+	}
+
+	// Execute the source hydration stage
+	result, err := proc.srcHydrationStage("test-partition", message)
+
+	// Assertions
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Check that events were hydrated for all sources
+	for i, sourceID := range sources {
+		hydratedTransformerEvents := result.groupedEventsBySourceId[SourceIDT(sourceID)]
+		require.Len(t, hydratedTransformerEvents, 2, "Should have 2 hydrated events for source %s", sourceID)
+
+		// Verify first event was hydrated correctly
+		require.Equal(t, "message-"+sourceID, hydratedTransformerEvents[0].Metadata.MessageID)
+		require.Equal(t, "Test Product "+sourceID, hydratedTransformerEvents[0].Message["productName"])
+
+		// Verify second event was hydrated correctly
+		require.Equal(t, "message2-"+sourceID, hydratedTransformerEvents[1].Metadata.MessageID)
+		require.Equal(t, "Test Product "+sourceID, hydratedTransformerEvents[1].Message["productName"])
+
+		// Check that event schema jobs were created
+		eventSchemaJobs := result.eventSchemaJobsBySourceId[SourceIDT(sourceID)]
+		require.Len(t, eventSchemaJobs, 2, "Should have 2 event schema jobs for source %s", sourceID)
+		require.Equal(t, "GW", eventSchemaJobs[0].CustomVal)
+		require.Equal(t, "GW", eventSchemaJobs[1].CustomVal)
+		require.Equal(t, "test-workspace", eventSchemaJobs[0].WorkspaceId)
+		require.Equal(t, "test-workspace", eventSchemaJobs[1].WorkspaceId)
+		require.Equal(t, "test-user", eventSchemaJobs[0].UserID)
+		require.Equal(t, "test-user", eventSchemaJobs[1].UserID)
+		require.Equal(t, jsonparser.GetStringOrEmpty(eventSchemaJobs[0].EventPayload, "productName"), "Test Product "+sourceID)
+		require.Equal(t, jsonparser.GetStringOrEmpty(eventSchemaJobs[1].EventPayload, "productName"), "Test Product "+sourceID)
+		require.Equal(t, jsonparser.GetFloatOrZero(eventSchemaJobs[0].EventPayload, "price"), float64(i*10)+29.99)
+		require.Equal(t, jsonparser.GetFloatOrZero(eventSchemaJobs[1].EventPayload, "price"), float64(i*10)+39.99)
+
+		// Check that eventsByMessageID was updated with hydrated event data
+		updatedEvent1, exists1 := result.eventsByMessageID["message-"+sourceID]
+		require.True(t, exists1)
+		require.Equal(t, "Test Product "+sourceID, updatedEvent1.SingularEvent["productName"])
+
+		updatedEvent2, exists2 := result.eventsByMessageID["message2-"+sourceID]
+		require.True(t, exists2)
+		require.Equal(t, "Test Product "+sourceID, updatedEvent2.SingularEvent["productName"])
+	}
 }

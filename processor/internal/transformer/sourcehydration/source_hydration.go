@@ -242,7 +242,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				return err
 			}
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("source hydration returned status code: %v, reponse: %s", resp.StatusCode, respData)
+				return fmt.Errorf("source hydration returned status code: %v, response: %s", resp.StatusCode, respData)
 			}
 
 			c.stat.NewTaggedStat("transformer_client_response_total_bytes", stats.CountType, tags).Count(len(respData))

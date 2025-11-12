@@ -220,6 +220,10 @@ func setMainLoopTimeout(proc *Handle, timeout time.Duration) {
 var (
 	sampleWorkspaceID = "some-workspace-id"
 	fblaSourceId      = "test-fbla-source-id"
+	fblaSourceId2     = "test-fbla-source-id-2"
+	fblaSourceId3     = "test-fbla-source-id-3"
+	fblaSourceId4     = "test-fbla-source-id-4"
+	fblaSourceId5     = "test-fbla-source-id-5"
 )
 
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
@@ -925,6 +929,54 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		},
 		{
 			ID: fblaSourceId,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId2,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId5,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId3,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId4,
 			SourceDefinition: backendconfig.SourceDefinitionT{
 				Name: "fbla",
 				Options: backendconfig.SourceDefinitionOptions{
