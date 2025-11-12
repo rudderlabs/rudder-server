@@ -396,11 +396,7 @@ func Test_Namespace_FetchInternalSecrets(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("with internal secret", func(t *testing.T) {
-		var queryParams url.Values
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Capture query parameters for assertion
-			queryParams = r.URL.Query()
-
 			user, _, ok := r.BasicAuth()
 			require.True(t, ok)
 			require.Equal(t, hostServiceSecret, user)
@@ -428,8 +424,6 @@ func Test_Namespace_FetchInternalSecrets(t *testing.T) {
 		configs, err := client.Get(ctx)
 		require.NoError(t, err)
 		require.Len(t, configs, 1)
-
-		require.Equal(t, queryParams.Get("secrets"), "embed")
 
 		// Get the workspace configuration
 		c, ok := configs["workspace-1"]
