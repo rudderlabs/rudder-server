@@ -292,9 +292,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		result, err := proc.srcHydrationStage("test-partition", message)
 
 		// Assertions
-		require.Error(t, err)
-		require.Nil(t, result)
-		require.Equal(t, "hydration error", err.Error())
+		require.NoError(t, err)
+		require.Nil(t, result.groupedEventsBySourceId[SourceIDT(fblaSourceId)])
 	})
 
 	t.Run("Test when JSON marshaling fails for event schema jobs", func(t *testing.T) {

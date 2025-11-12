@@ -205,7 +205,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 
 			if failOnError {
 				resp, err := client.Hydrate(ctx, req)
-				require.NoError(t, err)
+				require.Error(t, err)
 				require.Len(t, resp.Batch, 0)
 			} else {
 				require.Panics(t, func() {
@@ -484,7 +484,7 @@ func TestSourceHydration_ErrorResponses(t *testing.T) {
 				})
 			} else {
 				resp, err := client.Hydrate(ctx, req)
-				require.NoError(t, err)
+				require.Error(t, err)
 				require.Len(t, resp.Batch, tt.expectedLength)
 			}
 		})
@@ -1215,20 +1215,8 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 		}
 
 		resp, err := client.Hydrate(ctx, req)
-		require.NoError(t, err)
+		require.Error(t, err)
 
-		// Should have 3 events (from batches 1 and 2), missing the 1 event from batch 3 that failed
-		require.Len(t, resp.Batch, 4)
-
-		// Check that we got events 0, 1, and 4 (first batch and third batch)
-		ids := make([]string, len(resp.Batch))
-		for i, event := range resp.Batch {
-			ids[i] = event.ID
-		}
-		require.Contains(t, ids, "0")
-		require.Contains(t, ids, "1")
-		require.Contains(t, ids, "2")
-		require.Contains(t, ids, "3")
-		require.NotContains(t, ids, "4")
+		require.Len(t, resp.Batch, 0)
 	})
 }
