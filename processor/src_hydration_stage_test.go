@@ -29,6 +29,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				Metadata: types.Metadata{
 					MessageID: "message-1",
 					SourceID:  fblaSourceId,
+					JobID:     1,
 				},
 			},
 			{
@@ -40,6 +41,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				Metadata: types.Metadata{
 					MessageID: "message-2",
 					SourceID:  fblaSourceId,
+					JobID:     2,
 				},
 			},
 		}
@@ -47,7 +49,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create expected hydrated events
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
-				ID: "message-1",
+				ID: "1",
 				Event: map[string]interface{}{
 					"type":        "track",
 					"event":       "Product Viewed",
@@ -57,7 +59,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				},
 			},
 			{
-				ID: "message-2",
+				ID: "2",
 				Event: map[string]interface{}{
 					"type":        "track",
 					"event":       "Product Added",
@@ -373,9 +375,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Execute the source hydration stage
-		require.Panics(t, func() {
-			_, _ = proc.srcHydrationStage("test-partition", message)
-		})
+		_, err = proc.srcHydrationStage("test-partition", message)
+		require.Error(t, err)
 	})
 
 	t.Run("Test event schema jobs creation", func(t *testing.T) {
@@ -390,6 +391,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				Metadata: types.Metadata{
 					MessageID: "message-1",
 					SourceID:  fblaSourceId,
+					JobID:     1,
 				},
 			},
 		}
@@ -397,7 +399,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create expected hydrated events
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
-				ID: "message-1",
+				ID: "1",
 				Event: map[string]interface{}{
 					"type":        "track",
 					"event":       "Product Viewed",
@@ -435,6 +437,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		ogEventSchemaJob := &jobsdb.JobT{
+			JobID:       1,
 			UserID:      "test-user",
 			Parameters:  []byte(`{"source_id": "test-source"}`),
 			CustomVal:   "GW",
@@ -449,7 +452,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				ctx: context.Background(),
 			},
 			eventSchemaJobsBySourceId: map[SourceIDT][]*jobsdb.JobT{
-				SourceIDT(fblaSourceId): {},
+				SourceIDT(fblaSourceId): {ogEventSchemaJob},
 			},
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
@@ -494,6 +497,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				Metadata: types.Metadata{
 					MessageID: "message-1",
 					SourceID:  fblaSourceId,
+					JobID:     123,
 				},
 			},
 		}
@@ -501,7 +505,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create expected hydrated events
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
-				ID: "message-1",
+				ID: "123",
 				Event: map[string]interface{}{
 					"type":        "track",
 					"event":       "Product Viewed",
@@ -539,14 +543,11 @@ func TestSrcHydrationStage(t *testing.T) {
 			ReceivedAt:    time.Now(),
 		}
 
-		// Create test message with event schema jobs
+		// Create a test message with event schema jobs
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
 				ctx: context.Background(),
-			},
-			eventSchemaJobsBySourceId: map[SourceIDT][]*jobsdb.JobT{
-				SourceIDT(fblaSourceId): {&jobsdb.JobT{}},
 			},
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,

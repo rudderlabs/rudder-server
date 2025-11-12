@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
@@ -53,58 +54,78 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 			})))
 	}
 
+	// Process sources in parallel using errgroup
+	g, ctx := errgroup.WithContext(ctx)
+
 	for sourceId, jobs := range message.groupedEventsBySourceId {
-		source, err := proc.getSourceBySourceID(string(sourceId))
-		if err != nil {
-			return nil, err
-		}
-		if !source.IsSourceHydrationSupported() {
-			continue
-		}
-		hydratedJobs, err := proc.hydrate(ctx, source, jobs)
-		if err != nil {
-			return nil, err
-		}
-		message.groupedEventsBySourceId[sourceId] = hydratedJobs
-		if len(message.eventSchemaJobsBySourceId[sourceId]) > 0 {
-			if len(hydratedJobs) > 0 {
-				message.eventSchemaJobsBySourceId[sourceId] = make([]*jobsdb.JobT, 0, len(hydratedJobs))
+		g.Go(func() error {
+			source, err := proc.getSourceBySourceID(string(sourceId))
+			if err != nil {
+				return err
 			}
-			eventSchemaJobsByJobID := lo.SliceToMap(message.eventSchemaJobsBySourceId[sourceId], func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
-				return job.JobID, job
-			})
-			for i := 0; i < len(hydratedJobs); i++ {
-				event := hydratedJobs[i]
-				msgId := event.Metadata.MessageID
-				jobId := hydratedJobs[i].Metadata.JobID
-				marshalledPayload, marshallErr := jsonrs.Marshal(event.Message)
-				if marshallErr != nil {
-					proc.logger.Errorn("failed to marshal hydrated event for event schema",
-						obskit.SourceID(string(sourceId)),
-						obskit.Error(marshallErr),
-					)
-					panic(marshallErr)
+			if !source.IsSourceHydrationSupported() {
+				return nil
+			}
+
+			hydratedJobs, err := proc.hydrate(ctx, source, jobs)
+			if err != nil {
+				return err
+			}
+
+			for _, job := range hydratedJobs {
+				msgID := job.Metadata.MessageID
+				originalJob := message.eventsByMessageID[msgID]
+				message.eventsByMessageID[msgID] = types.SingularEventWithReceivedAt{
+					SingularEvent: job.Message,
+					ReceivedAt:    originalJob.ReceivedAt,
 				}
-				if marshalledPayload != nil {
-					originalJob := eventSchemaJobsByJobID[jobId]
-					message.eventSchemaJobsBySourceId[sourceId] = append(message.eventSchemaJobsBySourceId[sourceId], &jobsdb.JobT{
-						UUID:         originalJob.UUID,
-						UserID:       originalJob.UserID,
-						Parameters:   originalJob.Parameters,
-						CustomVal:    originalJob.CustomVal,
-						EventPayload: marshalledPayload,
-						CreatedAt:    originalJob.CreatedAt,
-						ExpireAt:     originalJob.ExpireAt,
-						WorkspaceId:  originalJob.WorkspaceId,
-					})
-					message.eventsByMessageID[msgId] = types.SingularEventWithReceivedAt{
-						SingularEvent: event.Message,
-						ReceivedAt:    message.eventsByMessageID[msgId].ReceivedAt,
+			}
+
+			// Update the shared data structure
+			message.groupedEventsBySourceId[sourceId] = hydratedJobs
+
+			if len(message.eventSchemaJobsBySourceId[sourceId]) > 0 {
+				eventSchemaJobsByJobID := lo.SliceToMap(message.eventSchemaJobsBySourceId[sourceId], func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
+					return job.JobID, job
+				})
+				if len(hydratedJobs) > 0 {
+					message.eventSchemaJobsBySourceId[sourceId] = make([]*jobsdb.JobT, 0, len(hydratedJobs))
+				}
+				for i := 0; i < len(hydratedJobs); i++ {
+					event := hydratedJobs[i]
+					jobId := hydratedJobs[i].Metadata.JobID
+					marshalledPayload, marshallErr := jsonrs.Marshal(event.Message)
+					if marshallErr != nil {
+						proc.logger.Errorn("failed to marshal hydrated event for event schema",
+							obskit.SourceID(string(sourceId)),
+							obskit.Error(marshallErr),
+						)
+						return marshallErr
+					}
+					if marshalledPayload != nil {
+						originalESJob := eventSchemaJobsByJobID[jobId]
+						message.eventSchemaJobsBySourceId[sourceId] = append(message.eventSchemaJobsBySourceId[sourceId], &jobsdb.JobT{
+							UUID:         originalESJob.UUID,
+							UserID:       originalESJob.UserID,
+							Parameters:   originalESJob.Parameters,
+							CustomVal:    originalESJob.CustomVal,
+							EventPayload: marshalledPayload,
+							CreatedAt:    originalESJob.CreatedAt,
+							ExpireAt:     originalESJob.ExpireAt,
+							WorkspaceId:  originalESJob.WorkspaceId,
+						})
 					}
 				}
 			}
-		}
+			return nil
+		})
 	}
+
+	// Wait for all goroutines to complete and check for errors
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
 	return &preTransformationMessage{
 		partition:                     message.partition,
 		subJobs:                       message.subJobs,
