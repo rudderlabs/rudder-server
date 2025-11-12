@@ -528,8 +528,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 			overFlownJobs = append(overFlownJobs, job)
 			continue
 		}
-		// We need to pass the sourceID to the transform function, so that we can store the sourceId in the file. As we are going to create one file per destination type.
-		fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job, batchJobs.Connection.Source.ID)
+		fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
 		if err != nil {
 			failedAsyncJobs := BatchedJobs{
 				Jobs:       []*jobsdb.JobT{job},
