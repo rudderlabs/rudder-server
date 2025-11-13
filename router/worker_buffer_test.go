@@ -169,8 +169,8 @@ func TestWorkerBuffer(t *testing.T) {
 			// Add some jobs to the buffer
 			job1 := createTestWorkerJob()
 			job2 := createTestWorkerJob()
-			wb.jobs <- job1
-			wb.jobs <- job2
+			wb.jobs <- &job1
+			wb.jobs <- &job2
 
 			t.Run("jobs but no reservations", func(t *testing.T) {
 				slots := wb.AvailableSlots()
@@ -192,9 +192,9 @@ func TestWorkerBuffer(t *testing.T) {
 			job1 := createTestWorkerJob()
 			job2 := createTestWorkerJob()
 			job3 := createTestWorkerJob()
-			wb.jobs <- job1
-			wb.jobs <- job2
-			wb.jobs <- job3
+			wb.jobs <- &job1
+			wb.jobs <- &job2
+			wb.jobs <- &job3
 
 			slots := wb.AvailableSlots()
 			require.Equal(t, 0, slots) // Should not go negative
@@ -511,8 +511,8 @@ func TestWorkerBuffer(t *testing.T) {
 			// Add some jobs
 			job1 := createTestWorkerJob()
 			job2 := createTestWorkerJob()
-			wb.jobs <- job1
-			wb.jobs <- job2
+			wb.jobs <- &job1
+			wb.jobs <- &job2
 
 			// Trigger stats recording
 			wb.currentCapacity()

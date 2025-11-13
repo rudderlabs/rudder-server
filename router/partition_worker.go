@@ -55,6 +55,7 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 					workLoopThroughput,
 					rt.reloadableConfig.experimentalBufferSizeScalingFactor,
 					rt.noOfJobsPerChannel,
+					rt.reloadableConfig.experimentalBufferSizeMinimum,
 				),
 				&workerBufferStats{
 					onceEvery:       kitsync.NewOnceEvery(5 * time.Second),

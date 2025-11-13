@@ -73,4 +73,5 @@ type reloadableConfig struct {
 	oauthV2ExpirationTimeDiff              config.ValueLoader[time.Duration]
 	enableExperimentalBufferSizeCalculator config.ValueLoader[bool]    // whether to use the experimental worker buffer size calculator or not
 	experimentalBufferSizeScalingFactor    config.ValueLoader[float64] // scaling factor to scale up the buffer size in the experimental calculator
+	experimentalBufferSizeMinimum          config.ValueLoader[int]     // minimum buffer size in the experimental calculator
 }

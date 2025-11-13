@@ -108,6 +108,14 @@ func (rt *Handle) Setup(
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destType, 64)
 	rt.maxNoOfJobsPerChannel = getRouterConfigInt("maxNoOfJobsPerChannel", destType, 10000)
 	rt.noOfJobsPerChannel = getRouterConfigInt("noOfJobsPerChannel", destType, 1000)
+	if rt.noOfJobsPerChannel > rt.maxNoOfJobsPerChannel { // if noOfJobsPerChannel is more than max, set it as the new max
+		rt.logger.Warnn("noOfJobsPerChannel is more than maxNoOfJobsPerChannel, setting maxNoOfJobsPerChannel to noOfJobsPerChannel value",
+			obskit.DestinationType(rt.destType),
+			logger.NewIntField("maxNoOfJobsPerChannel", int64(rt.maxNoOfJobsPerChannel)),
+			logger.NewIntField("noOfJobsPerChannel", int64(rt.noOfJobsPerChannel)),
+		)
+		rt.maxNoOfJobsPerChannel = rt.noOfJobsPerChannel
+	}
 	// Explicitly control destination types for which we want to support batching
 	// Avoiding stale configurations still having KAFKA batching enabled to cause issues with later versions of rudder-server
 	batchingSupportedDestinations := config.GetStringSliceVar([]string{"AM"}, "Router.batchingSupportedDestinations")
@@ -336,6 +344,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.oauthV2ExpirationTimeDiff = config.GetReloadableDurationVar(5, time.Minute, getRouterConfigKeys("oauth.expirationTimeDiff", rt.destType)...)
 	rt.reloadableConfig.enableExperimentalBufferSizeCalculator = config.GetReloadableBoolVar(false, getRouterConfigKeys("enableExperimentalBufferSizeCalculator", rt.destType)...)
 	rt.reloadableConfig.experimentalBufferSizeScalingFactor = config.GetReloadableFloat64Var(2.0, getRouterConfigKeys("experimentalBufferSizeScalingFactor", rt.destType)...)
+	rt.reloadableConfig.experimentalBufferSizeMinimum = config.GetReloadableIntVar(500, 1, getRouterConfigKeys("experimentalBufferSizeMinimum", rt.destType)...)
 	rt.diagnosisTickerTime = config.GetDurationVar(60, time.Second, "Diagnostics.routerTimePeriod", "Diagnostics.routerTimePeriodInS")
 	rt.netClientTimeout = config.GetDurationVar(10, time.Second,
 		"Router."+rt.destType+".httpTimeout",

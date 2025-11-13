@@ -13,7 +13,7 @@ import (
 type workerBuffer struct {
 	maxCapacity    int
 	targetCapacity func() int
-	jobs           chan workerJob
+	jobs           chan *workerJob
 
 	stats        *workerBufferStats
 	mu           sync.RWMutex
@@ -36,7 +36,7 @@ func newWorkerBuffer(maxCapacity int, targetCapacity func() int, stats *workerBu
 	wb := &workerBuffer{
 		maxCapacity:    maxCapacity,
 		targetCapacity: targetCapacity,
-		jobs:           make(chan workerJob, maxCapacity),
+		jobs:           make(chan *workerJob, maxCapacity),
 		stats:          stats,
 	}
 	return wb
@@ -50,13 +50,13 @@ func newSimpleWorkerBuffer(capacity int) *workerBuffer {
 	wb := &workerBuffer{
 		maxCapacity:    capacity,
 		targetCapacity: func() int { return capacity },
-		jobs:           make(chan workerJob, capacity),
+		jobs:           make(chan *workerJob, capacity),
 		stats:          nil,
 	}
 	return wb
 }
 
-func (wb *workerBuffer) Jobs() <-chan workerJob {
+func (wb *workerBuffer) Jobs() <-chan *workerJob {
 	return wb.jobs
 }
 
@@ -127,7 +127,7 @@ func (rs *reservedSlot) Use(wj workerJob) {
 	rs.wb.mu.Lock()
 	defer rs.wb.mu.Unlock()
 	rs.wb.reservations--
-	rs.wb.jobs <- wj
+	rs.wb.jobs <- &wj
 }
 
 // Release releases the reserved slot from the worker's buffer
