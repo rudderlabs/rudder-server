@@ -358,13 +358,22 @@ func TestSrcHydrationStage(t *testing.T) {
 			SingularEvent: dummySingularEvent,
 		}
 
+		ogEventSchemaJob := &jobsdb.JobT{
+			JobID:       1,
+			UserID:      "test-user",
+			Parameters:  []byte(`{"source_id": "test-source"}`),
+			CustomVal:   "GW",
+			WorkspaceId: "test-workspace",
+			UUID:        [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+		}
+
 		message := &srcHydrationMessage{
 			partition: "test-partition",
 			subJobs: subJob{
 				ctx: context.Background(),
 			},
 			eventSchemaJobsBySourceId: map[SourceIDT][]*jobsdb.JobT{
-				SourceIDT(fblaSourceId): {&jobsdb.JobT{}},
+				SourceIDT(fblaSourceId): {ogEventSchemaJob},
 			},
 			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
 				SourceIDT(fblaSourceId): events,
@@ -375,8 +384,10 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Execute the source hydration stage
-		_, err = proc.srcHydrationStage("test-partition", message)
-		require.Error(t, err)
+		msg, err := proc.srcHydrationStage("test-partition", message)
+		require.NoError(t, err)
+
+		require.Equal(t, msg.eventSchemaJobsBySourceId[SourceIDT(fblaSourceId)][0], ogEventSchemaJob)
 	})
 
 	t.Run("Test event schema jobs creation", func(t *testing.T) {
