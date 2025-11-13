@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,8 +16,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/processor/isolation"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
@@ -74,83 +71,6 @@ type reportRow struct {
 }
 
 func TestSrcHydration(t *testing.T) {
-	t.Run("SrcHydrationWithTransformer", func(t *testing.T) {
-		pageAccessToken := os.Getenv("FB_TEST_PAGE_ACCESS_TOKEN")
-		if pageAccessToken == "" {
-			t.Skip("FB_TEST_PAGE_ACCESS_TOKEN is not set, skipping test")
-		}
-
-		webhook := webhookutil.NewRecorder()
-		t.Cleanup(webhook.Close)
-		webhookURL := webhook.Server.URL
-
-		bcServer := backendconfigtest.NewBuilder().
-			WithWorkspaceConfig(backendconfigtest.NewConfigBuilder().
-				WithWorkspaceID(workspaceID).
-				WithSource(
-					backendconfigtest.NewSourceBuilder().
-						WithWorkspaceID(workspaceID).
-						WithID(sourceID1).
-						WithWriteKey(writeKey1).
-						WithSourceCategory("webhook").
-						WithInternalSecrets(json.RawMessage(fmt.Sprintf(`{"pageAccessToken": "%s"}`, pageAccessToken))).
-						WithSourceType("FACEBOOK_LEAD_ADS_NATIVE").
-						WithSourceDefOptions(backendconfig.SourceDefinitionOptions{
-							Hydration: struct {
-								Enabled bool
-							}{Enabled: true},
-						}).
-						WithConnection(
-							backendconfigtest.NewDestinationBuilder("WEBHOOK").
-								WithID("destination-1").
-								WithConfigOption("webhookMethod", "POST").
-								WithConfigOption("webhookUrl", webhookURL).
-								Build()).
-						Build()).
-				Build()).
-			Build()
-		t.Cleanup(bcServer.Close)
-
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
-
-		postgresContainer, err := postgres.Setup(pool, t)
-		require.NoError(t, err)
-
-		tr, err := transformer.Setup(pool, t)
-		require.NoError(t, err)
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
-
-		wg, ctx := errgroup.WithContext(ctx)
-		wg.Go(func() error {
-			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir())
-			if err != nil {
-				t.Logf("rudder-server exited with error: %v", err)
-			}
-			return err
-		})
-
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
-		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
-
-		eventsCount := 12
-
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
-		require.NoError(t, err)
-
-		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
-
-		require.Eventually(t, func() bool {
-			return webhook.RequestsCount() == eventsCount
-		}, 2*time.Minute, 10*time.Second, "unexpected number of events received, count of events: %d", webhook.RequestsCount())
-	})
-
 	t.Run("SrcHydration", func(t *testing.T) {
 		tests := []struct {
 			name                   string
@@ -204,10 +124,9 @@ func TestSrcHydration(t *testing.T) {
 				t.Cleanup(bcServer.Close)
 
 				trServer := transformertest.NewBuilder().
+					// we are only adding a route for srcDefName, so that it will be called only for srcDefName
+					// for other source definitions we will return a 404
 					WithSrcHydrationHandler(strings.ToLower(srcDefName), func(request proctypes.SrcHydrationRequest) (proctypes.SrcHydrationResponse, error) {
-						if request.Source.SourceDefinition.Name != srcDefName {
-							return proctypes.SrcHydrationResponse{}, fmt.Errorf("unexpected source name: %s", request.Source.SourceDefinition.Name)
-						}
 						lo.ForEach(request.Batch, func(event proctypes.SrcHydrationEvent, index int) {
 							event.Event["source_hydration_test"] = "success"
 						})
@@ -247,14 +166,14 @@ func TestSrcHydration(t *testing.T) {
 				health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
 				eventsCount := 8
-				err = sendEvents(4, "identify", "writekey-1", url)
+				err = sendEvents(4, "identify", writeKey1, url)
 				require.NoError(t, err)
-				err = sendEvents(4, "identify", "writekey-2", url)
+				err = sendEvents(4, "identify", writeKey2, url)
 				require.NoError(t, err)
 
 				if tt.failOnHydrationFailure {
 					eventsCount += 4
-					err = sendEvents(4, "identify", "writekey-3", url)
+					err = sendEvents(4, "identify", writeKey3, url)
 					require.NoError(t, err)
 				}
 

@@ -177,11 +177,12 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	jobIDToEventMap := make(map[string]types.TransformerEvent)
 
 	for _, event := range events {
+		jobID := strconv.FormatInt(event.Metadata.JobID, 10)
 		req.Batch = append(req.Batch, types.SrcHydrationEvent{
-			ID:    strconv.FormatInt(event.Metadata.JobID, 10),
+			ID:    jobID,
 			Event: event.Message,
 		})
-		jobIDToEventMap[strconv.FormatInt(event.Metadata.JobID, 10)] = event
+		jobIDToEventMap[jobID] = event
 	}
 
 	resp, err := proc.transformerClients.SrcHydration().Hydrate(ctx, req)
