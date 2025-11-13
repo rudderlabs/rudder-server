@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/processor/isolation"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
@@ -43,11 +46,32 @@ import (
 )
 
 const (
-	writeKey    = "writekey-1"
-	sourceID    = "source-1"
-	workspaceID = "workspace-1"
-	srcDefName  = "Source-Def-Name-1"
+	writeKey1            = "writekey-1"
+	sourceID1            = "source-1"
+	writeKey2            = "writekey-2"
+	sourceID2            = "source-2"
+	writeKey3            = "writekey-3"
+	sourceID3            = "source-3"
+	workspaceID          = "workspace-1"
+	srcDefName           = "Source-Def-Name-1"
+	failingSourceDefName = "Source-Def-Name-2"
 )
+
+type reportRow struct {
+	WorkspaceID    string
+	InstanceID     string
+	SourceID       string
+	DestinationID  string
+	InPU           string
+	PU             string
+	StatusCode     int
+	Status         string
+	Count          int64
+	TerminalState  bool
+	InitialState   bool
+	SourceCategory string
+	EventType      string
+}
 
 func TestSrcHydration(t *testing.T) {
 	t.Run("SrcHydrationWithTransformer", func(t *testing.T) {
@@ -66,8 +90,8 @@ func TestSrcHydration(t *testing.T) {
 				WithSource(
 					backendconfigtest.NewSourceBuilder().
 						WithWorkspaceID(workspaceID).
-						WithID(sourceID).
-						WithWriteKey(writeKey).
+						WithID(sourceID1).
+						WithWriteKey(writeKey1).
 						WithSourceCategory("webhook").
 						WithInternalSecrets(json.RawMessage(fmt.Sprintf(`{"pageAccessToken": "%s"}`, pageAccessToken))).
 						WithSourceType("FACEBOOK_LEAD_ADS_NATIVE").
@@ -128,100 +152,334 @@ func TestSrcHydration(t *testing.T) {
 	})
 
 	t.Run("SrcHydration", func(t *testing.T) {
-		webhook := webhookutil.NewRecorder()
-		t.Cleanup(webhook.Close)
-		webhookURL := webhook.Server.URL
+		tests := []struct {
+			name                   string
+			procIsolation          string
+			failOnHydrationFailure bool
+		}{
+			{
+				name:                   "procIsolation=source, failOnHydrationFailure=false",
+				procIsolation:          string(isolation.ModeSource),
+				failOnHydrationFailure: false,
+			},
+			{
+				name:                   "procIsolation=workspace, failOnHydrationFailure=false",
+				procIsolation:          string(isolation.ModeWorkspace),
+				failOnHydrationFailure: false,
+			},
+			{
+				name:                   "procIsolation=none, failOnHydrationFailure=false",
+				procIsolation:          string(isolation.ModeNone),
+				failOnHydrationFailure: false,
+			},
+			{
+				name:                   "procIsolation=source, failOnHydrationFailure=true",
+				procIsolation:          string(isolation.ModeSource),
+				failOnHydrationFailure: true,
+			},
+			{
+				name:                   "procIsolation=workspace, failOnHydrationFailure=true",
+				procIsolation:          string(isolation.ModeWorkspace),
+				failOnHydrationFailure: true,
+			},
+			{
+				name:                   "procIsolation=none, failOnHydrationFailure=true",
+				procIsolation:          string(isolation.ModeNone),
+				failOnHydrationFailure: true,
+			},
+		}
 
-		bcServer := backendconfigtest.NewBuilder().
-			WithWorkspaceConfig(backendconfigtest.NewConfigBuilder().
-				WithWorkspaceID(workspaceID).
-				WithSource(
-					backendconfigtest.NewSourceBuilder().
-						WithWorkspaceID(workspaceID).
-						WithID(sourceID).
-						WithWriteKey(writeKey).
-						WithSourceCategory("webhook").
-						WithSourceType(srcDefName).
-						WithSourceDefOptions(backendconfig.SourceDefinitionOptions{
-							Hydration: struct {
-								Enabled bool
-							}{Enabled: true},
-						}).
-						WithConnection(
-							backendconfigtest.NewDestinationBuilder("WEBHOOK").
-								WithID("destination-1").
-								WithConfigOption("webhookMethod", "POST").
-								WithConfigOption("webhookUrl", webhookURL).
-								Build()).
-						Build()).
-				Build()).
-			Build()
-		t.Cleanup(bcServer.Close)
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.isolationMode"), tt.procIsolation)
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.failOnError"),
+					strconv.FormatBool(tt.failOnHydrationFailure))
+				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.maxRetry"), "2")
 
-		trServer := transformertest.NewBuilder().
-			WithSrcHydrationHandler(strings.ToLower(srcDefName), func(request proctypes.SrcHydrationRequest) (proctypes.SrcHydrationResponse, error) {
-				if request.Source.SourceDefinition.Name != srcDefName {
-					return proctypes.SrcHydrationResponse{}, fmt.Errorf("unexpected source name: %s", request.Source.SourceDefinition.Name)
-				}
-				lo.ForEach(request.Batch, func(event proctypes.SrcHydrationEvent, index int) {
-					event.Event["source_hydration_test"] = "success"
+				webhook := webhookutil.NewRecorder()
+				t.Cleanup(webhook.Close)
+				webhookURL := webhook.Server.URL
+
+				bcServer := prepareBackendConfigServer(t, webhookURL)
+				t.Cleanup(bcServer.Close)
+
+				trServer := transformertest.NewBuilder().
+					WithSrcHydrationHandler(strings.ToLower(srcDefName), func(request proctypes.SrcHydrationRequest) (proctypes.SrcHydrationResponse, error) {
+						if request.Source.SourceDefinition.Name != srcDefName {
+							return proctypes.SrcHydrationResponse{}, fmt.Errorf("unexpected source name: %s", request.Source.SourceDefinition.Name)
+						}
+						lo.ForEach(request.Batch, func(event proctypes.SrcHydrationEvent, index int) {
+							event.Event["source_hydration_test"] = "success"
+						})
+						return proctypes.SrcHydrationResponse{
+							Batch: request.Batch,
+						}, nil
+					}).
+					WithDestTransformHandler(
+						"WEBHOOK",
+						transformertest.RESTJSONDestTransformerHandler(http.MethodPost, webhookURL),
+					).
+					Build()
+				t.Cleanup(trServer.Close)
+
+				pool, err := dockertest.NewPool("")
+				require.NoError(t, err)
+
+				postgresContainer, err := postgres.Setup(pool, t)
+				require.NoError(t, err)
+
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+
+				gwPort, err := kithelper.GetFreePort()
+				require.NoError(t, err)
+
+				wg, ctx := errgroup.WithContext(ctx)
+				wg.Go(func() error {
+					err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir())
+					if err != nil {
+						t.Logf("rudder-server exited with error: %v", err)
+					}
+					return err
 				})
-				return proctypes.SrcHydrationResponse{
-					Batch: request.Batch,
-				}, nil
-			}).
-			WithDestTransformHandler(
-				"WEBHOOK",
-				transformertest.RESTJSONDestTransformerHandler(http.MethodPost, webhookURL),
-			).
-			Build()
-		t.Cleanup(trServer.Close)
 
-		pool, err := dockertest.NewPool("")
-		require.NoError(t, err)
+				url := fmt.Sprintf("http://localhost:%d", gwPort)
+				health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
-		postgresContainer, err := postgres.Setup(pool, t)
-		require.NoError(t, err)
+				eventsCount := 8
+				err = sendEvents(4, "identify", "writekey-1", url)
+				require.NoError(t, err)
+				err = sendEvents(4, "identify", "writekey-2", url)
+				require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+				if tt.failOnHydrationFailure {
+					eventsCount += 4
+					err = sendEvents(4, "identify", "writekey-3", url)
+					require.NoError(t, err)
+				}
 
-		gwPort, err := kithelper.GetFreePort()
-		require.NoError(t, err)
+				requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 
-		wg, ctx := errgroup.WithContext(ctx)
-		wg.Go(func() error {
-			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir())
-			if err != nil {
-				t.Logf("rudder-server exited with error: %v", err)
-			}
-			return err
-		})
+				requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, 8)
 
-		url := fmt.Sprintf("http://localhost:%d", gwPort)
-		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+				require.Eventuallyf(t, func() bool {
+					return webhook.RequestsCount() == 8
+				}, 1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", webhook.RequestsCount())
 
-		eventsCount := 12
+				lo.ForEach(webhook.Requests(), func(req *http.Request, _ int) {
+					reqBody, err := io.ReadAll(req.Body)
+					require.NoError(t, err)
+					require.Equal(t, jsonparser.GetStringOrEmpty(reqBody, "source_hydration_test"), "success")
+				})
 
-		err = sendEvents(eventsCount, "identify", "writekey-1", url)
-		require.NoError(t, err)
+				expectedReports := append(
+					prepareExpectedReports(t, sourceID1, false),
+					prepareExpectedReports(t, sourceID2, false)...,
+				)
+				if tt.failOnHydrationFailure {
+					expectedReports = append(expectedReports, prepareExpectedReports(t, sourceID3, true)...)
+				}
+				requireReports(t, ctx, postgresContainer.DB, expectedReports)
 
-		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
-		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
-
-		require.Eventuallyf(t, func() bool {
-			return webhook.RequestsCount() == eventsCount
-		},
-			1*time.Minute, 5*time.Second, "unexpected number of events received, count of events: %d", webhook.RequestsCount())
-
-		lo.ForEach(webhook.Requests(), func(req *http.Request, _ int) {
-			reqBody, err := io.ReadAll(req.Body)
-			require.NoError(t, err)
-			require.Equal(t, jsonparser.GetStringOrEmpty(reqBody, "source_hydration_test"), "success")
-		})
-		cancel()
-		require.NoError(t, wg.Wait())
+				cancel()
+				require.NoError(t, wg.Wait())
+			})
+		}
 	})
+}
+
+func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []reportRow {
+	t.Helper()
+	if gwOnly {
+		return []reportRow{
+			{
+				WorkspaceID:    workspaceID,
+				InstanceID:     "1",
+				SourceID:       sourceId,
+				DestinationID:  "",
+				InPU:           "",
+				PU:             "gateway",
+				StatusCode:     0,
+				Status:         "succeeded",
+				Count:          4,
+				TerminalState:  false,
+				InitialState:   true,
+				SourceCategory: "webhook",
+				EventType:      "identify",
+			},
+		}
+	}
+	return []reportRow{
+		{
+			WorkspaceID:    workspaceID,
+			InstanceID:     "1",
+			SourceID:       sourceId,
+			DestinationID:  "",
+			InPU:           "",
+			PU:             "gateway",
+			StatusCode:     0,
+			Status:         "succeeded",
+			Count:          4,
+			TerminalState:  false,
+			InitialState:   true,
+			SourceCategory: "webhook",
+			EventType:      "identify",
+		},
+		{
+			WorkspaceID:    workspaceID,
+			InstanceID:     "1",
+			SourceID:       sourceId,
+			DestinationID:  "destination-1",
+			InPU:           "destination_filter",
+			PU:             "event_filter",
+			StatusCode:     200,
+			Status:         "succeeded",
+			Count:          4,
+			TerminalState:  false,
+			InitialState:   false,
+			SourceCategory: "webhook",
+			EventType:      "identify",
+		},
+		{
+			WorkspaceID:    workspaceID,
+			InstanceID:     "1",
+			SourceID:       sourceId,
+			DestinationID:  "destination-1",
+			InPU:           "event_filter",
+			PU:             "dest_transformer",
+			StatusCode:     200,
+			Status:         "succeeded",
+			Count:          4,
+			TerminalState:  false,
+			InitialState:   false,
+			SourceCategory: "webhook",
+			EventType:      "identify",
+		},
+		{
+			WorkspaceID:    workspaceID,
+			InstanceID:     "1",
+			SourceID:       sourceId,
+			DestinationID:  "destination-1",
+			InPU:           "dest_transformer",
+			PU:             "router",
+			StatusCode:     200,
+			Status:         "succeeded",
+			Count:          4,
+			TerminalState:  true,
+			InitialState:   false,
+			SourceCategory: "webhook",
+			EventType:      "identify",
+		},
+	}
+}
+
+func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedReports []reportRow) {
+	t.Helper()
+	query := `
+					SELECT
+					  workspace_id, instance_id, source_id, destination_id,
+					  in_pu, pu, status_code, status, count,
+					  terminal_state, initial_state, source_category, event_type
+					FROM
+					  reports
+					ORDER BY
+					  source_id, id;
+				`
+	require.Eventuallyf(t, func() bool {
+		rows, err := db.QueryContext(ctx, query)
+		if err != nil {
+			t.Logf("error querying reports: %v", err)
+			return false
+		}
+		defer rows.Close()
+
+		actualReports := make([]reportRow, 0)
+		for rows.Next() {
+			var r reportRow
+			var destID sql.NullString
+			err := rows.Scan(
+				&r.WorkspaceID, &r.InstanceID, &r.SourceID, &destID,
+				&r.InPU, &r.PU, &r.StatusCode, &r.Status, &r.Count,
+				&r.TerminalState, &r.InitialState, &r.SourceCategory, &r.EventType,
+			)
+			if err != nil {
+				t.Logf("error scanning report row: %v", err)
+				return false
+			}
+
+			r.DestinationID = destID.String
+			actualReports = append(actualReports, r)
+		}
+		require.NoError(t, rows.Err())
+		require.Equal(t, expectedReports, actualReports)
+		return true
+	}, 1*time.Minute, 5*time.Second, "reporting data mismatch")
+}
+
+func prepareBackendConfigServer(t *testing.T, webhookURL string) *httptest.Server {
+	t.Helper()
+	return backendconfigtest.NewBuilder().
+		WithWorkspaceConfig(backendconfigtest.NewConfigBuilder().
+			WithWorkspaceID(workspaceID).
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithWorkspaceID(workspaceID).
+					WithID(sourceID1).
+					WithWriteKey(writeKey1).
+					WithSourceCategory("webhook").
+					WithSourceType(srcDefName).
+					WithSourceDefOptions(backendconfig.SourceDefinitionOptions{
+						Hydration: struct {
+							Enabled bool
+						}{Enabled: true},
+					}).
+					WithConnection(
+						backendconfigtest.NewDestinationBuilder("WEBHOOK").
+							WithID("destination-1").
+							WithConfigOption("webhookMethod", "POST").
+							WithConfigOption("webhookUrl", webhookURL).
+							Build()).
+					Build()).
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithWorkspaceID(workspaceID).
+					WithID(sourceID2).
+					WithWriteKey(writeKey2).
+					WithSourceCategory("webhook").
+					WithSourceType(srcDefName).
+					WithSourceDefOptions(backendconfig.SourceDefinitionOptions{
+						Hydration: struct {
+							Enabled bool
+						}{Enabled: true},
+					}).
+					WithConnection(
+						backendconfigtest.NewDestinationBuilder("WEBHOOK").
+							WithID("destination-1").
+							WithConfigOption("webhookMethod", "POST").
+							WithConfigOption("webhookUrl", webhookURL).
+							Build()).
+					Build()).
+			WithSource(
+				backendconfigtest.NewSourceBuilder().
+					WithWorkspaceID(workspaceID).
+					WithID(sourceID3).
+					WithWriteKey(writeKey3).
+					WithSourceCategory("webhook").
+					WithSourceType(failingSourceDefName).
+					WithSourceDefOptions(backendconfig.SourceDefinitionOptions{
+						Hydration: struct {
+							Enabled bool
+						}{Enabled: true},
+					}).
+					WithConnection(
+						backendconfigtest.NewDestinationBuilder("WEBHOOK").
+							WithID("destination-1").
+							WithConfigOption("webhookMethod", "POST").
+							WithConfigOption("webhookUrl", webhookURL).
+							Build()).
+					Build()).
+			Build()).
+		Build()
 }
 
 func runRudderServer(
@@ -232,6 +490,7 @@ func runRudderServer(
 	cbURL, transformerURL,
 	tmpDir string,
 ) (err error) {
+	config.Reset()
 	t.Setenv("CONFIG_BACKEND_URL", cbURL)
 	t.Setenv("WORKSPACE_TOKEN", "token")
 	t.Setenv("DEST_TRANSFORM_URL", transformerURL)

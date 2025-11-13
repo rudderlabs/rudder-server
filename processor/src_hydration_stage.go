@@ -87,6 +87,12 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 			// Update shared maps with mutex protection
 			sharedMapsMutex.Lock()
 			defer sharedMapsMutex.Unlock()
+
+			if len(hydratedJobs) == 0 {
+				delete(message.groupedEventsBySourceId, sourceId)
+				return nil
+			}
+
 			// Update eventsByMessageID map
 			for _, job := range hydratedJobs {
 				msgID := job.Metadata.MessageID
@@ -96,7 +102,6 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					ReceivedAt:    originalJob.ReceivedAt,
 				}
 			}
-
 			// Update the groupedEventsBySourceId map
 			message.groupedEventsBySourceId[sourceId] = hydratedJobs
 
