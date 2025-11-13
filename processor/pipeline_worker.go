@@ -122,6 +122,9 @@ func (w *pipelineWorker) start() {
 
 		for jobs := range w.channel.srcHydration {
 			preTransformMsg, err := w.handle.srcHydrationStage(w.partition, jobs)
+			if errors.Is(err, types.ErrProcessorStopping) {
+				continue
+			}
 			if err != nil {
 				w.logger.Errorn("Error generating transformation message", obskit.Error(err))
 				panic(err)

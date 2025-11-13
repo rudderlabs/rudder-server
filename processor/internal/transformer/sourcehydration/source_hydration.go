@@ -42,12 +42,12 @@ func WithClient(client transformerclient.Client) Opt {
 // Client handles source hydration transformations
 type Client struct {
 	config struct {
-		sourceHydrationURL      string
-		maxRetry                config.ValueLoader[int]
-		failOnError             config.ValueLoader[bool]
-		maxRetryBackoffInterval config.ValueLoader[time.Duration]
-		timeoutDuration         time.Duration
-		batchSize               config.ValueLoader[int]
+		sourceHydrationURL           string
+		maxRetry                     config.ValueLoader[int]
+		failOnError                  config.ValueLoader[bool]
+		maxRetryBackoffInterval      config.ValueLoader[time.Duration]
+		logLongRunningTransformAfter time.Duration
+		batchSize                    config.ValueLoader[int]
 	}
 	conf   *config.Config
 	log    logger.Logger
@@ -63,7 +63,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "SourceHydration"))
 	handle.config.sourceHydrationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
+	handle.config.logLongRunningTransformAfter = conf.GetDuration("HttpClient.procTransformer.logLongRunningTransformAfter", 600, time.Second)
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.SourceHydration.maxRetry", "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.SourceHydration.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.SourceHydration.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
@@ -108,7 +108,7 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 	trackWg.Add(1)
 	go func() {
 		l := c.log.Withn(labels.ToLoggerFields()...)
-		transformerutils.TrackLongRunningTransformation(ctx, srcHydrationStage, c.config.timeoutDuration, l)
+		transformerutils.TrackLongRunningTransformation(ctx, srcHydrationStage, c.config.logLongRunningTransformAfter, l)
 		trackWg.Done()
 	}()
 
@@ -229,7 +229,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				if errors.Is(err, context.Canceled) {
 					return backoff.Permanent(err)
 				}
-				return err
+				return fmt.Errorf("client error: %w", err)
 			}
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
@@ -239,7 +239,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 			respData, err = io.ReadAll(resp.Body)
 			if err != nil {
-				return err
+				return fmt.Errorf("reading response body: %w", err)
 			}
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("source hydration returned status code: %v, response: %s", resp.StatusCode, respData)

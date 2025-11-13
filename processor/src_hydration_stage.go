@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"sync"
 
+	kitctx "github.com/rudderlabs/rudder-go-kit/context"
+
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
@@ -46,6 +48,9 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 	spanTags := stats.Tags{"partition": partition}
 	ctx, processJobsSpan := proc.tracer.Trace(message.subJobs.ctx, "srcHydrationStage", tracing.WithTraceTags(spanTags))
 	defer processJobsSpan.End()
+
+	ctx, cancel := kitctx.MergedContext(ctx, proc.backgroundCtx)
+	defer cancel()
 
 	if proc.limiter.srcHydration != nil {
 		defer proc.limiter.srcHydration.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
@@ -100,32 +105,20 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 				eventSchemaJobsByJobID := lo.SliceToMap(message.eventSchemaJobsBySourceId[sourceId], func(job *jobsdb.JobT) (int64, *jobsdb.JobT) {
 					return job.JobID, job
 				})
-				if len(hydratedJobs) > 0 {
-					message.eventSchemaJobsBySourceId[sourceId] = make([]*jobsdb.JobT, 0, len(hydratedJobs))
-				}
-				for i := 0; i < len(hydratedJobs); i++ {
-					event := hydratedJobs[i]
+				for i := range hydratedJobs {
 					jobId := hydratedJobs[i].Metadata.JobID
-					marshalledPayload, marshallErr := jsonrs.Marshal(event.Message)
-					if marshallErr != nil {
+					job, exists := eventSchemaJobsByJobID[jobId]
+					if !exists {
+						continue
+					}
+					payload, err := jsonrs.Marshal(hydratedJobs[i].Message)
+					if err != nil {
 						proc.logger.Errorn("failed to marshal hydrated event for event schema",
 							obskit.SourceID(string(sourceId)),
-							obskit.Error(marshallErr),
+							obskit.Error(err),
 						)
-						return marshallErr
-					}
-					if marshalledPayload != nil {
-						originalESJob := eventSchemaJobsByJobID[jobId]
-						message.eventSchemaJobsBySourceId[sourceId] = append(message.eventSchemaJobsBySourceId[sourceId], &jobsdb.JobT{
-							UUID:         originalESJob.UUID,
-							UserID:       originalESJob.UserID,
-							Parameters:   originalESJob.Parameters,
-							CustomVal:    originalESJob.CustomVal,
-							EventPayload: marshalledPayload,
-							CreatedAt:    originalESJob.CreatedAt,
-							ExpireAt:     originalESJob.ExpireAt,
-							WorkspaceId:  originalESJob.WorkspaceId,
-						})
+					} else {
+						job.EventPayload = payload
 					}
 				}
 			}
@@ -135,6 +128,9 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 
 	// Wait for all goroutines to complete and check for errors
 	if err := g.Wait(); err != nil {
+		if proc.backgroundCtx.Err() != nil {
+			return nil, types.ErrProcessorStopping
+		}
 		return nil, err
 	}
 
@@ -171,19 +167,22 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 			InternalSecret:   source.InternalSecret,
 		},
 	}
-	req.Batch = lo.Map(events, func(event types.TransformerEvent, _ int) types.SrcHydrationEvent {
-		return types.SrcHydrationEvent{
+
+	req.Batch = make([]types.SrcHydrationEvent, 0, len(events))
+	jobIDToEventMap := make(map[string]types.TransformerEvent)
+
+	for _, event := range events {
+		req.Batch = append(req.Batch, types.SrcHydrationEvent{
 			ID:    strconv.FormatInt(event.Metadata.JobID, 10),
 			Event: event.Message,
-		}
-	})
+		})
+		jobIDToEventMap[strconv.FormatInt(event.Metadata.JobID, 10)] = event
+	}
+
 	resp, err := proc.transformerClients.SrcHydration().Hydrate(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	jobIDToEventMap := lo.SliceToMap(events, func(event types.TransformerEvent) (string, types.TransformerEvent) {
-		return strconv.FormatInt(event.Metadata.JobID, 10), event
-	})
 	return lo.Map(resp.Batch, func(event types.SrcHydrationEvent, _ int) types.TransformerEvent {
 		originalEvent := jobIDToEventMap[event.ID]
 		originalEvent.Message = event.Event
