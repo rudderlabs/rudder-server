@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -299,6 +300,32 @@ func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
 		logger.NewStringField("transformationId", t.TransformationID),
 		logger.NewBoolField("mirroring", t.Mirroring),
 	}
+}
+
+// SrcHydrationEvent represents a single event in the hydration request/response
+type SrcHydrationEvent struct {
+	ID    string                 `json:"id" required:"true"` // JobID of the event we are hydrating
+	Event map[string]interface{} `json:"event" required:"true"`
+}
+
+// SrcHydrationRequest represents the request format for source hydration API
+type SrcHydrationRequest struct {
+	Batch  []SrcHydrationEvent `json:"batch"`
+	Source SrcHydrationSource  `json:"source"`
+}
+
+type SrcHydrationSource struct {
+	ID               string                          `json:"id"`
+	Config           json.RawMessage                 `json:"config"`
+	InternalSecret   json.RawMessage                 `json:"internalSecret"`
+	WorkspaceID      string                          `json:"workspaceId"`
+	SourceDefinition backendconfig.SourceDefinitionT `json:"sourceDefinition"`
+}
+
+// SrcHydrationResponse represents the response format from source hydration API
+type SrcHydrationResponse struct {
+	// Batch is a required field containing hydration events
+	Batch []SrcHydrationEvent `json:"batch" required:"true"`
 }
 
 func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {

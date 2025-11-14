@@ -5,6 +5,8 @@ package transformer
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -27,11 +29,16 @@ type TrackingPlanClient interface {
 	Validate(ctx context.Context, events []types.TransformerEvent) types.Response
 }
 
+type SrcHydrationClient interface {
+	Hydrate(ctx context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error)
+}
+
 type Clients struct {
 	user         UserClient
 	userMirror   UserClient
 	destination  DestinationClient
 	trackingplan TrackingPlanClient
+	srcHydration SrcHydrationClient
 }
 
 type TransformerClients interface {
@@ -39,6 +46,7 @@ type TransformerClients interface {
 	UserMirror() UserClient
 	Destination() DestinationClient
 	TrackingPlan() TrackingPlanClient
+	SrcHydration() SrcHydrationClient
 }
 
 // WithFeatureService is used to set the feature service for the destination transformer.
@@ -59,6 +67,7 @@ func NewClients(conf *config.Config, log logger.Logger, statsFactory stats.Stats
 		userMirror:   user_transformer.New(conf, log, statsFactory, user_transformer.ForMirroring()),
 		destination:  destination_transformer.New(conf, log, statsFactory, opts.destinationOpts...),
 		trackingplan: trackingplan_validation.New(conf, log, statsFactory),
+		srcHydration: sourcehydration.New(conf, log, statsFactory),
 	}
 }
 
@@ -69,6 +78,10 @@ func (c *Clients) UserMirror() UserClient { return c.userMirror }
 func (c *Clients) Destination() DestinationClient { return c.destination }
 
 func (c *Clients) TrackingPlan() TrackingPlanClient { return c.trackingplan }
+
+func (c *Clients) SrcHydration() SrcHydrationClient {
+	return c.srcHydration
+}
 
 type opts struct {
 	destinationOpts []destination_transformer.Opt

@@ -56,15 +56,21 @@ func (v1 *v1Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 	v1TransformerEvent := V1TransformerEvent{
 		EventRequest: eventRequest,
 		Source: backendconfig.SourceT{
-			ID:               source.ID,
-			OriginalID:       source.OriginalID,
-			Name:             source.Name,
-			SourceDefinition: source.SourceDefinition,
-			Config:           source.Config,
-			Enabled:          source.Enabled,
-			WorkspaceID:      source.WorkspaceID,
-			WriteKey:         source.WriteKey,
+			ID:          source.ID,
+			OriginalID:  source.OriginalID,
+			Name:        source.Name,
+			Config:      source.Config,
+			Enabled:     source.Enabled,
+			WorkspaceID: source.WorkspaceID,
+			WriteKey:    source.WriteKey,
 		},
+	}
+
+	v1TransformerEvent.Source.SourceDefinition = backendconfig.SourceDefinitionT{
+		ID:       source.SourceDefinition.ID,
+		Name:     source.SourceDefinition.Name,
+		Category: source.SourceDefinition.Category,
+		Type:     source.SourceDefinition.Type,
 	}
 
 	return jsonrs.Marshal(v1TransformerEvent)
@@ -95,15 +101,21 @@ func (v2 *v2Adapter) getTransformerEvent(authCtx *gwtypes.AuthRequestContext, ev
 	v2TransformerEvent := V2TransformerEvent{
 		EventRequest: eventRequest,
 		Source: backendconfig.SourceT{
-			ID:               source.ID,
-			OriginalID:       source.OriginalID,
-			Name:             source.Name,
-			SourceDefinition: source.SourceDefinition,
-			Config:           source.Config,
-			Enabled:          source.Enabled,
-			WorkspaceID:      source.WorkspaceID,
-			WriteKey:         source.WriteKey,
+			ID:          source.ID,
+			OriginalID:  source.OriginalID,
+			Name:        source.Name,
+			Config:      source.Config,
+			Enabled:     source.Enabled,
+			WorkspaceID: source.WorkspaceID,
+			WriteKey:    source.WriteKey,
 		},
+	}
+
+	v2TransformerEvent.Source.SourceDefinition = backendconfig.SourceDefinitionT{
+		ID:       source.SourceDefinition.ID,
+		Name:     source.SourceDefinition.Name,
+		Category: source.SourceDefinition.Category,
+		Type:     source.SourceDefinition.Type,
 	}
 
 	return jsonrs.Marshal(v2TransformerEvent)

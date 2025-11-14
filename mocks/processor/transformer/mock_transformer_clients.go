@@ -54,6 +54,20 @@ func (mr *MockTransformerClientsMockRecorder) Destination() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Destination", reflect.TypeOf((*MockTransformerClients)(nil).Destination))
 }
 
+// SrcHydration mocks base method.
+func (m *MockTransformerClients) SrcHydration() transformer.SrcHydrationClient {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SrcHydration")
+	ret0, _ := ret[0].(transformer.SrcHydrationClient)
+	return ret0
+}
+
+// SrcHydration indicates an expected call of SrcHydration.
+func (mr *MockTransformerClientsMockRecorder) SrcHydration() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SrcHydration", reflect.TypeOf((*MockTransformerClients)(nil).SrcHydration))
+}
+
 // TrackingPlan mocks base method.
 func (m *MockTransformerClients) TrackingPlan() transformer.TrackingPlanClient {
 	m.ctrl.T.Helper()

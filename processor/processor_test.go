@@ -217,7 +217,14 @@ func setMainLoopTimeout(proc *Handle, timeout time.Duration) {
 	proc.config.mainLoopTimeout = timeout
 }
 
-var sampleWorkspaceID = "some-workspace-id"
+var (
+	sampleWorkspaceID = "some-workspace-id"
+	fblaSourceId      = "test-fbla-source-id"
+	fblaSourceId2     = "test-fbla-source-id-2"
+	fblaSourceId3     = "test-fbla-source-id-3"
+	fblaSourceId4     = "test-fbla-source-id-4"
+	fblaSourceId5     = "test-fbla-source-id-5"
+)
 
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
@@ -920,6 +927,66 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 		},
+		{
+			ID: fblaSourceId,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId2,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId5,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId3,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
+		{
+			ID: fblaSourceId4,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "fbla",
+				Options: backendconfig.SourceDefinitionOptions{
+					Hydration: struct {
+						Enabled bool
+					}{Enabled: true},
+				},
+			},
+			WorkspaceID: "test-workspace-id",
+		},
 	},
 	Settings: backendconfig.Settings{
 		EventAuditEnabled: true,
@@ -967,7 +1034,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx: ctx,
@@ -1018,6 +1085,9 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				0,
 			)
 			Expect(err).To(BeNil())
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+			Expect(err).To(BeNil())
+
 			_, _ = processor.pretransformStage("", preTransMessage)
 
 			Expect(c.MockObserver.calls).To(HaveLen(1))
@@ -1046,7 +1116,7 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx: ctx,
@@ -1102,6 +1172,8 @@ var _ = Describe("Tracking Plan Validation", Ordered, func() {
 				},
 				0,
 			)
+			Expect(err).To(BeNil())
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
 
@@ -1304,7 +1376,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 			defer cancel()
 			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 			GinkgoT().Log("Processor setup and init done")
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx:     ctx,
@@ -1312,6 +1384,8 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 				},
 				0,
 			)
+			Expect(err).To(BeNil())
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
 			Expect(err).To(BeNil())
 			_, _ = processor.pretransformStage("", preTransMessage)
 
@@ -1491,7 +1565,7 @@ func TestArchival(t *testing.T) {
 			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 			t.Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx:     ctx,
@@ -1501,8 +1575,11 @@ func TestArchival(t *testing.T) {
 			)
 			require.NoError(t, err)
 			if archiveInPreProcess {
-				require.Nil(t, preTransMessage.archivalJobs)
+				require.Nil(t, srcHydrationMsg.archivalJobs)
 			}
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+			require.NoError(t, err)
+
 			_, _ = processor.pretransformStage("", preTransMessage)
 
 			require.Len(t, c.MockObserver.calls, 1)
@@ -1669,7 +1746,7 @@ func TestArchival(t *testing.T) {
 			require.NoError(t, processor.config.asyncInit.WaitContext(ctx))
 			t.Log("Processor setup and init done")
 
-			preTransMessage, err := processor.preprocessStage(
+			srcHydrationMsg, err := processor.preprocessStage(
 				"",
 				subJob{
 					ctx:     ctx,
@@ -1679,8 +1756,11 @@ func TestArchival(t *testing.T) {
 			)
 			require.NoError(t, err)
 			if archiveInPreProcess {
-				require.Nil(t, preTransMessage.archivalJobs)
+				require.Nil(t, srcHydrationMsg.archivalJobs)
 			}
+			preTransMessage, err := processor.srcHydrationStage("", srcHydrationMsg)
+			require.NoError(t, err)
+
 			_, _ = processor.pretransformStage("", preTransMessage)
 
 			require.Len(t, c.MockObserver.calls, 1)
