@@ -31,7 +31,7 @@ jobs:
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
@@ -91,7 +91,7 @@ jobs:
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
       - name: Checkout
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
@@ -145,7 +145,7 @@ jobs:
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
@@ -207,7 +207,7 @@ jobs:
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
           sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
-      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
@@ -262,7 +262,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Setup Go
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
