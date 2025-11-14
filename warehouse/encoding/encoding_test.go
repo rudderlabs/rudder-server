@@ -27,7 +27,7 @@ import (
 func TestReaderLoader(t *testing.T) {
 	misc.Init()
 
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	require.NoError(t, err)
 
 	t.Run("Parquet", func(t *testing.T) {

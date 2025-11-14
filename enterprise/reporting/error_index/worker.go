@@ -214,7 +214,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 		return i.FailedAtTime().Compare(j.FailedAtTime())
 	})
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}

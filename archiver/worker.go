@@ -147,7 +147,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	workspaceID := jobs[0].WorkspaceId
 
 	filePath := path.Join(
-		lo.Must(misc.CreateTMPDIR()),
+		lo.Must(misc.GetTmpDir()),
 		"rudder-backups",
 		w.sourceID,
 		fmt.Sprintf("%d_%d_%s_%s.json.gz", firstJobCreatedAt.Unix(), lastJobCreatedAt.Unix(), workspaceID, uuid.NewString()),

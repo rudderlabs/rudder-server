@@ -200,7 +200,7 @@ func generateCSVFile(filePath string, sortColumnNames bool) (string, error) {
 
 func getTempFilePath() (string, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", err
 	}

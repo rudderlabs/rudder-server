@@ -115,8 +115,8 @@ func createCSVWriter(fileName string) (*ActionFileInfo, error) {
 }
 
 func (u *LyticsBulkUploader) createCSVFile(existingFilePath string, streamTraitsMapping []StreamTraitMapping) (*ActionFileInfo, error) {
-	// Create a temporary directory using misc.CreateTMPDIR
-	tmpDirPath, err := misc.CreateTMPDIR()
+	// Create a temporary directory using misc.GetTmpDir
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary directory: %v", err)
 	}

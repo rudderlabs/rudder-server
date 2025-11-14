@@ -349,7 +349,7 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		loadFileType    = warehouseutils.GetLoadFileType(destinationType)
 	)
 
-	if tmpDirPath, err = misc.CreateTMPDIR(); err != nil {
+	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
 		return "", fmt.Errorf("create tmp dir: %w", err)
 	}
 
@@ -447,7 +447,7 @@ func downloadFile(ctx context.Context, dest *backendconfig.DestinationT, locatio
 		return err
 	}
 
-	if tmpDirPath, err = misc.CreateTMPDIR(); err != nil {
+	if tmpDirPath, err = misc.GetTmpDir(); err != nil {
 		return fmt.Errorf("create tmp dir: %w", err)
 	}
 

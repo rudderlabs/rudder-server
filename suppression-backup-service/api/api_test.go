@@ -23,7 +23,7 @@ import (
 
 // exportPath creates a tmp dir and returns the path to it
 func exportPath() (baseDir string, err error) {
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}

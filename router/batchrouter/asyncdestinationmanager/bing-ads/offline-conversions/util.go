@@ -61,7 +61,7 @@ contains the template of the uploadable file.
 */
 func createActionFile(actionType string) (*ActionFileInfo, error) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 	}
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(fmt.Errorf("error while creating tmp directory: %w", err))
 	}

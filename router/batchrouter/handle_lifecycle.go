@@ -313,7 +313,7 @@ func (brt *Handle) crashRecover() {
 			}
 
 			localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
-			tmpDirPath, err := misc.CreateTMPDIR()
+			tmpDirPath, err := misc.GetTmpDir()
 			if err != nil {
 				panic(err)
 			}

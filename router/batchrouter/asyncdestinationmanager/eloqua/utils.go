@@ -61,7 +61,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", 0, err
 	}
