@@ -1774,6 +1774,55 @@ func TestUpdateJobStatus(t *testing.T) {
 	})
 }
 
+func TestPartitionedJobsDB(t *testing.T) {
+	t.Run("without partitioning", func(t *testing.T) {
+		postgres := startPostgres(t)
+		db := NewForReadWrite("partitioning", WithDBHandle(postgres.DB))
+		require.NoError(t, db.Start(), "it should be able to start the jobs db handle")
+		defer db.TearDown()
+		err := db.Store(context.Background(), []*JobT{
+			{
+				UUID:         uuid.New(),
+				WorkspaceId:  "workspace-1",
+				UserID:       "user-1",
+				CustomVal:    "custom-val-1",
+				Parameters:   []byte(`{}`),
+				EventPayload: []byte(`{}`),
+				EventCount:   1,
+			},
+		})
+		require.NoError(t, err, "it should be able to store job")
+		unprocessed, err := db.GetUnprocessed(context.Background(), GetQueryParams{JobsLimit: 1})
+		require.NoError(t, err, "it should be able to get unprocessed jobs")
+		require.Equal(t, 1, len(unprocessed.Jobs), "it should return the stored job")
+		require.Empty(t, unprocessed.Jobs[0].PartitionID, "it should have empty partition ID")
+	})
+
+	t.Run("with partitioning", func(t *testing.T) {
+		postgres := startPostgres(t)
+		db := NewForReadWrite("partitioning", WithNumPartitions(64), WithDBHandle(postgres.DB))
+		require.NoError(t, db.Start(), "it should be able to start the jobs db handle")
+		defer db.TearDown()
+		err := db.Store(context.Background(), []*JobT{
+			{
+				UUID:         uuid.New(),
+				WorkspaceId:  "workspace-1",
+				UserID:       "user-1",
+				CustomVal:    "custom-val-1",
+				Parameters:   []byte(`{}`),
+				EventPayload: []byte(`{}`),
+				EventCount:   1,
+			},
+		})
+		require.NoError(t, err, "it should be able to store job")
+		unprocessed, err := db.GetUnprocessed(context.Background(), GetQueryParams{JobsLimit: 1})
+		require.NoError(t, err, "it should be able to get unprocessed jobs")
+		require.Equal(t, 1, len(unprocessed.Jobs), "it should return the stored job")
+		require.NotEmpty(t, unprocessed.Jobs[0].PartitionID, "it should have non-empty partition ID")
+		require.Equal(t, "workspace-1-62", unprocessed.Jobs[0].PartitionID, "it should have correct partition ID including the workspace ID and partition number")
+	})
+}
+
 type testingT interface {
 	Errorf(format string, args ...interface{})
 	FailNow()

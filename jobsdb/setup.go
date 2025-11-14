@@ -28,6 +28,7 @@ func (jd *Handle) setupDatabaseTables(templateData map[string]interface{}) {
 		Handle:                     jd.dbHandle,
 		MigrationsTable:            jd.SchemaMigrationTable(),
 		ShouldForceSetLowerVersion: jd.config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		Version:                    uint(jd.conf.dbTablesVersion),
 	}
 	// execute any necessary migrations
 	if err := m.MigrateFromTemplates("jobsdb", templateData); err != nil {

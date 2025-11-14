@@ -35,6 +35,9 @@ type Migrator struct {
 
 	// Indicates if all migrations should be run ignoring the current version in MigrationsTable
 	RunAlways bool
+
+	// Migration target version override. 0 means latest.
+	Version uint
 }
 
 var pkgLogger logger.Logger
@@ -161,7 +164,11 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 		}
 	}
 
-	err = migration.Up()
+	if m.Version != 0 {
+		err = migration.Migrate(m.Version)
+	} else {
+		err = migration.Up()
+	}
 	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
 		return fmt.Errorf("run migration from template directory %q, %w", templatesDir, err)
 	}
