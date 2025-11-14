@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/processor/isolation"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
@@ -71,6 +74,69 @@ type reportRow struct {
 }
 
 func TestSrcHydration(t *testing.T) {
+	t.Run("SrcHydrationWithTransformer", func(t *testing.T) {
+		envKey := "FB_TEST_PAGE_ACCESS_TOKEN"
+		if v, exists := os.LookupEnv(envKey); !exists || v == "" {
+			if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
+				t.Fatalf("%s environment variable not set", envKey)
+			}
+			t.Skipf("Skipping %s as %s is not set", t.Name(), envKey)
+		}
+		pageAccessToken := os.Getenv("FB_TEST_PAGE_ACCESS_TOKEN")
+		require.NotNil(t, pageAccessToken, "pageAccessToken is not set")
+
+		webhook := webhookutil.NewRecorder()
+		t.Cleanup(webhook.Close)
+		webhookURL := webhook.Server.URL
+
+		bcServer := prepareBackendConfigServer(t, webhookURL)
+		t.Cleanup(bcServer.Close)
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		postgresContainer, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
+
+		tr, err := transformer.Setup(pool, t)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		gwPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+
+		wg, ctx := errgroup.WithContext(ctx)
+		wg.Go(func() error {
+			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir())
+			if err != nil {
+				t.Logf("rudder-server exited with error: %v", err)
+			}
+			return err
+		})
+
+		url := fmt.Sprintf("http://localhost:%d", gwPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		eventsCount := 12
+
+		err = sendEvents(6, "identify", writeKey1, url)
+		require.NoError(t, err)
+		err = sendEvents(6, "identify", writeKey2, url)
+		require.NoError(t, err)
+
+		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
+
+		require.Eventually(t, func() bool {
+			return webhook.RequestsCount() == eventsCount
+		}, 2*time.Minute, 10*time.Second, "unexpected number of events received, count of events: %d", webhook.RequestsCount())
+
+		expectedReports := append(prepareExpectedReports(t, sourceID1, false), prepareExpectedReports(t, sourceID2, false)...)
+		requireReports(t, ctx, postgresContainer.DB, expectedReports)
+	})
+
 	t.Run("SrcHydration", func(t *testing.T) {
 		tests := []struct {
 			name                   string
@@ -114,7 +180,6 @@ func TestSrcHydration(t *testing.T) {
 				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.isolationMode"), tt.procIsolation)
 				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.failOnError"),
 					strconv.FormatBool(tt.failOnHydrationFailure))
-				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.maxRetry"), "2")
 
 				webhook := webhookutil.NewRecorder()
 				t.Cleanup(webhook.Close)
@@ -133,6 +198,9 @@ func TestSrcHydration(t *testing.T) {
 						return proctypes.SrcHydrationResponse{
 							Batch: request.Batch,
 						}, nil
+					}).
+					WithSrcHydrationHandler(strings.ToLower(failingSourceDefName), func(request proctypes.SrcHydrationRequest) (proctypes.SrcHydrationResponse, error) {
+						return proctypes.SrcHydrationResponse{}, errors.New("failed to hydrate, not hydration source")
 					}).
 					WithDestTransformHandler(
 						"WEBHOOK",
@@ -437,6 +505,7 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Profiler.Enabled"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.enableSuppressUserFeature"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.archiveInPreProcess"), "true")
+	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.maxRetry"), "2")
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
