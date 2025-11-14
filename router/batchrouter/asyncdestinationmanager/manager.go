@@ -26,6 +26,7 @@ func newRegularManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	connectionConfigMap map[string]interface{},
 ) (common.AsyncDestinationManager, error) {
 	switch destination.DestinationDefinition.Name {
 	case "BINGADS_AUDIENCE":
@@ -44,6 +45,8 @@ func newRegularManager(
 		return lyticsBulkUpload.NewManager(logger, statsFactory, destination)
 	case "SNOWPIPE_STREAMING":
 		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
+		// case "SALESFORCE_BULK_UPLOAD":
+		// return salesforcebulkupload.NewManager(logger, statsFactory, destination, connectionConfigMap)
 	}
 	return nil, errors.New("invalid destination type")
 }
@@ -62,10 +65,11 @@ func NewManager(
 	statsFactory stats.Stats,
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
+	connectionConfigMap map[string]interface{},
 ) (common.AsyncDestinationManager, error) {
 	switch {
 	case common.IsAsyncRegularDestination(destination.DestinationDefinition.Name):
-		return newRegularManager(conf, logger, statsFactory, destination, backendConfig)
+		return newRegularManager(conf, logger, statsFactory, destination, backendConfig, connectionConfigMap)
 	case common.IsSFTPDestination(destination.DestinationDefinition.Name):
 		return newSFTPManager(logger, statsFactory, destination)
 	}
