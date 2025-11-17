@@ -21,7 +21,7 @@ import (
 func TestWorkerBatchLoop(t *testing.T) {
 	t.Run("no batching and no transform at router, acceptWorkerJob returning always nil", func(t *testing.T) {
 		// Setup
-		inputCh := make(chan workerJob, 10)
+		inputCh := make(chan *workerJob, 10)
 		batchSize := 5
 
 		var processedJobs []types.DestinationJobT
@@ -75,7 +75,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 			params := &routerutils.JobParameters{
 				TransformAt: "processor", // Not "router"
 			}
-			inputCh <- workerJob{job: job, parameters: params}
+			inputCh <- &workerJob{job: job, parameters: params}
 		}
 
 		// Wait a bit to ensure jobs are processed and some timeouts are triggered too
@@ -104,7 +104,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 
 	t.Run("no batching and transform at router, then switch to no router transform", func(t *testing.T) {
 		// Setup
-		inputCh := make(chan workerJob, 10)
+		inputCh := make(chan *workerJob, 10)
 		batchSize := 5
 
 		var processedJobs []types.DestinationJobT
@@ -184,7 +184,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 			params := &routerutils.JobParameters{
 				TransformAt: "router",
 			}
-			inputCh <- workerJob{job: job, parameters: params}
+			inputCh <- &workerJob{job: job, parameters: params}
 		}
 
 		// Send a job with transform_at != "router" - this should trigger batch processing
@@ -195,7 +195,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		params := &routerutils.JobParameters{
 			TransformAt: "processor", // Not "router"
 		}
-		inputCh <- workerJob{job: job, parameters: params}
+		inputCh <- &workerJob{job: job, parameters: params}
 
 		// Wait a bit to ensure processing
 		time.Sleep(200 * time.Millisecond)
@@ -226,7 +226,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 
 	t.Run("with batching enabled", func(t *testing.T) {
 		// Setup
-		inputCh := make(chan workerJob, 10)
+		inputCh := make(chan *workerJob, 10)
 		batchSize := 3
 
 		var processedJobs []types.DestinationJobT
@@ -292,7 +292,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 			params := &routerutils.JobParameters{
 				TransformAt: "router",
 			}
-			inputCh <- workerJob{job: job, parameters: params}
+			inputCh <- &workerJob{job: job, parameters: params}
 		}
 
 		// Wait for batch processing
@@ -306,7 +306,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		params := &routerutils.JobParameters{
 			TransformAt: "router",
 		}
-		inputCh <- workerJob{job: job, parameters: params}
+		inputCh <- &workerJob{job: job, parameters: params}
 
 		// Wait for timeout to trigger processing of remaining jobs
 		time.Sleep(200*time.Millisecond + 50*time.Millisecond)
@@ -338,7 +338,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 
 	t.Run("jobsBatchTimeout resets even when no jobs during timeout", func(t *testing.T) {
 		// Setup
-		inputCh := make(chan workerJob, 10)
+		inputCh := make(chan *workerJob, 10)
 		batchSize := 5
 
 		var timeoutFireCount int
@@ -400,7 +400,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 			params := &routerutils.JobParameters{
 				TransformAt: "router",
 			}
-			inputCh <- workerJob{job: job, parameters: params}
+			inputCh <- &workerJob{job: job, parameters: params}
 
 			// Wait longer than timeout to ensure timeout fires
 			time.Sleep(60 * time.Millisecond)
@@ -433,7 +433,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 
 	t.Run("batch processing when batch size is reached", func(t *testing.T) {
 		// Setup
-		inputCh := make(chan workerJob, 10)
+		inputCh := make(chan *workerJob, 10)
 		batchSize := 2 // Small batch size for testing
 
 		var processedBatches [][]types.DestinationJobT
@@ -493,7 +493,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 			params := &routerutils.JobParameters{
 				TransformAt: "router",
 			}
-			inputCh <- workerJob{job: job, parameters: params}
+			inputCh <- &workerJob{job: job, parameters: params}
 		}
 
 		// Wait for processing
@@ -508,7 +508,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 			params := &routerutils.JobParameters{
 				TransformAt: "router",
 			}
-			inputCh <- workerJob{job: job, parameters: params}
+			inputCh <- &workerJob{job: job, parameters: params}
 		}
 
 		// Wait for processing

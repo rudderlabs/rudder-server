@@ -13,7 +13,7 @@ type workerBatchLoop struct {
 	ctx                      context.Context                                             // context for managing the lifecycle of the loop
 	jobsBatchTimeout         config.ValueLoader[time.Duration]                           // timeout for processing jobs in a batch
 	noOfJobsToBatchInAWorker config.ValueLoader[int]                                     // maximum number of jobs to batch in a worker before processing
-	inputCh                  <-chan workerJob                                            // channel to receive jobs for processing
+	inputCh                  <-chan *workerJob                                           // channel to receive jobs for processing
 	enableBatching           bool                                                        // whether to enable batching of jobs
 	batchTransform           func(routerJobs []types.RouterJobT) []types.DestinationJobT // function to transform router jobs into destination jobs in batch mode
 	transform                func(routerJobs []types.RouterJobT) []types.DestinationJobT // function to transform router jobs into destination jobs in non-batch mode
@@ -69,7 +69,7 @@ func (wl *workerBatchLoop) runLoop() {
 				doProcessRouterJobs()
 			}
 			start := time.Now()
-			if routerJob := wl.acceptWorkerJob(workerJob); routerJob != nil {
+			if routerJob := wl.acceptWorkerJob(*workerJob); routerJob != nil {
 				routerJobs = append(routerJobs, *routerJob)
 				if wl.noOfJobsToBatchInAWorker.Load() <= len(routerJobs) {
 					doProcessRouterJobs() // process the batch if it reaches the limit
