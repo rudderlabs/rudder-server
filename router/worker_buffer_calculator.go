@@ -44,12 +44,13 @@ func newExperimentalBufferSizeCalculator(
 	noOfJobsToBatchInAWorker config.ValueLoader[int], // number of jobs that a worker can batch together
 	workLoopThroughput metric.SimpleMovingAverage, // sliding average of work loop throughput
 	scalingFactor config.ValueLoader[float64], // scaling factor to scale up the buffer size
+	minBufferSize config.ValueLoader[int], // minimum buffer size
 ) bufferSizeCalculator {
 	return func() int {
-		const minBufferSize = 1
+		const one = 1
 		m1 := workLoopThroughput.Load() // at least the average throughput of the work loop
 		if m1 < 1 {                     // if there is no throughput yet, the throughput is less than 1 per second, set buffer to minBufferSize
-			return minBufferSize
+			return one
 		}
 		m2 := float64(jobQueryBatchSize.Load() / noOfWorkers) // at least the average number of jobs per worker during pickup
 		m3 := float64(noOfJobsToBatchInAWorker.Load())        // at least equal to the number of jobs to batch in a worker
@@ -59,7 +60,7 @@ func newExperimentalBufferSizeCalculator(
 				// calculate the maximum of the three metrics to determine the buffer size
 				math.Max(
 					math.Max(math.Max(m1, m2), m3)*scalingFactor.Load(), // scale up to provide some buffer
-					minBufferSize, // ensure buffer size is at least minBufferSize
+					math.Max(one, float64(minBufferSize.Load())),        // ensure buffer size is at least one or the configured minimum
 				)))
 	}
 }
@@ -74,6 +75,7 @@ func newBufferSizeCalculatorSwitcher(
 	workLoopThroughput metric.SimpleMovingAverage, // sliding average of work loop throughput
 	scalingFactor config.ValueLoader[float64], // scaling factor to scale up the buffer size
 	noOfJobsPerChannel int, // number of jobs per channel
+	minBufferSize config.ValueLoader[int], // minimum buffer size
 ) bufferSizeCalculator {
 	new := newExperimentalBufferSizeCalculator(
 		jobQueryBatchSize,
@@ -81,6 +83,7 @@ func newBufferSizeCalculatorSwitcher(
 		noOfJobsToBatchInAWorker,
 		workLoopThroughput,
 		scalingFactor,
+		minBufferSize,
 	)
 	legacy := newStandardBufferSizeCalculator(
 		noOfJobsToBatchInAWorker,

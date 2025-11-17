@@ -70,7 +70,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 20}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(10)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(100/5, 20, 10) * 1.2 = max(20, 20, 10) * 1.2 = 20 * 1.2 = 24
 			expectedSize := 24
@@ -84,7 +84,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 0}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(0)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			result := calculator()
 			require.Equal(t, 1, result)
@@ -96,7 +96,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 5}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(50) // This will be the maximum
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(20/10, 5, 50) * 1.2 = max(2, 5, 50) * 1.2 = 50 * 1.2 = 60
 			expectedSize := 60
@@ -110,7 +110,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 100} // This will be the maximum
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(1)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(50/10, 100, 1) * 1.2 = max(5, 100, 1) * 1.2 = 100 * 1.2 = 120
 			expectedSize := 120
@@ -123,7 +123,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(1000/5, 10, 5) * 1.2 = max(200, 10, 5) * 1.2 = 200 * 1.2 = 240
 			expectedSize := 240
@@ -138,7 +138,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 20}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			// No observation made, throughput is 0
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			require.Equal(t, 1, calculator())
 		})
@@ -149,7 +149,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(100/1, 10, 5) * 1.2 = max(100, 10, 5) * 1.2 = 100 * 1.2 = 120
 			expectedSize := 120
@@ -162,7 +162,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 500}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(200)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(10000/100 * 1.2, 500, 200) * 1.2 = max(120, 500, 200) * 1.2 = 500 * 1.2 = 600
 			expectedSize := 600
@@ -175,7 +175,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 3}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(2.5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// max(10/5 * 1.2, 3, 2.5) * 1.2 = max(2.4, 3, 2.5) * 1.2 = 3 * 1.2 = 3.6, ceil = 4
 			expectedSize := 4
@@ -190,7 +190,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// Initial calculation: max(100/5, 10, 5) * 1.2 = max(20, 10, 5) * 1.2 = 20 * 1.2 = 24
 			result1 := calculator()
@@ -209,7 +209,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// Initial calculation: max(50/5, 10, 5) * 1.2 = max(10, 10, 5) * 1.2 = 10 * 1.2 = 12
 			require.Equal(t, 12, calculator())
@@ -226,7 +226,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(2)
 			workLoopThroughput.Observe(5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// Initial calculation: max(50/5, 10, 5) * 1.2 = max(10, 10, 5) * 1.2 = 10 * 1.2 = 12
 			require.Equal(t, 12, calculator())
@@ -245,7 +245,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(10)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// All three metrics are equal: 100/10 = 10, 10, 10
 			// max(10, 10, 10) * 1.2 = 10 * 1.2 = 12
@@ -260,7 +260,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 20}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(10)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// Call calculator multiple times to ensure stats are captured
 			expectedSize := 24
@@ -276,7 +276,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 10}
 			workLoopThroughput := metric.NewSimpleMovingAverage(1)
 			workLoopThroughput.Observe(5)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			// Call calculator - first call should capture the stat
 			expectedSize := 12 // max(50/5, 10, 5) * 1.2 = max(10, 10, 5) * 1.2 = 10 * 1.2 = 12
@@ -295,7 +295,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 20}
 			workLoopThroughput := metric.NewSimpleMovingAverage(10)
 			workLoopThroughput.Observe(10)
-			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+			calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 			var wg sync.WaitGroup
 			results := make([]int, 100)
@@ -340,7 +340,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 
 			for _, tc := range testCases {
 				t.Run(fmt.Sprintf("workers=%d", tc.workers), func(t *testing.T) {
-					calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, tc.workers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+					calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, tc.workers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 					require.Equal(t, tc.expectedSize, calculator())
 				})
 			}
@@ -358,7 +358,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 					workLoopThroughput.Observe(float64(i * 50)) // 50, 100, 150, ..., 500
 				}
 
-				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 				// Average throughput = (50+100+...+500)/10 = 2750/10 = 275
 				// max(10000/20, 100, 275) * 1.2 = max(500, 100, 275) * 1.2 = 500 * 1.2 = 600
@@ -376,7 +376,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 					workLoopThroughput.Observe(2.0) // Steady low throughput
 				}
 
-				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 				// max(100/10, 10, 2) * 1.2 = max(10, 10, 2) * 1.2 = 10 * 1.2 = 12
 				require.Equal(t, 12, calculator())
@@ -394,7 +394,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 					workLoopThroughput.Observe(val)
 				}
 
-				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 				// Average = (10+50+30+80+20+40)/6 = 230/6 ≈ 38.33
 				// max(500/8, 25, 38.33) * 1.2 = max(62.5, 25, 38.33) * 1.2 = 62.5 * 1.2 = 75
@@ -409,7 +409,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 				noOfJobsToBatchInAWorker := &mockValueLoader[int]{value: 50}
 				workLoopThroughput := metric.NewSimpleMovingAverage(10) // No observations yet
 
-				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 				// Throughput is 0, so return minimum size
 				require.Equal(t, 1, calculator())
@@ -422,7 +422,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 				workLoopThroughput := metric.NewSimpleMovingAverage(3)
 				workLoopThroughput.Observe(50)
 
-				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 				// max(500/1, 100, 50) * 1.2 = max(500, 100, 50) * 1.2 = 500 * 1.2 = 600
 				require.Equal(t, 600, calculator())
@@ -435,7 +435,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 				workLoopThroughput := metric.NewSimpleMovingAverage(5)
 				workLoopThroughput.Observe(3)
 
-				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor)
+				calculator := newExperimentalBufferSizeCalculator(jobQueryBatchSize, noOfWorkers, noOfJobsToBatchInAWorker, workLoopThroughput, scalingFactor, config.SingleValueLoader(1))
 
 				// max(10/5 * 1.2, 1, 3) * 1.2 = max(2.4, 1, 3) * 1.2 = 3 * 1.2 = 3.6, ceil = 4
 				require.Equal(t, 4, calculator())
@@ -463,6 +463,7 @@ func TestBufferSizeCalculatorSwitcher(t *testing.T) {
 			workLoopThroughput,
 			config.SingleValueLoader(1.2),
 			noOfJobsPerChannel,
+			config.SingleValueLoader(1),
 		)
 
 		t.Run("uses legacy calculator when flag is false", func(t *testing.T) {
