@@ -30,6 +30,7 @@ func newPipelineWorker(index int, partition string, h workerHandle, t *tracing.T
 
 	bufSize := h.config().pipelineBufferedItems
 	w.channel.preprocess = make(chan subJob, bufSize)
+	w.channel.srcHydration = make(chan *srcHydrationMessage, bufSize)
 	w.channel.preTransform = make(chan *preTransformationMessage, bufSize)
 	w.channel.usertransform = make(chan *transformationMessage, bufSize)
 	w.channel.destinationtransform = make(chan *userTransformData, bufSize)
@@ -63,6 +64,7 @@ type pipelineWorker struct {
 	}
 	channel struct { // worker channels
 		preprocess           chan subJob                    // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
+		srcHydration         chan *srcHydrationMessage      // srcHydration channel is used to send jobs to hydrate events via transformer
 		preTransform         chan *preTransformationMessage // preTransform is used to send jobs to store to arc, event schema and tracking plan validation
 		usertransform        chan *transformationMessage    // userTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
 		destinationtransform chan *userTransformData        // destinationTransform channel is used to send jobs to transform asynchronously when pipelining is enabled
@@ -89,7 +91,9 @@ func (w *pipelineWorker) start() {
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.preTransform)
+		defer func() {
+			close(w.channel.srcHydration)
+		}()
 		defer w.logger.Debugn("preprocessing routine stopped")
 
 		for jobs := range w.channel.preprocess {
@@ -101,9 +105,33 @@ func (w *pipelineWorker) start() {
 				w.logger.Errorn("Error preprocessing jobs", obskit.Error(err))
 				panic(err)
 			}
+
 			waitStart := time.Now()
-			w.channel.preTransform <- val
-			w.tracer.RecordSpan(jobs.ctx, "start.preTransformCh.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
+			w.channel.srcHydration <- val
+			w.tracer.RecordSpan(jobs.ctx, "start.srcHydration.wait", waitStart, tracing.WithRecordSpanTags(spanTags))
+
+		}
+	})
+
+	// Src hydration goroutine
+	w.lifecycle.wg.Add(1)
+	rruntime.Go(func() {
+		defer w.lifecycle.wg.Done()
+		defer close(w.channel.preTransform)
+		defer w.logger.Debugn("src hydration routine stopped")
+
+		for jobs := range w.channel.srcHydration {
+			preTransformMsg, err := w.handle.srcHydrationStage(w.partition, jobs)
+			if errors.Is(err, types.ErrProcessorStopping) {
+				continue
+			}
+			if err != nil {
+				w.logger.Errorn("Error generating transformation message", obskit.Error(err))
+				panic(err)
+			}
+			waitTime := time.Now()
+			w.channel.preTransform <- preTransformMsg
+			w.tracer.RecordSpan(jobs.subJobs.ctx, "start.preTransformCh.wait", waitTime, tracing.WithRecordSpanTags(spanTags))
 		}
 	})
 
