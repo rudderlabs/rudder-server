@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ const (
 	writeKey3            = "writekey-3"
 	sourceID3            = "source-3"
 	workspaceID          = "workspace-1"
-	srcDefName           = "Source-Def-Name-1"
+	srcDefName           = "FACEBOOK_LEAD_ADS_NATIVE"
 	failingSourceDefName = "Source-Def-Name-2"
 )
 
@@ -74,7 +75,7 @@ type reportRow struct {
 }
 
 func TestSrcHydration(t *testing.T) {
-	t.Run("SrcHydrationWithTransformer", func(t *testing.T) {
+	t.Run("with actual transformer", func(t *testing.T) {
 		envKey := "FB_TEST_PAGE_ACCESS_TOKEN"
 		if v, exists := os.LookupEnv(envKey); !exists || v == "" {
 			if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
@@ -84,12 +85,13 @@ func TestSrcHydration(t *testing.T) {
 		}
 		pageAccessToken := os.Getenv("FB_TEST_PAGE_ACCESS_TOKEN")
 		require.NotNil(t, pageAccessToken, "pageAccessToken is not set")
+		internalSecret := json.RawMessage(fmt.Sprintf(`{"pageAccessToken": "%s"}`, pageAccessToken))
 
 		webhook := webhookutil.NewRecorder()
 		t.Cleanup(webhook.Close)
 		webhookURL := webhook.Server.URL
 
-		bcServer := prepareBackendConfigServer(t, webhookURL)
+		bcServer := prepareBackendConfigServer(t, webhookURL, internalSecret)
 		t.Cleanup(bcServer.Close)
 
 		pool, err := dockertest.NewPool("")
@@ -119,12 +121,16 @@ func TestSrcHydration(t *testing.T) {
 		url := fmt.Sprintf("http://localhost:%d", gwPort)
 		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
-		eventsCount := 12
+		numEvents := 6
+		var eventsCount int
 
-		err = sendEvents(6, "identify", writeKey1, url)
+		err = sendEvents(numEvents, "identify", writeKey1, url)
 		require.NoError(t, err)
-		err = sendEvents(6, "identify", writeKey2, url)
+		eventsCount += numEvents
+
+		err = sendEvents(numEvents, "identify", writeKey2, url)
 		require.NoError(t, err)
+		eventsCount += numEvents
 
 		requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 		requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
@@ -133,11 +139,11 @@ func TestSrcHydration(t *testing.T) {
 			return webhook.RequestsCount() == eventsCount
 		}, 2*time.Minute, 10*time.Second, "unexpected number of events received, count of events: %d", webhook.RequestsCount())
 
-		expectedReports := append(prepareExpectedReports(t, sourceID1, false), prepareExpectedReports(t, sourceID2, false)...)
+		expectedReports := append(prepareExpectedReports(t, sourceID1, false, numEvents), prepareExpectedReports(t, sourceID2, false, numEvents)...)
 		requireReports(t, ctx, postgresContainer.DB, expectedReports)
 	})
 
-	t.Run("SrcHydration", func(t *testing.T) {
+	t.Run("with test transformer", func(t *testing.T) {
 		tests := []struct {
 			name                   string
 			procIsolation          string
@@ -185,7 +191,7 @@ func TestSrcHydration(t *testing.T) {
 				t.Cleanup(webhook.Close)
 				webhookURL := webhook.Server.URL
 
-				bcServer := prepareBackendConfigServer(t, webhookURL)
+				bcServer := prepareBackendConfigServer(t, webhookURL, nil)
 				t.Cleanup(bcServer.Close)
 
 				trServer := transformertest.NewBuilder().
@@ -233,21 +239,29 @@ func TestSrcHydration(t *testing.T) {
 				url := fmt.Sprintf("http://localhost:%d", gwPort)
 				health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
 
-				eventsCount := 8
-				err = sendEvents(4, "identify", writeKey1, url)
+				numEvents := 4
+				var successfulEventCount int
+				var totalEventCount int
+
+				err = sendEvents(numEvents, "identify", writeKey1, url)
 				require.NoError(t, err)
-				err = sendEvents(4, "identify", writeKey2, url)
+				successfulEventCount += numEvents
+				totalEventCount += numEvents
+
+				err = sendEvents(numEvents, "identify", writeKey2, url)
 				require.NoError(t, err)
+				successfulEventCount += numEvents
+				totalEventCount += numEvents
 
 				if tt.failOnHydrationFailure {
-					eventsCount += 4
-					err = sendEvents(4, "identify", writeKey3, url)
+					err = sendEvents(numEvents, "identify", writeKey3, url)
 					require.NoError(t, err)
+					totalEventCount += numEvents
 				}
 
-				requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
+				requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, totalEventCount)
 
-				requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, 8)
+				requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, successfulEventCount)
 
 				require.Eventuallyf(t, func() bool {
 					return webhook.RequestsCount() == 8
@@ -260,11 +274,11 @@ func TestSrcHydration(t *testing.T) {
 				})
 
 				expectedReports := append(
-					prepareExpectedReports(t, sourceID1, false),
-					prepareExpectedReports(t, sourceID2, false)...,
+					prepareExpectedReports(t, sourceID1, false, numEvents),
+					prepareExpectedReports(t, sourceID2, false, numEvents)...,
 				)
 				if tt.failOnHydrationFailure {
-					expectedReports = append(expectedReports, prepareExpectedReports(t, sourceID3, true)...)
+					expectedReports = append(expectedReports, prepareExpectedReports(t, sourceID3, true, numEvents)...)
 				}
 				requireReports(t, ctx, postgresContainer.DB, expectedReports)
 
@@ -275,7 +289,7 @@ func TestSrcHydration(t *testing.T) {
 	})
 }
 
-func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []reportRow {
+func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool, numEvents int) []reportRow {
 	t.Helper()
 	if gwOnly {
 		return []reportRow{
@@ -288,7 +302,7 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []report
 				PU:             "gateway",
 				StatusCode:     0,
 				Status:         "succeeded",
-				Count:          4,
+				Count:          int64(numEvents),
 				TerminalState:  false,
 				InitialState:   true,
 				SourceCategory: "webhook",
@@ -306,7 +320,7 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []report
 			PU:             "gateway",
 			StatusCode:     0,
 			Status:         "succeeded",
-			Count:          4,
+			Count:          int64(numEvents),
 			TerminalState:  false,
 			InitialState:   true,
 			SourceCategory: "webhook",
@@ -321,7 +335,7 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []report
 			PU:             "event_filter",
 			StatusCode:     200,
 			Status:         "succeeded",
-			Count:          4,
+			Count:          int64(numEvents),
 			TerminalState:  false,
 			InitialState:   false,
 			SourceCategory: "webhook",
@@ -336,7 +350,7 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []report
 			PU:             "dest_transformer",
 			StatusCode:     200,
 			Status:         "succeeded",
-			Count:          4,
+			Count:          int64(numEvents),
 			TerminalState:  false,
 			InitialState:   false,
 			SourceCategory: "webhook",
@@ -351,7 +365,7 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool) []report
 			PU:             "router",
 			StatusCode:     200,
 			Status:         "succeeded",
-			Count:          4,
+			Count:          int64(numEvents),
 			TerminalState:  true,
 			InitialState:   false,
 			SourceCategory: "webhook",
@@ -403,7 +417,7 @@ func requireReports(t *testing.T, ctx context.Context, db *sql.DB, expectedRepor
 	}, 1*time.Minute, 5*time.Second, "reporting data mismatch")
 }
 
-func prepareBackendConfigServer(t *testing.T, webhookURL string) *httptest.Server {
+func prepareBackendConfigServer(t *testing.T, webhookURL string, internalSecret json.RawMessage) *httptest.Server {
 	t.Helper()
 	return backendconfigtest.NewBuilder().
 		WithWorkspaceConfig(backendconfigtest.NewConfigBuilder().
@@ -420,6 +434,7 @@ func prepareBackendConfigServer(t *testing.T, webhookURL string) *httptest.Serve
 							Enabled bool
 						}{Enabled: true},
 					}).
+					WithInternalSecrets(internalSecret).
 					WithConnection(
 						backendconfigtest.NewDestinationBuilder("WEBHOOK").
 							WithID("destination-1").
@@ -439,6 +454,7 @@ func prepareBackendConfigServer(t *testing.T, webhookURL string) *httptest.Serve
 							Enabled bool
 						}{Enabled: true},
 					}).
+					WithInternalSecrets(internalSecret).
 					WithConnection(
 						backendconfigtest.NewDestinationBuilder("WEBHOOK").
 							WithID("destination-1").
