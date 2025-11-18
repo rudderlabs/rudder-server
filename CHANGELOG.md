@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.1](https://github.com/rudderlabs/rudder-server/compare/v1.63.0...v1.63.1) (2025-11-17)
+
+
+### Bug Fixes
+
+* worker job buffer increased memory requirements causing excessive cpu for garbage collection ([#6500](https://github.com/rudderlabs/rudder-server/issues/6500)) ([26843ca](https://github.com/rudderlabs/rudder-server/commit/26843ca38685ed7cb80a2376d2bb140af34ba777))
+
 ## [1.63.0](https://github.com/rudderlabs/rudder-server/compare/v1.62.0...v1.63.0) (2025-11-11)
 
 
