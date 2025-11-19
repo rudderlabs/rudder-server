@@ -13,7 +13,7 @@ replace (
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.3
 	golang.org/x/image => golang.org/x/image v0.24.0
-	golang.org/x/net => golang.org/x/net v0.34.0
+	golang.org/x/net => golang.org/x/net v0.47.0
 	golang.org/x/net/html => golang.org/x/net/html v0.41.0
 	golang.org/x/text => golang.org/x/text v0.22.0
 	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
@@ -350,12 +350,12 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
-	golang.org/x/crypto v0.43.0 // indirect
+	golang.org/x/crypto v0.44.0 // indirect
 	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/net v0.46.1-0.20251013234738-63d1a5100f82 // indirect
-	golang.org/x/sys v0.37.0 // indirect
-	golang.org/x/term v0.36.0 // indirect
-	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/term v0.37.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/tools v0.36.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
