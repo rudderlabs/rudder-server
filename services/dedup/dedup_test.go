@@ -574,7 +574,6 @@ func startKeydb(t testing.TB, conf *config.Config) {
 
 	nodeConfig := keydb.Config{
 		NodeID:           0,
-		ClusterSize:      1,
 		TotalHashRanges:  128,
 		SnapshotInterval: time.Minute,
 		Addresses:        []string{address},

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.2](https://github.com/rudderlabs/rudder-server/compare/v1.63.1...v1.63.2) (2025-11-20)
+
+
+### Bug Fixes
+
+* keydb connection pool ([#6506](https://github.com/rudderlabs/rudder-server/issues/6506)) ([6da9443](https://github.com/rudderlabs/rudder-server/commit/6da94435079c76a96ef6590194db0ac6076aede1))
+
 ## [1.63.1](https://github.com/rudderlabs/rudder-server/compare/v1.63.0...v1.63.1) (2025-11-17)
 
 
