@@ -2852,11 +2852,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
 
-			err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
-			if err != nil {
-				return fmt.Errorf("saving dropped jobs: %w", err)
-			}
-
 			if proc.isReportingEnabled() {
 				if err = proc.reporting.Report(ctx, in.reportMetrics, tx.Tx()); err != nil {
 					return fmt.Errorf("reporting metrics: %w", err)
@@ -2868,9 +2863,17 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return fmt.Errorf("storing tracked users: %w", err)
 			}
 
+			// this will publish stats for all sources involved in this batch
 			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)
+			}
+			// this will publish rudder source stats only for dropped jobs involved in this batch.
+			// It needs to be called after rsourcesStats.Publish, otherwise, it may cause a deadlock
+			// e.g. the batch contains two keys and there are dropped jobs only for the second key but not for the first one
+			err = proc.saveDroppedJobs(ctx, in.droppedJobs, tx.Tx())
+			if err != nil {
+				return fmt.Errorf("saving dropped jobs: %w", err)
 			}
 			if enableConcurrentStore {
 				return g.Wait()
