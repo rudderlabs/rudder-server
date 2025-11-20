@@ -48,6 +48,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/partmap"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
 
@@ -424,10 +425,28 @@ type JobT struct {
 	LastJobStatus JobStatusT      `json:"LastJobStatus"`
 	Parameters    json.RawMessage `json:"Parameters"`
 	WorkspaceId   string          `json:"WorkspaceId"`
+	PartitionID   string          `json:"PartitionId"`
 }
 
 func (job *JobT) String() string {
-	return fmt.Sprintf("JobID=%v, UserID=%v, CreatedAt=%v, ExpireAt=%v, CustomVal=%v, Parameters=%v, EventPayload=%v EventCount=%d", job.JobID, job.UserID, job.CreatedAt, job.ExpireAt, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.EventCount)
+	var sb strings.Builder
+	sb.WriteString("JobID=")
+	sb.WriteString(strconv.FormatInt(job.JobID, 10))
+	sb.WriteString(", UserID=")
+	sb.WriteString(job.UserID)
+	sb.WriteString(", CreatedAt=")
+	sb.WriteString(job.CreatedAt.String())
+	sb.WriteString(", ExpireAt=")
+	sb.WriteString(job.ExpireAt.String())
+	sb.WriteString(", CustomVal=")
+	sb.WriteString(job.CustomVal)
+	sb.WriteString(", Parameters=")
+	sb.WriteString(string(job.Parameters))
+	sb.WriteString(", EventPayload=")
+	sb.WriteString(string(job.EventPayload))
+	sb.WriteString(" EventCount=")
+	sb.WriteString(strconv.Itoa(job.EventCount))
+	return sb.String()
 }
 
 func (job *JobT) sanitizeJSON() error {
@@ -571,6 +590,9 @@ type Handle struct {
 		maxOpenConnections             int
 		analyzeThreshold               config.ValueLoader[int]
 		MaxDSSize                      config.ValueLoader[int]
+		numPartitions                  int // if zero or negative, no partitioning
+		partitionFunction              func(job *JobT) string
+		dbTablesVersion                int // version of the database tables schema (0 means latest)
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
@@ -781,6 +803,35 @@ func WithSkipMaintenanceErr(ignore bool) OptsFunc {
 func WithJobMaxAge(jobMaxAge config.ValueLoader[time.Duration]) OptsFunc {
 	return func(jd *Handle) {
 		jd.conf.jobMaxAge = jobMaxAge
+	}
+}
+
+func WithNumPartitions(numPartitions int) OptsFunc {
+	{
+		return func(jd *Handle) {
+			// numPartitions must be greater than 0 and power-of-two
+			if numPartitions < 1 || (numPartitions&(numPartitions-1)) != 0 {
+				panic(fmt.Errorf("invalid number of jobsdb partitions, needs to be power of two: %d", numPartitions))
+			}
+			jd.conf.numPartitions = numPartitions
+			// default partition function using a 32-bit key space and Murmur3 hash
+			if jd.conf.partitionFunction == nil {
+				jd.conf.partitionFunction = func(job *JobT) string {
+					var partitionIdx uint32
+					if jd.conf.numPartitions > 0 {
+						partitionIdx, _ = partmap.Murmur3Partition32(job.UserID, uint32(jd.conf.numPartitions))
+					}
+					return job.WorkspaceId + "-" + strconv.Itoa(int(partitionIdx))
+				}
+			}
+		}
+	}
+}
+
+// withDatabaseTablesVersion sets the database tables version to use (internal use only for verifying database table migrations)
+func withDatabaseTablesVersion(dbVersion int) OptsFunc {
+	return func(jd *Handle) {
+		jd.conf.dbTablesVersion = dbVersion
 	}
 }
 
@@ -1509,6 +1560,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 		workspace_id TEXT NOT NULL DEFAULT '',
 		uuid UUID NOT NULL,
 		user_id TEXT NOT NULL,
+		partition_id TEXT NOT NULL DEFAULT '',
 		parameters JSONB NOT NULL,
 		custom_val VARCHAR(64) NOT NULL,
 		event_payload `+string(columnType)+` NOT NULL,
@@ -1535,7 +1587,12 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 
 func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
-		return fmt.Errorf("creating workspace index: %w", err)
+		return fmt.Errorf("creating workspace_id index: %w", err)
+	}
+	if jd.conf.numPartitions > 0 {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_partid" ON %[1]q (partition_id)`, newDS.JobTable)); err != nil {
+			return fmt.Errorf("creating partition_id index: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating custom_val index: %w", err)
@@ -2038,7 +2095,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		var stmt *sql.Stmt
 		var err error
 
-		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
+		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id", "partition_id"))
 		if err != nil {
 			return err
 		}
@@ -2049,8 +2106,11 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 			if job.EventCount > 1 {
 				eventCount = job.EventCount
 			}
-
-			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId); err != nil {
+			// Assign partition ID if not already assigned
+			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
+				job.PartitionID = jd.conf.partitionFunction(job)
+			}
+			if _, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), eventCount, job.WorkspaceId, job.PartitionID); err != nil {
 				return err
 			}
 		}
@@ -2198,7 +2258,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	var rows *sql.Rows
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
-									jobs.created_at, jobs.expire_at, jobs.workspace_id,
+									jobs.created_at, jobs.expire_at, jobs.workspace_id, jobs.partition_id,
 									octet_length(jobs.event_payload::text) as payload_size,
 									sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts,
 									sum(octet_length(jobs.event_payload::text)) over (order by jobs.job_id) as running_payload_size,
@@ -2265,7 +2325,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		var jsErrorResponse []byte
 		var jsParameters []byte
 		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
-			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &payloadSize, &runningEventCount, &runningPayloadSize,
+			&payload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PartitionID, &payloadSize, &runningEventCount, &runningPayloadSize,
 			&jsState, &jsAttemptNum,
 			&jsExecTime, &jsRetryTime,
 			&jsErrorCode, &jsErrorResponse, &jsParameters)
