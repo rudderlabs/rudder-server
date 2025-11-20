@@ -6,12 +6,20 @@ go 1.25.3
 // When upgrading a dependency, please make sure that
 // the same version is used both here and in the require section
 replace (
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp => github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.29.0
 	github.com/cyphar/filepath-securejoin => github.com/cyphar/filepath-securejoin v0.2.5
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v3 => github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.1.14
 	github.com/satori/go.uuid => github.com/satori/go.uuid v1.2.0
 	github.com/xitongsys/parquet-go => github.com/rudderlabs/parquet-go v0.0.3
+	go.opentelemetry.io/auto/sdk => go.opentelemetry.io/auto/sdk v1.1.0
+	go.opentelemetry.io/contrib/detectors/gcp => go.opentelemetry.io/contrib/detectors/gcp v1.37.0
+	go.opentelemetry.io/otel => go.opentelemetry.io/otel v1.37.0
+	go.opentelemetry.io/otel/metric => go.opentelemetry.io/otel/metric v1.37.0
+	go.opentelemetry.io/otel/sdk => go.opentelemetry.io/otel/sdk v1.37.0
+	go.opentelemetry.io/otel/sdk/metric => go.opentelemetry.io/otel/sdk/metric v1.37.0
+	go.opentelemetry.io/otel/trace => go.opentelemetry.io/otel/trace v1.37.0
 	golang.org/x/image => golang.org/x/image v0.24.0
 	golang.org/x/net => golang.org/x/net v0.47.0
 	golang.org/x/net/html => golang.org/x/net/html v0.41.0
