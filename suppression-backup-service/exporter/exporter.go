@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -19,14 +20,40 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
+const TmpExportFilePrefix = "tmp-export"
+
+// CleanupLingeringTmpExportFiles removes any lingering temporary export files from previous runs
+func CleanupLingeringTmpExportFiles() error {
+	tmpDir, err := misc.GetTmpDir()
+	if err != nil {
+		return fmt.Errorf("getting tmp dir: %w", err)
+	}
+	// find all files starting with tmp-export in the tmpDir and remove them
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return fmt.Errorf("could not read tmp dir: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), TmpExportFilePrefix) {
+			if err := os.Remove(path.Join(tmpDir, entry.Name())); err != nil {
+				return fmt.Errorf("could not remove lingering export file %s: %w", entry.Name(), err)
+			}
+		}
+	}
+	return nil
+}
+
 func Export(repo suppression.Repository, file model.File) error {
 	// export initially to a temp file
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return fmt.Errorf("could not create tmp dir: %w", err)
 	}
 
-	tempFile, err := os.CreateTemp(tmpDir, "tmp-export")
+	tempFile, err := os.CreateTemp(tmpDir, TmpExportFilePrefix)
 	if err != nil {
 		return fmt.Errorf("error creating temp file: %w", err)
 	}
@@ -71,7 +98,7 @@ type Exporter struct {
 
 func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	pollInterval := config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour)
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
@@ -125,7 +152,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 			return nil
 		default:
 			latestExport := func() error {
-				tmpDir, err := misc.CreateTMPDIR()
+				tmpDir, err := misc.GetTmpDir()
 				if err != nil {
 					return fmt.Errorf("latestExporterLoop: %w", err)
 				}

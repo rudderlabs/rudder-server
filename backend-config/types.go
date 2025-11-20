@@ -49,6 +49,13 @@ type SourceDefinitionT struct {
 	Name     string
 	Category string
 	Type     string // // Indicates whether source is one of {cloud, web, flutter, android, ios, warehouse, cordova, amp, reactnative, unity}. This field is not present in sources table
+	Options  SourceDefinitionOptions
+}
+
+type SourceDefinitionOptions struct {
+	Hydration struct {
+		Enabled bool
+	}
 }
 
 type DestinationT struct {
@@ -113,6 +120,7 @@ type SourceT struct {
 	GeoEnrichment              struct {
 		Enabled bool
 	}
+	InternalSecret json.RawMessage
 }
 
 type Credential struct {
@@ -123,6 +131,10 @@ type Credential struct {
 
 func (s *SourceT) IsReplaySource() bool {
 	return s.OriginalID != ""
+}
+
+func (s *SourceT) IsSourceHydrationSupported() bool {
+	return s.SourceDefinition.Options.Hydration.Enabled
 }
 
 type Account struct {

@@ -493,7 +493,7 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 }
 
 func (idr *Identity) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, path string) {
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(err)
 	}

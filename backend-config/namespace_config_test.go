@@ -339,6 +339,108 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 	require.Equal(t, 7, requestNumber)
 }
 
+func TestSourceDefinitionOptions(t *testing.T) {
+	var (
+		ctx               = context.Background()
+		namespace         = "dynamic-config-namespace"
+		hostServiceSecret = "service-secret"
+	)
+
+	bcSrv := &backendConfigServer{t: t, token: hostServiceSecret}
+	bcSrv.addNamespace(namespace, "./testdata/namespace_with_source_definition_options.json")
+
+	ts := httptest.NewServer(bcSrv)
+	defer ts.Close()
+	httpSrvURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	client := &namespaceConfig{
+		config: config.New(),
+		logger: logger.NOP,
+
+		client:           ts.Client(),
+		configBackendURL: httpSrvURL,
+
+		namespace:           namespace,
+		hostedServiceSecret: hostServiceSecret,
+	}
+	require.NoError(t, client.SetUp())
+
+	// Get the configuration from the API
+	configs, err := client.Get(ctx)
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+
+	// Get the workspace configuration
+	config, ok := configs["workspace-1"]
+	require.True(t, ok)
+
+	require.Len(t, config.Sources, 2)
+	require.Len(t, config.Sources[0].Destinations, 2)
+
+	// Verify that source definition options are correctly parsed
+	srcMap := config.SourcesMap()
+	require.Equal(t, srcMap["source-1"].SourceDefinition.Name, "Test Source")
+	require.True(t, srcMap["source-1"].SourceDefinition.Options.Hydration.Enabled)
+	require.False(t, srcMap["source-2"].SourceDefinition.Options.Hydration.Enabled)
+}
+
+func Test_Namespace_FetchInternalSecrets(t *testing.T) {
+	var (
+		ctx               = context.Background()
+		namespace         = "free-us-1"
+		hostServiceSecret = "service-secret"
+	)
+
+	responseBodyFromFile, err := os.ReadFile("./testdata/namespace_with_source_definition_options.json")
+	require.NoError(t, err)
+
+	t.Run("with internal secret", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			user, _, ok := r.BasicAuth()
+			require.True(t, ok)
+			require.Equal(t, hostServiceSecret, user)
+
+			_, _ = w.Write(responseBodyFromFile)
+		}))
+		defer ts.Close()
+
+		httpSrvURL, err := url.Parse(ts.URL)
+		require.NoError(t, err)
+		client := &namespaceConfig{
+			config: config.New(),
+			logger: logger.NOP,
+
+			client:           ts.Client(),
+			configBackendURL: httpSrvURL,
+
+			namespace:                namespace,
+			hostedServiceSecret:      hostServiceSecret,
+			cpRouterURL:              cpRouterURL,
+			incrementalConfigUpdates: false,
+		}
+		require.NoError(t, client.SetUp())
+
+		configs, err := client.Get(ctx)
+		require.NoError(t, err)
+		require.Len(t, configs, 1)
+
+		// Get the workspace configuration
+		c, ok := configs["workspace-1"]
+		require.True(t, ok)
+
+		require.Len(t, c.Sources, 2)
+		require.Len(t, c.Sources[0].Destinations, 2)
+
+		// Verify that source definition options are correctly parsed
+		srcMap := c.SourcesMap()
+		require.Equal(t, srcMap["source-1"].SourceDefinition.Name, "Test Source")
+		require.True(t, srcMap["source-1"].SourceDefinition.Options.Hydration.Enabled)
+		require.False(t, srcMap["source-2"].SourceDefinition.Options.Hydration.Enabled)
+		require.JSONEq(t, string(srcMap["source-1"].InternalSecret), `{"pageAccessToken": "some-page-access-token"}`)
+	})
+}
+
 type backendConfigServer struct {
 	t         *testing.T
 	responses map[string]string

@@ -160,7 +160,7 @@ func TestExportLoop(t *testing.T) {
 
 // exportPath creates a tmp dir and returns the path to it
 func exportPath() (baseDir string, err error) {
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
@@ -238,4 +238,105 @@ func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	_, _ = w.Write(body)
+}
+
+func TestCleanupLingeringExportFiles(t *testing.T) {
+	misc.Init()
+
+	tests := []struct {
+		name        string
+		setupFiles  []string
+		expectedErr bool
+		description string
+	}{
+		{
+			name:        "no files to cleanup",
+			setupFiles:  []string{},
+			expectedErr: false,
+			description: "should succeed when no tmp-export files exist",
+		},
+		{
+			name:        "single tmp-export file",
+			setupFiles:  []string{exporter.TmpExportFilePrefix + "-123"},
+			expectedErr: false,
+			description: "should remove a single tmp-export file",
+		},
+		{
+			name:        "multiple tmp-export files",
+			setupFiles:  []string{exporter.TmpExportFilePrefix + "-123", exporter.TmpExportFilePrefix + "-456", exporter.TmpExportFilePrefix + "-789"},
+			expectedErr: false,
+			description: "should remove multiple tmp-export files",
+		},
+		{
+			name:        "mixed files with tmp-export prefix",
+			setupFiles:  []string{exporter.TmpExportFilePrefix + "-123", "other-file", exporter.TmpExportFilePrefix + "-456", "regular-file.txt"},
+			expectedErr: false,
+			description: "should only remove files with tmp-export prefix",
+		},
+		{
+			name:        "files with similar names but different prefix",
+			setupFiles:  []string{"export-123", "tmp-123", "tmpexport-456", exporter.TmpExportFilePrefix + "tmp-export-real"},
+			expectedErr: false,
+			description: "should only remove files that start with exactly 'tmp-export'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpExportFilePrefixLength := len(exporter.TmpExportFilePrefix)
+			// Get the temp directory
+			tmpDir, err := misc.GetTmpDir()
+			require.NoError(t, err, "failed to get tmp dir")
+
+			// Create test files
+			var createdFiles []string
+			var tmpExportFiles []string
+			for _, fileName := range tt.setupFiles {
+				filePath := path.Join(tmpDir, fileName)
+				file, err := os.Create(filePath)
+				require.NoError(t, err, "failed to create test file: %s", fileName)
+				require.NoError(t, file.Close(), "failed to close test file: %s", fileName)
+				createdFiles = append(createdFiles, filePath)
+				if len(fileName) >= tmpExportFilePrefixLength && fileName[:tmpExportFilePrefixLength] == exporter.TmpExportFilePrefix {
+					tmpExportFiles = append(tmpExportFiles, filePath)
+				}
+			}
+
+			// Verify files were created
+			for _, filePath := range createdFiles {
+				_, err := os.Stat(filePath)
+				require.NoError(t, err, "test file should exist before cleanup: %s", filePath)
+			}
+
+			// Run the cleanup function
+			err = exporter.CleanupLingeringTmpExportFiles()
+
+			// Check expectations
+			if tt.expectedErr {
+				require.Error(t, err, "expected an error but got none")
+			} else {
+				require.NoError(t, err, "expected no error but got: %v", err)
+
+				// Verify tmp-export files were removed
+				for _, filePath := range tmpExportFiles {
+					_, err := os.Stat(filePath)
+					require.True(t, os.IsNotExist(err), "tmp-export file should be removed: %s", filePath)
+				}
+
+				// Verify other files still exist
+				for _, filePath := range createdFiles {
+					fileName := path.Base(filePath)
+					if len(fileName) < tmpExportFilePrefixLength || fileName[:tmpExportFilePrefixLength] != exporter.TmpExportFilePrefix {
+						_, err := os.Stat(filePath)
+						require.NoError(t, err, "non-tmp-export file should still exist: %s", filePath)
+					}
+				}
+			}
+
+			// Cleanup remaining test files
+			for _, filePath := range createdFiles {
+				_ = os.Remove(filePath)
+			}
+		})
+	}
 }

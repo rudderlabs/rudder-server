@@ -39,12 +39,22 @@ func (m *SimpleMockTrackingPlanClient) Validate(_ context.Context, _ []types.Tra
 	return m.ValidateOutput
 }
 
+type SimpleMockSrcHydrationClient struct {
+	HydratedOutput types.SrcHydrationResponse
+	err            error
+}
+
+func (m *SimpleMockSrcHydrationClient) Hydrate(_ context.Context, _ types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
+	return m.HydratedOutput, m.err
+}
+
 // SimpleClients is a minimal implementation of TransformerClients
 type SimpleClients struct {
 	userClient         UserClient
 	userMirrorClient   UserClient
 	destinationClient  DestinationClient
 	trackingPlanClient TrackingPlanClient
+	sycHydrationClient SrcHydrationClient
 }
 
 // NewSimpleClients creates a new instance of SimpleClients with empty responses
@@ -74,6 +84,10 @@ func NewSimpleClients() *SimpleClients {
 				FailedEvents: []types.TransformerResponse{},
 			},
 		},
+		sycHydrationClient: &SimpleMockSrcHydrationClient{
+			HydratedOutput: types.SrcHydrationResponse{},
+			err:            nil,
+		},
 	}
 }
 
@@ -93,6 +107,8 @@ func (s *SimpleClients) Destination() DestinationClient {
 func (s *SimpleClients) TrackingPlan() TrackingPlanClient {
 	return s.trackingPlanClient
 }
+
+func (s *SimpleClients) SrcHydration() SrcHydrationClient { return s.sycHydrationClient }
 
 // SetUserTransformOutput sets the response for the User transformer
 func (s *SimpleClients) SetUserTransformOutput(response types.Response) {
@@ -115,6 +131,14 @@ func (s *SimpleClients) SetTrackingPlanValidateOutput(response types.Response) {
 	}
 }
 
+// SetSrcHydrationOutput sets the response for the Source Hydration client
+func (s *SimpleClients) SetSrcHydrationOutput(response types.SrcHydrationResponse, err error) {
+	s.sycHydrationClient = &SimpleMockSrcHydrationClient{
+		HydratedOutput: response,
+		err:            err,
+	}
+}
+
 // WithDynamicUserTransform sets a custom function for User transformer
 func (s *SimpleClients) WithDynamicUserTransform(transformFn func(context.Context, []types.TransformerEvent) types.Response) {
 	s.userClient = &dynamicUserClient{transformFn: transformFn}
@@ -133,6 +157,11 @@ func (s *SimpleClients) WithDynamicDestinationTransform(transformFn func(context
 // WithDynamicTrackingPlanValidate sets a custom function for TrackingPlan validator
 func (s *SimpleClients) WithDynamicTrackingPlanValidate(validateFn func(context.Context, []types.TransformerEvent) types.Response) {
 	s.trackingPlanClient = &dynamicTrackingPlanClient{validateFn: validateFn}
+}
+
+// WithDynamicSrcHydration sets a custom function for Source Hydration
+func (s *SimpleClients) WithDynamicSrcHydration(hydrateFn func(context.Context, types.SrcHydrationRequest) (types.SrcHydrationResponse, error)) {
+	s.sycHydrationClient = &dynamicSrcHydrationClient{hydrateFn: hydrateFn}
 }
 
 // Helper types for dynamic behavior
@@ -159,6 +188,14 @@ type dynamicTrackingPlanClient struct {
 
 func (d *dynamicTrackingPlanClient) Validate(ctx context.Context, events []types.TransformerEvent) types.Response {
 	return d.validateFn(ctx, events)
+}
+
+type dynamicSrcHydrationClient struct {
+	hydrateFn func(context.Context, types.SrcHydrationRequest) (types.SrcHydrationResponse, error)
+}
+
+func (d *dynamicSrcHydrationClient) Hydrate(ctx context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
+	return d.hydrateFn(ctx, req)
 }
 
 // Helper functions to create common responses

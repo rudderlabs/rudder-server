@@ -46,7 +46,7 @@ type badgerDB struct {
 // DefaultPath returns the default path for the deduplication service's badger DB
 func DefaultPath() string {
 	badgerPathName := "/badgerdbv4"
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(err)
 	}

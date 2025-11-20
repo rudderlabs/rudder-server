@@ -216,7 +216,7 @@ func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (
 }
 
 func getRepoPath() (fullSuppressionPath, latestSuppressionPath string, err error) {
-	tmpDir, err := misc.CreateTMPDIR()
+	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return "", "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
