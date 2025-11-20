@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
@@ -1604,6 +1605,173 @@ func TestPayloadSizeColumnQueries(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 5, len(unprocessed.Jobs))
 	jobsDB.TearDown()
+}
+
+func TestUpdateJobStatus(t *testing.T) {
+	_ = startPostgres(t)
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 1)
+	statStore, err := memstats.New()
+	require.NoError(t, err)
+	triggerAddNewDS := make(chan time.Time)
+	triggerMigrateDS := make(chan time.Time)
+	jobsDB := &Handle{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+		TriggerMigrateDS: func() <-chan time.Time {
+			return triggerMigrateDS
+		},
+		config: c,
+		stats:  statStore,
+	}
+	err = jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)))
+	require.NoError(t, err)
+	defer jobsDB.TearDown()
+
+	require.Equal(t, 1, len(jobsDB.getDSList()))
+
+	generateJobs := func(sourceID, destinationID string, numOfJob int) []*JobT {
+		customVal := "MOCKDS"
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				WorkspaceId:  "workspace",
+				Parameters:   []byte(`{"source_id":"` + sourceID + `", "destination_id":"` + destinationID + `"}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	// adding mock jobs to jobsDB
+	jobs := generateJobs("source-1", "destination-1", 1)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+	t.Log("stored jobs")
+
+	// triggerAddNewDS to trigger jobsDB to add new DS
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB.getDSList()) == 2
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 2")
+
+	jobs = generateJobs("source-2", "destination-2", 1)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+	t.Log("stored jobs again")
+
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB.getDSList()) == 3
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 3")
+
+	jobs = generateJobs("source-3", "", 1)
+	err = jobsDB.Store(context.Background(), jobs)
+	require.NoError(t, err)
+	t.Log("and stored jobs again")
+
+	triggerAddNewDS <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB.getDSList()) == 4
+		},
+		time.Second*5, time.Millisecond,
+		"expected number of tables to be 4")
+
+	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{JobsLimit: 10})
+	require.NoError(t, err)
+
+	t.Run("with parameter filters", func(t *testing.T) {
+		statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
+			return &JobStatusT{
+				JobID:       job.JobID,
+				JobState:    Failed.State,
+				AttemptNum:  1,
+				WorkspaceId: "workspace",
+			}
+		})
+		// update job status by passing parameter filters should emit stats with parameter filters applied
+		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{"MOCKDS"}, []ParameterFilterT{{Name: "source_id", Value: "source-1"}}))
+		measurement := statStore.Get("jobsdb_updated_jobs", stats.Tags{
+			"tablePrefix": jobsDB.tablePrefix,
+			"jobState":    Failed.State,
+			"customVal":   "MOCKDS",
+			"source_id":   "source-1",
+		})
+		require.NotNil(t, measurement)
+		require.EqualValues(t, 3, measurement.LastValue())
+	})
+
+	t.Run("without parameter filters with job parameters", func(t *testing.T) {
+		// update job status without passing parameter filters should emit stats with parameter filters auto-detected
+		statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
+			return &JobStatusT{
+				JobID:         job.JobID,
+				JobState:      Failed.State,
+				AttemptNum:    1,
+				WorkspaceId:   "workspace",
+				JobParameters: job.Parameters,
+			}
+		})
+		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{"MOCKDS"}, []ParameterFilterT{}))
+		statsTags := stats.Tags{
+			"tablePrefix":    jobsDB.tablePrefix,
+			"jobState":       Failed.State,
+			"customVal":      "MOCKDS",
+			"source_id":      "source-1",
+			"destination_id": "destination-1",
+		}
+		measurement1 := statStore.Get("jobsdb_updated_jobs", statsTags)
+		require.NotNil(t, measurement1)
+		require.EqualValues(t, 1, measurement1.LastValue())
+
+		statsTags["source_id"] = "source-2"
+		statsTags["destination_id"] = "destination-2"
+		measurement2 := statStore.Get("jobsdb_updated_jobs", statsTags)
+		require.NotNil(t, measurement2)
+		require.EqualValues(t, 1, measurement2.LastValue())
+
+		statsTags["source_id"] = "source-3"
+		statsTags["destination_id"] = ""
+		measurement3 := statStore.Get("jobsdb_updated_jobs", statsTags)
+		require.NotNil(t, measurement3)
+		require.EqualValues(t, 1, measurement3.LastValue())
+	})
+
+	t.Run("without parameter filters without job parameters", func(t *testing.T) {
+		// update job status without passing parameter filters or job parameters should emit stats without parameter filters
+		statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
+			return &JobStatusT{
+				JobID:       job.JobID,
+				JobState:    Failed.State,
+				AttemptNum:  1,
+				WorkspaceId: "workspace",
+			}
+		})
+		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{"MOCKDS"}, []ParameterFilterT{}))
+		statsTags := stats.Tags{
+			"tablePrefix": jobsDB.tablePrefix,
+			"jobState":    Failed.State,
+			"customVal":   "MOCKDS",
+		}
+		measurement := statStore.Get("jobsdb_updated_jobs", statsTags)
+		require.NotNil(t, measurement)
+		require.EqualValues(t, 3, measurement.LastValue())
+	})
 }
 
 type testingT interface {

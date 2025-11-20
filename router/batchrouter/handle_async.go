@@ -382,7 +382,7 @@ func (brt *Handle) asyncStructSetup(sourceID, destinationID string, attemptNums 
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	uuid := uuid.New()
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(err)
 	}

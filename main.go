@@ -12,8 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/mem"
 
+	kitctx "github.com/rudderlabs/rudder-go-kit/context"
 	"github.com/rudderlabs/rudder-server/runner"
-	"github.com/rudderlabs/rudder-server/utils/signal"
 )
 
 var (
@@ -24,7 +24,7 @@ var (
 func main() {
 	c := config.Default
 	log := logger.NewLogger().Child("main")
-	ctx, cancel := signal.NotifyContextWithCallback(func() {
+	ctx, cancel := kitctx.NotifyContextWithCallback(func() {
 		log.Infon("Server received termination signal...")
 	}, syscall.SIGINT, syscall.SIGTERM)
 

@@ -301,7 +301,7 @@ func (jr *jobRun) path(stagingFileInfo stagingFileInfo) (string, error) {
 		return path, nil
 	}
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", fmt.Errorf("creating tmp dir: %w", err)
 	}

@@ -33,7 +33,7 @@ func initMisc() {
 var _ = Describe("Misc", func() {
 	initMisc()
 
-	tmpDirPath, err := CreateTMPDIR()
+	tmpDirPath, err := GetTmpDir()
 	Expect(err).To(BeNil())
 
 	Context("Remove Empty Folder Paths", func() {

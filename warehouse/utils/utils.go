@@ -747,7 +747,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	var err error
 	var existingChecksum string
 	var directoryName string
-	if directoryName, err = misc.CreateTMPDIR(); err != nil {
+	if directoryName, err = misc.GetTmpDir(); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root TMP directory for destination %v", err), "tmp_dir_failure"}
 	}
 	clientKeyConfig := destination.Config["clientKey"]
@@ -796,7 +796,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 func GetSSLKeyDirPath(destinationID string) (whSSLRootDir string) {
 	var err error
 	var directoryName string
-	if directoryName, err = misc.CreateTMPDIR(); err != nil {
+	if directoryName, err = misc.GetTmpDir(); err != nil {
 		pkgLogger.Errorn("Error creating SSL root TMP directory for destination", obskit.Error(err))
 		return whSSLRootDir
 	}

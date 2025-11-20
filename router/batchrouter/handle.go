@@ -250,7 +250,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	uuid := uuid.New()
 	brt.logger.Debugn("BRT: Starting logging to", logger.NewStringField("provider", provider))
 
-	tmpDirPath, err := misc.CreateTMPDIR()
+	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(err)
 	}

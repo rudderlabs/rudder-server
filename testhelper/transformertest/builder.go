@@ -19,6 +19,7 @@ func NewBuilder() *Builder {
 	b := &Builder{
 		routerTransforms:      map[string]struct{}{},
 		destTransformHandlers: map[string]http.HandlerFunc{},
+		srcHydrationHandlers:  map[string]http.HandlerFunc{},
 	}
 	return b
 }
@@ -32,6 +33,7 @@ type Builder struct {
 	routerTransformHandler      http.HandlerFunc
 	routerBatchTransformHandler http.HandlerFunc
 	featuresHandler             http.HandlerFunc
+	srcHydrationHandlers        map[string]http.HandlerFunc
 }
 
 func (b *Builder) WithFeaturesHandler(h http.HandlerFunc) *Builder {
@@ -76,6 +78,15 @@ func (b *Builder) WithUserTransformHandler(h TransformerHandler) *Builder {
 func (b *Builder) WithDesTransformHandlerFunc(destType string, h http.HandlerFunc) *Builder {
 	b.destTransformHandlers[destType] = apiVersionMiddleware(h)
 	return b
+}
+
+func (b *Builder) WithSrcHydrationHandlerFunc(srcName string, h http.HandlerFunc) *Builder {
+	b.srcHydrationHandlers[srcName] = h
+	return b
+}
+
+func (b *Builder) WithSrcHydrationHandler(srcName string, h SrcHydrationHandler) *Builder {
+	return b.WithSrcHydrationHandlerFunc(srcName, srcTransformerFunc(h))
 }
 
 // WithDestTransformHandler sets a destination specific transformation handler for the server
@@ -129,6 +140,16 @@ func (b *Builder) Build() *httptest.Server {
 		}
 	}
 
+	for k := range b.srcHydrationHandlers {
+		srcHydrateHandler := b.srcHydrationHandlers[k]
+		switch k {
+		case "*":
+			mux.HandleFunc("/v2/sources/", srcHydrateHandler)
+		default:
+			mux.HandleFunc("/v2/sources/"+strings.ToLower(k)+"/hydrate", srcHydrateHandler)
+		}
+	}
+
 	// router transformation
 	if b.routerTransformHandler == nil {
 		b.routerTransformHandler = apiVersionMiddleware(routerTransformerFunc(MirroringRouterTransformerHandler))
@@ -176,6 +197,27 @@ func transformerFunc(h TransformerHandler) http.HandlerFunc {
 			return
 		}
 		_ = jsonrs.NewEncoder(w).Encode(h(request))
+	}
+}
+
+func srcTransformerFunc(h SrcHydrationHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		var request types.SrcHydrationRequest
+		if err := jsonrs.Unmarshal(data, &request); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response, err := h(request)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_ = jsonrs.NewEncoder(w).Encode(response)
 	}
 }
 
