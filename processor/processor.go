@@ -2283,7 +2283,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 					destinationEvent.Metadata.DestinationID = destination.ID
 					destinationEvent.Metadata.DestinationName = destination.Name
 					destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
-					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID // new (missing)
+					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
 					if len(destination.Transformations) > 0 {
 						destinationEvent.Metadata.TransformationID = destination.Transformations[0].ID
 						destinationEvent.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
