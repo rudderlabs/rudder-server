@@ -484,7 +484,7 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	defer db.Close()
 
 	// Setup mock backend config
-	ts.setupMockBackendConfig("workspace3", "source3", "dest3", "destDef1", "destType", false)
+	ts.setupMockBackendConfig("workspace3", "source3", "dest3", "destDef3", "destType3", false)
 
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
