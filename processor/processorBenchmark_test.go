@@ -11,11 +11,16 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
-func Benchmark_makeCommonMetadataFromSingularEvent(b *testing.B) {
+func Benchmark_singularEventMetadata(b *testing.B) {
 	proc := &Handle{}
-	for i := 0; i < b.N; i++ {
-		_ = proc.makeCommonMetadataFromSingularEvent(
-			dummySingularEvent, dummyBatchEvent.UserID, dummyBatchEvent.JobID, time.Now(), &backendconfig.SourceT{
+	for b.Loop() {
+		_ = proc.singularEventMetadata(
+			dummySingularEvent,
+			dummyBatchEvent.UserID,
+			dummyBatchEvent.PartitionID,
+			dummyBatchEvent.JobID,
+			time.Now(),
+			&backendconfig.SourceT{
 				WorkspaceID: "test",
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name:     "test_def",
@@ -74,6 +79,7 @@ var dummyBatchEvent = jobsdb.JobT{
 	LastJobStatus: jobsdb.JobStatusT{},
 	Parameters:    gwParameters,
 	WorkspaceId:   "test",
+	PartitionID:   "test-0",
 }
 
 var gwParameters = []byte(`{"batch_id": 1, "source_id": "1rNMpysD4lTuzglyfmPzsmihAbK", "source_job_run_id": ""}`)
