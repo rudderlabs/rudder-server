@@ -1117,11 +1117,6 @@ func (proc *Handle) getTransformerEvents(
 		// user transformation message ids
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 
-		// TODO: the following should not be needed
-		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
-		eventMetadata.SourceCategory = userTransformedEvent.Metadata.SourceCategory
-		eventMetadata.DestinationDefinitionID = userTransformedEvent.Metadata.DestinationDefinitionID
-
 		updatedEvent := types.TransformerEvent{
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
