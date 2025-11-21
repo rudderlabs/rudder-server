@@ -24,3 +24,4 @@ build/wait-for-go/wait-for-go
 ginkgo.report
 *.prof
 .cursor/*
+.claude/settings.local.json

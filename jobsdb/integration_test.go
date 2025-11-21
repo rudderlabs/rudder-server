@@ -1042,6 +1042,7 @@ func TestCreateDS(t *testing.T) {
 			workspace_id TEXT NOT NULL DEFAULT '',
 			uuid UUID NOT NULL,
 			user_id TEXT NOT NULL,
+			partition_id TEXT NOT NULL DEFAULT '',
 			parameters JSONB NOT NULL,
 			custom_val VARCHAR(64) NOT NULL,
 			event_payload JSONB NOT NULL,

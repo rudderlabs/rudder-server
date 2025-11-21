@@ -484,7 +484,7 @@ func TestErrorDetailsReport_RateLimiting(t *testing.T) {
 	defer db.Close()
 
 	// Setup mock backend config
-	ts.setupMockBackendConfig("workspace3", "source3", "dest3", "destDef1", "destType", false)
+	ts.setupMockBackendConfig("workspace3", "source3", "dest3", "destDef3", "destType3", false)
 
 	conf := config.New()
 	conf.Set("Reporting.errorReporting.normalizer.enabled", true)
@@ -604,6 +604,227 @@ func TestErrorDetailReporter_GetStringifiedSampleEvent(t *testing.T) {
 			// Verify all expectations were met
 			expectErr := dbMock.ExpectationsWereMet()
 			require.NoError(t, expectErr)
+		})
+	}
+}
+
+func TestErrorDetailReporter_GetReports(t *testing.T) {
+	tests := []struct {
+		name          string
+		setupMock     func(sqlmock.Sqlmock)
+		expectedError string
+	}{
+		{
+			name: "error while getting minimum reported_at timestamp",
+			setupMock: func(mock sqlmock.Sqlmock) {
+				// Simulate error when querying for minimum reported_at
+				mock.ExpectQuery(`SELECT reported_at FROM error_detail_reports WHERE reported_at < \$1 ORDER BY reported_at ASC LIMIT 1`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectedError: "failed while getting reported_at",
+		},
+		{
+			name: "error while querying reports",
+			setupMock: func(mock sqlmock.Sqlmock) {
+				// First query for minimum reported_at succeeds
+				rows := sqlmock.NewRows([]string{"reported_at"}).AddRow(int64(100))
+				mock.ExpectQuery(`SELECT reported_at FROM error_detail_reports WHERE reported_at < \$1 ORDER BY reported_at ASC LIMIT 1`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				// Second query for actual reports fails
+				mock.ExpectQuery(`SELECT .+ FROM error_detail_reports WHERE reported_at = \$1`).
+					WithArgs(int64(100)).
+					WillReturnError(sql.ErrConnDone)
+			},
+			expectedError: "failed while getting reports",
+		},
+		{
+			name: "error while scanning rows",
+			setupMock: func(mock sqlmock.Sqlmock) {
+				// First query for minimum reported_at succeeds
+				minRows := sqlmock.NewRows([]string{"reported_at"}).AddRow(int64(100))
+				mock.ExpectQuery(`SELECT reported_at FROM error_detail_reports WHERE reported_at < \$1 ORDER BY reported_at ASC LIMIT 1`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnRows(minRows)
+
+				// Second query returns invalid data causing scan error
+				reportRows := sqlmock.NewRows([]string{
+					"workspace_id",
+					"namespace",
+					"instance_id",
+					"source_definition_id",
+					"source_id",
+					"destination_definition_id",
+					"destination_id",
+					"pu",
+					"reported_at",
+					"count",
+					"status_code",
+					"event_type",
+					"error_code",
+					"error_message",
+					"dest_type",
+					"sample_response",
+					"sample_event",
+					"event_name",
+				}).AddRow(
+					"ws1", "ns1", "inst1", "src_def_1", "src1", "dest_def_1", "dest1",
+					"router", "invalid_timestamp", // invalid type for reported_at
+					1, 400, "identify", "ERR001", "error message", "DES_TYPE",
+					`{"error": "test"}`, `{"event": "test"}`, "Test Event",
+				)
+				mock.ExpectQuery(`SELECT .+ FROM error_detail_reports WHERE reported_at = \$1`).
+					WithArgs(int64(100)).
+					WillReturnRows(reportRows)
+			},
+			expectedError: "failed while scanning rows",
+		},
+		{
+			name: "no reports available returns nil without error",
+			setupMock: func(mock sqlmock.Sqlmock) {
+				// Query returns no rows (NULL)
+				mock.ExpectQuery(`SELECT reported_at FROM error_detail_reports WHERE reported_at < \$1 ORDER BY reported_at ASC LIMIT 1`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnRows(sqlmock.NewRows([]string{"reported_at"}))
+			},
+			expectedError: "", // no error expected
+		},
+		{
+			name: "successful retrieval of reports",
+			setupMock: func(mock sqlmock.Sqlmock) {
+				// First query for minimum reported_at succeeds
+				minRows := sqlmock.NewRows([]string{"reported_at"}).AddRow(int64(100))
+				mock.ExpectQuery(`SELECT reported_at FROM error_detail_reports WHERE reported_at < \$1 ORDER BY reported_at ASC LIMIT 1`).
+					WithArgs(sqlmock.AnyArg()).
+					WillReturnRows(minRows)
+
+				// Second query returns valid reports
+				reportRows := sqlmock.NewRows([]string{
+					"workspace_id",
+					"namespace",
+					"instance_id",
+					"source_definition_id",
+					"source_id",
+					"destination_definition_id",
+					"destination_id",
+					"pu",
+					"reported_at",
+					"count",
+					"status_code",
+					"event_type",
+					"error_code",
+					"error_message",
+					"dest_type",
+					"sample_response",
+					"sample_event",
+					"event_name",
+				}).
+					AddRow(
+						"ws1", "ns1", "inst1", "src_def_1", "src1", "dest_def_1", "dest1",
+						"router", int64(100), int64(5), 400, "identify", "ERR001",
+						"Invalid request payload", "WEBHOOK",
+						`{"error": "bad request"}`, `{"userId": "123"}`, "User Identified",
+					).
+					AddRow(
+						"ws1", "ns1", "inst1", "src_def_1", "src1", "dest_def_1", "dest1",
+						"router", int64(100), int64(3), 500, "track", "ERR002",
+						"Internal server error", "WEBHOOK",
+						`{"error": "server error"}`, `{"event": "Order Completed"}`, "Order Completed",
+					)
+				mock.ExpectQuery(`SELECT .+ FROM error_detail_reports WHERE reported_at = \$1`).
+					WithArgs(int64(100)).
+					WillReturnRows(reportRows)
+			},
+			expectedError: "", // no error expected
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ts := newTestSetup(t)
+
+			// Create database mock
+			db, dbMock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close()
+
+			// Setup mock backend config
+			ts.setupMockBackendConfig("workspace1", "source1", "dest1", "destDef1", "destType", false)
+
+			edr := NewErrorDetailReporter(
+				context.TODO(),
+				ts.configSubscriber,
+				stats.NOP,
+				ts.conf,
+			)
+
+			// Register the database handle
+			syncerKey := "test-syncer-key"
+			edr.syncers[syncerKey] = &types.SyncSource{
+				DbHandle: db,
+			}
+
+			// Initialize stats that are normally initialized in mainLoop
+			// These stats are required by getReports but are only initialized when mainLoop runs
+			tags := edr.getTags("test")
+			edr.minReportedAtQueryTime = edr.stats.NewTaggedStat("error_detail_reports_min_reported_at_query_time", stats.TimerType, tags)
+			edr.errorDetailReportsQueryTime = edr.stats.NewTaggedStat("error_detail_reports_query_time", stats.TimerType, tags)
+
+			// Setup the mock expectations
+			tt.setupMock(dbMock)
+
+			// Call getReports
+			currentMs := int64(200)
+			reports, reportedAt, err := edr.getReports(context.Background(), currentMs, syncerKey)
+
+			// Verify error handling
+			if tt.expectedError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.expectedError)
+				require.Empty(t, reports)
+			} else {
+				require.NoError(t, err)
+
+				// For the "no reports available" case, reports should be nil
+				if tt.name == "no reports available returns nil without error" {
+					require.Nil(t, reports)
+					require.Equal(t, int64(0), reportedAt)
+				} else {
+					// For the successful retrieval case, validate the reports
+					require.NotNil(t, reports)
+					require.Len(t, reports, 2)
+					require.Equal(t, int64(100), reportedAt)
+
+					// Verify first report
+					require.Equal(t, "ws1", reports[0].WorkspaceID)
+					require.Equal(t, "src1", reports[0].SourceID)
+					require.Equal(t, "dest1", reports[0].DestinationID)
+					require.Equal(t, "router", reports[0].PU)
+					require.Equal(t, int64(100), reports[0].ReportedAt)
+					require.Equal(t, int64(5), reports[0].Count)
+					require.Equal(t, 400, reports[0].StatusCode)
+					require.Equal(t, "identify", reports[0].EventType)
+					require.Equal(t, "ERR001", reports[0].ErrorCode)
+					require.Equal(t, "Invalid request payload", reports[0].ErrorMessage)
+					require.Equal(t, "WEBHOOK", reports[0].DestType)
+					require.Equal(t, `{"error": "bad request"}`, reports[0].SampleResponse)
+					require.Equal(t, `{"userId": "123"}`, string(reports[0].SampleEvent))
+					require.Equal(t, "User Identified", reports[0].EventName)
+
+					// Verify second report
+					require.Equal(t, "ws1", reports[1].WorkspaceID)
+					require.Equal(t, int64(3), reports[1].Count)
+					require.Equal(t, 500, reports[1].StatusCode)
+					require.Equal(t, "track", reports[1].EventType)
+					require.Equal(t, "ERR002", reports[1].ErrorCode)
+					require.Equal(t, "Internal server error", reports[1].ErrorMessage)
+				}
+			}
+
+			// Verify all expectations were met
+			require.NoError(t, dbMock.ExpectationsWereMet())
 		})
 	}
 }

@@ -493,9 +493,9 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 			currentMs := time.Now().UTC().Unix() / 60
 
 			getReportsStart := time.Now()
-			reports, reportedAt := edr.getReports(ctx, currentMs, c.ConnInfo)
-			if ctx.Err() != nil {
-				edr.log.Errorn("getting reports", obskit.Error(ctx.Err()))
+			reports, reportedAt, err := edr.getReports(ctx, currentMs, c.ConnInfo)
+			if err != nil {
+				edr.log.Errorn("getting reports", obskit.Error(err))
 				select {
 				case <-ctx.Done():
 					edr.log.Infon("stopping mainLoop for syncer", logger.NewStringField("label", c.Label), obskit.Error(ctx.Err()))
@@ -542,7 +542,7 @@ func (edr *ErrorDetailReporter) mainLoop(ctx context.Context, c types.SyncerConf
 				})
 			}
 
-			err := errGroup.Wait()
+			err = errGroup.Wait()
 			if err == nil {
 				// sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ErrorDetailReportsTable, reportedAt)
 				dbHandle, err := edr.getDBHandle(c.ConnInfo)
@@ -623,23 +623,23 @@ func (edr *ErrorDetailReporter) vacuum(ctx context.Context, dbHandle *sql.DB, _ 
 	return nil
 }
 
-func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64) {
+func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64, syncerKey string) ([]*types.EDReportsDB, int64, error) {
 	var queryMin sql.NullInt64
 	dbHandle, err := edr.getDBHandle(syncerKey)
 	if err != nil {
 		edr.log.Errorn("Failed while getting DbHandle", obskit.Error(err))
-		return []*types.EDReportsDB{}, queryMin.Int64
+		return []*types.EDReportsDB{}, queryMin.Int64, fmt.Errorf("failed while getting DbHandle: %v", err)
 	}
 
 	queryStart := time.Now()
 	err = dbHandle.QueryRowContext(ctx, "SELECT reported_at FROM "+ErrorDetailReportsTable+" WHERE reported_at < $1 ORDER BY reported_at ASC LIMIT 1", currentMs).Scan(&queryMin)
 	if err != nil && err != sql.ErrNoRows {
 		edr.log.Errorn("Failed while getting reported_at", obskit.Error(err))
-		return []*types.EDReportsDB{}, queryMin.Int64
+		return []*types.EDReportsDB{}, queryMin.Int64, fmt.Errorf("failed while getting reported_at: %v", err)
 	}
 	edr.minReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
-		return nil, 0
+		return nil, 0, nil
 	}
 	edSelColumns := strings.Join([]string{
 		"workspace_id",
@@ -663,10 +663,10 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	}, ", ")
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
+	rows, err = dbHandle.QueryContext(ctx, `SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
 	if err != nil {
 		edr.log.Errorn("Failed while getting reports", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
-		return []*types.EDReportsDB{}, queryMin.Int64
+		return []*types.EDReportsDB{}, queryMin.Int64, fmt.Errorf("failed while getting reports: %v", err)
 	}
 
 	edr.errorDetailReportsQueryTime.Since(queryStart)
@@ -720,16 +720,16 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 		)
 		if err != nil {
 			edr.log.Errorn("Failed while scanning rows", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
-			return []*types.EDReportsDB{}, queryMin.Int64
+			return []*types.EDReportsDB{}, queryMin.Int64, fmt.Errorf("failed while scanning rows: %v", err)
 		}
 		dbEdMetric.SampleEvent = []byte(sampleEvent)
 		metrics = append(metrics, dbEdMetric)
 	}
 	if rows.Err() != nil {
 		edr.log.Errorn("Rows error while querying", obskit.Error(rows.Err()))
-		return []*types.EDReportsDB{}, queryMin.Int64
+		return []*types.EDReportsDB{}, queryMin.Int64, fmt.Errorf("rows error while querying: %v", rows.Err())
 	}
-	return metrics, queryMin.Int64
+	return metrics, queryMin.Int64, nil
 }
 
 func (edr *ErrorDetailReporter) aggregate(reports []*types.EDReportsDB) []*types.EDMetric {
