@@ -262,7 +262,7 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
         %s`, groupByColumns, ReportsTable, groupByColumns)
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(sqlStatement, bucketStart, bucketEnd)
+	rows, err = dbHandle.QueryContext(ctx, sqlStatement, bucketStart, bucketEnd)
 	if err != nil {
 		panic(err)
 	}

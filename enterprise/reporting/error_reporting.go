@@ -663,7 +663,7 @@ func (edr *ErrorDetailReporter) getReports(ctx context.Context, currentMs int64,
 	}, ", ")
 	var rows *sql.Rows
 	queryStart = time.Now()
-	rows, err = dbHandle.Query(`SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
+	rows, err = dbHandle.QueryContext(ctx, `SELECT `+edSelColumns+` FROM `+ErrorDetailReportsTable+` WHERE reported_at = $1`, queryMin.Int64)
 	if err != nil {
 		edr.log.Errorn("Failed while getting reports", logger.NewIntField("reported_at", queryMin.Int64), obskit.Error(err))
 		return []*types.EDReportsDB{}, queryMin.Int64, fmt.Errorf("failed while getting reports: %v", err)
