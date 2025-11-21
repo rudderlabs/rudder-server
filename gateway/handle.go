@@ -1088,6 +1088,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				EventPayload: payload,
 				EventCount:   len(eventBatch.Batch),
 				WorkspaceId:  msg.Properties.WorkspaceID,
+				PartitionID:  msg.Properties.PartitionID,
 			},
 		})
 	}

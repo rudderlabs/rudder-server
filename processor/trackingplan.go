@@ -5,14 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -26,7 +23,7 @@ type TrackingPlanStatT struct {
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:
 // 1. sourceSchemaConfig in Metadata.MergedTpConfig should be true
-func reportViolations(validateEvent *types.TransformerResponse, trackingPlanId string, trackingPlanVersion int) {
+func reportViolations(validateEvent *types.TransformerResponse, trackingPlanID string, trackingPlanVersion int) {
 	if validateEvent.Metadata.MergedTpConfig["propagateValidationErrors"] == "false" {
 		return
 	}
@@ -36,7 +33,7 @@ func reportViolations(validateEvent *types.TransformerResponse, trackingPlanId s
 	eventContext, ok := output["context"]
 	if !ok || eventContext == nil {
 		context := make(map[string]interface{})
-		context["trackingPlanId"] = trackingPlanId
+		context["trackingPlanId"] = trackingPlanID
 		context["trackingPlanVersion"] = trackingPlanVersion
 		context["violationErrors"] = validationErrors
 		output["context"] = context
@@ -46,7 +43,7 @@ func reportViolations(validateEvent *types.TransformerResponse, trackingPlanId s
 	if !castOk {
 		return
 	}
-	context["trackingPlanId"] = trackingPlanId
+	context["trackingPlanId"] = trackingPlanID
 	context["trackingPlanVersion"] = trackingPlanVersion
 	context["violationErrors"] = validationErrors
 }
@@ -54,15 +51,15 @@ func reportViolations(validateEvent *types.TransformerResponse, trackingPlanId s
 // enhanceWithViolation It enhances extra information of ValidationErrors in context for:
 // 1. response.Events
 // 1. response.FailedEvents
-func enhanceWithViolation(response types.Response, trackingPlanId string, trackingPlanVersion int) {
+func enhanceWithViolation(response types.Response, trackingPlanID string, trackingPlanVersion int) {
 	for i := range response.Events {
 		validatedEvent := &response.Events[i]
-		reportViolations(validatedEvent, trackingPlanId, trackingPlanVersion)
+		reportViolations(validatedEvent, trackingPlanID, trackingPlanVersion)
 	}
 
 	for i := range response.FailedEvents {
 		validatedEvent := &response.FailedEvents[i]
-		reportViolations(validatedEvent, trackingPlanId, trackingPlanVersion)
+		reportViolations(validatedEvent, trackingPlanID, trackingPlanVersion)
 	}
 }
 
@@ -70,30 +67,27 @@ func enhanceWithViolation(response types.Response, trackingPlanId string, tracki
 // The Response will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsBySourceId
 // 2. failedJobs gets added to validatedErrorJobs
-func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
+func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, map[SourceIDT]bool) {
 	validatedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	validatedReportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
-	validatedErrorJobs := make([]*jobsdb.JobT, 0)
 	trackingPlanEnabledMap := make(map[SourceIDT]bool)
 
 	for sourceId := range groupedEventsBySourceId {
 		eventList := groupedEventsBySourceId[sourceId]
-		validationStat := proc.newValidationStat(&eventList[0].Metadata)
-		validationStat.numEvents.Count(len(eventList))
-		proc.logger.Debugn("Validation input size", logger.NewIntField("inputSize", int64(len(eventList))))
 
-		// Checking if the tracking plan exists
-		isTpExists := eventList[0].Metadata.TrackingPlanID != ""
-		if !isTpExists {
+		trackingPlanID := eventList[0].Metadata.TrackingPlanID
+		trackingPlanVersion := eventList[0].Metadata.TrackingPlanVersion
+
+		if trackingPlanID == "" {
 			// pass on the jobs for transformation(User, Dest)
-			validatedEventsBySourceId[sourceId] = make([]types.TransformerEvent, 0)
 			validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventList...)
 			continue
 		}
-
+		validationStat := proc.newValidationStat(&eventList[0].Metadata)
+		validationStat.numEvents.Count(len(eventList))
 		transformerEvent := eventList[0]
-		destination := &transformerEvent.Destination
-		commonMetaData := makeCommonMetadataFromTransformerEvent(&transformerEvent)
+
+		commonMetaData := transformerEvent.Metadata.CommonMetadata()
 
 		validationStart := time.Now()
 		response := proc.transformerClients.TrackingPlan().Validate(context.TODO(), eventList)
@@ -108,21 +102,19 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 			continue
 		}
 
-		enhanceWithViolation(response, eventList[0].Metadata.TrackingPlanID, eventList[0].Metadata.TrackingPlanVersion)
+		enhanceWithViolation(response, trackingPlanID, trackingPlanVersion)
 		// Set trackingPlanEnabledMap for the sourceID to true.
 		// This is being used to distinguish the flows in reporting service
 		trackingPlanEnabledMap[sourceId] = true
 
 		var successMetrics []*reportingtypes.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, backendconfig.Connection{}, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
+		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, &transformerEvent.Destination, backendconfig.Connection{}, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
 		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
 		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 		validationStat.numValidationFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
 		proc.logger.Debugn("Validation output size", logger.NewIntField("outputSize", int64(len(eventsToTransform))))
-
-		validatedErrorJobs = append(validatedErrorJobs, nonSuccessMetrics.failedJobs...)
 
 		// REPORTING - START
 		if proc.isReportingEnabled() {
@@ -136,28 +128,9 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		if len(eventsToTransform) == 0 {
 			continue
 		}
-		validatedEventsBySourceId[sourceId] = make([]types.TransformerEvent, 0)
 		validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventsToTransform...)
 	}
-	return validatedEventsBySourceId, validatedReportMetrics, validatedErrorJobs, trackingPlanEnabledMap
-}
-
-// makeCommonMetadataFromTransformerEvent Creates a new Metadata instance
-func makeCommonMetadataFromTransformerEvent(transformerEvent *types.TransformerEvent) *types.Metadata {
-	metadata := transformerEvent.Metadata
-	commonMetaData := types.Metadata{
-		SourceID:         metadata.SourceID,
-		SourceName:       metadata.SourceName,
-		SourceType:       metadata.SourceType,
-		SourceCategory:   metadata.SourceCategory,
-		WorkspaceID:      metadata.WorkspaceID,
-		Namespace:        config.GetKubeNamespace(),
-		InstanceID:       misc.GetInstanceID(),
-		DestinationID:    metadata.DestinationID,
-		DestinationType:  metadata.DestinationType,
-		OriginalSourceID: metadata.OriginalSourceID,
-	}
-	return &commonMetaData
+	return validatedEventsBySourceId, validatedReportMetrics, trackingPlanEnabledMap
 }
 
 // newValidationStat Creates a new TrackingPlanStatT instance
