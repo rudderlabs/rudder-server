@@ -928,65 +928,41 @@ func enhanceWithTimeFields(event *types.TransformerEvent, singularEvent types.Si
 	event.Message["timestamp"] = timestamp.Format(misc.RFC3339Milli)
 }
 
-func (proc *Handle) makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, userID string, jobId int64, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *types.Metadata {
+func (proc *Handle) singularEventMetadata(singularEvent types.SingularEventT, userID, partitionID string, jobId int64, receivedAt time.Time, source *backendconfig.SourceT, eventParams types.EventParams) *types.Metadata {
 	commonMetadata := types.Metadata{}
-	commonMetadata.SourceID = source.ID
-	commonMetadata.SourceName = source.Name
-	commonMetadata.OriginalSourceID = source.OriginalID
-	commonMetadata.WorkspaceID = source.WorkspaceID
-	commonMetadata.Namespace = proc.namespace
-	commonMetadata.InstanceID = proc.instanceID
-	commonMetadata.RudderID = userID
+	// job metadata
 	commonMetadata.JobID = jobId
-	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
+	commonMetadata.WorkspaceID = source.WorkspaceID
+	commonMetadata.RudderID = userID
 	commonMetadata.ReceivedAt = receivedAt.Format(misc.RFC3339Milli)
+	commonMetadata.PartitionID = partitionID
+
+	// event-related metadata
+	commonMetadata.MessageID = stringify.Any(singularEvent["messageId"])
+	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
+	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
+
+	// source metadata
+	commonMetadata.SourceID = source.ID
+	commonMetadata.OriginalSourceID = source.OriginalID
+	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
+	commonMetadata.SourceName = source.Name
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
+	commonMetadata.SourceDefinitionType = source.SourceDefinition.Type
 
-	commonMetadata.SourceJobRunID = eventParams.SourceJobRunId
+	// retl metadata
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
+	commonMetadata.SourceJobRunID = eventParams.SourceJobRunId
 	commonMetadata.SourceTaskRunID = eventParams.SourceTaskRunId
 	commonMetadata.RecordID = misc.MapLookup(singularEvent, "recordId")
 
-	commonMetadata.EventName, _ = misc.MapLookup(singularEvent, "event").(string)
-	commonMetadata.EventType, _ = misc.MapLookup(singularEvent, "type").(string)
-	commonMetadata.SourceDefinitionID = source.SourceDefinition.ID
-	commonMetadata.SourceDefinitionType = source.SourceDefinition.Type
-
+	// other metadata
+	commonMetadata.InstanceID = proc.instanceID
+	commonMetadata.Namespace = proc.namespace
 	commonMetadata.TraceParent = eventParams.TraceParent
 
 	return &commonMetadata
-}
-
-// add metadata to each singularEvent which will be returned by transformer in response
-func enhanceWithMetadata(commonMetadata *types.Metadata, event *types.TransformerEvent, destination *backendconfig.DestinationT) {
-	metadata := types.Metadata{}
-	metadata.SourceType = commonMetadata.SourceType
-	metadata.SourceCategory = commonMetadata.SourceCategory
-	metadata.SourceID = commonMetadata.SourceID
-	metadata.OriginalSourceID = commonMetadata.OriginalSourceID
-	metadata.SourceName = commonMetadata.SourceName
-	metadata.WorkspaceID = commonMetadata.WorkspaceID
-	metadata.Namespace = commonMetadata.Namespace
-	metadata.InstanceID = commonMetadata.InstanceID
-	metadata.RudderID = commonMetadata.RudderID
-	metadata.JobID = commonMetadata.JobID
-	metadata.MessageID = commonMetadata.MessageID
-	metadata.ReceivedAt = commonMetadata.ReceivedAt
-	metadata.SourceTaskRunID = commonMetadata.SourceTaskRunID
-	metadata.RecordID = commonMetadata.RecordID
-	metadata.SourceJobID = commonMetadata.SourceJobID
-	metadata.SourceJobRunID = commonMetadata.SourceJobRunID
-	metadata.EventName = commonMetadata.EventName
-	metadata.EventType = commonMetadata.EventType
-	metadata.SourceDefinitionID = commonMetadata.SourceDefinitionID
-	metadata.DestinationID = destination.ID
-	metadata.DestinationName = destination.Name
-	metadata.DestinationDefinitionID = destination.DestinationDefinition.ID
-	metadata.DestinationType = destination.DestinationDefinition.Name
-	metadata.SourceDefinitionType = commonMetadata.SourceDefinitionType
-	metadata.TraceParent = commonMetadata.TraceParent
-	event.Metadata = metadata
 }
 
 func getKeyFromSourceAndDest(srcID, destID string) string {
@@ -1113,21 +1089,39 @@ func (proc *Handle) getTransformerEvents(
 		}
 
 		eventMetadata := commonMetaData
-		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
-		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
+		//
+		// fill non common metadata from response, effectively this strips out:
+		// - tracking plan information after tracking plan validation
+		// - user transformation information after user transformation (except for message IDs)
+
+		// job metadata
 		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
-		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
-		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
-		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
 		eventMetadata.RudderID = userTransformedEvent.Metadata.RudderID
-		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
 		eventMetadata.ReceivedAt = userTransformedEvent.Metadata.ReceivedAt
+		eventMetadata.PartitionID = userTransformedEvent.Metadata.PartitionID
+
+		// event metadata
+		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
 		eventMetadata.EventName = userTransformedEvent.Metadata.EventName
 		eventMetadata.EventType = userTransformedEvent.Metadata.EventType
-		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
-		eventMetadata.DestinationDefinitionID = userTransformedEvent.Metadata.DestinationDefinitionID
-		eventMetadata.SourceCategory = userTransformedEvent.Metadata.SourceCategory
+
+		// retl metadata
+		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
+		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
+		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
+		eventMetadata.RecordID = userTransformedEvent.Metadata.RecordID
+
+		// other metadata
 		eventMetadata.TraceParent = userTransformedEvent.Metadata.TraceParent
+
+		// user transformation message ids
+		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
+
+		// TODO: the following should not be needed
+		eventMetadata.SourceDefinitionID = userTransformedEvent.Metadata.SourceDefinitionID
+		eventMetadata.SourceCategory = userTransformedEvent.Metadata.SourceCategory
+		eventMetadata.DestinationDefinitionID = userTransformedEvent.Metadata.DestinationDefinitionID
+
 		updatedEvent := types.TransformerEvent{
 			Message:     userTransformedEvent.Output,
 			Metadata:    *eventMetadata,
@@ -1730,12 +1724,13 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		eventParams   types.EventParams
 		dedupKey      dedup.BatchKey
 		requestIP     string
-		recievedAt    time.Time
+		receivedAt    time.Time
 		parameters    json.RawMessage
 		span          stats.TraceSpan
 		source        *backendconfig.SourceT
 		uuid          uuid.UUID
 		customVal     string
+		partitionID   string
 		payloadFunc   func() json.RawMessage
 	}
 
@@ -1828,12 +1823,13 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 				jobID:         batchEvent.JobID,
 				userId:        batchEvent.UserID,
 				workspaceID:   batchEvent.WorkspaceId,
+				partitionID:   batchEvent.PartitionID,
 				singularEvent: singularEvent,
 				messageID:     messageId,
 				eventParams:   eventParams,
 				dedupKey:      dedupBatchKey,
 				requestIP:     requestIP,
-				recievedAt:    receivedAt,
+				receivedAt:    receivedAt,
 				parameters:    parameters,
 				span:          span,
 				source:        source,
@@ -1867,27 +1863,28 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			jobIDToSpecificDestMapOnly[event.jobID] = event.eventParams.DestinationID
 		}
 
-		commonMetadataFromSingularEvent := proc.makeCommonMetadataFromSingularEvent(
+		singularEventMetadata := proc.singularEventMetadata(
 			event.singularEvent,
 			event.userId,
+			event.partitionID,
 			event.jobID,
-			event.recievedAt,
+			event.receivedAt,
 			event.source,
 			event.eventParams,
 		)
 
 		// dummy event for metrics purposes only
-		transformerEvent := &types.TransformerResponse{}
-		transformerEvent.Metadata = *commonMetadataFromSingularEvent
+		reportingEvent := &types.TransformerResponse{}
+		reportingEvent.Metadata = *singularEventMetadata
 
 		if event.eventParams.IsBot {
 			// REPORTING - BOT_MANAGEMENT metrics - START
 			if proc.isReportingEnabled() {
 				status := reportingtypes.BotDetectedStatus
-				transformerEvent.StatusCode = reportingtypes.SuccessEventCode
+				reportingEvent.StatusCode = reportingtypes.SuccessEventCode
 				if event.eventParams.BotAction == reportingtypes.DropBotEventAction {
 					status = jobsdb.Filtered.State
-					transformerEvent.StatusCode = reportingtypes.FilterEventCode
+					reportingEvent.StatusCode = reportingtypes.FilterEventCode
 				}
 
 				proc.updateMetricMaps(
@@ -1895,7 +1892,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 					nil,
 					connectionDetailsMap,
 					botManagementStatusDetailsMap,
-					transformerEvent,
+					reportingEvent,
 					status,
 					reportingtypes.BOT_MANAGEMENT,
 					func() json.RawMessage {
@@ -1904,7 +1901,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 					nil,
 				)
 				// reset status code to 0 because transformerEvent is reused for other metrics
-				transformerEvent.StatusCode = 0
+				reportingEvent.StatusCode = 0
 			}
 			// REPORTING - BOT_MANAGEMENT metrics - END
 
@@ -1917,14 +1914,14 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		if event.eventParams.IsEventBlocked {
 			// REPORTING - EVENT_BLOCKING metrics - START
 			if proc.isReportingEnabled() {
-				transformerEvent.StatusCode = reportingtypes.FilterEventCode
+				reportingEvent.StatusCode = reportingtypes.FilterEventCode
 
 				proc.updateMetricMaps(
 					nil,
 					nil,
 					connectionDetailsMap,
 					eventBlockingStatusDetailsMap,
-					transformerEvent,
+					reportingEvent,
 					jobsdb.Filtered.State,
 					reportingtypes.EVENT_BLOCKING,
 					func() json.RawMessage {
@@ -1933,7 +1930,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 					nil,
 				)
 				// reset status code to 0 because transformerEvent is reused for other metrics
-				transformerEvent.StatusCode = 0
+				reportingEvent.StatusCode = 0
 			}
 			// REPORTING - EVENT_BLOCKING metrics - END
 
@@ -1954,14 +1951,14 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		totalEvents++
 		eventsByMessageID[event.messageID] = types.SingularEventWithReceivedAt{
 			SingularEvent: event.singularEvent,
-			ReceivedAt:    event.recievedAt,
+			ReceivedAt:    event.receivedAt,
 		}
 
 		sourceIsTransient := proc.transientSources.Apply(sourceId)
 		if proc.config.eventSchemaV2Enabled && // schemas enabled
 			proc.eventAuditEnabled(event.workspaceID) &&
 			// TODO: could use source.SourceDefinition.Category instead?
-			commonMetadataFromSingularEvent.SourceJobRunID == "" &&
+			singularEventMetadata.SourceJobRunID == "" &&
 			!sourceIsTransient {
 			if eventPayload := event.payloadFunc(); eventPayload != nil {
 				eventSchemaJobsBySourceId[SourceIDT(sourceId)] = append(eventSchemaJobsBySourceId[SourceIDT(sourceId)],
@@ -1980,7 +1977,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		}
 
 		if proc.config.archivalEnabled.Load() &&
-			commonMetadataFromSingularEvent.SourceJobRunID == "" && // archival enabled&&
+			singularEventMetadata.SourceJobRunID == "" && // archival enabled&&
 			!sourceIsTransient {
 			if eventPayload := event.payloadFunc(); eventPayload != nil {
 				archivalJobs = append(archivalJobs,
@@ -2004,7 +2001,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 				nil,
 				connectionDetailsMap,
 				statusDetailsMap,
-				transformerEvent,
+				reportingEvent,
 				jobsdb.Succeeded.State,
 				reportingtypes.GATEWAY,
 				func() json.RawMessage {
@@ -2031,7 +2028,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 					nil,
 					connectionDetailsMap,
 					enricherStatusDetailsMap,
-					transformerEvent,
+					reportingEvent,
 					botStatus,
 					reportingtypes.GATEWAY,
 					func() json.RawMessage {
@@ -2049,13 +2046,13 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		if !proc.isDestinationAvailable(event.singularEvent, sourceId, event.eventParams.DestinationID) {
 			// REPORTING - DESTINATION_FILTER filtered metrics - START
 			if proc.isReportingEnabled() {
-				transformerEvent.StatusCode = reportingtypes.FilterEventCode
+				reportingEvent.StatusCode = reportingtypes.FilterEventCode
 				proc.updateMetricMaps(
 					nil,
 					nil,
 					connectionDetailsMap,
 					destFilterStatusDetailMap,
-					transformerEvent,
+					reportingEvent,
 					jobsdb.Filtered.State,
 					reportingtypes.DESTINATION_FILTER,
 					func() json.RawMessage {
@@ -2063,7 +2060,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 					},
 					nil,
 				)
-				transformerEvent.StatusCode = 0
+				reportingEvent.StatusCode = 0
 			}
 			// REPORTING - DESTINATION_FILTER filtered metrics - END
 			continue
@@ -2072,15 +2069,13 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		if _, ok := groupedEventsBySourceId[SourceIDT(sourceId)]; !ok {
 			groupedEventsBySourceId[SourceIDT(sourceId)] = make([]types.TransformerEvent, 0)
 		}
-		shallowEventCopy := types.TransformerEvent{}
-		shallowEventCopy.Message = event.singularEvent
-		shallowEventCopy.Message["request_ip"] = event.requestIP
-		enhanceWithTimeFields(&shallowEventCopy, event.singularEvent, event.recievedAt)
-		enhanceWithMetadata(
-			commonMetadataFromSingularEvent,
-			&shallowEventCopy,
-			&backendconfig.DestinationT{},
-		)
+		transformerEvent := types.TransformerEvent{}
+		transformerEvent.Message = event.singularEvent
+		transformerEvent.Message["request_ip"] = event.requestIP
+		transformerEvent.Metadata = *singularEventMetadata
+		enhanceWithTimeFields(&transformerEvent, event.singularEvent, event.receivedAt)
+
+		// fill in tracking plan details
 		trackingPlanID := event.source.DgSourceTrackingPlanConfig.TrackingPlan.Id
 		trackingPlanVersion := event.source.DgSourceTrackingPlanConfig.TrackingPlan.Version
 		rudderTyperTPID := misc.MapLookup(event.singularEvent, "context", "ruddertyper", "trackingPlanId")
@@ -2090,12 +2085,12 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 				trackingPlanVersion = int(version)
 			}
 		}
-		shallowEventCopy.Metadata.TrackingPlanID = trackingPlanID
-		shallowEventCopy.Metadata.TrackingPlanVersion = trackingPlanVersion
-		shallowEventCopy.Metadata.SourceTpConfig = event.source.DgSourceTrackingPlanConfig.Config
-		shallowEventCopy.Metadata.MergedTpConfig = event.source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
+		transformerEvent.Metadata.TrackingPlanID = trackingPlanID
+		transformerEvent.Metadata.TrackingPlanVersion = trackingPlanVersion
+		transformerEvent.Metadata.SourceTpConfig = event.source.DgSourceTrackingPlanConfig.Config
+		transformerEvent.Metadata.MergedTpConfig = event.source.DgSourceTrackingPlanConfig.GetMergedConfig(singularEventMetadata.EventType)
 
-		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], shallowEventCopy)
+		groupedEventsBySourceId[SourceIDT(sourceId)] = append(groupedEventsBySourceId[SourceIDT(sourceId)], transformerEvent)
 	}
 
 	if len(statusList) != len(jobList) {
@@ -2246,7 +2241,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsBySourceId, validatedReportMetrics, _, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
+	validatedEventsBySourceId, validatedReportMetrics, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime(preTrans.partition).SendTiming(validateEventsTime)
 
@@ -2263,16 +2258,14 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 
 			backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(sourceId)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-			workspaceID := eventList[idx].Metadata.WorkspaceID
+			workspaceID := event.Metadata.WorkspaceID
 			workspaceLibraries := proc.getWorkspaceLibraries(workspaceID)
-			source, _ := proc.getSourceBySourceID(sourceId)
 
-			for i := range enabledDestTypes {
-				destType := &enabledDestTypes[i]
+			for _, destType := range enabledDestTypes {
 				enabledDestinationsList := proc.getConsentFilteredDestinations(
 					singularEvent,
 					sourceId,
-					lo.Filter(proc.getEnabledDestinations(sourceId, *destType), func(item backendconfig.DestinationT, index int) bool {
+					lo.Filter(proc.getEnabledDestinations(sourceId, destType), func(item backendconfig.DestinationT, index int) bool {
 						destId := preTrans.jobIDToSpecificDestMapOnly[event.Metadata.JobID]
 						if destId != "" {
 							return destId == item.ID
@@ -2284,36 +2277,32 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
-					shallowEventCopy := types.TransformerEvent{}
-					shallowEventCopy.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
-					shallowEventCopy.Message = singularEvent
-					shallowEventCopy.Destination = *destination
-					shallowEventCopy.Libraries = workspaceLibraries
-					// just in-case the source-type value is not set
-					if event.Metadata.SourceDefinitionType == "" {
-						event.Metadata.SourceDefinitionType = source.SourceDefinition.Type
-					}
-					shallowEventCopy.Metadata = event.Metadata
+					destinationEvent := types.TransformerEvent{}
+					destinationEvent.Connection = proc.getConnectionConfig(connection{sourceID: sourceId, destinationID: destination.ID})
+					destinationEvent.Message = singularEvent
+					destinationEvent.Destination = *destination
+					destinationEvent.Libraries = workspaceLibraries
+					destinationEvent.Metadata = event.Metadata
 
 					// At the TP flow we are not having destination information, so adding it here.
-					shallowEventCopy.Metadata.DestinationID = destination.ID
-					shallowEventCopy.Metadata.DestinationName = destination.Name
-					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
+					destinationEvent.Metadata.DestinationID = destination.ID
+					destinationEvent.Metadata.DestinationName = destination.Name
+					destinationEvent.Metadata.DestinationType = destination.DestinationDefinition.Name
+					destinationEvent.Metadata.DestinationDefinitionID = destination.DestinationDefinition.ID // new (missing)
 					if len(destination.Transformations) > 0 {
-						shallowEventCopy.Metadata.TransformationID = destination.Transformations[0].ID
-						shallowEventCopy.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
+						destinationEvent.Metadata.TransformationID = destination.Transformations[0].ID
+						destinationEvent.Metadata.TransformationVersionID = destination.Transformations[0].VersionID
 					}
-					shallowEventCopy.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
-					filterConfig(&shallowEventCopy)
-					metadata := shallowEventCopy.Metadata
+					destinationEvent.Credentials = proc.config.credentialsMap[destination.WorkspaceID]
+					filterConfig(&destinationEvent)
+					metadata := &destinationEvent.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
 					_, ok := groupedEvents[srcAndDestKey]
 					if !ok {
 						groupedEvents[srcAndDestKey] = make([]types.TransformerEvent, 0)
 					}
-					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey],
-						shallowEventCopy)
+					groupedEvents[srcAndDestKey] = append(groupedEvents[srcAndDestKey], destinationEvent)
 					if _, ok := uniqueMessageIdsBySrcDestKey[srcAndDestKey]; !ok {
 						uniqueMessageIdsBySrcDestKey[srcAndDestKey] = make(map[string]struct{})
 					}
@@ -2483,9 +2472,8 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 			chOut <- proc.userTransformAndFilter(
 				ctx,
 				partition,
-
-				srcAndDestKey, eventList,
-
+				srcAndDestKey,
+				eventList,
 				in.trackingPlanEnabledMap,
 				in.eventsByMessageID,
 				in.uniqueMessageIdsBySrcDestKey,
@@ -2971,24 +2959,10 @@ func (proc *Handle) userTransformAndFilter(
 	}
 
 	sourceID, destID := getSourceAndDestIDsFromKey(srcAndDestKey)
-	sourceName := eventList[0].Metadata.SourceName
 	destination := &eventList[0].Destination
 	connection := eventList[0].Connection
 	workspaceID := eventList[0].Metadata.WorkspaceID
-	destType := destination.DestinationDefinition.Name
-	commonMetaData := &types.Metadata{
-		SourceID:             sourceID,
-		SourceName:           sourceName,
-		OriginalSourceID:     eventList[0].Metadata.OriginalSourceID,
-		SourceType:           eventList[0].Metadata.SourceType,
-		SourceCategory:       eventList[0].Metadata.SourceCategory,
-		WorkspaceID:          workspaceID,
-		Namespace:            proc.namespace,
-		InstanceID:           proc.instanceID,
-		DestinationID:        destID,
-		DestinationType:      destType,
-		SourceDefinitionType: eventList[0].Metadata.SourceDefinitionType,
-	}
+	commonMetaData := eventList[0].Metadata.CommonMetadata()
 
 	reportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
 	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
@@ -3314,10 +3288,7 @@ func (proc *Handle) userTransformAndFilter(
 	}
 }
 
-func (proc *Handle) destTransform(
-	ctx context.Context,
-	data userTransformAndFilterOutput,
-) destTransformOutput {
+func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilterOutput) destTransformOutput {
 	if len(data.eventsToTransform) == 0 {
 		return destTransformOutput{
 			destJobs:        nil,
@@ -3334,15 +3305,14 @@ func (proc *Handle) destTransform(
 	sourceID := data.commonMetaData.SourceID
 	destID := data.commonMetaData.DestinationID
 	sourceName := data.commonMetaData.SourceName
-	destination := &data.eventsToTransform[0].Destination
 	workspaceID := data.commonMetaData.WorkspaceID
-	destType := destination.DestinationDefinition.Name
+	destType := data.commonMetaData.DestinationType
 	transformAt := data.transformAt
 
 	destJobs := make([]*jobsdb.JobT, 0)
 	batchDestJobs := make([]*jobsdb.JobT, 0)
 	routerDestIDs := make(map[string]struct{})
-	transformAtFromFeaturesFile := proc.transformerFeaturesService.RouterTransform(destination.DestinationDefinition.Name)
+	transformAtFromFeaturesFile := proc.transformerFeaturesService.RouterTransform(destType)
 
 	// Destination transformation - START
 	// Send to transformer only if is
@@ -3356,7 +3326,7 @@ func (proc *Handle) destTransform(
 			s := time.Now()
 			response = proc.transformerClients.Destination().Transform(ctx, data.eventsToTransform)
 
-			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, destination)
+			destTransformationStat := proc.newDestinationTransformationStat(sourceID, workspaceID, transformAt, &data.eventsToTransform[0].Destination)
 			destTransformationStat.transformTime.Since(s)
 			transformAt = "processor"
 
@@ -3439,7 +3409,8 @@ func (proc *Handle) destTransform(
 			sourceDefID := metadata.SourceDefinitionID
 			destDefID := metadata.DestinationDefinitionID
 			sourceCategory := metadata.SourceCategory
-			workspaceId := metadata.WorkspaceID
+			workspaceID := metadata.WorkspaceID
+			partitionID := metadata.PartitionID
 			// If the response from the transformer does not have userID in metadata, setting userID to random-uuid.
 			// This is done to respect findWorker logic in router.
 			if rudderID == "" {
@@ -3463,7 +3434,7 @@ func (proc *Handle) destTransform(
 				SourceDefinitionID:      sourceDefID,
 				DestinationDefinitionID: destDefID,
 				RecordID:                recordId,
-				WorkspaceId:             workspaceId,
+				WorkspaceId:             workspaceID,
 				TraceParent:             metadata.TraceParent,
 				ConnectionID:            generateConnectionID(sourceID, destID),
 			}
@@ -3481,7 +3452,8 @@ func (proc *Handle) destTransform(
 				ExpireAt:     time.Now(),
 				CustomVal:    destType,
 				EventPayload: destEventJSON,
-				WorkspaceId:  workspaceId,
+				WorkspaceId:  workspaceID,
+				PartitionID:  partitionID,
 			}
 			if slices.Contains(proc.config.batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)

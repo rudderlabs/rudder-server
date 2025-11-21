@@ -92,20 +92,14 @@ func (t *Client) Validate(ctx context.Context, clientEvents []types.TransformerE
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	trackWg.Add(1)
-	go func() {
+	trackWg.Go(func() {
 		l := t.log.Withn(labels.ToLoggerFields()...)
 		transformerutils.TrackLongRunningTransformation(ctx, "trackingPlan_validation", t.config.timeoutDuration, l)
-		trackWg.Done()
-	}()
+	})
 
 	batches := lo.Chunk(clientEvents, batchSize)
 
-	t.stat.NewTaggedStat(
-		"processor.transformer_request_batch_count",
-		stats.HistogramType,
-		labels.ToStatsTag(),
-	).Observe(float64(len(batches)))
+	t.stat.NewTaggedStat("processor.transformer_request_batch_count", stats.HistogramType, labels.ToStatsTag()).Observe(float64(len(batches)))
 
 	transformResponse := make([][]types.TransformerResponse, len(batches))
 
