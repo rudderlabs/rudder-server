@@ -528,7 +528,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 			overFlownJobs = append(overFlownJobs, job)
 			continue
 		}
-
 		fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
 		if err != nil {
 			failedAsyncJobs := BatchedJobs{
