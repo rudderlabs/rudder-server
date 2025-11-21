@@ -173,10 +173,9 @@ type Metadata struct {
 	RecordID        any    `json:"recordId,omitempty"`
 
 	// other metadata
-	OAuthAccessToken string `json:"oauthAccessToken,omitempty"` // TODO: this doesn't seem to be used anywhere
-	InstanceID       string `json:"instanceId,omitempty"`
-	Namespace        string `json:"namespace,omitempty"`
-	TraceParent      string `json:"traceparent,omitempty"`
+	InstanceID  string `json:"instanceId,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	TraceParent string `json:"traceparent,omitempty"`
 
 	// tracking plan metadata (available only during tracking plan transformations)
 	TrackingPlanID      string                            `json:"trackingPlanId,omitempty"`
