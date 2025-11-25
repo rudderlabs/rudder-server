@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
 	"github.com/stretchr/testify/require"
@@ -294,6 +298,30 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Assertions
 		require.NoError(t, err)
 		require.Nil(t, result.groupedEventsBySourceId[SourceIDT(fblaSourceId)])
+		require.Len(t, result.reportMetrics, 1)
+		sampleEvent, err := jsonrs.Marshal(events[0].Message)
+		require.NoError(t, err)
+
+		require.Equal(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{
+				SourceID:       fblaSourceId,
+				SourceCategory: "webhook",
+			},
+			PUDetails: reportingtypes.PUDetails{
+				PU:         reportingtypes.SOURCE_HYDRATION,
+				TerminalPU: false,
+				InitialPU:  false,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:         "failed",
+				Count:          1,
+				StatusCode:     500,
+				SampleResponse: "hydration error",
+				SampleEvent:    sampleEvent,
+				EventName:      "Product Viewed",
+				EventType:      "track",
+			},
+		})
 	})
 
 	t.Run("Test when JSON marshaling fails for event schema jobs", func(t *testing.T) {

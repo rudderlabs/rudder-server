@@ -27,6 +27,7 @@ const (
 	BotDetectedStatus = "bot_detected"
 
 	// Module names
+	SOURCE_HYDRATION       = "source_hydration"
 	BOT_MANAGEMENT         = "bot_management"
 	EVENT_BLOCKING         = "event_blocking"
 	GATEWAY                = "gateway"

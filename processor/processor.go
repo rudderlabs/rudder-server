@@ -3016,7 +3016,7 @@ func (proc *Handle) userTransformAndFilter(
 	if trackingPlanEnabled {
 		inPU = reportingtypes.TRACKINGPLAN_VALIDATOR
 	} else {
-		inPU = reportingtypes.DESTINATION_FILTER
+		inPU = reportingtypes.SOURCE_HYDRATION
 	}
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
