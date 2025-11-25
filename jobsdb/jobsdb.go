@@ -317,6 +317,8 @@ type JobsDB interface {
 	JournalMarkDone(opID int64) error
 
 	IsMasterBackupEnabled() bool
+
+	ReadExcludedPartitionsManager
 }
 
 type ParameterName interface {
@@ -534,6 +536,9 @@ type Handle struct {
 	dsListLock          *lock.Locker
 	dsMigrationLock     *lock.Locker
 	noResultsCache      *cache.NoResultsCache[ParameterFilterT]
+
+	excludedReadPartitionsLock sync.RWMutex
+	excludedReadPartitions     map[string]struct{}
 
 	// table count stats
 	statTableCount        stats.Measurement
@@ -968,9 +973,10 @@ func (jd *Handle) init() {
 						datasetIndices = append(datasetIndices, dataset.Index)
 					}
 
-					return map[string]interface{}{
-						"Prefix":   jd.tablePrefix,
-						"Datasets": datasetIndices,
+					return map[string]any{
+						"Prefix":              jd.tablePrefix,
+						"Datasets":            datasetIndices,
+						"PartitioningEnabled": jd.conf.numPartitions > 0,
 					}
 				}()
 
@@ -1154,6 +1160,7 @@ func (jd *Handle) readerSetup(ctx context.Context, l lock.LockToken) {
 		}
 		return nil
 	}())
+	jd.assertError(jd.loadReadExcludedPartitions())
 
 	g := jd.backgroundGroup
 	g.Go(crash.Wrapper(func() error {
@@ -1193,6 +1200,7 @@ func (jd *Handle) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 		}
 		return nil
 	}())
+	jd.assertError(jd.loadReadExcludedPartitions())
 
 	jd.startMigrateDSLoop(ctx)
 }
@@ -2235,6 +2243,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.workspace_id = '%s'", workspaceID))
 	}
 
+	jd.excludedReadPartitionsLock.RLock()
+	var excludedReadPartitions []string
+	if len(jd.excludedReadPartitions) > 0 {
+		excludedReadPartitions = lo.Keys(jd.excludedReadPartitions) // get excluded read partitions at the time of query
+	}
+	jd.excludedReadPartitionsLock.RUnlock()
+	if len(excludedReadPartitions) > 0 {
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id NOT IN (%s)", strings.Join(lo.Map(excludedReadPartitions, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
+	}
+
 	var filterQuery string
 	if len(filterConditions) > 0 {
 		filterQuery = "WHERE " + strings.Join(filterConditions, " AND ")
@@ -2272,7 +2290,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 									ORDER BY jobs.job_id %[5]s`,
 		ds.JobTable, joinType, joinTable, filterQuery, limitQuery)
 
-	var args []interface{}
+	var args []any
 
 	var wrapQuery []string
 	if params.EventsLimit > 0 {
