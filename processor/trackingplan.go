@@ -66,7 +66,6 @@ func enhanceWithViolation(response types.Response, trackingPlanID string, tracki
 // validateEvents If the TrackingPlanId exist for a particular write key then we are going to Validate from the transformer.
 // The Response will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsBySourceId
-// 2. failedJobs gets added to validatedErrorJobs
 func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, map[SourceIDT]bool) {
 	validatedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	validatedReportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
@@ -97,7 +96,6 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		// This is a safety check we are adding so that if something unexpected comes from transformer
 		// We are ignoring it.
 		if (len(response.Events) + len(response.FailedEvents)) != len(eventList) {
-			validatedEventsBySourceId[sourceId] = make([]types.TransformerEvent, 0)
 			validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventList...)
 			continue
 		}

@@ -216,11 +216,11 @@ func (m Metadata) CommonMetadata() *Metadata {
 		// source metadata
 		SourceID:             m.SourceID,
 		OriginalSourceID:     m.OriginalSourceID,
-		SourceDefinitionID:   m.SourceDefinitionID, // new (missing)
+		SourceDefinitionID:   m.SourceDefinitionID,
 		SourceName:           m.SourceName,
 		SourceType:           m.SourceType,
 		SourceCategory:       m.SourceCategory,
-		SourceDefinitionType: m.SourceDefinitionType, // new (missing)
+		SourceDefinitionType: m.SourceDefinitionType,
 
 		// other metadata
 		InstanceID: m.InstanceID,
