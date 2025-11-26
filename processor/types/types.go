@@ -145,40 +145,54 @@ type Credential struct {
 }
 
 type Metadata struct {
-	SourceID            string                            `json:"sourceId"`
-	SourceName          string                            `json:"sourceName"`
-	OriginalSourceID    string                            `json:"originalSourceId"`
-	WorkspaceID         string                            `json:"workspaceId"`
-	Namespace           string                            `json:"namespace,omitempty"`
-	InstanceID          string                            `json:"instanceId,omitempty"`
-	SourceType          string                            `json:"sourceType"`
-	SourceCategory      string                            `json:"sourceCategory"`
+	// job metadata
+	JobID       int64  `json:"jobId"`
+	WorkspaceID string `json:"workspaceId"`
+	RudderID    string `json:"rudderId,omitempty"` // used for ordering events (e.g. can be userId or anonymousId)
+	ReceivedAt  string `json:"receivedAt,omitempty"`
+	PartitionID string `json:"partitionId,omitempty"`
+
+	// event metadata
+	MessageID string `json:"messageId"`
+	EventName string `json:"eventName,omitempty"`
+	EventType string `json:"eventType,omitempty"`
+
+	// source metadata
+	SourceID             string `json:"sourceId"`
+	OriginalSourceID     string `json:"originalSourceId"` // for replayed events
+	SourceDefinitionID   string `json:"sourceDefinitionId,omitempty"`
+	SourceName           string `json:"sourceName"`
+	SourceType           string `json:"sourceType"`
+	SourceCategory       string `json:"sourceCategory"`
+	SourceDefinitionType string `json:"-"`
+
+	// retl metadata
+	SourceJobID     string `json:"sourceJobId,omitempty"`
+	SourceJobRunID  string `json:"sourceJobRunId,omitempty"`
+	SourceTaskRunID string `json:"sourceTaskRunId,omitempty"`
+	RecordID        any    `json:"recordId,omitempty"`
+
+	// other metadata
+	InstanceID  string `json:"instanceId,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	TraceParent string `json:"traceparent,omitempty"`
+
+	// tracking plan metadata (available only during tracking plan transformations)
 	TrackingPlanID      string                            `json:"trackingPlanId,omitempty"`
 	TrackingPlanVersion int                               `json:"trackingPlanVersion,omitempty"`
 	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig,omitempty"`
 	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig,omitempty"`
-	DestinationID       string                            `json:"destinationId"`
-	JobID               int64                             `json:"jobId"`
-	SourceJobID         string                            `json:"sourceJobId,omitempty"`
-	SourceJobRunID      string                            `json:"sourceJobRunId,omitempty"`
-	SourceTaskRunID     string                            `json:"sourceTaskRunId,omitempty"`
-	RecordID            interface{}                       `json:"recordId,omitempty"`
-	DestinationType     string                            `json:"destinationType"`
-	DestinationName     string                            `json:"destinationName"`
-	MessageID           string                            `json:"messageId"`
-	OAuthAccessToken    string                            `json:"oauthAccessToken,omitempty"`
-	TraceParent         string                            `json:"traceparent,omitempty"`
-	// set by user_transformer to indicate transformed event is part of group indicated by messageIDs
-	MessageIDs              []string `json:"messageIds,omitempty"`
-	RudderID                string   `json:"rudderId,omitempty"`
-	ReceivedAt              string   `json:"receivedAt,omitempty"`
-	EventName               string   `json:"eventName,omitempty"`
-	EventType               string   `json:"eventType,omitempty"`
-	SourceDefinitionID      string   `json:"sourceDefinitionId,omitempty"`
-	DestinationDefinitionID string   `json:"destinationDefinitionId,omitempty"`
+
+	// destination metadata (available after tracking plan)
+	DestinationID           string `json:"destinationId"`
+	DestinationName         string `json:"destinationName"`
+	DestinationType         string `json:"destinationType"`
+	DestinationDefinitionID string `json:"destinationDefinitionId,omitempty"`
+
+	// user transformation metadata (available only during user transformation)
 	TransformationID        string   `json:"transformationId,omitempty"`
 	TransformationVersionID string   `json:"transformationVersionId,omitempty"`
-	SourceDefinitionType    string   `json:"-"`
+	MessageIDs              []string `json:"messageIds,omitempty"` // set only by user transformer to indicate transformed event is part of group indicated by messageIDs
 }
 
 func (m Metadata) GetMessagesIDs() []string {
@@ -186,6 +200,38 @@ func (m Metadata) GetMessagesIDs() []string {
 		return m.MessageIDs
 	}
 	return []string{m.MessageID}
+}
+
+// CommonMetadata creates a new metadata instance keeping only common fields across events
+//
+//   - workspace id
+//   - source metadata
+//   - other metadata (instance id, namespace)
+//   - destination metadata
+func (m Metadata) CommonMetadata() *Metadata {
+	return &Metadata{
+		// job metadata
+		WorkspaceID: m.WorkspaceID,
+
+		// source metadata
+		SourceID:             m.SourceID,
+		OriginalSourceID:     m.OriginalSourceID,
+		SourceDefinitionID:   m.SourceDefinitionID,
+		SourceName:           m.SourceName,
+		SourceType:           m.SourceType,
+		SourceCategory:       m.SourceCategory,
+		SourceDefinitionType: m.SourceDefinitionType,
+
+		// other metadata
+		InstanceID: m.InstanceID,
+		Namespace:  m.Namespace,
+
+		// destination metadata (available after tracking plan)
+		DestinationID:           m.DestinationID,
+		DestinationName:         m.DestinationName,
+		DestinationType:         m.DestinationType,
+		DestinationDefinitionID: m.DestinationDefinitionID,
+	}
 }
 
 type TransformerResponse struct {

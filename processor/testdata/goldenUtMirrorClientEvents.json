@@ -28,7 +28,8 @@
             "destinationName": "B",
             "messageId": "message-1",
             "receivedAt": "2001-01-02T02:23:45.000Z",
-            "transformationVersionId": "transformation-version-id"
+            "transformationVersionId": "transformation-version-id",
+            "destinationDefinitionId": "enabled-destination-b-definition-id"
         },
         "destination": {
             "ID": "enabled-destination-b",
@@ -92,7 +93,8 @@
             "destinationName": "B",
             "messageId": "message-3",
             "receivedAt": "2002-01-02T02:23:45.000Z",
-            "transformationVersionId": "transformation-version-id"
+            "transformationVersionId": "transformation-version-id",
+            "destinationDefinitionId": "enabled-destination-b-definition-id"
         },
         "destination": {
             "ID": "enabled-destination-b",
@@ -154,7 +156,8 @@
             "destinationName": "B",
             "messageId": "message-4",
             "receivedAt": "2002-01-02T02:23:45.000Z",
-            "transformationVersionId": "transformation-version-id"
+            "transformationVersionId": "transformation-version-id",
+            "destinationDefinitionId": "enabled-destination-b-definition-id"
         },
         "destination": {
             "ID": "enabled-destination-b",

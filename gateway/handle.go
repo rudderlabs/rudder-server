@@ -791,26 +791,26 @@ type jobWithMetadata struct {
 	skipLiveEventRecording bool
 }
 
+type jobParams struct {
+	MessageID           string `json:"message_id"`
+	SourceID            string `json:"source_id"`
+	SourceJobRunID      string `json:"source_job_run_id"`
+	SourceTaskRunID     string `json:"source_task_run_id"`
+	UserID              string `json:"user_id"`
+	TraceParent         string `json:"traceparent"`
+	DestinationID       string `json:"destination_id,omitempty"`
+	SourceCategory      string `json:"source_category"`
+	IsBot               bool   `json:"is_bot,omitempty"`
+	BotName             string `json:"bot_name,omitempty"`
+	BotURL              string `json:"bot_url,omitempty"`
+	BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
+	BotAction           string `json:"bot_action,omitempty"`
+	IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
+}
+
 func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byte) (
 	[]jobWithMetadata, error,
 ) {
-	type params struct {
-		MessageID           string `json:"message_id"`
-		SourceID            string `json:"source_id"`
-		SourceJobRunID      string `json:"source_job_run_id"`
-		SourceTaskRunID     string `json:"source_task_run_id"`
-		UserID              string `json:"user_id"`
-		TraceParent         string `json:"traceparent"`
-		DestinationID       string `json:"destination_id,omitempty"`
-		SourceCategory      string `json:"source_category"`
-		IsBot               bool   `json:"is_bot,omitempty"`
-		BotName             string `json:"bot_name,omitempty"`
-		BotURL              string `json:"bot_url,omitempty"`
-		BotIsInvalidBrowser bool   `json:"bot_is_invalid_browser,omitempty"`
-		BotAction           string `json:"bot_action,omitempty"`
-		IsEventBlocked      bool   `json:"is_event_blocked,omitempty"`
-	}
-
 	type singularEventBatch struct {
 		Batch      []json.RawMessage `json:"batch"`
 		ReceivedAt string            `json:"receivedAt"`
@@ -1006,7 +1006,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 			"workspaceId": msg.Properties.WorkspaceID,
 		}).Since(msg.Properties.ReceivedAt)
 
-		jobsDBParams := params{
+		jobsDBParams := jobParams{
 			MessageID:           messageID,
 			SourceID:            msg.Properties.SourceID,
 			SourceJobRunID:      msg.Properties.SourceJobRunID,
@@ -1088,6 +1088,7 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 				EventPayload: payload,
 				EventCount:   len(eventBatch.Batch),
 				WorkspaceId:  msg.Properties.WorkspaceID,
+				PartitionID:  msg.Properties.PartitionID,
 			},
 		})
 	}
