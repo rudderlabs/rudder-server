@@ -2,7 +2,7 @@ package main
 
 import (
 	"os"
-	"runtime/debug"
+	"sync"
 	"syscall"
 	"time"
 
@@ -31,11 +31,11 @@ func main() {
 	log.Infon("Server is starting up...")
 	start := time.Now()
 
-	if memStat, err := mem.Get(); err == nil {
-		memoryLimit := int64(80 * memStat.Total / 100)
-		log.Infon("Setting memory limit", logger.NewIntField("limit", memoryLimit))
-		debug.SetMemoryLimit(memoryLimit)
-	}
+	var wg sync.WaitGroup
+	mem.WatchMemoryLimit(ctx, &wg,
+		mem.WatchWithLogger(log),
+		mem.WatchWithPercentageLoader(c.GetReloadableIntVar(90, 1, "memoryLimitPercentage")),
+	)
 
 	shutdownOnNonReloadableConfigChange := c.GetReloadableBoolVar(false, "shutdownOnNonReloadableConfigChange")
 	c.OnNonReloadableConfigChange(func(key string) {
@@ -66,5 +66,6 @@ func main() {
 		logger.NewDurationField("uptime", time.Since(start)),
 	)
 	cancel()
+	wg.Wait()
 	os.Exit(exitCode)
 }
