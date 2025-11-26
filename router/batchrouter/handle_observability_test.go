@@ -80,7 +80,7 @@ func TestEmitAsyncEventDeliveryTimeMetrics(t *testing.T) {
 	// Set up async destination struct
 	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
 		Destination: destination,
-		OriginalJobParameters: map[int64]json.RawMessage{
+		JobParameters: map[int64]json.RawMessage{
 			jobID: jobParamsBytes,
 		},
 	}
@@ -125,8 +125,8 @@ func TestEmitAsyncEventDeliveryTimeMetrics_NoSuccessfulJobs(t *testing.T) {
 	}
 
 	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
-		Destination:           destination,
-		OriginalJobParameters: make(map[int64]json.RawMessage),
+		Destination:   destination,
+		JobParameters: make(map[int64]json.RawMessage),
 	}
 
 	// Create job status list with only failed jobs
@@ -179,7 +179,7 @@ func TestEmitAsyncEventDeliveryTimeMetrics_MissingReceivedAt(t *testing.T) {
 
 	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
 		Destination: destination,
-		OriginalJobParameters: map[int64]json.RawMessage{
+		JobParameters: map[int64]json.RawMessage{
 			jobID: jobParamsBytes,
 		},
 	}
@@ -233,7 +233,7 @@ func TestEmitAsyncEventDeliveryTimeMetrics_InvalidReceivedAt(t *testing.T) {
 
 	brt.asyncDestinationStruct[destinationID] = &common.AsyncDestinationStruct{
 		Destination: destination,
-		OriginalJobParameters: map[int64]json.RawMessage{
+		JobParameters: map[int64]json.RawMessage{
 			jobID: jobParamsBytes,
 		},
 	}

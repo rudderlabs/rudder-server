@@ -299,6 +299,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
+				PartitionID:   job.PartitionID,
 			}
 			statusList = append(statusList, &status)
 			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason, parameters: parameters})

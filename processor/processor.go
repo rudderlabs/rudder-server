@@ -1775,6 +1775,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			Parameters:    []byte(`{}`),
 			JobParameters: batchEvent.Parameters,
 			WorkspaceId:   batchEvent.WorkspaceId,
+			PartitionID:   batchEvent.PartitionID,
 		}
 		statusList = append(statusList, &newStatus)
 
@@ -3725,6 +3726,7 @@ func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []
 			Parameters:    []byte(`{}`),
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
+			PartitionID:   job.PartitionID,
 		}
 	}
 	// Mark the jobs as executing
