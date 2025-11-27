@@ -88,13 +88,9 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 			IdleTimeout                                                                       time.Duration
 			allowReqsWithoutUserIDAndAnonymousID                                              config.ValueLoader[bool]
 			gwAllowPartialWriteWithErrors                                                     config.ValueLoader[bool]
-			enableInternalBatchValidator                                                      config.ValueLoader[bool]
-			enableInternalBatchEnrichment                                                     config.ValueLoader[bool]
 			webhookV2HandlerEnabled                                                           bool
 		}{
-			enableInternalBatchValidator:  config.SingleValueLoader(false),
-			enableInternalBatchEnrichment: config.SingleValueLoader(false),
-			webhookV2HandlerEnabled:       false,
+			webhookV2HandlerEnabled: false,
 		},
 		configSubscriberLock: sync.RWMutex{},
 		requestSizeStat:      statsStore.NewStat("gateway.request_size", stats.HistogramType),

@@ -128,8 +128,6 @@ type Handle struct {
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
 		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
-		enableInternalBatchValidator         config.ValueLoader[bool]
-		enableInternalBatchEnrichment        config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
 	}
 
@@ -856,14 +854,10 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 		return nil, errors.New((response.NotRudderEvent))
 	}
 
-	internalBatchValidatorEnabled := gw.conf.enableInternalBatchValidator.Load()
-	internalBatchEnrichmentEnabled := gw.conf.enableInternalBatchEnrichment.Load()
-
 	res = make([]jobWithMetadata, 0, len(messages))
 
 	for _, msg := range messages {
 		var (
-			rudderId         uuid.UUID
 			messageID        string
 			marshalledParams []byte
 			payload          []byte
@@ -871,105 +865,22 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 
 		stat := gwstats.SourceStat{ReqType: reqType}
 
-		if internalBatchEnrichmentEnabled {
-			err = gw.streamMsgValidator(&msg)
+		var ok bool
+		ok, err = gw.msgValidator.Validate(msg.Payload, &msg.Properties)
+		if err != nil || !ok {
+			errMsg := "validations failed"
 			if err != nil {
-				loggerFields := msg.Properties.LoggerFields()
-				loggerFields = append(loggerFields, obskit.Error(err))
-				gw.logger.Errorn("invalid message in request",
-					loggerFields...)
-				stat.RequestEventsFailed(1, (response.InvalidStreamMessage))
-				stat.Report(gw.stats)
-				return nil, errors.New((response.InvalidStreamMessage))
+				errMsg = err.Error()
+			} else {
+				err = errors.New(errMsg)
 			}
-			// TODO: get rid of this check
-			if msg.Properties.RequestType != "" {
-				switch msg.Properties.RequestType {
-				case "batch", "replay", "retl", "import":
-				default:
-					msg.Payload, err = sjson.SetBytes(msg.Payload, "type", msg.Properties.RequestType)
-					if err != nil {
-						stat.RequestEventsFailed(1, (response.NotRudderEvent))
-						stat.Report(gw.stats)
-						loggerFields := msg.Properties.LoggerFields()
-						loggerFields = append(loggerFields, obskit.Error(err))
-						gw.logger.Errorn("failed to set type in message", loggerFields...)
-						return nil, errors.New((response.NotRudderEvent))
-					}
-				}
-			}
-
-			anonIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "anonymousId").String())
-			userIDFromReq := sanitizeAndTrim(gjson.GetBytes(msg.Payload, "userId").String())
-			var changed bool
-			messageID, changed = getMessageID(msg.Payload)
-			if changed {
-				msg.Payload, err = sjson.SetBytes(msg.Payload, "messageId", messageID)
-				if err != nil {
-					stat.RequestFailed((response.NotRudderEvent))
-					stat.Report(gw.stats)
-					gw.logger.Errorn("failed to set messageID in message",
-						obskit.Error(err))
-					return nil, errors.New((response.NotRudderEvent))
-				}
-			}
-			rudderId, err = getRudderId(userIDFromReq, anonIDFromReq)
-			if err != nil {
-				stat.RequestFailed((response.NotRudderEvent))
-				stat.Report(gw.stats)
-				gw.logger.Errorn("failed to get rudderId",
-					obskit.Error(err))
-				return nil, errors.New((response.NotRudderEvent))
-			}
-			msg.Payload, err = sjson.SetBytes(msg.Payload, "rudderId", rudderId.String())
-			if err != nil {
-				stat.RequestFailed((response.NotRudderEvent))
-				stat.Report(gw.stats)
-				loggerFields := msg.Properties.LoggerFields()
-				loggerFields = append(loggerFields, obskit.Error(err))
-				gw.logger.Errorn("failed to set rudderId in message",
-					loggerFields...)
-				return nil, errors.New((response.NotRudderEvent))
-			}
-
-			msg.Payload, err = fillReceivedAt(msg.Payload, msg.Properties.ReceivedAt)
-			if err != nil {
-				err = fmt.Errorf("filling receivedAt: %w", err)
-				stat.RequestEventsFailed(1, err.Error())
-				stat.Report(gw.stats)
-				gw.logger.Errorn("failed to fill receivedAt in message",
-					obskit.Error(err))
-				return nil, fmt.Errorf("filling receivedAt: %w", err)
-			}
-			msg.Payload, err = fillRequestIP(msg.Payload, msg.Properties.RequestIP)
-			if err != nil {
-				err = fmt.Errorf("filling request_ip: %w", err)
-				stat.RequestEventsFailed(1, err.Error())
-				stat.Report(gw.stats)
-				gw.logger.Errorn("failed to fill request_ip in message",
-					obskit.Error(err))
-				return nil, fmt.Errorf("filling request_ip: %w", err)
-			}
-		}
-
-		if internalBatchValidatorEnabled {
-			var ok bool
-			ok, err = gw.msgValidator.Validate(msg.Payload, &msg.Properties)
-			if err != nil || !ok {
-				errMsg := "validations failed"
-				if err != nil {
-					errMsg = err.Error()
-				} else {
-					err = errors.New(errMsg)
-				}
-				loggerFields := msg.Properties.LoggerFields()
-				loggerFields = append(loggerFields, obskit.Error(err))
-				gw.logger.Errorn("invalid message in request",
-					loggerFields...)
-				stat.RequestEventsFailed(1, errMsg)
-				stat.Report(gw.stats)
-				return nil, errors.New(response.NotRudderEvent)
-			}
+			loggerFields := msg.Properties.LoggerFields()
+			loggerFields = append(loggerFields, obskit.Error(err))
+			gw.logger.Errorn("invalid message in request",
+				loggerFields...)
+			stat.RequestEventsFailed(1, errMsg)
+			stat.Report(gw.stats)
+			return nil, errors.New(response.NotRudderEvent)
 		}
 
 		writeKey, sourceDefName, sourceName, sourceType := "", "", "", ""
@@ -1099,18 +1010,6 @@ func (gw *Handle) extractJobsFromInternalBatchPayload(reqType string, body []byt
 	return res, nil
 }
 
-// getMessageID returns the messageID from the event payload.
-// If the messageID is not present, it generates a new one.
-// It also returns a boolean indicating if the messageID was changed.
-func getMessageID(event []byte) (string, bool) {
-	messageID := gjson.GetBytes(event, "messageId").String()
-	sanitizedMessageID := sanitizeAndTrim(messageID)
-	if sanitizedMessageID == "" {
-		return uuid.New().String(), true
-	}
-	return sanitizedMessageID, messageID != sanitizedMessageID
-}
-
 func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
 	rudderId, err := kituuid.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 	if err != nil {
@@ -1118,24 +1017,6 @@ func getRudderId(userIDFromReq, anonIDFromReq string) (uuid.UUID, error) {
 		return rudderId, err
 	}
 	return rudderId, nil
-}
-
-func sanitizeAndTrim(str string) string {
-	return strings.TrimSpace(sanitize.Unicode(str))
-}
-
-func fillReceivedAt(event []byte, receivedAt time.Time) ([]byte, error) {
-	if !gjson.GetBytes(event, "receivedAt").Exists() {
-		return sjson.SetBytes(event, "receivedAt", receivedAt.Format(misc.RFC3339Milli))
-	}
-	return event, nil
-}
-
-func fillRequestIP(event []byte, ip string) ([]byte, error) {
-	if !gjson.GetBytes(event, "request_ip").Exists() {
-		return sjson.SetBytes(event, "request_ip", ip)
-	}
-	return event, nil
 }
 
 func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (src backendconfig.SourceT, ok bool) {

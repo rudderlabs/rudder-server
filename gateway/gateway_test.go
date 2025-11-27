@@ -2426,9 +2426,6 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("validations", func() {
-			gateway.config.Set("gateway.enableMsgValidator", true)
-			gateway.config.Set("gateway.enableBatchEnrichment", false)
-
 			properties := stream.MessageProperties{
 				RequestType:   "track",
 				RoutingKey:    "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
