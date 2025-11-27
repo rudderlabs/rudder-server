@@ -26,14 +26,6 @@ type SalesforceBulkUploader struct {
 	destinationInfo *oauthv2.DestinationInfo
 }
 
-type SalesforceAuthService struct {
-	logger      logger.Logger
-	oauthClient oauthv2.OAuthHandler
-	workspaceID string
-	accountID   string
-	destID      string
-}
-
 type SalesforceAPIServiceInterface interface {
 	CreateJob(objectName, operation, externalIDField string) (string, *APIError)
 	UploadData(jobID, csvFilePath string) *APIError

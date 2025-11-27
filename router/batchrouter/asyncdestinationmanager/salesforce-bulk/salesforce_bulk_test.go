@@ -99,7 +99,7 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 			require.NotEmpty(t, result)
 
 			var parsed common.AsyncJob
-			err = json.Unmarshal([]byte(result), &parsed)
+			err = jsonrs.Unmarshal([]byte(result), &parsed)
 			require.NoError(t, err)
 			require.NotNil(t, parsed.Message)
 			require.NotNil(t, parsed.Metadata)
@@ -152,8 +152,10 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 	for _, job := range testData {
 		jobBytes, _ := jsonrs.Marshal(job)
-		tempFile.Write(jobBytes)
-		tempFile.Write([]byte("\n"))
+		_, err := tempFile.Write(jobBytes)
+		require.NoError(t, err)
+		_, err = tempFile.Write([]byte("\n"))
+		require.NoError(t, err)
 	}
 	tempFile.Close()
 
@@ -411,8 +413,10 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 
 		for _, job := range testData {
 			jobBytes, _ := jsonrs.Marshal(job)
-			tempFile.Write(jobBytes)
-			tempFile.Write([]byte("\n"))
+			_, err := tempFile.Write(jobBytes)
+			require.NoError(t, err)
+			_, err = tempFile.Write([]byte("\n"))
+			require.NoError(t, err)
 		}
 		tempFile.Close()
 

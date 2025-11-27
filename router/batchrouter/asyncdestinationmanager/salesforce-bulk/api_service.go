@@ -69,7 +69,7 @@ func (s *SalesforceAPIService) CreateJob(
 		}
 	}
 
-	s.logger.Debugf("Created Salesforce Bulk job %s for object %s", jobResp.ID, objectName)
+	s.logger.Debugn("Created Salesforce Bulk job %s for object %s", logger.NewStringField("jobID", jobResp.ID), logger.NewStringField("objectName", objectName))
 
 	return jobResp.ID, nil
 }
@@ -92,7 +92,7 @@ func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 		return apiErr
 	}
 
-	s.logger.Debugf("Uploaded data to Salesforce Bulk job %s", jobID)
+	s.logger.Debugn("Uploaded data to Salesforce Bulk job %s", logger.NewStringField("jobID", jobID))
 
 	return nil
 }
@@ -108,7 +108,7 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 		return apiErr
 	}
 
-	s.logger.Debugf("Closed Salesforce Bulk job %s", jobID)
+	s.logger.Debugn("Closed Salesforce Bulk job %s", logger.NewStringField("jobID", jobID))
 
 	return nil
 }
@@ -256,14 +256,14 @@ func (s *SalesforceAPIService) attemptRequest(
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    string(respBody),
-			Category:   categorizeError(resp.StatusCode, respBody),
+			Category:   categorizeError(resp.StatusCode),
 		}
 	}
 
 	return respBody, nil
 }
 
-func categorizeError(statusCode int, body []byte) string {
+func categorizeError(statusCode int) string {
 	switch statusCode {
 	case 401:
 		return "RefreshToken"
