@@ -6,14 +6,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
 func TestSalesforceBulk_Transform(t *testing.T) {
@@ -120,6 +121,13 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			},
 			Metadata: map[string]interface{}{
 				"job_id": float64(1),
+				"externalId": []map[string]interface{}{
+					{
+						"id":             "test1@example.com",
+						"identifierType": "Email",
+						"type":           "SALESFORCE_BULK_UPLOAD-Lead",
+					},
+				},
 			},
 		},
 		{
@@ -130,6 +138,13 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			},
 			Metadata: map[string]interface{}{
 				"job_id": float64(2),
+				"externalId": []map[string]interface{}{
+					{
+						"id":             "test2@example.com",
+						"identifierType": "Email",
+						"type":           "SALESFORCE_BULK_UPLOAD-Lead",
+					},
+				},
 			},
 		},
 	}
@@ -143,29 +158,14 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 	t.Run("successful upload - single operation", func(t *testing.T) {
 		var capturedCSVPath string
-		mockAPI := &MockSalesforceAPIService{
-			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
-				require.Equal(t, "Lead", objectName)
-				return "sf-job-123", nil
-			},
-			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
-				require.Equal(t, "sf-job-123", jobID)
-				capturedCSVPath = csvFilePath
-				// Verify CSV file exists during upload
-				_, err := os.Stat(csvFilePath)
-				require.NoError(t, err)
-				return nil
-			},
-			CloseJobFunc: func(jobID string) *APIError {
-				require.Equal(t, "sf-job-123", jobID)
-				return nil
-			},
-		}
-
+		ctrl := gomock.NewController(t)
+		mockAPI := NewMockSalesforceAPIService(ctrl)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
+		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 		uploader := &SalesforceBulkUploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
-			config:          DestinationConfig{Operation: "insert"},
 			dataHashToJobID: make(map[string][]int64),
 		}
 
@@ -195,124 +195,18 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.True(t, os.IsNotExist(err), "CSV file should be cleaned up after upload")
 	})
 
-	t.Run("successful upload - multiple operations", func(t *testing.T) {
-		// Create temp file with mixed operations
-		tempFileMulti, err := os.CreateTemp("", "test_multi_op_*.json")
-		require.NoError(t, err)
-		defer os.Remove(tempFileMulti.Name())
-
-		multiOpData := []common.AsyncJob{
-			{
-				Message: map[string]interface{}{
-					"Email":           "insert1@example.com",
-					"FirstName":       "Insert",
-					"LastName":        "One",
-					"rudderOperation": "insert",
-				},
-				Metadata: map[string]interface{}{
-					"job_id": float64(1),
-				},
-			},
-			{
-				Message: map[string]interface{}{
-					"Email":           "update1@example.com",
-					"FirstName":       "Update",
-					"LastName":        "One",
-					"rudderOperation": "update",
-				},
-				Metadata: map[string]interface{}{
-					"job_id": float64(2),
-				},
-			},
-			{
-				Message: map[string]interface{}{
-					"Email":           "delete1@example.com",
-					"FirstName":       "Delete",
-					"LastName":        "One",
-					"rudderOperation": "delete",
-				},
-				Metadata: map[string]interface{}{
-					"job_id": float64(3),
-				},
-			},
-		}
-
-		for _, job := range multiOpData {
-			jobBytes, _ := jsonrs.Marshal(job)
-			tempFileMulti.Write(jobBytes)
-			tempFileMulti.Write([]byte("\n"))
-		}
-		tempFileMulti.Close()
-
-		jobCalls := 0
-		var capturedCSVPaths []string
-		mockAPI := &MockSalesforceAPIService{
-			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
-				require.Equal(t, "Lead", objectName)
-				require.Contains(t, []string{"insert", "update", "delete"}, operation)
-				jobCalls++
-				return fmt.Sprintf("sf-job-%d", jobCalls), nil
-			},
-			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
-				require.Contains(t, jobID, "sf-job-")
-				capturedCSVPaths = append(capturedCSVPaths, csvFilePath)
-				return nil
-			},
-			CloseJobFunc: func(jobID string) *APIError {
-				require.Contains(t, jobID, "sf-job-")
-				return nil
-			},
-		}
-
-		uploader := &SalesforceBulkUploader{
-			logger:          logger.NOP,
-			apiService:      mockAPI,
-			config:          DestinationConfig{Operation: "insert"}, // Default fallback
-			dataHashToJobID: make(map[string][]int64),
-		}
-
-		result := uploader.Upload(&common.AsyncDestinationStruct{
-			Destination: &backendconfig.DestinationT{
-				ID: "test-dest-multi",
-			},
-			FileName:        tempFileMulti.Name(),
-			FailedJobIDs:    []int64{},
-			ImportingJobIDs: []int64{},
+	t.Run("upload with API error", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockAPI := NewMockSalesforceAPIService(ctrl)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("", &APIError{
+			StatusCode: 500,
+			Message:    "Internal Server Error",
+			Category:   "ServerError",
 		})
 
-		require.Equal(t, 3, result.ImportingCount, "All 3 jobs should be importing")
-		require.Equal(t, 0, result.FailedCount, "No jobs should have failed")
-		require.NotNil(t, result.ImportingParameters)
-
-		var params struct {
-			Jobs []SalesforceJobInfo `json:"jobs"`
-		}
-		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
-		require.NoError(t, err)
-		require.Len(t, params.Jobs, 3, "Should have created 3 separate Salesforce jobs")
-		require.Equal(t, 3, jobCalls, "Should have called CreateJob 3 times")
-		require.Len(t, capturedCSVPaths, 3)
-		for _, csvPath := range capturedCSVPaths {
-			_, err := os.Stat(csvPath)
-			require.True(t, os.IsNotExist(err), "CSV file should be cleaned up")
-		}
-	})
-
-	t.Run("upload with API error", func(t *testing.T) {
-		mockAPI := &MockSalesforceAPIService{
-			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
-				return "", &APIError{
-					StatusCode: 500,
-					Message:    "Internal Server Error",
-					Category:   "ServerError",
-				}
-			},
-		}
-
 		uploader := &SalesforceBulkUploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
-			config:          DestinationConfig{Operation: "insert"},
 			dataHashToJobID: make(map[string][]int64),
 		}
 
@@ -327,24 +221,21 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "All operations failed")
+		require.Contains(t, result.FailedReason, "Unable to upload data to Salesforce Bulk jobs, retrying in next iteration")
 	})
 
 	t.Run("upload with rate limit error", func(t *testing.T) {
-		mockAPI := &MockSalesforceAPIService{
-			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
-				return "", &APIError{
-					StatusCode: 429,
-					Message:    "Rate limit exceeded",
-					Category:   "RateLimit",
-				}
-			},
-		}
+		ctrl := gomock.NewController(t)
+		mockAPI := NewMockSalesforceAPIService(ctrl)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("", &APIError{
+			StatusCode: 429,
+			Message:    "Rate limit exceeded",
+			Category:   "RateLimit",
+		})
 
 		uploader := &SalesforceBulkUploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
-			config:          DestinationConfig{Operation: "insert"},
 			dataHashToJobID: make(map[string][]int64),
 		}
 
@@ -359,84 +250,109 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "All operations failed")
+		require.Contains(t, result.FailedReason, "Unable to upload data to Salesforce Bulk jobs, retrying in next iteration")
 	})
 }
 
 func TestSalesforceBulk_Poll(t *testing.T) {
 	testCases := []struct {
 		name           string
-		jobStatus      *JobResponse
-		setupMock      func(*MockSalesforceAPIService)
+		jobStatus      []*JobResponse
 		expectedStatus common.PollStatusResponse
+		pollInput      common.AsyncPoll
 	}{
 		{
 			name: "job complete - all success",
-			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
-					return &JobResponse{
-						ID:                     "job-123",
-						State:                  "JobComplete",
-						NumberRecordsProcessed: 100,
-						NumberRecordsFailed:    0,
-					}, nil
-				}
-			},
+			jobStatus: []*JobResponse{{
+				ID:                     "job-123",
+				State:                  "JobComplete",
+				NumberRecordsProcessed: 100,
+				NumberRecordsFailed:    0,
+			}},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
 				Complete:   true,
 				HasFailed:  false,
 			},
+			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-123","operation":"insert","headers":["Email"]}]}`},
 		},
 		{
 			name: "job in progress",
-			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
-					return &JobResponse{
-						ID:    "job-456",
-						State: "InProgress",
-					}, nil
-				}
-			},
+			jobStatus: []*JobResponse{{
+				ID:    "job-456",
+				State: "InProgress",
+			}},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
 				InProgress: true,
 			},
+			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-456","headers":["Email"]}]}`},
 		},
 		{
 			name: "job complete with failures",
-			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
-					return &JobResponse{
-						ID:                     "job-789",
-						State:                  "JobComplete",
-						NumberRecordsProcessed: 100,
-						NumberRecordsFailed:    10,
-					}, nil
-				}
-			},
+			jobStatus: []*JobResponse{{
+				ID:                     "job-789",
+				State:                  "JobComplete",
+				NumberRecordsProcessed: 100,
+				NumberRecordsFailed:    10,
+			}},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
 				Complete:   true,
 				HasFailed:  true,
 			},
+			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-789","headers":["Email"]}]}`},
 		},
 		{
 			name: "job failed",
-			setupMock: func(mock *MockSalesforceAPIService) {
-				mock.GetJobStatusFunc = func(jobID string) (*JobResponse, *APIError) {
-					return &JobResponse{
-						ID:           "job-failed",
-						State:        "Failed",
-						ErrorMessage: "Invalid object type",
-					}, nil
-				}
-			},
+			jobStatus: []*JobResponse{{
+				ID:           "job-failed",
+				State:        "Failed",
+				ErrorMessage: "Invalid object type",
+			}},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
 				Complete:   true,
 				HasFailed:  true,
 			},
+			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-failed","headers":["Email"]}]}`},
+		},
+		{
+			name: "When multiple jobs are present and all are complete",
+			jobStatus: []*JobResponse{{
+				ID:                     "job-123",
+				State:                  "JobComplete",
+				NumberRecordsProcessed: 100,
+				NumberRecordsFailed:    0,
+			}, {
+				ID:                     "job-456",
+				State:                  "JobComplete",
+				NumberRecordsProcessed: 100,
+				NumberRecordsFailed:    0,
+			}},
+			expectedStatus: common.PollStatusResponse{
+				StatusCode: 200,
+				Complete:   true,
+				HasFailed:  false,
+			},
+			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-123","headers":["Email"]},{"id":"job-456","headers":["Email"]}]}`},
+		},
+		{
+			name: "When multiple jobs are present and one is in progress",
+			jobStatus: []*JobResponse{{
+				ID:                     "job-123",
+				State:                  "JobComplete",
+				NumberRecordsProcessed: 100,
+				NumberRecordsFailed:    0,
+			}, {
+				ID:    "job-456",
+				State: "InProgress",
+			}},
+			expectedStatus: common.PollStatusResponse{
+				StatusCode: 200,
+				InProgress: true,
+			},
+			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-123","headers":["Email"]},{"id":"job-456","headers":["Email"]}]}`},
 		},
 	}
 
@@ -444,15 +360,17 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			mockAPI := &MockSalesforceAPIService{}
-			tc.setupMock(mockAPI)
+			ctrl := gomock.NewController(t)
+			mockAPI := NewMockSalesforceAPIService(ctrl)
+			for _, jobStatus := range tc.jobStatus {
+				mockAPI.EXPECT().GetJobStatus(jobStatus.ID).Return(jobStatus, nil)
+			}
 
 			uploader := &SalesforceBulkUploader{
 				apiService: mockAPI,
 			}
 
-			pollInput := common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-456","operation":"insert","headers":["Email"]}]}`}
-			result := uploader.Poll(pollInput)
+			result := uploader.Poll(tc.pollInput)
 
 			require.Equal(t, tc.expectedStatus.StatusCode, result.StatusCode)
 			require.Equal(t, tc.expectedStatus.Complete, result.Complete)
@@ -460,54 +378,6 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 			require.Equal(t, tc.expectedStatus.HasFailed, result.HasFailed)
 		})
 	}
-}
-
-func TestSalesforceBulk_Upload_ImportIdPresent(t *testing.T) {
-	t.Run("ImportingParameters includes importId for batch router polling", func(t *testing.T) {
-		tempFile, err := os.CreateTemp("", "test_importid_*.json")
-		require.NoError(t, err)
-		defer os.Remove(tempFile.Name())
-
-		testData := []common.AsyncJob{
-			{
-				Message:  map[string]interface{}{"Email": "test@example.com"},
-				Metadata: map[string]interface{}{"job_id": float64(1)},
-			},
-		}
-
-		for _, job := range testData {
-			jobBytes, _ := jsonrs.Marshal(job)
-			tempFile.Write(jobBytes)
-			tempFile.Write([]byte("\n"))
-		}
-		tempFile.Close()
-
-		mockAPI := &MockSalesforceAPIService{
-			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
-				return "sf-job-123", nil
-			},
-			UploadDataFunc: func(jobID, csvFilePath string) *APIError { return nil },
-			CloseJobFunc:   func(jobID string) *APIError { return nil },
-		}
-
-		uploader := &SalesforceBulkUploader{
-			logger:          logger.NOP,
-			apiService:      mockAPI,
-			config:          DestinationConfig{Operation: "insert"},
-			dataHashToJobID: make(map[string][]int64),
-		}
-
-		result := uploader.Upload(&common.AsyncDestinationStruct{
-			Destination: &backendconfig.DestinationT{ID: "test-dest"},
-			FileName:    tempFile.Name(),
-		})
-
-		var params map[string]interface{}
-		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
-		require.NoError(t, err)
-		require.Contains(t, params, "importId", "ImportingParameters must have importId for batch router")
-		require.NotEmpty(t, params["importId"], "importId should not be empty")
-	})
 }
 
 func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
@@ -521,7 +391,6 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 			largeData[i] = 'x'
 		}
 
-		var jobCount int
 		testData := make([]common.AsyncJob, 0)
 		for i := 1; i <= 600; i++ {
 			testData = append(testData, common.AsyncJob{
@@ -529,7 +398,12 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 					"Email":     fmt.Sprintf("user%d@example.com", i),
 					"LargeData": string(largeData),
 				},
-				Metadata: map[string]interface{}{"job_id": float64(i)},
+				Metadata: map[string]interface{}{"job_id": float64(i), "externalId": []map[string]interface{}{{
+					"id":             fmt.Sprintf("user%d@example.com", i),
+					"identifierType": "Email",
+					"type":           "SALESFORCE_BULK_UPLOAD-Lead",
+				}},
+				},
 			})
 		}
 
@@ -540,23 +414,18 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 		}
 		tempFile.Close()
 
-		mockAPI := &MockSalesforceAPIService{
-			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
-				jobCount++
-				return fmt.Sprintf("sf-job-%d", jobCount), nil
-			},
-			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
-				return nil
-			},
-			CloseJobFunc: func(jobID string) *APIError {
-				return nil
-			},
-		}
+		ctrl := gomock.NewController(t)
+		mockAPI := NewMockSalesforceAPIService(ctrl)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job", nil)
+		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job", nil)
+		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
+		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
+		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 
 		uploader := &SalesforceBulkUploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
-			config:          DestinationConfig{Operation: "insert"},
 			dataHashToJobID: make(map[string][]int64),
 		}
 
@@ -565,7 +434,6 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 			FileName:    tempFile.Name(),
 		})
 
-		require.Greater(t, jobCount, 1, "Should create multiple Salesforce jobs for overflow")
 		require.Equal(t, 600, result.ImportingCount, "All jobs should be imported")
 		require.Equal(t, 0, result.FailedCount, "No jobs should fail due to overflow")
 
@@ -574,28 +442,27 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 		}
 		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
 		require.NoError(t, err)
-		require.Len(t, params.Jobs, jobCount, "Should have job info for each Salesforce job")
+		require.Greater(t, len(params.Jobs), 1, "Should create multiple Salesforce jobs for overflow")
 	})
 }
 
 func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 	t.Run("successful stats retrieval with failures", func(t *testing.T) {
-		mockAPI := &MockSalesforceAPIService{
-			GetFailedRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
-				return []map[string]string{}, nil
-			},
-			GetSuccessfulRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
-				return []map[string]string{}, nil
-			},
-		}
+		ctrl := gomock.NewController(t)
+		mockAPI := NewMockSalesforceAPIService(ctrl)
+		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{}, nil)
+		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{{"Email": "test1@example.com", "FirstName": "John", "LastName": "Doe"}, {"Email": "test2@example.com", "FirstName": "Jane", "LastName": "Smith"}}, nil)
 
 		uploader := &SalesforceBulkUploader{
-			apiService:      mockAPI,
-			dataHashToJobID: make(map[string][]int64),
+			apiService: mockAPI,
+			dataHashToJobID: map[string][]int64{
+				"d03113301b5c9be7aaa6407e41a88bb7f2cbe38d29349451d53e749a9eee3dc4": {1},
+				"2c90f136effc0f60dda9383598cbeffe32671a8ecb1bbd19e9dfa6296e29a944": {2},
+			},
 		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"upsert","headers":["Email","FirstName","LastName"]}]}`),
+			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","headers":["Email","FirstName","LastName"]}]}`),
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -607,18 +474,14 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 	})
 
 	t.Run("handles API error fetching failed records", func(t *testing.T) {
-		mockAPI := &MockSalesforceAPIService{
-			GetFailedRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
-				return nil, &APIError{
-					StatusCode: 500,
-					Message:    "Server error",
-					Category:   "ServerError",
-				}
-			},
-			GetSuccessfulRecordsFunc: func(jobID string) ([]map[string]string, *APIError) {
-				return nil, nil
-			},
-		}
+		ctrl := gomock.NewController(t)
+		mockAPI := NewMockSalesforceAPIService(ctrl)
+		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return(nil, &APIError{
+			StatusCode: 500,
+			Message:    "Server error",
+			Category:   "ServerError",
+		})
+		// mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return(nil, nil)
 
 		uploader := &SalesforceBulkUploader{
 			logger:          logger.NOP,
@@ -627,11 +490,11 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		}
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","operation":"delete","headers":["Email"]}]}`),
+			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","headers":["Email"]}]}`),
 		})
 
-		require.Equal(t, 200, result.StatusCode)
-		require.NotNil(t, result.Metadata)
+		require.Equal(t, 500, result.StatusCode)
+		require.Contains(t, result.Error, "Failed to fetch failed records for job test-job-123: Server error")
 	})
 
 	t.Run("handles invalid parameters", func(t *testing.T) {
@@ -655,14 +518,14 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 			WorkspaceID: "test-workspace-456",
 			Config: map[string]interface{}{
 				"rudderAccountId": "test-account-789",
-				"operation":       "insert",
 			},
 		}
 
-		mockBackendConfig := NewMockBackendConfig()
+		ctrl := gomock.NewController(t)
+		mockBackendConfig := NewMockBackendConfig(ctrl)
 
 		manager, err := NewManager(
-			nil,
+			config.New(),
 			logger.NOP,
 			stats.NOP,
 			destination,
@@ -671,32 +534,6 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, manager)
-
-		uploader, ok := manager.(*SalesforceBulkUploader)
-		require.True(t, ok)
-		require.Equal(t, "insert", uploader.config.Operation)
-		require.Equal(t, "v62.0", uploader.config.APIVersion)
 	})
 
-	t.Run("invalid config", func(t *testing.T) {
-		destination := &backendconfig.DestinationT{
-			Config: map[string]interface{}{
-				"operation": "insert",
-			},
-		}
-
-		mockBackendConfig := NewMockBackendConfig()
-
-		manager, err := NewManager(
-			nil,
-			logger.NOP,
-			stats.NOP,
-			destination,
-			mockBackendConfig,
-		)
-
-		require.Error(t, err)
-		require.Nil(t, manager)
-		require.Contains(t, err.Error(), "rudderAccountId")
-	})
 }

@@ -191,7 +191,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 	if len(allImportingJobIDs) == 0 {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(allFailedJobIDs, importingJobIDs...),
-			FailedReason:  "Unable to upload data to Salesforce Bulk jobs, retrying in next batch",
+			FailedReason:  "Unable to upload data to Salesforce Bulk jobs, retrying in next iteration",
 			FailedCount:   len(allFailedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -311,14 +311,15 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 
 	var allFailedRecords []map[string]string
 	var allSuccessRecords []map[string]string
-	var fetchErrors int
 
 	for _, job := range params.Jobs {
 		failedRecords, apiError := s.apiService.GetFailedRecords(job.ID)
 		if apiError != nil {
 			s.logger.Errorf("Failed to fetch failed records for job %s: %s", job.ID, apiError.Message)
-			fetchErrors++
-			continue
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+				Error:      fmt.Sprintf("Failed to fetch failed records for job %s: %s", job.ID, apiError.Message),
+			}
 		}
 
 		for i := range failedRecords {
@@ -328,8 +329,10 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 		successRecords, apiError := s.apiService.GetSuccessfulRecords(job.ID)
 		if apiError != nil {
 			s.logger.Errorf("Failed to fetch successful records for job %s: %s", job.ID, apiError.Message)
-			fetchErrors++
-			continue
+			return common.GetUploadStatsResponse{
+				StatusCode: 500,
+				Error:      fmt.Sprintf("Failed to fetch successful records for job %s: %s", job.ID, apiError.Message),
+			}
 		}
 
 		for i := range successRecords {

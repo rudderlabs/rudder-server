@@ -18,7 +18,6 @@ type DestinationConfig struct {
 
 type SalesforceBulkUploader struct {
 	destName        string
-	config          DestinationConfig
 	logger          logger.Logger
 	statsFactory    stats.Stats
 	apiService      SalesforceAPIServiceInterface

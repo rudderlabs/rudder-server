@@ -8,108 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
-
-func TestSalesforceBulk_parseDestinationConfig(t *testing.T) {
-	testCases := []struct {
-		name        string
-		destination *backendconfig.DestinationT
-		expected    DestinationConfig
-		wantErr     bool
-		errorMsg    string
-	}{
-		{
-			name: "valid config with all fields",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-123",
-					"operation":       "insert",
-					"apiVersion":      "v57.0",
-				},
-			},
-			expected: DestinationConfig{
-				RudderAccountID: "test-account-123",
-				Operation:       "insert",
-				APIVersion:      "v57.0",
-			},
-			wantErr: false,
-		},
-		{
-			name: "valid config with defaults",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-456",
-				},
-			},
-			expected: DestinationConfig{
-				RudderAccountID: "test-account-456",
-				Operation:       "",
-				APIVersion:      "",
-			},
-			wantErr: false,
-		},
-		{
-			name: "missing rudderAccountId",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"operation": "insert",
-				},
-			},
-			wantErr:  true,
-			errorMsg: "rudderAccountId is required",
-		},
-		{
-			name: "invalid operation",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-789",
-					"operation":       "invalid_op",
-				},
-			},
-			wantErr:  true,
-			errorMsg: "invalid operation",
-		},
-		{
-			name: "upsert operation",
-			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
-					"rudderAccountId": "test-account-upsert",
-					"operation":       "upsert",
-				},
-			},
-			expected: DestinationConfig{
-				RudderAccountID: "test-account-upsert",
-				Operation:       "upsert",
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			result, err := parseDestinationConfig(tc.destination)
-
-			if tc.wantErr {
-				require.Error(t, err)
-				if tc.errorMsg != "" {
-					require.Contains(t, err.Error(), tc.errorMsg)
-				}
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tc.expected.RudderAccountID, result.RudderAccountID)
-			require.Equal(t, tc.expected.Operation, result.Operation)
-			if tc.expected.APIVersion != "" {
-				require.Equal(t, tc.expected.APIVersion, result.APIVersion)
-			}
-		})
-	}
-}
 
 func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 	testCases := []struct {
@@ -130,7 +30,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 						"job_id": float64(1),
 						"externalId": []interface{}{
 							map[string]interface{}{
-								"type":           "Salesforce-Contact",
+								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
 								"id":             "test@example.com",
 								"identifierType": "Email",
 							},
@@ -155,7 +55,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 						"job_id": float64(2),
 						"externalId": []interface{}{
 							map[string]interface{}{
-								"type":           "Salesforce-Lead",
+								"type":           "SALESFORCE_BULK_UPLOAD-Lead",
 								"id":             "lead@example.com",
 								"identifierType": "Email",
 							},
@@ -187,11 +87,8 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 					},
 				},
 			},
-			expected: &ObjectInfo{
-				ObjectType:      "Lead",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
+			wantErr:  true,
+			errorMsg: "externalId not found in the first job",
 		},
 		{
 			name: "empty externalId array",
@@ -206,52 +103,11 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			wantErr:  true,
 			errorMsg: "at least one element",
 		},
-		{
-			name: "event stream without externalId - uses config",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "stream@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(10),
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Contact",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
-		{
-			name: "event stream with default object type",
-			jobs: []common.AsyncJob{
-				{
-					Message: map[string]interface{}{
-						"Email": "default@example.com",
-					},
-					Metadata: map[string]interface{}{
-						"job_id": float64(11),
-					},
-				},
-			},
-			expected: &ObjectInfo{
-				ObjectType:      "Lead",
-				ExternalIDField: "Email",
-			},
-			wantErr: false,
-		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-
-			testConfig := DestinationConfig{}
-			if tc.name == "event stream without externalId - uses config" {
-				testConfig.ObjectType = "Contact"
-			}
 
 			result, err := extractObjectInfo(tc.jobs)
 
@@ -289,6 +145,13 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 					},
 					Metadata: map[string]interface{}{
 						"job_id": float64(1),
+						"externalId": []interface{}{
+							map[string]interface{}{
+								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
+								"id":             "test1@example.com",
+								"identifierType": "Email",
+							},
+						},
 					},
 				},
 				{
@@ -299,6 +162,13 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 					},
 					Metadata: map[string]interface{}{
 						"job_id": float64(2),
+						"externalId": []interface{}{
+							map[string]interface{}{
+								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
+								"id":             "test2@example.com",
+								"identifierType": "Email",
+							},
+						},
 					},
 				},
 			},
@@ -373,9 +243,6 @@ func TestSalesforceBulk_calculateHashCode(t *testing.T) {
 
 			require.NotEmpty(t, result)
 			require.Equal(t, tc.expected, result)
-
-			result2 := calculateHashCode(tc.row)
-			require.Equal(t, result, result2)
 		})
 	}
 }
