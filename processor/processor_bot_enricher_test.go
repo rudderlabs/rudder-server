@@ -271,7 +271,11 @@ func (s *botScenario) sendEvent(url, writeKey, workspaceID, sourceID string) err
 			"payload": {
 				"userId": "identified_user_id_1",
 				"anonymousId": "anonymousId_1",
-				"type": "identify"
+				"type": "identify",
+				"messageId": "messageId_1",
+				"request_ip": "1.2.3.4",
+				"rudderId": "rudderId_1",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z"
 			}
 		}
 	]`, s.isBot, s.botAction, s.botName, s.botURL, s.isInvalidBrowser, workspaceID, sourceID))
