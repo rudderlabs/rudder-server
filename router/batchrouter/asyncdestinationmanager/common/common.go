@@ -98,6 +98,11 @@ type ImportParameters struct {
 	MetaData MetaDataT `json:"metadata"`
 }
 
+type ConnectionConfigMapKey struct {
+	SourceID      string
+	DestinationID string
+}
+
 type AsyncDestinationStruct struct {
 	ImportingJobIDs       []int64
 	FailedJobIDs          []int64
@@ -117,6 +122,7 @@ type AsyncDestinationStruct struct {
 	OriginalJobParameters map[int64]stdjson.RawMessage
 	PartFileNumber        int
 	SourceJobRunID        string
+	ConnectionConfig      map[ConnectionConfigMapKey]interface{}
 }
 
 type GetUploadStatsInput struct {
