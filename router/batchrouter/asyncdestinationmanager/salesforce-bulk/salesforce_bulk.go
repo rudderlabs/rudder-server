@@ -10,6 +10,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
@@ -115,7 +116,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		s.hashMapMutex.Unlock()
 
 		if err != nil {
-			s.logger.Errorn("Error creating CSV: %v", logger.NewErrorField(err))
+			s.logger.Errorn("Error creating CSV: %v", obskit.Error(err))
 			for _, job := range input {
 				if jobID, ok := job.Metadata["job_id"].(float64); ok {
 					allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
@@ -126,7 +127,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 
 		if len(insertedJobIDs) == 0 {
 			if err := os.Remove(csvFilePath); err != nil {
-				s.logger.Debugn("Failed to remove empty CSV file %s: %v", logger.NewStringField("csvFilePath", csvFilePath), logger.NewErrorField(err))
+				s.logger.Debugn("Failed to remove empty CSV file %s: %v", logger.NewStringField("csvFilePath", csvFilePath), obskit.Error(err))
 			}
 			s.logger.Errorn("No jobs fit in CSV, marking as failed")
 			for _, job := range input {
@@ -148,7 +149,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 			objectInfo.ExternalIDField,
 		)
 		if apiError != nil {
-			s.logger.Errorn("Error creating Salesforce job for operation upsert: %v", logger.NewField("apiError", apiError))
+			s.logger.Errorn("Error creating Salesforce job for operation upsert: %v", logger.NewStringField("apiErrorMessage", apiError.Message))
 			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
 			for _, job := range overflowedJobs {
 				allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
@@ -158,7 +159,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 
 		apiError = s.apiService.UploadData(sfJobID, csvFilePath)
 		if apiError != nil {
-			s.logger.Errorn("Error uploading data for operation upsert: %v", logger.NewField("apiError", apiError))
+			s.logger.Errorn("Error uploading data for operation upsert: %v", logger.NewStringField("apiErrorMessage", apiError.Message))
 			_ = s.apiService.DeleteJob(sfJobID)
 			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
 			for _, job := range overflowedJobs {
@@ -169,7 +170,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 
 		apiError = s.apiService.CloseJob(sfJobID)
 		if apiError != nil {
-			s.logger.Errorn("Error closing job for operation upsert: %v", logger.NewField("apiError", apiError))
+			s.logger.Errorn("Error closing job for operation upsert: %v", logger.NewStringField("apiErrorMessage", apiError.Message))
 			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
 			for _, job := range overflowedJobs {
 				allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
@@ -186,7 +187,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		})
 
 		if err := os.Remove(csvFilePath); err != nil {
-			s.logger.Debugn("Failed to remove CSV file %s: %v", logger.NewStringField("csvFilePath", csvFilePath), logger.NewErrorField(err))
+			s.logger.Debugn("Failed to remove CSV file %s: %v", logger.NewStringField("csvFilePath", csvFilePath), obskit.Error(err))
 		}
 
 		input = overflowedJobs
