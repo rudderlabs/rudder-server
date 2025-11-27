@@ -68,10 +68,10 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 
 	// Mutex to protect shared maps
 	var sharedMapsMutex sync.Mutex
-
+	srcHydrationEnabledMap := make(map[SourceIDT]bool)
 	for sourceId, jobs := range message.groupedEventsBySourceId {
 		g.Go(func() error {
-			var hydrationFailedReports *reportingtypes.PUReportedMetric
+			var hydrationFailedReports []*reportingtypes.PUReportedMetric
 			source, err := proc.getSourceBySourceID(string(sourceId))
 			if err != nil {
 				return err
@@ -94,9 +94,10 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 			sharedMapsMutex.Lock()
 			defer sharedMapsMutex.Unlock()
 
+			srcHydrationEnabledMap[sourceId] = true
 			// Append hydration failed reports if any
 			if hydrationFailedReports != nil {
-				message.reportMetrics = append(message.reportMetrics, hydrationFailedReports)
+				message.reportMetrics = append(message.reportMetrics, hydrationFailedReports...)
 			}
 
 			// If no hydrated jobs, remove entry from groupedEventsBySourceId
@@ -171,6 +172,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 		jobList:                       message.jobList,
 		sourceDupStats:                message.sourceDupStats,
 		dedupKeys:                     message.dedupKeys,
+		srcHydrationEnabledMap:        srcHydrationEnabledMap,
 	}, nil
 }
 
@@ -208,25 +210,36 @@ func (proc *Handle) hydrate(ctx context.Context, source *backendconfig.SourceT, 
 	}), nil
 }
 
-func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, jobs []types.TransformerEvent, err error) *reportingtypes.PUReportedMetric {
-	sampleEvent, _ := jsonrs.Marshal(jobs[0].Message)
-	eventName, _ := misc.MapLookup(jobs[0].Message, "event").(string)
-	eventType, _ := misc.MapLookup(jobs[0].Message, "type").(string)
-	return &reportingtypes.PUReportedMetric{
-		ConnectionDetails: reportingtypes.ConnectionDetails{
-			SourceID:           source.ID,
-			SourceDefinitionID: source.SourceDefinition.ID,
-			SourceCategory:     source.SourceDefinition.Category,
-		},
-		PUDetails: *reportingtypes.CreatePUDetails("", reportingtypes.SOURCE_HYDRATION, false, false),
-		StatusDetail: &reportingtypes.StatusDetail{
-			Status:         jobsdb.Failed.State,
-			Count:          int64(len(jobs)),
-			StatusCode:     http.StatusInternalServerError,
-			SampleResponse: err.Error(),
-			SampleEvent:    sampleEvent,
-			EventName:      eventName,
-			EventType:      eventType,
-		},
-	}
+func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, jobs []types.TransformerEvent, err error) []*reportingtypes.PUReportedMetric {
+	metricsMap := make(map[string]map[string]*reportingtypes.PUReportedMetric)
+	return lo.FilterMap(jobs, func(job types.TransformerEvent, _ int) (*reportingtypes.PUReportedMetric, bool) {
+		eventName, _ := misc.MapLookup(job.Message, "event").(string)
+		eventType, _ := misc.MapLookup(job.Message, "type").(string)
+		if _, ok := metricsMap[eventName]; !ok {
+			metricsMap[eventName] = make(map[string]*reportingtypes.PUReportedMetric)
+		}
+		if _, ok := metricsMap[eventName][eventType]; !ok {
+			sampleEvent, _ := jsonrs.Marshal(job.Message)
+			metricsMap[eventName][eventType] = &reportingtypes.PUReportedMetric{
+				ConnectionDetails: reportingtypes.ConnectionDetails{
+					SourceID:           source.ID,
+					SourceDefinitionID: source.SourceDefinition.ID,
+					SourceCategory:     source.SourceDefinition.Category,
+				},
+				PUDetails: *reportingtypes.CreatePUDetails(reportingtypes.DESTINATION_FILTER, reportingtypes.SOURCE_HYDRATION, false, false),
+				StatusDetail: &reportingtypes.StatusDetail{
+					Status:         jobsdb.Aborted.State,
+					Count:          1,
+					StatusCode:     http.StatusInternalServerError,
+					SampleResponse: err.Error(),
+					SampleEvent:    sampleEvent,
+					EventName:      eventName,
+					EventType:      eventType,
+				},
+			}
+			return metricsMap[eventName][eventType], true
+		}
+		metricsMap[eventName][eventType].StatusDetail.Count += 1
+		return nil, false
+	})
 }
