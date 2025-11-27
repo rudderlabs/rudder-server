@@ -2089,6 +2089,67 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
+		It("fills message properties in job metadata", func() {
+			properties := stream.MessageProperties{
+				RequestType:         "dummyRequestType",
+				RoutingKey:          "anonymousId_header<<>>anonymousId_1<<>>identified_user_id",
+				WorkspaceID:         "workspaceID",
+				SourceID:            "sourceID",
+				SourceJobRunID:      "sourceJobRunID",
+				SourceTaskRunID:     "sourceTaskRunID",
+				UserID:              "userID",
+				TraceID:             "traceId",
+				DestinationID:       "destinationID",
+				SourceType:          "sourceType",
+				ReceivedAt:          time.Date(2024, 1, 1, 1, 1, 1, 1, time.UTC),
+				RequestIP:           "dummyIP",
+				PartitionID:         "partitionID",
+				IsBot:               true,
+				BotAction:           "none",
+				BotName:             "botName",
+				BotURL:              "botURL",
+				BotIsInvalidBrowser: true,
+			}
+			msg := stream.Message{
+				Properties: properties,
+				Payload:    []byte(`{}`),
+			}
+			messages := []stream.Message{msg}
+			payload, err := jsonrs.Marshal(messages)
+			Expect(err).To(BeNil())
+
+			req := &webRequestT{
+				reqType:        "batch",
+				authContext:    rCtxEnabled,
+				done:           make(chan<- string),
+				requestPayload: payload,
+			}
+			jobsWithStats, err := gateway.extractJobsFromInternalBatchPayload("batch", req.requestPayload)
+			Expect(err).To(BeNil())
+			Expect(jobsWithStats).To(HaveLen(1))
+
+			job := jobsWithStats[0].job
+			Expect(job.UserID).To(Equal(properties.RoutingKey))
+			Expect(job.WorkspaceId).To(Equal(properties.WorkspaceID))
+			Expect(job.PartitionID).To(Equal(properties.PartitionID))
+			var params jobParams
+			err = jsonrs.Unmarshal(job.Parameters, &params)
+			Expect(err).To(BeNil())
+
+			Expect(params.SourceID).To(Equal(properties.SourceID))
+			Expect(params.SourceJobRunID).To(Equal(properties.SourceJobRunID))
+			Expect(params.SourceTaskRunID).To(Equal(properties.SourceTaskRunID))
+			Expect(params.UserID).To(Equal(properties.UserID))
+			Expect(params.TraceParent).To(Equal(properties.TraceID))
+			Expect(params.DestinationID).To(Equal(properties.DestinationID))
+			Expect(params.SourceCategory).To(Equal(properties.SourceType))
+			Expect(params.IsBot).To(Equal(properties.IsBot))
+			Expect(params.BotName).To(Equal(properties.BotName))
+			Expect(params.BotURL).To(Equal(properties.BotURL))
+			Expect(params.BotIsInvalidBrowser).To(Equal(properties.BotIsInvalidBrowser))
+			Expect(params.BotAction).To(Equal(properties.BotAction))
+		})
+
 		It("doesn't override if receivedAt or request_ip already exists in payload", func() {
 			properties := stream.MessageProperties{
 				RequestType:   "dummyRequestType",

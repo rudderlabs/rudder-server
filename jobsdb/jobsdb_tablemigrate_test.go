@@ -12,13 +12,16 @@ func TestJobsDBTableMigrations(t *testing.T) {
 	t.Run("13_partition_id_column", func(t *testing.T) {
 		postgres := startPostgres(t)
 
-		// Start JobsDB with DB version 12 (without partition_id column) to create initial tables
+		// Start JobsDB with DB version 12 and create initial tables
 		jd := NewForWrite("test", WithDBHandle(postgres.DB), withDatabaseTablesVersion(12))
 		require.NoError(t, jd.Start(), "it should be able to start JobsDB")
 		jd.TearDown()
+		// drop partition_id column
+		_, err := postgres.DB.Exec(`ALTER TABLE test_jobs_1 DROP COLUMN IF EXISTS partition_id`)
+		require.NoError(t, err, "it should be able to drop partition_id column")
 
 		// Add some data to ensure migration works fine with existing data
-		_, err := postgres.DB.Exec(`
+		_, err = postgres.DB.Exec(`
 			INSERT INTO test_jobs_1 
 				(uuid, workspace_id, user_id, custom_val, parameters, event_payload, event_count) 
 			VALUES 

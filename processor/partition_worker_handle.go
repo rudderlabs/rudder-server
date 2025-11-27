@@ -22,11 +22,11 @@ type workerHandle interface {
 	markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error
 	jobSplitter(ctx context.Context, jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob
 	preprocessStage(partition string, subJobs subJob, delay time.Duration) (*srcHydrationMessage, error)
+	srcHydrationStage(partition string, in *srcHydrationMessage) (*preTransformationMessage, error)
 	pretransformStage(partition string, preTrans *preTransformationMessage) (*transformationMessage, error)
 	userTransformStage(partition string, in *transformationMessage) *userTransformData
 	destinationTransformStage(partition string, in *userTransformData) *storeMessage
 	storeStage(partition string, pipelineIndex int, in *storeMessage)
-	srcHydrationStage(partition string, in *srcHydrationMessage) (*preTransformationMessage, error)
 }
 
 // workerHandleConfig is a struct containing the processor.Handle configuration relevant for workers
