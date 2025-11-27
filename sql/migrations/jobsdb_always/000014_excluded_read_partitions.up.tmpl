@@ -1,0 +1,7 @@
+{{ if .PartitioningEnabled }}
+CREATE TABLE IF NOT EXISTS {{$.Prefix}}_read_excluded_partitions (
+  partition_id TEXT PRIMARY KEY
+);
+COMMENT ON TABLE {{$.Prefix}}_read_excluded_partitions IS 'Maintains a list of partition IDs that should be excluded from read operations in the queue';
+COMMENT ON COLUMN {{$.Prefix}}_read_excluded_partitions.partition_id IS 'Unique identifier for the partition to exclude from reads.';
+{{ end }}
