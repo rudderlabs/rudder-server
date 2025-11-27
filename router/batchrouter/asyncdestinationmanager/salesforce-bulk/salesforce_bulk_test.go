@@ -6,6 +6,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -13,8 +16,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 )
 
 func TestSalesforceBulk_Transform(t *testing.T) {
@@ -398,11 +399,12 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 					"Email":     fmt.Sprintf("user%d@example.com", i),
 					"LargeData": string(largeData),
 				},
-				Metadata: map[string]interface{}{"job_id": float64(i), "externalId": []map[string]interface{}{{
-					"id":             fmt.Sprintf("user%d@example.com", i),
-					"identifierType": "Email",
-					"type":           "SALESFORCE_BULK_UPLOAD-Lead",
-				}},
+				Metadata: map[string]interface{}{
+					"job_id": float64(i), "externalId": []map[string]interface{}{{
+						"id":             fmt.Sprintf("user%d@example.com", i),
+						"identifierType": "Email",
+						"type":           "SALESFORCE_BULK_UPLOAD-Lead",
+					}},
 				},
 			})
 		}
@@ -535,5 +537,4 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, manager)
 	})
-
 }

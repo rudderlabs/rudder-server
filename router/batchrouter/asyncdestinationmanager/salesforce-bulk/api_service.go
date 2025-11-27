@@ -8,11 +8,12 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/tidwall/gjson"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
-	"github.com/tidwall/gjson"
 )
 
 func NewSalesforceAPIService(
@@ -200,7 +201,6 @@ func (s *SalesforceAPIService) makeRequest(
 	body io.Reader,
 	contentType string,
 ) ([]byte, *APIError) {
-
 	respBody, apiError := s.attemptRequest(method, endpoint, body, contentType)
 	if apiError == nil {
 		return respBody, nil
