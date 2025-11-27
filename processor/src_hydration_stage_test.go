@@ -7,6 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
 	"github.com/stretchr/testify/require"
@@ -124,6 +128,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.Equal(t, "message-2", hydratedTransformerEvents[1].Metadata.MessageID)
 		require.Equal(t, "Test Product 2", hydratedTransformerEvents[1].Message["productName"])
 		require.Equal(t, 39.99, hydratedTransformerEvents[1].Message["price"])
+
+		require.True(t, result.srcHydrationEnabledMap[SourceIDT(fblaSourceId)])
 	})
 
 	t.Run("Test events pass through unchanged when source doesn't support hydration", func(t *testing.T) {
@@ -184,6 +190,8 @@ func TestSrcHydrationStage(t *testing.T) {
 		require.Len(t, resultEvents, 1)
 		require.Equal(t, events[0], resultEvents[0])
 		require.Equal(t, "Simple Event", resultEvents[0].Message["event"])
+
+		require.False(t, result.srcHydrationEnabledMap[SourceIDT(sourceID)])
 	})
 
 	t.Run("Test error when getSourceBySourceID returns an error", func(t *testing.T) {
@@ -294,6 +302,146 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Assertions
 		require.NoError(t, err)
 		require.Nil(t, result.groupedEventsBySourceId[SourceIDT(fblaSourceId)])
+		require.Len(t, result.reportMetrics, 1)
+		sampleEvent, err := jsonrs.Marshal(events[0].Message)
+		require.NoError(t, err)
+
+		require.Equal(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{
+				SourceID:       fblaSourceId,
+				SourceCategory: "webhook",
+			},
+			PUDetails: reportingtypes.PUDetails{
+				InPU:       reportingtypes.DESTINATION_FILTER,
+				PU:         reportingtypes.SOURCE_HYDRATION,
+				TerminalPU: false,
+				InitialPU:  false,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:         "aborted",
+				Count:          1,
+				StatusCode:     500,
+				SampleResponse: "hydration error",
+				SampleEvent:    sampleEvent,
+				EventName:      "Product Viewed",
+				EventType:      "track",
+			},
+		})
+	})
+
+	t.Run("Test error when the hydration client returns an error during the Hydrate call - multiple events", func(t *testing.T) {
+		// Create test events
+		events := []types.TransformerEvent{
+			{
+				Message: map[string]interface{}{
+					"type":      "track",
+					"event":     "Product Viewed",
+					"productId": "12345",
+				},
+				Metadata: types.Metadata{
+					MessageID: "message-1",
+					SourceID:  fblaSourceId,
+				},
+			},
+			{
+				Message: map[string]interface{}{
+					"type":      "identify",
+					"event":     "signup",
+					"productId": "12345",
+				},
+				Metadata: types.Metadata{
+					MessageID: "message-1",
+					SourceID:  fblaSourceId,
+				},
+			},
+		}
+
+		// Setup mock transformer clients with error
+		transformerClients := transformer.NewSimpleClients()
+		transformerClients.SetSrcHydrationOutput(types.SrcHydrationResponse{}, errors.New("hydration error"))
+
+		// Setup test context
+		c := &testContext{}
+		c.Setup(t)
+		defer c.Finish()
+		// Create processor handle
+		conf := config.New()
+		proc := NewHandle(conf, transformerClients)
+		c.mockGatewayJobsDB.EXPECT().DeleteExecuting().AnyTimes()
+		Setup(proc, c, true, true, t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		err := proc.config.asyncInit.WaitContext(ctx)
+		require.NoError(t, err)
+
+		// Create test message
+		message := &srcHydrationMessage{
+			partition: "test-partition",
+			subJobs: subJob{
+				ctx: context.Background(),
+			},
+			eventSchemaJobsBySourceId: make(map[SourceIDT][]*jobsdb.JobT),
+			groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
+				SourceIDT(fblaSourceId): events,
+			},
+			eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+		}
+
+		// Execute the source hydration stage
+		result, err := proc.srcHydrationStage("test-partition", message)
+
+		// Assertions
+		require.NoError(t, err)
+		require.Nil(t, result.groupedEventsBySourceId[SourceIDT(fblaSourceId)])
+		require.Len(t, result.reportMetrics, 2)
+		sampleEvent1, err := jsonrs.Marshal(events[0].Message)
+		require.NoError(t, err)
+		sampleEvent2, err := jsonrs.Marshal(events[1].Message)
+		require.NoError(t, err)
+
+		require.Equal(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{
+				SourceID:       fblaSourceId,
+				SourceCategory: "webhook",
+			},
+			PUDetails: reportingtypes.PUDetails{
+				InPU:       reportingtypes.DESTINATION_FILTER,
+				PU:         reportingtypes.SOURCE_HYDRATION,
+				TerminalPU: false,
+				InitialPU:  false,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:         "aborted",
+				Count:          1,
+				StatusCode:     500,
+				SampleResponse: "hydration error",
+				SampleEvent:    sampleEvent1,
+				EventName:      "Product Viewed",
+				EventType:      "track",
+			},
+		})
+		require.Equal(t, result.reportMetrics[1], &reportingtypes.PUReportedMetric{
+			ConnectionDetails: reportingtypes.ConnectionDetails{
+				SourceID:       fblaSourceId,
+				SourceCategory: "webhook",
+			},
+			PUDetails: reportingtypes.PUDetails{
+				InPU:       reportingtypes.DESTINATION_FILTER,
+				PU:         reportingtypes.SOURCE_HYDRATION,
+				TerminalPU: false,
+				InitialPU:  false,
+			},
+			StatusDetail: &reportingtypes.StatusDetail{
+				Status:         "aborted",
+				Count:          1,
+				StatusCode:     500,
+				SampleResponse: "hydration error",
+				SampleEvent:    sampleEvent2,
+				EventName:      "signup",
+				EventType:      "identify",
+			},
+		})
 	})
 
 	t.Run("Test when JSON marshaling fails for event schema jobs", func(t *testing.T) {
