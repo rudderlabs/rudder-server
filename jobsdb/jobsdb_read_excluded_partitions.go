@@ -83,6 +83,8 @@ func (jd *Handle) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionI
 // loadReadExcludedPartitions loads the excluded read partitions from the database
 // and populates the excludedReadPartitions map in the JobsDB handle.
 func (jd *Handle) loadReadExcludedPartitions() error {
+	jd.excludedReadPartitionsLock.Lock()
+	defer jd.excludedReadPartitionsLock.Unlock()
 	if jd.conf.numPartitions == 0 {
 		// Partitioning is not enabled; nothing to read.
 		return nil
