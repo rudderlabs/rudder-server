@@ -253,7 +253,7 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 				testConfig.ObjectType = "Contact"
 			}
 
-			result, err := extractObjectInfo(tc.jobs, testConfig)
+			result, err := extractObjectInfo(tc.jobs)
 
 			if tc.wantErr {
 				require.Error(t, err)
@@ -322,7 +322,6 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 				"test-dest-123",
 				tc.jobs,
 				dataHashToJobID,
-				"upsert",
 			)
 
 			if tc.wantErr {
@@ -450,17 +449,17 @@ func TestSalesforceBulk_calculateHashFromRecord(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			hash := calculateHashFromRecord(tc.record, tc.csvHeaders, "delete")
+			hash := calculateHashFromRecord(tc.record, tc.csvHeaders)
 
 			require.NotEmpty(t, hash)
 
 			if tc.shouldMatch {
-				expectedHash := calculateHashWithOperation(tc.compareWith, "delete")
+				expectedHash := calculateHashCode(tc.compareWith)
 				require.Equal(t, expectedHash, hash,
 					"Hash from record should match hash from original CSV values")
 			}
 
-			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders, "delete")
+			hash2 := calculateHashFromRecord(tc.record, tc.csvHeaders)
 			require.Equal(t, hash, hash2, "Hash should be consistent across multiple calls")
 		})
 	}
@@ -472,7 +471,7 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 
 		csvHeaders := []string{"Email", "FirstName", "LastName"}
 		uploadRow := []string{"integration@example.com", "Test", "User"}
-		uploadHash := calculateHashWithOperation(uploadRow, "update")
+		uploadHash := calculateHashCode(uploadRow)
 
 		salesforceResult := map[string]string{
 			"Email":       "integration@example.com",
@@ -482,7 +481,7 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 			"sf__Created": "true",
 			"sf__Error":   "",
 		}
-		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders, "update")
+		resultHash := calculateHashFromRecord(salesforceResult, csvHeaders)
 
 		require.Equal(t, uploadHash, resultHash,
 			"Upload hash and result hash should match for same data")
@@ -502,8 +501,8 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 			"FirstName": "User",
 		}
 
-		hash1 := calculateHashFromRecord(record1, csvHeaders, "upsert")
-		hash2 := calculateHashFromRecord(record2, csvHeaders, "upsert")
+		hash1 := calculateHashFromRecord(record1, csvHeaders)
+		hash2 := calculateHashFromRecord(record2, csvHeaders)
 
 		require.NotEqual(t, hash1, hash2,
 			"Different records should produce different hashes")
@@ -544,7 +543,6 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 			"test-dest",
 			jobs,
 			dataHashToJobID,
-			"update",
 		)
 
 		require.NoError(t, err)
@@ -594,7 +592,6 @@ func TestSalesforceBulk_createCSVFile_SingleRowTooLarge(t *testing.T) {
 			"test-dest",
 			jobs,
 			dataHashToJobID,
-			"insert",
 		)
 
 		require.NoError(t, err)
@@ -620,7 +617,9 @@ func TestSalesforceBulk_extractOperationFromJob(t *testing.T) {
 			name: "extract operation from rudderOperation field",
 			job: common.AsyncJob{
 				Message: map[string]interface{}{
-					"Email":           "test@example.com",
+					"Email": "test@example.com",
+				},
+				Metadata: map[string]interface{}{
 					"rudderOperation": "delete",
 				},
 			},
@@ -641,7 +640,9 @@ func TestSalesforceBulk_extractOperationFromJob(t *testing.T) {
 			name: "fallback to default when rudderOperation is empty",
 			job: common.AsyncJob{
 				Message: map[string]interface{}{
-					"Email":           "test@example.com",
+					"Email": "test@example.com",
+				},
+				Metadata: map[string]interface{}{
 					"rudderOperation": "",
 				},
 			},
@@ -673,25 +674,33 @@ func TestSalesforceBulk_groupJobsByOperation(t *testing.T) {
 			jobs: []common.AsyncJob{
 				{
 					Message: map[string]interface{}{
-						"Email":           "insert@example.com",
+						"Email": "insert@example.com",
+					},
+					Metadata: map[string]interface{}{
 						"rudderOperation": "insert",
 					},
 				},
 				{
 					Message: map[string]interface{}{
-						"Email":           "update@example.com",
+						"Email": "update@example.com",
+					},
+					Metadata: map[string]interface{}{
 						"rudderOperation": "update",
 					},
 				},
 				{
 					Message: map[string]interface{}{
-						"Email":           "delete@example.com",
+						"Email": "delete@example.com",
+					},
+					Metadata: map[string]interface{}{
 						"rudderOperation": "delete",
 					},
 				},
 				{
 					Message: map[string]interface{}{
-						"Email":           "insert2@example.com",
+						"Email": "insert2@example.com",
+					},
+					Metadata: map[string]interface{}{
 						"rudderOperation": "insert",
 					},
 				},

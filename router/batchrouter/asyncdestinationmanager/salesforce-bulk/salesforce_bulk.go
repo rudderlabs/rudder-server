@@ -14,10 +14,61 @@ import (
 )
 
 func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
-	return common.GetMarshalledData(
-		gjson.GetBytes(job.EventPayload, "body.JSON").String(),
-		job.JobID,
-	)
+	// Parse the event payload directly
+	if !gjson.ValidBytes(job.EventPayload) {
+		return "", fmt.Errorf("invalid JSON in event payload")
+	}
+
+	// Extract required fields from the input
+	traits := gjson.GetBytes(job.EventPayload, "traits")
+	externalId := gjson.GetBytes(job.EventPayload, "context.externalId")
+
+	// Build the metadata object
+	metadata := make(map[string]interface{})
+	metadata["job_id"] = float64(job.JobID)
+
+	// We are supporting only upsert operation
+	metadata["rudderOperation"] = "upsert"
+
+	// Add externalId to metadata if it exists
+	var externalIdArray []interface{}
+	if externalId.Exists() {
+		if err := json.Unmarshal([]byte(externalId.Raw), &externalIdArray); err == nil {
+			metadata["externalId"] = externalIdArray
+		}
+	}
+
+	// Build the message object
+	message := make(map[string]interface{})
+
+	// Add all traits to message
+	if traits.Exists() && traits.IsObject() {
+		traits.ForEach(func(key, value gjson.Result) bool {
+			message[key.String()] = value.Value()
+			return true
+		})
+	}
+
+	externalIdObject, err := extractFromVDM(externalIdArray)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract externalId: %w", err)
+	}
+	// Add externalId field to message
+	message[externalIdObject.ExternalIDField] = externalIdObject.ExternalIDValue
+
+	// Create the final AsyncJob structure
+	asyncJob := common.AsyncJob{
+		Message:  message,
+		Metadata: metadata,
+	}
+
+	// Marshal and return
+	responsePayload, err := json.Marshal(asyncJob)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal async job: %w", err)
+	}
+
+	return string(responsePayload), nil
 }
 
 func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
@@ -37,7 +88,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	objectInfo, err := extractObjectInfo(input, s.config)
+	objectInfo, err := extractObjectInfo(input)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
@@ -47,111 +98,100 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 		}
 	}
 
-	jobsByOperation := groupJobsByOperation(input, s.config.Operation)
-
 	var allImportingJobIDs []int64
 	var allFailedJobIDs []int64
 	var sfJobs []SalesforceJobInfo
 
 	allFailedJobIDs = append(allFailedJobIDs, failedJobIDs...)
 
-	for operation, jobs := range jobsByOperation {
-		s.logger.Infof("Processing %d jobs for operation: %s", len(jobs), operation)
+	for len(input) > 0 {
+		s.hashMapMutex.Lock()
+		csvFilePath, csvHeaders, insertedJobIDs, overflowedJobs, err := createCSVFile(
+			destinationID,
+			input,
+			s.dataHashToJobID,
+		)
+		s.hashMapMutex.Unlock()
 
-		remainingJobs := jobs
-
-		for len(remainingJobs) > 0 {
-			s.hashMapMutex.Lock()
-			csvFilePath, csvHeaders, insertedJobIDs, overflowedJobs, err := createCSVFile(
-				destinationID,
-				remainingJobs,
-				s.dataHashToJobID,
-				operation,
-			)
-			s.hashMapMutex.Unlock()
-
-			if err != nil {
-				s.logger.Errorf("Error creating CSV for operation %s: %v", operation, err)
-				for _, job := range remainingJobs {
-					if jobID, ok := job.Metadata["job_id"].(float64); ok {
-						allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
-					}
+		if err != nil {
+			s.logger.Errorf("Error creating CSV: %v", err)
+			for _, job := range input {
+				if jobID, ok := job.Metadata["job_id"].(float64); ok {
+					allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
 				}
-				break
 			}
-
-			if len(insertedJobIDs) == 0 {
-				if err := os.Remove(csvFilePath); err != nil {
-					s.logger.Debugf("Failed to remove empty CSV file %s: %v", csvFilePath, err)
-				}
-				s.logger.Errorf("No jobs fit in CSV for operation %s, marking as failed", operation)
-				for _, job := range remainingJobs {
-					if jobID, ok := job.Metadata["job_id"].(float64); ok {
-						allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
-					}
-				}
-				break
-			}
-
-			s.logger.Infof("Created CSV with %d jobs for operation %s (batch %d of %d total)",
-				len(insertedJobIDs), operation, len(allImportingJobIDs)/100+1, len(jobs))
-
-			sfJobID, apiError := s.apiService.CreateJob(
-				objectInfo.ObjectType,
-				operation,
-				objectInfo.ExternalIDField,
-			)
-			if apiError != nil {
-				s.logger.Errorf("Error creating Salesforce job for operation %s: %v", operation, apiError)
-				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-				for _, job := range overflowedJobs {
-					allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
-				}
-				break
-			}
-
-			apiError = s.apiService.UploadData(sfJobID, csvFilePath)
-			if apiError != nil {
-				s.logger.Errorf("Error uploading data for operation %s: %v", operation, apiError)
-				_ = s.apiService.DeleteJob(sfJobID)
-				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-				for _, job := range overflowedJobs {
-					allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
-				}
-				break
-			}
-
-			apiError = s.apiService.CloseJob(sfJobID)
-			if apiError != nil {
-				s.logger.Errorf("Error closing job for operation %s: %v", operation, apiError)
-				allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
-				for _, job := range overflowedJobs {
-					allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
-				}
-				break
-			}
-
-			s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation: %s", sfJobID, operation)
-
-			allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
-			sfJobs = append(sfJobs, SalesforceJobInfo{
-				ID:        sfJobID,
-				Operation: operation,
-				Headers:   csvHeaders,
-			})
-
-			if err := os.Remove(csvFilePath); err != nil {
-				s.logger.Debugf("Failed to remove CSV file %s: %v", csvFilePath, err)
-			}
-
-			remainingJobs = overflowedJobs
+			break
 		}
+
+		if len(insertedJobIDs) == 0 {
+			if err := os.Remove(csvFilePath); err != nil {
+				s.logger.Debugf("Failed to remove empty CSV file %s: %v", csvFilePath, err)
+			}
+			s.logger.Errorf("No jobs fit in CSV, marking as failed")
+			for _, job := range input {
+				if jobID, ok := job.Metadata["job_id"].(float64); ok {
+					allFailedJobIDs = append(allFailedJobIDs, int64(jobID))
+				}
+			}
+			break
+		}
+
+		s.logger.Infof("Created CSV with %d jobs (batch %d of %d total)",
+			len(insertedJobIDs), len(allImportingJobIDs)/100+1, len(input))
+		sfJobID, apiError := s.apiService.CreateJob(
+			objectInfo.ObjectType,
+			"upsert",
+			objectInfo.ExternalIDField,
+		)
+		if apiError != nil {
+			s.logger.Errorf("Error creating Salesforce job for operation upsert: %v", apiError)
+			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+			for _, job := range overflowedJobs {
+				allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
+			}
+			break
+		}
+
+		apiError = s.apiService.UploadData(sfJobID, csvFilePath)
+		if apiError != nil {
+			s.logger.Errorf("Error uploading data for operation upsert: %v", apiError)
+			_ = s.apiService.DeleteJob(sfJobID)
+			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+			for _, job := range overflowedJobs {
+				allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
+			}
+			break
+		}
+
+		apiError = s.apiService.CloseJob(sfJobID)
+		if apiError != nil {
+			s.logger.Errorf("Error closing job for operation upsert: %v", apiError)
+			allFailedJobIDs = append(allFailedJobIDs, insertedJobIDs...)
+			for _, job := range overflowedJobs {
+				allFailedJobIDs = append(allFailedJobIDs, int64(job.Metadata["job_id"].(float64)))
+			}
+			break
+		}
+
+		s.logger.Infof("Successfully created and closed Salesforce Bulk job %s for operation upsert", sfJobID)
+
+		allImportingJobIDs = append(allImportingJobIDs, insertedJobIDs...)
+		sfJobs = append(sfJobs, SalesforceJobInfo{
+			ID:      sfJobID,
+			Headers: csvHeaders,
+		})
+
+		if err := os.Remove(csvFilePath); err != nil {
+			s.logger.Debugf("Failed to remove CSV file %s: %v", csvFilePath, err)
+		}
+
+		input = overflowedJobs
 	}
 
 	if len(allImportingJobIDs) == 0 {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(allFailedJobIDs, importingJobIDs...),
-			FailedReason:  "All operations failed to create Salesforce Bulk jobs",
+			FailedReason:  "Unable to upload data to Salesforce Bulk jobs, retrying in next batch",
 			FailedCount:   len(allFailedJobIDs) + len(importingJobIDs),
 			DestinationID: destinationID,
 		}
@@ -282,7 +322,6 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 		}
 
 		for i := range failedRecords {
-			failedRecords[i]["_operation"] = job.Operation
 			failedRecords[i]["_headers"] = strings.Join(job.Headers, ",")
 		}
 
@@ -294,7 +333,6 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 		}
 
 		for i := range successRecords {
-			successRecords[i]["_operation"] = job.Operation
 			successRecords[i]["_headers"] = strings.Join(job.Headers, ",")
 		}
 
@@ -360,10 +398,9 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 	defer s.hashMapMutex.RUnlock()
 
 	for _, failedRecord := range failedRecords {
-		operation := failedRecord["_operation"]
 		headersStr := failedRecord["_headers"]
 		headers := strings.Split(headersStr, ",")
-		hash := calculateHashFromRecord(failedRecord, headers, operation)
+		hash := calculateHashFromRecord(failedRecord, headers)
 		if jobIDs, exists := s.dataHashToJobID[hash]; exists {
 			for _, jobID := range jobIDs {
 				if jobID != 0 {
@@ -378,16 +415,33 @@ func (s *SalesforceBulkUploader) matchRecordsToJobs(
 		}
 	}
 
-	failedJobIDSet := make(map[int64]bool)
-	for _, jobID := range metadata.AbortedKeys {
-		failedJobIDSet[jobID] = true
-	}
-
-	for _, job := range importingList {
-		if !failedJobIDSet[job.JobID] {
-			metadata.SucceededKeys = append(metadata.SucceededKeys, job.JobID)
+	for _, successRecord := range successRecords {
+		headersStr := successRecord["_headers"]
+		headers := strings.Split(headersStr, ",")
+		hash := calculateHashFromRecord(successRecord, headers)
+		if jobIDs, exists := s.dataHashToJobID[hash]; exists {
+			for _, jobID := range jobIDs {
+				if jobID != 0 {
+					metadata.SucceededKeys = append(metadata.SucceededKeys, jobID)
+				}
+			}
 		}
 	}
 
+	if len(metadata.SucceededKeys)+len(metadata.AbortedKeys) != len(importingList) {
+		s.logger.Errorf("Number of succeeded and aborted keys do not match the number of importing jobs, %d + %d != %d", len(metadata.SucceededKeys), len(metadata.AbortedKeys), len(importingList))
+
+		successJobIDSet := make(map[int64]bool)
+		for _, jobID := range metadata.SucceededKeys {
+			successJobIDSet[jobID] = true
+		}
+
+		for _, job := range importingList {
+			if !successJobIDSet[job.JobID] {
+				metadata.FailedKeys = append(metadata.FailedKeys, job.JobID)
+				metadata.FailedReasons[job.JobID] = "Input hash is not found in the data hash to job ID map or the job is not found in the successRespons or failedResponse"
+			}
+		}
+	}
 	return metadata
 }

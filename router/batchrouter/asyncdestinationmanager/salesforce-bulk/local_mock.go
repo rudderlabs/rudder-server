@@ -10,13 +10,13 @@ import (
 
 // MockSalesforceAPIService is a mock implementation of SalesforceAPIServiceInterface
 type MockSalesforceAPIService struct {
-	CreateJobFunc              func(objectName, operation, externalIDField string) (string, *APIError)
-	UploadDataFunc             func(jobID, csvFilePath string) *APIError
-	CloseJobFunc               func(jobID string) *APIError
-	GetJobStatusFunc           func(jobID string) (*JobResponse, *APIError)
-	GetFailedRecordsFunc       func(jobID string) ([]map[string]string, *APIError)
-	GetSuccessfulRecordsFunc   func(jobID string) ([]map[string]string, *APIError)
-	DeleteJobFunc              func(jobID string) *APIError
+	CreateJobFunc            func(objectName, operation, externalIDField string) (string, *APIError)
+	UploadDataFunc           func(jobID, csvFilePath string) *APIError
+	CloseJobFunc             func(jobID string) *APIError
+	GetJobStatusFunc         func(jobID string) (*JobResponse, *APIError)
+	GetFailedRecordsFunc     func(jobID string) ([]map[string]string, *APIError)
+	GetSuccessfulRecordsFunc func(jobID string) ([]map[string]string, *APIError)
+	DeleteJobFunc            func(jobID string) *APIError
 }
 
 func (m *MockSalesforceAPIService) CreateJob(objectName, operation, externalIDField string) (string, *APIError) {
@@ -122,4 +122,3 @@ func (m *MockBackendConfig) Stop() {}
 func NewMockBackendConfig() *MockBackendConfig {
 	return &MockBackendConfig{}
 }
-

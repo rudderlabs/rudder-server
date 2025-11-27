@@ -16,12 +16,13 @@ import (
 )
 
 const (
-	maxFileSize = 100 * 1024 * 1024
+	maxFileSize = 100 * 1024 * 1024 // 100MB in bytes
 )
 
 type ObjectInfo struct {
 	ObjectType      string
 	ExternalIDField string
+	ExternalIDValue string
 }
 
 func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
@@ -50,7 +51,7 @@ func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	return jobs, nil
 }
 
-func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*ObjectInfo, error) {
+func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
 		return nil, fmt.Errorf("no jobs to process")
 	}
@@ -60,16 +61,7 @@ func extractObjectInfo(jobs []common.AsyncJob, config DestinationConfig) (*Objec
 	if externalIDRaw, ok := firstJob.Metadata["externalId"]; ok {
 		return extractFromVDM(externalIDRaw)
 	}
-
-	objectType := config.ObjectType
-	if objectType == "" {
-		objectType = "Lead"
-	}
-
-	return &ObjectInfo{
-		ObjectType:      objectType,
-		ExternalIDField: "Email",
-	}, nil
+	return nil, fmt.Errorf("externalId not found in the first job")
 }
 
 func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
@@ -87,15 +79,13 @@ func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
 	if typeStr == "" {
 		return nil, fmt.Errorf("externalId type is required")
 	}
-
-	objectType := strings.Replace(typeStr, "Salesforce-", "", 1)
-	objectType = strings.Replace(objectType, "salesforce-", "", 1)
-
+	objectType := strings.Replace(typeStr, "SALESFORCE_BULK_UPLOAD-", "", 1)
 	identifierType, _ := externalIDMap["identifierType"].(string)
-
+	identifierValue, _ := externalIDMap["id"].(string)
 	return &ObjectInfo{
 		ObjectType:      objectType,
 		ExternalIDField: identifierType,
+		ExternalIDValue: identifierValue,
 	}, nil
 }
 
@@ -103,9 +93,8 @@ func createCSVFile(
 	destinationID string,
 	input []common.AsyncJob,
 	dataHashToJobID map[string][]int64,
-	operation string,
 ) (string, []string, []int64, []common.AsyncJob, error) {
-	csvFilePath := fmt.Sprintf("/tmp/salesforce_%s_%d.csv", destinationID, time.Now().Unix())
+	csvFilePath := fmt.Sprintf("/tmp/rudder-async-destination-logs/salesforce_%s_%d.csv", destinationID, time.Now().Unix())
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
 		return "", nil, nil, nil, fmt.Errorf("creating CSV file: %w", err)
@@ -125,9 +114,7 @@ func createCSVFile(
 	headerSet := make(map[string]bool)
 	for _, job := range input {
 		for key := range job.Message {
-			if key != "rudderOperation" {
-				headerSet[key] = true
-			}
+			headerSet[key] = true
 		}
 	}
 
@@ -179,7 +166,7 @@ func createCSVFile(
 		currentSize += rowSize
 		insertedJobIDs = append(insertedJobIDs, jobID)
 
-		hash := calculateHashWithOperation(row, operation)
+		hash := calculateHashCode(row)
 		dataHashToJobID[hash] = append(dataHashToJobID[hash], jobID)
 	}
 
@@ -192,22 +179,16 @@ func calculateHashCode(row []string) string {
 	return fmt.Sprintf("%x", hash)
 }
 
-func calculateHashWithOperation(row []string, operation string) string {
-	joined := strings.Join(append([]string{operation}, row...), ",")
-	hash := sha256.Sum256([]byte(joined))
-	return fmt.Sprintf("%x", hash)
-}
-
-func calculateHashFromRecord(record map[string]string, csvHeaders []string, operation string) string {
+func calculateHashFromRecord(record map[string]string, csvHeaders []string) string {
 	values := make([]string, 0, len(csvHeaders))
 	for _, header := range csvHeaders {
 		values = append(values, record[header])
 	}
-	return calculateHashWithOperation(values, operation)
+	return calculateHashCode(values)
 }
 
 func extractOperationFromJob(job common.AsyncJob, defaultOperation string) string {
-	if operation, ok := job.Message["rudderOperation"].(string); ok && operation != "" {
+	if operation, ok := job.Metadata["rudderOperation"].(string); ok && operation != "" {
 		return operation
 	}
 	return defaultOperation

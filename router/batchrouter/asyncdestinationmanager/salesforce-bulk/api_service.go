@@ -7,21 +7,25 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
+	"github.com/tidwall/gjson"
 )
 
 func NewSalesforceAPIService(
-	authService SalesforceAuthServiceInterface,
 	logger logger.Logger,
+	destinationInfo *oauthv2.DestinationInfo,
 	apiVersion string,
+	client *http.Client,
 ) *SalesforceAPIService {
 	return &SalesforceAPIService{
-		authService: authService,
-		logger:      logger,
-		apiVersion:  apiVersion,
+		logger:          logger,
+		destinationInfo: destinationInfo,
+		apiVersion:      apiVersion,
+		client:          client,
 	}
 }
 
@@ -48,16 +52,7 @@ func (s *SalesforceAPIService) CreateJob(
 		}
 	}
 
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return "", &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
-
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest", instanceURL, s.apiVersion)
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest", s.apiVersion)
 
 	respBody, apiErr := s.makeRequest("POST", endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
@@ -89,16 +84,7 @@ func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 	}
 	defer file.Close()
 
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
-
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/batches", instanceURL, s.apiVersion, jobID)
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s/batches", s.apiVersion, jobID)
 
 	_, apiErr := s.makeRequest("PUT", endpoint, file, "text/csv")
 	if apiErr != nil {
@@ -114,16 +100,7 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 	reqBody := map[string]string{"state": "UploadComplete"}
 	body, _ := jsonrs.Marshal(reqBody)
 
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
-
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s", instanceURL, s.apiVersion, jobID)
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s", s.apiVersion, jobID)
 
 	_, apiErr := s.makeRequest("PATCH", endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
@@ -136,18 +113,9 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 }
 
 func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return nil, &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s", s.apiVersion, jobID)
 
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s", instanceURL, s.apiVersion, jobID)
-
-	respBody, apiErr := s.makeRequest("GET", endpoint, nil, "")
+	respBody, apiErr := s.makeRequest("GET", endpoint, bytes.NewReader([]byte{}), "")
 	if apiErr != nil {
 		return nil, apiErr
 	}
@@ -165,51 +133,24 @@ func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIErr
 }
 
 func (s *SalesforceAPIService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return nil, &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
-
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/failedResults", instanceURL, s.apiVersion, jobID)
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s/failedResults", s.apiVersion, jobID)
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *SalesforceAPIService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return nil, &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
-
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s/successfulResults", instanceURL, s.apiVersion, jobID)
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s/successfulResults", s.apiVersion, jobID)
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *SalesforceAPIService) DeleteJob(jobID string) *APIError {
-	instanceURL, err := s.authService.GetInstanceURL()
-	if err != nil {
-		return &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting instance URL: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
+	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s", s.apiVersion, jobID)
 
-	endpoint := fmt.Sprintf("%s/services/data/%s/jobs/ingest/%s", instanceURL, s.apiVersion, jobID)
-
-	_, apiErr := s.makeRequest("DELETE", endpoint, nil, "")
+	_, apiErr := s.makeRequest("DELETE", endpoint, bytes.NewReader([]byte{}), "")
 	return apiErr
 }
 
 func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]string, *APIError) {
-	respBody, apiErr := s.makeRequest("GET", endpoint, nil, "")
+	respBody, apiErr := s.makeRequest("GET", endpoint, bytes.NewReader([]byte{}), "")
 	if apiErr != nil {
 		return nil, apiErr
 	}
@@ -259,75 +200,10 @@ func (s *SalesforceAPIService) makeRequest(
 	body io.Reader,
 	contentType string,
 ) ([]byte, *APIError) {
-	// Buffer small bodies (JSON) so we can retry them
-	// Large bodies (CSV files) are passed as *os.File and should not be buffered
-	var bodyBytes []byte
-	var canRetry bool
 
-	if body != nil {
-		// Check if it's a file (don't buffer large files)
-		if _, isFile := body.(*os.File); isFile {
-			canRetry = false
-		} else {
-			// Buffer the body so we can retry
-			var err error
-			bodyBytes, err = io.ReadAll(body)
-			if err != nil {
-				return nil, &APIError{
-					StatusCode: 500,
-					Message:    fmt.Sprintf("reading request body: %v", err),
-					Category:   "ServerError",
-				}
-			}
-			canRetry = true
-		}
-	} else {
-		canRetry = true
-	}
-
-	// Create body reader for initial attempt
-	var bodyReader io.Reader
-	if bodyBytes != nil {
-		bodyReader = bytes.NewReader(bodyBytes)
-	} else {
-		bodyReader = body
-	}
-
-	// Initial attempt
-	respBody, apiError := s.attemptRequest(method, endpoint, bodyReader, contentType)
+	respBody, apiError := s.attemptRequest(method, endpoint, body, contentType)
 	if apiError == nil {
 		return respBody, nil
-	}
-
-	// Retry logic for token refresh errors
-	const maxRetries = 2
-	if canRetry && apiError.Category == "RefreshToken" {
-		for retryCount := 0; retryCount < maxRetries; retryCount++ {
-			s.logger.Infof("Retrying Salesforce API request after token error (attempt %d/%d)", retryCount+1, maxRetries)
-
-			// Clear cached token to force refresh on next GetAccessToken call
-			if authSvc, ok := s.authService.(*SalesforceAuthService); ok {
-				authSvc.clearToken()
-			}
-
-			// Small backoff
-			time.Sleep(time.Duration((retryCount+1)*2) * time.Second)
-
-			// Recreate body reader from buffered bytes
-			if bodyBytes != nil {
-				bodyReader = bytes.NewReader(bodyBytes)
-			}
-
-			respBody, apiError = s.attemptRequest(method, endpoint, bodyReader, contentType)
-			if apiError == nil {
-				return respBody, nil
-			}
-
-			// If it's not a token error anymore, stop retrying
-			if apiError.Category != "RefreshToken" {
-				break
-			}
-		}
 	}
 
 	return nil, apiError
@@ -338,15 +214,6 @@ func (s *SalesforceAPIService) attemptRequest(
 	body io.Reader,
 	contentType string,
 ) ([]byte, *APIError) {
-	token, err := s.authService.GetAccessToken()
-	if err != nil {
-		return nil, &APIError{
-			StatusCode: 500,
-			Message:    fmt.Sprintf("getting access token: %v", err),
-			Category:   "RefreshToken",
-		}
-	}
-
 	req, err := http.NewRequest(method, endpoint, body)
 	if err != nil {
 		return nil, &APIError{
@@ -356,13 +223,13 @@ func (s *SalesforceAPIService) attemptRequest(
 		}
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), s.destinationInfo))
+
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, &APIError{
 			StatusCode: 500,
@@ -371,8 +238,12 @@ func (s *SalesforceAPIService) attemptRequest(
 		}
 	}
 	defer resp.Body.Close()
-
 	respBody, err := io.ReadAll(resp.Body)
+	fmt.Println("response", string(respBody))
+	originalResponse := gjson.GetBytes(respBody, "originalResponse").String()
+	if originalResponse != "" {
+		respBody = []byte(originalResponse)
+	}
 	if err != nil {
 		return nil, &APIError{
 			StatusCode: 500,

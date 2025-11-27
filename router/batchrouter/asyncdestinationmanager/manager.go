@@ -46,7 +46,7 @@ func newRegularManager(
 	case "SNOWPIPE_STREAMING":
 		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
 	case "SALESFORCE_BULK_UPLOAD":
-		return salesforcebulk.NewManager(logger, statsFactory, destination, backendConfig)
+		return salesforcebulk.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }

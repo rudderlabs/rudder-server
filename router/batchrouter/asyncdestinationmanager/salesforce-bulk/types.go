@@ -1,6 +1,7 @@
 package salesforcebulk
 
 import (
+	"net/http"
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -21,15 +22,9 @@ type SalesforceBulkUploader struct {
 	logger          logger.Logger
 	statsFactory    stats.Stats
 	apiService      SalesforceAPIServiceInterface
-	authService     SalesforceAuthServiceInterface
 	dataHashToJobID map[string][]int64
-	csvHeaders      []string
 	hashMapMutex    sync.RWMutex
-}
-
-type SalesforceAuthServiceInterface interface {
-	GetAccessToken() (string, error)
-	GetInstanceURL() (string, error)
+	destinationInfo *oauthv2.DestinationInfo
 }
 
 type SalesforceAuthService struct {
@@ -38,10 +33,6 @@ type SalesforceAuthService struct {
 	workspaceID string
 	accountID   string
 	destID      string
-	apiVersion  string
-	accessToken string
-	instanceURL string
-	tokenExpiry int64
 }
 
 type SalesforceAPIServiceInterface interface {
@@ -55,15 +46,15 @@ type SalesforceAPIServiceInterface interface {
 }
 
 type SalesforceAPIService struct {
-	authService SalesforceAuthServiceInterface
-	logger      logger.Logger
-	apiVersion  string
+	logger          logger.Logger
+	destinationInfo *oauthv2.DestinationInfo
+	apiVersion      string
+	client          *http.Client
 }
 
 type SalesforceJobInfo struct {
-	ID        string   `json:"id"`
-	Operation string   `json:"operation"`
-	Headers   []string `json:"headers"`
+	ID      string   `json:"id"`
+	Headers []string `json:"headers"`
 }
 
 type JobResponse struct {

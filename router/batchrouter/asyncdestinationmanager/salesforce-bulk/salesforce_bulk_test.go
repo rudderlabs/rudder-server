@@ -27,24 +27,57 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 			job: &jobsdb.JobT{
 				JobID: 123,
 				EventPayload: []byte(`{
-					"body": {
-						"JSON": {
-							"Email": "test@example.com",
-							"FirstName": "John",
-							"LastName": "Doe"
-						}
-					}
+					"channel": "sources",
+					"context": {
+						"externalId": [
+							{
+								"id": "evelyn.gonzalez@example.com",
+								"identifierType": "Email",
+								"type": "SALESFORCE_BULK_UPLOAD-Lead"
+							}
+						],
+						"mappedToDestination": "true"
+					},
+					"traits": {
+						"City": "Phoenix",
+						"Company": "2025-11-25T03:45:21.14287Z",
+						"Country": "USA",
+						"CreatedDate": "2025-11-25T03:45:21.14287Z",
+						"FirstName": "Evelyn",
+						"Industry": "AZ",
+						"LastName": "Gonzalez",
+						"Phone": "555-111-0020"
+					},
+					"type": "identify",
+					"userId": "evelyn.gonzalez@example.com"
 				}`),
 			},
 			wantErr: false,
 		},
 		{
-			name: "transform with empty body.JSON",
+			name: "successful transform with valid payload",
 			job: &jobsdb.JobT{
-				JobID:        456,
-				EventPayload: []byte(`{"body": {"JSON": {}}}`),
+				JobID: 123,
+				EventPayload: []byte(`{
+					"channel": "sources",
+					"context": {
+						"mappedToDestination": "true"
+					},
+					"traits": {
+						"City": "Phoenix",
+						"Company": "2025-11-25T03:45:21.14287Z",
+						"Country": "USA",
+						"CreatedDate": "2025-11-25T03:45:21.14287Z",
+						"FirstName": "Evelyn",
+						"Industry": "AZ",
+						"LastName": "Gonzalez",
+						"Phone": "555-111-0020"
+					},
+					"type": "identify",
+					"userId": "evelyn.gonzalez@example.com"
+				}`),
 			},
-			wantErr: false,
+			wantErr: true,
 		},
 	}
 
@@ -113,7 +146,6 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		mockAPI := &MockSalesforceAPIService{
 			CreateJobFunc: func(objectName, operation, externalIDField string) (string, *APIError) {
 				require.Equal(t, "Lead", objectName)
-				require.Equal(t, "insert", operation)
 				return "sf-job-123", nil
 			},
 			UploadDataFunc: func(jobID, csvFilePath string) *APIError {
@@ -157,7 +189,6 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, params.Jobs, 1)
 		require.Equal(t, "sf-job-123", params.Jobs[0].ID)
-		require.Equal(t, "insert", params.Jobs[0].Operation)
 
 		// Verify CSV file was cleaned up after upload
 		_, err = os.Stat(capturedCSVPath)
@@ -631,6 +662,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		mockBackendConfig := NewMockBackendConfig()
 
 		manager, err := NewManager(
+			nil,
 			logger.NOP,
 			stats.NOP,
 			destination,
@@ -656,6 +688,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		mockBackendConfig := NewMockBackendConfig()
 
 		manager, err := NewManager(
+			nil,
 			logger.NOP,
 			stats.NOP,
 			destination,
