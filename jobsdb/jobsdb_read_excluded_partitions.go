@@ -94,21 +94,18 @@ func (jd *Handle) loadReadExcludedPartitions() error {
 		return fmt.Errorf("querying read excluded partitions: %w", err)
 	}
 	defer rows.Close()
-	if rows != nil {
-		defer rows.Close()
-		for rows.Next() {
-			var partitionName string
-			if err := rows.Scan(&partitionName); err != nil {
-				return fmt.Errorf("scanning read excluded partition: %w", err)
-			}
-			if jd.excludedReadPartitions == nil {
-				jd.excludedReadPartitions = make(map[string]struct{})
-			}
-			jd.excludedReadPartitions[partitionName] = struct{}{}
+	for rows.Next() {
+		var partitionName string
+		if err := rows.Scan(&partitionName); err != nil {
+			return fmt.Errorf("scanning read excluded partition: %w", err)
 		}
-		if err = rows.Err(); err != nil {
-			return fmt.Errorf("iterating read excluded partitions: %w", err)
+		if jd.excludedReadPartitions == nil {
+			jd.excludedReadPartitions = make(map[string]struct{})
 		}
+		jd.excludedReadPartitions[partitionName] = struct{}{}
+	}
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("iterating read excluded partitions: %w", err)
 	}
 	return nil
 }
