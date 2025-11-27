@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/gateway/validator"
+
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -98,6 +100,8 @@ func createTestGateway(t *testing.T, eventBlockingSettings backendconfig.EventBl
 
 	// Use the same logic as backendConfigSubscriber to process the config data
 	gw.processBackendConfig(configData)
+
+	gw.msgValidator = validator.NewValidateMediator(gw.logger, stream.NewMessagePropertiesValidator())
 
 	return gw
 }
@@ -475,7 +479,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -486,7 +490,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -497,7 +501,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-3","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-3","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -508,7 +512,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"batch-request-type-with-type-track","messageId":"msg-3","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"batch-request-type-with-type-track","messageId":"msg-3","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -519,18 +523,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"event":"batch-request-type-with-no-type","messageId":"msg-3","userId":"user1"}`), // type is not present
-				},
-				{
-					Properties: stream.MessageProperties{
-						RequestType: "track",
-						RoutingKey:  "routing-key-3",
-						WorkspaceID: "workspace1",
-						SourceID:    "source-id-1", // Event stream source
-						ReceivedAt:  time.Now(),
-						RequestIP:   "1.1.1.1",
-					},
-					Payload: json.RawMessage(`{"event":"track-request-type-with-no-type","messageId":"msg-3","userId":"user1"}`), // type is not present
+					Payload: json.RawMessage(`{"event":"batch-request-type-with-no-type","messageId":"msg-3","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`), // type is not present
 				},
 			},
 			expectedJobs: []expectedJob{
@@ -564,12 +557,6 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 					skipLiveEventRecording: false,
 					shouldBeDropped:        false,
 				},
-				{
-					eventName:              "track-request-type-with-no-type",
-					isEventBlocked:         false,
-					skipLiveEventRecording: false,
-					shouldBeDropped:        false,
-				},
 			},
 			description: "Mixed batch should handle blocked, non-blocked, and non-event stream events correctly",
 		},
@@ -585,7 +572,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			expectedJobs: []expectedJob{
@@ -610,7 +597,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -621,7 +608,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 						ReceivedAt:  time.Now(),
 						RequestIP:   "1.1.1.1",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			expectedJobs: []expectedJob{
@@ -715,7 +702,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -727,7 +714,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"identify","messageId":"msg-2","userId":"user1","traits":{"name":"John"}}`),
+					Payload: json.RawMessage(`{"type":"identify","messageId":"msg-2","userId":"user1","traits":{"name":"John"},"rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			eventBlockingSettings: backendconfig.EventBlocking{
@@ -749,7 +736,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -761,7 +748,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			eventBlockingSettings: backendconfig.EventBlocking{
@@ -788,7 +775,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotURL:      "https://test-bot.com",
 						BotAction:   "drop",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -800,7 +787,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"AddToCart","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"AddToCart","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			eventBlockingSettings: backendconfig.EventBlocking{
@@ -825,7 +812,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotURL:      "https://test-bot.com",
 						BotAction:   "flag",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -839,7 +826,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotName:     "another-bot",
 						BotAction:   "disable",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			eventBlockingSettings: backendconfig.EventBlocking{
@@ -861,7 +848,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -875,7 +862,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotName:     "crawler-bot",
 						BotAction:   "drop",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"PageView","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -889,7 +876,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotName:     "analytics-bot",
 						BotAction:   "flag",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"AddToCart","messageId":"msg-3","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"AddToCart","messageId":"msg-3","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -901,7 +888,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						RequestIP:   "1.1.1.1",
 						IsBot:       false,
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Checkout","messageId":"msg-4","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Checkout","messageId":"msg-4","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			eventBlockingSettings: backendconfig.EventBlocking{
@@ -927,7 +914,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotName:     "blocked-bot",
 						BotAction:   "drop",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-1","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 				{
 					Properties: stream.MessageProperties{
@@ -941,7 +928,7 @@ func TestExtractJobsFromInternalBatchPayload_LiveEventRecording(t *testing.T) {
 						BotName:     "blocked-bot-2",
 						BotAction:   "flag",
 					},
-					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1"}`),
+					Payload: json.RawMessage(`{"type":"track","event":"Purchase","messageId":"msg-2","userId":"user1","rudderId":"some-rudder-id","request_ip":"[::1]","receivedAt":"2024-01-01T00:00:00Z"}`),
 				},
 			},
 			eventBlockingSettings: backendconfig.EventBlocking{

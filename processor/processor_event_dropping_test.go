@@ -355,23 +355,31 @@ func (s *eventDropScenario) sendEvents(url, writeKey, workspaceID, sourceID stri
 		var eventPayload string
 		if config.eventType == "track" {
 			eventPayload = fmt.Sprintf(`{
-				"userId": "user_%d",
-				"anonymousId": "anonymousId_%d",
+				"userId": "user_%[1]d",
+				"anonymousId": "anonymousId_%[1]d",
 				"type": "track",
-				"event": "%s",
+				"event": "%[2]s",
 				"properties": {
 					"testProperty": "testValue"
-				}
-			}`, i+1, i+1, config.eventName)
+				},
+				"messageId": "messageId_%[1]d",
+				"request_ip": "1.2.3.4",
+				"rudderId": "rudderId_1",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z"
+			}`, i+1, config.eventName)
 		} else {
 			eventPayload = fmt.Sprintf(`{
-				"userId": "user_%d",
-				"anonymousId": "anonymousId_%d",
-				"type": "identify",
+				"userId": "user_%[1]d",
+				"anonymousId": "anonymousId_%[1]d",
+				"type": "%[2]s",
 				"traits": {
 					"testTrait": "testValue"
-				}
-			}`, i+1, i+1)
+				},
+				"messageId": "messageId_%[1]d",
+				"request_ip": "1.2.3.4",
+				"rudderId": "rudderId_1",
+				"receivedAt": "2024-01-01T01:01:01.000000001Z"
+			}`, i+1, config.eventType)
 		}
 
 		// Wrap each event with its properties
