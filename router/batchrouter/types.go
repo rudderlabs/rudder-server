@@ -70,10 +70,43 @@ type getReportMetricsParams struct {
 }
 
 type setMultipleJobStatusParams struct {
-	AsyncOutput           common.AsyncUploadOutput
-	Attempted             bool
-	AttemptNums           map[int64]int
-	FirstAttemptedAts     map[int64]time.Time
-	OriginalJobParameters map[int64]stdjson.RawMessage
-	JobsList              []*jobsdb.JobT
+	asyncJobMetadata
+	AsyncOutput common.AsyncUploadOutput
+	Attempted   bool
+	JobsList    []*jobsdb.JobT
+}
+
+// asyncJobMetadata holds metadata related to async jobs
+type asyncJobMetadata struct {
+	AttemptNums       map[int64]int                // jobID -> attemptNum
+	FirstAttemptedAts map[int64]time.Time          // jobID -> first attempted at
+	JobParameters     map[int64]stdjson.RawMessage // jobID -> job parameters
+	PartitionIDs      map[int64]string             // jobID -> partitionID
+}
+
+// newAsyncJobMetadata creates asyncJobMetadata from a list of jobs
+func newAsyncJobMetadata(jobList []*jobsdb.JobT) asyncJobMetadata {
+	metadata := asyncJobMetadata{
+		AttemptNums:       make(map[int64]int),
+		FirstAttemptedAts: make(map[int64]time.Time),
+		JobParameters:     make(map[int64]stdjson.RawMessage),
+		PartitionIDs:      make(map[int64]string),
+	}
+	for _, job := range jobList {
+		metadata.AttemptNums[job.JobID] = job.LastJobStatus.AttemptNum
+		metadata.FirstAttemptedAts[job.JobID] = getFirstAttemptAtFromErrorResponse(job.LastJobStatus.ErrorResponse)
+		metadata.JobParameters[job.JobID] = job.Parameters
+		metadata.PartitionIDs[job.JobID] = job.PartitionID
+	}
+	return metadata
+}
+
+// newAsyncJobMetadataFromDestinationStruct creates asyncJobMetadata from an AsyncDestinationStruct
+func newAsyncJobMetadataFromDestinationStruct(asyncDestinationStruct *common.AsyncDestinationStruct) asyncJobMetadata {
+	return asyncJobMetadata{
+		AttemptNums:       asyncDestinationStruct.AttemptNums,
+		FirstAttemptedAts: asyncDestinationStruct.FirstAttemptedAts,
+		JobParameters:     asyncDestinationStruct.JobParameters,
+		PartitionIDs:      asyncDestinationStruct.PartitionIDs,
+	}
 }

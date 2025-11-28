@@ -174,14 +174,14 @@ func TestSFTP(t *testing.T) {
 			payload[id] = rawMessage
 
 			asyncDestination := common.AsyncDestinationStruct{
-				ImportingJobIDs:       []int64{1014, 1015, 1016, 1017},
-				FileName:              filePath,
-				Destination:           &destinations[0],
-				Manager:               manager,
-				OriginalJobParameters: payload,
-				CreatedAt:             now,
-				PartFileNumber:        1,
-				SourceJobRunID:        "someJobRunId_1",
+				ImportingJobIDs: []int64{1014, 1015, 1016, 1017},
+				FileName:        filePath,
+				Destination:     &destinations[0],
+				Manager:         manager,
+				JobParameters:   payload,
+				CreatedAt:       now,
+				PartFileNumber:  1,
+				SourceJobRunID:  "someJobRunId_1",
 			}
 			expected := common.AsyncUploadOutput{
 				DestinationID:   "destination_id_1",

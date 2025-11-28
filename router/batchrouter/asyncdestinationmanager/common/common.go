@@ -99,24 +99,28 @@ type ImportParameters struct {
 }
 
 type AsyncDestinationStruct struct {
-	ImportingJobIDs       []int64
-	FailedJobIDs          []int64
-	Exists                bool
-	Size                  int
-	CreatedAt             time.Time
-	FileName              string
-	Count                 int
-	CanUpload             bool
-	UploadInProgress      bool
-	UploadMutex           sync.RWMutex
-	DestinationUploadURL  string
-	Destination           *backendconfig.DestinationT
-	Manager               AsyncDestinationManager
-	AttemptNums           map[int64]int
-	FirstAttemptedAts     map[int64]time.Time
-	OriginalJobParameters map[int64]stdjson.RawMessage
-	PartFileNumber        int
-	SourceJobRunID        string
+	ImportingJobIDs      []int64
+	FailedJobIDs         []int64
+	Exists               bool
+	Size                 int
+	CreatedAt            time.Time
+	FileName             string
+	Count                int
+	CanUpload            bool
+	UploadInProgress     bool
+	UploadMutex          sync.RWMutex
+	DestinationUploadURL string
+	Destination          *backendconfig.DestinationT
+	Manager              AsyncDestinationManager
+	PartFileNumber       int
+	SourceJobRunID       string
+
+	// Maps jobID to various metadata
+
+	AttemptNums       map[int64]int
+	FirstAttemptedAts map[int64]time.Time
+	PartitionIDs      map[int64]string
+	JobParameters     map[int64]stdjson.RawMessage
 }
 
 type GetUploadStatsInput struct {
