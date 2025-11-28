@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/klaviyobulkupload"
 	lyticsBulkUpload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/lytics_bulk_upload"
 	marketobulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/marketo-bulk-upload"
+	salesforcebulkupload "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/salesforce-bulk-upload"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/sftp"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/yandexmetrica"
@@ -44,6 +45,8 @@ func newRegularManager(
 		return lyticsBulkUpload.NewManager(logger, statsFactory, destination)
 	case "SNOWPIPE_STREAMING":
 		return snowpipestreaming.New(conf, logger, statsFactory, destination), nil
+	case "SALESFORCE_BULK_UPLOAD":
+		return salesforcebulkupload.NewManager(conf, logger, statsFactory, destination, backendConfig)
 	}
 	return nil, errors.New("invalid destination type")
 }
