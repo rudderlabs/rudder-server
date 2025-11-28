@@ -21,18 +21,18 @@ func NewAPIService(
 	logger logger.Logger,
 	destinationInfo *oauthv2.DestinationInfo,
 	client *http.Client,
-) *SalesforceAPIService {
-	return &SalesforceAPIService{
+) *apiService {
+	return &apiService{
 		logger:          logger,
 		destinationInfo: destinationInfo,
 		client:          client,
 	}
 }
 
-func (s *SalesforceAPIService) CreateJob(
+func (s *apiService) CreateJob(
 	objectName, operation, externalIDField string,
 ) (string, *APIError) {
-	reqBody := JobCreateRequest{
+	reqBody := jobCreateRequest{
 		Object:      objectName,
 		ContentType: "CSV",
 		Operation:   operation,
@@ -76,7 +76,7 @@ func (s *SalesforceAPIService) CreateJob(
 	return jobResp.ID, nil
 }
 
-func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
+func (s *apiService) UploadData(jobID, csvFilePath string) *APIError {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
 		return &APIError{
@@ -101,7 +101,7 @@ func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 	return nil
 }
 
-func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
+func (s *apiService) CloseJob(jobID string) *APIError {
 	reqBody := map[string]string{"state": "UploadComplete"}
 	body, _ := jsonrs.Marshal(reqBody)
 
@@ -119,7 +119,7 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 	return nil
 }
 
-func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
+func (s *apiService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
 	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
 
 	respBody, apiErr := s.makeRequest(http.MethodGet, endpoint, bytes.NewReader([]byte{}), "")
@@ -139,24 +139,24 @@ func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIErr
 	return &jobResp, nil
 }
 
-func (s *SalesforceAPIService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
+func (s *apiService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
 	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/failedResults"
 	return s.getCSVRecords(endpoint)
 }
 
-func (s *SalesforceAPIService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
+func (s *apiService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
 	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/successfulResults"
 	return s.getCSVRecords(endpoint)
 }
 
-func (s *SalesforceAPIService) DeleteJob(jobID string) *APIError {
+func (s *apiService) DeleteJob(jobID string) *APIError {
 	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
 
 	_, apiErr := s.makeRequest(http.MethodDelete, endpoint, bytes.NewReader([]byte{}), "")
 	return apiErr
 }
 
-func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]string, *APIError) {
+func (s *apiService) getCSVRecords(endpoint string) ([]map[string]string, *APIError) {
 	respBody, apiErr := s.makeRequest(http.MethodGet, endpoint, bytes.NewReader([]byte{}), "")
 	if apiErr != nil {
 		return nil, apiErr
@@ -195,7 +195,7 @@ func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]stri
 	return records, nil
 }
 
-func (s *SalesforceAPIService) makeRequest(
+func (s *apiService) makeRequest(
 	method, endpoint string,
 	body io.Reader,
 	contentType string,
@@ -208,7 +208,7 @@ func (s *SalesforceAPIService) makeRequest(
 	return nil, apiError
 }
 
-func (s *SalesforceAPIService) attemptRequest(
+func (s *apiService) attemptRequest(
 	method, endpoint string,
 	body io.Reader,
 	contentType string,
@@ -262,7 +262,6 @@ func (s *SalesforceAPIService) attemptRequest(
 }
 
 func categorizeError(statusCode int) string {
-
 	switch statusCode {
 	case http.StatusUnauthorized:
 		return "RefreshToken"

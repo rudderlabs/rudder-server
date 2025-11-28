@@ -33,7 +33,7 @@ func NewManager(
 
 	cache := oauthv2.NewOauthTokenCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
-		Logger:              logger.Child("SalesforceBulkUploader").With(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID)),
+		Logger:              logger.Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID)),
 		Augmenter:           augmenter.RequestAugmenter,
 		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("BatchRouter.SALESFORCE_BULK_UPLOAD", conf),
 	}

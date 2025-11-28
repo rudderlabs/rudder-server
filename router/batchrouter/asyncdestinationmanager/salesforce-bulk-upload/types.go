@@ -24,13 +24,13 @@ type Uploader struct {
 	destName        string
 	logger          logger.Logger
 	statsFactory    stats.Stats
-	apiService      SalesforceAPIServiceInterface
+	apiService      APIServiceInterface
 	dataHashToJobID map[string][]int64
 	hashMapMutex    sync.RWMutex
 	destinationInfo *oauthv2.DestinationInfo
 }
 
-type SalesforceAPIServiceInterface interface {
+type APIServiceInterface interface {
 	CreateJob(objectName, operation, externalIDField string) (string, *APIError)
 	UploadData(jobID, csvFilePath string) *APIError
 	CloseJob(jobID string) *APIError
@@ -40,7 +40,7 @@ type SalesforceAPIServiceInterface interface {
 	DeleteJob(jobID string) *APIError
 }
 
-type SalesforceAPIService struct {
+type apiService struct {
 	logger          logger.Logger
 	destinationInfo *oauthv2.DestinationInfo
 	client          *http.Client
@@ -65,7 +65,7 @@ type JobResponse struct {
 	ErrorMessage           string  `json:"errorMessage,omitempty"`
 }
 
-type JobCreateRequest struct {
+type jobCreateRequest struct {
 	Object              string `json:"object"`
 	ContentType         string `json:"contentType"`
 	Operation           string `json:"operation"`
@@ -77,6 +77,12 @@ type APIError struct {
 	StatusCode int
 	Message    string
 	Category   string
+}
+
+type ObjectInfo struct {
+	ObjectType      string
+	ExternalIDField string
+	ExternalIDValue string
 }
 
 const (

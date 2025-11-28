@@ -19,12 +19,6 @@ const (
 	maxFileSize = 100 * 1024 * 1024 // 100MB in bytes
 )
 
-type ObjectInfo struct {
-	ObjectType      string
-	ExternalIDField string
-	ExternalIDValue string
-}
-
 func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -58,10 +52,16 @@ func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
 
 	firstJob := jobs[0]
 
-	if externalIDRaw, ok := firstJob.Metadata["externalId"]; ok {
-		return extractFromVDM(externalIDRaw)
+	externalIDRaw, ok := firstJob.Metadata["externalId"]
+	if !ok {
+		return nil, fmt.Errorf("externalId not found in the first job")
 	}
-	return nil, fmt.Errorf("externalId not found in the first job")
+
+	objectInfo, err := extractFromVDM(externalIDRaw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract object info: %w", err)
+	}
+	return objectInfo, nil
 }
 
 func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {

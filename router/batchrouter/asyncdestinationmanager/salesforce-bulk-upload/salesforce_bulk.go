@@ -23,7 +23,7 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 
 	// Extract required fields from the input
 	traits := gjson.GetBytes(job.EventPayload, "traits")
-	externalId := gjson.GetBytes(job.EventPayload, "context.externalId")
+	externalID := gjson.GetBytes(job.EventPayload, "context.externalId")
 
 	// Build the metadata object
 	metadata := make(map[string]interface{})
@@ -34,8 +34,8 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 
 	// Add externalId to metadata if it exists
 	var externalIdArray []interface{}
-	if externalId.Exists() {
-		if err := jsonrs.Unmarshal([]byte(externalId.Raw), &externalIdArray); err == nil {
+	if externalID.Exists() {
+		if err := jsonrs.Unmarshal([]byte(externalID.Raw), &externalIdArray); err == nil {
 			metadata["externalId"] = externalIdArray
 		}
 	}
