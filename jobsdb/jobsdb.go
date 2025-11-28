@@ -1889,6 +1889,11 @@ func (jd *Handle) WithTx(f func(tx *Tx) error) error {
 func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 	cacheKeys := make(map[string]map[string]map[string]struct{})
 	for _, job := range jobList {
+		partitionID := job.PartitionID
+		if partitionID == "" { // if there is no partition id (which is optional), use "none" so that cache invalidation doesn't invalidate the whole tree
+			partitionID = "none"
+		}
+		partitions := []string{partitionID}
 		workspace := job.WorkspaceId
 		customVal := job.CustomVal
 
@@ -1911,7 +1916,7 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 		paramsKey := strings.Join(params, "#")
 		if _, ok := cacheKeys[workspace][customVal][paramsKey]; !ok {
 			cacheKeys[workspace][customVal][paramsKey] = struct{}{}
-			jd.noResultsCache.Invalidate(ds.Index, workspace, []string{customVal}, []string{Unprocessed.State}, parameterFilters)
+			jd.noResultsCache.Invalidate(ds.Index, partitions, workspace, []string{customVal}, []string{Unprocessed.State}, parameterFilters)
 		}
 	}
 }
@@ -2177,10 +2182,11 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	stateFilters := params.stateFilters
 	customValFilters := params.CustomValFilters
 	var parameterFilters ParameterFilterList = params.ParameterFilters
+	var partitionFilters []string // TODO: this should be filled in the future
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	if jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, stateFilters, parameterFilters) {
+	if jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, stateFilters, parameterFilters) {
 		jd.logger.Debugn("[getJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v",
 			logger.NewStringField("ds", ds.String()),
 			logger.NewStringField("stateFilters", strings.Join(stateFilters, ",")),
@@ -2197,7 +2203,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	stateFilters = lo.Filter(stateFilters, func(state string, _ int) bool { // exclude states for which we already know that there are no jobs
-		return !jd.noResultsCache.Get(ds.Index, workspaceID, customValFilters, []string{state}, parameterFilters)
+		return !jd.noResultsCache.Get(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, parameterFilters)
 	})
 
 	defer jd.getTimerStat("jobsdb_get_jobs_ds_time", &tags).RecordDuration()()
@@ -2214,7 +2220,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			if state == Unprocessed.State && jd.ownerType == Read && lastDS {
 				continue
 			}
-			cacheTx[state] = jd.noResultsCache.StartNoResultTx(ds.Index, workspaceID, customValFilters, []string{state}, parameterFilters)
+			cacheTx[state] = jd.noResultsCache.StartNoResultTx(ds.Index, partitionFilters, workspaceID, customValFilters, []string{state}, parameterFilters)
 		}
 	}
 
@@ -2419,8 +2425,11 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}, true, nil
 }
 
-// updateJobStatusStats is a map containing statistics of job status updates grouped by: workspace -> state -> set of params (stringified) -> stats
-type updateJobStatusStats map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats
+// updateJobStatusStats is a map containing statistics of job status updates grouped by: partition -> workspace -> state -> set of params (stringified) -> stats
+type updateJobStatusStats map[partitionIDKey]map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats
+
+// partitionIDKey represents partition id as key
+type partitionIDKey string
 
 // workspaceIDKey represents workspace id as key
 type workspaceIDKey string
@@ -2433,22 +2442,27 @@ type parameterFiltersKey string
 
 // Merges metrics from two updateJobStatusStats together
 func (ujss updateJobStatusStats) Merge(other updateJobStatusStats) {
-	for ws, states := range other {
-		if _, ok := ujss[ws]; !ok {
-			ujss[ws] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+	for partitionID, workspaces := range other {
+		if _, ok := ujss[partitionID]; !ok {
+			ujss[partitionID] = make(map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 		}
-		for state, paramsMetrics := range states {
-			if _, ok := ujss[ws][state]; !ok {
-				ujss[ws][state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
+		for ws, states := range workspaces {
+			if _, ok := ujss[partitionID][ws]; !ok {
+				ujss[partitionID][ws] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
-			for params, metrics := range paramsMetrics {
-				existingMetrics, ok := ujss[ws][state][params]
-				if !ok {
-					existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
-					ujss[ws][state][params] = existingMetrics
+			for state, paramsMetrics := range states {
+				if _, ok := ujss[partitionID][ws][state]; !ok {
+					ujss[partitionID][ws][state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 				}
-				existingMetrics.count += metrics.count
-				existingMetrics.bytes += metrics.bytes
+				for params, metrics := range paramsMetrics {
+					existingMetrics, ok := ujss[partitionID][ws][state][params]
+					if !ok {
+						existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
+						ujss[partitionID][ws][state][params] = existingMetrics
+					}
+					existingMetrics.count += metrics.count
+					existingMetrics.bytes += metrics.bytes
+				}
 			}
 		}
 	}
@@ -2457,19 +2471,21 @@ func (ujss updateJobStatusStats) Merge(other updateJobStatusStats) {
 // Aggregates metrics by state across all workspaces
 func (ujss updateJobStatusStats) StatsByState() map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats {
 	result := make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
-	for _, states := range ujss {
-		for state, paramsMetrics := range states {
-			if _, ok := result[state]; !ok {
-				result[state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
-			}
-			for params, metrics := range paramsMetrics {
-				existingMetrics, ok := result[state][params]
-				if !ok {
-					existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
-					result[state][params] = existingMetrics
+	for _, workspaces := range ujss {
+		for _, states := range workspaces {
+			for state, paramsMetrics := range states {
+				if _, ok := result[state]; !ok {
+					result[state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 				}
-				existingMetrics.count += metrics.count
-				existingMetrics.bytes += metrics.bytes
+				for params, metrics := range paramsMetrics {
+					existingMetrics, ok := result[state][params]
+					if !ok {
+						existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
+						result[state][params] = existingMetrics
+					}
+					existingMetrics.count += metrics.count
+					existingMetrics.bytes += metrics.bytes
+				}
 			}
 		}
 	}
@@ -2506,12 +2522,18 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 
 		defer func() { _ = stmt.Close() }()
 		for _, status := range statusList {
-			//  Handle the case when google analytics returns gif in response
-			if _, ok := updatedStates[workspaceIDKey(status.WorkspaceId)]; !ok {
-				updatedStates[workspaceIDKey(status.WorkspaceId)] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+			var partitionID string // TODO: partition id should be filled for job statuses in the future
+			if partitionID == "" {
+				partitionID = "none"
 			}
-			if _, ok := updatedStates[workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)]; !ok {
-				updatedStates[workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
+			if _, ok := updatedStates[partitionIDKey(partitionID)]; !ok {
+				updatedStates[partitionIDKey(partitionID)] = make(map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+			}
+			if _, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)]; !ok {
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+			}
+			if _, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)]; !ok {
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
 			var parameters ParameterFilterList
 			var parametersKey parameterFiltersKey
@@ -2523,14 +2545,15 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 				parametersKey = parameterFiltersKey(parameters.String())
 
 			}
-			pm, ok := updatedStates[workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)][parametersKey]
+			pm, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)][parametersKey]
 			if !ok {
 				pm = &UpdateJobStatusStats{parameters: parameters}
-				updatedStates[workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)][parametersKey] = pm
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)][parametersKey] = pm
 			}
 			pm.count++
 			pm.bytes += len(status.ErrorResponse)
 
+			//  Handle the case when google analytics returns gif in response
 			if !utf8.ValidString(string(status.ErrorResponse)) {
 				status.ErrorResponse = []byte(`{}`)
 			}
@@ -2996,29 +3019,35 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 		// clear cache
 		for ds, dsStats := range updatedStatesByDS {
 			if len(dsStats) == 0 { // if no keys, we need to invalidate all keys
-				jd.noResultsCache.Invalidate(ds.Index, "", nil, nil, nil)
+				jd.noResultsCache.Invalidate(ds.Index, nil, "", nil, nil, nil)
 			}
-			for workspace, wsStats := range dsStats {
-				if len(wsStats) == 0 { // if no keys, we need to invalidate all keys
-					jd.noResultsCache.Invalidate(ds.Index, string(workspace), nil, nil, nil)
+			for partition, partStats := range dsStats {
+				if len(partStats) == 0 { // if no keys, we need to invalidate all keys
+					jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, "", nil, nil, nil)
 				}
-				for state, parametersStats := range wsStats {
-					stateList := []string{string(state)}
-					parameterFilters := lo.UniqBy( // gather unique parameter filters
-						lo.FlatMap(
-							lo.Values(parametersStats), // from all JobStatusMetrics
-							func(ujss *UpdateJobStatusStats, _ int) []ParameterFilterT {
-								return ujss.parameters
+				for workspace, wsStats := range partStats {
+					if len(wsStats) == 0 { // if no keys, we need to invalidate all keys
+						jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), nil, nil, nil)
+					}
+					for state, parametersStats := range wsStats {
+						stateList := []string{string(state)}
+						parameterFilters := lo.UniqBy( // gather unique parameter filters
+							lo.FlatMap(
+								lo.Values(parametersStats), // from all JobStatusMetrics
+								func(ujss *UpdateJobStatusStats, _ int) []ParameterFilterT {
+									return ujss.parameters
+								},
+							),
+							func(pf ParameterFilterT) string {
+								return pf.String() // uniqueness by string representation
 							},
-						),
-						func(pf ParameterFilterT) string {
-							return pf.String() // uniqueness by string representation
-						},
-					)
-					// invalidate cache for this combination
-					jd.noResultsCache.Invalidate(ds.Index, string(workspace), customValFilters, stateList, parameterFilters)
+						)
+						// invalidate cache for this combination
+						jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), customValFilters, stateList, parameterFilters)
+					}
 				}
 			}
+
 		}
 	})
 

@@ -57,12 +57,12 @@ type NoResultsCache[T ParameterFilter] struct {
 	cacheTree   cacheTree    // a hierarchical tree of cache entries
 }
 
-// Get returns true if the cache contains a valid entry for the provided dataset, workspace, customVals, states and parameters filters.
-func (c *NoResultsCache[T]) Get(dataset, workspace string, customVals, states []string, parameters []T) bool {
+// Get returns true if the cache contains a valid entry for the provided dataset, partitions, workspace, customVals, states and parameters filters.
+func (c *NoResultsCache[T]) Get(dataset string, partitions []string, workspace string, customVals, states []string, parameters []T) bool {
 	if c.skipCache(states, parameters) {
 		return false
 	}
-	workspace, states, customVals, params := filtersToCacheKeys(workspace, states, customVals, parameters)
+	partitionKeys, workspace, states, customVals, params := filtersToCacheKeys(partitions, workspace, states, customVals, parameters)
 
 	c.cacheTreeMu.RLock()
 	defer c.cacheTreeMu.RUnlock()
@@ -70,37 +70,45 @@ func (c *NoResultsCache[T]) Get(dataset, workspace string, customVals, states []
 	if _, ok := c.cacheTree[dataset]; !ok {
 		return false
 	}
-	if _, ok := c.cacheTree[dataset][workspace]; !ok {
-		return false
-	}
-	for _, customVal := range customVals {
-		if _, ok := c.cacheTree[dataset][workspace][customVal]; !ok {
+
+	for _, partition := range partitionKeys {
+		if _, ok := c.cacheTree[dataset][partition]; !ok {
 			return false
 		}
-		for _, state := range states {
-			if _, ok := c.cacheTree[dataset][workspace][customVal][state]; !ok {
+		if _, ok := c.cacheTree[dataset][partition][workspace]; !ok {
+			return false
+		}
+		for _, customVal := range customVals {
+			if _, ok := c.cacheTree[dataset][partition][workspace][customVal]; !ok {
 				return false
 			}
-			for _, param := range params {
-				if mark, ok := c.cacheTree[dataset][workspace][customVal][state][param]; !ok || !mark.noJobs || time.Now().After(mark.t.Add(c.ttl())) {
+			for _, state := range states {
+				if _, ok := c.cacheTree[dataset][partition][workspace][customVal][state]; !ok {
 					return false
+				}
+				for _, param := range params {
+					if mark, ok := c.cacheTree[dataset][partition][workspace][customVal][state][param]; !ok || !mark.noJobs || time.Now().After(mark.t.Add(c.ttl())) {
+						return false
+					}
 				}
 			}
 		}
 	}
+
 	return true
 }
 
-// Invalidate invalidates all cache entries for the provided dataset, workspace, customVals, states and parameters.
-func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, states []string, parameters []T) {
+// Invalidate invalidates all cache entries for the provided dataset, partitions, workspace, customVals, states and parameters.
+func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, workspace string, customVals, states []string, parameters []T) {
 	c.cacheTreeMu.Lock()
 	defer c.cacheTreeMu.Unlock()
-	workspaces, states, customVals, params := c.filtersToInvalidationKeys(workspace, states, customVals, parameters)
+	partitions, workspaces, states, customVals, params := c.filtersToInvalidationKeys(partitions, workspace, states, customVals, parameters)
 
-	if len(workspaces) == 0 { // if no workspace is provided, invalidate all by deleting the workspace's parent node
+	if len(partitions) == 0 { // if no partitions are provided, invalidate all by deleting the partitions's parent node
 		if c.warnOnBranchInvalidation.Load() && (len(customVals) > 0 || len(states) > 0 || len(parameters) > 0) {
 			c.logger.Warnn("Invalidating entire dataset",
 				logger.NewStringField("dataset", dataset),
+				logger.NewStringField("partitions", strings.Join(partitions, ",")),
 				logger.NewStringField("workspace", workspace),
 				logger.NewStringField("customVals", strings.Join(customVals, ",")),
 				logger.NewStringField("states", strings.Join(states, ",")),
@@ -113,68 +121,90 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 	if _, ok := c.cacheTree[dataset]; !ok {
 		return
 	}
-	for _, workspace := range workspaces {
-		if len(customVals) == 0 { // if no custom value is provided, invalidate all by deleting the customVal's parent node
-			if c.warnOnBranchInvalidation.Load() {
-				c.logger.Warnn("Invalidating entire workspace branch",
+	for _, partition := range partitions {
+		if len(workspaces) == 0 { // if no workspace is provided, invalidate all by deleting the workspace's parent node
+			if c.warnOnBranchInvalidation.Load() && (len(customVals) > 0 || len(states) > 0 || len(parameters) > 0) {
+				c.logger.Warnn("Invalidating entire partition",
 					logger.NewStringField("dataset", dataset),
+					logger.NewStringField("partition", partition),
 					logger.NewStringField("workspace", workspace),
 					logger.NewStringField("customVals", strings.Join(customVals, ",")),
 					logger.NewStringField("states", strings.Join(states, ",")),
 					logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
 				)
 			}
-			delete(c.cacheTree[dataset], workspace)
+			delete(c.cacheTree[dataset], partition)
 			continue
 		}
-		if _, ok := c.cacheTree[dataset][workspace]; !ok {
+		if _, ok := c.cacheTree[dataset][partition]; !ok {
 			continue
 		}
-		for _, customVal := range customVals {
-			if len(states) == 0 { // if no state is provided, invalidate all by deleting the state's parent node
+		for _, workspace := range workspaces {
+			if len(customVals) == 0 { // if no custom value is provided, invalidate all by deleting the customVal's parent node
 				if c.warnOnBranchInvalidation.Load() {
-					c.logger.Warnn("Invalidating entire customVal branch",
+					c.logger.Warnn("Invalidating entire workspace branch",
 						logger.NewStringField("dataset", dataset),
+						logger.NewStringField("partition", partition),
 						logger.NewStringField("workspace", workspace),
-						logger.NewStringField("customVal", customVal),
+						logger.NewStringField("customVals", strings.Join(customVals, ",")),
 						logger.NewStringField("states", strings.Join(states, ",")),
 						logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
 					)
 				}
-				delete(c.cacheTree[dataset][workspace], customVal)
+				delete(c.cacheTree[dataset][partition], workspace)
 				continue
 			}
-			if _, ok := c.cacheTree[dataset][workspace][customVal]; !ok {
+			if _, ok := c.cacheTree[dataset][partition][workspace]; !ok {
 				continue
 			}
-			for _, state := range states {
-				if len(params) == 0 { // if no parameter is provided, invalidate all by deleting the param's parent node
+			for _, customVal := range customVals {
+				if len(states) == 0 { // if no state is provided, invalidate all by deleting the state's parent node
 					if c.warnOnBranchInvalidation.Load() {
-						c.logger.Warnn("Invalidating entire state branch",
+						c.logger.Warnn("Invalidating entire customVal branch",
 							logger.NewStringField("dataset", dataset),
+							logger.NewStringField("partition", partition),
 							logger.NewStringField("workspace", workspace),
 							logger.NewStringField("customVal", customVal),
-							logger.NewStringField("state", state),
+							logger.NewStringField("states", strings.Join(states, ",")),
 							logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
 						)
 					}
-					delete(c.cacheTree[dataset][workspace][customVal], state)
+					delete(c.cacheTree[dataset][partition][workspace], customVal)
 					continue
 				}
-				if _, ok := c.cacheTree[dataset][workspace][customVal][state]; !ok {
+				if _, ok := c.cacheTree[dataset][partition][workspace][customVal]; !ok {
 					continue
 				}
-				for _, param := range params {
-					if c.warnOnBranchInvalidation.Load() { // if logging is enabled, log the invalidation of the leaf node at debug level, since this is the most granular level
-						c.logger.Debugn("Invalidating leaf",
-							logger.NewStringField("dataset", dataset),
-							logger.NewStringField("workspace", workspace),
-							logger.NewStringField("customVal", customVal),
-							logger.NewStringField("state", state),
-							logger.NewStringField("parameter", param),
-						)
+				for _, state := range states {
+					if len(params) == 0 { // if no parameter is provided, invalidate all by deleting the param's parent node
+						if c.warnOnBranchInvalidation.Load() {
+							c.logger.Warnn("Invalidating entire state branch",
+								logger.NewStringField("dataset", dataset),
+								logger.NewStringField("partition", partition),
+								logger.NewStringField("workspace", workspace),
+								logger.NewStringField("customVal", customVal),
+								logger.NewStringField("state", state),
+								logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
+							)
+						}
+						delete(c.cacheTree[dataset][partition][workspace][customVal], state)
+						continue
 					}
-					delete(c.cacheTree[dataset][workspace][customVal][state], param)
+					if _, ok := c.cacheTree[dataset][partition][workspace][customVal][state]; !ok {
+						continue
+					}
+					for _, param := range params {
+						if c.warnOnBranchInvalidation.Load() { // if logging is enabled, log the invalidation of the leaf node at debug level, since this is the most granular level
+							c.logger.Debugn("Invalidating leaf",
+								logger.NewStringField("dataset", dataset),
+								logger.NewStringField("workspace", workspace),
+								logger.NewStringField("customVal", customVal),
+								logger.NewStringField("state", state),
+								logger.NewStringField("parameter", param),
+							)
+						}
+						delete(c.cacheTree[dataset][partition][workspace][customVal][state], param)
+					}
 				}
 			}
 		}
@@ -183,15 +213,16 @@ func (c *NoResultsCache[T]) Invalidate(dataset, workspace string, customVals, st
 
 // InvalidateDataset invalidates all cache entries for a given dataset.
 func (c *NoResultsCache[T]) InvalidateDataset(dataset string) {
-	c.Invalidate(dataset, "", nil, nil, nil)
+	c.Invalidate(dataset, nil, "", nil, nil, nil)
 }
 
 // StartNoResultTx prepares the cache for accepting new no result entries.
 // The cache uses a special marker to prevent synchronisation issues between competing calls of Invalidate & SetNoResult.
-func (c *NoResultsCache[T]) StartNoResultTx(dataset, workspace string, customVals, states []string, parameters []T) (tx *NoResultTx[T]) {
+func (c *NoResultsCache[T]) StartNoResultTx(dataset string, partitions []string, workspace string, customVals, states []string, parameters []T) (tx *NoResultTx[T]) {
 	tx = &NoResultTx[T]{
 		id:         uuid.New().String(),
 		dataset:    dataset,
+		partitions: partitions,
 		workspace:  workspace,
 		customVals: customVals,
 		states:     states,
@@ -201,39 +232,47 @@ func (c *NoResultsCache[T]) StartNoResultTx(dataset, workspace string, customVal
 	if c.skipCache(states, parameters) {
 		return tx
 	}
-	workspace, states, customVals, params := filtersToCacheKeys(workspace, states, customVals, parameters)
+	partitions, workspace, states, customVals, params := filtersToCacheKeys(partitions, workspace, states, customVals, parameters)
 
 	c.cacheTreeMu.Lock()
 	defer c.cacheTreeMu.Unlock()
 
 	if _, ok := c.cacheTree[dataset]; !ok {
-		c.cacheTree[dataset] = map[string]map[string]map[string]map[string]cacheEntry{}
+		c.cacheTree[dataset] = map[string]map[string]map[string]map[string]map[string]cacheEntry{}
 	}
-	if _, ok := c.cacheTree[dataset][workspace]; !ok {
-		c.cacheTree[dataset][workspace] = map[string]map[string]map[string]cacheEntry{}
-	}
-	for _, customVal := range customVals {
-		if _, ok := c.cacheTree[dataset][workspace][customVal]; !ok {
-			c.cacheTree[dataset][workspace][customVal] = map[string]map[string]cacheEntry{}
+	for _, partition := range partitions {
+		if _, ok := c.cacheTree[dataset][partition]; !ok {
+			c.cacheTree[dataset][partition] = map[string]map[string]map[string]map[string]cacheEntry{}
 		}
-		for _, state := range states {
-			if _, ok := c.cacheTree[dataset][workspace][customVal][state]; !ok {
-				c.cacheTree[dataset][workspace][customVal][state] = map[string]cacheEntry{}
+		if _, ok := c.cacheTree[dataset][partition][workspace]; !ok {
+			c.cacheTree[dataset][partition][workspace] = map[string]map[string]map[string]cacheEntry{}
+		}
+		for _, customVal := range customVals {
+			if _, ok := c.cacheTree[dataset][partition][workspace][customVal]; !ok {
+				c.cacheTree[dataset][partition][workspace][customVal] = map[string]map[string]cacheEntry{}
 			}
-			for _, param := range params {
-				e := c.cacheTree[dataset][workspace][customVal][state][param]
-				e.AddToken(tx.id)
-				c.cacheTree[dataset][workspace][customVal][state][param] = e
+			for _, state := range states {
+				if _, ok := c.cacheTree[dataset][partition][workspace][customVal][state]; !ok {
+					c.cacheTree[dataset][partition][workspace][customVal][state] = map[string]cacheEntry{}
+				}
+				for _, param := range params {
+					e := c.cacheTree[dataset][partition][workspace][customVal][state][param]
+					e.AddToken(tx.id)
+					c.cacheTree[dataset][partition][workspace][customVal][state][param] = e
+				}
 			}
 		}
 	}
+
 	return tx
 }
 
 // NoResultTx is a transaction for the NoResultsCache.
 type NoResultTx[T ParameterFilter] struct {
 	id                 string
-	dataset, workspace string
+	dataset            string
+	partitions         []string
+	workspace          string
 	customVals, states []string
 	parameters         []T
 	c                  *NoResultsCache[T]
@@ -245,7 +284,7 @@ func (tx *NoResultTx[T]) Commit() bool {
 	if tx.c.skipCache(tx.states, tx.parameters) {
 		return false
 	}
-	workspace, states, customVals, params := filtersToCacheKeys(tx.workspace, tx.states, tx.customVals, tx.parameters)
+	partitions, workspace, states, customVals, params := filtersToCacheKeys(tx.partitions, tx.workspace, tx.states, tx.customVals, tx.parameters)
 
 	tx.c.cacheTreeMu.Lock()
 	defer tx.c.cacheTreeMu.Unlock()
@@ -253,30 +292,39 @@ func (tx *NoResultTx[T]) Commit() bool {
 	if _, ok := tx.c.cacheTree[tx.dataset]; !ok {
 		return false
 	}
-	if _, ok := tx.c.cacheTree[tx.dataset][workspace]; !ok {
-		return false
-	}
+
 	var missed bool
-	for _, customVal := range customVals {
-		if _, ok := tx.c.cacheTree[tx.dataset][workspace][customVal]; !ok {
+	for _, partition := range partitions {
+		if _, ok := tx.c.cacheTree[tx.dataset][partition]; !ok {
 			missed = true
 			continue
 		}
-		for _, state := range states {
-			if _, ok := tx.c.cacheTree[tx.dataset][workspace][customVal][state]; !ok {
+		if _, ok := tx.c.cacheTree[tx.dataset][partition][workspace]; !ok {
+			missed = true
+			continue
+		}
+		for _, customVal := range customVals {
+			if _, ok := tx.c.cacheTree[tx.dataset][partition][workspace][customVal]; !ok {
 				missed = true
 				continue
 			}
-			for _, param := range params {
-				e := tx.c.cacheTree[tx.dataset][workspace][customVal][state][param]
-				if e.SetNoJobs(tx.id) {
-					tx.c.cacheTree[tx.dataset][workspace][customVal][state][param] = e
-				} else {
+			for _, state := range states {
+				if _, ok := tx.c.cacheTree[tx.dataset][partition][workspace][customVal][state]; !ok {
 					missed = true
+					continue
+				}
+				for _, param := range params {
+					e := tx.c.cacheTree[tx.dataset][partition][workspace][customVal][state][param]
+					if e.SetNoJobs(tx.id) {
+						tx.c.cacheTree[tx.dataset][partition][workspace][customVal][state][param] = e
+					} else {
+						missed = true
+					}
 				}
 			}
 		}
 	}
+
 	return !missed
 }
 
@@ -295,9 +343,13 @@ func (c *NoResultsCache[T]) skipCache(states []string, parameters []T) bool {
 	return false
 }
 
-// filtersToCacheKeys returns the cache keys for the provided workspace, states, customVals and parameters filters.
+// filtersToCacheKeys returns the cache keys for the provided partition, workspace, states, customVals and parameters filters.
 // Wildcards are used if empty parameters are provided.
-func filtersToCacheKeys[T ParameterFilter](workspaceFilter string, statesFilter, customValsFilter []string, parametersFilter []T) (workspaceKey string, stateKeys, customValKeys, paramKeys []string) {
+func filtersToCacheKeys[T ParameterFilter](partitionFilter []string, workspaceFilter string, statesFilter, customValsFilter []string, parametersFilter []T) (partitionKeys []string, workspaceKey string, stateKeys, customValKeys, paramKeys []string) {
+	partitionKeys = partitionFilter
+	if len(partitionKeys) == 0 { // if no partition is provided, we use the wildcard
+		partitionKeys = []string{wildcard}
+	}
 	workspaceKey = workspaceFilter
 	if workspaceKey == "" { // if no workspace is provided, we use the wildcard
 		workspaceKey = wildcard
@@ -314,12 +366,17 @@ func filtersToCacheKeys[T ParameterFilter](workspaceFilter string, statesFilter,
 	if len(paramKeys) == 0 { // if no parameter is provided, we use the wildcard
 		paramKeys = []string{wildcard}
 	}
-	return workspaceKey, stateKeys, customValKeys, paramKeys
+	return partitionKeys, workspaceKey, stateKeys, customValKeys, paramKeys
 }
 
 // filtersToInvalidationKeys returns the cache keys that need to be invalidated for the provided workspace, states, customVals and parameters filters.
 // Wildcard keys are also returned if needed. An empty slice is returned if all keys need to be invalidated at that level.
-func (c *NoResultsCache[T]) filtersToInvalidationKeys(workspaceFilter string, statesFilter, customValsFilter []string, parametersFilter []T) (workspaceKeys, stateKeys, customValKeys, paramKeys []string) {
+func (c *NoResultsCache[T]) filtersToInvalidationKeys(partitionFilter []string, workspaceFilter string, statesFilter, customValsFilter []string, parametersFilter []T) (partitionKeys, workspaceKeys, stateKeys, customValKeys, paramKeys []string) {
+	if len(partitionFilter) > 0 { // include partitions along with the wildcard
+		partitionKeys = make([]string, len(partitionFilter)+1)
+		copy(partitionKeys, partitionFilter)
+		partitionKeys[len(partitionFilter)] = wildcard
+	}
 	if workspaceFilter != "" {
 		workspaceKeys = []string{workspaceFilter, wildcard}
 	}
@@ -336,7 +393,7 @@ func (c *NoResultsCache[T]) filtersToInvalidationKeys(workspaceFilter string, st
 	if len(paramKeys) > 0 { // include params along with the wildcard
 		paramKeys = append(paramKeys, wildcard)
 	}
-	return workspaceKeys, stateKeys, customValKeys, paramKeys
+	return partitionKeys, workspaceKeys, stateKeys, customValKeys, paramKeys
 }
 
 // String returns a string representation of the cache's tree contents.
@@ -351,11 +408,12 @@ func (c *NoResultsCache[T]) String() string {
 
 type (
 	datasetKey   = string
+	partitionKey = string
 	workspaceKey = string
 	customValKey = string
 	stateKey     = string
 	paramKey     = string
-	cacheTree    map[datasetKey]map[workspaceKey]map[customValKey]map[stateKey]map[paramKey]cacheEntry
+	cacheTree    map[datasetKey]map[partitionKey]map[workspaceKey]map[customValKey]map[stateKey]map[paramKey]cacheEntry
 )
 
 type cacheEntry struct {
