@@ -37,7 +37,7 @@ func (jd *Handle) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs 
 				return fmt.Errorf("adding excluded read partition ID %s: %w", partitionID, err)
 			}
 		}
-		// TODO: Invalidate partitions from NoResultsCache on success
+		jd.noResultsCache.InvalidatePartitions(partitionIDs)
 		return nil
 	}); err != nil {
 		return err
@@ -76,7 +76,7 @@ func (jd *Handle) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionI
 	for _, partitionID := range partitionIDs {
 		delete(jd.excludedReadPartitions, partitionID)
 	}
-	// TODO: Invalidate partitions from NoResultsCache
+	jd.noResultsCache.InvalidatePartitions(partitionIDs)
 	return nil
 }
 

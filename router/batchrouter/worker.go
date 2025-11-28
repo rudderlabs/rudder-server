@@ -135,6 +135,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				Parameters:    []byte(`{}`),
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
+				PartitionID:   job.PartitionID,
 			}
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", finalReason)
@@ -165,6 +166,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				Parameters:    []byte(`{}`),
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
+				PartitionID:   job.PartitionID,
 			}
 
 			statusList = append(statusList, &status)

@@ -682,6 +682,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			Parameters:    []byte(`{}`),
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
+			PartitionID:   job.PartitionID,
 		}
 		statusList = append(statusList, &status)
 		jobStateCounts[jobState] = jobStateCounts[jobState] + 1

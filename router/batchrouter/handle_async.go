@@ -121,6 +121,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 			Parameters:    routerutils.EmptyPayload,
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
+			PartitionID:   job.PartitionID,
 		}
 		jobIdConnectionDetailsMap[job.JobID] = jobsdb.ConnectionDetails{
 			SourceID:      sourceID,
@@ -214,6 +215,7 @@ func (brt *Handle) updatePollStatusToDB(
 						Parameters:    routerutils.EmptyPayload,
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
+						PartitionID:   job.PartitionID,
 					}
 					completedJobsList = append(completedJobsList, job)
 					statusList = append(statusList, status)
@@ -232,6 +234,7 @@ func (brt *Handle) updatePollStatusToDB(
 						Parameters:    routerutils.EmptyPayload,
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
+						PartitionID:   job.PartitionID,
 					}
 					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", errorRespString)
 					failedJobs = append(failedJobs, job)
@@ -252,6 +255,7 @@ func (brt *Handle) updatePollStatusToDB(
 						Parameters:    routerutils.EmptyPayload,
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
+						PartitionID:   job.PartitionID,
 					}
 					job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", errorRespString)
 					abortedJobs = append(abortedJobs, job)
@@ -686,6 +690,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				Parameters:    params.AsyncOutput.ImportingParameters,
 				JobParameters: params.JobParameters[jobId],
 				WorkspaceId:   workspaceID,
+				PartitionID:   params.PartitionIDs[jobId],
 			}
 			statusList = append(statusList, &status)
 		}
@@ -707,6 +712,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: params.JobParameters[jobId],
 				WorkspaceId:   workspaceID,
+				PartitionID:   params.PartitionIDs[jobId],
 			}
 			statusList = append(statusList, &status)
 			completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, params.JobParameters[jobId]))
@@ -730,6 +736,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: params.JobParameters[jobId],
 				WorkspaceId:   workspaceID,
+				PartitionID:   params.PartitionIDs[jobId],
 			}
 			if params.Attempted {
 				status.AttemptNum = params.AttemptNums[jobId] + 1
@@ -760,6 +767,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: params.JobParameters[jobId],
 				WorkspaceId:   workspaceID,
+				PartitionID:   params.PartitionIDs[jobId],
 			}
 			statusList = append(statusList, &status)
 			completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, params.JobParameters[jobId]))

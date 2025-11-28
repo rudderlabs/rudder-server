@@ -98,6 +98,26 @@ func TestNoResultsCache(t *testing.T) {
 			require.True(t, c.Get("other", []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
 		})
 
+		t.Run("InvalidatePartitions", func(t *testing.T) {
+			c := cache.NewNoResultsCache[paramFilter](supportedParamFilters, func() time.Duration { return time.Hour })
+
+			// set for 2 partitions in dataset
+			c.StartNoResultTx(dataset, []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}).Commit()
+			require.True(t, c.Get(dataset, []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
+
+			c.StartNoResultTx(dataset, []string{"other"}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}).Commit()
+			require.True(t, c.Get(dataset, []string{"other"}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
+
+			// set for same partition in another dataset
+			c.StartNoResultTx("other", []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}).Commit()
+			require.True(t, c.Get("other", []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
+
+			c.InvalidatePartitions([]string{partition})
+			require.False(t, c.Get(dataset, []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
+			require.True(t, c.Get(dataset, []string{"other"}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
+			require.False(t, c.Get("other", []string{partition}, workspace, []string{customVal}, []string{state}, []paramFilter{{name: "param1", value: "value1"}}))
+		})
+
 		t.Run("Wildcard", func(t *testing.T) {
 			c := cache.NewNoResultsCache[paramFilter](supportedParamFilters, func() time.Duration { return time.Hour })
 			c.StartNoResultTx(dataset, []string{}, "", []string{}, []string{state}, []paramFilter{}).Commit()
