@@ -1,4 +1,4 @@
-package salesforcebulk
+package salesforcebulkupload
 
 import (
 	"encoding/json"
@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
-func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
+func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Parse the event payload directly
 	if !gjson.ValidBytes(job.EventPayload) {
 		return "", fmt.Errorf("invalid JSON in event payload")
@@ -73,7 +73,7 @@ func (s *SalesforceBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return string(responsePayload), nil
 }
 
-func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
 	filePath := asyncDestStruct.FileName
@@ -221,7 +221,7 @@ func (s *SalesforceBulkUploader) Upload(asyncDestStruct *common.AsyncDestination
 	}
 }
 
-func (s *SalesforceBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+func (s *Uploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	var params struct {
 		Jobs []SalesforceJobInfo `json:"jobs"`
 	}
@@ -301,7 +301,7 @@ func (s *SalesforceBulkUploader) Poll(pollInput common.AsyncPoll) common.PollSta
 	}
 }
 
-func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
+func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUploadStatsResponse {
 	var params struct {
 		Jobs []SalesforceJobInfo `json:"jobs"`
 	}
@@ -356,7 +356,7 @@ func (s *SalesforceBulkUploader) GetUploadStats(input common.GetUploadStatsInput
 	}
 }
 
-func (s *SalesforceBulkUploader) handlePollError(apiError *APIError) common.PollStatusResponse {
+func (s *Uploader) handlePollError(apiError *APIError) common.PollStatusResponse {
 	if apiError.Category == "RefreshToken" {
 		return common.PollStatusResponse{
 			StatusCode: 500,
@@ -388,7 +388,7 @@ func (s *SalesforceBulkUploader) handlePollError(apiError *APIError) common.Poll
 	}
 }
 
-func (s *SalesforceBulkUploader) matchRecordsToJobs(
+func (s *Uploader) matchRecordsToJobs(
 	importingList []*jobsdb.JobT,
 	failedRecords, successRecords []map[string]string,
 ) common.EventStatMeta {

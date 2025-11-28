@@ -1,4 +1,4 @@
-package salesforcebulk
+package salesforcebulkupload
 
 import (
 	"encoding/json"
@@ -87,7 +87,7 @@ func TestSalesforceBulk_Transform(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			uploader := &SalesforceBulkUploader{}
+			uploader := &Uploader{}
 			result, err := uploader.Transform(tc.job)
 
 			if tc.wantErr {
@@ -166,7 +166,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job-123", nil)
 		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string][]int64),
@@ -207,7 +207,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Category:   "ServerError",
 		})
 
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string][]int64),
@@ -236,7 +236,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Category:   "RateLimit",
 		})
 
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string][]int64),
@@ -369,7 +369,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				mockAPI.EXPECT().GetJobStatus(jobStatus.ID).Return(jobStatus, nil)
 			}
 
-			uploader := &SalesforceBulkUploader{
+			uploader := &Uploader{
 				apiService: mockAPI,
 			}
 
@@ -429,7 +429,7 @@ func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string][]int64),
@@ -459,7 +459,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		mockAPI.EXPECT().GetFailedRecords(gomock.Any()).Return([]map[string]string{}, nil)
 		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{{"Email": "test1@example.com", "FirstName": "John", "LastName": "Doe"}, {"Email": "test2@example.com", "FirstName": "Jane", "LastName": "Smith"}}, nil)
 
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			apiService: mockAPI,
 			dataHashToJobID: map[string][]int64{
 				"d03113301b5c9be7aaa6407e41a88bb7f2cbe38d29349451d53e749a9eee3dc4": {1},
@@ -489,7 +489,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		})
 		// mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return(nil, nil)
 
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			logger:          logger.NOP,
 			apiService:      mockAPI,
 			dataHashToJobID: make(map[string][]int64),
@@ -504,7 +504,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 	})
 
 	t.Run("handles invalid parameters", func(t *testing.T) {
-		uploader := &SalesforceBulkUploader{
+		uploader := &Uploader{
 			dataHashToJobID: make(map[string][]int64),
 		}
 

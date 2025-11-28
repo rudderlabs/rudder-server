@@ -1,8 +1,9 @@
-package salesforcebulk
+package salesforcebulkupload
 
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,16 +17,14 @@ import (
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 )
 
-func NewSalesforceAPIService(
+func NewAPIService(
 	logger logger.Logger,
 	destinationInfo *oauthv2.DestinationInfo,
-	apiVersion string,
 	client *http.Client,
 ) *SalesforceAPIService {
 	return &SalesforceAPIService{
 		logger:          logger,
 		destinationInfo: destinationInfo,
-		apiVersion:      apiVersion,
 		client:          client,
 	}
 }
@@ -47,15 +46,15 @@ func (s *SalesforceAPIService) CreateJob(
 	body, err := jsonrs.Marshal(reqBody)
 	if err != nil {
 		return "", &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("marshalling job request: %v", err),
 			Category:   "ServerError",
 		}
 	}
 
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest", s.apiVersion)
+	endpoint := API_BASE_URL + "/jobs/ingest"
 
-	respBody, apiErr := s.makeRequest("POST", endpoint, bytes.NewReader(body), "application/json")
+	respBody, apiErr := s.makeRequest(http.MethodPost, endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
 		return "", apiErr
 	}
@@ -63,13 +62,16 @@ func (s *SalesforceAPIService) CreateJob(
 	var jobResp JobResponse
 	if err := jsonrs.Unmarshal(respBody, &jobResp); err != nil {
 		return "", &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("unmarshalling job response: %v", err),
 			Category:   "ServerError",
 		}
 	}
 
-	s.logger.Debugn("Created Salesforce Bulk job %s for object %s", logger.NewStringField("jobID", jobResp.ID), logger.NewStringField("objectName", objectName))
+	s.logger.Debugn("Created Salesforce Bulk job object",
+		logger.NewStringField("jobID", jobResp.ID),
+		logger.NewStringField("objectName", objectName),
+	)
 
 	return jobResp.ID, nil
 }
@@ -78,21 +80,23 @@ func (s *SalesforceAPIService) UploadData(jobID, csvFilePath string) *APIError {
 	file, err := os.Open(csvFilePath)
 	if err != nil {
 		return &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("opening CSV file: %v", err),
 			Category:   "ServerError",
 		}
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s/batches", s.apiVersion, jobID)
+	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/batches"
 
-	_, apiErr := s.makeRequest("PUT", endpoint, file, "text/csv")
+	_, apiErr := s.makeRequest(http.MethodPut, endpoint, file, "text/csv")
 	if apiErr != nil {
 		return apiErr
 	}
 
-	s.logger.Debugn("Uploaded data to Salesforce Bulk job %s", logger.NewStringField("jobID", jobID))
+	s.logger.Debugn("Uploaded data to Salesforce Bulk job",
+		logger.NewStringField("jobID", jobID),
+	)
 
 	return nil
 }
@@ -101,22 +105,24 @@ func (s *SalesforceAPIService) CloseJob(jobID string) *APIError {
 	reqBody := map[string]string{"state": "UploadComplete"}
 	body, _ := jsonrs.Marshal(reqBody)
 
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s", s.apiVersion, jobID)
+	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
 
-	_, apiErr := s.makeRequest("PATCH", endpoint, bytes.NewReader(body), "application/json")
+	_, apiErr := s.makeRequest(http.MethodPatch, endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
 		return apiErr
 	}
 
-	s.logger.Debugn("Closed Salesforce Bulk job %s", logger.NewStringField("jobID", jobID))
+	s.logger.Debugn("Closed Salesforce Bulk job",
+		logger.NewStringField("jobID", jobID),
+	)
 
 	return nil
 }
 
 func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s", s.apiVersion, jobID)
+	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
 
-	respBody, apiErr := s.makeRequest("GET", endpoint, bytes.NewReader([]byte{}), "")
+	respBody, apiErr := s.makeRequest(http.MethodGet, endpoint, bytes.NewReader([]byte{}), "")
 	if apiErr != nil {
 		return nil, apiErr
 	}
@@ -124,7 +130,7 @@ func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIErr
 	var jobResp JobResponse
 	if err := jsonrs.Unmarshal(respBody, &jobResp); err != nil {
 		return nil, &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("unmarshalling job status: %v", err),
 			Category:   "ServerError",
 		}
@@ -134,24 +140,24 @@ func (s *SalesforceAPIService) GetJobStatus(jobID string) (*JobResponse, *APIErr
 }
 
 func (s *SalesforceAPIService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s/failedResults", s.apiVersion, jobID)
+	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/failedResults"
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *SalesforceAPIService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s/successfulResults", s.apiVersion, jobID)
+	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/successfulResults"
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *SalesforceAPIService) DeleteJob(jobID string) *APIError {
-	endpoint := fmt.Sprintf("https://default.salesforce.com/services/data/%s/jobs/ingest/%s", s.apiVersion, jobID)
+	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
 
-	_, apiErr := s.makeRequest("DELETE", endpoint, bytes.NewReader([]byte{}), "")
+	_, apiErr := s.makeRequest(http.MethodDelete, endpoint, bytes.NewReader([]byte{}), "")
 	return apiErr
 }
 
 func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]string, *APIError) {
-	respBody, apiErr := s.makeRequest("GET", endpoint, bytes.NewReader([]byte{}), "")
+	respBody, apiErr := s.makeRequest(http.MethodGet, endpoint, bytes.NewReader([]byte{}), "")
 	if apiErr != nil {
 		return nil, apiErr
 	}
@@ -159,12 +165,12 @@ func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]stri
 	reader := csv.NewReader(bytes.NewReader(respBody))
 
 	headers, err := reader.Read()
-	if err == io.EOF {
-		return []map[string]string{}, nil
+	if errors.Is(err, io.EOF) {
+		return nil, nil
 	}
 	if err != nil {
 		return nil, &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("reading CSV header: %v", err),
 			Category:   "ServerError",
 		}
@@ -173,22 +179,15 @@ func (s *SalesforceAPIService) getCSVRecords(endpoint string) ([]map[string]stri
 	var records []map[string]string
 	for {
 		row, err := reader.Read()
-		if err == io.EOF {
-			break
-		}
 		if err != nil {
-			return nil, &APIError{
-				StatusCode: 500,
-				Message:    fmt.Sprintf("reading CSV row: %v", err),
-				Category:   "ServerError",
+			if errors.Is(err, io.EOF) {
+				break
 			}
 		}
 
-		record := make(map[string]string)
+		record := make(map[string]string, len(headers))
 		for i, value := range row {
-			if i < len(headers) {
-				record[headers[i]] = value
-			}
+			record[headers[i]] = value
 		}
 		records = append(records, record)
 	}
@@ -217,7 +216,7 @@ func (s *SalesforceAPIService) attemptRequest(
 	req, err := http.NewRequest(method, endpoint, body)
 	if err != nil {
 		return nil, &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("creating HTTP request: %v", err),
 			Category:   "ServerError",
 		}
@@ -232,27 +231,22 @@ func (s *SalesforceAPIService) attemptRequest(
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("making HTTP request: %v", err),
 			Category:   "ServerError",
 		}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(resp.Body)
-	fmt.Println("response", string(respBody))
-	originalResponse := gjson.GetBytes(respBody, "originalResponse").String()
-	if originalResponse != "" {
-		respBody = []byte(originalResponse)
-	}
 	if err != nil {
 		return nil, &APIError{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("reading response body: %v", err),
 			Category:   "ServerError",
 		}
 	}
 
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= http.StatusBadRequest {
 		return nil, &APIError{
 			StatusCode: resp.StatusCode,
 			Message:    string(respBody),
@@ -260,18 +254,23 @@ func (s *SalesforceAPIService) attemptRequest(
 		}
 	}
 
+	originalResponse := gjson.GetBytes(respBody, "originalResponse").String()
+	if originalResponse != "" {
+		respBody = []byte(originalResponse)
+	}
 	return respBody, nil
 }
 
 func categorizeError(statusCode int) string {
+
 	switch statusCode {
-	case 401:
+	case http.StatusUnauthorized:
 		return "RefreshToken"
-	case 429:
+	case http.StatusTooManyRequests:
 		return "RateLimit"
-	case 400:
+	case http.StatusBadRequest:
 		return "BadRequest"
-	case 500, 502, 503, 504:
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return "ServerError"
 	default:
 		return "Unknown"

@@ -1,4 +1,4 @@
-package salesforcebulk
+package salesforcebulkupload
 
 import (
 	"net/http"
@@ -9,14 +9,18 @@ import (
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )
 
+const (
+	API_VERSION  = "v62.0"
+	API_BASE_URL = "https://default.salesforce.com/services/data/" + API_VERSION
+)
+
 type DestinationConfig struct {
 	RudderAccountID string `json:"rudderAccountId"`
 	Operation       string `json:"operation"`
 	ObjectType      string `json:"objectType"`
-	APIVersion      string `json:"apiVersion"`
 }
 
-type SalesforceBulkUploader struct {
+type Uploader struct {
 	destName        string
 	logger          logger.Logger
 	statsFactory    stats.Stats
@@ -39,7 +43,6 @@ type SalesforceAPIServiceInterface interface {
 type SalesforceAPIService struct {
 	logger          logger.Logger
 	destinationInfo *oauthv2.DestinationInfo
-	apiVersion      string
 	client          *http.Client
 }
 

@@ -7,7 +7,7 @@
 //
 
 // Package salesforcebulk is a generated GoMock package.
-package salesforcebulk
+package salesforcebulkupload
 
 import (
 	context "context"

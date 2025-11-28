@@ -1,4 +1,4 @@
-package salesforcebulk
+package salesforcebulkupload
 
 import (
 	"bufio"
