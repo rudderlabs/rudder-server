@@ -1733,21 +1733,21 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	var jobsWithMetaData []jobWithMetaData
 	var dedupBatchKeys []dedup.BatchKey
 	var dedupBatchKeysIdx int
-	for _, batchEvent := range jobList {
+	for _, job := range jobList {
 		var eventParams types.EventParams
-		if err := jsonrs.Unmarshal(batchEvent.Parameters, &eventParams); err != nil {
+		if err := jsonrs.Unmarshal(job.Parameters, &eventParams); err != nil {
 			return nil, err
 		}
 
 		var span stats.TraceSpan
 		traceParent := eventParams.TraceParent
 		if traceParent == "" {
-			proc.logger.Debugn("Missing traceParent in preprocessStage", logger.NewIntField("jobId", batchEvent.JobID))
+			proc.logger.Debugn("Missing traceParent in preprocessStage", logger.NewIntField("jobId", job.JobID))
 		} else {
 			ctx := stats.InjectTraceParentIntoContext(context.Background(), traceParent)
 			_, span = proc.tracer.Trace(ctx, "preprocessStage", tracing.WithTraceKind(stats.SpanKindConsumer),
 				tracing.WithTraceTags(stats.Tags{
-					"workspaceId": batchEvent.WorkspaceId,
+					"workspaceId": job.WorkspaceId,
 					"sourceId":    eventParams.SourceId,
 					"partition":   partition,
 				}),
@@ -1756,7 +1756,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 		}
 
 		newStatus := jobsdb.JobStatusT{
-			JobID:         batchEvent.JobID,
+			JobID:         job.JobID,
 			JobState:      jobsdb.Succeeded.State,
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
@@ -1764,18 +1764,19 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			ErrorCode:     "200",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
-			JobParameters: batchEvent.Parameters,
-			WorkspaceId:   batchEvent.WorkspaceId,
+			JobParameters: job.Parameters,
+			WorkspaceId:   job.WorkspaceId,
+			PartitionID:   job.PartitionID,
 		}
 		statusList = append(statusList, &newStatus)
 
-		parameters := batchEvent.Parameters
+		parameters := job.Parameters
 		var gatewayBatchEvent types.GatewayBatchRequest
-		if err := jsonrs.Unmarshal(batchEvent.EventPayload, &gatewayBatchEvent); err != nil {
+		if err := jsonrs.Unmarshal(job.EventPayload, &gatewayBatchEvent); err != nil {
 			if span != nil {
 				span.SetStatus(stats.SpanStatusError, "cannot unmarshal event payload")
 			}
-			proc.logger.Warnn("json parsing of event payload", logger.NewIntField("jobID", batchEvent.JobID), obskit.Error(err))
+			proc.logger.Warnn("json parsing of event payload", logger.NewIntField("jobID", job.JobID), obskit.Error(err))
 			gatewayBatchEvent.Batch = []types.SingularEventT{}
 			continue
 		}
@@ -1784,7 +1785,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 
 		proc.statsFactory.NewSampledTaggedStat("processor.event_pickup_lag_seconds", stats.TimerType, stats.Tags{
 			"sourceId":    eventParams.SourceId,
-			"workspaceId": batchEvent.WorkspaceId,
+			"workspaceId": job.WorkspaceId,
 		}).Since(receivedAt)
 
 		source, err := proc.getSourceBySourceID(eventParams.SourceId)
@@ -1816,10 +1817,10 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			}
 			dedupBatchKeysIdx++
 			jobsWithMetaData = append(jobsWithMetaData, jobWithMetaData{
-				jobID:         batchEvent.JobID,
-				userId:        batchEvent.UserID,
-				workspaceID:   batchEvent.WorkspaceId,
-				partitionID:   batchEvent.PartitionID,
+				jobID:         job.JobID,
+				userId:        job.UserID,
+				workspaceID:   job.WorkspaceId,
+				partitionID:   job.PartitionID,
 				singularEvent: singularEvent,
 				messageID:     messageId,
 				eventParams:   eventParams,
@@ -1829,8 +1830,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 				parameters:    parameters,
 				span:          span,
 				source:        source,
-				uuid:          batchEvent.UUID,
-				customVal:     batchEvent.CustomVal,
+				uuid:          job.UUID,
+				customVal:     job.CustomVal,
 				payloadFunc:   payloadFunc,
 			})
 			dedupBatchKeys = append(dedupBatchKeys, dedupBatchKey)
@@ -3694,6 +3695,7 @@ func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []
 			Parameters:    []byte(`{}`),
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
+			PartitionID:   job.PartitionID,
 		}
 	}
 	// Mark the jobs as executing

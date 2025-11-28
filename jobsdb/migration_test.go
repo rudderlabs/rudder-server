@@ -506,9 +506,8 @@ func TestMigration(t *testing.T) {
 		require.EqualValues(t, 100, count)
 
 		getJobs, err := jobDB.GetToProcess(context.Background(), GetQueryParams{
-			IgnoreCustomValFiltersInQuery: true,
-			EventsLimit:                   1,
-			JobsLimit:                     1,
+			EventsLimit: 1,
+			JobsLimit:   1,
 		}, nil)
 		require.NoError(t, err)
 		require.Equal(t, 1, getJobs.EventsCount)
@@ -601,15 +600,15 @@ func TestPayloadLiteral(t *testing.T) {
 	require.NoError(t, txn.Commit())
 
 	byteJobs, err := byteJD.GetUnprocessed(ctx, GetQueryParams{
-		EventsLimit: 100, JobsLimit: 100, IgnoreCustomValFiltersInQuery: true,
+		EventsLimit: 100, JobsLimit: 100,
 	})
 	require.NoError(t, err)
 	textJobs, err := textJD.GetUnprocessed(ctx, GetQueryParams{
-		EventsLimit: 100, JobsLimit: 100, IgnoreCustomValFiltersInQuery: true,
+		EventsLimit: 100, JobsLimit: 100,
 	})
 	require.NoError(t, err)
 	jsonbJobs, err := jsonbJD.GetUnprocessed(ctx, GetQueryParams{
-		EventsLimit: 100, JobsLimit: 100, IgnoreCustomValFiltersInQuery: true,
+		EventsLimit: 100, JobsLimit: 100,
 	})
 	require.NoError(t, err)
 	require.Equal(t, 4, byteJobs.EventsCount)
