@@ -94,7 +94,12 @@ func createCSVFile(
 	input []common.AsyncJob,
 	dataHashToJobID map[string][]int64,
 ) (string, []string, []int64, []common.AsyncJob, error) {
-	csvFilePath := fmt.Sprintf("/tmp/rudder-async-destination-logs/salesforce_%s_%d.csv", destinationID, time.Now().Unix())
+	csvDir := "/tmp/rudder-async-destination-logs"
+	if err := os.MkdirAll(csvDir, 0o755); err != nil {
+		return "", nil, nil, nil, fmt.Errorf("creating CSV directory: %w", err)
+	}
+
+	csvFilePath := fmt.Sprintf("%s/salesforce_%s_%d.csv", csvDir, destinationID, time.Now().Unix())
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
 		return "", nil, nil, nil, fmt.Errorf("creating CSV file: %w", err)

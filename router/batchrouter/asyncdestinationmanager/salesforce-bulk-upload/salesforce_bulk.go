@@ -104,16 +104,12 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	var allFailedJobIDs []int64
 	var sfJobs []SalesforceJobInfo
 
-	allFailedJobIDs = append(allFailedJobIDs, failedJobIDs...)
-
 	for len(input) > 0 {
-		s.hashMapMutex.Lock()
 		csvFilePath, csvHeaders, insertedJobIDs, overflowedJobs, err := createCSVFile(
 			destinationID,
 			input,
 			s.dataHashToJobID,
 		)
-		s.hashMapMutex.Unlock()
 
 		if err != nil {
 			s.logger.Errorn("Error creating CSV: %v", obskit.Error(err))
@@ -401,9 +397,6 @@ func (s *Uploader) matchRecordsToJobs(
 		AbortedReasons: make(map[int64]string),
 		WarningReasons: make(map[int64]string),
 	}
-
-	s.hashMapMutex.RLock()
-	defer s.hashMapMutex.RUnlock()
 
 	for _, failedRecord := range failedRecords {
 		headersStr := failedRecord["_headers"]

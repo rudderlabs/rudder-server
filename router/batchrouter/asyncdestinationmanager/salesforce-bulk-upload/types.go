@@ -2,7 +2,6 @@ package salesforcebulkupload
 
 import (
 	"net/http"
-	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -26,7 +25,6 @@ type Uploader struct {
 	statsFactory    stats.Stats
 	apiService      APIServiceInterface
 	dataHashToJobID map[string][]int64
-	hashMapMutex    sync.RWMutex
 	destinationInfo *oauthv2.DestinationInfo
 }
 
@@ -88,3 +86,21 @@ type ObjectInfo struct {
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 )
+
+// NewUploaderForTest creates an Uploader instance for testing purposes.
+// This function is exported to allow test packages to create Uploader instances
+// without accessing unexported fields.
+func NewUploaderForTest(
+	logger logger.Logger,
+	apiService APIServiceInterface,
+	dataHashToJobID map[string][]int64,
+) *Uploader {
+	if dataHashToJobID == nil {
+		dataHashToJobID = make(map[string][]int64)
+	}
+	return &Uploader{
+		logger:          logger,
+		apiService:      apiService,
+		dataHashToJobID: dataHashToJobID,
+	}
+}
