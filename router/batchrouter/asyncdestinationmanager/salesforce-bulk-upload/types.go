@@ -1,8 +1,11 @@
 package salesforcebulkupload
 
+//go:generate mockgen -destination=../../../../mocks/router/salesforcebulkupload/salesforcebulkupload_mock.go -package=mocks github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/salesforce-bulk-upload APIServiceInterface
+
 import (
 	"net/http"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
@@ -26,6 +29,9 @@ type Uploader struct {
 	apiService      APIServiceInterface
 	dataHashToJobID map[string][]int64
 	destinationInfo *oauthv2.DestinationInfo
+	config          struct {
+		maxBufferCapacity config.ValueLoader[int64]
+	}
 }
 
 type APIServiceInterface interface {
@@ -86,21 +92,3 @@ type ObjectInfo struct {
 const (
 	destName = "SALESFORCE_BULK_UPLOAD"
 )
-
-// NewUploaderForTest creates an Uploader instance for testing purposes.
-// This function is exported to allow test packages to create Uploader instances
-// without accessing unexported fields.
-func NewUploaderForTest(
-	logger logger.Logger,
-	apiService APIServiceInterface,
-	dataHashToJobID map[string][]int64,
-) *Uploader {
-	if dataHashToJobID == nil {
-		dataHashToJobID = make(map[string][]int64)
-	}
-	return &Uploader{
-		logger:          logger,
-		apiService:      apiService,
-		dataHashToJobID: dataHashToJobID,
-	}
-}

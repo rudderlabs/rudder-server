@@ -108,7 +108,7 @@ func TestRequestAugmenter_Augment(t *testing.T) {
 			req, err := http.NewRequest("POST", "https://example.com/api", bytes.NewReader(tt.body))
 			require.NoError(t, err)
 
-			err = RequestAugmenter.Augment(req, tt.body, tt.secret)
+			err = NewRequestAugmenter().Augment(req, tt.body, tt.secret)
 
 			if tt.expectedError != "" {
 				require.Error(t, err)
@@ -267,7 +267,7 @@ func TestRequestAugmenter_Augment_RequestModification(t *testing.T) {
 		secret := json.RawMessage(`{"access_token":"test_token","instance_url":"https://newhost.salesforce.com"}`)
 		body := []byte(`{"test":"data"}`)
 
-		err = RequestAugmenter.Augment(req, body, secret)
+		err = NewRequestAugmenter().Augment(req, body, secret)
 		require.NoError(t, err)
 
 		require.Equal(t, "newhost.salesforce.com", req.URL.Host)
@@ -285,7 +285,7 @@ func TestRequestAugmenter_Augment_RequestModification(t *testing.T) {
 		body := []byte(`{"readable":"multiple times"}`)
 		secret := json.RawMessage(`{"access_token":"token","instance_url":"https://test.salesforce.com"}`)
 
-		err = RequestAugmenter.Augment(req, body, secret)
+		err = NewRequestAugmenter().Augment(req, body, secret)
 		require.NoError(t, err)
 
 		// Read body first time

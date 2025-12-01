@@ -1,6 +1,7 @@
 package salesforcebulkupload
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,12 +9,71 @@ import (
 
 	"github.com/tidwall/gjson"
 
+	"net/http"
+	"time"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
+	augmenter "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/salesforce-bulk-upload/augmenter"
+	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	oauthv2common "github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	oauthv2httpclient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
+
+func NewManager(
+	conf *config.Config,
+	logger logger.Logger,
+	statsFactory stats.Stats,
+	destination *backendconfig.DestinationT,
+	backendConfig backendconfig.BackendConfig,
+) (common.AsyncDestinationManager, error) {
+	destinationInfo := &oauthv2.DestinationInfo{
+		Config:           destination.Config,
+		DefinitionConfig: destination.DestinationDefinition.Config,
+		WorkspaceID:      destination.WorkspaceID,
+		DestType:         destination.DestinationDefinition.Name,
+		ID:               destination.ID,
+	}
+	httpClientTimeout := conf.GetDurationVar(30, time.Second, "SalesforceBulkUpload.httpClientTimeout")
+	cache := oauthv2.NewOauthTokenCache()
+	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
+		Logger:              logger.Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID)),
+		Augmenter:           augmenter.NewRequestAugmenter(),
+		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("BatchRouter.SALESFORCE_BULK_UPLOAD", conf),
+	}
+	originalHttpClient := &http.Client{Transport: &http.Transport{}, Timeout: httpClientTimeout}
+	client := oauthv2httpclient.NewOAuthHttpClient(originalHttpClient, oauthv2common.RudderFlowDelivery, &cache, backendConfig, augmenter.GetAuthErrorCategoryForSalesforce, optionalArgs)
+	apiService := NewAPIService(logger, destinationInfo, client)
+	u := NewUploader(conf, logger, statsFactory, apiService, destinationInfo)
+	return u, nil
+}
+
+func NewUploader(
+	conf *config.Config,
+	logger logger.Logger,
+	statsFactory stats.Stats,
+	apiService APIServiceInterface,
+	destinationInfo *oauthv2.DestinationInfo,
+) *Uploader {
+	u := &Uploader{
+		logger:          logger,
+		apiService:      apiService,
+		dataHashToJobID: make(map[string][]int64),
+		destinationInfo: destinationInfo,
+		statsFactory:    statsFactory,
+		destName:        destName,
+	}
+	u.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SalesforceBulkUpload.maxBufferCapacity")
+	return u
+}
 
 func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Parse the event payload directly
@@ -73,6 +133,32 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	return string(responsePayload), nil
 }
 
+func (s *Uploader) readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("opening file: %w", err)
+	}
+	defer file.Close()
+
+	var jobs []common.AsyncJob
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(nil, int(s.config.maxBufferCapacity.Load()))
+
+	for scanner.Scan() {
+		var job common.AsyncJob
+		if err := jsonrs.Unmarshal(scanner.Bytes(), &job); err != nil {
+			return nil, fmt.Errorf("unmarshalling job: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scanning file: %w", err)
+	}
+
+	return jobs, nil
+}
+
 func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
@@ -80,7 +166,7 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	failedJobIDs := asyncDestStruct.FailedJobIDs
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
 
-	input, err := readJobsFromFile(filePath)
+	input, err := s.readJobsFromFile(filePath)
 	if err != nil {
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),

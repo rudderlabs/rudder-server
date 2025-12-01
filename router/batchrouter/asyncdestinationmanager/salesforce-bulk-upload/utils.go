@@ -1,7 +1,6 @@
 package salesforcebulkupload
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/csv"
@@ -11,39 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
+	"github.com/samber/lo"
 )
 
 const (
 	maxFileSize = 100 * 1024 * 1024 // 100MB in bytes
 )
-
-func readJobsFromFile(filePath string) ([]common.AsyncJob, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("opening file: %w", err)
-	}
-	defer file.Close()
-
-	var jobs []common.AsyncJob
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(nil, 50000*1024)
-
-	for scanner.Scan() {
-		var job common.AsyncJob
-		if err := jsonrs.Unmarshal(scanner.Bytes(), &job); err != nil {
-			return nil, fmt.Errorf("unmarshalling job: %w", err)
-		}
-		jobs = append(jobs, job)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scanning file: %w", err)
-	}
-
-	return jobs, nil
-}
 
 func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
 	if len(jobs) == 0 {
@@ -116,20 +89,21 @@ func createCSVFile(
 		return "", nil, nil, nil, fmt.Errorf("no jobs to process")
 	}
 
-	headerSet := make(map[string]bool)
+	headerSet := make(map[string]struct{})
 	for _, job := range input {
 		for key := range job.Message {
-			headerSet[key] = true
+			if _, ok := headerSet[key]; ok {
+				continue
+			}
+			headerSet[key] = struct{}{}
 		}
 	}
 
-	headers := make([]string, 0, len(headerSet))
-	for key := range headerSet {
-		headers = append(headers, key)
-	}
+	headers := lo.Keys(headerSet)
+
 	sort.Strings(headers)
 
-	headerIndex := make(map[string]int)
+	headerIndex := make(map[string]int, len(headers))
 	for i, key := range headers {
 		headerIndex[key] = i
 	}

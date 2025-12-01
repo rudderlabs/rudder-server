@@ -13,11 +13,14 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
+	oauthv2extensions "github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 )
 
 type requestAugmenter struct{}
 
-var RequestAugmenter = &requestAugmenter{}
+func NewRequestAugmenter() oauthv2extensions.Augmenter {
+	return &requestAugmenter{}
+}
 
 // Custom augmenter for Salesforce which sets token to Authorization header and instance URL to the request URL
 func (s *requestAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
