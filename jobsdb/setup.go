@@ -36,7 +36,7 @@ func (jd *Handle) setupDatabaseTables(templateData map[string]interface{}) {
 	}
 }
 
-func (jd *Handle) runAlwaysChangesets(templateData map[string]interface{}) {
+func (jd *Handle) runAlwaysChangesets(templateData map[string]any) {
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
 		Handle:          jd.dbHandle,
