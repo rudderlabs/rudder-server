@@ -10,12 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/samber/lo"
-)
 
-const (
-	maxFileSize = 100 * 1024 * 1024 // 100MB in bytes
+	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
@@ -65,28 +62,24 @@ func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
 func createCSVFile(
 	destinationID string,
 	input []common.AsyncJob,
-	dataHashToJobID map[string][]int64,
-) (string, []string, []int64, []common.AsyncJob, error) {
+) (string, []string, map[string][]int64, error) {
 	csvDir := "/tmp/rudder-async-destination-logs"
 	if err := os.MkdirAll(csvDir, 0o755); err != nil {
-		return "", nil, nil, nil, fmt.Errorf("creating CSV directory: %w", err)
+		return "", nil, nil, fmt.Errorf("creating CSV directory: %w", err)
 	}
 
 	csvFilePath := fmt.Sprintf("%s/salesforce_%s_%d.csv", csvDir, destinationID, time.Now().Unix())
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
-		return "", nil, nil, nil, fmt.Errorf("creating CSV file: %w", err)
+		return "", nil, nil, fmt.Errorf("creating CSV file: %w", err)
 	}
 	defer csvFile.Close()
 
 	writer := csv.NewWriter(csvFile)
 	defer writer.Flush()
 
-	var insertedJobIDs []int64
-	var overflowedJobs []common.AsyncJob
-
 	if len(input) == 0 {
-		return "", nil, nil, nil, fmt.Errorf("no jobs to process")
+		return "", nil, nil, fmt.Errorf("no jobs to process")
 	}
 
 	headerSet := make(map[string]struct{})
@@ -109,47 +102,32 @@ func createCSVFile(
 	}
 
 	if err := writer.Write(headers); err != nil {
-		return "", nil, nil, nil, fmt.Errorf("writing CSV header: %w", err)
+		return "", nil, nil, fmt.Errorf("writing CSV header: %w", err)
 	}
 
-	currentSize := int64(len(strings.Join(headers, ",")) + 1)
-
+	dataHashToJobID := make(map[string][]int64)
 	for _, job := range input {
 		row := make([]string, len(headers))
-
 		for key, value := range job.Message {
 			if idx, ok := headerIndex[key]; ok {
 				row[idx] = fmt.Sprintf("%v", value)
 			}
 		}
-
 		jobID := int64(job.Metadata["job_id"].(float64))
-
 		buf := &bytes.Buffer{}
 		tempWriter := csv.NewWriter(buf)
 		if err := tempWriter.Write(row); err != nil {
-			return "", nil, nil, nil, fmt.Errorf("calculating row size: %w", err)
+			return "", nil, nil, fmt.Errorf("calculating row size: %w", err)
 		}
 		tempWriter.Flush()
-		rowSize := int64(buf.Len())
-
-		if currentSize+rowSize > maxFileSize {
-			overflowedJobs = append(overflowedJobs, job)
-			continue
-		}
-
 		if err := writer.Write(row); err != nil {
-			return "", nil, nil, nil, fmt.Errorf("writing CSV row: %w", err)
+			return "", nil, nil, fmt.Errorf("writing CSV row: %w", err)
 		}
-
-		currentSize += rowSize
-		insertedJobIDs = append(insertedJobIDs, jobID)
-
 		hash := calculateHashCode(row)
 		dataHashToJobID[hash] = append(dataHashToJobID[hash], jobID)
 	}
 
-	return csvFilePath, headers, insertedJobIDs, overflowedJobs, nil
+	return csvFilePath, headers, dataHashToJobID, nil
 }
 
 func calculateHashCode(row []string) string {

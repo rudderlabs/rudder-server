@@ -3,7 +3,6 @@ package salesforcebulkupload
 import (
 	"encoding/csv"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -186,12 +185,9 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-
-			dataHashToJobID := make(map[string][]int64)
-			csvFilePath, headers, insertedJobIDs, overflowedJobs, err := createCSVFile(
+			csvFilePath, headers, hashToJobID, err := createCSVFile(
 				"test-dest-123",
 				tc.jobs,
-				dataHashToJobID,
 			)
 
 			if tc.wantErr {
@@ -202,8 +198,6 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEmpty(t, csvFilePath)
 			require.NotEmpty(t, headers)
-			require.Len(t, insertedJobIDs, tc.expectedInserted)
-			require.Len(t, overflowedJobs, tc.expectedOverflow)
 
 			_, err = os.Stat(csvFilePath)
 			require.NoError(t, err)
@@ -212,7 +206,7 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 				require.NoError(t, os.Remove(csvFilePath))
 			})
 
-			require.Len(t, dataHashToJobID, tc.expectedInserted)
+			require.Len(t, hashToJobID, tc.expectedInserted)
 		})
 	}
 }
@@ -405,17 +399,15 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 			},
 		}
 
-		dataHashToJobID := make(map[string][]int64)
-		csvFilePath, headers, insertedJobIDs, _, err := createCSVFile(
+		csvFilePath, headers, hashToJobID, err := createCSVFile(
 			"test-dest",
 			jobs,
-			dataHashToJobID,
 		)
 
 		require.NoError(t, err)
 		defer os.Remove(csvFilePath)
 
-		require.Len(t, insertedJobIDs, 3)
+		require.Len(t, hashToJobID, 3)
 		require.Contains(t, headers, "Email")
 		require.Contains(t, headers, "FirstName")
 		require.Contains(t, headers, "LastName")
@@ -437,39 +429,6 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 		for i, row := range records[1:] {
 			require.Len(t, row, 5, "Row %d should have 5 columns", i+1)
 		}
-	})
-}
-
-func TestSalesforceBulk_createCSVFile_SingleRowTooLarge(t *testing.T) {
-	t.Run("returns empty insertedJobIDs when single row exceeds limit", func(t *testing.T) {
-		hugeData := strings.Repeat("x", 101*1024*1024)
-
-		jobs := []common.AsyncJob{
-			{
-				Message: map[string]interface{}{
-					"Email": "test@example.com",
-					"Data":  hugeData,
-				},
-				Metadata: map[string]interface{}{"job_id": float64(1)},
-			},
-		}
-
-		dataHashToJobID := make(map[string][]int64)
-		csvFilePath, headers, insertedJobIDs, overflowedJobs, err := createCSVFile(
-			"test-dest",
-			jobs,
-			dataHashToJobID,
-		)
-
-		require.NoError(t, err)
-		if csvFilePath != "" {
-			defer os.Remove(csvFilePath)
-		}
-
-		require.Empty(t, insertedJobIDs, "No jobs should fit when row exceeds 100MB")
-		require.Len(t, overflowedJobs, 1, "Job should be in overflow")
-		require.Equal(t, int64(1), int64(overflowedJobs[0].Metadata["job_id"].(float64)))
-		require.NotEmpty(t, headers, "Headers should still be created")
 	})
 }
 

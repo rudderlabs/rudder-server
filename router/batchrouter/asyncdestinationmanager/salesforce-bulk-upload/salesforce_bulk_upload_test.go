@@ -2,7 +2,6 @@ package salesforcebulkupload_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"testing"
 
@@ -174,22 +173,16 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 			},
-			FileName:        tempFile.Name(),
-			FailedJobIDs:    []int64{},
-			ImportingJobIDs: []int64{},
+			FileName: tempFile.Name(),
+			ImportingJobIDs: []int64{
+				1,
+				2,
+			},
 		})
 
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
-		require.NotNil(t, result.ImportingParameters)
-
-		var params struct {
-			Jobs []salesforcebulkupload.SalesforceJobInfo `json:"jobs"`
-		}
-		err := jsonrs.Unmarshal(result.ImportingParameters, &params)
-		require.NoError(t, err)
-		require.Len(t, params.Jobs, 1)
-		require.Equal(t, "sf-job-123", params.Jobs[0].ID)
+		require.JSONEq(t, `{"id":"sf-job-123","headers":["Email","FirstName","LastName"]}`, string(result.ImportingParameters))
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
@@ -207,14 +200,16 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 			},
-			FileName:        tempFile.Name(),
-			FailedJobIDs:    []int64{},
-			ImportingJobIDs: []int64{},
+			FileName: tempFile.Name(),
+			ImportingJobIDs: []int64{
+				1,
+				2,
+			},
 		})
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "Unable to upload data to Salesforce Bulk jobs, retrying in next iteration")
+		require.Contains(t, result.FailedReason, "Error creating Salesforce job: Internal Server Error")
 	})
 
 	t.Run("upload with rate limit error", func(t *testing.T) {
@@ -232,14 +227,16 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 			},
-			FileName:        tempFile.Name(),
-			FailedJobIDs:    []int64{},
-			ImportingJobIDs: []int64{},
+			FileName: tempFile.Name(),
+			ImportingJobIDs: []int64{
+				1,
+				2,
+			},
 		})
 
 		require.Equal(t, 0, result.ImportingCount)
 		require.Greater(t, result.FailedCount, 0)
-		require.Contains(t, result.FailedReason, "Unable to upload data to Salesforce Bulk jobs, retrying in next iteration")
+		require.Contains(t, result.FailedReason, "Error creating Salesforce job: Rate limit exceeded")
 	})
 }
 
@@ -263,7 +260,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				Complete:   true,
 				HasFailed:  false,
 			},
-			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-123","operation":"insert","headers":["Email"]}]}`},
+			pollInput: common.AsyncPoll{ImportId: `{"id":"job-123","headers":["Email"]}`},
 		},
 		{
 			name: "job in progress",
@@ -275,7 +272,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				StatusCode: 200,
 				InProgress: true,
 			},
-			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-456","headers":["Email"]}]}`},
+			pollInput: common.AsyncPoll{ImportId: `{"id":"job-456","headers":["Email"]}`},
 		},
 		{
 			name: "job complete with failures",
@@ -290,7 +287,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				Complete:   true,
 				HasFailed:  true,
 			},
-			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-789","headers":["Email"]}]}`},
+			pollInput: common.AsyncPoll{ImportId: `{"id":"job-789","headers":["Email"]}`},
 		},
 		{
 			name: "job failed",
@@ -304,44 +301,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 				Complete:   true,
 				HasFailed:  true,
 			},
-			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-failed","headers":["Email"]}]}`},
-		},
-		{
-			name: "When multiple jobs are present and all are complete",
-			jobStatus: []*salesforcebulkupload.JobResponse{{
-				ID:                     "job-123",
-				State:                  "JobComplete",
-				NumberRecordsProcessed: 100,
-				NumberRecordsFailed:    0,
-			}, {
-				ID:                     "job-456",
-				State:                  "JobComplete",
-				NumberRecordsProcessed: 100,
-				NumberRecordsFailed:    0,
-			}},
-			expectedStatus: common.PollStatusResponse{
-				StatusCode: 200,
-				Complete:   true,
-				HasFailed:  false,
-			},
-			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-123","headers":["Email"]},{"id":"job-456","headers":["Email"]}]}`},
-		},
-		{
-			name: "When multiple jobs are present and one is in progress",
-			jobStatus: []*salesforcebulkupload.JobResponse{{
-				ID:                     "job-123",
-				State:                  "JobComplete",
-				NumberRecordsProcessed: 100,
-				NumberRecordsFailed:    0,
-			}, {
-				ID:    "job-456",
-				State: "InProgress",
-			}},
-			expectedStatus: common.PollStatusResponse{
-				StatusCode: 200,
-				InProgress: true,
-			},
-			pollInput: common.AsyncPoll{ImportId: `{"jobs":[{"id":"job-123","headers":["Email"]},{"id":"job-456","headers":["Email"]}]}`},
+			pollInput: common.AsyncPoll{ImportId: `{"id":"job-failed","headers":["Email"]}`},
 		},
 	}
 
@@ -367,75 +327,8 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 	}
 }
 
-func TestSalesforceBulk_Upload_OverflowHandling(t *testing.T) {
-	t.Run("creates multiple Salesforce jobs when CSV exceeds 100MB", func(t *testing.T) {
-		tempFile, err := os.CreateTemp("", "test_overflow_*.json")
-		require.NoError(t, err)
-		defer os.Remove(tempFile.Name())
-
-		largeData := make([]byte, 200*1024)
-		for i := 0; i < 200*1024; i++ {
-			largeData[i] = 'x'
-		}
-
-		testData := make([]common.AsyncJob, 0)
-		for i := 1; i <= 600; i++ {
-			testData = append(testData, common.AsyncJob{
-				Message: map[string]interface{}{
-					"Email":     fmt.Sprintf("user%d@example.com", i),
-					"LargeData": string(largeData),
-				},
-				Metadata: map[string]interface{}{
-					"job_id": float64(i), "externalId": []map[string]interface{}{{
-						"id":             fmt.Sprintf("user%d@example.com", i),
-						"identifierType": "Email",
-						"type":           "SALESFORCE_BULK_UPLOAD-Lead",
-					}},
-				},
-			})
-		}
-
-		for _, job := range testData {
-			jobBytes, _ := jsonrs.Marshal(job)
-			_, err := tempFile.Write(jobBytes)
-			require.NoError(t, err)
-			_, err = tempFile.Write([]byte("\n"))
-			require.NoError(t, err)
-		}
-		tempFile.Close()
-
-		ctrl := gomock.NewController(t)
-		mockAPI := salesforcebulkupload_mocks.NewMockAPIServiceInterface(ctrl)
-		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job", nil)
-		mockAPI.EXPECT().CreateJob(gomock.Any(), gomock.Any(), gomock.Any()).Return("sf-job", nil)
-		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-		mockAPI.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
-		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
-
-		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
-
-		result := uploader.Upload(&common.AsyncDestinationStruct{
-			Destination: &backendconfig.DestinationT{ID: "test-dest"},
-			FileName:    tempFile.Name(),
-		})
-
-		require.Equal(t, 600, result.ImportingCount, "All jobs should be imported")
-		require.Equal(t, 0, result.FailedCount, "No jobs should fail due to overflow")
-
-		var params struct {
-			Jobs []salesforcebulkupload.SalesforceJobInfo `json:"jobs"`
-		}
-		err = jsonrs.Unmarshal(result.ImportingParameters, &params)
-		require.NoError(t, err)
-		require.Greater(t, len(params.Jobs), 1, "Should create multiple Salesforce jobs for overflow")
-	})
-}
-
 func TestSalesforceBulk_GetUploadStats(t *testing.T) {
-
 	t.Run("successful stats retrieval with failures", func(t *testing.T) {
-
 		tempFile, err := os.CreateTemp("", "test_upload_*.json")
 		require.NoError(t, err)
 		defer os.Remove(tempFile.Name())
@@ -469,13 +362,9 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			Destination: &backendconfig.DestinationT{ID: "test-dest"},
 			FileName:    tempFile.Name(),
 		})
-		// uploader.dataHashToJobID = map[string][]int64{
-		// 	"d03113301b5c9be7aaa6407e41a88bb7f2cbe38d29349451d53e749a9eee3dc4": {1},
-		// 	"2c90f136effc0f60dda9383598cbeffe32671a8ecb1bbd19e9dfa6296e29a944": {2},
-		// }
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","headers":["Email","FirstName","LastName"]}]}`),
+			Parameters: json.RawMessage(`{"id":"test-job-123","headers":["Email","FirstName","LastName"]}`),
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -499,11 +388,11 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"jobs":[{"id":"test-job-123","headers":["Email"]}]}`),
+			Parameters: json.RawMessage(`{"id":"test-job-123","headers":["Email"]}`),
 		})
 
 		require.Equal(t, 500, result.StatusCode)
-		require.Contains(t, result.Error, "Failed to fetch failed records for job test-job-123: Server error")
+		require.Contains(t, result.Error, "Failed to fetch failed records for job: test-job-123, Server error")
 	})
 
 	t.Run("handles invalid parameters", func(t *testing.T) {
@@ -514,7 +403,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		})
 
 		require.Equal(t, 500, result.StatusCode)
-		require.Contains(t, result.Error, "Failed to parse parameters")
+		require.Contains(t, result.Error, "Failed to parse poll parameters")
 	})
 }
 
