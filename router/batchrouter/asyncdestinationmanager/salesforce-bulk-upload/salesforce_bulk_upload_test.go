@@ -182,7 +182,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
-		require.JSONEq(t, `{"id":"sf-job-123","headers":["Email","FirstName","LastName"]}`, string(result.ImportingParameters))
+		require.JSONEq(t, `{"importId":"{\"id\":\"sf-job-123\",\"headers\":[\"Email\",\"FirstName\",\"LastName\"]}","metadata":{"csvHeader":""}}`, string(result.ImportingParameters))
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {
@@ -364,7 +364,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		})
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"id":"test-job-123","headers":["Email","FirstName","LastName"]}`),
+			Parameters: json.RawMessage(`{"importId":"{\"id\":\"sf-job-123\",\"headers\":[\"Email\",\"FirstName\",\"LastName\"]}","metadata":{"csvHeader":""}}`),
 			ImportingList: []*jobsdb.JobT{
 				{JobID: 1},
 				{JobID: 2},
@@ -383,12 +383,11 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 			Message:    "Server error",
 			Category:   "ServerError",
 		})
-		// mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return(nil, nil)
 
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
 
 		result := uploader.GetUploadStats(common.GetUploadStatsInput{
-			Parameters: json.RawMessage(`{"id":"test-job-123","headers":["Email"]}`),
+			Parameters: json.RawMessage(`{"importId":"{\"id\":\"test-job-123\",\"headers\":[\"Email\"]}","metadata":{"csvHeader":""}}`),
 		})
 
 		require.Equal(t, 500, result.StatusCode)

@@ -257,10 +257,20 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 		ID:      sfJobID,
 		Headers: csvHeaders,
 	})
-
+	var parameters common.ImportParameters
+	parameters.ImportId = string(importID)
+	importParameters, err := jsonrs.Marshal(parameters)
+	if err != nil {
+		return common.AsyncUploadOutput{
+			FailedJobIDs:  importingJobIDs,
+			FailedReason:  fmt.Sprintf("Failed to marshal import parameters: %v", err.Error()),
+			FailedCount:   len(importingJobIDs),
+			DestinationID: destinationID,
+		}
+	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
-		ImportingParameters: importID,
+		ImportingParameters: importParameters,
 		ImportingCount:      len(importingJobIDs),
 		DestinationID:       destinationID,
 	}
@@ -322,8 +332,8 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 		s.clearDataHashToJobID()
 	}()
 	var saleforceJobInfo SalesforceJobInfo
-
-	err := jsonrs.Unmarshal([]byte(input.Parameters), &saleforceJobInfo)
+	importId := gjson.GetBytes(input.Parameters, "importId").String()
+	err := jsonrs.Unmarshal([]byte(importId), &saleforceJobInfo)
 	if err != nil {
 		return common.GetUploadStatsResponse{
 			StatusCode: 500,
