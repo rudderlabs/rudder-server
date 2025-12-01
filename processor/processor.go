@@ -2966,8 +2966,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	transformationEnabled := len(destination.Transformations) > 0
 	proc.config.configSubscriberLock.RUnlock()
 
-	trackingPlanEnabled := srcPipelineSteps[SourceIDT(sourceID)].trackingPlanValidation
-	srcHydrationEnabled := srcPipelineSteps[SourceIDT(sourceID)].srcHydration
+	sourceSteps := srcPipelineSteps[SourceIDT(sourceID)]
 
 	var inCountMap map[string]int64
 	var inCountMetadataMap map[string]MetricMetadata
@@ -3014,9 +3013,9 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	var eventsToTransform []types.TransformerEvent
 	var inPU string
 	switch {
-	case trackingPlanEnabled:
+	case sourceSteps.trackingPlanValidation:
 		inPU = reportingtypes.TRACKINGPLAN_VALIDATOR
-	case srcHydrationEnabled:
+	case sourceSteps.srcHydration:
 		inPU = reportingtypes.SOURCE_HYDRATION
 	default:
 		inPU = reportingtypes.DESTINATION_FILTER

@@ -106,12 +106,9 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		enhanceWithViolation(response, trackingPlanID, trackingPlanVersion)
 		// Set sourcePipelineSteps.trackingPlanValidation for the sourceID to true.
 		// This is being used to distinguish the flows in reporting service
-		if step, exists := sourcePipelineSteps[sourceId]; exists {
-			step.trackingPlanValidation = true
-			sourcePipelineSteps[sourceId] = step
-		} else {
-			sourcePipelineSteps[sourceId] = SourcePipelineSteps{trackingPlanValidation: true}
-		}
+		sourceSteps := sourcePipelineSteps[sourceId]
+		sourceSteps.trackingPlanValidation = true
+		sourcePipelineSteps[sourceId] = sourceSteps
 
 		inPU := reportingtypes.DESTINATION_FILTER
 		if sourcePipelineSteps[sourceId].srcHydration {
