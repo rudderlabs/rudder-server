@@ -215,6 +215,7 @@ func srcTransformerFunc(h SrcHydrationHandler) http.HandlerFunc {
 		response, err := h(request)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(err.Error()))
 			return
 		}
 		_ = jsonrs.NewEncoder(w).Encode(response)

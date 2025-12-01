@@ -66,10 +66,13 @@ func enhanceWithViolation(response types.Response, trackingPlanID string, tracki
 // validateEvents If the TrackingPlanId exist for a particular write key then we are going to Validate from the transformer.
 // The Response will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsBySourceId
-func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, map[SourceIDT]bool) {
+func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types.TransformerEvent, eventsByMessageID map[string]types.SingularEventWithReceivedAt, srcHydrationEnabledMap map[SourceIDT]bool) (map[SourceIDT][]types.TransformerEvent, []*reportingtypes.PUReportedMetric, sourceIDPipelineSteps) {
 	validatedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	validatedReportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
-	trackingPlanEnabledMap := make(map[SourceIDT]bool)
+	sourcePipelineSteps := make(sourceIDPipelineSteps)
+	for enabledSourceId, enabled := range srcHydrationEnabledMap {
+		sourcePipelineSteps[enabledSourceId] = SourcePipelineSteps{srcHydration: enabled}
+	}
 
 	for sourceId := range groupedEventsBySourceId {
 		eventList := groupedEventsBySourceId[sourceId]
@@ -101,13 +104,20 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		}
 
 		enhanceWithViolation(response, trackingPlanID, trackingPlanVersion)
-		// Set trackingPlanEnabledMap for the sourceID to true.
+		// Set sourcePipelineSteps.trackingPlanValidation for the sourceID to true.
 		// This is being used to distinguish the flows in reporting service
-		trackingPlanEnabledMap[sourceId] = true
+		sourceSteps := sourcePipelineSteps[sourceId]
+		sourceSteps.trackingPlanValidation = true
+		sourcePipelineSteps[sourceId] = sourceSteps
+
+		inPU := reportingtypes.DESTINATION_FILTER
+		if sourcePipelineSteps[sourceId].srcHydration {
+			inPU = reportingtypes.SOURCE_HYDRATION
+		}
 
 		var successMetrics []*reportingtypes.PUReportedMetric
-		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, &transformerEvent.Destination, backendconfig.Connection{}, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
-		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, reportingtypes.DESTINATION_FILTER, reportingtypes.TRACKINGPLAN_VALIDATOR)
+		eventsToTransform, successMetrics, _, _ := proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, &transformerEvent.Destination, backendconfig.Connection{}, inPU, reportingtypes.TRACKINGPLAN_VALIDATOR) // Note: Sending false for usertransformation enabled is safe because this stage is before user transformation.
+		nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.TRACKINGPLAN_VALIDATOR)
 
 		validationStat.numValidationSuccessEvents.Count(len(eventsToTransform))
 		validationStat.numValidationFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
@@ -128,7 +138,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 		}
 		validatedEventsBySourceId[sourceId] = append(validatedEventsBySourceId[sourceId], eventsToTransform...)
 	}
-	return validatedEventsBySourceId, validatedReportMetrics, trackingPlanEnabledMap
+	return validatedEventsBySourceId, validatedReportMetrics, sourcePipelineSteps
 }
 
 // newValidationStat Creates a new TrackingPlanStatT instance
