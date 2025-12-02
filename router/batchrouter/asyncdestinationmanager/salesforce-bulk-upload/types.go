@@ -12,15 +12,10 @@ import (
 )
 
 const (
-	API_VERSION  = "v62.0"
-	API_BASE_URL = "https://default.salesforce.com/services/data/" + API_VERSION
+	ApiVersion = "v62.0"
+	ApiBaseURL = "https://default.salesforce.com/services/data/" + ApiVersion
+	CSVDir     = "/tmp/rudder-async-destination-logs"
 )
-
-type DestinationConfig struct {
-	RudderAccountID string `json:"rudderAccountId"`
-	Operation       string `json:"operation"`
-	ObjectType      string `json:"objectType"`
-}
 
 type Uploader struct {
 	destName        string
@@ -56,17 +51,10 @@ type SalesforceJobInfo struct {
 }
 
 type JobResponse struct {
-	ID                     string  `json:"id"`
-	State                  string  `json:"state"`
-	Object                 string  `json:"object"`
-	Operation              string  `json:"operation"`
-	CreatedDate            string  `json:"createdDate"`
-	SystemModstamp         string  `json:"systemModstamp"`
-	NumberRecordsProcessed int     `json:"numberRecordsProcessed"`
-	NumberRecordsFailed    int     `json:"numberRecordsFailed"`
-	TotalProcessingTime    int     `json:"totalProcessingTime"`
-	APIVersion             float64 `json:"apiVersion"`
-	ErrorMessage           string  `json:"errorMessage,omitempty"`
+	ID                  string `json:"id"`
+	State               string `json:"state"`
+	NumberRecordsFailed int    `json:"numberRecordsFailed"`
+	ErrorMessage        string `json:"errorMessage,omitempty"`
 }
 
 type jobCreateRequest struct {

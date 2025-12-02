@@ -50,31 +50,31 @@ func TestRequestAugmenter_Augment(t *testing.T) {
 			name:          "nil secret",
 			secret:        nil,
 			body:          []byte(`{"test":"data"}`),
-			expectedError: "secret is nil",
+			expectedError: ErrSecretNil.Error(),
 		},
 		{
 			name:          "empty access_token",
 			secret:        json.RawMessage(`{"access_token":"","instance_url":"https://test.salesforce.com"}`),
 			body:          []byte(`{"test":"data"}`),
-			expectedError: "access token is empty",
+			expectedError: ErrAccessTokenEmpty.Error(),
 		},
 		{
 			name:          "missing access_token",
 			secret:        json.RawMessage(`{"instance_url":"https://test.salesforce.com"}`),
 			body:          []byte(`{"test":"data"}`),
-			expectedError: "access token is empty",
+			expectedError: ErrAccessTokenEmpty.Error(),
 		},
 		{
 			name:          "empty instance_url",
 			secret:        json.RawMessage(`{"access_token":"test_token","instance_url":""}`),
 			body:          []byte(`{"test":"data"}`),
-			expectedError: "instance URL is empty",
+			expectedError: ErrInstanceURLEmpty.Error(),
 		},
 		{
 			name:          "missing instance_url",
 			secret:        json.RawMessage(`{"access_token":"test_token"}`),
 			body:          []byte(`{"test":"data"}`),
-			expectedError: "instance URL is empty",
+			expectedError: ErrInstanceURLEmpty.Error(),
 		},
 		{
 			name:   "empty body is handled correctly",
@@ -129,7 +129,6 @@ func TestGetAuthErrorCategoryForSalesforce(t *testing.T) {
 		name             string
 		responseBody     []byte
 		expectedCategory string
-		expectedError    string
 	}{
 		{
 			name: "INVALID_SESSION_ID error code returns refresh token category",
@@ -237,15 +236,8 @@ func TestGetAuthErrorCategoryForSalesforce(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			category, err := GetAuthErrorCategoryForSalesforce(tt.responseBody)
+			category := GetAuthErrorCategoryForSalesforce(tt.responseBody)
 
-			if tt.expectedError != "" {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.expectedError)
-				return
-			}
-
-			require.NoError(t, err)
 			require.Equal(t, tt.expectedCategory, category)
 		})
 	}

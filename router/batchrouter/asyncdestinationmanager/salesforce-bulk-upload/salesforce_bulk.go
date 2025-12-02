@@ -43,15 +43,19 @@ func NewManager(
 	}
 	httpClientTimeout := conf.GetDurationVar(30, time.Second, "SalesforceBulkUpload.httpClientTimeout")
 	cache := oauthv2.NewOauthTokenCache()
+	childLogger := logger.Child("salesforcebulkupload").Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID))
+
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
-		Logger:              logger.Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID)),
+		Logger:              childLogger,
 		Augmenter:           augmenter.NewRequestAugmenter(),
 		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("BatchRouter.SALESFORCE_BULK_UPLOAD", conf),
 	}
 	originalHttpClient := &http.Client{Transport: &http.Transport{}, Timeout: httpClientTimeout}
-	client := oauthv2httpclient.NewOAuthHttpClient(originalHttpClient, oauthv2common.RudderFlowDelivery, &cache, backendConfig, augmenter.GetAuthErrorCategoryForSalesforce, optionalArgs)
-	apiService := NewAPIService(logger, destinationInfo, client)
-	u := NewUploader(conf, logger, statsFactory, apiService, destinationInfo)
+	client := oauthv2httpclient.NewOAuthHttpClient(originalHttpClient, oauthv2common.RudderFlowDelivery, &cache, backendConfig, func(responseBody []byte) (string, error) {
+		return augmenter.GetAuthErrorCategoryForSalesforce(responseBody), nil
+	}, optionalArgs)
+	apiService := newAPIService(childLogger, destinationInfo, client)
+	u := NewUploader(conf, childLogger, statsFactory, apiService, destinationInfo)
 	return u, nil
 }
 
@@ -75,11 +79,6 @@ func NewUploader(
 }
 
 func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
-	// Parse the event payload directly
-	if !gjson.ValidBytes(job.EventPayload) {
-		return "", fmt.Errorf("invalid JSON in event payload")
-	}
-
 	// Extract required fields from the input
 	traits := gjson.GetBytes(job.EventPayload, "traits")
 	externalID := gjson.GetBytes(job.EventPayload, "context.externalId")
@@ -162,15 +161,14 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
 	filePath := asyncDestStruct.FileName
-	failedJobIDs := asyncDestStruct.FailedJobIDs
 	importingJobIDs := asyncDestStruct.ImportingJobIDs
 
 	input, err := s.readJobsFromFile(filePath)
 	if err != nil {
 		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+			FailedJobIDs:  importingJobIDs,
 			FailedReason:  fmt.Sprintf("Error reading jobs from file: %v", err),
-			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+			FailedCount:   len(importingJobIDs),
 			DestinationID: destinationID,
 		}
 	}
@@ -178,9 +176,9 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	objectInfo, err := extractObjectInfo(input)
 	if err != nil {
 		return common.AsyncUploadOutput{
-			FailedJobIDs:  append(failedJobIDs, importingJobIDs...),
+			FailedJobIDs:  importingJobIDs,
 			FailedReason:  fmt.Sprintf("Error extracting object info: %v", err),
-			FailedCount:   len(failedJobIDs) + len(importingJobIDs),
+			FailedCount:   len(importingJobIDs),
 			DestinationID: destinationID,
 		}
 	}
@@ -188,10 +186,8 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 		destinationID,
 		input,
 	)
-	s.dataHashToJobID = hashToJobID
-
 	if err != nil {
-		s.logger.Errorn("Error creating CSV: %v", obskit.Error(err))
+		s.logger.Errorn("Error creating CSV", obskit.Error(err))
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  importingJobIDs,
 			FailedReason:  fmt.Sprintf("Error creating CSV: %v", err),
@@ -199,6 +195,7 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 			DestinationID: destinationID,
 		}
 	}
+	s.dataHashToJobID = hashToJobID
 
 	s.logger.Infon("Created CSV file",
 		logger.NewStringField("csvFilePath", csvFilePath),
@@ -210,7 +207,7 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 		objectInfo.ExternalIDField,
 	)
 	if apiError != nil {
-		s.logger.Errorn("Error creating Salesforce job for operation upsert.", logger.NewStringField("apiErrorMessage", apiError.Message))
+		s.logger.Errorn("Error creating Salesforce job for operation upsert.", logger.NewStringField("apiErrorMessage", apiError.Message), logger.NewStringField("category", apiError.Category), logger.NewIntField("statusCode", int64(apiError.StatusCode)))
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  importingJobIDs,
 			FailedReason:  fmt.Sprintf("Error creating Salesforce job: %v", apiError.Message),
@@ -248,10 +245,11 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	}
 
 	s.logger.Infon("Successfully created and closed Salesforce Bulk job", logger.NewStringField("jobID", sfJobID))
-
-	if err := os.Remove(csvFilePath); err != nil {
-		s.logger.Debugn("Failed to remove CSV file.", logger.NewStringField("csvFilePath", csvFilePath), obskit.Error(err))
-	}
+	defer func() {
+		if err := os.Remove(csvFilePath); err != nil {
+			s.logger.Debugn("Failed to remove CSV file.", logger.NewStringField("csvFilePath", csvFilePath), obskit.Error(err))
+		}
+	}()
 
 	importID, _ := jsonrs.Marshal(&SalesforceJobInfo{
 		ID:      sfJobID,
@@ -261,6 +259,9 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	parameters.ImportId = string(importID)
 	importParameters, err := jsonrs.Marshal(parameters)
 	if err != nil {
+		if err := s.apiService.DeleteJob(sfJobID); err != nil {
+			s.logger.Errorn("Error deleting Salesforce job.", logger.NewStringField("apiErrorMessage", err.Message))
+		}
 		return common.AsyncUploadOutput{
 			FailedJobIDs:  importingJobIDs,
 			FailedReason:  fmt.Sprintf("Failed to marshal import parameters: %v", err.Error()),
@@ -283,7 +284,6 @@ func (s *Uploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	if err != nil {
 		return common.PollStatusResponse{
 			StatusCode: 500,
-			Complete:   false,
 			Error:      fmt.Sprintf("Failed to parse poll parameters: %v", err.Error()),
 		}
 	}
@@ -336,7 +336,7 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 	err := jsonrs.Unmarshal([]byte(importId), &saleforceJobInfo)
 	if err != nil {
 		return common.GetUploadStatsResponse{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Error:      fmt.Sprintf("Failed to parse poll parameters: %v", err.Error()),
 		}
 	}
@@ -345,7 +345,7 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 	if apiError != nil {
 		s.logger.Errorn("Failed to fetch failed records for job", logger.NewStringField("jobID", saleforceJobInfo.ID), logger.NewStringField("apiError", apiError.Message))
 		return common.GetUploadStatsResponse{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Error:      fmt.Sprintf("Failed to fetch failed records for job: %s, %s", saleforceJobInfo.ID, apiError.Message),
 		}
 	}
@@ -353,14 +353,14 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 	if apiError != nil {
 		s.logger.Errorn("Failed to fetch successful records for job", logger.NewStringField("jobID", saleforceJobInfo.ID), logger.NewStringField("apiError", apiError.Message))
 		return common.GetUploadStatsResponse{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Error:      fmt.Sprintf("Failed to fetch successful records for job: %s, %s", saleforceJobInfo.ID, apiError.Message),
 		}
 	}
 
 	metadata := s.matchRecordsToJobs(input.ImportingList, failedRecords, successRecords, saleforceJobInfo.Headers)
 	return common.GetUploadStatsResponse{
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 		Metadata:   metadata,
 	}
 }
@@ -368,31 +368,26 @@ func (s *Uploader) GetUploadStats(input common.GetUploadStatsInput) common.GetUp
 func (s *Uploader) handlePollError(apiError *APIError) common.PollStatusResponse {
 	if apiError.Category == "RefreshToken" {
 		return common.PollStatusResponse{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Error:      "OAuth token expired during poll",
-			Complete:   false,
 		}
 	}
 
 	switch apiError.StatusCode {
 	case 429:
 		return common.PollStatusResponse{
-			StatusCode: 429,
+			StatusCode: http.StatusTooManyRequests,
 			Error:      "Rate limit exceeded during poll",
-			Complete:   false,
 		}
 	case 400, 404:
 		return common.PollStatusResponse{
 			StatusCode: apiError.StatusCode,
 			Error:      apiError.Message,
-			Complete:   true,
-			HasFailed:  true,
 		}
 	default:
 		return common.PollStatusResponse{
-			StatusCode: 500,
+			StatusCode: http.StatusInternalServerError,
 			Error:      apiError.Message,
-			Complete:   false,
 		}
 	}
 }
@@ -405,11 +400,9 @@ func (s *Uploader) matchRecordsToJobs(
 	metadata := common.EventStatMeta{
 		FailedKeys:     make([]int64, 0),
 		AbortedKeys:    make([]int64, 0),
-		WarningKeys:    make([]int64, 0),
 		SucceededKeys:  make([]int64, 0),
 		FailedReasons:  make(map[int64]string),
 		AbortedReasons: make(map[int64]string),
-		WarningReasons: make(map[int64]string),
 	}
 
 	for _, failedRecord := range failedRecords {
@@ -441,22 +434,15 @@ func (s *Uploader) matchRecordsToJobs(
 			logger.NewIntField("importing_jobs", int64(len(importingList))),
 		)
 
-		successJobIDSet := lo.SliceToMap(metadata.SucceededKeys, func(jobID int64) (int64, struct{}) {
-			return jobID, struct{}{}
+		importingJobIDs := lo.Map(importingList, func(job *jobsdb.JobT, _ int) int64 {
+			return job.JobID
 		})
+		missingJobIDs, _ := lo.Difference(importingJobIDs, append(metadata.SucceededKeys, metadata.AbortedKeys...))
 
-		abortedJobIDSet := lo.SliceToMap(metadata.AbortedKeys, func(jobID int64) (int64, struct{}) {
-			return jobID, struct{}{}
+		metadata.FailedKeys = missingJobIDs
+		metadata.FailedReasons = lo.SliceToMap(missingJobIDs, func(jobID int64) (int64, string) {
+			return jobID, "Input hash is not found in the data hash to job ID map or the job is not found in the successRespons or failedResponse"
 		})
-
-		for _, job := range importingList {
-			_, okSuccess := successJobIDSet[job.JobID]
-			_, okAborted := abortedJobIDSet[job.JobID]
-			if !okSuccess && !okAborted {
-				metadata.FailedKeys = append(metadata.FailedKeys, job.JobID)
-				metadata.FailedReasons[job.JobID] = "Input hash is not found in the data hash to job ID map or the job is not found in the successRespons or failedResponse"
-			}
-		}
 	}
 	return metadata
 }

@@ -1,11 +1,11 @@
 package salesforcebulkupload
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/csv"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -63,12 +63,10 @@ func createCSVFile(
 	destinationID string,
 	input []common.AsyncJob,
 ) (string, []string, map[string][]int64, error) {
-	csvDir := "/tmp/rudder-async-destination-logs"
-	if err := os.MkdirAll(csvDir, 0o755); err != nil {
+	if err := os.MkdirAll(CSVDir, 0o755); err != nil {
 		return "", nil, nil, fmt.Errorf("creating CSV directory: %w", err)
 	}
-
-	csvFilePath := fmt.Sprintf("%s/salesforce_%s_%d.csv", csvDir, destinationID, time.Now().Unix())
+	csvFilePath := filepath.Join(CSVDir, fmt.Sprintf("salesforce_%s_%d.csv", destinationID, time.Now().Unix()))
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("creating CSV file: %w", err)
@@ -77,10 +75,6 @@ func createCSVFile(
 
 	writer := csv.NewWriter(csvFile)
 	defer writer.Flush()
-
-	if len(input) == 0 {
-		return "", nil, nil, fmt.Errorf("no jobs to process")
-	}
 
 	headerSet := make(map[string]struct{})
 	for _, job := range input {
@@ -96,13 +90,13 @@ func createCSVFile(
 
 	sort.Strings(headers)
 
+	if err := writer.Write(headers); err != nil {
+		return "", nil, nil, fmt.Errorf("writing CSV header: %w", err)
+	}
+
 	headerIndex := make(map[string]int, len(headers))
 	for i, key := range headers {
 		headerIndex[key] = i
-	}
-
-	if err := writer.Write(headers); err != nil {
-		return "", nil, nil, fmt.Errorf("writing CSV header: %w", err)
 	}
 
 	dataHashToJobID := make(map[string][]int64)
@@ -114,12 +108,6 @@ func createCSVFile(
 			}
 		}
 		jobID := int64(job.Metadata["job_id"].(float64))
-		buf := &bytes.Buffer{}
-		tempWriter := csv.NewWriter(buf)
-		if err := tempWriter.Write(row); err != nil {
-			return "", nil, nil, fmt.Errorf("calculating row size: %w", err)
-		}
-		tempWriter.Flush()
 		if err := writer.Write(row); err != nil {
 			return "", nil, nil, fmt.Errorf("writing CSV row: %w", err)
 		}
@@ -142,22 +130,4 @@ func calculateHashFromRecord(record map[string]string, csvHeaders []string) stri
 		values = append(values, record[header])
 	}
 	return calculateHashCode(values)
-}
-
-func extractOperationFromJob(job common.AsyncJob, defaultOperation string) string {
-	if operation, ok := job.Metadata["rudderOperation"].(string); ok && operation != "" {
-		return operation
-	}
-	return defaultOperation
-}
-
-func groupJobsByOperation(jobs []common.AsyncJob, defaultOperation string) map[string][]common.AsyncJob {
-	grouped := make(map[string][]common.AsyncJob)
-
-	for _, job := range jobs {
-		operation := extractOperationFromJob(job, defaultOperation)
-		grouped[operation] = append(grouped[operation], job)
-	}
-
-	return grouped
 }

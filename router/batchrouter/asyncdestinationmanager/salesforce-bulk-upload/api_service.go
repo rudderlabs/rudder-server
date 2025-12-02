@@ -17,11 +17,11 @@ import (
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 )
 
-func NewAPIService(
+func newAPIService(
 	logger logger.Logger,
 	destinationInfo *oauthv2.DestinationInfo,
 	client *http.Client,
-) *apiService {
+) APIServiceInterface {
 	return &apiService{
 		logger:          logger,
 		destinationInfo: destinationInfo,
@@ -52,7 +52,7 @@ func (s *apiService) CreateJob(
 		}
 	}
 
-	endpoint := API_BASE_URL + "/jobs/ingest"
+	endpoint := ApiBaseURL + "/jobs/ingest"
 
 	respBody, apiErr := s.makeRequest(http.MethodPost, endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
@@ -87,7 +87,7 @@ func (s *apiService) UploadData(jobID, csvFilePath string) *APIError {
 	}
 	defer func() { _ = file.Close() }()
 
-	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/batches"
+	endpoint := ApiBaseURL + "/jobs/ingest/" + jobID + "/batches"
 
 	_, apiErr := s.makeRequest(http.MethodPut, endpoint, file, "text/csv")
 	if apiErr != nil {
@@ -105,7 +105,7 @@ func (s *apiService) CloseJob(jobID string) *APIError {
 	reqBody := map[string]string{"state": "UploadComplete"}
 	body, _ := jsonrs.Marshal(reqBody)
 
-	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
+	endpoint := ApiBaseURL + "/jobs/ingest/" + jobID
 
 	_, apiErr := s.makeRequest(http.MethodPatch, endpoint, bytes.NewReader(body), "application/json")
 	if apiErr != nil {
@@ -120,7 +120,7 @@ func (s *apiService) CloseJob(jobID string) *APIError {
 }
 
 func (s *apiService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
-	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
+	endpoint := ApiBaseURL + "/jobs/ingest/" + jobID
 
 	respBody, apiErr := s.makeRequest(http.MethodGet, endpoint, bytes.NewReader([]byte{}), "")
 	if apiErr != nil {
@@ -140,17 +140,17 @@ func (s *apiService) GetJobStatus(jobID string) (*JobResponse, *APIError) {
 }
 
 func (s *apiService) GetFailedRecords(jobID string) ([]map[string]string, *APIError) {
-	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/failedResults"
+	endpoint := ApiBaseURL + "/jobs/ingest/" + jobID + "/failedResults"
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *apiService) GetSuccessfulRecords(jobID string) ([]map[string]string, *APIError) {
-	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID + "/successfulResults"
+	endpoint := ApiBaseURL + "/jobs/ingest/" + jobID + "/successfulResults"
 	return s.getCSVRecords(endpoint)
 }
 
 func (s *apiService) DeleteJob(jobID string) *APIError {
-	endpoint := API_BASE_URL + "/jobs/ingest/" + jobID
+	endpoint := ApiBaseURL + "/jobs/ingest/" + jobID
 
 	_, apiErr := s.makeRequest(http.MethodDelete, endpoint, bytes.NewReader([]byte{}), "")
 	return apiErr
@@ -165,10 +165,10 @@ func (s *apiService) getCSVRecords(endpoint string) ([]map[string]string, *APIEr
 	reader := csv.NewReader(bytes.NewReader(respBody))
 
 	headers, err := reader.Read()
-	if errors.Is(err, io.EOF) {
-		return nil, nil
-	}
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, nil
+		}
 		return nil, &APIError{
 			StatusCode: http.StatusInternalServerError,
 			Message:    fmt.Sprintf("reading CSV header: %v", err),
@@ -196,19 +196,6 @@ func (s *apiService) getCSVRecords(endpoint string) ([]map[string]string, *APIEr
 }
 
 func (s *apiService) makeRequest(
-	method, endpoint string,
-	body io.Reader,
-	contentType string,
-) ([]byte, *APIError) {
-	respBody, apiError := s.attemptRequest(method, endpoint, body, contentType)
-	if apiError == nil {
-		return respBody, nil
-	}
-
-	return nil, apiError
-}
-
-func (s *apiService) attemptRequest(
 	method, endpoint string,
 	body io.Reader,
 	contentType string,

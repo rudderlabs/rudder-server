@@ -250,10 +250,9 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		{
 			name: "job complete - all success",
 			jobStatus: []*salesforcebulkupload.JobResponse{{
-				ID:                     "job-123",
-				State:                  "JobComplete",
-				NumberRecordsProcessed: 100,
-				NumberRecordsFailed:    0,
+				ID:                  "job-123",
+				State:               "JobComplete",
+				NumberRecordsFailed: 0,
 			}},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,
@@ -277,10 +276,9 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 		{
 			name: "job complete with failures",
 			jobStatus: []*salesforcebulkupload.JobResponse{{
-				ID:                     "job-789",
-				State:                  "JobComplete",
-				NumberRecordsProcessed: 100,
-				NumberRecordsFailed:    10,
+				ID:                  "job-789",
+				State:               "JobComplete",
+				NumberRecordsFailed: 10,
 			}},
 			expectedStatus: common.PollStatusResponse{
 				StatusCode: 200,

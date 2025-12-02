@@ -22,18 +22,24 @@ func NewRequestAugmenter() oauthv2extensions.Augmenter {
 	return &requestAugmenter{}
 }
 
+var (
+	ErrSecretNil        = errors.New("secret is nil")
+	ErrAccessTokenEmpty = errors.New("access token is empty")
+	ErrInstanceURLEmpty = errors.New("instance URL is empty")
+)
+
 // Custom augmenter for Salesforce which sets token to Authorization header and instance URL to the request URL
 func (s *requestAugmenter) Augment(r *http.Request, body []byte, secret json.RawMessage) error {
 	if secret == nil {
-		return errors.New("secret is nil")
+		return ErrSecretNil
 	}
 	accessToken := gjson.GetBytes(secret, "access_token").String()
 	if accessToken == "" {
-		return errors.New("access token is empty")
+		return ErrAccessTokenEmpty
 	}
 	instanceURL := gjson.GetBytes(secret, "instance_url").String()
 	if instanceURL == "" {
-		return errors.New("instance URL is empty")
+		return ErrInstanceURLEmpty
 	}
 	instanceURL = strings.Replace(instanceURL, "https://", "", 1)
 	// format -> Authorization : OAuth <accessToken>
@@ -44,22 +50,12 @@ func (s *requestAugmenter) Augment(r *http.Request, body []byte, secret json.Raw
 }
 
 // GetAuthErrorCategoryForSalesforce returns the error category for Salesforce authentication errors
-
-func GetAuthErrorCategoryForSalesforce(responseBody []byte) (string, error) {
-	/*
-		Sample response for Salesforce
-		[
-			{
-				"message": "Session expired or invalid",
-				"errorCode": "INVALID_SESSION_ID"
-			}
-		]
-	*/
+func GetAuthErrorCategoryForSalesforce(responseBody []byte) string {
 	invalidResults := lo.Filter(gjson.GetBytes(responseBody, "#.errorCode").Array(), func(errorTypeResult gjson.Result, _ int) bool {
 		return errorTypeResult.String() == "INVALID_SESSION_ID"
 	})
 	if len(invalidResults) > 0 {
-		return common.CategoryRefreshToken, nil
+		return common.CategoryRefreshToken
 	}
-	return "", nil
+	return ""
 }
