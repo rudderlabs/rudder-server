@@ -803,7 +803,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			}
 
 			batchRouter := defaultHandle(destType)
-			batchRouter.initAsyncDestinationStruct(&destination)
+			batchRouter.initAsyncDestinationStruct(&destination, nil)
 			mockCtrl := gomock.NewController(t)
 			mockJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
 			batchRouter.jobsDB = mockJobsDB
