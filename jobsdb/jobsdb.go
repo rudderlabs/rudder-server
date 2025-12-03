@@ -814,8 +814,8 @@ func WithJobMaxAge(jobMaxAge config.ValueLoader[time.Duration]) OptsFunc {
 func WithNumPartitions(numPartitions int) OptsFunc {
 	{
 		return func(jd *Handle) {
-			// numPartitions must be greater than 0 and power-of-two
-			if numPartitions < 1 || (numPartitions&(numPartitions-1)) != 0 {
+			// numPartitions must be a power-of-two number
+			if (numPartitions & (numPartitions - 1)) != 0 {
 				panic(fmt.Errorf("invalid number of jobsdb partitions, needs to be power of two: %d", numPartitions))
 			}
 			jd.conf.numPartitions = numPartitions

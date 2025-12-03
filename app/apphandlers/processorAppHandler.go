@@ -157,6 +157,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		defer dbPool.Close()
 	}
 
+	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
+
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
@@ -164,6 +166,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -173,7 +176,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
-		jobsdb.WithNumPartitions(config.GetIntVar(64, 1, "JobsDB.partitionCount")),
+		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -183,7 +186,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
-		jobsdb.WithNumPartitions(config.GetIntVar(64, 1, "JobsDB.partitionCount")),
+		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer batchRouterDB.Close()
 	schemaDB := jobsdb.NewForReadWrite(
