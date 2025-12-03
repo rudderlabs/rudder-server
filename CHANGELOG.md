@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.64.0-rc.3](https://github.com/rudderlabs/rudder-server/compare/v1.63.0...v1.64.0-rc.3) (2025-12-03)
+
+
+### Features
+
+* add a new processor stage for source hydration ([#6481](https://github.com/rudderlabs/rudder-server/issues/6481)) ([56dc15e](https://github.com/rudderlabs/rudder-server/commit/56dc15e2cbe89461f7201332d755672cc6dca8b2))
+* add reporting for failed hydration events ([#6521](https://github.com/rudderlabs/rudder-server/issues/6521)) ([eda76fb](https://github.com/rudderlabs/rudder-server/commit/eda76fb23dbc90d585f2fdda54bff0dd8bace6cc))
+* **jobsdb:** introduce partition_id column ([#6502](https://github.com/rudderlabs/rudder-server/issues/6502)) ([f73a8e3](https://github.com/rudderlabs/rudder-server/commit/f73a8e3c5ca106a4b36643c2c020be37dd9598ac))
+* **jobsdb:** read excluded partition management ([#6520](https://github.com/rudderlabs/rudder-server/issues/6520)) ([26b2661](https://github.com/rudderlabs/rudder-server/commit/26b2661052fb81e1f6f2da0696e4f042ef152225))
+* onboard salesforce bulk upload ([#6527](https://github.com/rudderlabs/rudder-server/issues/6527)) ([b80a512](https://github.com/rudderlabs/rudder-server/commit/b80a512f2e363acd035f09957ed19557f5bc648c))
+
+
+### Bug Fixes
+
+* error handling in getReports for error detail reporting ([#6517](https://github.com/rudderlabs/rudder-server/issues/6517)) ([5824bac](https://github.com/rudderlabs/rudder-server/commit/5824baced6125a549c887d0138fd4b76a69dd92c))
+* **jobsdb:** system panics with error column jobs.partition_id does not exist ([#6523](https://github.com/rudderlabs/rudder-server/issues/6523)) ([95f7cb9](https://github.com/rudderlabs/rudder-server/commit/95f7cb98153061fac781974d0d04544a1b677791))
+* keydb connection pool ([#6506](https://github.com/rudderlabs/rudder-server/issues/6506)) ([112166e](https://github.com/rudderlabs/rudder-server/commit/112166e6d1ffe4b6c12db9b609a270a2b19f9d9d))
+* rsources stats deadlock with two syncs from the same source and second one dropping jobs ([#6511](https://github.com/rudderlabs/rudder-server/issues/6511)) ([d467c1a](https://github.com/rudderlabs/rudder-server/commit/d467c1a2a710a3f9f8b6c9f255af25a7754a4bd5))
+* worker job buffer increased memory requirements causing excessive cpu for garbage collection ([#6500](https://github.com/rudderlabs/rudder-server/issues/6500)) ([148442e](https://github.com/rudderlabs/rudder-server/commit/148442e6026b34fce6ae6392dbb189f428828bdd))
+
+
+### Miscellaneous
+
+* capture parameter labels in jobsdb update job status stats ([#6495](https://github.com/rudderlabs/rudder-server/issues/6495)) ([0b868c1](https://github.com/rudderlabs/rudder-server/commit/0b868c18f053cc9c100b09369c499f0b4fedb837))
+* cleanup internal batch validator and enrichment flags ([#6530](https://github.com/rudderlabs/rudder-server/issues/6530)) ([6b065a0](https://github.com/rudderlabs/rudder-server/commit/6b065a0c65e7c2cd592394a1e425a8df349f197b))
+* cleanup lingering temporary export files upon suppression backup service startup ([#6493](https://github.com/rudderlabs/rudder-server/issues/6493)) ([6c0493e](https://github.com/rudderlabs/rudder-server/commit/6c0493e2a8fd5ba0bc8ec11580fef294f5f2ef5a))
+* read partition id from message properties and propagate it to router jobs ([#6518](https://github.com/rudderlabs/rudder-server/issues/6518)) ([bb57fa5](https://github.com/rudderlabs/rudder-server/commit/bb57fa5a31e972be5c65153495559e8694931a9b))
+* update build-scan-push-action version to 1.8.2 ([#6508](https://github.com/rudderlabs/rudder-server/issues/6508)) ([700ff80](https://github.com/rudderlabs/rudder-server/commit/700ff806beaf038ab9a3e6d7b27e8c7d1e1507db))
+* update rudder-go-kit and refactor signal context handling ([#6501](https://github.com/rudderlabs/rudder-server/issues/6501)) ([488ba89](https://github.com/rudderlabs/rudder-server/commit/488ba8939bf99b3e8d265911f76393d0341cf5f5))
+* watch and update memory limits periodically ([#6519](https://github.com/rudderlabs/rudder-server/issues/6519)) ([791c8ca](https://github.com/rudderlabs/rudder-server/commit/791c8cafa40cb116ffcb9514fb7d9b96616e7d29))
+
 ## [1.63.3](https://github.com/rudderlabs/rudder-server/compare/v1.63.2...v1.63.3) (2025-11-20)
 
 
