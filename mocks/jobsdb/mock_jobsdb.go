@@ -46,6 +46,20 @@ func (m *MockJobsDB) EXPECT() *MockJobsDBMockRecorder {
 	return m.recorder
 }
 
+// AddReadExcludedPartitionIDs mocks base method.
+func (m *MockJobsDB) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "AddReadExcludedPartitionIDs", ctx, partitionIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// AddReadExcludedPartitionIDs indicates an expected call of AddReadExcludedPartitionIDs.
+func (mr *MockJobsDBMockRecorder) AddReadExcludedPartitionIDs(ctx, partitionIDs any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddReadExcludedPartitionIDs", reflect.TypeOf((*MockJobsDB)(nil).AddReadExcludedPartitionIDs), ctx, partitionIDs)
+}
+
 // DeleteExecuting mocks base method.
 func (m *MockJobsDB) DeleteExecuting() {
 	m.ctrl.T.Helper()
@@ -314,6 +328,20 @@ func (m *MockJobsDB) Ping() error {
 func (mr *MockJobsDBMockRecorder) Ping() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Ping", reflect.TypeOf((*MockJobsDB)(nil).Ping))
+}
+
+// RemoveReadExcludedPartitionIDs mocks base method.
+func (m *MockJobsDB) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveReadExcludedPartitionIDs", ctx, partitionIDs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveReadExcludedPartitionIDs indicates an expected call of RemoveReadExcludedPartitionIDs.
+func (mr *MockJobsDBMockRecorder) RemoveReadExcludedPartitionIDs(ctx, partitionIDs any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveReadExcludedPartitionIDs", reflect.TypeOf((*MockJobsDB)(nil).RemoveReadExcludedPartitionIDs), ctx, partitionIDs)
 }
 
 // Store mocks base method.

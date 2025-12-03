@@ -294,7 +294,10 @@ func sendEventsToGateway(t *testing.T, httpPort int, writeKey, sourceID, workspa
 				"name": "http"
 			}
 		},
-		"timestamp": "2020-02-02T00:23:09.544Z"
+		"timestamp": "2020-02-02T00:23:09.544Z",
+		"rudderId": "some-rudder-id",
+		"request_ip": "[::1]",
+		"receivedAt": "2024-01-01T01:01:01.000000001Z"
 	}`
 	payload1 := strings.NewReader(event)
 	sendEvent(t, httpPort, payload1, "identify", writeKey)

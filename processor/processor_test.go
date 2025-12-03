@@ -930,7 +930,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			ID: fblaSourceId,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name: "fbla",
+				Name:     "fbla",
+				Category: "webhook",
 				Options: backendconfig.SourceDefinitionOptions{
 					Hydration: struct {
 						Enabled bool
@@ -942,7 +943,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			ID: fblaSourceId2,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name: "fbla",
+				Name:     "fbla",
+				Category: "webhook",
 				Options: backendconfig.SourceDefinitionOptions{
 					Hydration: struct {
 						Enabled bool
@@ -954,7 +956,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			ID: fblaSourceId5,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name: "fbla",
+				Name:     "fbla",
+				Category: "webhook",
 				Options: backendconfig.SourceDefinitionOptions{
 					Hydration: struct {
 						Enabled bool
@@ -966,7 +969,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			ID: fblaSourceId3,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name: "fbla",
+				Name:     "fbla",
+				Category: "webhook",
 				Options: backendconfig.SourceDefinitionOptions{
 					Hydration: struct {
 						Enabled bool
@@ -978,7 +982,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 		{
 			ID: fblaSourceId4,
 			SourceDefinition: backendconfig.SourceDefinitionT{
-				Name: "fbla",
+				Name:     "fbla",
+				Category: "webhook",
 				Options: backendconfig.SourceDefinitionOptions{
 					Hydration: struct {
 						Enabled bool

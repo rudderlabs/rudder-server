@@ -278,6 +278,7 @@ func TestSrcHydration(t *testing.T) {
 					prepareExpectedReports(t, sourceID2, false, numEvents)...,
 				)
 				if tt.failOnHydrationFailure {
+					expectedReports = append(expectedReports, prepareSrcHydrationFailedReports(t, sourceID3, numEvents)...)
 					expectedReports = append(expectedReports, prepareExpectedReports(t, sourceID3, true, numEvents)...)
 				}
 				requireReports(t, ctx, postgresContainer.DB, expectedReports)
@@ -287,6 +288,27 @@ func TestSrcHydration(t *testing.T) {
 			})
 		}
 	})
+}
+
+func prepareSrcHydrationFailedReports(t *testing.T, sourceID string, numEvents int) []reportRow {
+	t.Helper()
+	return []reportRow{
+		{
+			WorkspaceID:    workspaceID,
+			InstanceID:     "1",
+			SourceID:       sourceID,
+			DestinationID:  "",
+			InPU:           "destination_filter",
+			PU:             "source_hydration",
+			StatusCode:     500,
+			Status:         "aborted",
+			Count:          int64(numEvents),
+			TerminalState:  false,
+			InitialState:   false,
+			SourceCategory: "webhook",
+			EventType:      "identify",
+		},
+	}
 }
 
 func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool, numEvents int) []reportRow {
@@ -331,7 +353,7 @@ func prepareExpectedReports(t *testing.T, sourceId string, gwOnly bool, numEvent
 			InstanceID:     "1",
 			SourceID:       sourceId,
 			DestinationID:  "destination-1",
-			InPU:           "destination_filter",
+			InPU:           "source_hydration",
 			PU:             "event_filter",
 			StatusCode:     200,
 			Status:         "succeeded",

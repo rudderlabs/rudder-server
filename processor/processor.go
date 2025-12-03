@@ -1653,6 +1653,7 @@ type preTransformationMessage struct {
 	jobList                       []*jobsdb.JobT
 	sourceDupStats                map[dupStatKey]int
 	dedupKeys                     map[string]struct{}
+	srcHydrationEnabledMap        map[SourceIDT]bool
 }
 
 func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time.Duration) (*srcHydrationMessage, error) {
@@ -2236,7 +2237,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	// Placing the trackingPlan validation filters here.
 	// Else further down events are duplicated by destId, so multiple validation takes places for same event
 	validateEventsStart := time.Now()
-	validatedEventsBySourceId, validatedReportMetrics, trackingPlanEnabledMap := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID)
+	validatedEventsBySourceId, validatedReportMetrics, sourcePipelineSteps := proc.validateEvents(preTrans.groupedEventsBySourceId, preTrans.eventsByMessageID, preTrans.srcHydrationEnabledMap)
 	validateEventsTime := time.Since(validateEventsStart)
 	defer proc.stats.validateEventsTime(preTrans.partition).SendTiming(validateEventsTime)
 
@@ -2313,7 +2314,7 @@ func (proc *Handle) pretransformStage(partition string, preTrans *preTransformat
 	return &transformationMessage{
 		preTrans.subJobs.ctx,
 		groupedEvents,
-		trackingPlanEnabledMap,
+		sourcePipelineSteps,
 		preTrans.eventsByMessageID,
 		uniqueMessageIdsBySrcDestKey,
 		preTrans.reportMetrics,
@@ -2375,11 +2376,17 @@ func (proc *Handle) storeArchiveJobs(ctx context.Context, archivalJobs []*jobsdb
 	return nil
 }
 
+type SourcePipelineSteps struct {
+	srcHydration           bool
+	trackingPlanValidation bool
+}
+type sourceIDPipelineSteps map[SourceIDT]SourcePipelineSteps
+
 type transformationMessage struct {
 	ctx           context.Context
 	groupedEvents map[string][]types.TransformerEvent
 
-	trackingPlanEnabledMap       map[SourceIDT]bool
+	srcPipelineSteps             sourceIDPipelineSteps
 	eventsByMessageID            map[string]types.SingularEventWithReceivedAt
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}
 	reportMetrics                []*reportingtypes.PUReportedMetric
@@ -2469,7 +2476,7 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 				partition,
 				srcAndDestKey,
 				eventList,
-				in.trackingPlanEnabledMap,
+				in.srcPipelineSteps,
 				in.eventsByMessageID,
 				in.uniqueMessageIdsBySrcDestKey,
 			)
@@ -2938,15 +2945,7 @@ type userTransformAndFilterOutput struct {
 	transformAt           string
 }
 
-func (proc *Handle) userTransformAndFilter(
-	ctx context.Context,
-	partition string,
-	srcAndDestKey string,
-	eventList []types.TransformerEvent,
-	trackingPlanEnabledMap map[SourceIDT]bool,
-	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
-	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
-) userTransformAndFilterOutput {
+func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAndDestKey string, eventList []types.TransformerEvent, srcPipelineSteps sourceIDPipelineSteps, eventsByMessageID map[string]types.SingularEventWithReceivedAt, uniqueMessageIdsBySrcDestKey map[string]map[string]struct{}) userTransformAndFilterOutput {
 	if len(eventList) == 0 {
 		return userTransformAndFilterOutput{
 			eventsToTransform: eventList,
@@ -2967,7 +2966,7 @@ func (proc *Handle) userTransformAndFilter(
 	transformationEnabled := len(destination.Transformations) > 0
 	proc.config.configSubscriberLock.RUnlock()
 
-	trackingPlanEnabled := trackingPlanEnabledMap[SourceIDT(sourceID)]
+	sourceSteps := srcPipelineSteps[SourceIDT(sourceID)]
 
 	var inCountMap map[string]int64
 	var inCountMetadataMap map[string]MetricMetadata
@@ -3013,9 +3012,12 @@ func (proc *Handle) userTransformAndFilter(
 	var response types.Response
 	var eventsToTransform []types.TransformerEvent
 	var inPU string
-	if trackingPlanEnabled {
+	switch {
+	case sourceSteps.trackingPlanValidation:
 		inPU = reportingtypes.TRACKINGPLAN_VALIDATOR
-	} else {
+	case sourceSteps.srcHydration:
+		inPU = reportingtypes.SOURCE_HYDRATION
+	default:
 		inPU = reportingtypes.DESTINATION_FILTER
 	}
 	// Send to custom transformer only if the destination has a transformer enabled
