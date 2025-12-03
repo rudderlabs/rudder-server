@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +31,7 @@ import (
 	rsRand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
@@ -1847,6 +1849,7 @@ func startPostgres(t testingT) *postgres.Resource {
 	t.Setenv("JOBS_DB_USER", postgresContainer.User)
 	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 	initJobsDB()
+	runNodeMigration(t, postgresContainer.DB)
 	return postgresContainer
 }
 
@@ -1855,4 +1858,12 @@ func initJobsDB() {
 	logger.Reset()
 	admin.Init()
 	misc.Init()
+}
+
+func runNodeMigration(t testingT, db *sql.DB) {
+	m := &migrator.Migrator{
+		Handle:          db,
+		MigrationsTable: "node_migrations",
+	}
+	require.NoError(t, m.Migrate("node"))
 }
