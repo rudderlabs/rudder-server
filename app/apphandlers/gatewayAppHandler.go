@@ -75,6 +75,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		}
 		defer dbPool.Close()
 	}
+	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
@@ -82,7 +83,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
-		jobsdb.WithNumPartitions(config.GetIntVar(64, 1, "JobsDB.partitionCount")),
+		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gatewayDB.Close()
 
