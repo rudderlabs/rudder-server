@@ -183,6 +183,11 @@ func (s *apiService) getCSVRecords(endpoint string) ([]map[string]string, *APIEr
 			if errors.Is(err, io.EOF) {
 				break
 			}
+			return nil, &APIError{
+				StatusCode: http.StatusInternalServerError,
+				Message:    fmt.Sprintf("reading CSV row: %v", err),
+				Category:   "ServerError",
+			}
 		}
 
 		record := make(map[string]string, len(headers))

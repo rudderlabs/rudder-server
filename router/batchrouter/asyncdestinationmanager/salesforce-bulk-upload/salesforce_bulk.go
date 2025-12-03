@@ -187,6 +187,11 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 		destinationID,
 		input,
 	)
+	defer func() {
+		if err := os.Remove(csvFilePath); err != nil {
+			s.logger.Debugn("Failed to remove CSV file.", logger.NewStringField("csvFilePath", csvFilePath), obskit.Error(err))
+		}
+	}()
 	if err != nil {
 		s.logger.Errorn("Error creating CSV", obskit.Error(err))
 		return common.AsyncUploadOutput{
@@ -246,11 +251,6 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	}
 
 	s.logger.Infon("Successfully created and closed Salesforce Bulk job", logger.NewStringField("jobID", sfJobID))
-	defer func() {
-		if err := os.Remove(csvFilePath); err != nil {
-			s.logger.Debugn("Failed to remove CSV file.", logger.NewStringField("csvFilePath", csvFilePath), obskit.Error(err))
-		}
-	}()
 
 	importID, _ := jsonrs.Marshal(&SalesforceJobInfo{
 		ID:      sfJobID,
