@@ -272,25 +272,26 @@ func getRefreshTokenErrResp(response string, oauthToken *OAuthToken, l logger.Lo
 		message = fmt.Sprintf("Unmarshal of response unsuccessful: %s", response)
 	} else {
 		code := gjson.Get(response, "body.code").String()
-		switch code {
-		case common.RefTokenInvalidGrant:
-			// User (or) AccessToken (or) RefreshToken has been revoked
-			errorType = common.RefTokenInvalidGrant
-			bodyMsg := gjson.Get(response, "body.message").String()
+		bodyMsg := gjson.Get(response, "body.message").String()
+
+		if code != "" {
+			errorType = code
 			if bodyMsg == "" {
-				// Default message
-				l.Debugn("Unable to get body.message", logger.NewStringField("response", response))
-				message = ErrPermissionOrTokenRevoked.Error()
+				// Default messages for known error codes
+				switch code {
+				case common.RefTokenInvalidGrant:
+					// User (or) AccessToken (or) RefreshToken has been revoked
+					l.Debugn("Unable to get body.message", logger.NewStringField("response", response))
+					message = ErrPermissionOrTokenRevoked.Error()
+				case common.RefTokenInvalidResponse:
+					message = "invalid refresh response"
+				default:
+					// Fallback to generic message if body.message is missing
+					message = fmt.Sprintf("Internal service error: %s", code)
+				}
 			} else {
 				message = bodyMsg
 			}
-		case common.RefTokenInvalidResponse:
-			errorType = code
-			msg := gjson.Get(response, "body.message").String()
-			if msg == "" {
-				msg = "invalid refresh response"
-			}
-			message = msg
 		}
 	}
 	return errorType, message
