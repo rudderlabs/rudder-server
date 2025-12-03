@@ -182,7 +182,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		require.Equal(t, 2, result.ImportingCount)
 		require.Equal(t, 0, result.FailedCount)
-		require.JSONEq(t, `{"importId":"{\"id\":\"sf-job-123\",\"headers\":[\"Email\",\"FirstName\",\"LastName\"]}","metadata":{"csvHeader":""}}`, string(result.ImportingParameters))
+		require.JSONEq(t, `{"importId":{"id":"sf-job-123","headers":["Email","FirstName","LastName"]}}`, string(result.ImportingParameters))
 	})
 
 	t.Run("upload with API error", func(t *testing.T) {

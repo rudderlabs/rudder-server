@@ -2,6 +2,7 @@ package salesforcebulkupload
 
 import (
 	"bufio"
+	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -255,23 +256,10 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 		ID:      sfJobID,
 		Headers: csvHeaders,
 	})
-	var parameters common.ImportParameters
-	parameters.ImportId = string(importID)
-	importParameters, err := jsonrs.Marshal(parameters)
-	if err != nil {
-		if err := s.apiService.DeleteJob(sfJobID); err != nil {
-			s.logger.Errorn("Error deleting Salesforce job.", logger.NewStringField("apiErrorMessage", err.Message))
-		}
-		return common.AsyncUploadOutput{
-			FailedJobIDs:  importingJobIDs,
-			FailedReason:  fmt.Sprintf("Failed to marshal import parameters: %v", err.Error()),
-			FailedCount:   len(importingJobIDs),
-			DestinationID: destinationID,
-		}
-	}
+	importingParameters := stdjson.RawMessage(`{"importId":` + string(importID) + `}`)
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
-		ImportingParameters: importParameters,
+		ImportingParameters: importingParameters,
 		ImportingCount:      len(importingJobIDs),
 		DestinationID:       destinationID,
 	}
