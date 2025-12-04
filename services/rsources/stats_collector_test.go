@@ -23,7 +23,6 @@ import (
 var _ = Describe("Using StatsCollector", Serial, func() {
 	var (
 		jobs                    []*jobsdb.JobT
-		jobErrors               map[uuid.UUID]string
 		jobStatuses             []*jobsdb.JobStatusT
 		mockCtrl                *gomock.Controller
 		js                      *MockJobService
@@ -49,7 +48,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 		droppedJobsCollector = NewDroppedJobsCollector(js, droppedStatsTag["module"], statsStore)
 		sourceOnlyStatCollector = NewDroppedJobsCollector(js, srcOnlyStatsTag["module"], statsStore, IgnoreDestinationID())
 		jobs = []*jobsdb.JobT{}
-		jobErrors = map[uuid.UUID]string{}
 		jobStatuses = []*jobsdb.JobStatusT{}
 	})
 
@@ -113,41 +111,6 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 				It("fails during publish", func() {
 					err := statsCollector.Publish(context.TODO(), nil)
 					Expect(err).ToNot(BeNil())
-					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
-				})
-			})
-		})
-
-		Context("half of the jobs have errors", func() {
-			BeforeEach(func() {
-				for i, job := range jobs {
-					if i < len(jobs)/2 {
-						jobErrors[job.UUID] = "error"
-					}
-				}
-			})
-			Context("the rest of the jobs are stored", func() {
-				BeforeEach(func() {
-					statsCollector.JobsStoredWithErrors(jobs, jobErrors)
-				})
-				It("can publish without error all successful jobs as In stats", func() {
-					js.EXPECT().
-						IncrementStats(
-							gomock.Any(),
-							gomock.Any(),
-							params.JobRunID,
-							JobTargetKey{
-								TaskRunID:     params.TaskRunID,
-								SourceID:      params.SourceID,
-								DestinationID: params.DestinationID,
-							},
-							Stats{
-								In: uint(len(jobs) / 2),
-							}).
-						Times(1)
-
-					err := statsCollector.Publish(context.TODO(), nil)
-					Expect(err).To(BeNil())
 					Expect(len(statsStore.Get(rsourcesPublishTime, statsTag).Durations()), 1)
 				})
 			})

@@ -12,7 +12,6 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -32,9 +31,6 @@ type StatsCollector interface {
 	StatsPublisher
 	// JobsStored captures incoming job statistics
 	JobsStored(jobs []*jobsdb.JobT)
-
-	// JobsStoredWithErrors captures incoming job statistics
-	JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string)
 
 	// BeginProcessing prepares the necessary indices in order to
 	// be ready for capturing JobStatus statistics
@@ -140,12 +136,12 @@ func (r *statsCollector) orderedFailedRecordsKeys() []statKey {
 }
 
 func (r *statsCollector) JobsStored(jobs []*jobsdb.JobT) {
-	r.buildStats(jobs, nil, true)
+	r.buildStats(jobs, true)
 }
 
 func (r *statsCollector) JobsDropped(jobs []*jobsdb.JobT) {
 	r.processing = true
-	r.buildStats(jobs, nil, true)
+	r.buildStats(jobs, true)
 	jobStatuses := make([]*jobsdb.JobStatusT, 0, len(jobs))
 	for i := range jobs {
 		jobStatuses = append(jobStatuses, &jobsdb.JobStatusT{
@@ -156,12 +152,8 @@ func (r *statsCollector) JobsDropped(jobs []*jobsdb.JobT) {
 	r.CollectStats(jobStatuses)
 }
 
-func (r *statsCollector) JobsStoredWithErrors(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string) {
-	r.buildStats(jobs, failedJobs, true)
-}
-
 func (r *statsCollector) BeginProcessing(jobs []*jobsdb.JobT) {
-	r.buildStats(jobs, nil, false)
+	r.buildStats(jobs, false)
 	r.processing = true
 }
 
@@ -249,12 +241,9 @@ func (r *statsCollector) Publish(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, failedJobs map[uuid.UUID]string, incrementIn bool) { // skipcq: RVV-A0005
+func (r *statsCollector) buildStats(jobs []*jobsdb.JobT, incrementIn bool) { // skipcq: RVV-A0005
 	for i := range jobs {
 		job := jobs[i]
-		if _, ok := failedJobs[job.UUID]; ok {
-			continue
-		}
 		jobRunId, recordId, jobTargetKey := r.parametersParser(job.Parameters)
 		if jobRunId != "" {
 			sk := statKey{
