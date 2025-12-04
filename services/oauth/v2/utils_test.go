@@ -42,6 +42,56 @@ var (
 				Expect(errType).To(Equal("ref_token_invalid_grant"))
 				Expect(message).To(Equal("[criteo_audience] \"invalid_grant\" error, refresh token has expired or revoked"))
 			})
+
+			It("Call GetRefreshTokenErrResp with invalid_grant response and empty message", func() {
+				oauthToken := &OAuthToken{
+					ExpirationDate: "",
+					Secret:         nil,
+				}
+				errType, message := getRefreshTokenErrResp(`{"body":{"code":"ref_token_invalid_grant"}}`, oauthToken, mockLogger)
+				Expect(errType).To(Equal("ref_token_invalid_grant"))
+				Expect(message).To(Equal("problem with user permission or access/refresh token have been revoked"))
+			})
+
+			It("Call GetRefreshTokenErrResp with invalid_refresh_response code", func() {
+				oauthToken := &OAuthToken{
+					ExpirationDate: "",
+					Secret:         nil,
+				}
+				errType, message := getRefreshTokenErrResp(`{"body":{"code":"INVALID_REFRESH_RESPONSE","message":"Custom invalid refresh message"}}`, oauthToken, mockLogger)
+				Expect(errType).To(Equal("INVALID_REFRESH_RESPONSE"))
+				Expect(message).To(Equal("Custom invalid refresh message"))
+			})
+
+			It("Call GetRefreshTokenErrResp with invalid_refresh_response code and empty message", func() {
+				oauthToken := &OAuthToken{
+					ExpirationDate: "",
+					Secret:         nil,
+				}
+				errType, message := getRefreshTokenErrResp(`{"body":{"code":"INVALID_REFRESH_RESPONSE"}}`, oauthToken, mockLogger)
+				Expect(errType).To(Equal("INVALID_REFRESH_RESPONSE"))
+				Expect(message).To(Equal("invalid refresh response"))
+			})
+
+			It("Call GetRefreshTokenErrResp with unknown error code and custom message", func() {
+				oauthToken := &OAuthToken{
+					ExpirationDate: "",
+					Secret:         nil,
+				}
+				errType, message := getRefreshTokenErrResp(`{"body":{"code":"httpError","message":"Connection timeout occurred"}}`, oauthToken, mockLogger)
+				Expect(errType).To(Equal("httpError"))
+				Expect(message).To(Equal("Connection timeout occurred"))
+			})
+
+			It("Call GetRefreshTokenErrResp with unknown error code and empty message (default case)", func() {
+				oauthToken := &OAuthToken{
+					ExpirationDate: "",
+					Secret:         nil,
+				}
+				errType, message := getRefreshTokenErrResp(`{"body":{"code":"httpError"}}`, oauthToken, mockLogger)
+				Expect(errType).To(Equal("httpError"))
+				Expect(message).To(Equal("Internal service error: httpError"))
+			})
 		})
 	})
 )
