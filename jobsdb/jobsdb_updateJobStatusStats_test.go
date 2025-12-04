@@ -21,12 +21,14 @@ func TestUpdateJobStatusStats(t *testing.T) {
 		t.Run("merge into empty", func(t *testing.T) {
 			stats1 := updateJobStatusStats{}
 			stats2 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
@@ -34,11 +36,12 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 			stats1.Merge(stats2)
 
-			require.Contains(t, stats1, workspaceIDKey("workspace1"))
-			require.Contains(t, stats1[workspaceIDKey("workspace1")], jobStateKey("failed"))
-			require.Contains(t, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param1:value1"))
+			require.Contains(t, stats1, partitionIDKey("partition1"))
+			require.Contains(t, stats1[partitionIDKey("partition1")], workspaceIDKey("workspace1"))
+			require.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")], jobStateKey("failed"))
+			require.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param1:value1"))
 
-			mergedStats := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			mergedStats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 5, mergedStats.count)
 			assert.Equal(t, 100, mergedStats.bytes)
 			assert.Equal(t, "param1:value1", mergedStats.parameters.String())
@@ -46,12 +49,14 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 		t.Run("merge from empty", func(t *testing.T) {
 			stats1 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
@@ -60,34 +65,39 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 			stats1.Merge(stats2)
 
-			require.Contains(t, stats1, workspaceIDKey("workspace1"))
-			require.Contains(t, stats1[workspaceIDKey("workspace1")], jobStateKey("failed"))
-			require.Contains(t, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param1:value1"))
+			require.Contains(t, stats1, partitionIDKey("partition1"))
+			require.Contains(t, stats1[partitionIDKey("partition1")], workspaceIDKey("workspace1"))
+			require.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")], jobStateKey("failed"))
+			require.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param1:value1"))
 
-			mergedStats := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			mergedStats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 5, mergedStats.count)
 			assert.Equal(t, 100, mergedStats.bytes)
 		})
 
 		t.Run("merge same workspace and state", func(t *testing.T) {
 			stats1 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
 			}
 			stats2 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      50,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
 					},
 				},
@@ -95,30 +105,34 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 			stats1.Merge(stats2)
 
-			mergedStats := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			mergedStats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 8, mergedStats.count)   // 5 + 3
 			assert.Equal(t, 150, mergedStats.bytes) // 100 + 50
 		})
 
 		t.Run("merge different parameters", func(t *testing.T) {
 			stats1 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
 			}
 			stats2 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
-							count:      3,
-							bytes:      50,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
 					},
 				},
@@ -126,37 +140,41 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 			stats1.Merge(stats2)
 
-			assert.Contains(t, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param1:value1"))
-			assert.Contains(t, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param2:value2"))
+			assert.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param1:value1"))
+			assert.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")], parameterFiltersKey("param2:value2"))
 
-			stats1Merged := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			stats1Merged := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 5, stats1Merged.count)
 			assert.Equal(t, 100, stats1Merged.bytes)
 
-			stats2Merged := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param2:value2")]
+			stats2Merged := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param2:value2")]
 			assert.Equal(t, 3, stats2Merged.count)
 			assert.Equal(t, 50, stats2Merged.bytes)
 		})
 
 		t.Run("merge different states", func(t *testing.T) {
 			stats1 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
 			}
 			stats2 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("succeeded"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      50,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("succeeded"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
 					},
 				},
@@ -164,37 +182,41 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 			stats1.Merge(stats2)
 
-			assert.Contains(t, stats1[workspaceIDKey("workspace1")], jobStateKey("failed"))
-			assert.Contains(t, stats1[workspaceIDKey("workspace1")], jobStateKey("succeeded"))
+			assert.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")], jobStateKey("failed"))
+			assert.Contains(t, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")], jobStateKey("succeeded"))
 
-			failedStats := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			failedStats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 5, failedStats.count)
 			assert.Equal(t, 100, failedStats.bytes)
 
-			succeededStats := stats1[workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("param1:value1")]
+			succeededStats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 3, succeededStats.count)
 			assert.Equal(t, 50, succeededStats.bytes)
 		})
 
 		t.Run("merge different workspaces", func(t *testing.T) {
 			stats1 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
 			}
 			stats2 := updateJobStatusStats{
-				workspaceIDKey("workspace2"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      50,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace2"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
 					},
 				},
@@ -202,102 +224,150 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 			stats1.Merge(stats2)
 
-			assert.Contains(t, stats1, workspaceIDKey("workspace1"))
-			assert.Contains(t, stats1, workspaceIDKey("workspace2"))
+			assert.Contains(t, stats1, partitionIDKey("partition1"))
 
-			ws1Stats := stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			assert.Contains(t, stats1[partitionIDKey("partition1")], workspaceIDKey("workspace1"))
+			assert.Contains(t, stats1[partitionIDKey("partition1")], workspaceIDKey("workspace2"))
+
+			ws1Stats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 5, ws1Stats.count)
 			assert.Equal(t, 100, ws1Stats.bytes)
 
-			ws2Stats := stats1[workspaceIDKey("workspace2")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			ws2Stats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace2")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			assert.Equal(t, 3, ws2Stats.count)
+			assert.Equal(t, 50, ws2Stats.bytes)
+		})
+
+		t.Run("merge different partitions", func(t *testing.T) {
+			stats1 := updateJobStatusStats{
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
+						},
+					},
+				},
+			}
+			stats2 := updateJobStatusStats{
+				partitionIDKey("partition2"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      50,
+							},
+						},
+					},
+				},
+			}
+
+			stats1.Merge(stats2)
+
+			assert.Contains(t, stats1, partitionIDKey("partition1"))
+			assert.Contains(t, stats1, partitionIDKey("partition2"))
+
+			ws1Stats := stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
+			assert.Equal(t, 5, ws1Stats.count)
+			assert.Equal(t, 100, ws1Stats.bytes)
+
+			ws2Stats := stats1[partitionIDKey("partition2")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")]
 			assert.Equal(t, 3, ws2Stats.count)
 			assert.Equal(t, 50, ws2Stats.bytes)
 		})
 
 		t.Run("merge complex hierarchy", func(t *testing.T) {
 			stats1 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
+							parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
+								count:      2,
+								bytes:      20,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{},
+								count:      3,
+								bytes:      25,
+							},
 						},
-						parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
-							count:      2,
-							bytes:      20,
-						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{},
-							count:      3,
-							bytes:      25,
+						jobStateKey("succeeded"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      10,
+								bytes:      0,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: nil,
+								count:      5,
+								bytes:      0,
+							},
 						},
 					},
-					jobStateKey("succeeded"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      10,
-							bytes:      0,
-						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: nil,
-							count:      5,
-							bytes:      0,
-						},
-					},
-				},
-				workspaceIDKey("workspace2"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param3:value3"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param3", Value: "value3"}},
-							count:      1,
-							bytes:      10,
+					workspaceIDKey("workspace2"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param3:value3"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param3", Value: "value3"}},
+								count:      1,
+								bytes:      10,
+							},
 						},
 					},
 				},
 			}
 
 			stats2 := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      30,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      30,
+							},
+							parameterFiltersKey("param4:value4"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param4", Value: "value4"}},
+								count:      1,
+								bytes:      5,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: nil,
+								count:      2,
+								bytes:      15,
+							},
 						},
-						parameterFiltersKey("param4:value4"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param4", Value: "value4"}},
-							count:      1,
-							bytes:      5,
+						jobStateKey("aborted"): {
+							parameterFiltersKey("param5:value5"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param5", Value: "value5"}},
+								count:      7,
+								bytes:      70,
+							},
 						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: nil,
-							count:      2,
-							bytes:      15,
+						jobStateKey("succeeded"): {
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{},
+								count:      3,
+								bytes:      0,
+							},
 						},
 					},
-					jobStateKey("aborted"): {
-						parameterFiltersKey("param5:value5"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param5", Value: "value5"}},
-							count:      7,
-							bytes:      70,
-						},
-					},
-					jobStateKey("succeeded"): {
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{},
-							count:      3,
-							bytes:      0,
-						},
-					},
-				},
-				workspaceIDKey("workspace3"): {
-					jobStateKey("succeeded"): {
-						parameterFiltersKey("param6:value6"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param6", Value: "value6"}},
-							count:      15,
-							bytes:      0,
+					workspaceIDKey("workspace3"): {
+						jobStateKey("succeeded"): {
+							parameterFiltersKey("param6:value6"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param6", Value: "value6"}},
+								count:      15,
+								bytes:      0,
+							},
 						},
 					},
 				},
@@ -306,28 +376,28 @@ func TestUpdateJobStatusStats(t *testing.T) {
 			stats1.Merge(stats2)
 
 			// Check merged values
-			assert.Equal(t, 8, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")].count)   // 5 + 3
-			assert.Equal(t, 130, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")].bytes) // 100 + 30
+			assert.Equal(t, 8, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")].count)   // 5 + 3
+			assert.Equal(t, 130, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param1:value1")].bytes) // 100 + 30
 
 			// Check preserved values
-			assert.Equal(t, 2, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param2:value2")].count)
-			assert.Equal(t, 20, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param2:value2")].bytes)
-			assert.Equal(t, 10, stats1[workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("param1:value1")].count)
-			assert.Equal(t, 1, stats1[workspaceIDKey("workspace2")][jobStateKey("failed")][parameterFiltersKey("param3:value3")].count)
+			assert.Equal(t, 2, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param2:value2")].count)
+			assert.Equal(t, 20, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param2:value2")].bytes)
+			assert.Equal(t, 10, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("param1:value1")].count)
+			assert.Equal(t, 1, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace2")][jobStateKey("failed")][parameterFiltersKey("param3:value3")].count)
 
 			// Check new values
-			assert.Equal(t, 1, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param4:value4")].count)
-			assert.Equal(t, 5, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param4:value4")].bytes)
-			assert.Equal(t, 7, stats1[workspaceIDKey("workspace1")][jobStateKey("aborted")][parameterFiltersKey("param5:value5")].count)
-			assert.Equal(t, 70, stats1[workspaceIDKey("workspace1")][jobStateKey("aborted")][parameterFiltersKey("param5:value5")].bytes)
-			assert.Equal(t, 15, stats1[workspaceIDKey("workspace3")][jobStateKey("succeeded")][parameterFiltersKey("param6:value6")].count)
-			assert.Equal(t, 0, stats1[workspaceIDKey("workspace3")][jobStateKey("succeeded")][parameterFiltersKey("param6:value6")].bytes)
+			assert.Equal(t, 1, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param4:value4")].count)
+			assert.Equal(t, 5, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("param4:value4")].bytes)
+			assert.Equal(t, 7, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("aborted")][parameterFiltersKey("param5:value5")].count)
+			assert.Equal(t, 70, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("aborted")][parameterFiltersKey("param5:value5")].bytes)
+			assert.Equal(t, 15, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace3")][jobStateKey("succeeded")][parameterFiltersKey("param6:value6")].count)
+			assert.Equal(t, 0, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace3")][jobStateKey("succeeded")][parameterFiltersKey("param6:value6")].bytes)
 
 			// Check merged empty parameter cases
-			assert.Equal(t, 5, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("")].count)    // 3 + 2 (empty ParameterFilterList + nil parameters)
-			assert.Equal(t, 40, stats1[workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("")].bytes)   // 25 + 15
-			assert.Equal(t, 8, stats1[workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("")].count) // 5 + 3 (nil parameters + empty ParameterFilterList)
-			assert.Equal(t, 0, stats1[workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("")].bytes) // 0 + 0
+			assert.Equal(t, 5, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("")].count)    // 3 + 2 (empty ParameterFilterList + nil parameters)
+			assert.Equal(t, 40, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("failed")][parameterFiltersKey("")].bytes)   // 25 + 15
+			assert.Equal(t, 8, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("")].count) // 5 + 3 (nil parameters + empty ParameterFilterList)
+			assert.Equal(t, 0, stats1[partitionIDKey("partition1")][workspaceIDKey("workspace1")][jobStateKey("succeeded")][parameterFiltersKey("")].bytes) // 0 + 0
 		})
 	})
 
@@ -342,12 +412,14 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 		t.Run("single workspace single state", func(t *testing.T) {
 			stats := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
 				},
@@ -366,21 +438,23 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 		t.Run("multiple workspaces same state same parameters", func(t *testing.T) {
 			stats := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
-				},
-				workspaceIDKey("workspace2"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      50,
+					workspaceIDKey("workspace2"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
 					},
 				},
@@ -398,21 +472,23 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 		t.Run("multiple workspaces same state different parameters", func(t *testing.T) {
 			stats := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
 						},
 					},
-				},
-				workspaceIDKey("workspace2"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
-							count:      3,
-							bytes:      50,
+					workspaceIDKey("workspace2"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
 					},
 				},
@@ -435,35 +511,37 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 		t.Run("multiple workspaces different states", func(t *testing.T) {
 			stats := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
+						},
+						jobStateKey("succeeded"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      10,
+								bytes:      0,
+							},
 						},
 					},
-					jobStateKey("succeeded"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      10,
-							bytes:      0,
+					workspaceIDKey("workspace2"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      50,
+							},
 						},
-					},
-				},
-				workspaceIDKey("workspace2"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      50,
-						},
-					},
-					jobStateKey("aborted"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      2,
-							bytes:      25,
+						jobStateKey("aborted"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      2,
+								bytes:      25,
+							},
 						},
 					},
 				},
@@ -493,79 +571,83 @@ func TestUpdateJobStatusStats(t *testing.T) {
 
 		t.Run("complex aggregation", func(t *testing.T) {
 			stats := updateJobStatusStats{
-				workspaceIDKey("workspace1"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      5,
-							bytes:      100,
+				partitionIDKey("partition1"): {
+					workspaceIDKey("workspace1"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      5,
+								bytes:      100,
+							},
+							parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
+								count:      2,
+								bytes:      20,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{},
+								count:      3,
+								bytes:      30,
+							},
 						},
-						parameterFiltersKey("param2:value2"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param2", Value: "value2"}},
-							count:      2,
-							bytes:      20,
-						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{},
-							count:      3,
-							bytes:      30,
+						jobStateKey("succeeded"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      10,
+								bytes:      0,
+							},
+							parameterFiltersKey("param3:value3"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param3", Value: "value3"}},
+								count:      1,
+								bytes:      0,
+							},
 						},
 					},
-					jobStateKey("succeeded"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      10,
-							bytes:      0,
+					workspaceIDKey("workspace2"): {
+						jobStateKey("failed"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      3,
+								bytes:      30,
+							},
+							parameterFiltersKey("param4:value4"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param4", Value: "value4"}},
+								count:      1,
+								bytes:      10,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: nil,
+								count:      2,
+								bytes:      20,
+							},
 						},
-						parameterFiltersKey("param3:value3"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param3", Value: "value3"}},
-							count:      1,
-							bytes:      0,
+						jobStateKey("succeeded"): {
+							parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
+								count:      7,
+								bytes:      0,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: nil,
+								count:      4,
+								bytes:      0,
+							},
 						},
 					},
 				},
-				workspaceIDKey("workspace2"): {
-					jobStateKey("failed"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      3,
-							bytes:      30,
-						},
-						parameterFiltersKey("param4:value4"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param4", Value: "value4"}},
-							count:      1,
-							bytes:      10,
-						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: nil,
-							count:      2,
-							bytes:      20,
-						},
-					},
-					jobStateKey("succeeded"): {
-						parameterFiltersKey("param1:value1"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param1", Value: "value1"}},
-							count:      7,
-							bytes:      0,
-						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: nil,
-							count:      4,
-							bytes:      0,
-						},
-					},
-				},
-				workspaceIDKey("workspace3"): {
-					jobStateKey("aborted"): {
-						parameterFiltersKey("param5:value5"): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{{Name: "param5", Value: "value5"}},
-							count:      4,
-							bytes:      40,
-						},
-						parameterFiltersKey(""): &UpdateJobStatusStats{
-							parameters: ParameterFilterList{},
-							count:      6,
-							bytes:      60,
+				partitionIDKey("partition2"): {
+					workspaceIDKey("workspace3"): {
+						jobStateKey("aborted"): {
+							parameterFiltersKey("param5:value5"): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{{Name: "param5", Value: "value5"}},
+								count:      4,
+								bytes:      40,
+							},
+							parameterFiltersKey(""): &UpdateJobStatusStats{
+								parameters: ParameterFilterList{},
+								count:      6,
+								bytes:      60,
+							},
 						},
 					},
 				},
