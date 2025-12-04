@@ -37,7 +37,6 @@ func (jd *Handle) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs 
 				return fmt.Errorf("adding excluded read partition ID %s: %w", partitionID, err)
 			}
 		}
-		jd.noResultsCache.InvalidatePartitions(partitionIDs)
 		return nil
 	}); err != nil {
 		return err
