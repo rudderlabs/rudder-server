@@ -216,7 +216,7 @@ type JobsDB interface {
 	WithStoreSafeTx(context.Context, func(tx StoreSafeTx) error) error
 
 	// WithStoreSafeTxFromTx prepares a store-safe environment for an existing transaction.
-	WithStoreSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx StoreSafeTx) error) error
+	WithStoreSafeTxFromTx(context.Context, *Tx, func(tx StoreSafeTx) error) error
 
 	// Store stores the provided jobs to the database
 	Store(ctx context.Context, jobList []*JobT) error
@@ -3202,7 +3202,7 @@ func (jd *Handle) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		return jd.inStoreSafeCtx(ctx, storeCmd)
+		return fmt.Errorf("invalid store safe tx identifier, expected: %s, actual: %s", jd.Identifier(), tx.storeSafeTxIdentifier())
 	}
 	return storeCmd()
 }
@@ -3244,8 +3244,7 @@ func (jd *Handle) StoreEachBatchRetryInTx(
 		return err
 	}
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		_ = jd.inStoreSafeCtx(ctx, storeCmd)
-		return res, err
+		return nil, fmt.Errorf("invalid store safe tx identifier, expected: %s, actual: %s", jd.Identifier(), tx.storeSafeTxIdentifier())
 	}
 	_ = storeCmd()
 	return res, err

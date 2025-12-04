@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	golock "github.com/viney-shih/go-lock"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -70,7 +72,9 @@ func WithNumPartitions(numPartitions int) Opt {
 
 // NewJobsDBPartitionBuffer creates a new JobsDBPartitionBuffer with the given options
 func NewJobsDBPartitionBuffer(ctx context.Context, opts ...Opt) (JobsDBPartitionBuffer, error) {
-	jb := &jobsDBPartitionBuffer{}
+	jb := &jobsDBPartitionBuffer{
+		bufferedPartitionsMu: golock.NewCASMutex(),
+	}
 	for _, opt := range opts {
 		opt(jb)
 	}
