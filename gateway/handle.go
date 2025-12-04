@@ -127,7 +127,6 @@ type Handle struct {
 		WriteTimeout                         time.Duration
 		IdleTimeout                          time.Duration
 		allowReqsWithoutUserIDAndAnonymousID config.ValueLoader[bool]
-		gwAllowPartialWriteWithErrors        config.ValueLoader[bool]
 		webhookV2HandlerEnabled              bool
 	}
 
@@ -1048,7 +1047,7 @@ func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 			gw.stats,
 			rsources.IgnoreDestinationID(),
 		)
-		rsourcesStats.JobsStoredWithErrors(jobs, nil)
+		rsourcesStats.JobsStored(jobs)
 		err := rsourcesStats.Publish(ctx, tx.SqlTx())
 		if err != nil {
 			gw.logger.Errorn("Failed to publish rsources stats",

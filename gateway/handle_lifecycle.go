@@ -104,7 +104,6 @@ func (gw *Handle) Setup(
 	gw.conf.dbBatchWriteTimeout = config.GetReloadableDurationVar(5, time.Millisecond, "Gateway.dbBatchWriteTimeout", "Gateway.dbBatchWriteTimeoutInMS")
 	// Enables accepting requests without user id and anonymous id. This is added to prevent client 4xx retries.
 	gw.conf.allowReqsWithoutUserIDAndAnonymousID = config.GetReloadableBoolVar(false, "Gateway.allowReqsWithoutUserIDAndAnonymousID")
-	gw.conf.gwAllowPartialWriteWithErrors = config.GetReloadableBoolVar(true, "Gateway.allowPartialWriteWithErrors")
 	// Maximum request size to gateway
 	gw.conf.maxReqSize = config.GetReloadableIntVar(4000, 1024, "Gateway.maxReqSizeInKB")
 	// Enable rate limit on incoming events. false by default
@@ -483,7 +482,7 @@ func (gw *Handle) dbWriterWorkerProcess() {
 	for breq := range gw.batchUserWorkerBatchRequestQ {
 		var (
 			jobBatches       = make([][]*jobsdb.JobT, 0)
-			errorMessagesMap map[uuid.UUID]string
+			errorMessagesMap = make(map[uuid.UUID]string, len(jobBatches))
 		)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -492,33 +491,21 @@ func (gw *Handle) dbWriterWorkerProcess() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), gw.conf.WriteTimeout)
 		err := gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-			if gw.conf.gwAllowPartialWriteWithErrors.Load() {
-				var err error
-				errorMessagesMap, err = gw.jobsDB.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
-				if err != nil {
-					return err
-				}
-			} else {
-				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
-				if err != nil {
-					gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
-					gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
-					return err
-				}
+			err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
+			if err != nil {
+				gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
+				gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
+				return err
 			}
-
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(gw.rsourcesService, "gw", gw.stats, rsources.IgnoreDestinationID())
-			rsourcesStats.JobsStoredWithErrors(lo.Flatten(jobBatches), errorMessagesMap)
+			rsourcesStats.JobsStored(lo.Flatten(jobBatches))
 			return rsourcesStats.Publish(ctx, tx.SqlTx())
 		})
 		if err != nil {
 			errorMessage := err.Error()
 			if ctx.Err() != nil {
 				errorMessage = ctx.Err().Error()
-			}
-			if errorMessagesMap == nil {
-				errorMessagesMap = make(map[uuid.UUID]string, len(jobBatches))
 			}
 			for _, batch := range jobBatches {
 				errorMessagesMap[batch[0].UUID] = errorMessage
