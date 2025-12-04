@@ -216,6 +216,16 @@ func (c *NoResultsCache[T]) InvalidateDataset(dataset string) {
 	c.Invalidate(dataset, nil, "", nil, nil, nil)
 }
 
+// InvalidatePartitions invalidates all cache entries for the given partitions.
+func (c *NoResultsCache[T]) InvalidatePartitions(partitions []string) {
+	c.cacheTreeMu.Lock()
+	datasets := lo.Keys(c.cacheTree)
+	c.cacheTreeMu.Unlock()
+	for _, dataset := range datasets {
+		c.Invalidate(dataset, partitions, "", nil, nil, nil)
+	}
+}
+
 // StartNoResultTx prepares the cache for accepting new no result entries.
 // The cache uses a special marker to prevent synchronisation issues between competing calls of Invalidate & SetNoResult.
 func (c *NoResultsCache[T]) StartNoResultTx(dataset string, partitions []string, workspace string, customVals, states []string, parameters []T) (tx *NoResultTx[T]) {

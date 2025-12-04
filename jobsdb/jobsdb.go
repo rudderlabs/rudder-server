@@ -76,27 +76,16 @@ const (
 	TEXT  payloadColumnType = "text"
 )
 
-// QueryConditions holds jobsdb query conditions
-type QueryConditions struct {
-	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
-	IgnoreCustomValFiltersInQuery bool
-	CustomValFilters              []string
-	ParameterFilters              []ParameterFilterT
-	StateFilters                  []string
-	AfterJobID                    *int64
-}
-
 // GetQueryParams is a struct to hold jobsdb query params.
 type GetQueryParams struct {
 	// query conditions
 
-	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
-	IgnoreCustomValFiltersInQuery bool
-	WorkspaceID                   string
-	CustomValFilters              []string
-	ParameterFilters              []ParameterFilterT
-	stateFilters                  []string
-	afterJobID                    *int64
+	WorkspaceID      string
+	CustomValFilters []string
+	ParameterFilters []ParameterFilterT
+	PartitionFilters []string
+	stateFilters     []string
+	afterJobID       *int64
 
 	// query limits
 
@@ -387,8 +376,9 @@ type JobStatusT struct {
 	ErrorCode     string          `json:"ErrorCode"`
 	ErrorResponse json.RawMessage `json:"ErrorResponse"`
 	Parameters    json.RawMessage `json:"Parameters"`
-	JobParameters json.RawMessage `json:"-"`
-	WorkspaceId   string          `json:"WorkspaceId"`
+	JobParameters json.RawMessage `json:"-"`           // not stored in DB
+	WorkspaceId   string          `json:"WorkspaceId"` // TODO: do we really need this field stored in DB?
+	PartitionID   string          `json:"-"`           // not stored in DB
 }
 
 type ConnectionDetails struct {
@@ -597,6 +587,7 @@ type Handle struct {
 		MaxDSSize                      config.ValueLoader[int]
 		numPartitions                  int // if zero or negative, no partitioning
 		partitionFunction              func(job *JobT) string
+		warnOnStatusMissingPartitionID config.ValueLoader[bool]
 		dbTablesVersion                int // version of the database tables schema (0 means latest)
 
 		migration struct {
@@ -1073,6 +1064,9 @@ func (jd *Handle) loadConfig() {
 	// (every few seconds) so a DS may go beyond this size
 	// passing `maxDSSize` by reference, so it can be hot reloaded
 	jd.conf.MaxDSSize = jd.config.GetReloadableIntVar(100000, 1, jd.configKeys("maxDSSize")...)
+
+	// starting with false as default since initial set of migrated jobs will not have partitionID set
+	jd.conf.warnOnStatusMissingPartitionID = jd.config.GetReloadableBoolVar(false, jd.configKeys("warnOnStatusMissingPartitionID")...)
 
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
@@ -1890,7 +1884,9 @@ func (jd *Handle) invalidateCacheForJobs(ds dataSetT, jobList []*JobT) {
 	cacheKeys := make(map[string]map[string]map[string]struct{})
 	for _, job := range jobList {
 		partitionID := job.PartitionID
-		if partitionID == "" { // if there is no partition id (which is optional), use "none" so that cache invalidation doesn't invalidate the whole tree
+		if partitionID == "" {
+			// If there is no partition id, use "none" so that cache invalidation doesn't invalidate the whole tree
+			// No need to log a warning, because partitioning is optional, it is not enabled for all jobsdbs
 			partitionID = "none"
 		}
 		partitions := []string{partitionID}
@@ -2182,7 +2178,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	stateFilters := params.stateFilters
 	customValFilters := params.CustomValFilters
 	var parameterFilters ParameterFilterList = params.ParameterFilters
-	var partitionFilters []string // TODO: this should be filled in the future
+	partitionFilters := lo.Uniq(params.PartitionFilters)
 	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
@@ -2237,7 +2233,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.job_id > %d", *params.afterJobID))
 	}
 
-	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
+	if len(customValFilters) > 0 {
 		filterConditions = append(filterConditions, constructQueryOR("jobs.custom_val", customValFilters))
 	}
 
@@ -2249,14 +2245,19 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.workspace_id = '%s'", workspaceID))
 	}
 
-	jd.excludedReadPartitionsLock.RLock()
-	var excludedReadPartitions []string
-	if len(jd.excludedReadPartitions) > 0 {
-		excludedReadPartitions = lo.Keys(jd.excludedReadPartitions) // get excluded read partitions at the time of query
-	}
-	jd.excludedReadPartitionsLock.RUnlock()
-	if len(excludedReadPartitions) > 0 {
-		filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id NOT IN (%s)", strings.Join(lo.Map(excludedReadPartitions, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
+	if len(partitionFilters) > 0 {
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id IN (%s)", strings.Join(lo.Map(partitionFilters, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
+	} else {
+		// excludedReadPartitions are mutually exclusive with partitionFilters
+		jd.excludedReadPartitionsLock.RLock()
+		var excludedReadPartitions []string
+		if len(jd.excludedReadPartitions) > 0 {
+			excludedReadPartitions = lo.Keys(jd.excludedReadPartitions) // get excluded read partitions at the time of query
+		}
+		jd.excludedReadPartitionsLock.RUnlock()
+		if len(excludedReadPartitions) > 0 {
+			filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id NOT IN (%s)", strings.Join(lo.Map(excludedReadPartitions, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
+		}
 	}
 
 	var filterQuery string
@@ -2366,10 +2367,12 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			job.LastJobStatus.ErrorCode = jsErrorCode.String
 			job.LastJobStatus.ErrorResponse = jsErrorResponse
 			job.LastJobStatus.Parameters = jsParameters
+			job.LastJobStatus.JobParameters = job.Parameters
+			job.LastJobStatus.WorkspaceId = job.WorkspaceId
+			job.LastJobStatus.PartitionID = job.PartitionID
 		} else {
 			resultsetStates[Unprocessed.State] = struct{}{}
 		}
-		job.LastJobStatus.JobParameters = job.Parameters
 
 		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
 			// events limit overflow is triggered as long as we have read at least one job
@@ -2507,10 +2510,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 		return updatedStates, err
 	}
 
-	defer jd.getTimerStat(
-		"update_job_status_ds_time",
-		&tags,
-	).RecordDuration()()
+	defer jd.getTimerStat("update_job_status_ds_time", &tags).RecordDuration()()
 	updatedStates = updateJobStatusStats{}
 	store := func() error {
 		updatedStates = updateJobStatusStats{} // reset in case of retry
@@ -2522,8 +2522,16 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 
 		defer func() { _ = stmt.Close() }()
 		for _, status := range statusList {
-			var partitionID string // TODO: partition id should be filled for job statuses in the future
+			partitionID := status.PartitionID
 			if partitionID == "" {
+				if jd.conf.numPartitions > 0 && jd.conf.warnOnStatusMissingPartitionID.Load() {
+					// log a warning if partition id is not set but partitioning is enabled
+					fields := lo.MapToSlice(tags.getStatsTags(jd.tablePrefix), func(k, v string) logger.Field {
+						return logger.NewStringField(k, v)
+					})
+					fields = append(fields, logger.NewIntField("job_id", status.JobID))
+					jd.logger.Warnn("Job status partition id is empty while partitioning is enabled, using none", fields...)
+				}
 				partitionID = "none"
 			}
 			if _, ok := updatedStates[partitionIDKey(partitionID)]; !ok {
@@ -3241,13 +3249,7 @@ func (jd *Handle) StoreEachBatchRetryInTx(
 	return res, err
 }
 
-func (jd *Handle) internalStoreEachBatchRetryInTx(
-	ctx context.Context,
-	tx *Tx,
-	ds dataSetT,
-	jobBatches [][]*JobT) (
-	errorMessagesMap map[uuid.UUID]string, err error,
-) {
+func (jd *Handle) internalStoreEachBatchRetryInTx(ctx context.Context, tx *Tx, ds dataSetT, jobBatches [][]*JobT) (errorMessagesMap map[uuid.UUID]string, err error) {
 	const (
 		savepointSql = "SAVEPOINT storeBatchWithRetryEach"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
