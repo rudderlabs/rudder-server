@@ -150,14 +150,14 @@ func (brt *Handle) emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID str
 		}
 
 		// Get original job parameters for this job
-		originalParams, exists := asyncDestStruct.OriginalJobParameters[status.JobID]
+		jobParameters, exists := asyncDestStruct.JobParameters[status.JobID]
 		if !exists {
 			brt.logger.Debugn("Original job parameters not found for jobID: %d", logger.NewIntField("jobID", status.JobID))
 			continue
 		}
 
 		// Extract receivedAt from original job parameters
-		receivedAtStr := gjson.GetBytes(originalParams, "received_at").String()
+		receivedAtStr := gjson.GetBytes(jobParameters, "received_at").String()
 		if receivedAtStr == "" {
 			brt.logger.Debugn("ReceivedAt not found in job parameters for jobID: %d", logger.NewIntField("jobID", status.JobID))
 			continue
@@ -171,7 +171,7 @@ func (brt *Handle) emitAsyncEventDeliveryTimeMetrics(sourceID, destinationID str
 		}
 
 		// Extract source category from original job parameters
-		sourceCategory := gjson.GetBytes(originalParams, "source_category").String()
+		sourceCategory := gjson.GetBytes(jobParameters, "source_category").String()
 
 		// Create and emit the event_delivery_time metric
 		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
