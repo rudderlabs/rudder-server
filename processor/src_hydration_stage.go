@@ -82,6 +82,10 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 
 			hydratedJobs, err := proc.hydrate(ctx, source, jobs)
 			if err != nil {
+				if ctx.Err() != nil {
+					proc.logger.Warnn("context cancelled during source hydration", obskit.SourceID(string(sourceId)))
+					return err
+				}
 				proc.logger.Errorn("failed to hydrate source events, skipping jobs",
 					obskit.SourceID(string(sourceId)),
 					obskit.Error(err),

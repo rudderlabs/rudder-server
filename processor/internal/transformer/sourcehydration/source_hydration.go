@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/cenkalti/backoff"
 	"github.com/samber/lo"
@@ -254,8 +254,11 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			retryCount++
 			c.log.Warnn(
 				"Source hydration HTTP connection error",
-				obskit.Error(err),
-				logger.NewIntField("attempts", int64(retryCount)),
+				append(
+					labels.ToLoggerFields(),
+					logger.NewIntField("attempts", int64(retryCount)),
+					obskit.Error(err),
+				)...,
 			)
 		},
 	)
