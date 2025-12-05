@@ -70,7 +70,7 @@ jobs:
           echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
       - name: Trigger dispatch event
-        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release_action.outputs.releases_created == 'true' }}
         with:
@@ -82,7 +82,7 @@ jobs:
                 "version": "${{ steps.extract_version.outputs.version }}"
             }
       - name: Trigger dispatch event - Staging
-        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release_action.outputs.releases_created == 'true' }}
         with:
