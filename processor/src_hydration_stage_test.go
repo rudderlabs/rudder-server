@@ -917,3 +917,78 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 		require.Equal(t, "Test Product "+sourceID, updatedEvent2.SingularEvent["productName"])
 	}
 }
+
+func TestSrcHydrationStageContextCancellation(t *testing.T) {
+	// Create test events
+	events := []types.TransformerEvent{
+		{
+			Message: map[string]interface{}{
+				"type":      "track",
+				"event":     "Product Viewed",
+				"productId": "12345",
+			},
+			Metadata: types.Metadata{
+				MessageID: "message-1",
+				SourceID:  fblaSourceId,
+				JobID:     1,
+			},
+		},
+	}
+
+	// Setup mock transformer clients with delay to allow context cancellation
+	transformerClients := transformer.NewSimpleClients()
+	transformerClients.WithDynamicSrcHydration(func(ctx context.Context, req types.SrcHydrationRequest) (types.SrcHydrationResponse, error) {
+		// Simulate a long-running operation
+		select {
+		case <-time.After(5 * time.Second):
+			return types.SrcHydrationResponse{}, errors.New("hydration should have been cancelled")
+		case <-ctx.Done():
+			return types.SrcHydrationResponse{}, ctx.Err()
+		}
+	})
+
+	// Setup test context
+	c := &testContext{}
+	c.Setup(t)
+	defer c.Finish()
+	// Create processor handle
+	conf := config.New()
+	proc := NewHandle(conf, transformerClients)
+	c.mockGatewayJobsDB.EXPECT().DeleteExecuting().AnyTimes()
+	Setup(proc, c, true, true, t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err := proc.config.asyncInit.WaitContext(ctx)
+	require.NoError(t, err)
+
+	procCtx, procCtxCancel := context.WithCancel(ctx)
+	proc.backgroundCtx = procCtx
+
+	// Create test message
+	message := &srcHydrationMessage{
+		partition: "test-partition",
+		subJobs: subJob{
+			ctx: context.Background(),
+		},
+		eventSchemaJobsBySourceId: make(map[SourceIDT][]*jobsdb.JobT),
+		groupedEventsBySourceId: map[SourceIDT][]types.TransformerEvent{
+			SourceIDT(fblaSourceId): events,
+		},
+		eventsByMessageID: make(map[string]types.SingularEventWithReceivedAt),
+	}
+
+	// Cancel the context shortly after starting the operation
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		procCtxCancel()
+	}()
+
+	// Execute the source hydration stage
+	result, err := proc.srcHydrationStage("test-partition", message)
+
+	// Assertions - should get a context cancelled error
+	require.Error(t, err)
+	require.Equal(t, types.ErrProcessorStopping, err)
+	require.Nil(t, result)
+}
