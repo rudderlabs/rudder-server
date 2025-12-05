@@ -231,6 +231,7 @@ type JobsDB interface {
 	// StoreEachBatchRetry tries to store all the provided job batches to the database
 	//
 	// returns the uuids of first job of each failed batch
+	// Deprecated: use Store instead
 	StoreEachBatchRetry(ctx context.Context, jobBatches [][]*JobT) map[uuid.UUID]string
 
 	// StoreEachBatchRetryInTx tries to store all the provided job batches to the database, using an existing transaction.
@@ -241,6 +242,7 @@ type JobsDB interface {
 	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreEachBatchRetryInTx(ctx, tx, jobBatches)
 	//    })
+	// Deprecated: use StoreInTx instead
 	StoreEachBatchRetryInTx(ctx context.Context, tx StoreSafeTx, jobBatches [][]*JobT) (map[uuid.UUID]string, error)
 
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
@@ -308,6 +310,10 @@ type JobsDB interface {
 	IsMasterBackupEnabled() bool
 
 	ReadExcludedPartitionsManager
+
+	// lifecycle management
+	Start() error
+	Stop()
 }
 
 type ParameterName interface {
@@ -813,11 +819,7 @@ func WithNumPartitions(numPartitions int) OptsFunc {
 			// default partition function using a 32-bit key space and Murmur3 hash
 			if jd.conf.partitionFunction == nil {
 				jd.conf.partitionFunction = func(job *JobT) string {
-					var partitionIdx uint32
-					if jd.conf.numPartitions > 0 {
-						partitionIdx, _ = partmap.Murmur3Partition32(job.UserID, uint32(jd.conf.numPartitions))
-					}
-					return job.WorkspaceId + "-" + strconv.Itoa(int(partitionIdx))
+					return DefaultParititionFunction(job, jd.conf.numPartitions)
 				}
 			}
 		}
@@ -3581,4 +3583,13 @@ func (jd *Handle) withDistributedSharedLock(ctx context.Context, tx *Tx, operati
 		return fmt.Errorf("error while acquiring a shared advisory lock %d for operation %s: %w", advisoryLock, operation, err)
 	}
 	return f()
+}
+
+// DefaultParititionFunction is the default function to compute partition key for a job
+func DefaultParititionFunction(job *JobT, numPartitions int) string {
+	var partitionIdx uint32
+	if numPartitions > 0 {
+		partitionIdx, _ = partmap.Murmur3Partition32(job.UserID, uint32(numPartitions))
+	}
+	return job.WorkspaceId + "-" + strconv.Itoa(int(partitionIdx))
 }

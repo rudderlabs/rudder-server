@@ -1,0 +1,18 @@
+{{ if .PartitioningEnabled }}
+CREATE TABLE IF NOT EXISTS {{$.Prefix}}_buffered_partitions (
+  partition_id TEXT PRIMARY KEY
+);
+COMMENT ON TABLE {{$.Prefix}}_buffered_partitions IS 'Maintains a list of partition IDs that should be buffered to a secondary queue during write operations';
+COMMENT ON COLUMN {{$.Prefix}}_buffered_partitions.partition_id IS 'Unique identifier for the partition to buffer during writes.';
+
+-- Each modification to buffered_partitions tables bumps the version in the buffered_partitions_versions table
+INSERT INTO buffered_partitions_versions (key, version) VALUES ('{{.Prefix}}', 0) ON CONFLICT DO NOTHING;
+
+-- Trigger to acquire a write lock and bump the buffered partitions version on changes
+CREATE OR REPLACE TRIGGER {{$.Prefix}}_bump_buffered_partitions_version
+AFTER INSERT OR UPDATE OR DELETE
+ON {{$.Prefix}}_buffered_partitions
+FOR EACH STATEMENT
+EXECUTE FUNCTION bump_buffered_partitions_version('{{$.Prefix}}');
+
+{{ end }}

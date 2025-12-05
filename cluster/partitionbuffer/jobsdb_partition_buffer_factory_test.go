@@ -1,0 +1,212 @@
+package partitionbuffer
+
+import (
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+)
+
+func TestNewJobsDBPartitionBuffer(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pg, err := postgres.Setup(pool, t)
+	require.NoError(t, err)
+	runNodeMigration(t, pg.DB)
+
+	jobs := []*jobsdb.JobT{
+		{
+			UUID:         uuid.New(),
+			CustomVal:    "test",
+			EventCount:   1,
+			Parameters:   []byte("{}"),
+			WorkspaceId:  "workspace-1",
+			UserID:       "user-1",
+			EventPayload: []byte("{}"),
+		},
+		{
+			UUID:         uuid.New(),
+			CustomVal:    "test",
+			EventCount:   1,
+			Parameters:   []byte("{}"),
+			WorkspaceId:  "workspace-1",
+			UserID:       "user-2",
+			EventPayload: []byte("{}"),
+		},
+	}
+	t.Run("WithReadWriteJobsDBs", func(t *testing.T) {
+		ctx := t.Context()
+
+		primary := jobsdb.NewForReadWrite("rw", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, primary.Start(), "it should be able to start JobsDB")
+		t.Cleanup(func() {
+			primary.TearDown()
+		})
+		buffer := jobsdb.NewForReadWrite("rw_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, buffer.Start(), "it should be able to start JobsDB Buffer")
+		t.Cleanup(func() {
+			buffer.TearDown()
+		})
+		pb, err := NewJobsDBPartitionBuffer(ctx, WithReadWriteJobsDBs(primary, buffer))
+		require.NoError(t, err, "it should be able to create JobsDBPartitionBuffer")
+
+		err = pb.Store(ctx, jobs)
+		require.NoError(t, err, "it should be able to store jobs")
+
+		err = primary.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			return pb.StoreInTx(ctx, tx, jobs)
+		})
+		require.NoError(t, err, "it should be able to store jobs in tx")
+
+		res := pb.StoreEachBatchRetry(ctx, [][]*jobsdb.JobT{jobs, jobs})
+		require.Len(t, res, 0, "it should be able to store each batch retry")
+
+		err = primary.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			res, err := pb.StoreEachBatchRetryInTx(ctx, tx, [][]*jobsdb.JobT{jobs, jobs})
+			require.Len(t, res, 0, "it should be able to store each batch retry in tx")
+			return err
+		})
+		require.NoError(t, err, "it should be able to store each batch retry in tx")
+
+		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
+		require.NoError(t, err, "FlushBufferedPartitions should be supported in reader-only mode")
+	})
+
+	t.Run("WithWithWriterOnlyJobsDBs", func(t *testing.T) {
+		ctx := t.Context()
+
+		primaryWriter := jobsdb.NewForReadWrite("wo", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, primaryWriter.Start(), "it should be able to start primary writer JobsDB")
+		t.Cleanup(func() {
+			primaryWriter.TearDown()
+		})
+		bufferWriter := jobsdb.NewForReadWrite("wo_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, bufferWriter.Start(), "it should be able to start buffer writer JobsDB")
+		t.Cleanup(func() {
+			bufferWriter.TearDown()
+		})
+		pb, err := NewJobsDBPartitionBuffer(ctx, WithWithWriterOnlyJobsDBs(primaryWriter, bufferWriter))
+		require.NoError(t, err)
+
+		err = pb.Store(ctx, jobs)
+		require.NoError(t, err, "it should be able to store jobs")
+
+		err = primaryWriter.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			return pb.StoreInTx(ctx, tx, jobs)
+		})
+		require.NoError(t, err, "it should be able to store jobs in tx")
+
+		res := pb.StoreEachBatchRetry(ctx, [][]*jobsdb.JobT{jobs, jobs})
+		require.Len(t, res, 0, "it should be able to store each batch retry")
+
+		err = primaryWriter.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			res, err := pb.StoreEachBatchRetryInTx(ctx, tx, [][]*jobsdb.JobT{jobs, jobs})
+			require.Len(t, res, 0, "it should be able to store each batch retry in tx")
+			return err
+		})
+		require.NoError(t, err, "it should be able to store each batch retry in tx")
+
+		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
+		require.ErrorIs(t, err, ErrFlushNotSupported, "FlushBufferedPartitions should not be supported in writer-only mode")
+	})
+
+	t.Run("WithReaderOnlyAndFlushJobsDBs", func(t *testing.T) {
+		ctx := t.Context()
+
+		// need to create the writer before the reader so that journal tables are created
+		primaryWriter := jobsdb.NewForReadWrite("ro", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, primaryWriter.Start(), "it should be able to start primary writer JobsDB")
+		t.Cleanup(func() {
+			primaryWriter.TearDown()
+		})
+
+		primaryReader := jobsdb.NewForRead("ro", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, primaryReader.Start(), "it should be able to start primary reader JobsDB")
+		t.Cleanup(func() {
+			primaryReader.TearDown()
+		})
+
+		// we need to create a writer buffer DB to create journal tables, even though we won't use it
+		bufferWriter := jobsdb.NewForWrite("ro_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, bufferWriter.Start(), "it should be able to start buffer reader JobsDB")
+		t.Cleanup(func() {
+			bufferWriter.TearDown()
+		})
+
+		bufferReader := jobsdb.NewForRead("ro_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		require.NoError(t, bufferReader.Start(), "it should be able to start buffer reader JobsDB")
+		t.Cleanup(func() {
+			bufferReader.TearDown()
+		})
+
+		pb, err := NewJobsDBPartitionBuffer(ctx, WithReaderOnlyAndFlushJobsDBs(primaryReader, bufferReader, primaryWriter))
+		require.NoError(t, err)
+
+		// This configuration is for reader-only mode, so Store operations should not be supported (canStore=false)
+		err = pb.Store(ctx, jobs)
+		require.ErrorIs(t, err, ErrStoreNotSupported, "Store should not be supported in reader-only mode")
+
+		err = primaryWriter.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			return pb.StoreInTx(ctx, tx, jobs)
+		})
+		require.ErrorIs(t, err, ErrStoreNotSupported, "StoreInTx should not be supported in reader-only mode")
+
+		res := pb.StoreEachBatchRetry(ctx, [][]*jobsdb.JobT{jobs, jobs})
+		require.Len(t, res, len(jobs), "StoreEachBatchRetry should return errors for all jobs")
+		for _, job := range jobs {
+			require.Equal(t, ErrStoreNotSupported.Error(), res[job.UUID], "Each job should have store not supported error")
+		}
+
+		err = primaryWriter.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
+			res, err := pb.StoreEachBatchRetryInTx(ctx, tx, [][]*jobsdb.JobT{jobs, jobs})
+			require.Len(t, res, len(jobs), "StoreEachBatchRetryInTx should return errors for all jobs")
+			for _, job := range jobs {
+				require.Equal(t, ErrStoreNotSupported.Error(), res[job.UUID], "Each job should have store not supported error")
+			}
+			return err
+		})
+		require.NoError(t, err, "StoreEachBatchRetryInTx should complete without error")
+
+		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
+		require.NoError(t, err, "FlushBufferedPartitions should be supported in reader-only mode")
+	})
+
+	t.Run("With invalid config", func(t *testing.T) {
+		ctx := t.Context()
+		_, err := NewJobsDBPartitionBuffer(ctx)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrInvalidJobsDBPartitionBufferConfig)
+	})
+
+	t.Run("Failing to load buffered partitions from db", func(t *testing.T) {
+		pg, err := postgres.Setup(pool, t)
+		require.NoError(t, err)
+		runNodeMigration(t, pg.DB)
+		ctx := t.Context()
+		primary := jobsdb.NewForReadWrite("rw",
+			jobsdb.WithDBHandle(pg.DB),
+			jobsdb.WithNumPartitions(64),
+			jobsdb.WithSkipMaintenanceErr(true),
+		)
+		require.NoError(t, primary.Start(), "it should be able to start JobsDB")
+		t.Cleanup(func() {
+			primary.TearDown()
+		})
+		buffer := jobsdb.NewForReadWrite("rw_buf",
+			jobsdb.WithDBHandle(pg.DB),
+			jobsdb.WithNumPartitions(64),
+			jobsdb.WithSkipMaintenanceErr(true),
+		)
+		require.NoError(t, buffer.Start(), "it should be able to start JobsDB Buffer")
+		t.Cleanup(func() {
+			buffer.TearDown()
+		})
+		pg.DB.Close() // close the DB to simulate failure in refreshing buffered partitions
+		_, err = NewJobsDBPartitionBuffer(ctx, WithReadWriteJobsDBs(primary, buffer))
+		require.Error(t, err)
+	})
+}

@@ -41,6 +41,9 @@ func (a *gatewayApp) Setup() error {
 	if err := rudderCoreDBValidator(); err != nil {
 		return err
 	}
+	if err := rudderCoreNodeSetup(); err != nil {
+		return err
+	}
 	a.setupDone = true
 	return nil
 }

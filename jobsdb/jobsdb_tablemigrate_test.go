@@ -56,4 +56,47 @@ func TestJobsDBTableMigrations(t *testing.T) {
 		require.Len(t, unprocessed.Jobs, 2)
 		require.Equal(t, "partition-1", unprocessed.Jobs[1].PartitionID)
 	})
+
+	t.Run("15_buffered_partitions", func(t *testing.T) {
+		t.Run("partitioning enabled", func(t *testing.T) {
+			postgres := startPostgres(t)
+
+			jd := NewForWrite("test", WithDBHandle(postgres.DB), WithNumPartitions(1))
+			require.NoError(t, jd.Start(), "it should be able to start JobsDB")
+			jd.TearDown()
+
+			row := postgres.DB.QueryRow(`SELECT count(*) FROM test_buffered_partitions`)
+			require.NoError(t, row.Err(), "it should be able to query buffered_partitions table")
+			var count int
+			require.NoError(t, row.Scan(&count))
+			require.Equal(t, 0, count, "buffered_partitions table should be empty initially")
+
+			// verify version was bumped correctly
+			var version int
+			err := postgres.DB.QueryRow(`SELECT version FROM buffered_partitions_versions WHERE key = 'test'`).Scan(&version)
+			require.NoError(t, err, "it should be able to query node_migrations table")
+			require.Equal(t, 0, version, "buffered_partitions_versions version should be 0")
+
+			// add an entry to buffered_partitions table
+			_, err = postgres.DB.Exec(`INSERT INTO test_buffered_partitions (partition_id) VALUES ('partition-1')`)
+			require.NoError(t, err, "it should be able to insert into buffered_partitions table")
+
+			// verify version was bumped correctly
+			var newVersion int
+			err = postgres.DB.QueryRow(`SELECT version FROM buffered_partitions_versions WHERE key = 'test'`).Scan(&newVersion)
+			require.NoError(t, err, "it should be able to query node_migrations table")
+			require.Equal(t, 1, newVersion, "jobsdb_tables version should be 15 after migration")
+		})
+
+		t.Run("partitioning disabled", func(t *testing.T) {
+			postgres := startPostgres(t)
+
+			jd := NewForWrite("test", WithDBHandle(postgres.DB))
+			require.NoError(t, jd.Start(), "it should be able to start JobsDB")
+			jd.TearDown()
+
+			row := postgres.DB.QueryRow(`SELECT count(*) FROM test_buffered_partitions`)
+			require.Error(t, row.Err(), "it should be able to query buffered_partitions table")
+		})
+	})
 }
