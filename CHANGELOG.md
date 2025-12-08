@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.64.1](https://github.com/rudderlabs/rudder-server/compare/v1.64.0...v1.64.1) (2025-12-05)
+
+
+### Bug Fixes
+
+* handle ctx cancellation during source hydration ([#6555](https://github.com/rudderlabs/rudder-server/issues/6555)) ([befd559](https://github.com/rudderlabs/rudder-server/commit/befd559d338d6161b1a6df78f544cd0aa2e88fe2))
+
 ## [1.64.0](https://github.com/rudderlabs/rudder-server/compare/v1.63.0...v1.64.0) (2025-12-03)
 
 
