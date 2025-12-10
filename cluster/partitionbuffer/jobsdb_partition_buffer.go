@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/maputil"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
@@ -40,11 +41,11 @@ type jobsDBPartitionBuffer struct {
 	lifecycleJobsDBs []jobsdb.JobsDB // JobsDBs involved in lifecycle operations (like Close)
 
 	// nolint: unused // TODO: to be used in Store implementation
-	differentReaderWriterDBs  bool                           // if having different reader/writer DBs, we need to refresh buffered partitions on every Store
-	canStore                  bool                           // indicates if Store operations are supported
-	canFlush                  bool                           // indicates if Flush operations are supported
-	numPartitions             int                            // number of partitions used in partition function
-	bufferedPartitionsMu      sync.RWMutex                   // mutex to protect bufferedPartitionsVersion & bufferedPartitions
-	bufferedPartitionsVersion int                            // version of the buffered partitions
-	bufferedPartitions        *readOnlyMap[string, struct{}] // buffered partitions
+	differentReaderWriterDBs  bool                                   // if having different reader/writer DBs, we need to refresh buffered partitions on every Store
+	canStore                  bool                                   // indicates if Store operations are supported
+	canFlush                  bool                                   // indicates if Flush operations are supported
+	numPartitions             int                                    // number of partitions used in partition function
+	bufferedPartitionsMu      sync.RWMutex                           // mutex to protect bufferedPartitionsVersion & bufferedPartitions
+	bufferedPartitionsVersion int                                    // version gets bumped whenever partitions change in the database, used for comparing cache validity
+	bufferedPartitions        *maputil.ReadOnlyMap[string, struct{}] // buffered partitions
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
+	"github.com/rudderlabs/rudder-go-kit/maputil"
 	"github.com/rudderlabs/rudder-server/utils/tx"
 )
 
@@ -42,7 +43,7 @@ func (b *jobsDBPartitionBuffer) BufferPartitions(ctx context.Context, partitionI
 func (b *jobsDBPartitionBuffer) RefreshBufferedPartitions(ctx context.Context) error {
 	var (
 		dbVersion          int
-		bufferedPartitions *readOnlyMap[string, struct{}]
+		bufferedPartitions *maputil.ReadOnlyMap[string, struct{}]
 	)
 	err := b.WithTx(func(tx *tx.Tx) (err error) {
 		dbVersion, err = b.getBufferedPartitionsVersionInTx(ctx, tx)
@@ -66,7 +67,7 @@ func (b *jobsDBPartitionBuffer) RefreshBufferedPartitions(ctx context.Context) e
 }
 
 // getBufferedPartitionsInTx fetches the list of buffered partitions from the database within the provided transaction
-func (b *jobsDBPartitionBuffer) getBufferedPartitionsInTx(ctx context.Context, tx *tx.Tx) (*readOnlyMap[string, struct{}], error) {
+func (b *jobsDBPartitionBuffer) getBufferedPartitionsInTx(ctx context.Context, tx *tx.Tx) (*maputil.ReadOnlyMap[string, struct{}], error) {
 	bufferedPartitions := make(map[string]struct{})
 	query := `SELECT partition_id FROM ` + b.Identifier() + `_buffered_partitions`
 	rows, err := tx.QueryContext(ctx, query)
@@ -85,7 +86,7 @@ func (b *jobsDBPartitionBuffer) getBufferedPartitionsInTx(ctx context.Context, t
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating buffered partitions rows: %w", err)
 	}
-	return newReadOnlyMap(bufferedPartitions), nil
+	return maputil.NewReadOnlyMap(bufferedPartitions), nil
 }
 
 // getBufferedPartitionsVersionInTx fetches the version of buffered partitions from the database within the provided transaction

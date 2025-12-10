@@ -76,7 +76,7 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		require.NoError(t, err, "FlushBufferedPartitions should be supported in reader-only mode")
 	})
 
-	t.Run("WithWithWriterOnlyJobsDBs", func(t *testing.T) {
+	t.Run("WithWriterOnlyJobsDBs", func(t *testing.T) {
 		ctx := t.Context()
 
 		primaryWriter := jobsdb.NewForReadWrite("wo", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
@@ -89,7 +89,7 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		t.Cleanup(func() {
 			bufferWriter.TearDown()
 		})
-		pb, err := NewJobsDBPartitionBuffer(ctx, WithWithWriterOnlyJobsDBs(primaryWriter, bufferWriter))
+		pb, err := NewJobsDBPartitionBuffer(ctx, WithWriterOnlyJobsDBs(primaryWriter, bufferWriter))
 		require.NoError(t, err)
 
 		err = pb.Store(ctx, jobs)

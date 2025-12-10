@@ -11,7 +11,7 @@ import (
 type Opt func(*jobsDBPartitionBuffer)
 
 // ErrInvalidJobsDBPartitionBufferConfig is returned when the configuration for JobsDBPartitionBuffer is invalid
-var ErrInvalidJobsDBPartitionBufferConfig = errors.New("invalid jobsdb partition buffer configuration, need to use WithReadWriteJobsDBs, WithWithWriterOnlyJobsDBs or WithReaderOnlyAndFlushJobsDBs")
+var ErrInvalidJobsDBPartitionBufferConfig = errors.New("invalid jobsdb partition buffer configuration, need to use WithReadWriteJobsDBs, WithWriterOnlyJobsDBs or WithReaderOnlyAndFlushJobsDBs")
 
 // WithReadWriteJobsDBs sets both read and write JobsDBs for primary and buffer
 func WithReadWriteJobsDBs(primary, buffer jobsdb.JobsDB) Opt {
@@ -28,8 +28,8 @@ func WithReadWriteJobsDBs(primary, buffer jobsdb.JobsDB) Opt {
 	}
 }
 
-// WithWithWriterOnlyJobsDBs sets only the writer JobsDBs for primary and buffer
-func WithWithWriterOnlyJobsDBs(primaryWriter, bufferWriter jobsdb.JobsDB) Opt {
+// WithWriterOnlyJobsDBs sets only the writer JobsDBs for primary and buffer
+func WithWriterOnlyJobsDBs(primaryWriter, bufferWriter jobsdb.JobsDB) Opt {
 	return func(b *jobsDBPartitionBuffer) {
 		b.JobsDB = primaryWriter
 		b.primaryWriteJobsDB = primaryWriter
