@@ -87,6 +87,12 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 		}
 	}
 
+	// Convert conversionValue to string as customer can provide it as integer or float
+	conversionValue, ok := fields["conversionValue"]
+	if ok {
+		fields["conversionValue"] = fmt.Sprintf("%v", conversionValue)
+	}
+
 	// Return error if no valid input is found.
 	if !enhancedConversionProvided {
 		return payload, fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")

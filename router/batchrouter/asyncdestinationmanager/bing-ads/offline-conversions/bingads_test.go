@@ -503,7 +503,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 		})
 		It("Transform() Test -> successful ", func() {
 			job := &jobsdb.JobT{
-				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2023-05-22T06:27:54Z\",\n    \"conversionValue\": \"100\",\n    \"microsoftClickId\": \"click_id\",\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"test@testmail.com\",\n    \"phone\":\"+911234567890\"\n  }\n}"),
+				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2023-05-22T06:27:54Z\",\n    \"conversionValue\": 100,\n    \"microsoftClickId\": \"click_id\",\n    \"conversionCurrencyCode\": \"USD\",\n    \"email\":\"test@testmail.com\",\n    \"phone\":\"+911234567890\"\n  }\n}"),
 			}
 			uploader := &BingAdsBulkUploader{
 				isHashRequired: true,
