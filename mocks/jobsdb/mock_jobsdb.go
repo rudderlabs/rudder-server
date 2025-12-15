@@ -344,6 +344,32 @@ func (mr *MockJobsDBMockRecorder) RemoveReadExcludedPartitionIDs(ctx, partitionI
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveReadExcludedPartitionIDs", reflect.TypeOf((*MockJobsDB)(nil).RemoveReadExcludedPartitionIDs), ctx, partitionIDs)
 }
 
+// Start mocks base method.
+func (m *MockJobsDB) Start() error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Start")
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Start indicates an expected call of Start.
+func (mr *MockJobsDBMockRecorder) Start() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockJobsDB)(nil).Start))
+}
+
+// Stop mocks base method.
+func (m *MockJobsDB) Stop() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Stop")
+}
+
+// Stop indicates an expected call of Stop.
+func (mr *MockJobsDBMockRecorder) Stop() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockJobsDB)(nil).Stop))
+}
+
 // Store mocks base method.
 func (m *MockJobsDB) Store(ctx context.Context, jobList []*jobsdb.JobT) error {
 	m.ctrl.T.Helper()
