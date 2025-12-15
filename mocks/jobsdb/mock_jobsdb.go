@@ -470,17 +470,17 @@ func (mr *MockJobsDBMockRecorder) WithStoreSafeTx(arg0, arg1 any) *gomock.Call {
 }
 
 // WithStoreSafeTxFromTx mocks base method.
-func (m *MockJobsDB) WithStoreSafeTxFromTx(ctx context.Context, arg1 *tx.Tx, f func(jobsdb.StoreSafeTx) error) error {
+func (m *MockJobsDB) WithStoreSafeTxFromTx(arg0 context.Context, arg1 *tx.Tx, arg2 func(jobsdb.StoreSafeTx) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WithStoreSafeTxFromTx", ctx, arg1, f)
+	ret := m.ctrl.Call(m, "WithStoreSafeTxFromTx", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // WithStoreSafeTxFromTx indicates an expected call of WithStoreSafeTxFromTx.
-func (mr *MockJobsDBMockRecorder) WithStoreSafeTxFromTx(ctx, arg1, f any) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) WithStoreSafeTxFromTx(arg0, arg1, arg2 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithStoreSafeTxFromTx", reflect.TypeOf((*MockJobsDB)(nil).WithStoreSafeTxFromTx), ctx, arg1, f)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithStoreSafeTxFromTx", reflect.TypeOf((*MockJobsDB)(nil).WithStoreSafeTxFromTx), arg0, arg1, arg2)
 }
 
 // WithTx mocks base method.

@@ -31,7 +31,9 @@ func (b *jobsDBPartitionBuffer) BufferPartitions(ctx context.Context, partitionI
 	}); err != nil {
 		return fmt.Errorf("setting buffered partitions: %w", err)
 	}
-	b.bufferedPartitionsMu.Lock()
+	if !b.bufferedPartitionsMu.TryLockWithContext(ctx) {
+		return fmt.Errorf("acquiring a buffered partitions write lock while setting buffered partitions: %w", ctx.Err())
+	}
 	defer b.bufferedPartitionsMu.Unlock()
 	b.bufferedPartitions = b.bufferedPartitions.Append(lo.SliceToMap(partitionIds, func(partition string) (string, struct{}) {
 		return partition, struct{}{}
@@ -41,6 +43,10 @@ func (b *jobsDBPartitionBuffer) BufferPartitions(ctx context.Context, partitionI
 }
 
 func (b *jobsDBPartitionBuffer) RefreshBufferedPartitions(ctx context.Context) error {
+	if !b.bufferedPartitionsMu.TryLockWithContext(ctx) {
+		return fmt.Errorf("acquiring a buffered partitions write lock while refreshing %w", ctx.Err())
+	}
+	defer b.bufferedPartitionsMu.Unlock()
 	var (
 		dbVersion          int
 		bufferedPartitions *maputil.ReadOnlyMap[string, struct{}]
@@ -59,8 +65,6 @@ func (b *jobsDBPartitionBuffer) RefreshBufferedPartitions(ctx context.Context) e
 	if err != nil {
 		return fmt.Errorf("refreshing buffered partitions: %w", err)
 	}
-	b.bufferedPartitionsMu.Lock()
-	defer b.bufferedPartitionsMu.Unlock()
 	b.bufferedPartitionsVersion = dbVersion
 	b.bufferedPartitions = bufferedPartitions
 	return nil

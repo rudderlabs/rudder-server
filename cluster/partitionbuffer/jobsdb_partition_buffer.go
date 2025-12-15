@@ -3,7 +3,8 @@ package partitionbuffer
 import (
 	"context"
 	"errors"
-	"sync"
+
+	golock "github.com/viney-shih/go-lock"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/maputil"
@@ -45,7 +46,7 @@ type jobsDBPartitionBuffer struct {
 	canStore                  bool                                   // indicates if Store operations are supported
 	canFlush                  bool                                   // indicates if Flush operations are supported
 	numPartitions             int                                    // number of partitions used in partition function
-	bufferedPartitionsMu      sync.RWMutex                           // mutex to protect bufferedPartitionsVersion & bufferedPartitions
+	bufferedPartitionsMu      *golock.CASMutex                       // mutex to protect bufferedPartitionsVersion & bufferedPartitions
 	bufferedPartitionsVersion int                                    // version gets bumped whenever partitions change in the database, used for comparing cache validity
 	bufferedPartitions        *maputil.ReadOnlyMap[string, struct{}] // buffered partitions
 }
