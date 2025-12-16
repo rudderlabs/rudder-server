@@ -1,0 +1,53 @@
+syntax = "proto3";
+package proto;
+import "google/protobuf/timestamp.proto";
+
+option go_package = ".;proto";
+
+// Service for migrating jobs of partitions in batches
+service PartitionMigration {
+    // Bidirectional streaming RPC for migrating jobs in batches
+    rpc StreamJobs(stream StreamJobsRequest) returns (stream JobsBatchAck) {}
+}
+
+// The request message for streaming jobs
+message StreamJobsRequest {
+  oneof payload {
+    JobStreamMetadata metadata = 1;
+    JobsBatchChunk chunk = 2;
+  }
+}
+
+// Acknowledgment message for job batches being persisted
+message JobsBatchAck {
+    int64 batchIndex = 1;
+}
+
+// The setup metadata for preparing the stream, should be the first message of the stream
+message JobStreamMetadata {
+    string migrationJobId = 1;
+    string tablePrefix = 2;
+    repeated string partitionIds = 3;
+}
+
+// A chunk of jobs being sent in the stream
+message JobsBatchChunk {
+    int64 batchIndex = 1; // Index of the batch being sent
+    bool lastChunk = 2; // Indicates if this is the last chunk of the batch
+    repeated Job jobs = 3; // List of jobs in this chunk
+}
+
+// Representation of a JobsDB job
+message Job {
+  bytes uuid = 1;
+  int64 jobID = 2;
+  string userId = 3;
+  google.protobuf.Timestamp createdAt = 4;
+  google.protobuf.Timestamp expireAt = 5;
+  string customVal = 6;
+  int64 eventCount = 7;
+  bytes eventPayload = 8;
+  bytes parameters = 9;
+  string workspaceId = 10;
+  string partitionId = 11;
+}
