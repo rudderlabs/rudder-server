@@ -1354,7 +1354,7 @@ var _ = Describe("Processor with event schemas v2", Ordered, func() {
 					gomock.Any(),
 					gomock.Any(),
 				).Times(1).
-				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 					_ = f(jobsdb.EmptyStoreSafeTx())
 				}).Return(nil)
 			c.mockEventSchemasDB.EXPECT().
@@ -1547,11 +1547,8 @@ func TestArchival(t *testing.T) {
 			}
 
 			c.mockArchivalDB.EXPECT().
-				WithStoreSafeTx(
-					gomock.Any(),
-					gomock.Any(),
-				).Times(1).
-				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 					_ = f(jobsdb.EmptyStoreSafeTx())
 				}).Return(nil)
 			c.mockArchivalDB.EXPECT().
@@ -2007,7 +2004,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				}`, sourceIDToName[SourceIDEnabledNoUT]), string(job.Parameters))
 			}
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -2048,7 +2045,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 					gomock.Any(),
 					gomock.Any(),
 				).Times(1).
-				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 					_ = f(jobsdb.EmptyStoreSafeTx())
 				}).Return(nil)
 			c.mockArchivalDB.EXPECT().
@@ -2432,7 +2429,7 @@ var _ = Describe("Processor", Ordered, func() {
 				}`, sourceIDToName[SourceIDEnabledNoUT]), string(job.Parameters))
 			}
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -2473,7 +2470,7 @@ var _ = Describe("Processor", Ordered, func() {
 					gomock.Any(),
 					gomock.Any(),
 				).Times(1).
-				Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+				Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 					_ = f(jobsdb.EmptyStoreSafeTx())
 				}).Return(nil)
 			c.mockArchivalDB.EXPECT().
@@ -2687,7 +2684,7 @@ var _ = Describe("Processor", Ordered, func() {
 				}`, sourceIDToName[SourceIDEnabledOnlyUT]), string(job.Parameters))
 			}
 
-			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -2698,7 +2695,7 @@ var _ = Describe("Processor", Ordered, func() {
 					}
 				})
 
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -2803,12 +2800,12 @@ var _ = Describe("Processor", Ordered, func() {
 			c.MockDedup.EXPECT().Commit(gomock.Any()).Times(1)
 
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(1)).Times(1)
 
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -2921,7 +2918,7 @@ var _ = Describe("Processor", Ordered, func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -3006,7 +3003,7 @@ var _ = Describe("Processor", Ordered, func() {
 				FailedEvents: transformerResponses,
 			})
 
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -3085,7 +3082,7 @@ var _ = Describe("Processor", Ordered, func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -3180,7 +3177,7 @@ var _ = Describe("Processor", Ordered, func() {
 					rsources.Stats{In: 1, Failed: 1},
 				).Times(1)
 
-			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 

@@ -343,7 +343,7 @@ var _ = Describe("Gateway Enterprise", func() {
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(
 				gomock.Any(),
 				gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(
@@ -627,7 +627,7 @@ var _ = Describe("Gateway", func() {
 						gomock.Any(),
 						gomock.Any()).Times(1).Do(func(
 						ctx context.Context,
-						f func(tx jobsdb.StoreSafeTx) error,
+						f func(jobsdb.StoreSafeTx) error,
 					) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
@@ -705,7 +705,7 @@ var _ = Describe("Gateway", func() {
 				gomock.Any(),
 				gomock.Any()).Times(1).Do(func(
 				ctx context.Context,
-				f func(tx jobsdb.StoreSafeTx) error,
+				f func(jobsdb.StoreSafeTx) error,
 			) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
@@ -768,7 +768,7 @@ var _ = Describe("Gateway", func() {
 				gomock.Any(),
 				gomock.Any()).AnyTimes().Do(func(
 				ctx context.Context,
-				f func(tx jobsdb.StoreSafeTx) error,
+				f func(jobsdb.StoreSafeTx) error,
 			) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
@@ -848,7 +848,7 @@ var _ = Describe("Gateway", func() {
 				"import":  gateway.webImportHandler(),
 				"extract": gateway.webExtractHandler(),
 			}
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(3)
@@ -899,7 +899,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should send bots information", func() {
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -1009,7 +1009,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
 			c.mockRateLimiter.EXPECT().CheckLimitReached(gomock.Any(), gomock.Any(), gomock.Any()).Return(false, nil).Times(1)
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
@@ -1333,7 +1333,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "batch" && handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.

@@ -207,7 +207,7 @@ func TestUTMirroring(t *testing.T) {
 			EventsLimit:      processor.config.maxEventsToProcess.Load(),
 			PayloadSizeLimit: processor.payloadLimit.Load(),
 		}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
-		c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+		c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 			_ = f(jobsdb.EmptyStoreSafeTx())
 		}).Return(nil)
 		callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -217,7 +217,7 @@ func TestUTMirroring(t *testing.T) {
 					assertStoreJob(t, job, i, "value-enabled-destination-b")
 				}
 			})
-		c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+		c.mockArchivalDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).AnyTimes().Do(func(ctx context.Context, f func(jobsdb.StoreSafeTx) error) {
 			_ = f(jobsdb.EmptyStoreSafeTx())
 		}).Return(nil)
 		c.mockArchivalDB.EXPECT().
