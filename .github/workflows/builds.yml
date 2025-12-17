@@ -17,37 +17,37 @@ permissions:
 env:
   arch_amd64: amd64
   arch_arm64: arm64
-  docker_oss_images: |
-    name=rudderlabs/develop-rudder-server
-    name=rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+  develop_oss_image: |
+    rudderlabs/develop-rudder-server
+  oss_image: rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
   docker_oss_tags: |
     type=ref,event=branch
     type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
     type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-    type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
     type=semver,pattern={{major}}.{{minor}}
     type=semver,pattern={{major}}
-  docker_ent_images: |
-    name=rudderstack/develop-rudder-server-enterprise
-    name=rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+  develop_ent_image: |
+    rudderstack/develop-rudder-server-enterprise
+  ent_image: rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
   docker_ent_tags: |
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-    type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
-    type=raw,value=${{ github.head_ref }}-race,enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
     type=semver,pattern={{version}}-race
     type=semver,pattern={{major}}.{{minor}}
     type=semver,pattern={{major}}.{{minor}}-race
     type=semver,pattern={{major}}
-  docker_sbsvc_images: |
-    name=rudderstack/develop-suppression-backup-service
-    name=rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
+  develop_sbsvc_image: |
+    rudderstack/develop-suppression-backup-service
+  sbsvc_image: rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
   docker_sbsvc_tags: |
     type=ref,event=branch
     type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-    type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
+    type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
     type=semver,pattern={{version}}
     type=semver,pattern={{major}}.{{minor}}
     type=semver,pattern={{major}}
@@ -76,13 +76,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_oss_images}}
+          images: |
+            name=${{env.oss_image}}
+            name=${{env.develop_oss_image}}
           tags: ${{env.docker_oss_tags}}
       - name: Docker arm64 meta
         id: arm64_meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_oss_images}}
+          images: |
+            name=${{env.oss_image}}
+            name=${{env.develop_oss_image}}
           tags: ${{env.docker_oss_tags}}
           flavor: |
             suffix=-${{env.arch_arm64}},onlatest=true
@@ -90,11 +94,13 @@ jobs:
         id: amd64_meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_oss_images}}
+          images: |
+            name=${{env.oss_image}}
+            name=${{env.develop_oss_image}}
           tags: ${{env.docker_oss_tags}}
           flavor: |
             suffix=-${{env.arch_amd64}},onlatest=true
-  docker-oss:
+  build-oss:
     needs:
       - docker-oss-meta
     strategy:
@@ -104,10 +110,14 @@ jobs:
             tags: ${{needs.docker-oss-meta.outputs.arm64_tags}}
             labels: ${{needs.docker-oss-meta.outputs.arm64_labels}}
             platform: linux/arm64
+            is_docker_build: true
+            meta: ${{needs.docker-oss-meta.outputs}}
           - os: ubuntu-latest
             tags: ${{needs.docker-oss-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-oss-meta.outputs.amd64_labels}}
             platform: linux/amd64
+            is_docker_build: true
+            meta: ${{needs.docker-oss-meta.outputs}}
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -119,13 +129,25 @@ jobs:
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        if: ${{ matrix.build-config.is_docker_build  }}
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Configure AWS Credentials
+        if: ${{ !matrix.build-config.is_docker_build  }}
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        if: ${{ !matrix.build-config.is_docker_build  }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build, scan and push
-        uses: rudderlabs/build-scan-push-action@d4991410238cec1b416875f1eb0e7a4565ac29aa # v1.8.2
+        uses: rudderlabs/build-scan-push-action@96d7bfca912dd2e8805dbb322dc2540504ecac1e # v2.1.0
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
@@ -133,10 +155,10 @@ jobs:
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
-            BUILD_DATE=${{ needs.docker-oss-meta.outputs.build-date }}
-            VERSION=${{ needs.docker-oss-meta.outputs.version }}
+            BUILD_DATE=${{ matrix.build-config.meta.build-date }}
+            VERSION=${{ matrix.build-config.meta.version }}
             COMMIT_HASH=${{ github.sha }}
-            REVISION=${{ needs.docker-oss-meta.outputs.revision }}
+            REVISION=${{ matrix.build-config.meta.revision }}
   docker-ent-meta:
     runs-on: ubuntu-latest
     if: github.actor != 'dependabot[bot]'
@@ -160,13 +182,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_ent_images}}
+          images: |
+            name=${{env.ent_image}}
+            name=${{env.develop_ent_image}}
           tags: ${{env.docker_ent_tags}}
       - name: Docker arm64 meta
         id: arm64_meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_ent_images}}
+          images: |
+            name=${{env.ent_image}}
+            name=${{env.develop_ent_image}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
             suffix=-${{env.arch_arm64}},onlatest=true
@@ -174,13 +200,74 @@ jobs:
         id: amd64_meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_ent_images}}
+          images: |
+            name=${{env.ent_image}}
+            name=${{env.develop_ent_image}}
           tags: ${{env.docker_ent_tags}}
           flavor: |
             suffix=-${{env.arch_amd64}},onlatest=true
-  docker-ent:
+  ecr-ent-meta:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    outputs:
+      labels: ${{ steps.meta.outputs.labels }}
+      build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+      version: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+      revision: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+      tags: ${{ steps.meta.outputs.tags }}
+      arm64_tags: ${{ steps.arm64_meta.outputs.tags }}
+      arm64_labels: ${{ steps.arm64_meta.outputs.labels }}
+      amd64_tags: ${{ steps.amd64_meta.outputs.tags }}
+      amd64_labels: ${{ steps.amd64_meta.outputs.labels }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
+
+      - name: meta
+        id: meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: |
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.ent_image}}
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.develop_ent_image}}
+          tags: ${{env.docker_ent_tags}}
+      - name: arm64 meta
+        id: arm64_meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: |
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.ent_image}}
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.develop_ent_image}}
+          tags: ${{env.docker_ent_tags}}
+          flavor: |
+            suffix=-${{env.arch_arm64}},onlatest=true
+      - name: amd64 meta
+        id: amd64_meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: |
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.ent_image}}
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.develop_ent_image}}
+          tags: ${{env.docker_ent_tags}}
+          flavor: |
+            suffix=-${{env.arch_amd64}},onlatest=true
+  build-ent:
     needs:
       - docker-ent-meta
+      - ecr-ent-meta
     strategy:
       matrix:
         build-config:
@@ -188,10 +275,26 @@ jobs:
             tags: ${{needs.docker-ent-meta.outputs.arm64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.arm64_labels}}
             platform: linux/arm64
+            is_docker_build: true
+            meta: ${{needs.docker-ent-meta.outputs}}
           - os: ubuntu-latest
             tags: ${{needs.docker-ent-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-ent-meta.outputs.amd64_labels}}
             platform: linux/amd64
+            is_docker_build: true
+            meta: ${{needs.docker-ent-meta.outputs}}
+          - os: [ self-hosted, Linux, ARM64, ubuntu-22 ]
+            tags: ${{needs.ecr-ent-meta.outputs.arm64_tags}}
+            labels: ${{needs.ecr-ent-meta.outputs.arm64_labels}}
+            platform: linux/arm64
+            is_docker_build: false
+            meta: ${{needs.ecr-ent-meta.outputs}}
+          - os: ubuntu-latest
+            tags: ${{needs.ecr-ent-meta.outputs.amd64_tags}}
+            labels: ${{needs.ecr-ent-meta.outputs.amd64_labels}}
+            platform: linux/amd64
+            is_docker_build: false
+            meta: ${{needs.ecr-ent-meta.outputs}}
         race: [false, true]
     runs-on: ${{matrix.build-config.os}}
     steps:
@@ -203,14 +306,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
       - name: Login to DockerHub
+        if: ${{ matrix.build-config.is_docker_build }}
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Configure AWS Credentials
+        if: ${{ !matrix.build-config.is_docker_build  }}
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        if: ${{ !matrix.build-config.is_docker_build  }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build, scan and push
-        uses: rudderlabs/build-scan-push-action@d4991410238cec1b416875f1eb0e7a4565ac29aa # v1.8.2
+        uses: rudderlabs/build-scan-push-action@96d7bfca912dd2e8805dbb322dc2540504ecac1e # v2.1.0
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
@@ -218,10 +333,10 @@ jobs:
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
-            BUILD_DATE=${{ needs.docker-ent-meta.outputs.build-date }}
-            VERSION=${{ needs.docker-ent-meta.outputs.version }}
+            BUILD_DATE=${{ matrix.build-config.meta.build-date }}
+            VERSION=${{ matrix.build-config.meta.version }}
             COMMIT_HASH=${{ github.sha }}
-            REVISION=${{ needs.docker-ent-meta.outputs.revision }}
+            REVISION=${{ matrix.build-config.meta.revision }}
             ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
             ${{ matrix.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
   docker-sbsvc-meta:
@@ -247,13 +362,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_sbsvc_images}}
+          images: |
+            name=${{env.sbsvc_image}}
+            name=${{env.develop_sbsvc_image}}
           tags: ${{env.docker_sbsvc_tags}}
       - name: Docker arm64 meta
         id: arm64_meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_sbsvc_images}}
+          images: |
+            name=${{env.sbsvc_image}}
+            name=${{env.develop_sbsvc_image}}
           tags: ${{env.docker_sbsvc_tags}}
           flavor: |
             suffix=-${{env.arch_arm64}},onlatest=true
@@ -261,13 +380,73 @@ jobs:
         id: amd64_meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
         with:
-          images: ${{env.docker_sbsvc_images}}
+          images: |
+            name=${{env.sbsvc_image}}
+            name=${{env.develop_sbsvc_image}}
           tags: ${{env.docker_sbsvc_tags}}
           flavor: |
             suffix=-${{env.arch_amd64}},onlatest=true
-  docker-suppression-backup-service:
+  ecr-sbsvc-meta:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    outputs:
+      labels: ${{ steps.meta.outputs.labels }}
+      build-date: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+      version: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+      revision: ${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+      tags: ${{ steps.meta.outputs.tags }}
+      arm64_tags: ${{ steps.arm64_meta.outputs.tags }}
+      arm64_labels: ${{ steps.arm64_meta.outputs.labels }}
+      amd64_tags: ${{ steps.amd64_meta.outputs.tags }}
+      amd64_labels: ${{ steps.amd64_meta.outputs.labels }}
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
+        with:
+          egress-policy: audit
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: |
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.sbsvc_image}}
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.develop_sbsvc_image}}
+          tags: ${{env.docker_sbsvc_tags}}
+      - name: Docker arm64 meta
+        id: arm64_meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: |
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.sbsvc_image}}
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.develop_sbsvc_image}}
+          tags: ${{env.docker_sbsvc_tags}}
+          flavor: |
+            suffix=-${{env.arch_arm64}},onlatest=true
+      - name: Docker amd64 meta
+        id: amd64_meta
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        with:
+          images: |
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.sbsvc_image}}
+            name=${{ steps.login-ecr.outputs.registry }}/${{env.develop_sbsvc_image}}
+          tags: ${{env.docker_sbsvc_tags}}
+          flavor: |
+            suffix=-${{env.arch_amd64}},onlatest=true
+  build-suppression-backup-service:
     needs:
       - docker-sbsvc-meta
+      - ecr-sbsvc-meta
     strategy:
       matrix:
         build-config:
@@ -275,10 +454,26 @@ jobs:
             tags: ${{needs.docker-sbsvc-meta.outputs.arm64_tags}}
             labels: ${{needs.docker-sbsvc-meta.outputs.arm64_labels}}
             platform: linux/arm64
+            is_docker_build: true
+            meta: ${{needs.docker-sbsvc-meta.outputs}}
           - os: ubuntu-latest
             tags: ${{needs.docker-sbsvc-meta.outputs.amd64_tags}}
             labels: ${{needs.docker-sbsvc-meta.outputs.amd64_labels}}
             platform: linux/amd64
+            is_docker_build: true
+            meta: ${{needs.docker-sbsvc-meta.outputs}}
+          - os: [ self-hosted, Linux, ARM64, ubuntu-22 ]
+            tags: ${{needs.ecr-sbsvc-meta.outputs.arm64_tags}}
+            labels: ${{needs.ecr-sbsvc-meta.outputs.arm64_labels}}
+            platform: linux/arm64
+            is_docker_build: false
+            meta: ${{needs.ecr-sbsvc-meta.outputs}}
+          - os: ubuntu-latest
+            tags: ${{needs.ecr-sbsvc-meta.outputs.amd64_tags}}
+            labels: ${{needs.ecr-sbsvc-meta.outputs.amd64_labels}}
+            platform: linux/amd64
+            is_docker_build: false
+            meta: ${{needs.ecr-sbsvc-meta.outputs}}
     runs-on: ${{matrix.build-config.os}}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -290,13 +485,25 @@ jobs:
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        if: ${{ matrix.build-config.is_docker_build  }}
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Configure AWS Credentials
+        if: ${{ !matrix.build-config.is_docker_build  }}
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        if: ${{ !matrix.build-config.is_docker_build  }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Build, scan and push
-        uses: rudderlabs/build-scan-push-action@d4991410238cec1b416875f1eb0e7a4565ac29aa # v1.8.2
+        uses: rudderlabs/build-scan-push-action@96d7bfca912dd2e8805dbb322dc2540504ecac1e # v2.1.0
         with:
           context: .
           platforms: ${{ matrix.build-config.platform }}
@@ -305,13 +512,18 @@ jobs:
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
-            BUILD_DATE=${{ needs.docker-sbsvc-meta.outputs.build-date }}
-            VERSION=${{ needs.docker-sbsvc-meta.outputs.version }}
+            BUILD_DATE=${{ matrix.build-config.meta.build-date }}
+            VERSION=${{ matrix.build-config.meta.version }}
             COMMIT_HASH=${{ github.sha }}
-            REVISION=${{ needs.docker-sbsvc-meta.outputs.revision }}
-  create-manifest-docker-oss:
+            REVISION=${{ matrix.build-config.meta.revision }}
+  create-manifest-oss:
     runs-on: ubuntu-latest
-    needs: [ docker-oss, docker-oss-meta ]
+    needs: [ build-oss, docker-oss-meta ]
+    strategy:
+      matrix:
+        config:
+          - is_docker: true
+            meta: ${{ needs.docker-oss-meta.outputs }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -319,10 +531,22 @@ jobs:
           egress-policy: audit
 
       - name: Login to DockerHub
+        if: ${{ matrix.config.is_docker }}
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Configure AWS Credentials
+        if: ${{ !matrix.config.is_docker }}
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        if: ${{ !matrix.config.is_docker }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Create multi-arch manifest for Docker OSS
@@ -330,16 +554,23 @@ jobs:
           while read -r tag; do
             echo "$tag"
 
-            arm_tag=$(echo "${{ needs.docker-oss-meta.outputs.arm64_tags }}" | grep "$tag")
+            arm_tag=$(echo "${{ matrix.config.meta.arm64_tags }}" | grep "$tag")
 
-            amd_tag=$(echo "${{ needs.docker-oss-meta.outputs.amd64_tags }}" | grep "$tag")
+            amd_tag=$(echo "${{ matrix.config.meta.amd64_tags }}" | grep "$tag")
 
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
-          done <<< "${{ needs.docker-oss-meta.outputs.tags }}"
-  create-manifest-docker-ent:
+          done <<< "${{ matrix.config.meta.tags }}"
+  create-manifest-ent:
     runs-on: ubuntu-latest
-    needs: [ docker-ent, docker-ent-meta ]
+    needs: [ build-ent, docker-ent-meta, ecr-ent-meta ]
+    strategy:
+      matrix:
+        config:
+          - is_docker: true
+            meta: ${{ needs.docker-ent-meta.outputs }}
+          - is_docker: false
+            meta: ${{ needs.ecr-ent-meta.outputs }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -347,10 +578,22 @@ jobs:
           egress-policy: audit
 
       - name: Login to DockerHub
+        if: ${{ matrix.config.is_docker }}
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Configure AWS Credentials
+        if: ${{ !matrix.config.is_docker }}
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        if: ${{ !matrix.config.is_docker }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Create multi-arch manifest for Docker ENT
@@ -358,17 +601,24 @@ jobs:
           while read -r tag; do
             echo "$tag"
 
-            arm_tag=$(echo "${{ needs.docker-ent-meta.outputs.arm64_tags }}" | grep "$tag")
+            arm_tag=$(echo "${{ matrix.config.meta.arm64_tags }}" | grep "$tag")
 
-            amd_tag=$(echo "${{ needs.docker-ent-meta.outputs.amd64_tags }}" | grep "$tag")
+            amd_tag=$(echo "${{ matrix.config.meta.amd64_tags }}" | grep "$tag")
 
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
-          done <<< "${{ needs.docker-ent-meta.outputs.tags }}"
+          done <<< "${{ matrix.config.meta.tags }}"
 
-  create-manifest-docker-sbsvc:
+  create-manifest-sbsvc:
     runs-on: ubuntu-latest
-    needs: [ docker-suppression-backup-service, docker-sbsvc-meta ]
+    needs: [ build-suppression-backup-service, docker-sbsvc-meta, ecr-sbsvc-meta ]
+    strategy:
+      matrix:
+        config:
+          - is_docker: true
+            meta: ${{ needs.docker-sbsvc-meta.outputs }}
+          - is_docker: false
+            meta: ${{ needs.ecr-sbsvc-meta.outputs }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -376,10 +626,22 @@ jobs:
           egress-policy: audit
 
       - name: Login to DockerHub
+        if: ${{ matrix.config.is_docker }}
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Configure AWS Credentials
+        if: ${{ !matrix.config.is_docker }}
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838  # v5.0.0
+        with:
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        if: ${{ !matrix.config.is_docker }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076  # v2.0.1
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
       - name: Create multi-arch manifest for Docker Suppression Backup Service
@@ -387,10 +649,10 @@ jobs:
           while read -r tag; do
             echo "$tag"
 
-            arm_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.arm64_tags }}" | grep "$tag")
+            arm_tag=$(echo "${{ matrix.config.meta.arm64_tags }}" | grep "$tag")
 
-            amd_tag=$(echo "${{ needs.docker-sbsvc-meta.outputs.amd64_tags }}" | grep "$tag")
+            amd_tag=$(echo "${{ matrix.config.meta.amd64_tags }}" | grep "$tag")
 
             docker buildx imagetools create -t $tag $arm_tag $amd_tag
 
-          done <<< "${{ needs.docker-sbsvc-meta.outputs.tags }}"
+          done <<< "${{ matrix.config.meta.tags }}"
