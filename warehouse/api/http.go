@@ -212,6 +212,7 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !mode.IsDegraded(a.config.runningMode) {
 		if !a.notifier.CheckHealth(ctx) {
+			a.logger.Warnn("notifier service is not healthy")
 			http.Error(w, "Cannot connect to notifierService", http.StatusInternalServerError)
 			return
 		}
@@ -220,21 +221,20 @@ func (a *Api) healthHandler(w http.ResponseWriter, r *http.Request) {
 
 	if mode.IsMaster(a.mode) {
 		if !checkHealth(ctx, a.db.DB) {
+			a.logger.Warnn("dbService is not healthy")
 			http.Error(w, "Cannot connect to dbService", http.StatusInternalServerError)
 			return
 		}
 		dbService = "UP"
 	}
 
-	healthVal := fmt.Sprintf(`
-{
-	"server": "UP",
-	"db": %q,
-	"notifier": %q,
-	"acceptingEvents": "TRUE",
-	"warehouseMode": %q
-}
-	`,
+	healthVal := fmt.Sprintf(`{
+		"server": "UP",
+		"db": %q,
+		"notifier": %q,
+		"acceptingEvents": "TRUE",
+		"warehouseMode": %q
+	}`,
 		dbService,
 		notifierService,
 		strings.ToUpper(a.mode),
