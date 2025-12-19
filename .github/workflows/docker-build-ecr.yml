@@ -23,6 +23,11 @@ on:
         description: 'AWS ECR Region'
         required: true
         type: string
+      race:
+        description: 'build with race detector'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write # allows the JWT to be requested from GitHub's OIDC provider
@@ -106,10 +111,12 @@ jobs:
             tags: ${{ needs.docker-meta.outputs.arm64_tags }}
             labels: ${{ needs.docker-meta.outputs.arm64_labels }}
             platform: linux/arm64
+            race: ${{ inputs.race }}
           - os: ubuntu-latest
             tags: ${{ needs.docker-meta.outputs.amd64_tags }}
             labels: ${{ needs.docker-meta.outputs.amd64_labels }}
             platform: linux/amd64
+            race: ${{ inputs.race }}
     runs-on: ${{ matrix.build-config.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -148,6 +155,7 @@ jobs:
             VERSION=${{ needs.docker-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
             REVISION=${{ needs.docker-meta.outputs.revision }}
+            ${{ matrix.build-config.race == 'true' && 'RACE_ENABLED=TRUE CGO_ENABLED=1' || '' }}
 
   create-manifest:
     runs-on: ubuntu-latest
