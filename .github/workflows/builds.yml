@@ -14,53 +14,22 @@ concurrency:
 permissions:
   id-token: write # allows the JWT to be requested from GitHub's OIDC provider
   contents: read  # This is required for actions/checkout
-env:
-  arch_amd64: amd64
-  arch_arm64: arm64
-  develop_oss_image: |
-    rudderlabs/develop-rudder-server
-  oss_image: rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
-  docker_oss_tags: |
-    type=ref,event=branch
-    type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-    type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
-    type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-    type=semver,pattern={{version}}
-    type=semver,pattern={{major}}.{{minor}}
-    type=semver,pattern={{major}}
-  develop_ent_image: |
-    rudderstack/develop-rudder-server-enterprise
-  ent_image: rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
-  docker_ent_tags: |
-    type=ref,event=branch
-    type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-    type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-    type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
-    type=semver,pattern={{version}}
-    type=semver,pattern={{version}}-race
-    type=semver,pattern={{major}}.{{minor}}
-    type=semver,pattern={{major}}.{{minor}}-race
-    type=semver,pattern={{major}}
-  develop_sbsvc_image: |
-    rudderstack/develop-suppression-backup-service
-  sbsvc_image: rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}
-  docker_sbsvc_tags: |
-    type=ref,event=branch
-    type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-    type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-    type=semver,pattern={{version}}
-    type=semver,pattern={{major}}.{{minor}}
-    type=semver,pattern={{major}}
 
 jobs:
   oss:
     uses: ./.github/workflows/docker-build-dockerhub.yml
     with:
       image_names: |
-        ${{ toJSON(fromJSON(format('[ "{0}", "{1}" ]', env.oss_image, env.develop_oss_image))) }}
+        ["rudderlabs/develop-rudder-server", "rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
       tags: |
-        ${{ env.docker_oss_tags }}
+        type=ref,event=branch
+        type=raw,value=1-alpine,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+        type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -69,9 +38,18 @@ jobs:
     uses: ./.github/workflows/docker-build-dockerhub.yml
     with:
       image_names: |
-        ${{ toJSON(fromJSON(format('[ "{0}", "{1}" ]', env.ent_image, env.develop_ent_image))) }}
+        ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
-      tags: ${{ env.docker_ent_tags }}
+      tags: |
+        type=ref,event=branch
+        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+        type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{version}}-race
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}.{{minor}}-race
+        type=semver,pattern={{major}}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -80,9 +58,18 @@ jobs:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
       image_names: |
-        ${{ toJSON(fromJSON(format('[ "{0}", "{1}" ]', env.ent_image, env.develop_ent_image))) }}
-      tags: ${{ env.docker_ent_tags }}
+        ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
+      tags: |
+        type=ref,event=branch
+        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+        type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{version}}-race
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}.{{minor}}-race
+        type=semver,pattern={{major}}
       aws_ecr_iam_role_arn: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
       aws_ecr_region: ${{ vars.AWS_ECR_REGION }}
 
@@ -90,9 +77,15 @@ jobs:
     uses: ./.github/workflows/docker-build-dockerhub.yml
     with:
       image_names: |
-        ${{ toJSON(fromJSON(format('[ "{0}", "{1}" ]', env.sbsvc_image, env.develop_sbsvc_image))) }}
+        ["rudderstack/develop-suppression-backup-service", "rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: ./suppression-backup-service/Dockerfile
-      tags: ${{ env.docker_sbsvc_tags }}
+      tags: |
+        type=ref,event=branch
+        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -101,8 +94,14 @@ jobs:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
       image_names: |
-        ${{ toJSON(fromJSON(format('[ "{0}", "{1}" ]', env.sbsvc_image, env.develop_sbsvc_image))) }}
-      tags: ${{ env.docker_sbsvc_tags }}
+        ["rudderstack/develop-suppression-backup-service", "rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: ./suppression-backup-service/Dockerfile
+      tags: |
+        type=ref,event=branch
+        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
+        type=semver,pattern={{version}}
+        type=semver,pattern={{major}}.{{minor}}
+        type=semver,pattern={{major}}
       aws_ecr_iam_role_arn: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
       aws_ecr_region: ${{ vars.AWS_ECR_REGION }}

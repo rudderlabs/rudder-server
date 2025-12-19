@@ -74,15 +74,8 @@ jobs:
         id: meta
         uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
         with:
-          images: |
-            ${{ steps.process-images.outputs.formatted_images }}
-          tags: |
-            type=ref,event=branch
-            type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{version}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
-            type=semver,pattern={{major}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
+          images: ${{ steps.process-images.outputs.formatted_images }}
+          tags: ${{ inputs.tags }}
 
       - name: Docker arm64 meta
         id: arm64_meta
@@ -90,13 +83,7 @@ jobs:
         with:
           images: |
             ${{ steps.process-images.outputs.formatted_images }}
-          tags: |
-            type=ref,event=branch
-            type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{version}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
-            type=semver,pattern={{major}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
+          tags: ${{ inputs.tags }}
           flavor: |
             suffix=-${{ env.arch_arm64 }},onlatest=true
 
@@ -106,13 +93,7 @@ jobs:
         with:
           images: |
             ${{ steps.process-images.outputs.formatted_images }}
-          tags: |
-            type=ref,event=branch
-            type=raw,value=${{ github.head_ref }},enable=${{ github.event_name == 'pull_request' }}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{version}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
-            type=semver,pattern={{major}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.ref == format('refs/heads/{0}', 'main') || github.event_name == 'release' }}
+          tags: ${{ inputs.tags }}
           flavor: |
             suffix=-${{ env.arch_amd64 }},onlatest=true
 
