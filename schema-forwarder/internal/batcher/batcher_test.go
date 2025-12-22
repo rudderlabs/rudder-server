@@ -12,6 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
 )
 
+const testSourceID = "test-source-id"
+
 func TestEventSchemaMessageBatcher(t *testing.T) {
 	t.Run("Add same message twice", func(t *testing.T) {
 		mockTransformer := &mockTransformer{}
@@ -23,6 +25,7 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 			},
 			Hash:       "hash",
 			ObservedAt: timestamppb.Now(),
+			SourceId:   testSourceID,
 		}
 
 		b := batcher.NewEventSchemaMessageBatcher(mockTransformer)
@@ -46,6 +49,7 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 			},
 			Hash:       "hash-1",
 			ObservedAt: timestamppb.Now(),
+			SourceId:   testSourceID,
 		}
 
 		b := batcher.NewEventSchemaMessageBatcher(mockTransformer)
@@ -60,6 +64,7 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 			},
 			Hash:       "hash-2",
 			ObservedAt: timestamppb.Now(),
+			SourceId:   testSourceID,
 		}
 
 		require.NoError(t, b.Add(&jobsdb.JobT{JobID: 2}))

@@ -69,17 +69,36 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 	})
 
 	t.Run("Test getSchemaKeyFromJob", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(testdata.TrackEvent, testdata.WriteKeyEnabled), &testdata.TestEventSchemaKey)
+		expectedKey := &proto.EventSchemaKey{
+			WriteKey:        testdata.WriteKeyEnabled,
+			EventType:       "track",
+			EventIdentifier: "event-name",
+		}
+		require.Equal(t, schemaTransformer.getSchemaKeyFromJob(testdata.TrackEvent, testdata.WriteKeyEnabled), expectedKey)
 	})
 
-	t.Run("Test getWriteKeyFromParams", func(t *testing.T) {
-		require.Equal(t, schemaTransformer.getWriteKeyFromParams(testdata.TestParams), testdata.WriteKeyEnabled)
+	t.Run("Test getWriteKeyAndSourceIdFromParams", func(t *testing.T) {
+		writeKey, sourceId := schemaTransformer.getWriteKeyAndSourceIdFromParams(testdata.TestParams)
+		require.Equal(t, writeKey, testdata.WriteKeyEnabled)
+		require.Equal(t, sourceId, testdata.SourceIDEnabled)
+
+		writeKey, sourceId = schemaTransformer.getWriteKeyAndSourceIdFromParams([]byte(`{}`))
+		require.Equal(t, writeKey, "")
+		require.Equal(t, sourceId, "")
+
+		writeKey, sourceId = schemaTransformer.getWriteKeyAndSourceIdFromParams([]byte(`{"source_id": ""}`))
+		require.Equal(t, writeKey, "")
+		require.Equal(t, sourceId, "")
+
+		writeKey, sourceId = schemaTransformer.getWriteKeyAndSourceIdFromParams([]byte(`{"source_id": "non-existent-source"}`))
+		require.Equal(t, writeKey, "")
+		require.Equal(t, sourceId, "non-existent-source")
 	})
 
 	t.Run("Test getSchemaMessage", func(t *testing.T) {
 		schemaKey := schemaTransformer.getSchemaKeyFromJob(testdata.TrackEvent, testdata.WriteKeyEnabled)
 		timeNow := time.Now()
-		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, []byte{}, testdata.SampleWorkspaceID, timeNow)
+		schemaMessage, err := schemaTransformer.getSchemaMessage(schemaKey, testdata.TrackEvent, []byte{}, testdata.SampleWorkspaceID, testdata.SourceIDEnabled, timeNow)
 		testEventSchemaMessage := generateTestEventSchemaMessage(timeNow)
 		require.Nil(t, err)
 		require.Equal(t, schemaMessage, testEventSchemaMessage)
@@ -95,6 +114,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Equal(t, string(eventSchemaMessage.Sample), string(testSchemaMessage.Sample))
 		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
 		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
+		require.Equal(t, eventSchemaMessage.SourceId, testSchemaMessage.SourceId)
 		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
 	})
 
@@ -121,6 +141,26 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Nil(t, e)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "event schema has more than")
+	})
+
+	t.Run("Test Transform missing sourceId", func(t *testing.T) {
+		event := generateTestJob(t, time.Now())
+		event.Parameters = []byte(`{}`)
+
+		e, err := schemaTransformer.Transform(event)
+		require.Nil(t, e)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "writeKey or sourceId could not be found")
+	})
+
+	t.Run("Test Transform missing writeKey", func(t *testing.T) {
+		event := generateTestJob(t, time.Now())
+		event.Parameters = []byte(`{"source_id": "non-existent-source"}`)
+
+		e, err := schemaTransformer.Transform(event)
+		require.Nil(t, e)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "writeKey or sourceId could not be found")
 	})
 }
 
@@ -151,6 +191,7 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 		require.Equal(t, string(eventSchemaMessage.Sample), string(testSchemaMessage.Sample))
 		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
 		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
+		require.Equal(t, eventSchemaMessage.SourceId, testSchemaMessage.SourceId)
 		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
 	})
 }
@@ -158,11 +199,16 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 	return &proto.EventSchemaMessage{
 		WorkspaceID: testdata.SampleWorkspaceID,
-		Key:         &testdata.TestEventSchemaKey,
-		ObservedAt:  timestamppb.New(time),
-		Schema:      testdata.TrackSchema,
-		Hash:        proto.SchemaHash(testdata.TrackSchema),
-		Sample:      []byte("{}"),
+		Key: &proto.EventSchemaKey{
+			WriteKey:        testdata.WriteKeyEnabled,
+			EventType:       "track",
+			EventIdentifier: "event-name",
+		},
+		ObservedAt: timestamppb.New(time),
+		Schema:     testdata.TrackSchema,
+		Hash:       proto.SchemaHash(testdata.TrackSchema),
+		Sample:     []byte("{}"),
+		SourceId:   testdata.SourceIDEnabled,
 	}
 }
 

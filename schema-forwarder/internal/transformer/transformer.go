@@ -71,15 +71,16 @@ func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, e
 	if err := jsonrs.Unmarshal(job.EventPayload, &eventPayload); err != nil {
 		return nil, err
 	}
-	writeKey := st.getWriteKeyFromParams(job.Parameters)
-	if writeKey == "" {
-		return nil, fmt.Errorf("writeKey could not be found")
+	writeKey, sourceId := st.getWriteKeyAndSourceIdFromParams(job.Parameters)
+	if writeKey == "" || sourceId == "" {
+		return nil, fmt.Errorf("writeKey or sourceId could not be found")
 	}
+
 	schemaKey := st.getSchemaKeyFromJob(eventPayload, writeKey)
 	if st.identifierLimit > 0 && len(schemaKey.EventIdentifier) > st.identifierLimit {
 		return nil, fmt.Errorf("event identifier size is greater than %d", st.identifierLimit)
 	}
-	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, []byte("{}"), job.WorkspaceId, job.CreatedAt)
+	schemaMessage, err := st.getSchemaMessage(schemaKey, eventPayload, []byte("{}"), job.WorkspaceId, sourceId, job.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +142,7 @@ func (st *transformer) getEventIdentifier(event map[string]interface{}, eventTyp
 }
 
 // getSchemaMessage returns the schema message from the event by flattening the event and getting the schema
-func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, sample json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
+func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, sample json.RawMessage, workspaceId, sourceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
 	flattenedEvent, err := st.flattenEvent(event)
 	if err != nil {
 		return nil, err
@@ -160,6 +161,7 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 		Hash:        proto.SchemaHash(schema),
 		ObservedAt:  timestamppb.New(observedAt),
 		Sample:      sample,
+		SourceId:    sourceId,
 	}, nil
 }
 
@@ -193,13 +195,13 @@ func (st *transformer) disablePIIReporting(writeKey string) bool {
 	return st.newPIIReportingSettings[writeKey]
 }
 
-// getWriteKeyFromParams returns the write key from the job parameters
-func (st *transformer) getWriteKeyFromParams(parameters json.RawMessage) string {
+// getWriteKeyAndSourceIdFromParams returns the write key and source ID from the job parameters
+func (st *transformer) getWriteKeyAndSourceIdFromParams(parameters json.RawMessage) (string, string) {
 	sourceId := gjson.GetBytes(parameters, "source_id").Str
 	if sourceId == "" {
-		return sourceId
+		return "", ""
 	}
 	st.mu.RLock()
 	defer st.mu.RUnlock()
-	return st.sourceWriteKeyMap[sourceId]
+	return st.sourceWriteKeyMap[sourceId], sourceId
 }
