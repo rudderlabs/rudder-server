@@ -772,7 +772,7 @@ func TestCacheScenarios(t *testing.T) {
 		return js
 	}
 
-	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
+	checkDSLimitJobs := func(t *testing.T, limit int) JobsResult {
 		maxDSSize := 1
 		c := config.New()
 		c.Set("JobsDB.maxDSSize", maxDSSize)
@@ -816,6 +816,8 @@ func TestCacheScenarios(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
+				dbWithOneLimit.dsListLock.RLock()
+				defer dbWithOneLimit.dsListLock.RUnlock()
 				return len(dbWithOneLimit.getDSList()) == 2
 			},
 			time.Second, time.Millisecond,
@@ -826,20 +828,22 @@ func TestCacheScenarios(t *testing.T) {
 		res, err = dbWithOneLimit.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		fmt.Println("res jobs:", len(res.Jobs))
-		return res.Jobs
+		return res
 	}
 
 	t.Run("Test cache with ds limit as one", func(t *testing.T) {
 		limit := 1
 		jobs := checkDSLimitJobs(t, limit)
 		fmt.Println("jobs:", jobs)
-		require.Equal(t, 2, len(jobs)) // Should return only 2 jobs since ds limit is 1
+		require.Equal(t, 2, len(jobs.Jobs)) // Should return only 2 jobs since ds limit is 1
+		require.True(t, jobs.DSLimitsReached)
 	})
 
 	t.Run("Test cache with no ds limit i.e. using default limit", func(t *testing.T) {
 		limit := -1
 		jobs := checkDSLimitJobs(t, limit)
-		require.Equal(t, 5, len(jobs)) // Should return all jobs since there is no ds limit
+		require.Equal(t, 5, len(jobs.Jobs)) // Should return all jobs since there is no ds limit
+		require.False(t, jobs.DSLimitsReached)
 	})
 
 	t.Run("Test cache with 1 writer and 1 reader jobsdb (gateway, processor scenario)", func(t *testing.T) {

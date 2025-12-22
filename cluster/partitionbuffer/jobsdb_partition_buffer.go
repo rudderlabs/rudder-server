@@ -3,11 +3,15 @@ package partitionbuffer
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
 	golock "github.com/viney-shih/go-lock"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/maputil"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
@@ -30,23 +34,28 @@ type JobsDBPartitionBuffer interface {
 
 type jobsDBPartitionBuffer struct {
 	jobsdb.JobsDB
+	primaryWriteJobsDB jobsdb.JobsDB   // primary JobsDB for write operations
+	primaryReadJobsDB  jobsdb.JobsDB   // primary JobsDB for read operations
+	bufferWriteJobsDB  jobsdb.JobsDB   // buffer JobsDB for write operations
+	bufferReadJobsDB   jobsdb.JobsDB   // buffer JobsDB for read operations
+	lifecycleJobsDBs   []jobsdb.JobsDB // JobsDBs involved in lifecycle operations (like Close)
+	logger             logger.Logger
+	stats              stats.Stats
 
-	logger logger.Logger
+	// configuration
+	differentReaderWriterDBs bool                              // if having different reader/writer DBs, we need to refresh buffered partitions on every Store
+	canStore                 bool                              // indicates if Store operations are supported
+	canFlush                 bool                              // indicates if Flush operations are supported
+	numPartitions            int                               // number of partitions used in partition function
+	flushBatchSize           config.ValueLoader[int]           // number of records to flush in a single batch
+	flushPayloadSize         config.ValueLoader[int64]         // total payload size (in bytes) to flush in a single batch
+	flushMoveTimeout         config.ValueLoader[time.Duration] // timeout for move operation, before forcing switchover
 
-	primaryWriteJobsDB jobsdb.JobsDB // primary JobsDB for write operations
-	primaryReadJobsDB  jobsdb.JobsDB // primary JobsDB for read operations
-
-	bufferWriteJobsDB jobsdb.JobsDB // buffer JobsDB for write operations
-	bufferReadJobsDB  jobsdb.JobsDB // buffer JobsDB for read operations
-
-	lifecycleJobsDBs []jobsdb.JobsDB // JobsDBs involved in lifecycle operations (like Close)
-
-	// nolint: unused // TODO: to be used in Store implementation
-	differentReaderWriterDBs  bool                                   // if having different reader/writer DBs, we need to refresh buffered partitions on every Store
-	canStore                  bool                                   // indicates if Store operations are supported
-	canFlush                  bool                                   // indicates if Flush operations are supported
-	numPartitions             int                                    // number of partitions used in partition function
+	// state
 	bufferedPartitionsMu      *golock.CASMutex                       // mutex to protect bufferedPartitionsVersion & bufferedPartitions
 	bufferedPartitionsVersion int                                    // version gets bumped whenever partitions change in the database, used for comparing cache validity
 	bufferedPartitions        *maputil.ReadOnlyMap[string, struct{}] // buffered partitions
+
+	flushingPartitionsMu sync.Mutex          // mutex to protect flushingPartitions
+	flushingPartitions   map[string]struct{} // partitions that are currently being flushed
 }
