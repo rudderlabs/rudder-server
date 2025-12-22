@@ -330,6 +330,20 @@ func (mr *MockJobsDBMockRecorder) Ping() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Ping", reflect.TypeOf((*MockJobsDB)(nil).Ping))
 }
 
+// RefreshDSList mocks base method.
+func (m *MockJobsDB) RefreshDSList(ctx context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RefreshDSList", ctx)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RefreshDSList indicates an expected call of RefreshDSList.
+func (mr *MockJobsDBMockRecorder) RefreshDSList(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshDSList", reflect.TypeOf((*MockJobsDB)(nil).RefreshDSList), ctx)
+}
+
 // RemoveReadExcludedPartitionIDs mocks base method.
 func (m *MockJobsDB) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionIDs []string) error {
 	m.ctrl.T.Helper()
@@ -509,4 +523,18 @@ func (m *MockJobsDB) WithUpdateSafeTx(arg0 context.Context, arg1 func(jobsdb.Upd
 func (mr *MockJobsDBMockRecorder) WithUpdateSafeTx(arg0, arg1 any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithUpdateSafeTx", reflect.TypeOf((*MockJobsDB)(nil).WithUpdateSafeTx), arg0, arg1)
+}
+
+// WithUpdateSafeTxFromTx mocks base method.
+func (m *MockJobsDB) WithUpdateSafeTxFromTx(ctx context.Context, arg1 *tx.Tx, f func(jobsdb.UpdateSafeTx) error) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WithUpdateSafeTxFromTx", ctx, arg1, f)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// WithUpdateSafeTxFromTx indicates an expected call of WithUpdateSafeTxFromTx.
+func (mr *MockJobsDBMockRecorder) WithUpdateSafeTxFromTx(ctx, arg1, f any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithUpdateSafeTxFromTx", reflect.TypeOf((*MockJobsDB)(nil).WithUpdateSafeTxFromTx), ctx, arg1, f)
 }
