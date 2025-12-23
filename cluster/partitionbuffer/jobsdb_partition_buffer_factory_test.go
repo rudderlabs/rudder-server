@@ -7,6 +7,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -44,17 +46,14 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		ctx := t.Context()
 
 		primary := jobsdb.NewForReadWrite("rw", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		require.NoError(t, primary.Start(), "it should be able to start JobsDB")
-		t.Cleanup(func() {
-			primary.TearDown()
-		})
 		buffer := jobsdb.NewForReadWrite("rw_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
 		require.NoError(t, buffer.Start(), "it should be able to start JobsDB Buffer")
-		t.Cleanup(func() {
-			buffer.TearDown()
-		})
-		pb, err := NewJobsDBPartitionBuffer(ctx, WithReadWriteJobsDBs(primary, buffer))
+		pb, err := NewJobsDBPartitionBuffer(ctx, WithReadWriteJobsDBs(primary, buffer), WithLogger(logger.NOP))
 		require.NoError(t, err, "it should be able to create JobsDBPartitionBuffer")
+		require.NoError(t, pb.Start(), "it should be able to start pb buffer")
+		t.Cleanup(func() {
+			pb.Stop()
+		})
 
 		err = pb.Store(ctx, jobs())
 		require.NoError(t, err, "it should be able to store jobs")
@@ -74,6 +73,8 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		})
 		require.NoError(t, err, "it should be able to store each batch retry in tx")
 
+		err = pb.BufferPartitions(ctx, []string{"partition-1"})
+		require.NoError(t, err, "it should be able to buffer partitions")
 		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
 		require.NoError(t, err, "FlushBufferedPartitions should be supported in reader-only mode")
 	})
@@ -82,17 +83,13 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		ctx := t.Context()
 
 		primaryWriter := jobsdb.NewForReadWrite("wo", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		require.NoError(t, primaryWriter.Start(), "it should be able to start primary writer JobsDB")
-		t.Cleanup(func() {
-			primaryWriter.TearDown()
-		})
 		bufferWriter := jobsdb.NewForReadWrite("wo_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		require.NoError(t, bufferWriter.Start(), "it should be able to start buffer writer JobsDB")
-		t.Cleanup(func() {
-			bufferWriter.TearDown()
-		})
-		pb, err := NewJobsDBPartitionBuffer(ctx, WithWriterOnlyJobsDBs(primaryWriter, bufferWriter))
+		pb, err := NewJobsDBPartitionBuffer(ctx, WithWriterOnlyJobsDBs(primaryWriter, bufferWriter), WithStats(stats.NOP))
 		require.NoError(t, err)
+		require.NoError(t, pb.Start(), "it should be able to start pb buffer")
+		t.Cleanup(func() {
+			pb.Stop()
+		})
 
 		err = pb.Store(ctx, jobs())
 		require.NoError(t, err, "it should be able to store jobs")
@@ -111,6 +108,9 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 			return err
 		})
 		require.NoError(t, err, "it should be able to store each batch retry in tx")
+
+		err = pb.BufferPartitions(ctx, []string{"partition-1"})
+		require.NoError(t, err, "it should be able to buffer partitions")
 
 		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
 		require.ErrorIs(t, err, ErrFlushNotSupported, "FlushBufferedPartitions should not be supported in writer-only mode")
@@ -121,18 +121,9 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 
 		// need to create the writer before the reader so that journal tables are created
 		primaryWriter := jobsdb.NewForReadWrite("ro", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		require.NoError(t, primaryWriter.Start(), "it should be able to start primary writer JobsDB")
-		t.Cleanup(func() {
-			primaryWriter.TearDown()
-		})
-
 		primaryReader := jobsdb.NewForRead("ro", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		require.NoError(t, primaryReader.Start(), "it should be able to start primary reader JobsDB")
-		t.Cleanup(func() {
-			primaryReader.TearDown()
-		})
 
-		// we need to create a writer buffer DB to create journal tables, even though we won't use it
+		// we need to first create a writer buffer DB to create journal tables, even though we won't use it
 		bufferWriter := jobsdb.NewForWrite("ro_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
 		require.NoError(t, bufferWriter.Start(), "it should be able to start buffer reader JobsDB")
 		t.Cleanup(func() {
@@ -140,13 +131,13 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		})
 
 		bufferReader := jobsdb.NewForRead("ro_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		require.NoError(t, bufferReader.Start(), "it should be able to start buffer reader JobsDB")
-		t.Cleanup(func() {
-			bufferReader.TearDown()
-		})
 
 		pb, err := NewJobsDBPartitionBuffer(ctx, WithReaderOnlyAndFlushJobsDBs(primaryReader, bufferReader, primaryWriter))
 		require.NoError(t, err)
+		require.NoError(t, pb.Start(), "it should be able to start pb buffer")
+		t.Cleanup(func() {
+			pb.Stop()
+		})
 
 		// This configuration is for reader-only mode, so Store operations should not be supported (canStore=false)
 		err = pb.Store(ctx, jobs())
@@ -173,6 +164,8 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		})
 		require.NoError(t, err, "StoreEachBatchRetryInTx should complete without error")
 
+		err = pb.BufferPartitions(ctx, []string{"partition-1"})
+		require.NoError(t, err, "it should be able to buffer partitions")
 		err = pb.FlushBufferedPartitions(ctx, []string{"partition-1"})
 		require.NoError(t, err, "FlushBufferedPartitions should be supported in reader-only mode")
 	})
