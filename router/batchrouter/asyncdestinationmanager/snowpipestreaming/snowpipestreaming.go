@@ -228,6 +228,10 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		discardImportInfo             *importInfo
 		failedReason                  string
 	)
+	var (
+		abortedJobIDs []int64
+		abortReason   string
+	)
 	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
 	isBackoffSet := false      // should not be set again if already set
 	for _, info := range uploadInfos {
@@ -246,6 +250,16 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 				}
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false
+			case errors.Is(err, errAbort):
+				m.logger.Warnn("Aborting jobs for table",
+					logger.NewStringField("table", info.tableName),
+					obskit.Error(err),
+				)
+				abortedJobIDs = append(abortedJobIDs, info.jobIDs...)
+				if abortReason == "" {
+					abortReason = err.Error()
+				}
+				continue
 			}
 			m.logger.Warnn("Failed to send events to Snowpipe",
 				logger.NewStringField("table", info.tableName),
@@ -288,6 +302,7 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	m.stats.jobs.importing.Count(len(importingJobIDs))
 	m.stats.jobs.failed.Count(len(failedJobIDs))
+	m.stats.jobs.aborted.Count(len(abortedJobIDs))
 
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
@@ -296,6 +311,9 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		FailedJobIDs:        failedJobIDs,
 		FailedReason:        failedReason,
 		FailedCount:         len(failedJobIDs),
+		AbortJobIDs:         abortedJobIDs,
+		AbortReason:         abortReason,
+		AbortCount:          len(abortedJobIDs),
 		DestinationID:       asyncDest.Destination.ID,
 	}
 }

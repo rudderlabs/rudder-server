@@ -16,6 +16,7 @@ import (
 var (
 	errAuthz   = errors.New("snowpipe authorization error")
 	errBackoff = errors.New("snowpipe backoff error")
+	errAbort   = errors.New("abort error")
 )
 
 // initializeChannelWithSchema creates a new channel for the given table if it doesn't exist.
@@ -126,6 +127,9 @@ func (m *Manager) createChannel(
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
 		return nil, fmt.Errorf("%w, %w", errAuthz, err)
 	default:
+		if resp.SnowflakeAPIHttpCode == internalapi.ApiStatusUnsupportedColumn {
+			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
+		}
 		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
 }
