@@ -25,7 +25,7 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 			},
 			Hash:       "hash",
 			ObservedAt: timestamppb.Now(),
-			SourceId:   testSourceID,
+			SourceID:   testSourceID,
 		}
 
 		b := batcher.NewEventSchemaMessageBatcher(mockTransformer)
@@ -49,7 +49,7 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 			},
 			Hash:       "hash-1",
 			ObservedAt: timestamppb.Now(),
-			SourceId:   testSourceID,
+			SourceID:   testSourceID,
 		}
 
 		b := batcher.NewEventSchemaMessageBatcher(mockTransformer)
@@ -64,7 +64,7 @@ func TestEventSchemaMessageBatcher(t *testing.T) {
 			},
 			Hash:       "hash-2",
 			ObservedAt: timestamppb.Now(),
-			SourceId:   testSourceID,
+			SourceID:   testSourceID,
 		}
 
 		require.NoError(t, b.Add(&jobsdb.JobT{JobID: 2}))

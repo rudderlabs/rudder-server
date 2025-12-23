@@ -18,5 +18,5 @@ message EventSchemaMessage {
   bytes correlationID = 6;
   string hash = 7;
   int64 batchCount = 8; 
-  string sourceId = 9; 
+  string sourceID = 9; 
 }

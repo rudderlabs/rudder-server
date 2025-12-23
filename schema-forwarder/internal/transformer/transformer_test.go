@@ -114,7 +114,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 		require.Equal(t, string(eventSchemaMessage.Sample), string(testSchemaMessage.Sample))
 		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
 		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
-		require.Equal(t, eventSchemaMessage.SourceId, testSchemaMessage.SourceId)
+		require.Equal(t, eventSchemaMessage.SourceID, testSchemaMessage.SourceID)
 		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
 	})
 
@@ -191,7 +191,7 @@ func Test_SchemaTransformer_Interface(t *testing.T) {
 		require.Equal(t, string(eventSchemaMessage.Sample), string(testSchemaMessage.Sample))
 		require.Equal(t, eventSchemaMessage.WorkspaceID, testSchemaMessage.WorkspaceID)
 		require.Equal(t, eventSchemaMessage.Key, testSchemaMessage.Key)
-		require.Equal(t, eventSchemaMessage.SourceId, testSchemaMessage.SourceId)
+		require.Equal(t, eventSchemaMessage.SourceID, testSchemaMessage.SourceID)
 		require.Equal(t, eventSchemaMessage.ObservedAt.AsTime(), testSchemaMessage.ObservedAt.AsTime())
 	})
 }
@@ -208,7 +208,7 @@ func generateTestEventSchemaMessage(time time.Time) *proto.EventSchemaMessage {
 		Schema:     testdata.TrackSchema,
 		Hash:       proto.SchemaHash(testdata.TrackSchema),
 		Sample:     []byte("{}"),
-		SourceId:   testdata.SourceIDEnabled,
+		SourceID:   testdata.SourceIDEnabled,
 	}
 }
 

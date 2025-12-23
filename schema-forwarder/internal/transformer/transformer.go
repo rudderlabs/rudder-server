@@ -161,7 +161,7 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 		Hash:        proto.SchemaHash(schema),
 		ObservedAt:  timestamppb.New(observedAt),
 		Sample:      sample,
-		SourceId:    sourceId,
+		SourceID:    sourceId,
 	}, nil
 }
 
