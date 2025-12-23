@@ -126,10 +126,10 @@ func (m *Manager) createChannel(
 		return resp, nil
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
 		return nil, fmt.Errorf("%w, %w", errAuthz, err)
-	case internalapi.ErrUnknownError:
-		// This case was added to handle the case where streaming does not support certain column types (e.g., AUTOINCREMENT)
-		return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	default:
+		if resp.SnowflakeAPIHttpCode == internalapi.ApiStatusUnsupportedColumn {
+			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
+		}
 		return nil, fmt.Errorf("creating channel with code %s, message: %s and error: %s", resp.Code, resp.SnowflakeAPIMessage, resp.Error)
 	}
 }
