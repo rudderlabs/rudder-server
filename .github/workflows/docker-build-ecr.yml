@@ -39,6 +39,7 @@ env:
 
 jobs:
   docker-meta:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     outputs:
       labels: ${{ steps.meta.outputs.labels }}
