@@ -34,6 +34,12 @@ type OAuthHandler interface {
 	RefreshToken(params *OAuthTokenParams, previousSecret json.RawMessage) (json.RawMessage, StatusCodeError)
 }
 
+type refreshTokenResponseError struct {
+	errType    string
+	message    string
+	statusCode int
+}
+
 // WithCache sets the cache for the OAuthHandler
 func WithCache(cache OauthTokenCache) func(*oauthHandler) {
 	return func(h *oauthHandler) {
@@ -261,40 +267,55 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 	return token.Secret, nil
 }
 
-func getRefreshTokenErrResp(response string, oauthToken *OAuthToken, l logger.Logger) (errorType, message string) {
+// getRefreshTokenFromResponse parses the response from control plane and returns either the token or an error
+func getRefreshTokenFromResponse(response string, l logger.Logger) (oauthToken *OAuthToken, err *refreshTokenResponseError) {
+	statusCode := http.StatusInternalServerError
 	if gjson.Get(response, common.ErrorType).String() != "" { // TODO: is this indeed a valid case?
-		errorType = gjson.Get(response, common.ErrorType).String()
-		message = gjson.Get(response, "message").String()
-	} else if err := jsonrs.Unmarshal([]byte(response), &oauthToken); err != nil {
-		// Some problem with AccessToken unmarshalling
-		l.Debugn("Failed with error response", obskit.Error(err))
-		errorType = "unmarshallableResponse"
-		message = fmt.Sprintf("Unmarshal of response unsuccessful: %s", response)
-	} else {
-		code := gjson.Get(response, "body.code").String()
-		bodyMsg := gjson.Get(response, "body.message").String()
-
-		if code != "" {
-			errorType = code
-			if bodyMsg == "" {
-				// Default messages for known error codes
-				switch code {
-				case common.RefTokenInvalidGrant:
-					// User (or) AccessToken (or) RefreshToken has been revoked
-					l.Debugn("Unable to get body.message", logger.NewStringField("response", response))
-					message = ErrPermissionOrTokenRevoked.Error()
-				case common.RefTokenInvalidResponse:
-					message = "invalid refresh response"
-				default:
-					// Fallback to generic message if body.message is missing
-					message = fmt.Sprintf("Internal service error: %s", code)
-				}
-			} else {
-				message = bodyMsg
-			}
+		return nil, &refreshTokenResponseError{
+			errType:    gjson.Get(response, common.ErrorType).String(),
+			message:    gjson.Get(response, "message").String(),
+			statusCode: statusCode,
 		}
 	}
-	return errorType, message
+	if err := jsonrs.Unmarshal([]byte(response), &oauthToken); err != nil {
+		// Some problem with AccessToken unmarshalling
+		l.Debugn("Failed with error response", obskit.Error(err))
+		return nil, &refreshTokenResponseError{
+			errType:    "unmarshallableResponse",
+			message:    fmt.Sprintf("Unmarshal of response unsuccessful: %s", response),
+			statusCode: statusCode,
+		}
+	}
+	var errorType string
+	// Check if there is an error in the response body
+	if errorType = gjson.Get(response, "body.code").String(); errorType == "" { // no error
+		return oauthToken, nil
+	}
+	message := gjson.Get(response, "body.message").String()
+	switch errorType {
+	case common.RefTokenInvalidGrant:
+		statusCode = http.StatusBadRequest
+		if message == "" {
+			// User (or) AccessToken (or) RefreshToken has been revoked
+			l.Debugn("Unable to get body.message", logger.NewStringField("response", response))
+			message = ErrPermissionOrTokenRevoked.Error()
+		}
+	case common.RefTokenInvalidResponse:
+		if message == "" {
+			message = "invalid auth token refresh response"
+		}
+	default:
+		if message == "" {
+			// Fallback to generic message if body.message is missing
+			message = fmt.Sprintf("Internal service error: %s", errorType)
+		}
+	}
+
+	return nil, &refreshTokenResponseError{
+		errType:    errorType,
+		message:    message,
+		statusCode: statusCode,
+	}
 }
 
 // This method hits the Control Plane to get the token
@@ -316,7 +337,7 @@ func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthToken
 		RequestType:  action,
 		AuthIdentity: h.Identity(),
 	}
-	var oauthToken OAuthToken
+	var oauthToken *OAuthToken
 	// Stat for counting number of Refresh Token endpoint calls
 	statsHandler.Increment("request_sent", stats.Tags{
 		"isCallToCpApi": "true",
@@ -346,17 +367,14 @@ func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthToken
 		return nil, NewStatusCodeError(http.StatusInternalServerError, errors.New("empty secret in response from control plane"))
 	}
 
-	if errType, errMessage := getRefreshTokenErrResp(response, &oauthToken, h.logger); routerutils.IsNotEmptyString(errMessage) {
-		// potential oauth secret alert as we are not setting anything in the cache as secret
+	var refreshTokenErr *refreshTokenResponseError
+	oauthToken, refreshTokenErr = getRefreshTokenFromResponse(response, h.logger)
+	if refreshTokenErr != nil {
 		statsHandler.Increment("request", stats.Tags{
-			"errorMessage":  errType,
+			"errorMessage":  refreshTokenErr.errType,
 			"isCallToCpApi": "true",
 		})
-		statusCode := http.StatusInternalServerError
-		if errType == common.RefTokenInvalidGrant {
-			statusCode = http.StatusBadRequest
-		}
-		return nil, NewStatusCodeError(statusCode, &TypeMessageError{Type: errType, Message: errMessage})
+		return nil, NewStatusCodeError(refreshTokenErr.statusCode, &TypeMessageError{Type: refreshTokenErr.errType, Message: refreshTokenErr.message})
 	}
 
 	if oauthToken.IsEmpty() {
@@ -373,6 +391,6 @@ func (h *oauthHandler) getTokenFromAPI(params *OAuthTokenParams, body OauthToken
 	})
 	log.Debugn("[request] :: (Write) Account Secret received")
 	oauthToken.ExpirationDate = gjson.Get(response, "secret.expirationDate").String()
-	h.cache.Store(params.AccountID, oauthToken)
-	return &oauthToken, nil
+	h.cache.Store(params.AccountID, *oauthToken)
+	return oauthToken, nil
 }
