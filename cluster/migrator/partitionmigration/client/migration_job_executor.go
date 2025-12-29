@@ -160,8 +160,24 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 
 		// send job batches in chunks
 		batchIndex := -1
+
+		var noMoreJobs bool // signals the end of jobs to be sent
+		// As the last batch we are always sending an empty chunk, in order to avoid a race condition in deduplication, if this is enabled on server:
+		// The server, after sending an acknowledgement for the last batch, it then resets its deduplication state for this migration job id.
+		// If client crashes before marking the jobs as migrated, upon restart it will resend the last batch which will not be deduplicated by server.
 		for {
 			batchIndex++
+			if noMoreJobs {
+				// we sent an empty chunk in the previous iteration to signal end of jobs
+				// we are done sending
+				_ = stream.CloseSend()
+				close(batchesToAck)
+				return nil
+			}
+			// get next batch of jobs to process
+			mpe.logger.Debugn("Getting next batch of jobs to process",
+				logger.NewIntField("batchIndex", int64(batchIndex)),
+			)
 			jobs, err := mpe.sourceDB.GetToProcess(streamCtx, jobsdb.GetQueryParams{
 				PartitionFilters: mpe.partitionIDs,
 				JobsLimit:        mpe.batchSize.Load(),
@@ -171,9 +187,10 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			}
 			if len(jobs.Jobs) == 0 && !jobs.DSLimitsReached {
 				// no more jobs to process, we are done sending
-				_ = stream.CloseSend()
-				close(batchesToAck)
-				return nil
+				noMoreJobs = true
+				mpe.logger.Debugn("No more jobs to process, sending empty chunk to signal end of jobs",
+					logger.NewIntField("batchIndex", int64(batchIndex)),
+				)
 			}
 			mpe.logger.Debugn("About to send batch of jobs",
 				logger.NewIntField("batchIndex", int64(batchIndex)),
@@ -196,6 +213,9 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 
 			// split jobs into chunks and send them
 			chunks := lo.Chunk(jobs.Jobs, mpe.chunkSize.Load())
+			if len(chunks) == 0 {
+				chunks = [][]*jobsdb.JobT{{}} // we will send one empty chunk if there are no jobs
+			}
 			mpe.logger.Debugn("Sending batch in chunks",
 				logger.NewIntField("batchIndex", int64(batchIndex)),
 				logger.NewIntField("chunkCount", int64(len(chunks))),
@@ -371,6 +391,9 @@ func (mpe *migrationJobExecutor) markExecutingJobsAsFailed(ctx context.Context) 
 
 // updateJobStatus updates the status of the given jobs to the given state
 func (mpe *migrationJobExecutor) updateJobStatus(ctx context.Context, jobs []*jobsdb.JobT, state string, err error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
 	errorCode := ""
 	errorResponse := []byte("{}")
 	switch state {
