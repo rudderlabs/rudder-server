@@ -269,12 +269,11 @@ func (h *oauthHandler) getToken(params *OAuthTokenParams, previousSecret json.Ra
 
 // getRefreshTokenFromResponse parses the response from control plane and returns either the token or an error
 func getRefreshTokenFromResponse(response string, l logger.Logger) (oauthToken *OAuthToken, err *refreshTokenResponseError) {
-	statusCode := http.StatusInternalServerError
 	if gjson.Get(response, common.ErrorType).String() != "" { // TODO: is this indeed a valid case?
 		return nil, &refreshTokenResponseError{
 			errType:    gjson.Get(response, common.ErrorType).String(),
 			message:    gjson.Get(response, "message").String(),
-			statusCode: statusCode,
+			statusCode: http.StatusInternalServerError,
 		}
 	}
 	if err := jsonrs.Unmarshal([]byte(response), &oauthToken); err != nil {
@@ -283,14 +282,16 @@ func getRefreshTokenFromResponse(response string, l logger.Logger) (oauthToken *
 		return nil, &refreshTokenResponseError{
 			errType:    "unmarshallableResponse",
 			message:    fmt.Sprintf("Unmarshal of response unsuccessful: %s", response),
-			statusCode: statusCode,
+			statusCode: http.StatusInternalServerError,
 		}
 	}
-	var errorType string
-	// Check if there is an error in the response body
-	if errorType = gjson.Get(response, "body.code").String(); errorType == "" { // no error
+	errorType := gjson.Get(response, "body.code").String()
+	if errorType == "" { // no error, return the token
 		return oauthToken, nil
 	}
+
+	// handle error type scenarios
+	statusCode := http.StatusInternalServerError
 	message := gjson.Get(response, "body.message").String()
 	switch errorType {
 	case common.RefTokenInvalidGrant:
