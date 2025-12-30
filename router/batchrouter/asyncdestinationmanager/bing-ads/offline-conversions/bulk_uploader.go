@@ -87,6 +87,15 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 		}
 	}
 
+	// Convert all fields to string as customer can provide it as integer or float
+	fields = lo.MapValues(fields, func(value any, key string) any {
+		_, ok := value.(string)
+		if ok {
+			return value
+		}
+		return fmt.Sprintf("%v", value)
+	})
+
 	// Return error if no valid input is found.
 	if !enhancedConversionProvided {
 		return payload, fmt.Errorf("missing required field: microsoftClickId (or provide a hashed email/phone for enhanced conversions)")

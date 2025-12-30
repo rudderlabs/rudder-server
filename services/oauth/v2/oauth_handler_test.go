@@ -672,7 +672,7 @@ var _ = Describe("Oauth", func() {
 			Expect(err).ToNot(BeNil())
 			Expect(response).To(BeNil())
 			Expect(err.StatusCode()).To(Equal(http.StatusInternalServerError))
-			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "INVALID_REFRESH_RESPONSE", Message: "invalid refresh response"}))
+			Expect(err).To(MatchError(&v2.TypeMessageError{Type: "INVALID_REFRESH_RESPONSE", Message: "invalid auth token refresh response"}))
 		})
 
 		It("refreshToken function call when stored cache is same as provided secret and cpApiCall returns a failed response because of invalid refresh response without message", func() {

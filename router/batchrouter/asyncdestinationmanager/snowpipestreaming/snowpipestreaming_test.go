@@ -984,6 +984,71 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+	t.Run("Upload with some events succeeding and some aborting", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		sm.api = &mockAPI{
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{
+						Success:              false,
+						SnowflakeAPIMessage:  "Unknown error occurred",
+						SnowflakeAPIHttpCode: internalapi.ApiStatusUnsupportedColumn,
+					}, nil
+				},
+			},
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+		}
+		output := sm.Upload(&common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_records.txt",
+		})
+
+		// Verify output: USERS table succeeds (jobs 1001, 1003), PRODUCTS table aborts (jobs 1002, 1004)
+		require.Equal(t, common.AsyncUploadOutput{
+			ImportingJobIDs:     []int64{1001, 1003},
+			ImportingCount:      2,
+			ImportingParameters: []byte(`{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}]}`),
+			AbortJobIDs:         []int64{1002, 1004},
+			AbortCount:          2,
+			AbortReason:         output.AbortReason,
+			DestinationID:       "test-destination",
+		}, output)
+		require.Contains(t, output.AbortReason, "Unknown error occurred")
+
+		// Verify stats
+		require.Equal(t, map[string]float64{
+			"importing": 2,
+			"aborted":   2,
+		}, map[string]float64{
+			"importing": statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+				"module":        "batch_router",
+				"workspaceId":   "test-workspace",
+				"destType":      "SNOWPIPE_STREAMING",
+				"destinationId": "test-destination",
+				"status":        "importing",
+			}).LastValue(),
+			"aborted": statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+				"module":        "batch_router",
+				"workspaceId":   "test-workspace",
+				"destType":      "SNOWPIPE_STREAMING",
+				"destinationId": "test-destination",
+				"status":        "aborted",
+			}).LastValue(),
+		})
+	})
 	t.Run("Upload success", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)

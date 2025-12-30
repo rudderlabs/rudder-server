@@ -9,4 +9,6 @@ const (
 	ErrSchemaDoesNotExistOrNotAuthorized   = "ERR_SCHEMA_DOES_NOT_EXIST_OR_NOT_AUTHORIZED"
 	ErrTableDoesNotExistOrNotAuthorized    = "ERR_TABLE_DOES_NOT_EXIST_OR_NOT_AUTHORIZED"
 	ErrSchemaConflict                      = "ERR_SCHEMA_CONFLICT"
+
+	ApiStatusUnsupportedColumn = 55 // // Snowpipe Streaming does not support columns of type AUTOINCREMENT, IDENTITY, GEO, or columns with a default value or collation.
 )

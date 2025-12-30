@@ -250,6 +250,9 @@ type JobsDB interface {
 	// needs to call UpdateJobStatusInTx.
 	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 
+	// WithUpdateSafeTxFromTx prepares an update-safe environment for an existing transaction.
+	WithUpdateSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx UpdateSafeTx) error) error
+
 	// UpdateJobStatus updates the provided job statuses
 	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
@@ -299,6 +302,7 @@ type JobsDB interface {
 	Ping() error
 	DeleteExecuting()
 	FailExecuting()
+	RefreshDSList(ctx context.Context) error
 
 	/* Journal */
 
@@ -1848,6 +1852,17 @@ func (jd *Handle) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) 
 	})
 }
 
+func (jd *Handle) WithUpdateSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx UpdateSafeTx) error) error {
+	return jd.inUpdateSafeCtx(ctx, func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
+		return f(&updateSafeTx{
+			tx:          tx,
+			identity:    jd.tablePrefix,
+			dsList:      dsList,
+			dsRangeList: dsRangeList,
+		})
+	})
+}
+
 func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT, dsRangeList []dataSetRangeT) error) error {
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
@@ -2165,10 +2180,11 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 }
 
 type JobsResult struct {
-	Jobs          []*JobT
-	LimitsReached bool
-	EventsCount   int
-	PayloadSize   int64
+	Jobs            []*JobT
+	LimitsReached   bool
+	DSLimitsReached bool
+	EventsCount     int
+	PayloadSize     int64
 }
 
 /*
@@ -2696,7 +2712,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 							}
 						} else {
 							// maybe another node added a new DS that we need to make visible to us
-							if err := jd.refreshDSList(ctx); err != nil {
+							if err := jd.RefreshDSList(ctx); err != nil {
 								return fmt.Errorf("refreshDSList: %w", err)
 							}
 						}
@@ -2750,7 +2766,7 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 			return
 		}
 		timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.refreshDSTimeout.Load())
-		if err := jd.refreshDSList(timeoutCtx); err != nil {
+		if err := jd.RefreshDSList(timeoutCtx); err != nil {
 			cancel()
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
 				panic(err)
@@ -2761,8 +2777,8 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 	}
 }
 
-// refreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
-func (jd *Handle) refreshDSList(ctx context.Context) error {
+// RefreshDSList refreshes the list of datasets in memory if the database view of the list has changed.
+func (jd *Handle) RefreshDSList(ctx context.Context) error {
 	jd.logger.Debugn("Start", logger.NewStringField("operation", "refreshDSListLoop"))
 
 	start := time.Now()
@@ -3435,6 +3451,7 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 			}
 		}
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
+			res.DSLimitsReached = true
 			break
 		}
 		jobs, dsHit, err := jd.getJobsDS(ctx, ds, len(dsList)-1 == idx, params)
