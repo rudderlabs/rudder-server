@@ -124,14 +124,15 @@ func TestAsyncDestinationManager(t *testing.T) {
 			mockBatchRouterJobsDB.EXPECT().GetImporting(
 				gomock.Any(),
 				gomock.Any(),
+				gomock.Any(),
 			).DoAndReturn(
-				func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-					return jobsdb.JobsResult{}, nil
+				func(ctx context.Context, params jobsdb.GetQueryParams, _ any) (*jobsdb.MoreJobsResult, error) {
+					return &jobsdb.MoreJobsResult{}, nil
 				},
 			).AnyTimes()
 			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
 				gomock.Any(), gomock.Any(), gomock.Any(), []string{destType}, gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			).Times(1).Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT, _, _ any) {
 				require.Len(t, statuses, 4)
 
 				require.Equal(t, int64(1), statuses[0].JobID)
@@ -139,28 +140,28 @@ func TestAsyncDestinationManager(t *testing.T) {
 				require.Equal(t, "200", statuses[0].ErrorCode)
 				require.Empty(t, gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
 				require.JSONEq(t, `{"importID": "importID"}`, string(statuses[0].Parameters))
-				require.Nil(t, statuses[0].JobParameters)
+				require.NotEmpty(t, gjson.GetBytes(statuses[0].JobParameters, "destination_id").String())
 
 				require.Equal(t, int64(2), statuses[1].JobID)
 				require.Equal(t, jobsdb.Succeeded.State, statuses[1].JobState)
 				require.Equal(t, "200", statuses[1].ErrorCode)
 				require.Empty(t, gjson.GetBytes(statuses[1].ErrorResponse, "error").String())
 				require.JSONEq(t, `{}`, string(statuses[1].Parameters))
-				require.Nil(t, statuses[1].JobParameters)
+				require.NotEmpty(t, gjson.GetBytes(statuses[1].JobParameters, "destination_id").String())
 
 				require.Equal(t, int64(3), statuses[2].JobID)
 				require.Equal(t, jobsdb.Failed.State, statuses[2].JobState)
 				require.Equal(t, "500", statuses[2].ErrorCode)
 				require.Equal(t, "mocked failed reason", gjson.GetBytes(statuses[2].ErrorResponse, "error").String())
 				require.JSONEq(t, `{}`, string(statuses[2].Parameters))
-				require.Nil(t, statuses[2].JobParameters)
+				require.NotEmpty(t, gjson.GetBytes(statuses[2].JobParameters, "destination_id").String())
 
 				require.Equal(t, int64(4), statuses[3].JobID)
 				require.Equal(t, jobsdb.Aborted.State, statuses[3].JobState)
 				require.Equal(t, "400", statuses[3].ErrorCode)
 				require.Equal(t, "mocked abort reason", gjson.GetBytes(statuses[3].ErrorResponse, "error").String())
 				require.JSONEq(t, `{}`, string(statuses[3].Parameters))
-				require.Nil(t, statuses[3].JobParameters)
+				require.NotEmpty(t, gjson.GetBytes(statuses[3].JobParameters, "destination_id").String())
 
 				cancel()
 			}).Return(nil)
@@ -229,9 +230,10 @@ func TestAsyncDestinationManager(t *testing.T) {
 			mockBatchRouterJobsDB.EXPECT().GetImporting(
 				gomock.Any(),
 				gomock.Any(),
+				gomock.Any(),
 			).DoAndReturn(
-				func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-					return jobsdb.JobsResult{}, nil
+				func(ctx context.Context, params jobsdb.GetQueryParams, _ any) (*jobsdb.MoreJobsResult, error) {
+					return &jobsdb.MoreJobsResult{}, nil
 				},
 			).AnyTimes()
 			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
@@ -245,7 +247,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					require.Equal(t, "200", statuses[i].ErrorCode)
 					require.Empty(t, gjson.GetBytes(statuses[i].ErrorResponse, "error").String())
 					require.JSONEq(t, `{"importID": "importID"}`, string(statuses[i].Parameters))
-					require.Nil(t, statuses[i].JobParameters)
+					require.NotEmpty(t, gjson.GetBytes(statuses[i].JobParameters, "destination_id").String())
 				}
 
 				cancel()
@@ -363,13 +365,18 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 		batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
 		batchRouter.asyncAbortedJobCount = statsStore.NewStat("async_aborted_job_count", stats.CountType)
+		batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 		mockBatchRouterJobsDB.EXPECT().GetImporting(
 			gomock.Any(),
 			gomock.Any(),
+			gomock.Any(),
 		).DoAndReturn(
-			func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-				jr := jobsdb.JobsResult{}
+			func(ctx context.Context, params jobsdb.GetQueryParams, _ any) (*jobsdb.MoreJobsResult, error) {
+				jr := &jobsdb.MoreJobsResult{}
+				if params.JobsLimit != 1 {
+					return jr, nil
+				}
 				jr.Jobs = append(jr.Jobs, &jobsdb.JobT{
 					UUID:         uuid.New(),
 					UserID:       "u1",
@@ -418,15 +425,16 @@ func TestAsyncDestinationManager(t *testing.T) {
 					Destination: destination,
 					Sources:     []backendconfig.SourceT{source},
 				}
-
-				batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-				batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
-				batchRouter.asyncDestinationStruct[destination.ID].Exists = true
-				batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
-				batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
-					pollOutput: common.PollStatusResponse{
-						InProgress: false,
-						StatusCode: http.StatusBadRequest,
+				batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{
+					ImportingJobIDs: []int64{1},
+					Destination:     &destination,
+					Exists:          true,
+					FileName:        "testdata/uploadData.txt",
+					Manager: &mockAsyncDestinationManager{
+						pollOutput: common.PollStatusResponse{
+							InProgress: false,
+							StatusCode: http.StatusBadRequest,
+						},
 					},
 				}
 			}
@@ -439,6 +447,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 		}()
 		<-done
 		require.EqualValues(t, 1, statsStore.Get("async_aborted_job_count", stats.Tags{}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("async_get_importing_iterations", stats.Tags{}).LastValue())
 	})
 	t.Run("Poll (StatusCode=StatusOK)", func(t *testing.T) {
 		t.Run("not HasFailed and HasWarning", func(t *testing.T) {
@@ -458,13 +467,18 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 			batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
 			batchRouter.asyncSuccessfulJobCount = statsStore.NewStat("async_successful_job_count", stats.CountType)
+			batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 			mockBatchRouterJobsDB.EXPECT().GetImporting(
 				gomock.Any(),
 				gomock.Any(),
+				gomock.Any(),
 			).DoAndReturn(
-				func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-					jr := jobsdb.JobsResult{}
+				func(ctx context.Context, params jobsdb.GetQueryParams, _ any) (*jobsdb.MoreJobsResult, error) {
+					jr := &jobsdb.MoreJobsResult{}
+					if params.JobsLimit != 1 {
+						return jr, nil
+					}
 					jr.Jobs = append(jr.Jobs, &jobsdb.JobT{
 						UUID:         uuid.New(),
 						UserID:       "u1",
@@ -514,17 +528,19 @@ func TestAsyncDestinationManager(t *testing.T) {
 						Sources:     []backendconfig.SourceT{source},
 					}
 
-					batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-					batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
-					batchRouter.asyncDestinationStruct[destination.ID].Exists = true
-					batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
-					batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
-						pollOutput: common.PollStatusResponse{
-							InProgress: false,
-							StatusCode: http.StatusOK,
-							Complete:   true,
-							HasFailed:  false,
-							HasWarning: false,
+					batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{
+						ImportingJobIDs: []int64{1},
+						Destination:     &destination,
+						Exists:          true,
+						FileName:        "testdata/uploadData.txt",
+						Manager: &mockAsyncDestinationManager{
+							pollOutput: common.PollStatusResponse{
+								InProgress: false,
+								StatusCode: http.StatusOK,
+								Complete:   true,
+								HasFailed:  false,
+								HasWarning: false,
+							},
 						},
 					}
 				}
@@ -561,14 +577,19 @@ func TestAsyncDestinationManager(t *testing.T) {
 			batchRouter.asyncSuccessfulJobCount = statsStore.NewStat("async_successful_job_count", stats.CountType)
 			batchRouter.asyncFailedJobCount = statsStore.NewStat("async_failed_job_count", stats.CountType)
 			batchRouter.asyncAbortedJobCount = statsStore.NewStat("async_aborted_job_count", stats.CountType)
+			batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 			mockBatchRouterJobsDB.EXPECT().GetImporting(
 				gomock.Any(),
 				gomock.Any(),
+				gomock.Any(),
 			).DoAndReturn(
-				func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-					jr := jobsdb.JobsResult{}
-					for i := 0; i < 4; i++ {
+				func(ctx context.Context, params jobsdb.GetQueryParams, _ any) (*jobsdb.MoreJobsResult, error) {
+					jr := &jobsdb.MoreJobsResult{}
+					if params.JobsLimit != 1 && params.JobsLimit != 4 {
+						return jr, nil
+					}
+					for i := range 4 {
 						jr.Jobs = append(jr.Jobs, &jobsdb.JobT{
 							UUID:         uuid.New(),
 							UserID:       "u" + strconv.Itoa(i+1),
@@ -641,33 +662,35 @@ func TestAsyncDestinationManager(t *testing.T) {
 						Sources:     []backendconfig.SourceT{source},
 					}
 
-					batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-					batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
-					batchRouter.asyncDestinationStruct[destination.ID].Exists = true
-					batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
-					batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
-						pollOutput: common.PollStatusResponse{
-							InProgress: false,
-							StatusCode: http.StatusOK,
-							Complete:   true,
-							HasFailed:  true,
-							HasWarning: true,
-						},
-						statsOutput: common.GetUploadStatsResponse{
-							StatusCode: http.StatusOK,
-							Metadata: common.EventStatMeta{
-								SucceededKeys: []int64{1},
-								FailedKeys:    []int64{2},
-								WarningKeys:   []int64{3},
-								AbortedKeys:   []int64{4},
-								FailedReasons: map[int64]string{
-									2: "failed reason",
-								},
-								WarningReasons: map[int64]string{
-									3: "warning reason",
-								},
-								AbortedReasons: map[int64]string{
-									4: "aborted reason",
+					batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{
+						ImportingJobIDs: []int64{1, 2, 3, 4},
+						Destination:     &destination,
+						Exists:          true,
+						FileName:        "testdata/uploadData.txt",
+						Manager: &mockAsyncDestinationManager{
+							pollOutput: common.PollStatusResponse{
+								InProgress: false,
+								StatusCode: http.StatusOK,
+								Complete:   true,
+								HasFailed:  true,
+								HasWarning: true,
+							},
+							statsOutput: common.GetUploadStatsResponse{
+								StatusCode: http.StatusOK,
+								Metadata: common.EventStatMeta{
+									SucceededKeys: []int64{1},
+									FailedKeys:    []int64{2},
+									WarningKeys:   []int64{3},
+									AbortedKeys:   []int64{4},
+									FailedReasons: map[int64]string{
+										2: "failed reason",
+									},
+									WarningReasons: map[int64]string{
+										3: "warning reason",
+									},
+									AbortedReasons: map[int64]string{
+										4: "aborted reason",
+									},
 								},
 							},
 						},
@@ -706,13 +729,18 @@ func TestAsyncDestinationManager(t *testing.T) {
 
 		batchRouter.asyncPollTimeStat = statsStore.NewStat("async_poll_time", stats.TimerType)
 		batchRouter.asyncFailedJobCount = statsStore.NewStat("async_failed_job_count", stats.CountType)
+		batchRouter.asyncGetImportingIterations = statsStore.NewStat("async_get_importing_iterations", stats.HistogramType)
 
 		mockBatchRouterJobsDB.EXPECT().GetImporting(
 			gomock.Any(),
 			gomock.Any(),
+			gomock.Any(),
 		).DoAndReturn(
-			func(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
-				jr := jobsdb.JobsResult{}
+			func(ctx context.Context, params jobsdb.GetQueryParams, _ any) (*jobsdb.MoreJobsResult, error) {
+				jr := &jobsdb.MoreJobsResult{}
+				if params.JobsLimit != 1 {
+					return jr, nil
+				}
 				jr.Jobs = append(jr.Jobs, &jobsdb.JobT{
 					UUID:         uuid.New(),
 					UserID:       "u1",
@@ -762,15 +790,17 @@ func TestAsyncDestinationManager(t *testing.T) {
 					Sources:     []backendconfig.SourceT{source},
 				}
 
-				batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{}
-				batchRouter.asyncDestinationStruct[destination.ID].Destination = &destination
-				batchRouter.asyncDestinationStruct[destination.ID].Exists = true
-				batchRouter.asyncDestinationStruct[destination.ID].FileName = "testdata/uploadData.txt"
-				batchRouter.asyncDestinationStruct[destination.ID].Manager = &mockAsyncDestinationManager{
-					pollOutput: common.PollStatusResponse{
-						InProgress: false,
-						StatusCode: http.StatusUnauthorized,
-						Error:      "failed with status code 401",
+				batchRouter.asyncDestinationStruct[destination.ID] = &common.AsyncDestinationStruct{
+					ImportingJobIDs: []int64{1},
+					Destination:     &destination,
+					Exists:          true,
+					FileName:        "testdata/uploadData.txt",
+					Manager: &mockAsyncDestinationManager{
+						pollOutput: common.PollStatusResponse{
+							InProgress: false,
+							StatusCode: http.StatusUnauthorized,
+							Error:      "failed with status code 401",
+						},
 					},
 				}
 			}
@@ -816,8 +846,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					_ = f(jobsdb.EmptyUpdateSafeTx())
 				}).Return(nil)
 			mockJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, customValFilters []string, _ interface{}) {
-					require.Equal(t, []string{destType}, customValFilters)
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ any) {
 					require.Len(t, statuses, 1)
 					require.Equal(t, job.JobID, statuses[0].JobID)
 					require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
