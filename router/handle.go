@@ -229,7 +229,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		flushTime = time.Now()
 		// Mark the jobs as executing
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
+			return rt.jobsDB.UpdateJobStatus(ctx, statusList)
 		}, rt.sendRetryUpdateStats)
 		if err != nil {
 			rt.logger.Errorn("Error occurred while marking jobs statuses as executing. Panicking", obskit.DestinationType(rt.destType), obskit.Error(err))
@@ -300,6 +300,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
 			}
 			statusList = append(statusList, &status)
 			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason, parameters: parameters})
@@ -527,7 +528,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destType}, nil)
+				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList)
 				if err != nil {
 					return fmt.Errorf("updating %s jobs statuses: %w", rt.destType, err)
 				}

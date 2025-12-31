@@ -703,11 +703,11 @@ func (m *mockJobsDB) StoreInTx(ctx context.Context, sst jobsdb.StoreSafeTx, jobs
 	return m.JobsDB.StoreInTx(ctx, sst, jobs)
 }
 
-func (m *mockJobsDB) UpdateJobStatusInTx(ctx context.Context, tx jobsdb.UpdateSafeTx, statusList []*jobsdb.JobStatusT, customValFilters []string, parameterFilters []jobsdb.ParameterFilterT) error {
+func (m *mockJobsDB) UpdateJobStatusInTx(ctx context.Context, tx jobsdb.UpdateSafeTx, statusList []*jobsdb.JobStatusT) error {
 	if m.updateJobStatusInTxErr != nil {
 		return m.updateJobStatusInTxErr
 	}
-	return m.JobsDB.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
+	return m.JobsDB.UpdateJobStatusInTx(ctx, tx, statusList)
 }
 
 func (m *mockJobsDB) RefreshDSList(ctx context.Context) error {

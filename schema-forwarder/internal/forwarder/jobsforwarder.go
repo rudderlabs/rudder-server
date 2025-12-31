@@ -106,14 +106,17 @@ func (jf *JobsForwarder) Start() error {
 						errorResponse, _ := jsonrs.Marshal(map[string]string{"transform_error": err.Error()})
 						statuses = append(statuses, &jobsdb.JobStatusT{
 							JobID:         job.JobID,
-							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 							JobState:      jobsdb.Aborted.State,
+							AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 							ExecTime:      time.Now(),
 							RetryTime:     time.Now(),
 							ErrorCode:     "400",
+							ErrorResponse: errorResponse,
 							Parameters:    []byte(`{}`),
 							JobParameters: job.Parameters,
-							ErrorResponse: errorResponse,
+							WorkspaceId:   job.WorkspaceId,
+							PartitionID:   job.PartitionID,
+							CustomVal:     job.CustomVal,
 						})
 						jf.stat.NewTaggedStat("schema_forwarder_jobs", stats.CountType, stats.Tags{"state": "invalid"}).Increment()
 						continue
@@ -152,12 +155,17 @@ func (jf *JobsForwarder) Start() error {
 									for _, job := range batch.Jobs {
 										statuses = append(statuses, &jobsdb.JobStatusT{
 											JobID:         job.JobID,
-											AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 											JobState:      jobsdb.Succeeded.State,
+											AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 											ExecTime:      time.Now(),
-											Parameters:    []byte(`{}`),
+											RetryTime:     time.Now(),
+											ErrorCode:     "200",
 											ErrorResponse: []byte(`{}`),
+											Parameters:    []byte(`{}`),
 											JobParameters: job.Parameters,
+											WorkspaceId:   job.WorkspaceId,
+											PartitionID:   job.PartitionID,
+											CustomVal:     job.CustomVal,
 										})
 									}
 
@@ -191,14 +199,17 @@ func (jf *JobsForwarder) Start() error {
 						for _, job := range schemaBatch.Jobs {
 							statuses = append(statuses, &jobsdb.JobStatusT{
 								JobID:         job.JobID,
-								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 								JobState:      jobsdb.Aborted.State,
+								AttemptNum:    job.LastJobStatus.AttemptNum + 1,
 								ExecTime:      time.Now(),
 								RetryTime:     time.Now(),
 								ErrorCode:     "400",
+								ErrorResponse: errorResponse,
 								Parameters:    []byte(`{}`),
 								JobParameters: job.Parameters,
-								ErrorResponse: errorResponse,
+								WorkspaceId:   job.WorkspaceId,
+								PartitionID:   job.PartitionID,
+								CustomVal:     job.CustomVal,
 							})
 							abortedCount++
 						}

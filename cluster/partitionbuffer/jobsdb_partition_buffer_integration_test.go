@@ -374,6 +374,7 @@ func (m testPartitionBufferIntegrationTestMethods) RunSequence(t *testing.T, ctx
 								JobParameters: job.Parameters,
 								WorkspaceId:   job.WorkspaceId,
 								PartitionID:   job.PartitionID,
+								CustomVal:     job.CustomVal,
 							})
 							seqNum := gjson.GetBytes(job.EventPayload, "sequence").Int()
 							history[job.PartitionID] = append(history[job.PartitionID], int(seqNum))
@@ -385,7 +386,7 @@ func (m testPartitionBufferIntegrationTestMethods) RunSequence(t *testing.T, ctx
 						}
 						if len(statusList) > 0 {
 							updateCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-							err := reader.UpdateJobStatus(updateCtx, statusList, []string{customVal}, nil)
+							err := reader.UpdateJobStatus(updateCtx, statusList)
 							cancel()
 							if err != nil {
 								return fmt.Errorf("updating job statuses for custom val %s: %w", customVal, err)

@@ -55,7 +55,8 @@ func TestEventOrderDebugInfo(t *testing.T) {
 		ErrorResponse: []byte("{}"),
 		Parameters:    []byte(`{}`),
 		JobParameters: []byte(`{"destination_id", "destination1"}`),
-	}}, nil, nil))
+		CustomVal:     job.CustomVal,
+	}}))
 	require.NoError(t, jdb.UpdateJobStatus(context.Background(), []*jobsdb.JobStatusT{{
 		WorkspaceId:   "workspace1",
 		JobID:         job.JobID,
@@ -63,7 +64,8 @@ func TestEventOrderDebugInfo(t *testing.T) {
 		ErrorResponse: []byte("{}"),
 		Parameters:    []byte(`{}`),
 		JobParameters: []byte(`{"destination_id", "destination1"}`),
-	}}, nil, nil))
+		CustomVal:     job.CustomVal,
+	}}))
 
 	rt := &Handle{
 		jobsDB: jdb,
