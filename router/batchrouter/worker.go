@@ -213,7 +213,6 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				"reasons":     strings.Join(destDrainStat.Reasons, ", "),
 				"workspaceId": destDrainStat.Workspace,
 			}).Count(destDrainStat.Count)
-			w.brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(destDrainStat.Count))
 		}
 	}
 

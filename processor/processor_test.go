@@ -3226,8 +3226,8 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any()).AnyTimes()
 
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -3281,8 +3281,8 @@ var _ = Describe("Processor", Ordered, func() {
 			processor.config.readLoopSleep = config.SingleValueLoader(time.Millisecond)
 
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
-			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any()).AnyTimes()
+			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any()).AnyTimes()
 
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Times(0)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)

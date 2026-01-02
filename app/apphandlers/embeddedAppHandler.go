@@ -152,6 +152,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		defer dbPool.Close()
 	}
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
+
+	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
+
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
@@ -179,7 +182,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDBHandle(dbPool),
 	)
 	defer gwDBForProcessor.Close()
-	routerDB := jobsdb.NewForReadWrite(
+	routerDBHandle := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.rtDSLimit),
@@ -188,8 +191,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer routerDB.Close()
-	batchRouterDB := jobsdb.NewForReadWrite(
+	defer routerDBHandle.Close()
+	routerDB := jobsdb.NewPendingEventsJobsDB(routerDBHandle, pendingEventsRegistry)
+
+	batchRouterDBHandle := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchrtDSLimit),
@@ -198,7 +203,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer batchRouterDB.Close()
+	defer batchRouterDBHandle.Close()
+	batchRouterDB := jobsdb.NewPendingEventsJobsDB(batchRouterDBHandle, pendingEventsRegistry)
 
 	schemaDB := jobsdb.NewForReadWrite(
 		"esch",
@@ -251,8 +257,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}
 	}()
 
-	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
-
 	proc := processor.New(
 		ctx,
 		&options.ClearDB,
@@ -292,7 +296,6 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
 		AdaptiveLimit:              adaptiveLimit,
-		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:     reporting,
@@ -301,11 +304,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
 			batchRouterDB,
 		),
-		TransientSources:      transientSources,
-		RsourcesService:       rsourcesService,
-		Debugger:              destinationHandle,
-		AdaptiveLimit:         adaptiveLimit,
-		PendingEventsRegistry: pendingEventsRegistry,
+		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
+		Debugger:         destinationHandle,
+		AdaptiveLimit:    adaptiveLimit,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 

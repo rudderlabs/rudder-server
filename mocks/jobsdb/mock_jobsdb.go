@@ -13,7 +13,6 @@ import (
 	context "context"
 	json "encoding/json"
 	reflect "reflect"
-	time "time"
 
 	uuid "github.com/google/uuid"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
@@ -174,17 +173,17 @@ func (mr *MockJobsDBMockRecorder) GetJournalEntries(opType any) *gomock.Call {
 }
 
 // GetPileUpCounts mocks base method.
-func (m *MockJobsDB) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
+func (m *MockJobsDB) GetPileUpCounts(ctx context.Context, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetPileUpCounts", ctx, cutoffTime, increaseFunc)
+	ret := m.ctrl.Call(m, "GetPileUpCounts", ctx, increaseFunc)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // GetPileUpCounts indicates an expected call of GetPileUpCounts.
-func (mr *MockJobsDBMockRecorder) GetPileUpCounts(ctx, cutoffTime, increaseFunc any) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) GetPileUpCounts(ctx, increaseFunc any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPileUpCounts", reflect.TypeOf((*MockJobsDB)(nil).GetPileUpCounts), ctx, cutoffTime, increaseFunc)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetPileUpCounts", reflect.TypeOf((*MockJobsDB)(nil).GetPileUpCounts), ctx, increaseFunc)
 }
 
 // GetSucceeded mocks base method.
