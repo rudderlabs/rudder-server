@@ -57,6 +57,7 @@ jobs:
         ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
       tags: |
+        type=ref,event=branch,suffix=-race
         type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
         type=semver,pattern={{version}}-race
         type=semver,pattern={{major}}.{{minor}}-race
@@ -86,6 +87,7 @@ jobs:
         ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
       tags: |
+        type=ref,event=branch,suffix=-race
         type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
         type=semver,pattern={{version}}-race
         type=semver,pattern={{major}}.{{minor}}-race
