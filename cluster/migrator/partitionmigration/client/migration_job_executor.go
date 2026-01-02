@@ -276,6 +276,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 					mpe.logger.Debugn("Stream was closed by server")
 					return nil
 				}
+				start := time.Now()
 				// wait for the acknowledgement
 				mpe.logger.Debugn("Waiting for ack from server",
 					logger.NewIntField("batchIndex", int64(batchToAck.A)),
@@ -305,6 +306,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 				delete(unackedBatches, batchToAck.A)
 				unackedBatchesMu.Unlock()
 				totalAcked.Add(int64(len(batchToAck.B)))
+				mpe.stats.NewTaggedStat("partition_mig_jobexec_jobs_acked_time", stats.TimerType, mpe.statsTags()).SendTiming(time.Since(start))
 				mpe.stats.NewTaggedStat("partition_mig_jobexec_jobs_acked", stats.CountType, mpe.statsTags()).Count(len(batchToAck.B))
 			}
 		}
