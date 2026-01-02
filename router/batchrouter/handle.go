@@ -98,6 +98,7 @@ type Handle struct {
 	transformerURL               string
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
+	maxImportingQueryIterations  config.ValueLoader[int]
 
 	drainer routerutils.Drainer
 
@@ -136,11 +137,12 @@ type Handle struct {
 	uploadedRawDataJobsCache map[string]map[string]bool
 	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
-	asyncPollTimeStat       stats.Measurement
-	asyncFailedJobsTimeStat stats.Measurement
-	asyncSuccessfulJobCount stats.Measurement
-	asyncFailedJobCount     stats.Measurement
-	asyncAbortedJobCount    stats.Measurement
+	asyncPollTimeStat           stats.Measurement
+	asyncFailedJobsTimeStat     stats.Measurement
+	asyncSuccessfulJobCount     stats.Measurement
+	asyncFailedJobCount         stats.Measurement
+	asyncAbortedJobCount        stats.Measurement
+	asyncGetImportingIterations stats.Measurement
 }
 
 // mainLoop is responsible for pinging the workers periodically for every active partition
@@ -845,8 +847,9 @@ func (brt *Handle) skipFetchingJobs(partition string) bool {
 			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
 		}
 		brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-		importingList, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-			return brt.jobsDB.GetImporting(ctx, queryParams)
+
+		importingList, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
+			return brt.jobsDB.GetImporting(ctx, queryParams, nil)
 		}, brt.sendQueryRetryStats)
 		if err != nil {
 			brt.logger.Errorn("BRT: Failed to get importing jobs", obskit.DestinationType(brt.destType), obskit.Error(err))

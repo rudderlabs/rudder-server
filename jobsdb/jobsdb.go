@@ -272,7 +272,7 @@ type JobsDB interface {
 	GetUnprocessed(ctx context.Context, params GetQueryParams) (JobsResult, error)
 
 	// GetImporting finds jobs in importing state
-	GetImporting(ctx context.Context, params GetQueryParams) (JobsResult, error)
+	GetImporting(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error)
 
 	// GetAborted finds jobs in aborted state
 	GetAborted(ctx context.Context, params GetQueryParams) (JobsResult, error)
@@ -1939,24 +1939,7 @@ type moreToken struct {
 }
 
 func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
-
-	if params.JobsLimit == 0 {
-		return &MoreJobsResult{More: more}, nil
-	}
-	params.stateFilters = []string{Failed.State, Waiting.State, Unprocessed.State}
-	slices.Sort(params.stateFilters)
-	tags := statTags{
-		StateFilters:     params.stateFilters,
-		CustomValFilters: params.CustomValFilters,
-		WorkspaceID:      params.WorkspaceID,
-		ParameterFilters: params.ParameterFilters,
-		MoreToken:        more != nil,
-	}
-	command := func() moreQueryResult {
-		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
-	}
-	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
-	return res.MoreJobsResult, res.err
+	return jd.getMoreJobs(ctx, []string{Failed.State, Waiting.State, Unprocessed.State}, params, more)
 }
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
@@ -3355,8 +3338,8 @@ func (jd *Handle) GetUnprocessed(ctx context.Context, params GetQueryParams) (Jo
 }
 
 // GetImporting finds jobs in importing state
-func (jd *Handle) GetImporting(ctx context.Context, params GetQueryParams) (JobsResult, error) { // skipcq: CRT-P0003
-	return jd.GetJobs(ctx, []string{Importing.State}, params)
+func (jd *Handle) GetImporting(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+	return jd.getMoreJobs(ctx, []string{Importing.State}, params, more)
 }
 
 // GetAborted finds jobs in aborted state
@@ -3446,7 +3429,13 @@ func (jd *Handle) getJobs(ctx context.Context, params GetQueryParams, more MoreT
 			if idx < len(dsRangeList) { // ranges are not stored for the last ds
 				// so the following condition cannot be applied the last ds
 				if *params.afterJobID > dsRangeList[idx].maxJobID {
+					// skip this ds as afterJobID is beyond this ds's range
 					continue
+				}
+				if *params.afterJobID < dsRangeList[idx].minJobID {
+					// we have reached the ds where afterJobID would be present
+					// so clear it for next ds
+					params.afterJobID = nil
 				}
 			}
 		}
@@ -3523,6 +3512,27 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	}
 	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.JobsResult, res.err
+}
+
+func (jd *Handle) getMoreJobs(ctx context.Context, states []string, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+
+	if params.JobsLimit == 0 {
+		return &MoreJobsResult{More: more}, nil
+	}
+	params.stateFilters = slices.Clone(states)
+	slices.Sort(params.stateFilters)
+	tags := statTags{
+		StateFilters:     params.stateFilters,
+		CustomValFilters: params.CustomValFilters,
+		WorkspaceID:      params.WorkspaceID,
+		ParameterFilters: params.ParameterFilters,
+		MoreToken:        more != nil,
+	}
+	command := func() moreQueryResult {
+		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
+	}
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
+	return res.MoreJobsResult, res.err
 }
 
 type queryResult struct {
