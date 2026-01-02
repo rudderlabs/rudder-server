@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -249,6 +251,8 @@ func TestSrcHydrationStage(t *testing.T) {
 	})
 
 	t.Run("Test error when the hydration client returns an error during the Hydrate call", func(t *testing.T) {
+		msgId := "message-1"
+		receivedAt := time.Now().In(time.UTC)
 		// Create test events
 		events := []types.TransformerEvent{
 			{
@@ -258,8 +262,9 @@ func TestSrcHydrationStage(t *testing.T) {
 					"productId": "12345",
 				},
 				Metadata: types.Metadata{
-					MessageID: "message-1",
-					SourceID:  fblaSourceId,
+					MessageID:  msgId,
+					ReceivedAt: receivedAt.Format(misc.RFC3339Milli),
+					SourceID:   fblaSourceId,
 				},
 			},
 		}
@@ -306,7 +311,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		sampleEvent, err := jsonrs.Marshal(events[0].Message)
 		require.NoError(t, err)
 
-		require.Equal(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
+		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
 			ConnectionDetails: reportingtypes.ConnectionDetails{
 				SourceID:       fblaSourceId,
 				SourceCategory: "webhook",
@@ -325,12 +330,21 @@ func TestSrcHydrationStage(t *testing.T) {
 				SampleEvent:    sampleEvent,
 				EventName:      "Product Viewed",
 				EventType:      "track",
+				FailedMessages: []*reportingtypes.FailedMessage{
+					{
+						MessageID:  msgId,
+						ReceivedAt: receivedAt.Truncate(time.Millisecond),
+					},
+				},
 			},
 		})
 	})
 
 	t.Run("Test error when the hydration client returns an error during the Hydrate call - multiple events", func(t *testing.T) {
 		// Create test events
+		msgId1 := "message-1"
+		msgId2 := "message-2"
+		receivedAt := time.Now().In(time.UTC)
 		events := []types.TransformerEvent{
 			{
 				Message: map[string]interface{}{
@@ -339,8 +353,9 @@ func TestSrcHydrationStage(t *testing.T) {
 					"productId": "12345",
 				},
 				Metadata: types.Metadata{
-					MessageID: "message-1",
-					SourceID:  fblaSourceId,
+					MessageID:  msgId1,
+					ReceivedAt: receivedAt.Format(misc.RFC3339Milli),
+					SourceID:   fblaSourceId,
 				},
 			},
 			{
@@ -350,8 +365,9 @@ func TestSrcHydrationStage(t *testing.T) {
 					"productId": "12345",
 				},
 				Metadata: types.Metadata{
-					MessageID: "message-1",
-					SourceID:  fblaSourceId,
+					MessageID:  msgId2,
+					ReceivedAt: receivedAt.Format(misc.RFC3339Milli),
+					SourceID:   fblaSourceId,
 				},
 			},
 		}
@@ -400,7 +416,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		sampleEvent2, err := jsonrs.Marshal(events[1].Message)
 		require.NoError(t, err)
 
-		require.Equal(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
+		require.EqualValues(t, result.reportMetrics[0], &reportingtypes.PUReportedMetric{
 			ConnectionDetails: reportingtypes.ConnectionDetails{
 				SourceID:       fblaSourceId,
 				SourceCategory: "webhook",
@@ -419,9 +435,15 @@ func TestSrcHydrationStage(t *testing.T) {
 				SampleEvent:    sampleEvent1,
 				EventName:      "Product Viewed",
 				EventType:      "track",
+				FailedMessages: []*reportingtypes.FailedMessage{
+					{
+						MessageID:  msgId1,
+						ReceivedAt: receivedAt.Truncate(time.Millisecond),
+					},
+				},
 			},
 		})
-		require.Equal(t, result.reportMetrics[1], &reportingtypes.PUReportedMetric{
+		require.EqualValues(t, result.reportMetrics[1], &reportingtypes.PUReportedMetric{
 			ConnectionDetails: reportingtypes.ConnectionDetails{
 				SourceID:       fblaSourceId,
 				SourceCategory: "webhook",
@@ -440,6 +462,12 @@ func TestSrcHydrationStage(t *testing.T) {
 				SampleEvent:    sampleEvent2,
 				EventName:      "signup",
 				EventType:      "identify",
+				FailedMessages: []*reportingtypes.FailedMessage{
+					{
+						MessageID:  msgId2,
+						ReceivedAt: receivedAt.Truncate(time.Millisecond),
+					},
+				},
 			},
 		})
 	})
