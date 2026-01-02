@@ -292,7 +292,7 @@ type JobsDB interface {
 
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
-	GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
+	GetPileUpCounts(ctx context.Context, increaseFunc rmetrics.IncreasePendingEventsFunc) (err error)
 
 	// GetDistinctParameterValues returns the list of distinct parameter("source_id", "destination_id", "workspace_id") values inside the jobs tables filtering for the passed customVal
 	GetDistinctParameterValues(ctx context.Context, parameter ParameterName, customValFilter string) (values []string, err error)
@@ -712,6 +712,7 @@ var (
 	Migrated  = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
 	Filtered  = jobStateT{isValid: true, isTerminal: true, State: "filtered"}
 
+	terminalStates         map[string]struct{}
 	validTerminalStates    []string
 	validNonTerminalStates []string
 )
@@ -756,11 +757,13 @@ func (ot OwnerType) Identifier() string {
 }
 
 func init() {
+	terminalStates = make(map[string]struct{})
 	for _, js := range jobStates {
 		if !js.isValid {
 			continue
 		}
 		if js.isTerminal {
+			terminalStates[js.State] = struct{}{}
 			validTerminalStates = append(validTerminalStates, js.State)
 		} else {
 			validNonTerminalStates = append(validNonTerminalStates, js.State)
@@ -1962,7 +1965,7 @@ func (jd *Handle) GetToProcess(ctx context.Context, params GetQueryParams, more 
 
 var cacheParameterFilters = []string{"source_id", "destination_id"}
 
-func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
+func (jd *Handle) GetPileUpCounts(ctx context.Context, increaseFunc rmetrics.IncreasePendingEventsFunc) error {
 	// pause migration to avoid any read locks being blocked during pileup count
 	jd.migrateDSPaused.Store(true)
 	defer jd.migrateDSPaused.Store(false)
@@ -1979,18 +1982,20 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 	queryString := `WITH pending AS (
 	SELECT
 		j.workspace_id AS workspace_id,
-		j.custom_val AS custom_val
+		j.custom_val AS custom_val,
+		j.parameters->>'destination_id' AS destination_id
 	FROM
 		%[1]q j
-		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
+		LEFT JOIN %[2]q s ON j.job_id = s.job_id
 	WHERE
-		s.job_id is null OR s.job_state = ANY($2)
+		s.job_id is null OR s.job_state = ANY($1)
 )
 SELECT
 	workspace_id,
 	custom_val,
+	destination_id,
 	COUNT(*)
-FROM pending GROUP BY workspace_id, custom_val`
+FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 
 	g, ctx := errgroup.WithContext(ctx)
 	const defaultConcurrency = 4
@@ -2006,8 +2011,7 @@ FROM pending GROUP BY workspace_id, custom_val`
 	for _, ds := range dsList {
 		ds := ds
 		g.Go(func() error {
-			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
-				cutoffTime,
+			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, "v_last_"+ds.JobStatusTable),
 				pq.Array([]string{Executing.State, Failed.State, Importing.State, Waiting.State}))
 			if err != nil {
 				return fmt.Errorf("getting pileup counts for %q: %w", ds.JobTable, err)
@@ -2017,14 +2021,14 @@ FROM pending GROUP BY workspace_id, custom_val`
 			}()
 			for rows.Next() {
 				var (
-					workspace, customVal sql.NullString
-					count                sql.NullInt64
+					workspace, customVal, destinationID sql.NullString
+					count                               sql.NullInt64
 				)
-				if err := rows.Scan(&workspace, &customVal, &count); err != nil {
+				if err := rows.Scan(&workspace, &customVal, &destinationID, &count); err != nil {
 					return fmt.Errorf("scanning pileup counts rows for %q: %w", ds.JobTable, err)
 				}
 				if count.Valid {
-					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, float64(count.Int64))
+					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, rmetrics.All, float64(count.Int64))
 				}
 			}
 			if err = rows.Err(); err != nil {

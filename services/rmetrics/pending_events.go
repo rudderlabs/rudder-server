@@ -13,18 +13,18 @@ const (
 )
 
 type (
-	DecreasePendingEventsFunc func(tablePrefix, workspace, destType string, value float64)
-	IncreasePendingEventsFunc func(tablePrefix, workspace, destType string, value float64)
+	DecreasePendingEventsFunc func(tablePrefix, workspaceID, destType, destinationID string, value float64)
+	IncreasePendingEventsFunc func(tablePrefix, workspaceID, destType, destinationID string, value float64)
 )
 
 // PendingEventsRegistry is a registry for pending events metrics
 type PendingEventsRegistry interface {
 	// IncreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
-	IncreasePendingEvents(tablePrefix, workspace, destType string, value float64)
+	IncreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64)
 	// DecreasePendingEvents decrements three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
-	DecreasePendingEvents(tablePrefix, workspace, destType string, value float64)
+	DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64)
 	// PendingEvents gets the measurement for pending events metric
-	PendingEvents(tablePrefix, workspace, destType string) metric.Gauge
+	PendingEvents(tablePrefix, workspaceID, destType, destinationID string) metric.Gauge
 	// Publish publishes the metrics to the global published metrics registry
 	Publish()
 	// Reset resets the registry to a new, non published one and clears the global published metrics registry
@@ -59,31 +59,31 @@ type pendingEventsRegistry struct {
 }
 
 // IncreasePendingEvents increments three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
-func (pem *pendingEventsRegistry) IncreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
+func (pem *pendingEventsRegistry) IncreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64) {
 	pem.registryMu.RLock()
 	defer pem.registryMu.RUnlock()
 
-	pem.PendingEvents(tablePrefix, workspace, destType).Add(value)
-	pem.PendingEvents(tablePrefix, All, destType).Add(value)
-	pem.PendingEvents(tablePrefix, All, All).Add(value)
+	pem.PendingEvents(tablePrefix, workspaceID, destType, destinationID).Add(value)
+	pem.PendingEvents(tablePrefix, All, destType, All).Add(value)
+	pem.PendingEvents(tablePrefix, All, All, All).Add(value)
 	pem.registry.MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Add(value)
 	pem.registry.MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Add(value)
 }
 
 // DecreasePendingEvents decrements three gauges, the dest & workspace-specific gauge, plus two aggregate (global) gauges
-func (pem *pendingEventsRegistry) DecreasePendingEvents(tablePrefix, workspace, destType string, value float64) {
+func (pem *pendingEventsRegistry) DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID string, value float64) {
 	pem.registryMu.RLock()
 	defer pem.registryMu.RUnlock()
-	pem.PendingEvents(tablePrefix, workspace, destType).Sub(value)
-	pem.PendingEvents(tablePrefix, All, destType).Sub(value)
-	pem.PendingEvents(tablePrefix, All, All).Sub(value)
+	pem.PendingEvents(tablePrefix, workspaceID, destType, destinationID).Sub(value)
+	pem.PendingEvents(tablePrefix, All, destType, All).Sub(value)
+	pem.PendingEvents(tablePrefix, All, All, All).Sub(value)
 	pem.registry.MustGetGauge(pendingEventsMeasurementAll{tablePrefix, destType}).Sub(value)
 	pem.registry.MustGetGauge(pendingEventsMeasurementAll{tablePrefix, All}).Sub(value)
 }
 
 // PendingEvents gets the measurement for pending events metric
-func (pem *pendingEventsRegistry) PendingEvents(tablePrefix, workspace, destType string) metric.Gauge {
-	return pem.registry.MustGetGauge(newPendingEventsMeasurement(tablePrefix, workspace, destType))
+func (pem *pendingEventsRegistry) PendingEvents(tablePrefix, workspaceID, destType, destinationID string) metric.Gauge {
+	return pem.registry.MustGetGauge(newPendingEventsMeasurement(tablePrefix, workspaceID, destType, destinationID))
 }
 
 // Publish publishes the metrics to the global published metrics registry
@@ -116,14 +116,20 @@ func (pem *pendingEventsRegistry) Reset() {
 	metric.Instance.Reset()
 }
 
-func newPendingEventsMeasurement(tablePrefix, workspace, destType string) metric.Measurement {
-	return pendingEventsMeasurement{tablePrefix, workspace, destType}
+func newPendingEventsMeasurement(tablePrefix, workspaceID, destType, destinationID string) metric.Measurement {
+	return pendingEventsMeasurement{
+		tablePrefix:   tablePrefix,
+		workspaceID:   workspaceID,
+		destType:      destType,
+		destinationID: destinationID,
+	}
 }
 
 type pendingEventsMeasurement struct {
-	tablePrefix string
-	workspace   string
-	destType    string
+	tablePrefix   string
+	workspaceID   string
+	destType      string
+	destinationID string
 }
 
 func (r pendingEventsMeasurement) GetName() string {
@@ -132,8 +138,9 @@ func (r pendingEventsMeasurement) GetName() string {
 
 func (r pendingEventsMeasurement) GetTags() map[string]string {
 	return map[string]string{
-		"workspaceId": r.workspace,
-		"destType":    r.destType,
+		"workspaceId":   r.workspaceID,
+		"destType":      r.destType,
+		"destinationId": r.destinationID,
 	}
 }
 
