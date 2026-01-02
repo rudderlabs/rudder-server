@@ -427,10 +427,10 @@ func (mpe *migrationJobExecutor) updateJobStatus(ctx context.Context, jobs []*jo
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
+			CustomVal:     job.CustomVal,
 		}
 	}
-	customValFilters := []string{"migrated"} // TODO: this is fine for now, but we'll need adaptations as soon as we start worrying about pending events
-	return mpe.sourceDB.UpdateJobStatus(ctx, statusList, customValFilters, nil)
+	return mpe.sourceDB.UpdateJobStatus(ctx, statusList)
 }
 
 // receiveWithTimeout wraps stream.Recv with a timeout and context cancellation support

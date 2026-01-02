@@ -62,6 +62,7 @@ func (nf *AbortingForwarder) Start() error {
 						Parameters:    []byte(`{}`),
 						JobParameters: job.Parameters,
 						WorkspaceId:   job.WorkspaceId,
+						CustomVal:     job.CustomVal,
 					})
 				}
 				err = nf.MarkJobStatuses(ctx, statusList)
