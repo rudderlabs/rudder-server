@@ -3,7 +3,7 @@ package snowpipestreaming
 import (
 	"bufio"
 	"context"
-	stdjson "encoding/json"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -289,15 +289,17 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		importInfos = append(importInfos, discardImportInfo)
 	}
 
-	var importParameters stdjson.RawMessage
+	var importParameters json.RawMessage
 	if len(importInfos) > 0 {
-		importIDBytes, err := jsonrs.Marshal(importInfos)
+		importParameters, err = jsonrs.Marshal(common.ImportParameters{
+			ImportId:    importInfos,
+			ImportCount: len(importingJobIDs),
+		})
 		if err != nil {
 			return m.abortJobs(asyncDest, fmt.Errorf("failed to marshal import id: %w", err).Error())
 		}
-
-		importParameters = stdjson.RawMessage(`{"importId":` + string(importIDBytes) + `}`)
 	}
+
 	m.logger.Infon("Uploaded data to snowpipe streaming destination")
 
 	m.stats.jobs.importing.Count(len(importingJobIDs))

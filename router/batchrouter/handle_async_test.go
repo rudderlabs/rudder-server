@@ -388,8 +388,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2024-01-01T00:00:00.000Z"}`),
+						Parameters:    []byte(`{"importId": "importID", "importCount": 1}`),
 					},
-					Parameters: []byte(`{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`),
+					Parameters: []byte(`{"source_id": "sourceID", "destination_id": "destinationID"}`),
 				})
 				return jr, nil
 			},
@@ -403,7 +404,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			require.Empty(t, statuses[0].ErrorCode)
 			require.Equal(t, "", gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
 			require.JSONEq(t, `{}`, string(statuses[0].Parameters))
-			require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
+			require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
 			cancel()
 		}).Return(nil)
 		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -490,8 +491,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 						LastJobStatus: jobsdb.JobStatusT{
 							AttemptNum:    1,
 							ErrorResponse: []byte(`{"firstAttemptedAt": "2024-01-01T00:00:00.000Z"}`),
+							Parameters:    []byte(`{"importId": "importID", "importCount": 1}`),
 						},
-						Parameters: []byte(`{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`),
+						Parameters: []byte(`{"source_id": "sourceID", "destination_id": "destinationID"}`),
 					})
 					return jr, nil
 				},
@@ -505,7 +507,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 				require.Empty(t, statuses[0].ErrorCode)
 				require.Empty(t, gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
 				require.JSONEq(t, `{}`, string(statuses[0].Parameters))
-				require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
+				require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
 				cancel()
 			}).Return(nil)
 			mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -601,8 +603,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 							LastJobStatus: jobsdb.JobStatusT{
 								AttemptNum:    1,
 								ErrorResponse: []byte(`{"firstAttemptedAt": "2024-01-01T00:00:00.000Z"}`),
+								Parameters:    []byte(`{"importId": "importID", "importCount": 4}`),
 							},
-							Parameters: []byte(`{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`),
+							Parameters: []byte(`{"source_id": "sourceID", "destination_id": "destinationID"}`),
 						})
 					}
 					return jr, nil
@@ -617,28 +620,28 @@ func TestAsyncDestinationManager(t *testing.T) {
 				require.Equal(t, "200", statuses[0].ErrorCode)
 				require.Empty(t, gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
 				require.JSONEq(t, `{}`, string(statuses[0].Parameters))
-				require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
+				require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
 
 				require.Equal(t, int64(2), statuses[1].JobID)
 				require.Equal(t, jobsdb.Failed.State, statuses[1].JobState)
 				require.Equal(t, "400", statuses[1].ErrorCode)
 				require.Equal(t, "failed reason", gjson.GetBytes(statuses[1].ErrorResponse, "Error").String())
 				require.JSONEq(t, `{}`, string(statuses[1].Parameters))
-				require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[1].JobParameters))
+				require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[1].JobParameters))
 
 				require.Equal(t, int64(3), statuses[2].JobID)
 				require.Equal(t, jobsdb.Succeeded.State, statuses[2].JobState)
 				require.Equal(t, "200", statuses[2].ErrorCode)
 				require.Equal(t, "warning reason", gjson.GetBytes(statuses[2].ErrorResponse, "Remarks").String())
 				require.JSONEq(t, `{}`, string(statuses[2].Parameters))
-				require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[2].JobParameters))
+				require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[2].JobParameters))
 
 				require.Equal(t, int64(4), statuses[3].JobID)
 				require.Equal(t, jobsdb.Aborted.State, statuses[3].JobState)
 				require.Equal(t, "400", statuses[3].ErrorCode)
 				require.Equal(t, "aborted reason", gjson.GetBytes(statuses[3].ErrorResponse, "Error").String())
 				require.JSONEq(t, `{}`, string(statuses[3].Parameters))
-				require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[3].JobParameters))
+				require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[3].JobParameters))
 
 				cancel()
 			}).Return(nil)
@@ -752,8 +755,9 @@ func TestAsyncDestinationManager(t *testing.T) {
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum:    1,
 						ErrorResponse: []byte(`{"firstAttemptedAt": "2024-01-01T00:00:00.000Z"}`),
+						Parameters:    []byte(`{"importId": "importID", "importCount": 1}`),
 					},
-					Parameters: []byte(`{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`),
+					Parameters: []byte(`{"source_id": "sourceID", "destination_id": "destinationID"}`),
 				})
 				return jr, nil
 			},
@@ -767,7 +771,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			require.Equal(t, "401", statuses[0].ErrorCode)
 			require.Equal(t, "failed with status code 401", gjson.GetBytes(statuses[0].ErrorResponse, "error").String())
 			require.JSONEq(t, `{}`, string(statuses[0].Parameters))
-			require.JSONEq(t, `{"importId": "importID", "source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
+			require.JSONEq(t, `{"source_id": "sourceID", "destination_id": "destinationID"}`, string(statuses[0].JobParameters))
 			cancel()
 		}).Return(nil)
 		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {

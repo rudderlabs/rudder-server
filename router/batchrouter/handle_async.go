@@ -111,8 +111,10 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, destinationID string, 
 
 func getPollInput(job *jobsdb.JobT) common.AsyncPoll {
 	parameters := job.LastJobStatus.Parameters
-	importId := gjson.GetBytes(parameters, "importId").String()
-	return common.AsyncPoll{ImportId: importId}
+	return common.AsyncPoll{
+		ImportId:    gjson.GetBytes(parameters, "importId").String(),
+		ImportCount: int(gjson.GetBytes(parameters, "importCount").Int()),
+	}
 }
 
 func enhanceResponseWithFirstAttemptedAt(msg stdjson.RawMessage, resp []byte) []byte {
@@ -175,10 +177,10 @@ func (brt *Handle) getParamertsFromJobs(jobs []*jobsdb.JobT) map[int64]stdjson.R
 	return parametersMap
 }
 
-func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sourceID string, importingJob *jobsdb.JobT, pollResp common.PollStatusResponse) ([]*jobsdb.JobStatusT, error) {
+func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sourceID string, importingJob *jobsdb.JobT, importingCount int, pollResp common.PollStatusResponse) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
-	list, err := brt.getImportingJobs(ctx, destinationID, len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs))
+	list, err := brt.getImportingJobs(ctx, destinationID, importingCount)
 	if err != nil {
 		return statusList, err
 	}
@@ -344,47 +346,38 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				if pollResp.InProgress {
 					continue
 				}
-				statusList, err := brt.updatePollStatusToDB(ctx, destinationID, sourceID, importingJob, pollResp)
+				importingCount := pollInput.ImportCount
+				if importingCount == 0 { // fallback to maxEventsInABatch if import count is not set
+					importingCount = brt.maxEventsInABatch
+				}
+				statusList, err := brt.updatePollStatusToDB(ctx, destinationID, sourceID, importingJob, importingCount, pollResp)
 				if err == nil {
 					brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
 					brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-					structImportingJobIDs := brt.asyncDestinationStruct[destinationID].ImportingJobIDs
-					// Clean up only if the importing job IDs in statusList are present in asyncDestinationStruct
-					if slices.Contains(structImportingJobIDs, importingJob.JobID) {
-						if len(statusList) != len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs) {
-							// Log a warning if there is a mismatch in the lengths
-							var minStatusJobID, maxStatusJobID int64
-							for _, status := range statusList {
-								if status.JobID < minStatusJobID {
-									minStatusJobID = status.JobID
-								}
-								if status.JobID > maxStatusJobID {
-									maxStatusJobID = status.JobID
-								}
+					if pollInput.ImportCount > 0 && len(statusList) != len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs) {
+						// Log a warning if there is a mismatch in the lengths
+						var minStatusJobID, maxStatusJobID int64
+						for _, status := range statusList {
+							if status.JobID < minStatusJobID {
+								minStatusJobID = status.JobID
 							}
-							brt.logger.Errorn("Async Destination Bug: mismatch in updated status list and importing jobs in asyncDestinationStruct",
-								obskit.DestinationType(brt.destType),
-								obskit.DestinationID(destinationID),
-								logger.NewIntField("statusListSize", int64(len(statusList))),
-								logger.NewIntField("importingJobIDsSize", int64(len(structImportingJobIDs))),
-								logger.NewIntField("minStructImportingJobID", lo.Min(structImportingJobIDs)),
-								logger.NewIntField("minStatusJobID", minStatusJobID),
-								logger.NewIntField("maxStructImportingJobID", lo.Max(structImportingJobIDs)),
-								logger.NewIntField("maxStatusJobID", maxStatusJobID),
-							)
+							if status.JobID > maxStatusJobID {
+								maxStatusJobID = status.JobID
+							}
 						}
-						brt.asyncStructCleanUp(destinationID)
-					} else {
-						// Log an error if the importing job is not found in asyncDestinationStruct (setup an alert for this as well)
-						brt.logger.Errorn("Async Destination Bug: async importing job not found in asyncDestinationStruct, cannot clean up since there might be a future job in progress",
+						structImportingJobIDs := brt.asyncDestinationStruct[destinationID].ImportingJobIDs
+						brt.logger.Errorn("Async Destination Bug: mismatch in updated status list and importing jobs in asyncDestinationStruct",
 							obskit.DestinationType(brt.destType),
 							obskit.DestinationID(destinationID),
-							logger.NewIntField("importingJobID", importingJob.JobID),
+							logger.NewIntField("statusListSize", int64(len(statusList))),
+							logger.NewIntField("importingJobIDsSize", int64(len(structImportingJobIDs))),
 							logger.NewIntField("minStructImportingJobID", lo.Min(structImportingJobIDs)),
+							logger.NewIntField("minStatusJobID", minStatusJobID),
 							logger.NewIntField("maxStructImportingJobID", lo.Max(structImportingJobIDs)),
-							logger.NewIntField("structPartFileNumber", int64(brt.asyncDestinationStruct[destinationID].PartFileNumber)),
+							logger.NewIntField("maxStatusJobID", maxStatusJobID),
 						)
 					}
+					brt.asyncStructCleanUp(destinationID)
 					brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 				}
 			}
@@ -429,7 +422,6 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 					})
 					if uploadResponse.ImportingParameters != nil && len(uploadResponse.ImportingJobIDs) > 0 {
 						brt.asyncDestinationStruct[destinationID].UploadInProgress = true
-						brt.asyncDestinationStruct[destinationID].ImportingJobIDs = lo.Uniq(uploadResponse.ImportingJobIDs)
 					} else {
 						brt.asyncStructCleanUp(destinationID)
 					}

@@ -76,7 +76,8 @@ type AsyncUploadOutput struct {
 }
 
 type AsyncPoll struct {
-	ImportId string `json:"importId"`
+	ImportId    string `json:"importId"`
+	ImportCount int    `json:"importCount"`
 }
 
 type AsyncJob struct {
@@ -94,8 +95,8 @@ type MetaDataT struct {
 	CSVHeaders string `json:"csvHeader"`
 }
 type ImportParameters struct {
-	ImportId string    `json:"importId"`
-	MetaData MetaDataT `json:"metadata"`
+	ImportId    any `json:"importId"`
+	ImportCount int `json:"importCount"`
 }
 
 type AsyncDestinationStruct struct {

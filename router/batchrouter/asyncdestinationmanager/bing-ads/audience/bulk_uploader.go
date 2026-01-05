@@ -104,9 +104,10 @@ func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 		successJobs = append(successJobs, actionFile.SuccessfulJobIDs...)
 	}
 
-	var parameters common.ImportParameters
-	parameters.ImportId = strings.Join(importIds, commaSeparator)
-	importParameters, err := jsonrs.Marshal(parameters)
+	importParameters, err := jsonrs.Marshal(common.ImportParameters{
+		ImportId:    strings.Join(importIds, commaSeparator),
+		ImportCount: len(successJobs),
+	})
 	if err != nil {
 		b.logger.Errorn("Errored in Marshalling parameters", obskit.Error(err))
 	}
