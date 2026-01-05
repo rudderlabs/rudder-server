@@ -42,12 +42,14 @@ func WithClient(client transformerclient.Client) Opt {
 // Client handles source hydration transformations
 type Client struct {
 	config struct {
-		sourceHydrationURL           string
-		maxRetry                     config.ValueLoader[int]
-		failOnError                  config.ValueLoader[bool]
-		maxRetryBackoffInterval      config.ValueLoader[time.Duration]
-		logLongRunningTransformAfter time.Duration
-		batchSize                    config.ValueLoader[int]
+		sourceHydrationURL      string
+		maxRetry                config.ValueLoader[int]
+		failOnError             config.ValueLoader[bool]
+		maxRetryBackoffInterval config.ValueLoader[time.Duration]
+		// Maximum time to wait before stopping retries
+		maxEscapedTimeIncludingRetries config.ValueLoader[time.Duration]
+		logLongRunningTransformAfter   time.Duration
+		batchSize                      config.ValueLoader[int]
 	}
 	conf   *config.Config
 	log    logger.Logger
@@ -64,9 +66,10 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "SourceHydration"))
 	handle.config.sourceHydrationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	handle.config.logLongRunningTransformAfter = conf.GetDuration("HttpClient.procTransformer.logLongRunningTransformAfter", 600, time.Second)
-	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.SourceHydration.maxRetry", "Processor.maxRetry")
+	handle.config.maxRetry = conf.GetReloadableIntVar(0, 1, "Processor.SourceHydration.maxRetry", "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.SourceHydration.failOnError", "Processor.Transformer.failOnError")
-	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.SourceHydration.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
+	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(1, time.Minute, "Processor.SourceHydration.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
+	handle.config.maxEscapedTimeIncludingRetries = conf.GetReloadableDurationVar(1, time.Hour, "Processor.SourceHydration.maxEscapedTimeIncludingRetries", "Processor.maxEscapedTimeIncludingRetries")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.SourceHydration.batchSize", "Processor.transformBatchSize")
 
 	for _, opt := range opts {
@@ -208,6 +211,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	retryStrategy := backoff.NewExponentialBackOff()
 	// MaxInterval caps the RetryInterval
 	retryStrategy.MaxInterval = c.config.maxRetryBackoffInterval.Load()
+	retryStrategy.MaxElapsedTime = c.config.maxEscapedTimeIncludingRetries.Load()
 
 	err := backoff.RetryNotify(
 		transformerutils.WithProcTransformReqTimeStat(func() error {
