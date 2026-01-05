@@ -31,15 +31,18 @@ import (
 
 const ReportsTable = "reports"
 
+var errBlockedByActiveTransactions = errors.New("blocked by active transactions")
+
 const (
-	StatReportingMainLoopTime              = "reporting_client_main_loop_time"
-	StatReportingGetReportsTime            = "reporting_client_get_reports_time"
-	StatReportingGetReportsCount           = "reporting_client_get_reports_count"
-	StatReportingGetAggregatedReportsTime  = "reporting_client_get_aggregated_reports_time"
-	StatReportingGetAggregatedReportsCount = "reporting_client_get_aggregated_reports_count"
-	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
-	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
-	StatReportingVacuumDuration            = "reporting_vacuum_duration"
+	StatReportingMainLoopTime                                = "reporting_client_main_loop_time"
+	StatReportingGetReportsTime                              = "reporting_client_get_reports_time"
+	StatReportingGetReportsCount                             = "reporting_client_get_reports_count"
+	StatReportingGetAggregatedReportsTime                    = "reporting_client_get_aggregated_reports_time"
+	StatReportingGetAggregatedReportsCount                   = "reporting_client_get_aggregated_reports_count"
+	StatReportingGetMinReportedAtQueryTime                   = "reporting_client_get_min_reported_at_query_time"
+	StatReportingGetReportsQueryTime                         = "reporting_client_get_reports_query_time"
+	StatReportingVacuumDuration                              = "reporting_vacuum_duration"
+	StatReportingMainLoopBlockedDueToActiveTransactionsCount = "reporting_main_loop_blocked_due_to_active_transactions_count"
 )
 
 type DefaultReporter struct {
@@ -74,6 +77,9 @@ type DefaultReporter struct {
 	eventNamePrefixLength config.ValueLoader[int]
 	eventNameSuffixLength config.ValueLoader[int]
 	commonClient          *client.Client
+
+	activeTransactionsByReportedAtMutex sync.Mutex
+	activeTransactionsByReportedAt      map[int64]int64
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -134,6 +140,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		eventNamePrefixLength:                eventNamePrefixLength,
 		eventNameSuffixLength:                eventNameSuffixLength,
 		commonClient:                         client.New(client.RouteMetrics, conf, log, stats),
+		activeTransactionsByReportedAt:       make(map[int64]int64),
 	}
 }
 
@@ -238,6 +245,20 @@ func (r *DefaultReporter) getReports(currentMs, aggregationIntervalMin int64, sy
 	// we don't want to flush partial buckets, so we wait for the current bucket to be complete
 	if bucketEnd > currentMs {
 		return nil, 0, nil
+	}
+
+	safeToFlushCurrentBucket := true
+	r.activeTransactionsByReportedAtMutex.Lock()
+	for transactionReportedAt := range r.activeTransactionsByReportedAt {
+		if transactionReportedAt < bucketEnd {
+			safeToFlushCurrentBucket = false
+			break
+		}
+	}
+	r.activeTransactionsByReportedAtMutex.Unlock()
+
+	if !safeToFlushCurrentBucket {
+		return nil, 0, errBlockedByActiveTransactions
 	}
 
 	groupByColumns := "workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_task_run_id, source_job_id, source_job_run_id, transformation_id, transformation_version_id, tracking_plan_id, tracking_plan_version, in_pu, pu, status, terminal_state, initial_state, status_code, event_name, event_type, error_type"
@@ -415,6 +436,7 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 	getReportsCount := r.stats.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
 	getAggregatedReportsTimer := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
 	getAggregatedReportsCount := r.stats.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
+	loopBlockedDueToActiveTransactionsCount := r.stats.NewTaggedStat(StatReportingMainLoopBlockedDueToActiveTransactionsCount, stats.CountType, stats.Tags{"clientName": c.Label})
 
 	r.getMinReportedAtQueryTime = r.stats.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
 	r.getReportsQueryTime = r.stats.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
@@ -452,7 +474,11 @@ func (r *DefaultReporter) mainLoop(ctx context.Context, c types.SyncerConfig) {
 			aggregationIntervalMin := int64(aggregationInterval.Load().Minutes())
 			reports, reportedAt, err := r.getReports(currentMin, aggregationIntervalMin, c.ConnInfo)
 			if err != nil {
-				r.log.Errorn("getting reports", obskit.Error(err))
+				if errors.Is(err, errBlockedByActiveTransactions) {
+					loopBlockedDueToActiveTransactionsCount.Increment()
+				} else {
+					r.log.Errorn("getting reports", obskit.Error(err))
+				}
 				select {
 				case <-ctx.Done():
 					r.log.Infon("stopping mainLoop for syncer",
@@ -633,7 +659,21 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	}
 	defer func() { _ = stmt.Close() }()
 
+	r.activeTransactionsByReportedAtMutex.Lock()
 	reportedAt := time.Now().UTC().Unix() / 60
+	r.activeTransactionsByReportedAt[reportedAt]++
+	r.activeTransactionsByReportedAtMutex.Unlock()
+
+	defer func() {
+		r.activeTransactionsByReportedAtMutex.Lock()
+		if r.activeTransactionsByReportedAt[reportedAt] == 1 {
+			delete(r.activeTransactionsByReportedAt, reportedAt)
+		} else {
+			r.activeTransactionsByReportedAt[reportedAt]--
+		}
+		r.activeTransactionsByReportedAtMutex.Unlock()
+	}()
+
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 		metric := *metric
