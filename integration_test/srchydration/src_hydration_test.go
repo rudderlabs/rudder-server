@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
@@ -28,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 
+	_ "github.com/marcboeker/go-duckdb"
 	"github.com/samber/lo"
 
 	proctypes "github.com/rudderlabs/rudder-server/processor/types"
@@ -111,7 +114,7 @@ func TestSrcHydration(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir())
+			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir(), nil)
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -221,6 +224,9 @@ func TestSrcHydration(t *testing.T) {
 				postgresContainer, err := postgres.Setup(pool, t)
 				require.NoError(t, err)
 
+				minioResource, err := minio.Setup(pool, t)
+				require.NoError(t, err)
+
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
 
@@ -229,7 +235,7 @@ func TestSrcHydration(t *testing.T) {
 
 				wg, ctx := errgroup.WithContext(ctx)
 				wg.Go(func() error {
-					err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir())
+					err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), minioResource)
 					if err != nil {
 						t.Logf("rudder-server exited with error: %v", err)
 					}
@@ -280,6 +286,12 @@ func TestSrcHydration(t *testing.T) {
 				if tt.failOnHydrationFailure {
 					expectedReports = append(expectedReports, prepareSrcHydrationFailedReports(t, sourceID3, numEvents)...)
 					expectedReports = append(expectedReports, prepareExpectedReports(t, sourceID3, true, numEvents)...)
+					requireJobsCount(t, ctx, postgresContainer.DB, "err_idx", jobsdb.Succeeded.State, numEvents)
+					requireMessagesCount(t, ctx, minioResource, numEvents, []lo.Tuple2[string, string]{
+						{A: "source_id", B: sourceID3},
+						{A: "failed_stage", B: "source_hydration"},
+						{A: "event_type", B: "identify"},
+					}...)
 				}
 				requireReports(t, ctx, postgresContainer.DB, expectedReports)
 
@@ -507,14 +519,7 @@ func prepareBackendConfigServer(t *testing.T, webhookURL string, internalSecret 
 		Build()
 }
 
-func runRudderServer(
-	t testing.TB,
-	ctx context.Context,
-	port int,
-	postgresContainer *postgres.Resource,
-	cbURL, transformerURL,
-	tmpDir string,
-) (err error) {
+func runRudderServer(t testing.TB, ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string, minioResource *minio.Resource) (err error) {
 	config.Reset()
 	t.Setenv("CONFIG_BACKEND_URL", cbURL)
 	t.Setenv("WORKSPACE_TOKEN", "token")
@@ -544,6 +549,18 @@ func runRudderServer(
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.enableSuppressUserFeature"), "false")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.archiveInPreProcess"), "true")
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.maxRetry"), "2")
+	if minioResource != nil {
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.enabled"), "true")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.SleepDuration"), "1s")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.minWorkerSleep"), "1s")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.uploadFrequency"), "1s")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.Bucket"), minioResource.BucketName)
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.Endpoint"), fmt.Sprintf("http://%s", minioResource.Endpoint))
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.AccessKey"), minioResource.AccessKeyID)
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.SecretAccessKey"), minioResource.AccessKeySecret)
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.S3ForcePathStyle"), "true")
+		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.DisableSSL"), "true")
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
@@ -635,5 +652,43 @@ func requireJobsCount(
 		30*time.Second,
 		1*time.Second,
 		"%d %s events should be in %s state", expectedCount, queue, state,
+	)
+}
+
+// nolint: unparam
+func requireMessagesCount(
+	t *testing.T,
+	ctx context.Context,
+	mr *minio.Resource,
+	expectedCount int,
+	filters ...lo.Tuple2[string, string],
+) {
+	t.Helper()
+
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+
+	_, err = db.Exec(fmt.Sprintf(`INSTALL parquet; LOAD parquet; INSTALL httpfs; LOAD httpfs;SET s3_region='%s';SET s3_endpoint='%s';SET s3_access_key_id='%s';SET s3_secret_access_key='%s';SET s3_use_ssl= false;SET s3_url_style='path';`,
+		mr.Region,
+		mr.Endpoint,
+		mr.AccessKeyID,
+		mr.AccessKeySecret,
+	))
+	require.NoError(t, err)
+
+	query := fmt.Sprintf("SELECT count(*) FROM read_parquet('%s') WHERE 1 = 1", fmt.Sprintf("s3://%s/**/**/**/*.parquet", mr.BucketName))
+	query += strings.Join(lo.Map(filters, func(t lo.Tuple2[string, string], _ int) string {
+		return fmt.Sprintf(" AND %s = '%s'", t.A, t.B)
+	}), "")
+
+	require.Eventually(t, func() bool {
+		var messagesCount int
+		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&messagesCount))
+		t.Logf("messagesCount: %d", messagesCount)
+		return messagesCount == expectedCount
+	},
+		10*time.Second,
+		1*time.Second,
+		fmt.Sprintf("%d messages should be in the bucket", expectedCount),
 	)
 }
