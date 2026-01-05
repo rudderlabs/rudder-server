@@ -38,7 +38,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -55,22 +54,21 @@ type Handle struct {
 	destType string
 	// dependencies
 
-	conf                  *config.Config
-	logger                logger.Logger
-	netHandle             *http.Client
-	jobsDB                jobsdb.JobsDB
-	reporting             types.Reporting
-	backendConfig         backendconfig.BackendConfig
-	fileManagerFactory    filemanager.Factory
-	transientSources      transientsource.Service
-	rsourcesService       rsources.JobService
-	warehouseClient       *client.Warehouse
-	debugger              destinationdebugger.DestinationDebugger
-	Diagnostics           diagnostics.DiagnosticsI
-	pendingEventsRegistry rmetrics.PendingEventsRegistry
-	adaptiveLimit         func(int64) int64
-	isolationStrategy     isolation.Strategy
-	now                   func() time.Time
+	conf               *config.Config
+	logger             logger.Logger
+	netHandle          *http.Client
+	jobsDB             jobsdb.JobsDB
+	reporting          types.Reporting
+	backendConfig      backendconfig.BackendConfig
+	fileManagerFactory filemanager.Factory
+	transientSources   transientsource.Service
+	rsourcesService    rsources.JobService
+	warehouseClient    *client.Warehouse
+	debugger           destinationdebugger.DestinationDebugger
+	Diagnostics        diagnostics.DiagnosticsI
+	adaptiveLimit      func(int64) int64
+	isolationStrategy  isolation.Strategy
+	now                func() time.Time
 
 	// configuration
 
@@ -574,7 +572,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		batchJobState string
 		errorResp     []byte
 	)
-	batchRouterWorkspaceJobStatusCount := make(map[string]int)
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
 		switch {
@@ -695,7 +692,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 			// Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
-			workspaceID := job.WorkspaceId
 			key := parameters.SourceID + ":" + parameters.DestinationID + ":" + parameters.SourceJobRunID + ":" + jobState + ":" + strconv.Itoa(errorCode) + ":" + parameters.EventName + ":" + parameters.EventType
 			if _, ok := connectionDetailsMap[key]; !ok {
 				cd = &types.ConnectionDetails{
@@ -731,9 +727,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 				sd.Count++
 			}
 			if status.JobState != jobsdb.Failed.State {
-				if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Aborted.State {
-					batchRouterWorkspaceJobStatusCount[workspaceID] += 1
-				}
 				sd.Count++
 				if failedMessage != nil {
 					sd.FailedMessages = append(sd.FailedMessages, failedMessage)
@@ -743,9 +736,6 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		// REPORTING - END
 	}
 
-	for workspace, jobCount := range batchRouterWorkspaceJobStatusCount {
-		brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", workspace, brt.destType, float64(jobCount))
-	}
 	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.Failed.State {

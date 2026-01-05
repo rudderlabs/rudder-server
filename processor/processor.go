@@ -2771,7 +2771,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to batch router", logger.NewIntField("jobCount", int64(len(batchDestJobs))))
-			proc.IncreasePendingEvents("batch_rt", getJobCountsByWorkspaceDestType(batchDestJobs))
 			proc.stats.statBatchDestNumOutputEvents(partition).Count(len(batchDestJobs))
 			proc.stats.statDBWriteBatchPayloadBytes(partition).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
@@ -2813,7 +2812,6 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 				return err
 			}
 			proc.logger.Debugn("[Processor] Total jobs written to router", logger.NewIntField("jobCount", int64(len(destJobs))))
-			proc.IncreasePendingEvents("rt", getJobCountsByWorkspaceDestType(destJobs))
 			proc.stats.statDestNumOutputEvents(partition).Count(len(destJobs))
 			proc.stats.statDBWriteRouterPayloadBytes(partition).Observe(
 				float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
@@ -2907,22 +2905,6 @@ func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemana
 	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "proc-uploader")), func() time.Duration {
 		return conf.GetDuration("Processor.Store.Sampling.Timeout", 120, time.Second)
 	})
-}
-
-// getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type
-//
-// map[workspaceID]map[destType]count
-func getJobCountsByWorkspaceDestType(jobs []*jobsdb.JobT) map[string]map[string]int {
-	jobCounts := make(map[string]map[string]int)
-	for _, job := range jobs {
-		workspace := job.WorkspaceId
-		destType := job.CustomVal
-		if _, ok := jobCounts[workspace]; !ok {
-			jobCounts[workspace] = make(map[string]int)
-		}
-		jobCounts[workspace][destType] += 1
-	}
-	return jobCounts
 }
 
 type destTransformOutput struct {
@@ -3872,14 +3854,6 @@ func (proc *Handle) pipelineDelayStats(partition string, first, last *jobsdb.Job
 	}
 	proc.statsFactory.NewTaggedStat("pipeline_delay_min_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(lastJobDelay)
 	proc.statsFactory.NewTaggedStat("pipeline_delay_max_seconds", stats.GaugeType, stats.Tags{"partition": partition, "module": "processor"}).Gauge(firstJobDelay)
-}
-
-func (proc *Handle) IncreasePendingEvents(tablePrefix string, stats map[string]map[string]int) {
-	for workspace := range stats {
-		for destType := range stats[workspace] {
-			proc.pendingEventsRegistry.IncreasePendingEvents(tablePrefix, workspace, destType, float64(stats[workspace][destType]))
-		}
-	}
 }
 
 func (proc *Handle) countPendingEvents(ctx context.Context) error {
