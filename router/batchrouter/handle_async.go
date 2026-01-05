@@ -30,24 +30,26 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
-func (brt *Handle) getImportingJobs(ctx context.Context, destinationID string, limit int) (jobsdb.JobsResult, error) {
+func (brt *Handle) getImportingJobs(ctx context.Context, augmentQueryParams func(*jobsdb.GetQueryParams), limit int) (jobsdb.JobsResult, error) {
 	var jobsResult jobsdb.JobsResult
 	// we need to get all importing jobs based on limit, overcoming dsLimits and payload size limits
 	var stop bool
 	var moreToken any
 	var iterations int
 	maxIterations := brt.maxImportingQueryIterations.Load()
+
 	for !stop {
 		jobsLimit := limit - len(jobsResult.Jobs)
+		queryParams := jobsdb.GetQueryParams{
+			CustomValFilters: []string{brt.destType},
+			JobsLimit:        jobsLimit,
+			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
+		}
+		augmentQueryParams(&queryParams)
 		r, err := misc.QueryWithRetriesAndNotify(ctx, brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (*jobsdb.MoreJobsResult, error) {
 			return brt.jobsDB.GetImporting(
 				ctx,
-				jobsdb.GetQueryParams{
-					CustomValFilters: []string{brt.destType},
-					JobsLimit:        jobsLimit,
-					ParameterFilters: []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}},
-					PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
-				},
+				queryParams,
 				moreToken,
 			)
 		}, brt.sendQueryRetryStats)
@@ -180,7 +182,9 @@ func (brt *Handle) getParamertsFromJobs(jobs []*jobsdb.JobT) map[int64]stdjson.R
 func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sourceID string, importingJob *jobsdb.JobT, importingCount int, pollResp common.PollStatusResponse) ([]*jobsdb.JobStatusT, error) {
 	var statusList []*jobsdb.JobStatusT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
-	list, err := brt.getImportingJobs(ctx, destinationID, importingCount)
+	list, err := brt.getImportingJobs(ctx, func(gqp *jobsdb.GetQueryParams) {
+		gqp.ParameterFilters = []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
+	}, importingCount)
 	if err != nil {
 		return statusList, err
 	}
@@ -326,7 +330,9 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 			brt.configSubscriberMu.RUnlock()
 			for destinationID := range destinationsMap {
 				brt.logger.Debugn("pollAsyncStatus Started", obskit.DestinationType(brt.destType))
-				jobsResult, err := brt.getImportingJobs(ctx, destinationID, 1)
+				jobsResult, err := brt.getImportingJobs(ctx, func(gqp *jobsdb.GetQueryParams) {
+					gqp.ParameterFilters = []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
+				}, 1)
 				if err != nil {
 					// TODO: Add metrics
 					brt.logger.Errorn("Error while getting job", obskit.DestinationType(brt.destType), obskit.Error(err))
