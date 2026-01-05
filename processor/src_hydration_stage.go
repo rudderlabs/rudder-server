@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	kitctx "github.com/rudderlabs/rudder-go-kit/context"
@@ -70,7 +72,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 	var sharedMapsMutex sync.Mutex
 	srcHydrationEnabledMap := make(map[SourceIDT]bool)
 	for sourceId, jobs := range message.groupedEventsBySourceId {
-		g.Go(func() error {
+		g.Go(crash.Wrapper(func() error {
 			var hydrationFailedReports []*reportingtypes.PUReportedMetric
 			source, err := proc.getSourceBySourceID(string(sourceId))
 			if err != nil {
@@ -145,7 +147,7 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 				}
 			}
 			return nil
-		})
+		}))
 	}
 
 	// Wait for all goroutines to complete and check for errors
@@ -219,6 +221,7 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 	return lo.FilterMap(jobs, func(job types.TransformerEvent, _ int) (*reportingtypes.PUReportedMetric, bool) {
 		eventName, _ := misc.MapLookup(job.Message, "event").(string)
 		eventType, _ := misc.MapLookup(job.Message, "type").(string)
+		receivedAt, _ := time.Parse(misc.RFC3339Milli, job.Metadata.ReceivedAt)
 		if _, ok := metricsMap[eventName]; !ok {
 			metricsMap[eventName] = make(map[string]*reportingtypes.PUReportedMetric)
 		}
@@ -239,11 +242,21 @@ func (proc *Handle) getHydrationFailedReports(source *backendconfig.SourceT, job
 					SampleEvent:    sampleEvent,
 					EventName:      eventName,
 					EventType:      eventType,
+					FailedMessages: []*reportingtypes.FailedMessage{
+						{
+							MessageID:  job.Metadata.MessageID,
+							ReceivedAt: receivedAt,
+						},
+					},
 				},
 			}
 			return metricsMap[eventName][eventType], true
 		}
 		metricsMap[eventName][eventType].StatusDetail.Count += 1
+		metricsMap[eventName][eventType].StatusDetail.FailedMessages = append(metricsMap[eventName][eventType].StatusDetail.FailedMessages, &reportingtypes.FailedMessage{
+			MessageID:  job.Metadata.MessageID,
+			ReceivedAt: receivedAt,
+		})
 		return nil, false
 	})
 }
