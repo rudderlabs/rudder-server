@@ -26,7 +26,7 @@ func TestJobsdbPileupCount(t *testing.T) {
 	)
 	generateJobs := func(numOfJob int) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  WorkspaceID,
 				Parameters:   []byte(`{"source_id":"sourceID","destination_id":"destinationID"}`),
@@ -72,9 +72,9 @@ func TestJobsdbPileupCount(t *testing.T) {
 	require.Equal(t, OriginalPendingEvents, len(res.Jobs))
 
 	var pendingEventsCount int
-	increasePendingEvents := func(tablePrefix, workspace, destType string, value float64) {
+	increasePendingEvents := func(tablePrefix, workspaceID, destType, destinationID string, value float64) {
 		require.Equal(t, TablePrefix, tablePrefix)
-		require.Equal(t, WorkspaceID, workspace)
+		require.Equal(t, WorkspaceID, workspaceID)
 		require.Equal(t, CustomVal, destType)
 		pendingEventsCount += int(value)
 	}
@@ -139,7 +139,7 @@ func TestJobsdbPileupCount(t *testing.T) {
 			case <-ctx1.Done():
 				return nil
 			case <-time.After(1 * time.Millisecond):
-				err := jdb.GetPileUpCounts(ctx1, start, func(tablePrefix, workspace, destType string, value float64) {
+				err := jdb.GetPileUpCounts(ctx1, start, func(tablePrefix, workspaceID, destType, destinationID string, value float64) {
 					pileupCount.Add(int64(value))
 				})
 				cancel2() // stop goroutines 3 and 4 after getting pileup counts
@@ -198,6 +198,4 @@ func TestJobsdbPileupCount(t *testing.T) {
 	require.NoError(t, g2.Wait(), "goroutines 3 and 4 should not return an error")
 	require.EqualValues(t, 0, pileupCount.Load())
 	t.Logf("Queries: %d, Migrations: %d", queries, migrations)
-	// not reliable to uncomment this assertion
-	// require.Greaterf(t, queries, migrations, "migrations should not be pausing queries")
 }
