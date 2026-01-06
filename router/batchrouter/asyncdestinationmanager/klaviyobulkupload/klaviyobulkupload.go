@@ -316,7 +316,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		importIds = append(importIds, uploadResp.Data.Id)
 	}
 	importParameters, err := jsonrs.Marshal(common.ImportParameters{
-		ImportId: strings.Join(importIds, IMPORT_ID_SEPARATOR),
+		ImportId:    strings.Join(importIds, IMPORT_ID_SEPARATOR),
+		ImportCount: len(successJobs),
 	})
 	if err != nil {
 		return kbu.generateKlaviyoErrorOutput("Error while marshaling parameters.", err, importingJobIDs, destinationID)

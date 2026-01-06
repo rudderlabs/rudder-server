@@ -250,7 +250,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, []int64{1002, 1004}, output.ImportingJobIDs)
 		require.Equal(t, 2, output.ImportingCount)
-		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1004","table":"PRODUCTS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1004","table":"PRODUCTS","failed":false,"reason":"","count":2}], "importCount":2}`, string(output.ImportingParameters))
 		require.Equal(t, []int64{1001, 1003}, output.FailedJobIDs)
 		require.Equal(t, 2, output.FailedCount)
 		require.Contains(t, output.FailedReason, assert.AnError.Error())
@@ -848,7 +848,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
 		require.Equal(t, 4, output.ImportingCount)
-		require.Equal(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}], "importCount":4}`, string(output.ImportingParameters))
 		require.Nil(t, output.FailedJobIDs)
 		require.Zero(t, output.FailedCount)
 		require.Equal(t, "test-destination", output.DestinationID)
@@ -912,7 +912,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
 		require.Equal(t, 4, output.ImportingCount)
-		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2},{"channelId":"test-rudder-discards-channel","offset":"1004","table":"RUDDER_DISCARDS","failed":false,"reason":"","count":4}]}`, string(output.ImportingParameters))
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2},{"channelId":"test-rudder-discards-channel","offset":"1004","table":"RUDDER_DISCARDS","failed":false,"reason":"","count":4}], "importCount":4}`, string(output.ImportingParameters))
 		require.Nil(t, output.FailedJobIDs)
 		require.Zero(t, output.FailedCount)
 		require.Equal(t, "test-destination", output.DestinationID)
@@ -964,7 +964,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, []int64{1001, 1003}, output.ImportingJobIDs)
 		require.Equal(t, 2, output.ImportingCount)
-		require.Equal(t, `{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
+		require.JSONEq(t, `{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}], "importCount": 2}`, string(output.ImportingParameters))
 		require.Equal(t, []int64{1002, 1004}, output.FailedJobIDs)
 		require.Equal(t, 2, output.FailedCount)
 		require.Contains(t, output.FailedReason, assert.AnError.Error())
@@ -1020,7 +1020,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, common.AsyncUploadOutput{
 			ImportingJobIDs:     []int64{1001, 1003},
 			ImportingCount:      2,
-			ImportingParameters: []byte(`{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}]}`),
+			ImportingParameters: []byte(`{"importId":[{"channelId":"test-users-channel","offset":"1003","table":"USERS","failed":false,"reason":"","count":2}],"importCount":2}`),
 			AbortJobIDs:         []int64{1002, 1004},
 			AbortCount:          2,
 			AbortReason:         output.AbortReason,
@@ -1077,7 +1077,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
 		require.Equal(t, 4, output.ImportingCount)
-		require.Equal(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}],"importCount":4}`, string(output.ImportingParameters))
 		require.Nil(t, output.FailedJobIDs)
 		require.Zero(t, output.FailedCount)
 		require.Equal(t, "test-destination", output.DestinationID)
@@ -1160,7 +1160,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
 		require.Equal(t, 4, output.ImportingCount)
-		require.Equal(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]}`, string(output.ImportingParameters))
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}],"importCount":4}`, string(output.ImportingParameters))
 		require.Nil(t, output.FailedJobIDs)
 		require.Zero(t, output.FailedCount)
 	})

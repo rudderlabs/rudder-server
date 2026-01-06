@@ -128,9 +128,10 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to run the sync after uploading the file. ", err, destination.ID, asyncDestStruct)
 	}
-	var parameters common.ImportParameters
-	parameters.ImportId = syncURI + ":" + importDefinition.URI
-	importParameters, err := jsonrs.Marshal(parameters)
+	importParameters, err := jsonrs.Marshal(common.ImportParameters{
+		ImportId:    syncURI + ":" + importDefinition.URI,
+		ImportCount: len(uploadJobInfo.succeededJobs),
+	})
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("error while marshaling parameters. ", err, destination.ID, asyncDestStruct)
 	}

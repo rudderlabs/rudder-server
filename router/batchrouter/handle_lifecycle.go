@@ -209,6 +209,7 @@ func (brt *Handle) setupReloadableVars() {
 	brt.warehouseServiceMaxRetryTime = config.GetReloadableDurationVar(3, time.Hour, "BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr")
 	brt.datePrefixOverride = config.GetReloadableStringVar("", "BatchRouter.datePrefixOverride")
 	brt.customDatePrefix = config.GetReloadableStringVar("", "BatchRouter.customDatePrefix")
+	brt.maxImportingQueryIterations = config.GetReloadableIntVar(50, 1, "BatchRouter."+brt.destType+".maxImportingQueryIterations", "BatchRouter.maxImportingQueryIterations")
 }
 
 func (brt *Handle) startAsyncDestinationManager() {
@@ -221,6 +222,7 @@ func (brt *Handle) startAsyncDestinationManager() {
 	brt.asyncSuccessfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, asyncStatTags)
 	brt.asyncFailedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, asyncStatTags)
 	brt.asyncAbortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, asyncStatTags)
+	brt.asyncGetImportingIterations = stats.Default.NewTaggedStat("async_get_importing_iterations", stats.HistogramType, asyncStatTags)
 
 	brt.asyncDestinationStruct = make(map[string]*asynccommon.AsyncDestinationStruct)
 

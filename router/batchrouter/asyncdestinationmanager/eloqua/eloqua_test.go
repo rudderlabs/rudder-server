@@ -296,6 +296,7 @@ var _ = Describe("Eloqua test", func() {
 			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
 			var parameters common.ImportParameters
 			parameters.ImportId = "/syncs/384:/contacts/imports/384"
+			parameters.ImportCount = 9
 			importParameters, err := jsonrs.Marshal(parameters)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)

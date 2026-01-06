@@ -1,7 +1,6 @@
 package marketobulkupload
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -49,10 +48,6 @@ const (
 	MARKETO_WARNING_HEADER = "Import Warning Reason"
 	MARKETO_FAILED_HEADER  = "Import Failure Reason"
 )
-
-func getImportingParameters(importID string) json.RawMessage {
-	return json.RawMessage(`{"importId": "` + importID + `"}`)
-}
 
 func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
@@ -143,10 +138,18 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 
 	}
 
+	importParameters, err := jsonrs.Marshal(common.ImportParameters{
+		ImportId:    importID,
+		ImportCount: len(importingJobIDs),
+	})
+	if err != nil {
+		b.logger.Errorn("marshalling parameters", obskit.Error(err))
+	}
+
 	// return the response
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
-		ImportingParameters: getImportingParameters(importID),
+		ImportingParameters: importParameters,
 		FailedJobIDs:        failedJobIDs,
 		ImportingCount:      len(importingJobIDs),
 		FailedCount:         len(failedJobIDs),

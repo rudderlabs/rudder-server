@@ -130,18 +130,18 @@ func (mr *MockJobsDBMockRecorder) GetFailed(ctx, params any) *gomock.Call {
 }
 
 // GetImporting mocks base method.
-func (m *MockJobsDB) GetImporting(ctx context.Context, params jobsdb.GetQueryParams) (jobsdb.JobsResult, error) {
+func (m *MockJobsDB) GetImporting(ctx context.Context, params jobsdb.GetQueryParams, more jobsdb.MoreToken) (*jobsdb.MoreJobsResult, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetImporting", ctx, params)
-	ret0, _ := ret[0].(jobsdb.JobsResult)
+	ret := m.ctrl.Call(m, "GetImporting", ctx, params, more)
+	ret0, _ := ret[0].(*jobsdb.MoreJobsResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetImporting indicates an expected call of GetImporting.
-func (mr *MockJobsDBMockRecorder) GetImporting(ctx, params any) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) GetImporting(ctx, params, more any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImporting", reflect.TypeOf((*MockJobsDB)(nil).GetImporting), ctx, params)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetImporting", reflect.TypeOf((*MockJobsDB)(nil).GetImporting), ctx, params, more)
 }
 
 // GetJobs mocks base method.

@@ -98,6 +98,7 @@ type Handle struct {
 	transformerURL               string
 	datePrefixOverride           config.ValueLoader[string]
 	customDatePrefix             config.ValueLoader[string]
+	maxImportingQueryIterations  config.ValueLoader[int]
 
 	drainer routerutils.Drainer
 
@@ -136,11 +137,12 @@ type Handle struct {
 	uploadedRawDataJobsCache map[string]map[string]bool
 	asyncDestinationStruct   map[string]*asynccommon.AsyncDestinationStruct
 
-	asyncPollTimeStat       stats.Measurement
-	asyncFailedJobsTimeStat stats.Measurement
-	asyncSuccessfulJobCount stats.Measurement
-	asyncFailedJobCount     stats.Measurement
-	asyncAbortedJobCount    stats.Measurement
+	asyncPollTimeStat           stats.Measurement
+	asyncFailedJobsTimeStat     stats.Measurement
+	asyncSuccessfulJobCount     stats.Measurement
+	asyncFailedJobCount         stats.Measurement
+	asyncAbortedJobCount        stats.Measurement
+	asyncGetImportingIterations stats.Measurement
 }
 
 // mainLoop is responsible for pinging the workers periodically for every active partition
@@ -839,15 +841,11 @@ func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time
 // skipFetchingJobs returns true if the destination type is async and the there are still jobs in [importing] state for this destination type
 func (brt *Handle) skipFetchingJobs(partition string) bool {
 	if asynccommon.IsAsyncDestination(brt.destType) {
-		queryParams := jobsdb.GetQueryParams{
-			CustomValFilters: []string{brt.destType},
-			JobsLimit:        1,
-			PayloadSizeLimit: brt.adaptiveLimit(brt.payloadLimit.Load()),
-		}
-		brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-		importingList, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-			return brt.jobsDB.GetImporting(ctx, queryParams)
-		}, brt.sendQueryRetryStats)
+		importingList, err := brt.getImportingJobs(
+			context.Background(),
+			func(gqp *jobsdb.GetQueryParams) { brt.isolationStrategy.AugmentQueryParams(partition, gqp) },
+			1,
+		)
 		if err != nil {
 			brt.logger.Errorn("BRT: Failed to get importing jobs", obskit.DestinationType(brt.destType), obskit.Error(err))
 			panic(err)

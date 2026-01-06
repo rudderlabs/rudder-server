@@ -2,7 +2,6 @@ package salesforcebulkupload
 
 import (
 	"bufio"
-	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -252,14 +251,19 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 
 	s.logger.Infon("Successfully created and closed Salesforce Bulk job", logger.NewStringField("jobID", sfJobID))
 
-	importID, _ := jsonrs.Marshal(&SalesforceJobInfo{
-		ID:      sfJobID,
-		Headers: csvHeaders,
+	importParameters, err := jsonrs.Marshal(common.ImportParameters{
+		ImportId: SalesforceJobInfo{
+			ID:      sfJobID,
+			Headers: csvHeaders,
+		},
+		ImportCount: len(importingJobIDs),
 	})
-	importingParameters := stdjson.RawMessage(`{"importId":` + string(importID) + `}`)
+	if err != nil {
+		s.logger.Errorn("marshalling parameters", obskit.Error(err))
+	}
 	return common.AsyncUploadOutput{
 		ImportingJobIDs:     importingJobIDs,
-		ImportingParameters: importingParameters,
+		ImportingParameters: importParameters,
 		ImportingCount:      len(importingJobIDs),
 		DestinationID:       destinationID,
 	}
