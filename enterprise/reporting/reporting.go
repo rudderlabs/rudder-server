@@ -669,8 +669,11 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		r.activeTransactionsByReportedAtMutex.Lock()
 		if r.activeTransactionsByReportedAt[reportedAt] == 1 {
 			delete(r.activeTransactionsByReportedAt, reportedAt)
-		} else {
+		} else if r.activeTransactionsByReportedAt[reportedAt] > 1 {
 			r.activeTransactionsByReportedAt[reportedAt]--
+		} else {
+			// This should never happen - indicates a bug in transaction tracking
+			r.log.Errorn("active transactions counter is invalid")
 		}
 		r.activeTransactionsByReportedAtMutex.Unlock()
 	})
