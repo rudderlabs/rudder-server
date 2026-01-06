@@ -664,8 +664,8 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	r.activeTransactionsByReportedAt[reportedAt]++
 	r.activeTransactionsByReportedAtMutex.Unlock()
 
-	// Cleanup function to decrement counter on both commit and rollback
-	decrementCounter := func() {
+	// Cleanup when transaction completes (success or failure)
+	txn.AddFinallyListener(func() {
 		r.activeTransactionsByReportedAtMutex.Lock()
 		if r.activeTransactionsByReportedAt[reportedAt] == 1 {
 			delete(r.activeTransactionsByReportedAt, reportedAt)
@@ -673,10 +673,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			r.activeTransactionsByReportedAt[reportedAt]--
 		}
 		r.activeTransactionsByReportedAtMutex.Unlock()
-	}
-
-	txn.AddSuccessListener(decrementCounter)
-	txn.AddFailureListener(decrementCounter)
+	})
 
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
