@@ -664,7 +664,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	r.activeTransactionsByReportedAt[reportedAt]++
 	r.activeTransactionsByReportedAtMutex.Unlock()
 
-	defer func() {
+	txn.AddSuccessListener(func() {
 		r.activeTransactionsByReportedAtMutex.Lock()
 		if r.activeTransactionsByReportedAt[reportedAt] == 1 {
 			delete(r.activeTransactionsByReportedAt, reportedAt)
@@ -672,7 +672,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 			r.activeTransactionsByReportedAt[reportedAt]--
 		}
 		r.activeTransactionsByReportedAtMutex.Unlock()
-	}()
+	})
 
 	for _, metric := range metrics {
 		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
