@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.65.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.64.0...v1.65.0-rc.2) (2026-01-06)
+
+
+### Features
+
+* add error index reporting for source hydration stage ([#6573](https://github.com/rudderlabs/rudder-server/issues/6573)) ([c0867d9](https://github.com/rudderlabs/rudder-server/commit/c0867d9960c2d6b549a96d28dccf0eb509d67974))
+* add support for pushing image to ecr ([#6567](https://github.com/rudderlabs/rudder-server/issues/6567)) ([2c9b143](https://github.com/rudderlabs/rudder-server/commit/2c9b143ef3fbf5a071016daf0d9816fd418489b2))
+* jobsdb partition buffer flush and switchover ([#6559](https://github.com/rudderlabs/rudder-server/issues/6559)) ([b87c406](https://github.com/rudderlabs/rudder-server/commit/b87c406b16e64b477e8fc086c3f7b87e984b36dc))
+* jobsdb partition buffer store decorator ([#6551](https://github.com/rudderlabs/rudder-server/issues/6551)) ([9d36aec](https://github.com/rudderlabs/rudder-server/commit/9d36aec21852b8aa02f1b9863c8c1930a240179a))
+* **jobsdb:** partition id filters in get query params ([#6531](https://github.com/rudderlabs/rudder-server/issues/6531)) ([022fe65](https://github.com/rudderlabs/rudder-server/commit/022fe656645195e796bff47e8af836a6df60f7a2))
+* managing buffered partitions in jobsdb partition buffer ([#6544](https://github.com/rudderlabs/rudder-server/issues/6544)) ([89fd603](https://github.com/rudderlabs/rudder-server/commit/89fd60390b22301003c05ff28e58e51d79b53547))
+* partition migration grpc server, client and job executor ([#6568](https://github.com/rudderlabs/rudder-server/issues/6568)) ([3a9b242](https://github.com/rudderlabs/rudder-server/commit/3a9b2425114e0ab88c4f214971380364d7b92e61))
+
+
+### Bug Fixes
+
+* add race condition suffix for master branch ([#6582](https://github.com/rudderlabs/rudder-server/issues/6582)) ([65d1813](https://github.com/rudderlabs/rudder-server/commit/65d18135f251df82d4ef398a1ef7496337c6d976))
+* async destination framework doesn't return all importing jobs ([#6578](https://github.com/rudderlabs/rudder-server/issues/6578)) ([05a2ee9](https://github.com/rudderlabs/rudder-server/commit/05a2ee97fa96e190b3899069a8266062f919eabf))
+* handle ctx cancellation during source hydration ([#6555](https://github.com/rudderlabs/rudder-server/issues/6555)) ([77b94a4](https://github.com/rudderlabs/rudder-server/commit/77b94a4d72ad177bebccdcfed0d8991f7bedd63e))
+* handle oauth empty secret case ([#6540](https://github.com/rudderlabs/rudder-server/issues/6540)) ([95af013](https://github.com/rudderlabs/rudder-server/commit/95af01354a1682a1f36980a05b473d7082eef342))
+* reporting race condition between flusher and syncer ([#6585](https://github.com/rudderlabs/rudder-server/issues/6585)) ([00f7e4f](https://github.com/rudderlabs/rudder-server/commit/00f7e4f63e79143bfc0bc34887823cf65955dbc5))
+* transform conversionValue to string before upload for binga ads offline conversion ([#6562](https://github.com/rudderlabs/rudder-server/issues/6562)) ([072548d](https://github.com/rudderlabs/rudder-server/commit/072548d92410f9a7c666ef3e0d61be4d0d6d8e10))
+* unhandled column type error in snowflake streaming ([#6571](https://github.com/rudderlabs/rudder-server/issues/6571)) ([7aed657](https://github.com/rudderlabs/rudder-server/commit/7aed65748be85f7c57af7a71fdb9072cc240b5ef))
+
+
+### Miscellaneous
+
+* enhance source hydration client retry config ([#6584](https://github.com/rudderlabs/rudder-server/issues/6584)) ([b99eee6](https://github.com/rudderlabs/rudder-server/commit/b99eee6531d675804be2a4f4ec106f37662ebc62))
+* **jobsdb:** cache should not be invalidated when adding a read excluded partition ([#6554](https://github.com/rudderlabs/rudder-server/issues/6554)) ([430f06b](https://github.com/rudderlabs/rudder-server/commit/430f06b5c5f788e4d04374999f195a3a35bc7d06))
+* **jobsdb:** extend no results cache to support partition ids ([#6529](https://github.com/rudderlabs/rudder-server/issues/6529)) ([8b2385e](https://github.com/rudderlabs/rudder-server/commit/8b2385ef936dcc1033fdbe53fd8f10c080980cee))
+* refactor async destination job metadata capturing ([#6528](https://github.com/rudderlabs/rudder-server/issues/6528)) ([167cafa](https://github.com/rudderlabs/rudder-server/commit/167cafa6c215d2f3e399642d5f4418a1c30e5b21))
+* sync release v1.64.0 to main branch ([#6547](https://github.com/rudderlabs/rudder-server/issues/6547)) ([418c453](https://github.com/rudderlabs/rudder-server/commit/418c4535511b1cd84f0e14e25214d6daf5fe0c0d))
+* warehouse health logs ([#6569](https://github.com/rudderlabs/rudder-server/issues/6569)) ([afcbc39](https://github.com/rudderlabs/rudder-server/commit/afcbc39c32fdb248711c82b642387f4310e466d3))
+
 ## [1.64.1](https://github.com/rudderlabs/rudder-server/compare/v1.64.0...v1.64.1) (2025-12-05)
 
 
