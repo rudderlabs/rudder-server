@@ -136,6 +136,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
 			}
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "batch_router")
 			job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", finalReason)
@@ -167,6 +168,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
 			}
 
 			statusList = append(statusList, &status)
@@ -187,7 +189,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 		})
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return brt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-				err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{brt.destType}, parameterFilters)
+				err := brt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList)
 				if err != nil {
 					return fmt.Errorf("marking %s job statuses as aborted: %w", brt.destType, err)
 				}
@@ -219,7 +221,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 	if len(statusList) > 0 {
 		brt.logger.Debugn("BRT: DB Status update complete for parameter Filters", obskit.DestinationType(brt.destType), logger.NewIntField("parameterFiltersCount", int64(len(parameterFilters))))
 		err := misc.RetryWithNotify(context.Background(), brt.jobsDBCommandTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return brt.jobsDB.UpdateJobStatus(ctx, statusList, []string{brt.destType}, parameterFilters)
+			return brt.jobsDB.UpdateJobStatus(ctx, statusList)
 		}, brt.sendRetryUpdateStats)
 		if err != nil {
 			panic(fmt.Errorf("updating %s job statuses: %w", brt.destType, err))

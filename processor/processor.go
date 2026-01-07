@@ -1767,6 +1767,7 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
+			CustomVal:     job.CustomVal,
 		}
 		statusList = append(statusList, &newStatus)
 
@@ -2829,7 +2830,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 	in.rsourcesStats.CollectStats(statusList)
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{proc.config.GWCustomVal}, nil)
+			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			if err != nil {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
 			}
@@ -3696,11 +3697,12 @@ func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
+			CustomVal:     job.CustomVal,
 		}
 	}
 	// Mark the jobs as executing
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{proc.config.GWCustomVal}, nil)
+		return proc.gatewayDB.UpdateJobStatus(ctx, statusList)
 	}, proc.sendRetryUpdateStats)
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)

@@ -125,6 +125,7 @@ func (b *jobsDBPartitionBuffer) moveBufferedPartitions(ctx context.Context, part
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
 			}
 		})
 		if err := b.primaryWriteJobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
@@ -133,9 +134,7 @@ func (b *jobsDBPartitionBuffer) moveBufferedPartitions(ctx context.Context, part
 			}
 			// create job statuses
 			if err := b.bufferReadJobsDB.WithUpdateSafeTxFromTx(ctx, tx.Tx(), func(tx jobsdb.UpdateSafeTx) error {
-				return b.bufferReadJobsDB.UpdateJobStatusInTx(ctx, tx, statusList,
-					[]string{"flush"}, // intentionally using one random customValFilter "flush" so that no jobs cache will not invalidate a full branch
-					nil)
+				return b.bufferReadJobsDB.UpdateJobStatusInTx(ctx, tx, statusList)
 			}); err != nil {
 				return fmt.Errorf("updating job statuses for moved jobs: %w", err)
 			}

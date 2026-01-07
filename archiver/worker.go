@@ -249,10 +249,10 @@ func (w *worker) markStatus(jobs []*jobsdb.JobT, state string, response []byte) 
 						RetryTime:     time.Now(),
 						WorkspaceId:   job.WorkspaceId,
 						JobParameters: job.Parameters,
+						PartitionID:   job.PartitionID,
+						CustomVal:     job.CustomVal,
 					}
 				}),
-				w.queryParams.CustomValFilters,
-				nil,
 			)
 		},
 		func(attempt int) {

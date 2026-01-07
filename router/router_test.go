@@ -613,8 +613,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callGetAllJobs)
@@ -627,8 +627,8 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
@@ -699,8 +699,8 @@ var _ = Describe("router", func() {
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 				}).After(callGetAllJobs)
 
@@ -712,8 +712,8 @@ var _ = Describe("router", func() {
 				close(done)
 			}).Return(nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 
@@ -785,14 +785,14 @@ var _ = Describe("router", func() {
 
 			var routerAborted bool
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
 					Expect(drainList).To(HaveLen(1))
 					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
 					routerAborted = true
@@ -859,14 +859,14 @@ var _ = Describe("router", func() {
 
 			var routerAborted bool
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
 					Expect(drainList).To(HaveLen(1))
 					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
 					routerAborted = true
@@ -940,14 +940,14 @@ var _ = Describe("router", func() {
 
 			var routerAborted bool
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
 					Expect(drainList).To(HaveLen(1))
 					assertJobStatus(
 						jobs[0],
@@ -1044,14 +1044,14 @@ var _ = Describe("router", func() {
 
 			var routerAborted bool
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1)
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT) {
 					Expect(drainList).To(HaveLen(1))
 					assertJobStatus(
 						jobs[0],
@@ -1135,8 +1135,8 @@ var _ = Describe("router", func() {
 				Times(1).
 				Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: unprocessedJobsList}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 3)
 				}).Return(nil).After(callAllJobs)
 
@@ -1153,9 +1153,9 @@ var _ = Describe("router", func() {
 					}).Return(nil)
 
 			c.mockRouterJobsDB.EXPECT().
-				UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).
+				UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).
 				Times(1).
-				Do(func(ctx context.Context, _ jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+				Do(func(ctx context.Context, _ jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(
 						unprocessedJobsList[0],
 						statuses[0],
@@ -1274,8 +1274,8 @@ var _ = Describe("router", func() {
 				JobsLimit:        10000,
 			}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: jobsList}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -1320,8 +1320,8 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
@@ -1431,8 +1431,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[2], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -1486,8 +1486,8 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[1], jobsdb.Waiting.State, "", 0)
 					assertTransformJobStatuses(unprocessedJobsList[2], statuses[2], jobsdb.Waiting.State, "", 0)
@@ -1651,8 +1651,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -1744,7 +1744,7 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			<-router.backendConfigInitialized
 			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
@@ -1846,8 +1846,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -1909,8 +1909,8 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList))).Times(1).
+				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 2)
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Filtered.State, "298", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "299", 1)
@@ -2027,8 +2027,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 					assertJobStatus(unprocessedJobsList[1], statuses[2], jobsdb.Executing.State, "", `{}`, 0)
@@ -2090,7 +2090,7 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			<-router.backendConfigInitialized
 			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
@@ -2186,8 +2186,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
@@ -2254,7 +2254,7 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
 
 			<-router.backendConfigInitialized
 			worker := newPartitionWorker(context.Background(), router, gaDestinationID)
@@ -2344,8 +2344,8 @@ var _ = Describe("router", func() {
 					JobsLimit:        10000,
 				}, nil).Times(1).Return(&jobsdb.MoreJobsResult{JobsResult: jobsdb.JobsResult{Jobs: allJobs}}, nil)
 
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 1)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 0)
 				}).Return(nil).After(callAllJobs)
@@ -2408,8 +2408,8 @@ var _ = Describe("router", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
-			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", `{"content-type":"application/json","response": "{\"message\": \"some message1\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", `{"content-type":"application/json","response": "{\"message\": \"some message2\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 0)
 				})
