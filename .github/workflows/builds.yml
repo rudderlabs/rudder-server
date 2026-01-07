@@ -50,6 +50,7 @@ jobs:
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
   enterprise-dockerhub-race:
     uses: ./.github/workflows/docker-build-dockerhub.yml
     with:
@@ -65,6 +66,7 @@ jobs:
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
   enterprise-ecr:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
@@ -80,6 +82,8 @@ jobs:
         type=semver,pattern={{major}}
       aws_ecr_iam_role_arn: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
       aws_ecr_region: ${{ vars.AWS_ECR_REGION }}
+    secrets:
+      ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
   enterprise-ecr-race:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
@@ -94,6 +98,8 @@ jobs:
       aws_ecr_iam_role_arn: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
       aws_ecr_region: ${{ vars.AWS_ECR_REGION }}
       race: true
+    secrets:
+      ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
   sbsvc-dockerhub:
     uses: ./.github/workflows/docker-build-dockerhub.yml
     with:

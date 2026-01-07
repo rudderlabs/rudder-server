@@ -28,6 +28,9 @@ on:
         required: false
         type: boolean
         default: false
+    secrets:
+      ENTERPRISE_TOKEN:
+        required: false
 
 permissions:
   id-token: write # allows the JWT to be requested from GitHub's OIDC provider
@@ -152,6 +155,7 @@ jobs:
           tags: ${{ matrix.build-config.tags }}
           labels: ${{ matrix.build-config.labels }}
           build-args: |
+            ENTERPRISE_TOKEN=${{ secrets.ENTERPRISE_TOKEN }}
             BUILD_DATE=${{ needs.docker-meta.outputs.build-date }}
             VERSION=${{ needs.docker-meta.outputs.version }}
             COMMIT_HASH=${{ github.sha }}
