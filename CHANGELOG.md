@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.65.1](https://github.com/rudderlabs/rudder-server/compare/v1.65.0...v1.65.1) (2026-01-08)
+
+
+### Miscellaneous
+
+* improve async destination bug logging ([#6594](https://github.com/rudderlabs/rudder-server/issues/6594)) ([c02c6f0](https://github.com/rudderlabs/rudder-server/commit/c02c6f0a54d35bc826ee46c5fe1136930e07be08))
+
 ## [1.65.0](https://github.com/rudderlabs/rudder-server/compare/v1.64.0...v1.65.0) (2026-01-07)
 
 
