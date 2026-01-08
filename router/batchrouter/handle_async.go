@@ -360,11 +360,11 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				if err == nil {
 					brt.recordAsyncDestinationDeliveryStatus(sourceID, destinationID, statusList)
 					brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
-					if pollInput.ImportCount > 0 && len(statusList) != len(brt.asyncDestinationStruct[destinationID].ImportingJobIDs) {
+					if pollInput.ImportCount > 0 && len(statusList) != pollInput.ImportCount {
 						// Log a warning if there is a mismatch in the lengths
 						var minStatusJobID, maxStatusJobID int64
 						for _, status := range statusList {
-							if status.JobID < minStatusJobID {
+							if minStatusJobID == 0 || status.JobID < minStatusJobID {
 								minStatusJobID = status.JobID
 							}
 							if status.JobID > maxStatusJobID {
@@ -376,11 +376,12 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 							obskit.DestinationType(brt.destType),
 							obskit.DestinationID(destinationID),
 							logger.NewIntField("statusListSize", int64(len(statusList))),
-							logger.NewIntField("importingJobIDsSize", int64(len(structImportingJobIDs))),
-							logger.NewIntField("minStructImportingJobID", lo.Min(structImportingJobIDs)),
 							logger.NewIntField("minStatusJobID", minStatusJobID),
-							logger.NewIntField("maxStructImportingJobID", lo.Max(structImportingJobIDs)),
 							logger.NewIntField("maxStatusJobID", maxStatusJobID),
+							logger.NewIntField("importingJobIDsSize", int64(pollInput.ImportCount)),
+							logger.NewIntField("structImportingJobIDsSize", int64(len(structImportingJobIDs))),
+							logger.NewIntField("minStructImportingJobID", lo.Min(structImportingJobIDs)),
+							logger.NewIntField("maxStructImportingJobID", lo.Max(structImportingJobIDs)),
 						)
 					}
 					brt.asyncStructCleanUp(destinationID)
