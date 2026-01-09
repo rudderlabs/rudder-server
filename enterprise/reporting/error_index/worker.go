@@ -219,7 +219,12 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	dir, err := os.MkdirTemp(tmpDirPath, "*")
+	errorIndexDir := tmpDirPath + "/" + misc.RudderReportingErrorIndex
+	if err := os.MkdirAll(errorIndexDir, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("creating error index directory: %w", err)
+	}
+
+	dir, err := os.MkdirTemp(errorIndexDir, "*")
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
