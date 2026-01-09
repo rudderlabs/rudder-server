@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -209,6 +210,8 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 	return statusList, nil
 }
 
+// uploadPayloads uploads the payloads to the object storage.
+// Not thread-safe: uses a shared temporary directory that is deleted after upload.
 func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filemanager.UploadedFile, error) {
 	slices.SortFunc(payloads, func(i, j payload) int {
 		return i.FailedAtTime().Compare(j.FailedAtTime())
@@ -219,7 +222,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	errorIndexDir := tmpDirPath + "/" + misc.RudderReportingErrorIndex
+	errorIndexDir := filepath.Join(tmpDirPath, misc.RudderReportingErrorIndex)
 	if err := os.MkdirAll(errorIndexDir, os.ModePerm); err != nil {
 		return nil, fmt.Errorf("creating error index directory: %w", err)
 	}
@@ -228,6 +231,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
+	defer os.RemoveAll(dir)
 
 	minFailedAt := payloads[0].FailedAtTime()
 	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
@@ -238,9 +242,6 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	if err != nil {
 		return nil, fmt.Errorf("creating file: %w", err)
 	}
-	defer func() {
-		_ = os.Remove(f.Name())
-	}()
 
 	if err = w.encodeToParquet(f, payloads); err != nil {
 		return nil, fmt.Errorf("writing to file: %w", err)
