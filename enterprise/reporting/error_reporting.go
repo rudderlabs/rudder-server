@@ -25,6 +25,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -820,4 +821,25 @@ func (edr *ErrorDetailReporter) Stop() {
 	if edr.eventSampler != nil {
 		edr.eventSampler.Close()
 	}
+}
+
+func (edr *ErrorDetailReporter) NewMetricsCollector(jobs []*jobsdb.JobT) types.MetricsCollector {
+	return &ErrorDetailMetricsCollector{}
+}
+
+// ErrorDetailMetricsCollector is a noop metrics collector for ErrorDetailReporter
+// Error detail reporting happens directly during job processing via Report() method
+type ErrorDetailMetricsCollector struct{}
+
+func (*ErrorDetailMetricsCollector) Collect(pu string, metrics *types.PUReportedMetric) {
+	// noop - ErrorDetailReporter uses Report() directly
+}
+
+func (*ErrorDetailMetricsCollector) Flush(ctx context.Context, tx *Tx) error {
+	// noop - ErrorDetailReporter uses Report() directly
+	return nil
+}
+
+func (*ErrorDetailMetricsCollector) Merge(other types.MetricsCollector) {
+	// noop - ErrorDetailReporter uses Report() directly
 }

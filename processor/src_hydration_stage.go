@@ -36,6 +36,7 @@ type srcHydrationMessage struct {
 	botManagementStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	eventBlockingStatusDetailsMap map[string]map[string]*reportingtypes.StatusDetail
 	destFilterStatusDetailMap     map[string]map[string]*reportingtypes.StatusDetail
+	metricsCollector              reportingtypes.MetricsCollector
 	reportMetrics                 []*reportingtypes.PUReportedMetric
 	totalEvents                   int
 	groupedEventsBySourceId       map[SourceIDT][]types.TransformerEvent

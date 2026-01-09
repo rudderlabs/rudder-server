@@ -66,3 +66,24 @@ func (es *EventStatsReporter) Stop() {
 func (es *EventStatsReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 	return func() {}
 }
+
+func (es *EventStatsReporter) NewMetricsCollector(jobs []*jobsdb.JobT) types.MetricsCollector {
+	return &EventStatsMetricsCollector{}
+}
+
+// EventStatsMetricsCollector is a noop metrics collector for EventStatsReporter
+// Event stats reporting happens directly during job processing via Report() method
+type EventStatsMetricsCollector struct{}
+
+func (*EventStatsMetricsCollector) Collect(pu string, metrics *types.PUReportedMetric) {
+	// noop - EventStatsReporter uses Report() directly
+}
+
+func (*EventStatsMetricsCollector) Flush(ctx context.Context, tx *Tx) error {
+	// noop - EventStatsReporter uses Report() directly
+	return nil
+}
+
+func (*EventStatsMetricsCollector) Merge(other types.MetricsCollector) {
+	// noop - EventStatsReporter uses Report() directly
+}

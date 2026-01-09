@@ -24,6 +24,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -74,6 +75,11 @@ type DefaultReporter struct {
 	eventNamePrefixLength config.ValueLoader[int]
 	eventNameSuffixLength config.ValueLoader[int]
 	commonClient          *client.Client
+}
+
+type DefaultMetricsCollector struct {
+	reporter *DefaultReporter
+	metrics  []*types.PUReportedMetric
 }
 
 func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Logger, configSubscriber *configSubscriber, stats stats.Stats) *DefaultReporter {
@@ -588,17 +594,41 @@ func (r *DefaultReporter) vacuum(ctx context.Context, db *sql.DB, tags stats.Tag
 	return nil
 }
 
-func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
-	if len(metrics) == 0 {
+func (r *DefaultReporter) getTags(label string) stats.Tags {
+	return stats.Tags{
+		"workspaceId": r.configSubscriber.WorkspaceID(),
+		"instanceId":  r.instanceID,
+		"clientName":  label,
+	}
+}
+
+func (r *DefaultReporter) Stop() {
+	r.cancel()
+	_ = r.g.Wait()
+}
+
+func (r *DefaultReporter) NewMetricsCollector(jobs []*jobsdb.JobT) types.MetricsCollector {
+	return &DefaultMetricsCollector{
+		reporter: r,
+		metrics:  []*types.PUReportedMetric{},
+	}
+}
+
+func (c *DefaultMetricsCollector) Collect(pu string, metrics *types.PUReportedMetric) {
+	c.metrics = append(c.metrics, metrics)
+}
+
+func (c *DefaultMetricsCollector) Flush(ctx context.Context, txn *Tx) error {
+	if len(c.metrics) == 0 {
 		return nil
 	}
 
-	prefixLength := r.eventNamePrefixLength.Load()
-	suffixLength := r.eventNameSuffixLength.Load()
+	prefixLength := c.reporter.eventNamePrefixLength.Load()
+	suffixLength := c.reporter.eventNameSuffixLength.Load()
 	maxLength := prefixLength + suffixLength
 	if prefixLength <= 0 || suffixLength <= 0 {
 		err := errors.New("invalid event name trimming configuration prefixLength and suffixLength must be > 0")
-		r.log.Errorn(`[ Reporting ]: Invalid event name trimming configuration`, obskit.Error(err),
+		c.reporter.log.Errorn(`[ Reporting ]: Invalid event name trimming configuration`, obskit.Error(err),
 			logger.NewIntField("prefixLength", int64(prefixLength)),
 			logger.NewIntField("suffixLength", int64(suffixLength)))
 		return err
@@ -634,19 +664,19 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	defer func() { _ = stmt.Close() }()
 
 	reportedAt := time.Now().UTC().Unix() / 60
-	for _, metric := range metrics {
-		workspaceID := r.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
+	for _, metric := range c.metrics {
+		workspaceID := c.reporter.configSubscriber.WorkspaceIDFromSource(metric.SourceID)
 		metric := *metric
 
-		if metric.SourceCategory == "warehouse" || slices.Contains(r.sourcesWithEventNameTrackingDisabled, metric.SourceID) {
+		if metric.SourceCategory == "warehouse" || slices.Contains(c.reporter.sourcesWithEventNameTrackingDisabled, metric.SourceID) {
 			metric.StatusDetail.EventName = metric.StatusDetail.EventType
 		}
 
-		if r.configSubscriber.IsPIIReportingDisabled(workspaceID) {
+		if c.reporter.configSubscriber.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, r.eventSampler, r.eventSamplingEnabled.Load(), int64(r.eventSamplingDuration.Load().Minutes()))
+		sampleEvent, sampleResponse, err := getSampleWithEventSampling(metric, reportedAt, c.reporter.eventSampler, c.reporter.eventSamplingEnabled.Load(), int64(c.reporter.eventSamplingDuration.Load().Minutes()))
 		if err != nil {
 			return err
 		}
@@ -657,7 +687,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		}
 
 		_, err = stmt.Exec(
-			workspaceID, r.namespace, r.instanceID,
+			workspaceID, c.reporter.namespace, c.reporter.instanceID,
 			metric.SourceDefinitionID,
 			metric.SourceCategory,
 			metric.SourceID,
@@ -691,19 +721,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 	return nil
 }
 
-func (r *DefaultReporter) getTags(label string) stats.Tags {
-	return stats.Tags{
-		"workspaceId": r.configSubscriber.WorkspaceID(),
-		"instanceId":  r.instanceID,
-		"clientName":  label,
-	}
-}
-
-func (r *DefaultReporter) Stop() {
-	r.cancel()
-	_ = r.g.Wait()
-
-	if r.eventSampler != nil {
-		r.eventSampler.Close()
-	}
+func (c *DefaultMetricsCollector) Merge(other types.MetricsCollector) {
+	otherCollector := other.(*DefaultMetricsCollector)
+	c.metrics = append(c.metrics, otherCollector.metrics...)
 }

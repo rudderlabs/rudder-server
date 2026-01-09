@@ -6,6 +6,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -32,6 +33,10 @@ type Mediator struct {
 	stats     stats.Stats
 
 	cronRunners []flusher.Runner
+}
+
+type MetricsCollectorMediator struct {
+	metricsCollectors []types.MetricsCollector
 }
 
 func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.Logger, enterpriseToken string, backendConfig backendconfig.BackendConfig) *Mediator {
@@ -76,16 +81,6 @@ func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.L
 	rm.reporters = append(rm.reporters, eventStatsReporter)
 
 	return rm
-}
-
-func (rm *Mediator) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *Tx) error {
-	for _, reporter := range rm.reporters {
-		if err := reporter.Report(ctx, metrics, txn); err != nil {
-			rm.log.Errorn("error occurred while reporting metrics", obskit.Error(err))
-			return err
-		}
-	}
-	return nil
 }
 
 func (rm *Mediator) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
@@ -134,5 +129,40 @@ func (rm *Mediator) Stop() {
 
 	for _, f := range rm.cronRunners {
 		f.Stop()
+	}
+}
+
+func (rm *Mediator) NewMetricsCollector(jobs []*jobsdb.JobT) types.MetricsCollector {
+	metricsCollectors := []types.MetricsCollector{}
+	for _, reporter := range rm.reporters {
+		metricsCollectors = append(metricsCollectors, reporter.NewMetricsCollector(jobs))
+	}
+	return &MetricsCollectorMediator{
+		metricsCollectors: metricsCollectors,
+	}
+}
+
+func (m *MetricsCollectorMediator) Collect(pu string, metrics *types.PUReportedMetric) {
+	for _, metricsCollector := range m.metricsCollectors {
+		metricsCollector.Collect(pu, metrics)
+	}
+}
+
+func (m *MetricsCollectorMediator) Flush(ctx context.Context, tx *Tx) error {
+	for _, metricsCollector := range m.metricsCollectors {
+		if err := metricsCollector.Flush(ctx, tx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *MetricsCollectorMediator) Merge(other types.MetricsCollector) {
+	otherMetricsCollectorMediator := other.(*MetricsCollectorMediator)
+	if len(m.metricsCollectors) != len(otherMetricsCollectorMediator.metricsCollectors) {
+		panic("metrics collectors have different lengths")
+	}
+	for i, metricsCollector := range m.metricsCollectors {
+		metricsCollector.Merge(otherMetricsCollectorMediator.metricsCollectors[i])
 	}
 }

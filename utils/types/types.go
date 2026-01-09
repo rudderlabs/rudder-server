@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
@@ -31,17 +32,27 @@ type ConfigEnvI interface {
 
 // Reporting is interface to report metrics
 type Reporting interface {
-	// Report reports metrics to reporting service
-	Report(ctx context.Context, metrics []*PUReportedMetric, tx *Tx) error
-
 	// DatabaseSyncer creates reporting tables in the database and returns a function to periodically sync the data
 	DatabaseSyncer(c SyncerConfig) ReportingSyncer
+
+	NewMetricsCollector(jobs []*jobsdb.JobT) MetricsCollector
 
 	// Stop the reporting service
 	Stop()
 }
 
 type ReportingSyncer func()
+
+// MetricsCollector collects metrics
+type MetricsCollector interface {
+	// TODO: create a minimal struct for the client to pass metrics
+	Collect(pu string, metrics *PUReportedMetric)
+
+	Flush(ctx context.Context, tx *Tx) error
+
+	// Merge merges the metrics from the other collector into the current collector
+	Merge(other MetricsCollector)
+}
 
 // ConfigT simple map config structure
 type ConfigT map[string]interface{}

@@ -3,6 +3,7 @@ package reporting
 import (
 	"context"
 
+	"github.com/rudderlabs/rudder-server/jobsdb"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -19,3 +20,18 @@ func (*NOOP) DatabaseSyncer(c types.SyncerConfig) types.ReportingSyncer {
 }
 
 func (*NOOP) Stop() {}
+
+func (*NOOP) NewMetricsCollector(jobs []*jobsdb.JobT) types.MetricsCollector {
+	return &NOOPMetricsCollector{}
+}
+
+// NOOPMetricsCollector is a noop metrics collector
+type NOOPMetricsCollector struct{}
+
+func (*NOOPMetricsCollector) Collect(pu string, metrics *types.PUReportedMetric) {}
+
+func (*NOOPMetricsCollector) Flush(ctx context.Context, tx *Tx) error {
+	return nil
+}
+
+func (*NOOPMetricsCollector) Merge(other types.MetricsCollector) {}

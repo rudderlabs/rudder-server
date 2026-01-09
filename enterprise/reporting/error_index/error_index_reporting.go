@@ -310,6 +310,27 @@ func (eir *ErrorIndexReporter) Stop() {
 	}
 }
 
+func (eir *ErrorIndexReporter) NewMetricsCollector(jobs []*jobsdb.JobT) types.MetricsCollector {
+	return &ErrorIndexMetricsCollector{}
+}
+
+// ErrorIndexMetricsCollector is a noop metrics collector for ErrorIndexReporter
+// Error index reporting happens directly during job processing via Report() method
+type ErrorIndexMetricsCollector struct{}
+
+func (*ErrorIndexMetricsCollector) Collect(pu string, metrics []*types.PUReportedMetric) {
+	// noop - ErrorIndexReporter uses Report() directly
+}
+
+func (*ErrorIndexMetricsCollector) Flush(ctx context.Context, tx *Tx) error {
+	// noop - ErrorIndexReporter uses Report() directly
+	return nil
+}
+
+func (*ErrorIndexMetricsCollector) Merge(other types.MetricsCollector) {
+	// noop - ErrorIndexReporter uses Report() directly
+}
+
 // resolveJobsDB returns the jobsdb that matches the current transaction (using system information functions)
 // https://www.postgresql.org/docs/11/functions-info.html
 func (eir *ErrorIndexReporter) resolveJobsDB(tx *Tx) (jobsdb.JobsDB, error) {

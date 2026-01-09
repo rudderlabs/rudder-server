@@ -1673,6 +1673,8 @@ func (proc *Handle) preprocessStage(partition string, subJobs subJob, delay time
 	jobList := subJobs.subJobs
 	proc.stats.statNumRequests(partition).Count(len(jobList))
 
+	metricsCollector := proc.reporting.NewMetricsCollector(jobList)
+
 	var statusList []*jobsdb.JobStatusT
 	groupedEventsBySourceId := make(map[SourceIDT][]types.TransformerEvent)
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt)
