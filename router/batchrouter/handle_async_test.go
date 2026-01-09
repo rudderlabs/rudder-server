@@ -25,7 +25,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -68,7 +67,6 @@ func defaultHandle(destType string) *Handle {
 	batchRouter.now = func() time.Time {
 		return time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	}
-	batchRouter.pendingEventsRegistry = rmetrics.NewPendingEventsRegistry()
 	return batchRouter
 }
 

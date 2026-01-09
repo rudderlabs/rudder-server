@@ -92,19 +92,6 @@ func (brt *Handle) updateJobStatuses(ctx context.Context, allJobs, completedJobs
 					return fmt.Errorf("reporting metrics: %w", err)
 				}
 			}
-			tx.Tx().AddSuccessListener(func() {
-				terminalStatusCounters := map[string]int{}
-				for _, status := range statusList {
-					switch status.JobState {
-					case jobsdb.Succeeded.State, jobsdb.Aborted.State:
-						terminalStatusCounters[status.WorkspaceId]++
-					default:
-					}
-				}
-				for workspaceId, count := range terminalStatusCounters {
-					brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", workspaceId, brt.destType, float64(count))
-				}
-			})
 			return nil
 		})
 	}, brt.sendRetryUpdateStats)
@@ -899,7 +886,6 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		panic(err)
 	}
 	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
-	brt.pendingEventsRegistry.DecreasePendingEvents("batch_rt", workspaceID, brt.destType, float64(len(completedJobsList)))
 	if params.Attempted {
 		var sourceID string
 		if len(statusList) > 0 {
