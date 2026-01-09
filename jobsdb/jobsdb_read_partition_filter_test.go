@@ -142,9 +142,10 @@ func TestReadPartitionFilter(t *testing.T) {
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   unprocessed.Jobs[0].WorkspaceId,
 				PartitionID:   unprocessed.Jobs[0].PartitionID,
+				CustomVal:     unprocessed.Jobs[0].CustomVal,
 			},
 		}
-		err = db.UpdateJobStatus(ctx, statuses, nil, nil)
+		err = db.UpdateJobStatus(ctx, statuses)
 		require.NoError(t, err, "should update job status to executing")
 
 		// Verify that GetUnprocessed with partition filter now returns 0 jobs for that partition
@@ -191,9 +192,10 @@ func TestReadPartitionFilter(t *testing.T) {
 				ErrorResponse: []byte(`{}`),
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   unprocessed.Jobs[1].WorkspaceId,
+				CustomVal:     unprocessed.Jobs[1].CustomVal,
 			},
 		}
-		err = db.UpdateJobStatus(ctx, statuses, nil, nil)
+		err = db.UpdateJobStatus(ctx, statuses)
 		require.NoError(t, err, "should update job status to executing")
 
 		// Verify that GetUnprocessed with partition filter now returns 0 jobs for that partition

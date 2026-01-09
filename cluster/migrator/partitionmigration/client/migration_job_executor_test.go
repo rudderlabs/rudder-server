@@ -117,7 +117,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		jobs, err := env.sourceJobsDB.GetUnprocessed(t.Context(), jobsdb.GetQueryParams{JobsLimit: 100})
 		require.NoError(t, err)
 		require.Len(t, jobs.Jobs, 100)
-		err = env.sourceJobsDB.UpdateJobStatus(t.Context(), env.generateJobStatuses(t, jobs.Jobs, jobsdb.Executing.State), []string{"test"}, nil)
+		err = env.sourceJobsDB.UpdateJobStatus(t.Context(), env.generateJobStatuses(t, jobs.Jobs, jobsdb.Executing.State))
 		require.NoError(t, err)
 
 		c := config.New()
@@ -332,6 +332,7 @@ func (testMigrationJobExecutorEnv) generateJobStatuses(t *testing.T, jobs []*job
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
+			CustomVal:     job.CustomVal,
 		}
 	})
 }
