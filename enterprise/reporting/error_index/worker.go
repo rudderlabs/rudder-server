@@ -210,8 +210,6 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 	return statusList, nil
 }
 
-// uploadPayloads uploads the payloads to the object storage.
-// Not thread-safe: uses a shared temporary directory that is deleted after upload.
 func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filemanager.UploadedFile, error) {
 	slices.SortFunc(payloads, func(i, j payload) int {
 		return i.FailedAtTime().Compare(j.FailedAtTime())
