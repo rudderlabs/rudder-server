@@ -31,6 +31,8 @@ import (
 
 const srcHydrationStage = "source_hydration"
 
+var ErrPermanentTransformerFailure = errors.New("transformer permanent failure")
+
 type Opt func(*Client)
 
 func WithClient(client transformerclient.Client) Opt {
@@ -141,6 +143,9 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 		if errors.Is(err, context.Canceled) {
 			return types.SrcHydrationResponse{}, err
 		}
+		if errors.Is(err, ErrPermanentTransformerFailure) {
+			return types.SrcHydrationResponse{}, err
+		}
 		if c.config.failOnError.Load() {
 			return types.SrcHydrationResponse{}, err
 		}
@@ -246,6 +251,13 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				return fmt.Errorf("reading response body: %w", err)
 			}
 			if resp.StatusCode != http.StatusOK {
+				if resp.Header.Get("X-Rudder-Should-Abort") == "true" {
+					c.log.Warnn("Received abort signal from source hydration service", labels.ToLoggerFields()...)
+					c.stat.NewTaggedStat("src_hydration_transformer_abort_requests", stats.CountType, tags).Increment()
+					return backoff.Permanent(
+						fmt.Errorf("source hydration returned status code: %v, response: %s, err: %w", resp.StatusCode, respData, ErrPermanentTransformerFailure),
+					)
+				}
 				return fmt.Errorf("source hydration returned status code: %v, response: %s", resp.StatusCode, respData)
 			}
 

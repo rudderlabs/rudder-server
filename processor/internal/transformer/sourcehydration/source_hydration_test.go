@@ -1220,3 +1220,126 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 		require.Len(t, resp.Batch, 0)
 	})
 }
+
+func TestSourceHydration_TransformerAbort(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("transformer aborts hydration", func(t *testing.T) {
+		reqCount := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reqCount++
+			var req types.SrcHydrationRequest
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
+			require.NoError(t, err)
+
+			w.Header().Set("X-Rudder-Should-Abort", "true")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("Internal Server Error"))
+		}))
+		defer server.Close()
+
+		conf := config.New()
+		conf.Set("DEST_TRANSFORM_URL", server.URL)
+		conf.Set("Processor.SourceHydration.batchSize", 5)
+		conf.Set("Processor.SourceHydration.maxRetry", 10)
+		conf.Set("Processor.SourceHydration.failOnError", false)
+
+		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
+
+		// Create 5 events
+		var events []types.SrcHydrationEvent
+		for i := 0; i < 5; i++ {
+			events = append(events, types.SrcHydrationEvent{
+				ID: fmt.Sprintf("%d", i),
+				Event: map[string]interface{}{
+					"test": fmt.Sprintf("event%d", i),
+				},
+			})
+		}
+
+		source := types.SrcHydrationSource{
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "TestSource",
+			},
+		}
+
+		req := types.SrcHydrationRequest{
+			Batch:  events,
+			Source: source,
+		}
+
+		resp, err := client.Hydrate(ctx, req)
+		require.ErrorIs(t, err, sourcehydration.ErrPermanentTransformerFailure)
+
+		require.Len(t, resp.Batch, 0)
+		require.Equal(t, reqCount, 1, "should have only made one request before aborting - no retries")
+	})
+
+	t.Run("transformer aborts hydration - partial failures", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var req types.SrcHydrationRequest
+			err := jsonrs.NewDecoder(r.Body).Decode(&req)
+			require.NoError(t, err)
+
+			// Fail the batch with 1 event, succeed others
+			if len(req.Batch) == 1 {
+				w.Header().Set("X-Rudder-Should-Abort", "true")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte("Internal Server Error"))
+				return
+			}
+
+			response := types.SrcHydrationResponse{
+				Batch: req.Batch,
+			}
+
+			w.WriteHeader(http.StatusOK)
+			err = jsonrs.NewEncoder(w).Encode(response)
+			require.NoError(t, err)
+		}))
+		defer server.Close()
+
+		conf := config.New()
+		conf.Set("DEST_TRANSFORM_URL", server.URL)
+		conf.Set("Processor.SourceHydration.batchSize", 2)
+		conf.Set("Processor.SourceHydration.maxRetry", 2)
+		conf.Set("Processor.SourceHydration.failOnError", false)
+
+		client := sourcehydration.New(conf, logger.NOP, stats.NOP)
+
+		// Create 5 events, split into 3 batches: [0,1], [2,3], [4]
+		var events []types.SrcHydrationEvent
+		for i := 0; i < 5; i++ {
+			events = append(events, types.SrcHydrationEvent{
+				ID: fmt.Sprintf("%d", i),
+				Event: map[string]interface{}{
+					"test": fmt.Sprintf("event%d", i),
+				},
+			})
+		}
+
+		source := types.SrcHydrationSource{
+			ID:             "source-id",
+			WorkspaceID:    "workspace-id",
+			Config:         []byte("{}"),
+			InternalSecret: []byte(`{"pageAccessToken": "some-page-access-token"}`),
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: "TestSource",
+			},
+		}
+
+		req := types.SrcHydrationRequest{
+			Batch:  events,
+			Source: source,
+		}
+
+		resp, err := client.Hydrate(ctx, req)
+		require.ErrorIs(t, err, sourcehydration.ErrPermanentTransformerFailure)
+
+		require.Len(t, resp.Batch, 0)
+	})
+}
