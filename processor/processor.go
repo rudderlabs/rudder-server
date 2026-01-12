@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"path"
+	"path/filepath"
 	"runtime/trace"
 	"slices"
 	"strconv"
@@ -2745,7 +2745,7 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 										return fmt.Errorf("marshalling batch router jobs: %w: %w ", storeErr, err)
 									}
 
-									objName := path.Join("proc-samples", proc.instanceID, uuid.NewString())
+									objName := filepath.Join("proc-samples", proc.instanceID, uuid.NewString())
 									uploadFile, err := proc.storeSamplingFileManager.UploadReader(ctx, objName, strings.NewReader(string(batchDestJobsJSON)))
 									if err != nil {
 										return fmt.Errorf("uploading sample batch router jobs: %w: %w", storeErr, err)

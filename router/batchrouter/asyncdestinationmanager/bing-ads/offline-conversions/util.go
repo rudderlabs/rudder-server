@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -60,12 +59,11 @@ returns the csv file and zip file path, along with the csv writer that
 contains the template of the uploadable file.
 */
 func createActionFile(actionType string) (*ActionFileInfo, error) {
-	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return nil, err
 	}
-	path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
+	path := filepath.Join(tmpDirPath, misc.RudderAsyncDestinationLogs, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	csvFile, err := os.Create(csvFilePath)
@@ -250,12 +248,11 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	if err != nil {
 		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
 	}
-	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		panic(fmt.Errorf("error while creating tmp directory: %w", err))
 	}
-	outputDir := path.Join(tmpDirPath, localTmpDirName)
+	outputDir := filepath.Join(tmpDirPath, misc.RudderAsyncDestinationLogs)
 	// Create output directory if it doesn't exist
 	_, err = os.Stat(outputDir)
 	if os.IsNotExist(err) {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -69,7 +69,7 @@ type Repository struct {
 func NewRepository(basePath string, log logger.Logger, stats stats.Stats, opts ...Opt) (*Repository, error) {
 	b := &Repository{
 		log:           log,
-		path:          path.Join(basePath, "badgerdbv4"),
+		path:          filepath.Join(basePath, "badgerdbv4"),
 		maxGoroutines: 1,
 		maxSeedWait:   10 * time.Second,
 		stats:         stats,

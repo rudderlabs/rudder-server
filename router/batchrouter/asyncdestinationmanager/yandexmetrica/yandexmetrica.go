@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -146,17 +145,16 @@ func generateCSVFromJSON(jsonData []byte, goalId string) (string, string, error)
 	})
 
 	// Open the CSV file for writing
-	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", "", fmt.Errorf("creating tmp dir: %v", err)
 	}
-	folderPath := path.Join(tmpDirPath, localTmpDirName)
+	folderPath := filepath.Join(tmpDirPath, misc.RudderAsyncDestinationLogs)
 	_, err = os.Stat(folderPath)
 	if os.IsNotExist(err) {
 		folderPath, _ = os.MkdirTemp(folderPath, "")
 	}
-	csvPath := path.Join(folderPath, uuid.NewString())
+	csvPath := filepath.Join(folderPath, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%s.csv`, csvPath)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {

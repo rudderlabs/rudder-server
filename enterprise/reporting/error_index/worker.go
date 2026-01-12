@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -234,7 +233,7 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 	minFailedAt := payloads[0].FailedAtTime()
 	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
 
-	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
+	filePath := filepath.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
 
 	f, err := os.Create(filePath)
 	if err != nil {

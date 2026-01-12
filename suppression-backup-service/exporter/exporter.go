@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,7 +38,7 @@ func CleanupLingeringTmpExportFiles() error {
 			continue
 		}
 		if strings.HasPrefix(entry.Name(), TmpExportFilePrefix) {
-			if err := os.Remove(path.Join(tmpDir, entry.Name())); err != nil {
+			if err := os.Remove(filepath.Join(tmpDir, entry.Name())); err != nil {
 				return fmt.Errorf("could not remove lingering export file %s: %w", entry.Name(), err)
 			}
 		}
@@ -102,7 +102,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
-	repo, err := newBadgerDBInstance(path.Join(tmpDir, "fullsuppressionV2"), e.Log)
+	repo, err := newBadgerDBInstance(filepath.Join(tmpDir, "fullsuppressionV2"), e.Log)
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
 	}
@@ -156,7 +156,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				if err != nil {
 					return fmt.Errorf("latestExporterLoop: %w", err)
 				}
-				baseDir := path.Join(tmpDir, "latestsuppression")
+				baseDir := filepath.Join(tmpDir, "latestsuppression")
 				err = os.RemoveAll(baseDir)
 				if err != nil {
 					return fmt.Errorf("could not remove tmp dir: %w", err)
@@ -169,7 +169,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 					_ = repo.Stop()
 				}()
 
-				path.Join(tmpDir, "latestsuppression")
+				filepath.Join(tmpDir, "latestsuppression")
 				syncer, err := suppression.NewSyncer(
 					config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
 					e.Id,
