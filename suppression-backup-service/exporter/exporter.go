@@ -169,7 +169,6 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 					_ = repo.Stop()
 				}()
 
-				filepath.Join(tmpDir, "latestsuppression")
 				syncer, err := suppression.NewSyncer(
 					config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
 					e.Id,
