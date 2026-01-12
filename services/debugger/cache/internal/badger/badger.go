@@ -3,7 +3,7 @@ package badger
 import (
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -127,17 +127,17 @@ func New[E any](origin string, log logger.Logger, stats stats.Stats, opts ...fun
 		stats:  stats,
 	}
 	e.loadCacheConfig()
-	badgerPathName := e.origin + "/cache/badgerdbv4"
+	badgerPathName := filepath.Join(e.origin, "cache", "badgerdbv4")
 	defer func() {
 		// TODO : Remove this after badgerdb v2 is completely removed
-		_ = os.RemoveAll(fmt.Sprintf(`%v%v`, e.origin, "/badgerdbv3"))
+		_ = os.RemoveAll(filepath.Join(e.origin, "badgerdbv3"))
 	}()
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		e.logger.Errorn("Unable to create tmp directory", obskit.Error(err))
 		return nil, err
 	}
-	storagePath := path.Join(tmpDirPath, badgerPathName)
+	storagePath := filepath.Join(tmpDirPath, badgerPathName)
 	if e.cleanupOnStartup {
 		if err := os.RemoveAll(storagePath); err != nil {
 			e.logger.Warnn("Unable to cleanup badgerDB storage path",

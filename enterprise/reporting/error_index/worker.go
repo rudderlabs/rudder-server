@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -219,23 +219,26 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	dir, err := os.MkdirTemp(tmpDirPath, "*")
+	errorIndexDir := filepath.Join(tmpDirPath, misc.RudderReportingErrorIndex)
+	if err := os.MkdirAll(errorIndexDir, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("creating error index directory: %w", err)
+	}
+
+	dir, err := os.MkdirTemp(errorIndexDir, "*")
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
+	defer os.RemoveAll(dir)
 
 	minFailedAt := payloads[0].FailedAtTime()
 	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
 
-	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
+	filePath := filepath.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
 
 	f, err := os.Create(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating file: %w", err)
 	}
-	defer func() {
-		_ = os.Remove(f.Name())
-	}()
 
 	if err = w.encodeToParquet(f, payloads); err != nil {
 		return nil, fmt.Errorf("writing to file: %w", err)

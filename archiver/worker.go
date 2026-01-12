@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -146,7 +145,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) (string, e
 	lastJobCreatedAt := jobs[len(jobs)-1].CreatedAt.UTC()
 	workspaceID := jobs[0].WorkspaceId
 
-	filePath := path.Join(
+	filePath := filepath.Join(
 		lo.Must(misc.GetTmpDir()),
 		"rudder-backups",
 		w.sourceID,

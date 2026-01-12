@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -63,8 +63,8 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("could not get export path: %w", err)
 	}
 
-	fullExportFile := model.File{Path: path.Join(fullExportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
-	latestExportFile := model.File{Path: path.Join(latestExportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
+	fullExportFile := model.File{Path: filepath.Join(fullExportBaseDir, "full-export"), Mu: &sync.RWMutex{}}
+	latestExportFile := model.File{Path: filepath.Join(latestExportBaseDir, "latest-export"), Mu: &sync.RWMutex{}}
 
 	if err := exporter.CleanupLingeringTmpExportFiles(); err != nil {
 		pkgLogger.Warnn("could not cleanup lingering export files: %w", obskit.Error(err))
@@ -141,7 +141,7 @@ func exportPath() (baseDir string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
-	baseDir = path.Join(tmpDir, "exportV2")
+	baseDir = filepath.Join(tmpDir, "exportV2")
 	if err := os.MkdirAll(baseDir, 0o700); err != nil {
 		return "", fmt.Errorf("could not create tmp dir: %w", err)
 	}

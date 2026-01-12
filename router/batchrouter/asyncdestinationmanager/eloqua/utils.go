@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -60,18 +60,16 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 	_, _ = file.Seek(0, 0)
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(nil, bufferSize)
-	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", 0, err
 	}
-	folderPath := path.Join(tmpDirPath, localTmpDirName)
+	folderPath := filepath.Join(tmpDirPath, misc.RudderAsyncDestinationLogs)
 	_, e := os.Stat(folderPath)
 	if os.IsNotExist(e) {
 		folderPath, _ = os.MkdirTemp(folderPath, "")
 	}
-	path := path.Join(folderPath, uuid.NewString())
-	// path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
+	path := filepath.Join(folderPath, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	csvFile, err := os.Create(csvFilePath)
 	if err != nil {
