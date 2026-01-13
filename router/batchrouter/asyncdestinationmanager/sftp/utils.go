@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -199,12 +198,11 @@ func generateCSVFile(filePath string, sortColumnNames bool) (string, error) {
 }
 
 func getTempFilePath() (string, error) {
-	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return "", err
 	}
-	folderPath := path.Join(tmpDirPath, localTmpDirName)
+	folderPath := filepath.Join(tmpDirPath, misc.RudderAsyncDestinationLogs)
 	_, e := os.Stat(folderPath)
 	if os.IsNotExist(e) {
 		if err := os.MkdirAll(folderPath, os.ModePerm); err != nil {

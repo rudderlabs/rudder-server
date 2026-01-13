@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 
@@ -183,7 +182,6 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
-				rmetrics.NewPendingEventsRegistry(),
 			)
 		})
 	})
@@ -206,7 +204,6 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.Default,
-				rmetrics.NewPendingEventsRegistry(),
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -277,8 +274,8 @@ var _ = Describe("BatchRouter", func() {
 				return res, nil
 			}).AnyTimes()
 
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, `{}`, 1)
 				}).Return(nil)
@@ -288,8 +285,8 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
@@ -324,7 +321,6 @@ var _ = Describe("BatchRouter", func() {
 				rsources.NewNoOpService(),
 				destinationdebugger.NewNoOpService(),
 				config.New(),
-				rmetrics.NewPendingEventsRegistry(),
 			)
 
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
@@ -407,8 +403,8 @@ var _ = Describe("BatchRouter", func() {
 			c.mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
-			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
+				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
 					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
 					cancel()
@@ -625,7 +621,6 @@ func TestBatchRouter(t *testing.T) {
 		rsources.NewNoOpService(),
 		destinationdebugger.NewNoOpService(),
 		c,
-		rmetrics.NewPendingEventsRegistry(),
 	)
 
 	batchrouter.minIdleSleep = config.SingleValueLoader(time.Microsecond)

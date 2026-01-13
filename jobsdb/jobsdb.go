@@ -254,14 +254,14 @@ type JobsDB interface {
 	WithUpdateSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx UpdateSafeTx) error) error
 
 	// UpdateJobStatus updates the provided job statuses
-	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT) error
 
 	// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
 	// Please ensure that you are using an UpdateSafeTx, e.g.
 	//    jobsdb.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
-	//	      jobsdb.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
+	//	      jobsdb.UpdateJobStatusInTx(ctx, tx, statusList)
 	//    })
-	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
+	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT) error
 
 	/* Queries */
 
@@ -350,14 +350,14 @@ customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 IMP NOTE: AcquireUpdateJobStatusLocks Should be called before calling this function
 */
-func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT) error {
 	updateCmd := func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
 		if len(statusList) == 0 {
 			return nil
 		}
-		tags := statTags{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
+		tags := statTags{}
 		command := func() error {
-			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList, customValFilters, parameterFilters)
+			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList)
 		}
 		err := executeDbRequest(jd, newWriteDbRequest("update_job_status", &tags, command))
 		return err
@@ -389,6 +389,7 @@ type JobStatusT struct {
 	JobParameters json.RawMessage `json:"-"`           // not stored in DB
 	WorkspaceId   string          `json:"WorkspaceId"` // TODO: do we really need this field stored in DB?
 	PartitionID   string          `json:"-"`           // not stored in DB
+	CustomVal     string          `json:"-"`           // not stored in DB
 }
 
 type ConnectionDetails struct {
@@ -711,6 +712,7 @@ var (
 	Migrated  = jobStateT{isValid: true, isTerminal: true, State: "migrated"}
 	Filtered  = jobStateT{isValid: true, isTerminal: true, State: "filtered"}
 
+	terminalStates         map[string]struct{}
 	validTerminalStates    []string
 	validNonTerminalStates []string
 )
@@ -755,11 +757,13 @@ func (ot OwnerType) Identifier() string {
 }
 
 func init() {
+	terminalStates = make(map[string]struct{})
 	for _, js := range jobStates {
 		if !js.isValid {
 			continue
 		}
 		if js.isTerminal {
+			terminalStates[js.State] = struct{}{}
 			validTerminalStates = append(validTerminalStates, js.State)
 		} else {
 			validNonTerminalStates = append(validNonTerminalStates, js.State)
@@ -1961,7 +1965,8 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 	queryString := `WITH pending AS (
 	SELECT
 		j.workspace_id AS workspace_id,
-		j.custom_val AS custom_val
+		j.custom_val AS custom_val,
+		j.parameters->>'destination_id' AS destination_id
 	FROM
 		%[1]q j
 		LEFT JOIN (SELECT DISTINCT ON (job_id) job_id, job_state FROM %[2]q WHERE exec_time < $1 ORDER BY job_id ASC, id DESC) s ON j.job_id = s.job_id
@@ -1971,8 +1976,9 @@ func (jd *Handle) GetPileUpCounts(ctx context.Context, cutoffTime time.Time, inc
 SELECT
 	workspace_id,
 	custom_val,
+	destination_id,
 	COUNT(*)
-FROM pending GROUP BY workspace_id, custom_val`
+FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 
 	g, ctx := errgroup.WithContext(ctx)
 	const defaultConcurrency = 4
@@ -1999,14 +2005,14 @@ FROM pending GROUP BY workspace_id, custom_val`
 			}()
 			for rows.Next() {
 				var (
-					workspace, customVal sql.NullString
-					count                sql.NullInt64
+					workspace, customVal, destinationID sql.NullString
+					count                               sql.NullInt64
 				)
-				if err := rows.Scan(&workspace, &customVal, &count); err != nil {
+				if err := rows.Scan(&workspace, &customVal, &destinationID, &count); err != nil {
 					return fmt.Errorf("scanning pileup counts rows for %q: %w", ds.JobTable, err)
 				}
 				if count.Valid {
-					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, float64(count.Int64))
+					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, rmetrics.All, float64(count.Int64))
 				}
 			}
 			if err = rows.Err(); err != nil {
@@ -2371,6 +2377,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 			job.LastJobStatus.JobParameters = job.Parameters
 			job.LastJobStatus.WorkspaceId = job.WorkspaceId
 			job.LastJobStatus.PartitionID = job.PartitionID
+			job.LastJobStatus.CustomVal = job.CustomVal
 		} else {
 			resultsetStates[Unprocessed.State] = struct{}{}
 		}
@@ -2430,13 +2437,16 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 }
 
 // updateJobStatusStats is a map containing statistics of job status updates grouped by: partition -> workspace -> state -> set of params (stringified) -> stats
-type updateJobStatusStats map[partitionIDKey]map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats
+type updateJobStatusStats map[partitionIDKey]map[workspaceIDKey]map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats
 
 // partitionIDKey represents partition id as key
 type partitionIDKey string
 
 // workspaceIDKey represents workspace id as key
 type workspaceIDKey string
+
+// customValKey represents custom value as key
+type customValKey string
 
 // jobStateKey represents job state as key (failed, succeeded, etc)
 type jobStateKey string
@@ -2448,24 +2458,29 @@ type parameterFiltersKey string
 func (ujss updateJobStatusStats) Merge(other updateJobStatusStats) {
 	for partitionID, workspaces := range other {
 		if _, ok := ujss[partitionID]; !ok {
-			ujss[partitionID] = make(map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+			ujss[partitionID] = make(map[workspaceIDKey]map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 		}
-		for ws, states := range workspaces {
+		for ws, customVals := range workspaces {
 			if _, ok := ujss[partitionID][ws]; !ok {
-				ujss[partitionID][ws] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+				ujss[partitionID][ws] = make(map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
-			for state, paramsMetrics := range states {
-				if _, ok := ujss[partitionID][ws][state]; !ok {
-					ujss[partitionID][ws][state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
+			for cv, states := range customVals {
+				if _, ok := ujss[partitionID][ws][cv]; !ok {
+					ujss[partitionID][ws][cv] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 				}
-				for params, metrics := range paramsMetrics {
-					existingMetrics, ok := ujss[partitionID][ws][state][params]
-					if !ok {
-						existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
-						ujss[partitionID][ws][state][params] = existingMetrics
+				for state, paramsMetrics := range states {
+					if _, ok := ujss[partitionID][ws][cv][state]; !ok {
+						ujss[partitionID][ws][cv][state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 					}
-					existingMetrics.count += metrics.count
-					existingMetrics.bytes += metrics.bytes
+					for params, metrics := range paramsMetrics {
+						existingMetrics, ok := ujss[partitionID][ws][cv][state][params]
+						if !ok {
+							existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
+							ujss[partitionID][ws][cv][state][params] = existingMetrics
+						}
+						existingMetrics.count += metrics.count
+						existingMetrics.bytes += metrics.bytes
+					}
 				}
 			}
 		}
@@ -2473,22 +2488,27 @@ func (ujss updateJobStatusStats) Merge(other updateJobStatusStats) {
 }
 
 // Aggregates metrics by state across all workspaces
-func (ujss updateJobStatusStats) StatsByState() map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats {
-	result := make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+func (ujss updateJobStatusStats) StatsByCustomValAndState() map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats {
+	result := make(map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 	for _, workspaces := range ujss {
-		for _, states := range workspaces {
-			for state, paramsMetrics := range states {
-				if _, ok := result[state]; !ok {
-					result[state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
+		for _, customVals := range workspaces {
+			for customVal, states := range customVals {
+				if _, ok := result[customVal]; !ok {
+					result[customVal] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 				}
-				for params, metrics := range paramsMetrics {
-					existingMetrics, ok := result[state][params]
-					if !ok {
-						existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
-						result[state][params] = existingMetrics
+				for state, paramsMetrics := range states {
+					if _, ok := result[customVal][state]; !ok {
+						result[customVal][state] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 					}
-					existingMetrics.count += metrics.count
-					existingMetrics.bytes += metrics.bytes
+					for params, metrics := range paramsMetrics {
+						existingMetrics, ok := result[customVal][state][params]
+						if !ok {
+							existingMetrics = &UpdateJobStatusStats{parameters: metrics.parameters}
+							result[customVal][state][params] = existingMetrics
+						}
+						existingMetrics.count += metrics.count
+						existingMetrics.bytes += metrics.bytes
+					}
 				}
 			}
 		}
@@ -2506,12 +2526,12 @@ type UpdateJobStatusStats struct {
 	bytes int
 }
 
-func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT, tags statTags) (updatedStates updateJobStatusStats, err error) {
+func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT, statusList []*JobStatusT) (updatedStates updateJobStatusStats, err error) {
 	if len(statusList) == 0 {
 		return updatedStates, err
 	}
 
-	defer jd.getTimerStat("update_job_status_ds_time", &tags).RecordDuration()()
+	defer jd.getTimerStat("update_job_status_ds_time", nil).RecordDuration()()
 	updatedStates = updateJobStatusStats{}
 	store := func() error {
 		updatedStates = updateJobStatusStats{} // reset in case of retry
@@ -2527,22 +2547,25 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 			if partitionID == "" {
 				if jd.conf.numPartitions > 0 && jd.conf.warnOnStatusMissingPartitionID.Load() {
 					// log a warning if partition id is not set but partitioning is enabled
-					fields := lo.MapToSlice(tags.getStatsTags(jd.tablePrefix), func(k, v string) logger.Field {
-						return logger.NewStringField(k, v)
-					})
-					fields = append(fields, logger.NewIntField("job_id", status.JobID))
+					fields := []logger.Field{
+						logger.NewStringField("tablePrefix", jd.tablePrefix),
+						logger.NewIntField("job_id", status.JobID),
+					}
 					jd.logger.Warnn("Job status partition id is empty while partitioning is enabled, using none", fields...)
 				}
 				partitionID = "none"
 			}
 			if _, ok := updatedStates[partitionIDKey(partitionID)]; !ok {
-				updatedStates[partitionIDKey(partitionID)] = make(map[workspaceIDKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+				updatedStates[partitionIDKey(partitionID)] = make(map[workspaceIDKey]map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
 			if _, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)]; !ok {
-				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)] = make(map[customValKey]map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
-			if _, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)]; !ok {
-				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
+			if _, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)]; !ok {
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)] = make(map[jobStateKey]map[parameterFiltersKey]*UpdateJobStatusStats)
+			}
+			if _, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)][jobStateKey(status.JobState)]; !ok {
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)][jobStateKey(status.JobState)] = make(map[parameterFiltersKey]*UpdateJobStatusStats)
 			}
 			var parameters ParameterFilterList
 			var parametersKey parameterFiltersKey
@@ -2554,10 +2577,10 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 				parametersKey = parameterFiltersKey(parameters.String())
 
 			}
-			pm, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)][parametersKey]
+			pm, ok := updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)][jobStateKey(status.JobState)][parametersKey]
 			if !ok {
 				pm = &UpdateJobStatusStats{parameters: parameters}
-				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][jobStateKey(status.JobState)][parametersKey] = pm
+				updatedStates[partitionIDKey(partitionID)][workspaceIDKey(status.WorkspaceId)][customValKey(status.CustomVal)][jobStateKey(status.JobState)][parametersKey] = pm
 			}
 			pm.count++
 			pm.bytes += len(status.ErrorResponse)
@@ -2992,9 +3015,9 @@ func (jd *Handle) recoverFromJournal(owner OwnerType) {
 	jd.recoverFromCrash(owner, mainGoRoutine)
 }
 
-func (jd *Handle) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *Handle) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT) error {
 	return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
-		return jd.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
+		return jd.UpdateJobStatusInTx(ctx, tx, statusList)
 	})
 }
 
@@ -3003,19 +3026,12 @@ internalUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
+func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT) error {
 	// capture stats
-	tags := statTags{
-		CustomValFilters: customValFilters,
-		ParameterFilters: parameterFilters,
-	}
-	defer jd.getTimerStat(
-		"update_job_status_time",
-		&tags,
-	).RecordDuration()()
+	defer jd.getTimerStat("update_job_status_time", nil).RecordDuration()()
 
 	// do update
-	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, dsList, dsRangeList, statusList, tags)
+	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, dsList, dsRangeList, statusList)
 	if err != nil {
 		jd.logger.Infon("Error occurred while updating job statuses",
 			logger.NewStringField("tablePrefix", jd.tablePrefix),
@@ -3038,21 +3054,27 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 					if len(wsStats) == 0 { // if no keys, we need to invalidate all keys
 						jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), nil, nil, nil)
 					}
-					for state, parametersStats := range wsStats {
-						stateList := []string{string(state)}
-						parameterFilters := lo.UniqBy( // gather unique parameter filters
-							lo.FlatMap(
-								lo.Values(parametersStats), // from all JobStatusMetrics
-								func(ujss *UpdateJobStatusStats, _ int) []ParameterFilterT {
-									return ujss.parameters
+					for customVal, customValStats := range wsStats {
+						if len(customValStats) == 0 { // if no keys, we need to invalidate all keys
+							jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), []string{string(customVal)}, nil, nil)
+							continue
+						}
+						for state, parametersStats := range customValStats {
+							stateList := []string{string(state)}
+							parameterFilters := lo.UniqBy( // gather unique parameter filters
+								lo.FlatMap(
+									lo.Values(parametersStats), // from all JobStatusMetrics
+									func(ujss *UpdateJobStatusStats, _ int) []ParameterFilterT {
+										return ujss.parameters
+									},
+								),
+								func(pf ParameterFilterT) string {
+									return pf.String() // uniqueness by string representation
 								},
-							),
-							func(pf ParameterFilterT) string {
-								return pf.String() // uniqueness by string representation
-							},
-						)
-						// invalidate cache for this combination
-						jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), customValFilters, stateList, parameterFilters)
+							)
+							// invalidate cache for this combination
+							jd.noResultsCache.Invalidate(ds.Index, []string{string(partition)}, string(workspace), []string{string(customVal)}, stateList, parameterFilters)
+						}
 					}
 				}
 			}
@@ -3066,18 +3088,19 @@ func (jd *Handle) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsLis
 		for _, dsStats := range updatedStatesByDS {
 			merged.Merge(dsStats)
 		}
-		statsByState := merged.StatsByState()
-		for state, parametersMap := range statsByState {
-			for _, metrics := range parametersMap {
-				statTags := tags.getStatsTags(jd.tablePrefix)
-				statTags["jobState"] = string(state)
-				if len(parameterFilters) == 0 { // only add parameter filters if not already set
+		statsByCustomValAndState := merged.StatsByCustomValAndState()
+		for customVal, statsByState := range statsByCustomValAndState {
+			for state, parametersMap := range statsByState {
+				for _, metrics := range parametersMap {
+					statTags := (&statTags{}).getStatsTags(jd.tablePrefix)
+					statTags["jobState"] = string(state)
+					statTags["customVal"] = string(customVal)
 					for _, pf := range metrics.parameters {
 						statTags[pf.Name] = pf.Value
 					}
+					jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(metrics.count)
+					jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(metrics.bytes)
 				}
-				jd.stats.NewTaggedStat("jobsdb_updated_jobs", stats.CountType, statTags).Count(metrics.count)
-				jd.stats.NewTaggedStat("jobsdb_updated_bytes", stats.CountType, statTags).Count(metrics.bytes)
 			}
 		}
 	})
@@ -3090,7 +3113,7 @@ doUpdateJobStatusInTx updates the status of a batch of jobs
 customValFilters[] is passed, so we can efficiently mark empty cache
 Later we can move this to query
 */
-func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT, tags statTags) (updatedStatesByDS map[dataSetT]updateJobStatusStats, err error) {
+func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []dataSetT, dsRangeList []dataSetRangeT, statusList []*JobStatusT) (updatedStatesByDS map[dataSetT]updateJobStatusStats, err error) {
 	if len(statusList) == 0 {
 		return updatedStatesByDS, err
 	}
@@ -3124,7 +3147,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 					)
 				}
 				var updatedStates updateJobStatusStats
-				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
+				updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i])
 				if err != nil {
 					return updatedStatesByDS, err
 				}
@@ -3145,7 +3168,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 				logger.NewIntField("index", int64(i)),
 			)
 			var updatedStates updateJobStatusStats
-			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i], tags)
+			updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, ds.ds, statusList[lastPos:i])
 			if err != nil {
 				return updatedStatesByDS, err
 			}
@@ -3167,7 +3190,7 @@ func (jd *Handle) doUpdateJobStatusInTx(ctx context.Context, tx *Tx, dsList []da
 			logger.NewIntField("jobID", statusList[lastPos].JobID),
 			logger.NewIntField("lenStatusList", int64(len(statusList))))
 		var updatedStates updateJobStatusStats
-		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
+		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:])
 		if err != nil {
 			return updatedStatesByDS, err
 		}

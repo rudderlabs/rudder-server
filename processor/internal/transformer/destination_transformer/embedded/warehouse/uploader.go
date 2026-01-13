@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -54,7 +54,7 @@ func (t *Transformer) compareResponsesAndUpload(ctx context.Context, events []ty
 		return
 	}
 
-	objName := path.Join("embedded-wt-samples", t.config.instanceID, uuid.NewString()) + ".log.gz"
+	objName := filepath.Join("embedded-wt-samples", t.config.instanceID, uuid.NewString()) + ".log.gz"
 	uploadFile, err := t.loggedSamplesUploader.UploadReader(ctx, objName, &b)
 	if err != nil {
 		t.logger.Warnn("Unable to upload sample diff", obskit.Error(err))

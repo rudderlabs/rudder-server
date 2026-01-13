@@ -36,7 +36,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -57,7 +56,6 @@ type Handle struct {
 	rsourcesService            rsources.JobService
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	debugger                   destinationdebugger.DestinationDebugger
-	pendingEventsRegistry      rmetrics.PendingEventsRegistry
 	adaptiveLimit              func(int64) int64
 
 	// configuration
@@ -229,7 +227,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		flushTime = time.Now()
 		// Mark the jobs as executing
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
-			return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destType}, nil)
+			return rt.jobsDB.UpdateJobStatus(ctx, statusList)
 		}, rt.sendRetryUpdateStats)
 		if err != nil {
 			rt.logger.Errorn("Error occurred while marking jobs statuses as executing. Panicking", obskit.DestinationType(rt.destType), obskit.Error(err))
@@ -300,6 +298,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
 			}
 			statusList = append(statusList, &status)
 			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason, parameters: parameters})
@@ -405,7 +404,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
-	routerWorkspaceJobStatusCount := make(map[string]int)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
@@ -415,7 +413,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		rt.throttlerFactory.GetPickupThrottler(rt.destType, parameters.DestinationID, workerJobStatus.parameters.EventType).ResponseCodeReceived(errorCode) // send response code to throttler
 		// Update metrics maps
 		// REPORTING - ROUTER - START
-		workspaceID := workerJobStatus.status.WorkspaceId
 		eventName := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_name")
 		eventType := jsonparser.GetStringOrEmpty(workerJobStatus.job.Parameters, "event_type")
 		jobIDConnectionDetailsMap[workerJobStatus.job.JobID] = jobsdb.ConnectionDetails{
@@ -464,11 +461,9 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				}
 			}
 		case jobsdb.Succeeded.State, jobsdb.Filtered.State:
-			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
 		case jobsdb.Aborted.State:
-			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 			sd.FailedMessages = append(sd.FailedMessages, &utilTypes.FailedMessage{MessageID: parameters.MessageID, ReceivedAt: parameters.ParseReceivedAtTime()})
 			completedJobsList = append(completedJobsList, workerJobStatus.job)
@@ -527,7 +522,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.reloadableConfig.jobsDBCommandTimeout.Load(), rt.reloadableConfig.jobdDBMaxRetries.Load(), func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destType}, nil)
+				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList)
 				if err != nil {
 					return fmt.Errorf("updating %s jobs statuses: %w", rt.destType, err)
 				}
@@ -547,9 +542,6 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			panic(err)
 		}
 		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
-		for workspace, jobCount := range routerWorkspaceJobStatusCount {
-			rt.pendingEventsRegistry.DecreasePendingEvents("rt", workspace, rt.destType, float64(jobCount))
-		}
 	}
 
 	if rt.guaranteeUserEventOrder {

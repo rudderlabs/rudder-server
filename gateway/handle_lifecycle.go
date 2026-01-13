@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -290,7 +290,7 @@ func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, 
 		case <-ctx.Done():
 			return
 		case upload := <-uploads:
-			fileName := path.Join("gw-failed-events", instanceName, time.Now().Format("2006-01-02"), uuid.New().String())
+			fileName := filepath.Join("gw-failed-events", instanceName, time.Now().Format("2006-01-02"), uuid.New().String())
 			uploadedFile, err := fm.UploadReader(ctx, fileName, bytes.NewReader(upload.payload))
 			if err != nil {
 				log.Errorn("cannot upload payload dump", obskit.Error(err))

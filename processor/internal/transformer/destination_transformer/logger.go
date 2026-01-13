@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"path"
+	"path/filepath"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -46,7 +46,7 @@ func (c *Client) compareAndLog(
 
 	c.loggedEvents.Add(noOfDifferences)
 
-	objName := path.Join("embedded-dt-samples", config.GetKubeNamespace(), uuid.New().String())
+	objName := filepath.Join("embedded-dt-samples", config.GetKubeNamespace(), uuid.New().String())
 	differingResponseJSON, err := jsonrs.Marshal(differingResponse)
 	if err != nil {
 		c.loggedEvents.Add(-noOfDifferences)
