@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/allisson/go-pglock/v3"
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/spaolacci/murmur3"
@@ -23,6 +23,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 )
@@ -314,13 +315,15 @@ func (n *Notifier) migrate() error {
 		return m.Migrate("pg_notifier_queue")
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		n.logger.Warnn("retrying warehouse database migration",
-			logger.NewDurationField("backoffDelay", t),
-			obskit.Error(err))
-	})
+	err := backoffvoid.Retry(context.TODO(),
+		operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			n.logger.Warnn("retrying warehouse database migration",
+				logger.NewDurationField("backoffDelay", t),
+				obskit.Error(err))
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("could not migrate pg_notifier_queue: %w", err)
 	}
@@ -341,13 +344,15 @@ func (n *Notifier) migrateAlways() error {
 		})
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		n.logger.Warnn("retrying warehouse database run always migration",
-			logger.NewDurationField("backoffDelay", t),
-			obskit.Error(err))
-	})
+	err := backoffvoid.Retry(context.TODO(),
+		operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			n.logger.Warnn("retrying warehouse database run always migration",
+				logger.NewDurationField("backoffDelay", t),
+				obskit.Error(err))
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("could not migrate pg_notifier_queue always: %w", err)
 	}

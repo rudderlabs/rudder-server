@@ -13,7 +13,7 @@ import (
 	"github.com/bufbuild/httplb/conn"
 	"github.com/bufbuild/httplb/picker"
 	"github.com/bufbuild/httplb/resolver"
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
@@ -210,7 +210,6 @@ func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Co
 			Multiplier:      config.GetFloat64Var(defaultRetryRudderErrorsMultiplier, "Transformer.Client.Retryable.multiplier"),
 		}
 	}
-
 	return retryablehttp.NewRetryableHTTPClient(
 		retryableConfig,
 		retryablehttp.WithHttpClient(baseClient),

@@ -12,9 +12,10 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 )
@@ -154,13 +155,7 @@ func NewClient(baseURL string, fns ...OptFn) AlertSender {
 }
 
 func (c *Client) retry(ctx context.Context, fn func() error) error {
-	var opts backoff.BackOff
-
-	opts = backoff.NewExponentialBackOff()
-	opts = backoff.WithMaxRetries(opts, uint64(c.retries))
-	opts = backoff.WithContext(opts, ctx)
-
-	return backoff.Retry(fn, opts)
+	return backoffvoid.Retry(ctx, fn, backoff.WithMaxTries(uint(c.retries+1)))
 }
 
 func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
