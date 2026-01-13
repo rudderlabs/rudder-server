@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.65.2](https://github.com/rudderlabs/rudder-server/compare/v1.65.1...v1.65.2) (2026-01-13)
+
+
+### Bug Fixes
+
+* klaviyo bulk upload manager panics after upload error ([#6603](https://github.com/rudderlabs/rudder-server/issues/6603)) ([41ae4bb](https://github.com/rudderlabs/rudder-server/commit/41ae4bbd919314d8a3263faddb1ad88e5834dfad))
+
 ## [1.65.1](https://github.com/rudderlabs/rudder-server/compare/v1.65.0...v1.65.1) (2026-01-08)
 
 
