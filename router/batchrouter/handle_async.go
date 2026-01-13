@@ -521,6 +521,7 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 		brt.asyncDestinationStruct[destinationID].UploadMutex.Lock()
 		defer brt.asyncDestinationStruct[destinationID].UploadMutex.Unlock()
 		if brt.asyncDestinationStruct[destinationID].CanUpload {
+			// Waiting for previous upload to complete, mark all jobs as failed
 			out := common.AsyncUploadOutput{
 				DestinationID: destinationID,
 			}
@@ -528,7 +529,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 				out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 				out.FailedReason = `Jobs flowed over the prescribed limit`
 			}
-
 			brt.setMultipleJobStatus(setMultipleJobStatusParams{
 				asyncJobMetadata: newAsyncJobMetadata(batchJobs.Jobs),
 				AsyncOutput:      out,
@@ -537,8 +537,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 			return nil
 		}
 	}
-
-	var skipUpdateStructJobMetadataMaps bool
 	if !ok || !brt.asyncDestinationStruct[destinationID].Exists {
 		if !ok {
 			asyncStruct := &common.AsyncDestinationStruct{}
@@ -547,25 +545,20 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 			brt.asyncDestinationStruct[destinationID] = asyncStruct
 		}
 		brt.asyncStructSetup(batchJobs.Connection.Source.ID, destinationID, batchJobs.Jobs)
-		skipUpdateStructJobMetadataMaps = true
 	}
-
 	file, err := os.OpenFile(brt.asyncDestinationStruct[destinationID].FileName, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		err = fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error())
 		panic(err)
 	}
 	defer func() { _ = file.Close() }()
-	var overFlow bool
 	var overFlownJobs []*jobsdb.JobT
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 	for _, job := range batchJobs.Jobs {
 		if !IsAsyncDestinationLimitNotReached(brt, destinationID) {
-			overFlow = true
 			overFlownJobs = append(overFlownJobs, job)
 			continue
 		}
-
 		fileData, err := brt.asyncDestinationStruct[destinationID].Manager.Transform(job)
 		if err != nil {
 			failedAsyncJobs := BatchedJobs{
@@ -589,9 +582,15 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 		brt.asyncDestinationStruct[destinationID].Count = brt.asyncDestinationStruct[destinationID].Count + 1
 		brt.asyncDestinationStruct[destinationID].DestinationUploadURL = gjson.Get(string(job.EventPayload), "endpoint").String()
 
+		brt.asyncDestinationStruct[destinationID].AttemptNums[job.JobID] = job.LastJobStatus.AttemptNum
+		brt.asyncDestinationStruct[destinationID].FirstAttemptedAts[job.JobID] = getFirstAttemptAtFromErrorResponse(job.LastJobStatus.ErrorResponse)
+		brt.asyncDestinationStruct[destinationID].JobParameters[job.JobID] = job.Parameters
+		brt.asyncDestinationStruct[destinationID].PartitionIDs[job.JobID] = job.PartitionID
+
 	}
 
 	if len(overFlownJobs) > 0 {
+		// mark overflown jobs as failed
 		out := common.AsyncUploadOutput{
 			DestinationID: destinationID,
 		}
@@ -599,7 +598,6 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 			out.FailedJobIDs = append(out.FailedJobIDs, job.JobID)
 			out.FailedReason = `Jobs flowed over the prescribed limit`
 		}
-
 		brt.setMultipleJobStatus(
 			setMultipleJobStatusParams{
 				asyncJobMetadata: newAsyncJobMetadata(batchJobs.Jobs),
@@ -607,21 +605,8 @@ func (brt *Handle) sendJobsToStorage(batchJobs BatchedJobs) error {
 				JobsList:         batchJobs.Jobs,
 			},
 		)
-
-		return nil
-	}
-
-	if !skipUpdateStructJobMetadataMaps { // update job metadata maps of asyncDestinationStruct
-		for _, job := range batchJobs.Jobs {
-			brt.asyncDestinationStruct[destinationID].AttemptNums[job.JobID] = job.LastJobStatus.AttemptNum
-			brt.asyncDestinationStruct[destinationID].FirstAttemptedAts[job.JobID] = getFirstAttemptAtFromErrorResponse(job.LastJobStatus.ErrorResponse)
-			brt.asyncDestinationStruct[destinationID].JobParameters[job.JobID] = job.Parameters
-			brt.asyncDestinationStruct[destinationID].PartitionIDs[job.JobID] = job.PartitionID
-		}
-	}
-	if overFlow {
+		// turn on CanUpload flag to true
 		brt.asyncDestinationStruct[destinationID].CanUpload = true
-		return nil
 	}
 
 	return nil
