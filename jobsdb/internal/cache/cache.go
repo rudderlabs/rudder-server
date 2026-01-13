@@ -140,7 +140,7 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 			continue
 		}
 		for _, workspace := range workspaces {
-			if workspace == "" && c.warnOnBranchInvalidation.Load() {
+			if workspace == "" && c.warnOnBranchInvalidation.Load() { // TODO: invalidate entire branch in next release
 				c.logger.Warnn("Cache Invalidation Bug: empty workspace",
 					logger.NewStringField("dataset", dataset),
 					logger.NewStringField("partition", partition),
@@ -168,7 +168,7 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 				continue
 			}
 			for _, customVal := range customVals {
-				if customVal == "" && c.warnOnBranchInvalidation.Load() {
+				if customVal == "" && c.warnOnBranchInvalidation.Load() { // TODO: invalidate entire branch in next release
 					c.logger.Warnn("Cache Invalidation Bug: empty customVal",
 						logger.NewStringField("dataset", dataset),
 						logger.NewStringField("partition", partition),
