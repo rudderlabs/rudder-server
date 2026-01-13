@@ -106,7 +106,7 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 
 	if len(partitions) == 0 { // if no partitions are provided, invalidate all by deleting the partitions's parent node
 		if c.warnOnBranchInvalidation.Load() && (len(customVals) > 0 || len(states) > 0 || len(parameters) > 0) {
-			c.logger.Warnn("Invalidating entire dataset",
+			c.logger.Warnn("Cache Invalidation Bug: invalidating entire dataset",
 				logger.NewStringField("dataset", dataset),
 				logger.NewStringField("partitions", strings.Join(partitions, ",")),
 				logger.NewStringField("workspace", workspace),
@@ -124,7 +124,7 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 	for _, partition := range partitions {
 		if len(workspaces) == 0 { // if no workspace is provided, invalidate all by deleting the workspace's parent node
 			if c.warnOnBranchInvalidation.Load() && (len(customVals) > 0 || len(states) > 0 || len(parameters) > 0) {
-				c.logger.Warnn("Invalidating entire partition",
+				c.logger.Warnn("Cache Invalidation Bug: invalidating entire partition",
 					logger.NewStringField("dataset", dataset),
 					logger.NewStringField("partition", partition),
 					logger.NewStringField("workspace", workspace),
@@ -140,9 +140,19 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 			continue
 		}
 		for _, workspace := range workspaces {
+			if workspace == "" && c.warnOnBranchInvalidation.Load() { // TODO: invalidate entire branch in next release
+				c.logger.Warnn("Cache Invalidation Bug: empty workspace",
+					logger.NewStringField("dataset", dataset),
+					logger.NewStringField("partition", partition),
+					logger.NewStringField("workspace", workspace),
+					logger.NewStringField("customVals", strings.Join(customVals, ",")),
+					logger.NewStringField("states", strings.Join(states, ",")),
+					logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
+				)
+			}
 			if len(customVals) == 0 { // if no custom value is provided, invalidate all by deleting the customVal's parent node
 				if c.warnOnBranchInvalidation.Load() {
-					c.logger.Warnn("Invalidating entire workspace branch",
+					c.logger.Warnn("Cache Invalidation Bug: invalidating entire workspace branch",
 						logger.NewStringField("dataset", dataset),
 						logger.NewStringField("partition", partition),
 						logger.NewStringField("workspace", workspace),
@@ -158,9 +168,19 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 				continue
 			}
 			for _, customVal := range customVals {
+				if customVal == "" && c.warnOnBranchInvalidation.Load() { // TODO: invalidate entire branch in next release
+					c.logger.Warnn("Cache Invalidation Bug: empty customVal",
+						logger.NewStringField("dataset", dataset),
+						logger.NewStringField("partition", partition),
+						logger.NewStringField("workspace", workspace),
+						logger.NewStringField("customVals", strings.Join(customVals, ",")),
+						logger.NewStringField("states", strings.Join(states, ",")),
+						logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
+					)
+				}
 				if len(states) == 0 { // if no state is provided, invalidate all by deleting the state's parent node
 					if c.warnOnBranchInvalidation.Load() {
-						c.logger.Warnn("Invalidating entire customVal branch",
+						c.logger.Warnn("Cache Invalidation Bug: invalidating entire customVal branch",
 							logger.NewStringField("dataset", dataset),
 							logger.NewStringField("partition", partition),
 							logger.NewStringField("workspace", workspace),
@@ -176,9 +196,19 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 					continue
 				}
 				for _, state := range states {
+					if state == "" && c.warnOnBranchInvalidation.Load() {
+						c.logger.Warnn("Cache Invalidation Bug: empty state",
+							logger.NewStringField("dataset", dataset),
+							logger.NewStringField("partition", partition),
+							logger.NewStringField("workspace", workspace),
+							logger.NewStringField("customVals", strings.Join(customVals, ",")),
+							logger.NewStringField("states", strings.Join(states, ",")),
+							logger.NewStringField("parameters", strings.Join(lo.Map(parameters, func(pf T, _ int) string { return pf.GetName() + ":" + pf.GetValue() }), ",")),
+						)
+					}
 					if len(params) == 0 { // if no parameter is provided, invalidate all by deleting the param's parent node
 						if c.warnOnBranchInvalidation.Load() {
-							c.logger.Warnn("Invalidating entire state branch",
+							c.logger.Warnn("Cache Invalidation Bug: invalidating entire state branch",
 								logger.NewStringField("dataset", dataset),
 								logger.NewStringField("partition", partition),
 								logger.NewStringField("workspace", workspace),

@@ -230,9 +230,11 @@ func (p *twoStage) Run(ctx context.Context) error {
 									Parameters:    []byte(`{}`),
 									JobParameters: job.Parameters,
 									WorkspaceId:   job.WorkspaceId,
+									PartitionID:   job.PartitionID,
+									CustomVal:     job.CustomVal,
 								})
 							}
-							if err := readerDB1.UpdateJobStatus(ctx, statusList, []string{customVal}, nil); err != nil {
+							if err := readerDB1.UpdateJobStatus(ctx, statusList); err != nil {
 								if ctx.Err() != nil {
 									return nil // nolint: nilerr
 								}
@@ -305,9 +307,11 @@ func (p *twoStage) Run(ctx context.Context) error {
 									Parameters:    []byte(`{}`),
 									JobParameters: job.Parameters,
 									WorkspaceId:   job.WorkspaceId,
+									PartitionID:   job.PartitionID,
+									CustomVal:     job.CustomVal,
 								})
 							}
-							if err := db2.UpdateJobStatus(ctx, statusList, []string{customVal}, nil); err != nil {
+							if err := db2.UpdateJobStatus(ctx, statusList); err != nil {
 								if ctx.Err() != nil {
 									return nil // nolint: nilerr
 								}

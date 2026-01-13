@@ -200,9 +200,11 @@ func (p *simple) Run(ctx context.Context) error {
 									Parameters:    []byte(`{}`),
 									JobParameters: job.Parameters,
 									WorkspaceId:   job.WorkspaceId,
+									PartitionID:   job.PartitionID,
+									CustomVal:     job.CustomVal,
 								})
 							}
-							if err := readerDB.UpdateJobStatus(ctx, statusList, []string{customVal}, nil); err != nil {
+							if err := readerDB.UpdateJobStatus(ctx, statusList); err != nil {
 								if ctx.Err() != nil {
 									return nil // nolint: nilerr
 								}

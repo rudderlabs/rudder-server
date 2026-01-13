@@ -99,7 +99,8 @@ func TestJobsdbPileupCount(t *testing.T) {
 			ErrorResponse: []byte(`{}`),
 			AttemptNum:    1,
 			ErrorCode:     "999",
-		}}, nil, nil))
+			CustomVal:     res.Jobs[i].CustomVal,
+		}}))
 		if state.isTerminal {
 			actualPendingEvents -= 1
 		}
@@ -158,7 +159,8 @@ func TestJobsdbPileupCount(t *testing.T) {
 				ErrorResponse: []byte(`{}`),
 				AttemptNum:    1,
 				ErrorCode:     "200",
-			}}, nil, nil); err != nil {
+				CustomVal:     job.CustomVal,
+			}}); err != nil {
 				return err
 			}
 			pileupCount.Add(-1)
