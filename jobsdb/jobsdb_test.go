@@ -530,6 +530,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB1.dsListLock.RLock()
+			defer jobsDB1.dsListLock.RUnlock()
 			return len(jobsDB1.getDSList()) == 2
 		},
 		time.Second, time.Millisecond,
@@ -545,6 +547,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB2.dsListLock.RLock()
+			defer jobsDB2.dsListLock.RUnlock()
 			return len(jobsDB2.getDSList()) == 3
 		},
 		10*time.Second, time.Millisecond,
@@ -564,8 +568,12 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB1.dsListLock.RLock()
 			dsLen1 = len(jobsDB1.getDSList())
+			jobsDB1.dsListLock.RUnlock()
+			jobsDB2.dsListLock.RLock()
 			dsLen2 = len(jobsDB2.getDSList())
+			jobsDB2.dsListLock.RUnlock()
 			return dsLen1 == 4 && dsLen2 == 4
 		},
 		time.Second, time.Millisecond,
@@ -725,6 +733,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
+				jobsDB1.dsListLock.RLock()
+				defer jobsDB1.dsListLock.RUnlock()
 				return len(jobsDB1.getDSList()) == 2
 			},
 			10*time.Second, time.Millisecond,
