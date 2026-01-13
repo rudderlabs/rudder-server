@@ -308,8 +308,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 			failedJobs = append(failedJobs, importingJobIDs[idx])
 			kbu.Logger.Errorn("Error while uploading profiles",
 				obskit.Error(err),
-				obskit.DestinationID(destinationID),
-				logger.NewStringField("uploadErrors", uploadResp.Errors.String()))
+				obskit.DestinationID(destinationID))
 			continue
 		}
 
