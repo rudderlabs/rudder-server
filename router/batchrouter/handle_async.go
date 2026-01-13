@@ -722,23 +722,24 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	jobIDConnectionDetailsMap := make(map[int64]jobsdb.ConnectionDetails)
-	getJobParameters := func(jobID int64) stdjson.RawMessage {
+
+	missingJobParameters := map[string][]int64{}
+	getJobParameters := func(state string, jobID int64) stdjson.RawMessage {
 		jobParameters, ok := params.JobParameters[jobID]
 		if !ok {
-			brt.logger.Errorn("Async Destination Bug: no job parameters found for async job, synthezing job parameters",
-				logger.NewIntField("jobId", jobID),
-				obskit.DestinationID(params.AsyncOutput.DestinationID),
-				obskit.DestinationType(brt.destType),
-			)
+			missingJobParameters[state] = append(missingJobParameters[state], jobID)
+			// synthesize job parameters with the destination ID in case of missing job parameters
 			jobParameters = []byte(`{"destination_id":"` + params.AsyncOutput.DestinationID + `"}`)
 		}
 		return jobParameters
 	}
 	if len(params.AsyncOutput.ImportingJobIDs) > 0 {
-		for _, jobId := range lo.Uniq(params.AsyncOutput.ImportingJobIDs) {
+		importingJobIDs := lo.Uniq(params.AsyncOutput.ImportingJobIDs)
+		for _, jobId := range importingJobIDs {
+			jobParameters := getJobParameters(jobsdb.Importing.State, jobId)
 			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: params.AsyncOutput.DestinationID,
-				SourceID:      gjson.GetBytes(params.JobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
@@ -749,7 +750,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				ErrorCode:     "200",
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", routerutils.EmptyPayload),
 				Parameters:    params.AsyncOutput.ImportingParameters,
-				JobParameters: getJobParameters(jobId),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,
 				PartitionID:   params.PartitionIDs[jobId],
 				CustomVal:     brt.destType,
@@ -758,10 +759,12 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 		}
 	}
 	if len(params.AsyncOutput.SucceededJobIDs) > 0 {
-		for _, jobId := range lo.Uniq(params.AsyncOutput.SucceededJobIDs) {
+		succeededJobIDs := lo.Uniq(params.AsyncOutput.SucceededJobIDs)
+		for _, jobId := range succeededJobIDs {
+			jobParameters := getJobParameters(jobsdb.Succeeded.State, jobId)
 			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: params.AsyncOutput.DestinationID,
-				SourceID:      gjson.GetBytes(params.JobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
 			status := jobsdb.JobStatusT{
 				JobID:         jobId,
@@ -772,20 +775,22 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				ErrorCode:     "200",
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(params.AsyncOutput.SuccessResponse)),
 				Parameters:    routerutils.EmptyPayload,
-				JobParameters: getJobParameters(jobId),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,
 				PartitionID:   params.PartitionIDs[jobId],
 				CustomVal:     brt.destType,
 			}
 			statusList = append(statusList, &status)
-			completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, getJobParameters(jobId)))
+			completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, jobParameters))
 		}
 	}
 	if len(params.AsyncOutput.FailedJobIDs) > 0 {
-		for _, jobId := range lo.Uniq(params.AsyncOutput.FailedJobIDs) {
+		failedJobIDs := lo.Uniq(params.AsyncOutput.FailedJobIDs)
+		for _, jobId := range failedJobIDs {
+			jobParameters := getJobParameters(jobsdb.Failed.State, jobId)
 			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: params.AsyncOutput.DestinationID,
-				SourceID:      gjson.GetBytes(params.JobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
 			resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", params.AsyncOutput.FailedReason)
 			status := jobsdb.JobStatusT{
@@ -797,7 +802,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				ErrorCode:     "500",
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", resp),
 				Parameters:    routerutils.EmptyPayload,
-				JobParameters: getJobParameters(jobId),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,
 				PartitionID:   params.PartitionIDs[jobId],
 				CustomVal:     brt.destType,
@@ -808,7 +813,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 
 			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
-				completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, getJobParameters(jobId)))
+				completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, jobParameters))
 			}
 			statusList = append(statusList, &status)
 		}
@@ -816,7 +821,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 	if len(params.AsyncOutput.AbortJobIDs) > 0 {
 		toAbortJobIDs := lo.Uniq(params.AsyncOutput.AbortJobIDs)
 		if len(params.AsyncOutput.SucceededJobIDs) > 0 {
-			if common := lo.Intersect(params.AsyncOutput.SucceededJobIDs, toAbortJobIDs); len(common) > 0 {
+			if common := lo.Intersect(lo.Uniq(params.AsyncOutput.SucceededJobIDs), toAbortJobIDs); len(common) > 0 {
 				// Debugging negative pending events count issue
 				brt.logger.Errorn("Async Destination Bug: same async job IDs are present in both SucceededJobIDs and AbortJobIDs. Removing them from AbortJobIDs",
 					obskit.DestinationType(brt.destType),
@@ -826,9 +831,10 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 			}
 		}
 		for _, jobId := range toAbortJobIDs {
+			jobParameters := getJobParameters(jobsdb.Aborted.State, jobId)
 			jobIDConnectionDetailsMap[jobId] = jobsdb.ConnectionDetails{
 				DestinationID: params.AsyncOutput.DestinationID,
-				SourceID:      gjson.GetBytes(params.JobParameters[jobId], "source_id").String(),
+				SourceID:      gjson.GetBytes(jobParameters, "source_id").String(),
 			}
 			resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "error", params.AsyncOutput.AbortReason)
 			status := jobsdb.JobStatusT{
@@ -840,14 +846,27 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 				ErrorCode:     "400",
 				ErrorResponse: routerutils.EnhanceJsonWithTime(params.FirstAttemptedAts[jobId], "firstAttemptedAt", stdjson.RawMessage(resp)),
 				Parameters:    routerutils.EmptyPayload,
-				JobParameters: getJobParameters(jobId),
+				JobParameters: jobParameters,
 				WorkspaceId:   workspaceID,
 				PartitionID:   params.PartitionIDs[jobId],
 				CustomVal:     brt.destType,
 			}
 			statusList = append(statusList, &status)
-			completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, getJobParameters(jobId)))
+			completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, jobParameters))
 		}
+	}
+
+	if len(missingJobParameters) > 0 {
+		loggerFields := []logger.Field{
+			obskit.DestinationType(brt.destType),
+			obskit.DestinationID(params.AsyncOutput.DestinationID),
+			logger.NewBoolField("attempted", params.Attempted),
+			logger.NewStringField("availableJobIDs", fmt.Sprintf("%+v", lo.Keys(params.JobParameters))),
+		}
+		for state, jobIDs := range missingJobParameters {
+			loggerFields = append(loggerFields, logger.NewStringField(state+"MissingJobIDs", fmt.Sprintf("%+v", jobIDs)))
+		}
+		brt.logger.Errorn("Async Destination Bug: missing job parameters for async jobs", loggerFields...)
 	}
 
 	if len(statusList) == 0 {
