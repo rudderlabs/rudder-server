@@ -8,10 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -49,14 +50,7 @@ func (r *Router) retryTrackSync(ctx context.Context, warehouse *model.Warehouse)
 	o := func() error {
 		return r.trackSync(ctx, warehouse)
 	}
-	b := backoff.WithContext(
-		backoff.WithMaxRetries(
-			backoff.NewExponentialBackOff(),
-			uint64(r.config.cronTrackerRetries.Load()),
-		),
-		ctx,
-	)
-	return backoff.Retry(o, b)
+	return backoffvoid.Retry(ctx, o, backoff.WithMaxTries(uint(r.config.cronTrackerRetries.Load()+1)))
 }
 
 func (r *Router) trackSync(ctx context.Context, warehouse *model.Warehouse) error {

@@ -15,7 +15,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -26,6 +26,7 @@ import (
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -208,12 +209,9 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		respData   []byte
 	)
 
-	retryStrategy := backoff.NewExponentialBackOff()
-	// MaxInterval caps the RetryInterval
-	retryStrategy.MaxInterval = c.config.maxRetryBackoffInterval.Load()
-	retryStrategy.MaxElapsedTime = c.config.maxEscapedTimeIncludingRetries.Load()
-
-	err := backoff.RetryNotify(
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = c.config.maxRetryBackoffInterval.Load()
+	err := backoffvoid.Retry(ctx,
 		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var err error
 			requestStartTime := time.Now()
@@ -253,8 +251,9 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 			return nil
 		}, c.stat, labels),
-		backoff.WithMaxRetries(retryStrategy, uint64(c.config.maxRetry.Load())),
-		func(err error, t time.Duration) {
+		backoff.WithMaxElapsedTime(c.config.maxEscapedTimeIncludingRetries.Load()),
+		backoff.WithMaxTries(uint(c.config.maxRetry.Load()+1)),
+		backoff.WithNotify(func(err error, t time.Duration) {
 			retryCount++
 			c.log.Warnn(
 				"Source hydration HTTP connection error",
@@ -264,7 +263,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 					obskit.Error(err),
 				)...,
 			)
-		},
+		}),
 	)
 	if err != nil {
 		return nil, err

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	pulsarType "github.com/apache/pulsar-client-go/pulsar"
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/batcher"
 	"github.com/rudderlabs/rudder-server/schema-forwarder/internal/transformer"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 )
 
@@ -188,11 +189,14 @@ func (jf *JobsForwarder) Start() error {
 				}
 
 				// Retry to forward the batches to pulsar until there are no more messageBatches to retry or until maxRetryElapsedTime is reached
-				expB := backoff.NewExponentialBackOff()
-				expB.InitialInterval = jf.initialRetryInterval.Load()
-				expB.MaxInterval = jf.maxRetryInterval.Load()
-				expB.MaxElapsedTime = jf.maxRetryElapsedTime.Load()
-				if err = backoff.Retry(tryForward, backoff.WithContext(expB, ctx)); err != nil {
+				bo := backoff.NewExponentialBackOff()
+				bo.InitialInterval = jf.initialRetryInterval.Load()
+				bo.MaxInterval = jf.maxRetryInterval.Load()
+				if err = backoffvoid.Retry(ctx,
+					tryForward,
+					backoff.WithBackOff(bo),
+					backoff.WithMaxElapsedTime(jf.maxRetryElapsedTime.Load()),
+				); err != nil {
 					errorResponse, _ := jsonrs.Marshal(map[string]string{"error": err.Error()})
 					var abortedCount int
 					for _, schemaBatch := range messageBatches { // mark all messageBatches left over as aborted

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
@@ -19,6 +19,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/backend-config/dynamicconfig"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -97,12 +98,14 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 		return fetchError
 	}
 
-	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		wc.logger.Warnn("Failed to fetch backend config from API",
-			obskit.Error(err), logger.NewDurationField("retryAfter", t),
-		)
-	})
+	err := backoffvoid.Retry(ctx, operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			wc.logger.Warnn("Failed to fetch backend config from API",
+				obskit.Error(err), logger.NewDurationField("retryAfter", t),
+			)
+		}),
+	)
 	if err != nil {
 		if ctx.Err() == nil {
 			wc.logger.Errorn("Error sending request to the server", obskit.Error(err))

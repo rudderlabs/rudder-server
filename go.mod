@@ -50,8 +50,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.40.2
 	github.com/aws/smithy-go v1.23.2
 	github.com/bufbuild/httplb v0.4.1
-	github.com/cenkalti/backoff v2.2.1+incompatible
-	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/confluentinc/confluent-kafka-go/v2 v2.11.1
 	github.com/databricks/databricks-sql-go v1.8.0
 	github.com/dgraph-io/badger/v4 v4.8.0
@@ -193,7 +192,7 @@ require (
 	github.com/bitfield/gotestdox v0.2.2 // indirect
 	github.com/bits-and-blooms/bitset v1.14.3 // indirect
 	github.com/buraksezer/consistent v0.10.0 // indirect
-	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/cncf/xds/go v0.0.0-20251022180443-0feb69152e9f // indirect

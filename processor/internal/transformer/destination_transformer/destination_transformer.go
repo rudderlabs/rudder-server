@@ -19,7 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
 	transformerfs "github.com/rudderlabs/rudder-server/services/transformer"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/kafka"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/pubsub"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -285,11 +286,9 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		resp       *http.Response
 		respData   []byte
 	)
-	retryStrategy := backoff.NewExponentialBackOff()
-	// MaxInterval caps the RetryInterval
-	retryStrategy.MaxInterval = d.config.maxRetryBackoffInterval.Load()
-
-	err := backoff.RetryNotify(
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = d.config.maxRetryBackoffInterval.Load()
+	err := backoffvoid.Retry(ctx,
 		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()
@@ -331,15 +330,16 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			}
 			return reqErr
 		}, d.stat, labels),
-		backoff.WithMaxRetries(retryStrategy, uint64(d.config.maxRetry.Load())),
-		func(err error, t time.Duration) {
+		backoff.WithBackOff(bo),
+		backoff.WithMaxTries(uint(d.config.maxRetry.Load()+1)),
+		backoff.WithNotify(func(err error, t time.Duration) {
 			retryCount++
 			d.log.Warnn(
 				"JS HTTP connection error",
 				obskit.Error(err),
 				logger.NewIntField("attempts", int64(retryCount)),
 			)
-		},
+		}),
 	)
 	if err != nil {
 		if d.config.failOnError.Load() {
