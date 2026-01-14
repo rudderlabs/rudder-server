@@ -18,7 +18,10 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
-var ErrProcessorStopping = errors.New("processor is stopping")
+var (
+	ErrProcessorStopping           = errors.New("processor is stopping")
+	ErrPermanentTransformerFailure = errors.New("transformer permanent failure")
+)
 
 // SingularEventT single event structure
 type SingularEventT map[string]interface{}

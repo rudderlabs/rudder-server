@@ -1232,7 +1232,7 @@ func TestSourceHydration_TransformerAbort(t *testing.T) {
 			err := jsonrs.NewDecoder(r.Body).Decode(&req)
 			require.NoError(t, err)
 
-			w.Header().Set("X-Rudder-Should-Abort", "true")
+			w.Header().Set("X-Rudder-Permanent-Error", "true")
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = w.Write([]byte("Internal Server Error"))
 		}))
@@ -1273,7 +1273,7 @@ func TestSourceHydration_TransformerAbort(t *testing.T) {
 		}
 
 		resp, err := client.Hydrate(ctx, req)
-		require.ErrorIs(t, err, sourcehydration.ErrPermanentTransformerFailure)
+		require.ErrorIs(t, err, types.ErrPermanentTransformerFailure)
 
 		require.Len(t, resp.Batch, 0)
 		require.Equal(t, reqCount, 1, "should have only made one request before aborting - no retries")
@@ -1287,7 +1287,7 @@ func TestSourceHydration_TransformerAbort(t *testing.T) {
 
 			// Fail the batch with 1 event, succeed others
 			if len(req.Batch) == 1 {
-				w.Header().Set("X-Rudder-Should-Abort", "true")
+				w.Header().Set("X-Rudder-Permanent-Error", "true")
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = w.Write([]byte("Internal Server Error"))
 				return
@@ -1338,7 +1338,7 @@ func TestSourceHydration_TransformerAbort(t *testing.T) {
 		}
 
 		resp, err := client.Hydrate(ctx, req)
-		require.ErrorIs(t, err, sourcehydration.ErrPermanentTransformerFailure)
+		require.ErrorIs(t, err, types.ErrPermanentTransformerFailure)
 
 		require.Len(t, resp.Batch, 0)
 	})
