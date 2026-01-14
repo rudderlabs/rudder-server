@@ -142,6 +142,9 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 		if errors.Is(err, context.Canceled) {
 			return types.SrcHydrationResponse{}, err
 		}
+		if errors.Is(err, types.ErrPermanentTransformerFailure) {
+			return types.SrcHydrationResponse{}, err
+		}
 		if c.config.failOnError.Load() {
 			return types.SrcHydrationResponse{}, err
 		}
@@ -244,6 +247,12 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 				return fmt.Errorf("reading response body: %w", err)
 			}
 			if resp.StatusCode != http.StatusOK {
+				if resp.Header.Get("X-Rudder-Permanent-Error") == "true" {
+					c.stat.NewTaggedStat("transformer_permanent_error", stats.CountType, tags).Increment()
+					return backoff.Permanent(
+						fmt.Errorf("source hydration returned status code: %v, response: %s, err: %w", resp.StatusCode, respData, types.ErrPermanentTransformerFailure),
+					)
+				}
 				return fmt.Errorf("source hydration returned status code: %v, response: %s", resp.StatusCode, respData)
 			}
 
