@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go"
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -30,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	sqlmw "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
@@ -548,12 +549,17 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(ctx context.Context, tableName 
 		return tableError.err
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(1*time.Second), uint64(ch.config.loadTableFailureRetries))
-	retryError := backoff.RetryNotify(operation, backoffWithMaxRetry, func(error error, t time.Duration) {
-		err = fmt.Errorf("%s Error occurred while retrying for load tables with error: %v", ch.GetLogIdentifier(tableName), error)
-		ch.logger.Errorn("Error occurred while retrying for load tables", obskit.Error(err))
-		chStats.failRetries.Count(1)
-	})
+	retryError := backoffvoid.Retry(context.TODO(),
+		operation,
+		backoff.WithBackOff(backoff.NewConstantBackOff(1*time.Second)),
+		backoff.WithMaxElapsedTime(0),
+		backoff.WithMaxTries(uint(ch.config.loadTableFailureRetries)+1),
+		backoff.WithNotify(func(error error, t time.Duration) {
+			err = fmt.Errorf("%s Error occurred while retrying for load tables with error: %v", ch.GetLogIdentifier(tableName), error)
+			ch.logger.Errorn("Error occurred while retrying for load tables", obskit.Error(err))
+			chStats.failRetries.Count(1)
+		}),
+	)
 	if retryError != nil {
 		err = retryError
 	}

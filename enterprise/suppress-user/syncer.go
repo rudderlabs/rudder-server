@@ -10,13 +10,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -195,10 +196,12 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		return err
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		s.log.Errorn("Failed to fetch source regulations from API, retrying", obskit.Error(err), logger.NewStringField("retryAfter", t.String()))
-	})
+	err := backoffvoid.Retry(context.TODO(), operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			s.log.Errorn("Failed to fetch source regulations from API, retrying", obskit.Error(err), logger.NewStringField("retryAfter", t.String()))
+		}),
+	)
 	if err != nil {
 		s.log.Errorn("Error sending request to the server", obskit.Error(err))
 		return []model.Suppression{}, nil, err

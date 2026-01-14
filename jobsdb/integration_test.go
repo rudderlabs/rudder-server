@@ -54,6 +54,7 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 			ErrorResponse: []byte(`\u0000{"status": "status"}`),
 			Parameters:    []byte(``),
 			WorkspaceId:   job.WorkspaceId,
+			CustomVal:     job.CustomVal,
 		})
 	}
 	return statuses
@@ -115,9 +116,10 @@ func TestJobsDB(t *testing.T) {
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
 		WorkspaceId:   defaultWorkspaceID,
+		CustomVal:     customVal,
 	}
 
-	err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+	err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 	require.NoError(t, err)
 
 	uj, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{
@@ -192,10 +194,11 @@ func TestJobsDB(t *testing.T) {
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   defaultWorkspaceID,
+				CustomVal:     customVal,
 			}
 		}
 		t.Log("Mark some jobs as failed")
-		err = jobDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{})
+		err = jobDB.UpdateJobStatus(context.Background(), statuses)
 		require.NoError(t, err)
 
 		t.Log("GetUnprocessed with job count limit")
@@ -285,10 +288,11 @@ func TestJobsDB(t *testing.T) {
 					ErrorResponse: []byte(`{"success":"OK"}`),
 					Parameters:    []byte(`{}`),
 					WorkspaceId:   defaultWorkspaceID,
+					CustomVal:     customVal,
 				}
 			}
 			t.Log("Mark all jobs as failed")
-			err = jobDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{})
+			err = jobDB.UpdateJobStatus(context.Background(), statuses)
 			require.NoError(t, err)
 		}
 
@@ -536,9 +540,10 @@ func TestJobsDB(t *testing.T) {
 			ErrorCode:     "202",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
+			CustomVal:     fetchedJobs[0].CustomVal,
 		}
 
-		err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+		err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 		require.NoError(t, err)
 
 		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
@@ -635,8 +640,9 @@ func TestJobsDB(t *testing.T) {
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				CustomVal:     job.CustomVal,
 			}
-			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 			require.NoError(t, err)
 		}
 
@@ -661,8 +667,9 @@ func TestJobsDB(t *testing.T) {
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				CustomVal:     job.CustomVal,
 			}
-			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 			require.NoError(t, err)
 		}
 
@@ -686,8 +693,9 @@ func TestJobsDB(t *testing.T) {
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				CustomVal:     job.CustomVal,
 			}
-			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 			require.NoError(t, err)
 		}
 
@@ -718,8 +726,9 @@ func TestJobsDB(t *testing.T) {
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				CustomVal:     job.CustomVal,
 			}
-			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 			require.NoError(t, err)
 		}
 
@@ -741,8 +750,9 @@ func TestJobsDB(t *testing.T) {
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				CustomVal:     job.CustomVal,
 			}
-			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 			require.NoError(t, err)
 		}
 
@@ -764,8 +774,9 @@ func TestJobsDB(t *testing.T) {
 				ErrorCode:     "202",
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
+				CustomVal:     job.CustomVal,
 			}
-			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
+			err := jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status})
 			require.NoError(t, err)
 		}
 
@@ -822,12 +833,7 @@ func TestJobsDB(t *testing.T) {
 
 		require.NoError(
 			t,
-			jobDB.UpdateJobStatus(
-				context.Background(),
-				append(failedStatuses, succeededStatuses...),
-				[]string{customVal},
-				[]ParameterFilterT{},
-			),
+			jobDB.UpdateJobStatus(context.Background(), append(failedStatuses, succeededStatuses...)),
 		)
 
 		unprocessedBeforeMigration, err := jobDB.GetUnprocessed(context.Background(), GetQueryParams{JobsLimit: 100})
@@ -928,10 +934,10 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	require.Equal(t, 30, len(jobs), "should get all 30 jobs")
 
 	// Mark 1-10 as failed
-	require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs[0:10], Failed.State), []string{customVal}, []ParameterFilterT{}))
+	require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs[0:10], Failed.State)))
 
 	// Mark 11-20 as waiting
-	require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs[10:20], Waiting.State), []string{customVal}, []ParameterFilterT{}))
+	require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(jobs[10:20], Waiting.State)))
 
 	t.Run("GetAllJobs with large limits", func(t *testing.T) {
 		params := GetQueryParams{JobsLimit: 30}
@@ -1026,8 +1032,9 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
 		WorkspaceId:   defaultWorkspaceID,
+		CustomVal:     customVal,
 	}
-	err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{jobStatus}, []string{customVal}, []ParameterFilterT{})
+	err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{jobStatus})
 	require.NoError(t, err)
 }
 
@@ -1514,10 +1521,11 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *Handle, totalJobs, pageSi
 							ErrorResponse: []byte(`{"success":"OK"}`),
 							Parameters:    []byte(`{}`),
 							WorkspaceId:   defaultWorkspaceID,
+							CustomVal:     customVal,
 						}
 					}
 
-					err = jobsDB.UpdateJobStatus(context.Background(), status, []string{customVal}, []ParameterFilterT{})
+					err = jobsDB.UpdateJobStatus(context.Background(), status)
 					require.NoError(b, err)
 
 					for _, j := range unprocessedList {
@@ -1633,10 +1641,11 @@ func consume(t testing.TB, db *Handle, count int) {
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
 			WorkspaceId:   defaultWorkspaceID,
+			CustomVal:     j.CustomVal,
 		}
 	}
 
-	err = db.UpdateJobStatus(context.Background(), status, []string{}, []ParameterFilterT{})
+	err = db.UpdateJobStatus(context.Background(), status)
 	require.NoError(t, err)
 }
 

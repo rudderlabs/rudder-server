@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"sync"
@@ -801,7 +802,12 @@ func (g *GRPC) validateObjectStorage(ctx context.Context, request validateObject
 		return fmt.Errorf("unable to create temp directory: \n%w", err)
 	}
 
-	f, err = os.CreateTemp(tmpDirectory, downloadFileNamePattern)
+	downloadDir := filepath.Join(tmpDirectory, misc.RudderWarehouseGRPCDownloads)
+	if err := os.MkdirAll(downloadDir, os.ModePerm); err != nil {
+		return fmt.Errorf("unable to create download directory: \n%w", err)
+	}
+
+	f, err = os.CreateTemp(downloadDir, downloadFileNamePattern)
 	if err != nil {
 		return fmt.Errorf("unable to create temp file: \n%w", err)
 	}

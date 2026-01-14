@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 	"golang.org/x/sync/errgroup"
 
@@ -916,11 +916,10 @@ func (job *UploadJob) durationBeforeNextAttempt(attempt int64) time.Duration { /
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = job.config.minUploadBackoff
 	b.MaxInterval = job.config.maxUploadBackoff
-	b.MaxElapsedTime = 0
 	b.Multiplier = 2
 	b.RandomizationFactor = 0
 	b.Reset()
-	for index := int64(0); index < attempt; index++ {
+	for range attempt {
 		d = b.NextBackOff()
 	}
 	return d

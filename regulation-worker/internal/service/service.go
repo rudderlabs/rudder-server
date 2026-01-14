@@ -5,12 +5,13 @@ import (
 	"errors"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 )
 
 //go:generate mockgen -source=service.go -destination=mock_service.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
@@ -88,15 +89,17 @@ func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobI
 	maxWait := 10 * time.Minute
 	var err error
 	bo := backoff.NewExponentialBackOff()
-	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = maxWait
 
-	if err = backoff.Retry(func() error {
-		err := js.API.UpdateStatus(ctx, status, jobID)
-		pkgLogger.Debugn("trying to update status...")
-		return err
-	}, boCtx); err != nil {
+	if err = backoffvoid.Retry(ctx,
+		func() error {
+			err := js.API.UpdateStatus(ctx, status, jobID)
+			pkgLogger.Debugn("trying to update status...")
+			return err
+		},
+		backoff.WithBackOff(bo),
+		backoff.WithMaxElapsedTime(maxWait),
+	); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
 			pkgLogger.Debugn("reached retry limit...")
 			return err

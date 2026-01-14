@@ -13,6 +13,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -292,7 +293,10 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	batches := m.splitInBatches(spec.jobs, batchSize)
 
 	t.Logf("sending %d events in %d batches", len(spec.jobs), len(batches))
+	var gzipMutex sync.Mutex
 	gzipPayload := func(data []byte) (io.Reader, error) {
+		gzipMutex.Lock()
+		defer gzipMutex.Unlock()
 		var b bytes.Buffer
 		gz := gzip.NewWriter(&b)
 		_, err = gz.Write(data)
@@ -310,12 +314,12 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 
 		return &b, nil
 	}
+
 	g := &errgroup.Group{}
 	g.SetLimit(10)
 	client := &http.Client{}
 	url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
 	for _, payload := range batches {
-		payload := payload
 		g.Go(func() error {
 			writeKey := gjson.GetBytes(payload, "batch.0.workspaceID").String()
 			p, err := gzipPayload(payload)
@@ -353,7 +357,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 
 	r := rmetrics.NewPendingEventsRegistry(rmetrics.WithPublished())
 	require.Eventually(t, func() bool {
-		return r.PendingEvents("rt", rmetrics.All, rmetrics.All).IntValue() == 0
+		return r.PendingEvents("rt", rmetrics.All, rmetrics.All, rmetrics.All).IntValue() == 0
 	}, 300*time.Second, 1*time.Second, "all rt jobs should be aborted")
 	t.Log("shutting down rudder-server")
 	cancel()

@@ -530,6 +530,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB1.dsListLock.RLock()
+			defer jobsDB1.dsListLock.RUnlock()
 			return len(jobsDB1.getDSList()) == 2
 		},
 		time.Second, time.Millisecond,
@@ -545,6 +547,8 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB2.dsListLock.RLock()
+			defer jobsDB2.dsListLock.RUnlock()
 			return len(jobsDB2.getDSList()) == 3
 		},
 		10*time.Second, time.Millisecond,
@@ -564,8 +568,12 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB1.dsListLock.RLock()
 			dsLen1 = len(jobsDB1.getDSList())
+			jobsDB1.dsListLock.RUnlock()
+			jobsDB2.dsListLock.RLock()
 			dsLen2 = len(jobsDB2.getDSList())
+			jobsDB2.dsListLock.RUnlock()
 			return dsLen1 == 4 && dsLen2 == 4
 		},
 		time.Second, time.Millisecond,
@@ -619,6 +627,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
+				jobsDB.dsListLock.RLock()
+				defer jobsDB.dsListLock.RUnlock()
 				return len(jobsDB.getDSList()) == 2
 			},
 			time.Second*5, time.Millisecond,
@@ -723,6 +733,8 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		require.Eventually(
 			t,
 			func() bool {
+				jobsDB1.dsListLock.RLock()
+				defer jobsDB1.dsListLock.RUnlock()
 				return len(jobsDB1.getDSList()) == 2
 			},
 			10*time.Second, time.Millisecond,
@@ -1082,9 +1094,10 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 				ErrorResponse: []byte(`{"success":"OK"}`),
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   defaultWorkspaceID,
+				CustomVal:     job.CustomVal,
 			})
 		}
-		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
+		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 
 		processed1, err := jobsDB.GetFailed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100, afterJobID: &unprocessed.Jobs[0].JobID})
 		require.NoError(t, err)
@@ -1136,9 +1149,10 @@ func TestDeleteExecuting(t *testing.T) {
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
 			WorkspaceId:   defaultWorkspaceID,
+			CustomVal:     job.CustomVal,
 		})
 	}
-	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 	unprocessed, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
@@ -1191,9 +1205,10 @@ func TestFailExecuting(t *testing.T) {
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
 			WorkspaceId:   defaultWorkspaceID,
+			CustomVal:     job.CustomVal,
 		})
 	}
-	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 
 	unprocessed, err = jobsDB.GetUnprocessed(context.Background(), GetQueryParams{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
@@ -1388,6 +1403,8 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			t.Logf("tables %d", len(jobsDB.getDSList()))
 			return len(jobsDB.getDSList()) == 2
 		},
@@ -1416,6 +1433,8 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			return len(jobsDB.getDSList()) == 3
 		},
 		time.Second*5, time.Millisecond,
@@ -1433,9 +1452,10 @@ func TestGetActiveWorkspaces(t *testing.T) {
 			JobState:    Succeeded.State,
 			AttemptNum:  1,
 			WorkspaceId: "ws-3",
+			CustomVal:   job.CustomVal,
 		}
 	})
-	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 
 	activeWorkspaces, err = jobsDB.GetDistinctParameterValues(context.Background(), WorkspaceID, "")
 	require.NoError(t, err)
@@ -1500,6 +1520,8 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			return len(jobsDB.getDSList()) == 2
 		},
 		time.Second*5, time.Millisecond,
@@ -1519,6 +1541,8 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			return len(jobsDB.getDSList()) == 3
 		},
 		time.Second*5, time.Millisecond,
@@ -1541,9 +1565,10 @@ func TestGetDistinctParameterValues(t *testing.T) {
 			JobState:    Succeeded.State,
 			AttemptNum:  1,
 			WorkspaceId: "workspace",
+			CustomVal:   job.CustomVal,
 		}
 	})
-	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{}, []ParameterFilterT{}))
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 	triggerMigrateDS <- time.Now()
 	triggerMigrateDS <- time.Now()
 
@@ -1665,6 +1690,8 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			return len(jobsDB.getDSList()) == 2
 		},
 		time.Second*5, time.Millisecond,
@@ -1679,6 +1706,8 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			return len(jobsDB.getDSList()) == 3
 		},
 		time.Second*5, time.Millisecond,
@@ -1693,6 +1722,8 @@ func TestUpdateJobStatus(t *testing.T) {
 	require.Eventually(
 		t,
 		func() bool {
+			jobsDB.dsListLock.RLock()
+			defer jobsDB.dsListLock.RUnlock()
 			return len(jobsDB.getDSList()) == 4
 		},
 		time.Second*5, time.Millisecond,
@@ -1700,27 +1731,6 @@ func TestUpdateJobStatus(t *testing.T) {
 
 	res, err := jobsDB.GetUnprocessed(context.Background(), GetQueryParams{JobsLimit: 10})
 	require.NoError(t, err)
-
-	t.Run("with parameter filters", func(t *testing.T) {
-		statuses := lo.Map(res.Jobs, func(job *JobT, _ int) *JobStatusT {
-			return &JobStatusT{
-				JobID:       job.JobID,
-				JobState:    Failed.State,
-				AttemptNum:  1,
-				WorkspaceId: "workspace",
-			}
-		})
-		// update job status by passing parameter filters should emit stats with parameter filters applied
-		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{"MOCKDS"}, []ParameterFilterT{{Name: "source_id", Value: "source-1"}}))
-		measurement := statStore.Get("jobsdb_updated_jobs", stats.Tags{
-			"tablePrefix": jobsDB.tablePrefix,
-			"jobState":    Failed.State,
-			"customVal":   "MOCKDS",
-			"source_id":   "source-1",
-		})
-		require.NotNil(t, measurement)
-		require.EqualValues(t, 3, measurement.LastValue())
-	})
 
 	t.Run("without parameter filters with job parameters", func(t *testing.T) {
 		// update job status without passing parameter filters should emit stats with parameter filters auto-detected
@@ -1731,9 +1741,10 @@ func TestUpdateJobStatus(t *testing.T) {
 				AttemptNum:    1,
 				WorkspaceId:   "workspace",
 				JobParameters: job.Parameters,
+				CustomVal:     job.CustomVal,
 			}
 		})
-		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{"MOCKDS"}, []ParameterFilterT{}))
+		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 		statsTags := stats.Tags{
 			"tablePrefix":    jobsDB.tablePrefix,
 			"jobState":       Failed.State,
@@ -1766,9 +1777,10 @@ func TestUpdateJobStatus(t *testing.T) {
 				JobState:    Failed.State,
 				AttemptNum:  1,
 				WorkspaceId: "workspace",
+				CustomVal:   job.CustomVal,
 			}
 		})
-		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{"MOCKDS"}, []ParameterFilterT{}))
+		require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses))
 		statsTags := stats.Tags{
 			"tablePrefix": jobsDB.tablePrefix,
 			"jobState":    Failed.State,

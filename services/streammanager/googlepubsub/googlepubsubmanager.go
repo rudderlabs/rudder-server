@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
@@ -26,6 +26,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 )
 
 type PubSubConfig struct {
@@ -152,15 +153,16 @@ func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topi
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = producer.retryInitialInterval.Load()
 	bo.MaxInterval = producer.retryMaxInterval.Load()
-	bo.MaxElapsedTime = producer.retryMaxElapsedTime.Load()
 	bo.Multiplier = 2
-
-	// Limit to configured max retries
-	boWithMaxRetries := backoff.WithMaxRetries(bo, uint64(producer.retryMaxRetries.Load()))
-
-	err := backoff.RetryNotify(operation, backoff.WithContext(boWithMaxRetries, ctx), func(err error, t time.Duration) {
-		pkgLogger.Warnn("[GooglePubSub] Retrying due to authentication error", logger.NewDurationField("retryAfter", t), obskit.Error(err))
-	})
+	err := backoffvoid.Retry(ctx,
+		operation,
+		backoff.WithBackOff(bo),
+		backoff.WithMaxElapsedTime(producer.retryMaxElapsedTime.Load()),
+		backoff.WithMaxTries(uint(producer.retryMaxRetries.Load()+1)),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			pkgLogger.Warnn("[GooglePubSub] Retrying due to authentication error", logger.NewDurationField("retryAfter", t), obskit.Error(err))
+		}),
+	)
 
 	return serverID, err
 }

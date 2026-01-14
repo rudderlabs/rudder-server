@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -198,11 +198,16 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 			return &jobsdb.JobStatusT{
 				JobID:         item.JobID,
 				JobState:      jobsdb.Succeeded.State,
-				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
-				Parameters:    []byte(`{}`),
 				AttemptNum:    item.LastJobStatus.AttemptNum + 1,
 				ExecTime:      w.now(),
 				RetryTime:     w.now(),
+				ErrorCode:     "200",
+				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
+				Parameters:    []byte(`{}`),
+				JobParameters: item.Parameters,
+				WorkspaceId:   item.WorkspaceId,
+				PartitionID:   item.PartitionID,
+				CustomVal:     item.CustomVal,
 			}
 		})...)
 	}
@@ -219,23 +224,26 @@ func (w *worker) uploadPayloads(ctx context.Context, payloads []payload) (*filem
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
 
-	dir, err := os.MkdirTemp(tmpDirPath, "*")
+	errorIndexDir := filepath.Join(tmpDirPath, misc.RudderReportingErrorIndex)
+	if err := os.MkdirAll(errorIndexDir, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("creating error index directory: %w", err)
+	}
+
+	dir, err := os.MkdirTemp(errorIndexDir, "*")
 	if err != nil {
 		return nil, fmt.Errorf("creating tmp directory: %w", err)
 	}
+	defer os.RemoveAll(dir)
 
 	minFailedAt := payloads[0].FailedAtTime()
 	maxFailedAt := payloads[len(payloads)-1].FailedAtTime()
 
-	filePath := path.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
+	filePath := filepath.Join(dir, fmt.Sprintf("%d_%d_%s_%s.parquet", minFailedAt.Unix(), maxFailedAt.Unix(), w.config.instanceID, uuid.NewString()))
 
 	f, err := os.Create(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating file: %w", err)
 	}
-	defer func() {
-		_ = os.Remove(f.Name())
-	}()
 
 	if err = w.encodeToParquet(f, payloads); err != nil {
 		return nil, fmt.Errorf("writing to file: %w", err)
@@ -292,7 +300,7 @@ func (w *worker) markJobsStatus(statusList []*jobsdb.JobStatusT) error {
 		w.config.jobsDBCommandTimeout,
 		w.config.jobsDBMaxRetries.Load(),
 		func(ctx context.Context) error {
-			return w.jobsDB.UpdateJobStatus(ctx, statusList, nil, nil)
+			return w.jobsDB.UpdateJobStatus(ctx, statusList)
 		},
 		func(attempt int) {
 			w.log.Warnn("failed to mark job's status", logger.NewIntField("attempt", int64(attempt)))

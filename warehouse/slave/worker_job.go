@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -333,11 +332,11 @@ func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo, loadFileNamePref
 		loadFileName := fmt.Sprintf("%s.%s.%s", loadFileNamePrefix, jr.job.SourceID, warehouseutils.GetLoadFileFormat(jr.job.LoadFileType))
 		// adding uuid to the load file path to ensure that the load file is unique
 		// Even if same batch is processed by same worker, load file path will be unique but file name is constant
-		loadFileDir := path.Join(path.Dir(stagingFilePathWithoutExt), misc.FastUUID().String())
+		loadFileDir := filepath.Join(filepath.Dir(stagingFilePathWithoutExt), misc.FastUUID().String())
 		if err := os.MkdirAll(loadFileDir, os.ModePerm); err != nil {
 			return "", fmt.Errorf("creating load file directory: %w", err)
 		}
-		loadFilePath := path.Join(loadFileDir, loadFileName)
+		loadFilePath := filepath.Join(loadFileDir, loadFileName)
 		return loadFilePath, nil
 	}
 

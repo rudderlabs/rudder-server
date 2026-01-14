@@ -5,6 +5,8 @@ package klaviyobulkupload
 import (
 	"strings"
 
+	"github.com/samber/lo"
+
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
@@ -40,14 +42,7 @@ func (e ErrorDetail) String() string {
 type ErrorDetailList []ErrorDetail
 
 func (e ErrorDetailList) String() string {
-	sb := strings.Builder{}
-	for k, v := range e {
-		if k > 0 {
-			sb.WriteString(",")
-		}
-		sb.WriteString(v.String())
-	}
-	return sb.String()
+	return strings.Join(lo.Map(e, func(ed ErrorDetail, _ int) string { return ed.String() }), ",")
 }
 
 type ErrorSource struct {

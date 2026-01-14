@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -38,12 +37,11 @@ returns the csv file and zip file path, along with the csv writer that
 contains the template of the uploadable file.
 */
 func createActionFile(audienceId, actionType string) (*ActionFileInfo, error) {
-	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
 		return nil, err
 	}
-	path := path.Join(tmpDirPath, localTmpDirName, uuid.NewString())
+	path := filepath.Join(tmpDirPath, misc.RudderAsyncDestinationLogs, uuid.NewString())
 	csvFilePath := fmt.Sprintf(`%v.csv`, path)
 	zipFilePath := fmt.Sprintf(`%v.zip`, path)
 	csvFile, err := os.Create(csvFilePath)

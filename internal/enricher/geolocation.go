@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
+	"path/filepath"
 
 	"github.com/samber/lo"
 
@@ -163,8 +163,8 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 	)
 
 	var (
-		baseDIR      = path.Join(conf.GetString("RUDDER_TMPDIR", "."), "geolocation")
-		downloadPath = path.Join(baseDIR, dbKey)
+		baseDIR      = filepath.Join(conf.GetString("RUDDER_TMPDIR", "."), "geolocation")
+		downloadPath = filepath.Join(baseDIR, dbKey)
 	)
 
 	// If the filepath exists return

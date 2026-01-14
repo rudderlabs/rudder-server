@@ -14,12 +14,13 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -76,19 +77,12 @@ type Client struct {
 	conf *config.Config
 }
 
-func backOffFromConfig(conf *config.Config) backoff.BackOff {
-	var opts []backoff.ExponentialBackOffOpts
-	var b backoff.BackOff
-
-	// exponential backoff related config can be added here
-
-	b = backoff.NewExponentialBackOff(opts...)
-
+func backoffOptsFromConfig(conf *config.Config) (opts []backoff.RetryOption) {
+	opts = append(opts, backoff.WithBackOff(backoff.NewExponentialBackOff()))
 	if conf.IsSet("Reporting.httpClient.backoff.maxRetries") {
-		b = backoff.WithMaxRetries(b, uint64(conf.GetInt64("Reporting.httpClient.backoff.maxRetries", 0)))
+		opts = append(opts, backoff.WithMaxTries(uint(conf.GetInt("Reporting.httpClient.backoff.maxRetries", 0)+1)))
 	}
-
-	return b
+	return opts
 }
 
 // New creates a new reporting client
@@ -163,10 +157,11 @@ func (c *Client) Send(ctx context.Context, payload any) error {
 		return err
 	}
 
-	b := backoff.WithContext(backOffFromConfig(c.conf), ctx)
-	err = backoff.RetryNotify(o, b, func(err error, t time.Duration) {
+	opts := backoffOptsFromConfig(c.conf)
+	opts = append(opts, backoff.WithNotify(func(err error, t time.Duration) {
 		c.log.Warnn(`Error reporting to service, retrying`, obskit.Error(err))
-	})
+	}))
+	err = backoffvoid.Retry(ctx, o, opts...)
 	if err != nil {
 		c.log.Errorn(`Error making request to reporting service`, obskit.Error(err))
 	}

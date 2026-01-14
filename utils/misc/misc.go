@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/araddon/dateparse"
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 	"github.com/spaolacci/murmur3"
 	"github.com/tidwall/sjson"
@@ -35,6 +35,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -62,6 +63,8 @@ const (
 	RudderRedshiftManifests       = "rudder-redshift-manifests"
 	RudderWarehouseJsonUploadsTmp = "rudder-warehouse-json-uploads-tmp"
 	RudderTestPayload             = "rudder-test-payload"
+	RudderWarehouseGRPCDownloads  = "rudder-warehouse-grpc-downloads"
+	RudderReportingErrorIndex     = "rudder-reporting-error-index"
 )
 
 // ErrorStoreT : DS to store the app errors
@@ -362,14 +365,16 @@ func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Durat
 		respBody, statusCode, fetchError = MakeHTTPRequestWithTimeout(url, bytes.NewBuffer(payload), timeout)
 		return fetchError
 	}
-
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorn("Failed to make call, retrying",
-			obskit.Error(err),
-			logger.NewDurationField("retryAfter", t),
-		)
-	})
+	err := backoffvoid.Retry(context.TODO(),
+		operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			pkgLogger.Errorn("Failed to make call, retrying",
+				obskit.Error(err),
+				logger.NewDurationField("retryAfter", t),
+			)
+		}),
+	)
 	if err != nil {
 		pkgLogger.Errorn("Error sending request to the server", obskit.Error(err))
 		return respBody, statusCode
