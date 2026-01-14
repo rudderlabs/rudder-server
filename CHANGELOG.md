@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.65.3](https://github.com/rudderlabs/rudder-server/compare/v1.65.2...v1.65.3) (2026-01-14)
+
+
+### Bug Fixes
+
+* async destination manager doesn't update job id metadata maps in case of an overflow ([#6608](https://github.com/rudderlabs/rudder-server/issues/6608)) ([920a995](https://github.com/rudderlabs/rudder-server/commit/920a995fa1dd2411cb9da655a16f961be0070523))
+
 ## [1.65.2](https://github.com/rudderlabs/rudder-server/compare/v1.65.1...v1.65.2) (2026-01-13)
 
 
