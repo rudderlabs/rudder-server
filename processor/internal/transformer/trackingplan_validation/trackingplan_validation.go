@@ -250,7 +250,7 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	bo.MaxInterval = t.config.maxRetryBackoffInterval.Load()
 
 	err := backoffvoid.Retry(
-		context.TODO(),
+		ctx,
 		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()

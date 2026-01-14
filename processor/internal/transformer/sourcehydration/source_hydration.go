@@ -211,7 +211,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = c.config.maxRetryBackoffInterval.Load()
-	err := backoffvoid.Retry(context.TODO(),
+	err := backoffvoid.Retry(ctx,
 		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var err error
 			requestStartTime := time.Now()
