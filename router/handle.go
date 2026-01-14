@@ -83,7 +83,6 @@ type Handle struct {
 
 	logger                         logger.Logger
 	tracer                         stats.Tracer
-	destinationResponseHandler     ResponseHandler
 	telemetry                      *Diagnostic
 	netHandle                      NetHandle
 	customDestinationManager       customDestinationManager.DestinationManager

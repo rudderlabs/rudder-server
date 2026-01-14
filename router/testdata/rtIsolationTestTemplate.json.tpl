@@ -64,7 +64,6 @@
                                 "saveDestinationResponse": false
                             },
                             "configSchema": null,
-                            "responseRules": null,
                             "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
                             "name": "WEBHOOK",
                             "displayName": "Webhook",

@@ -59,7 +59,7 @@ const (
 
 var testTimeout = 10 * time.Second
 
-var s3DestinationDefinition = backendconfig.DestinationDefinitionT{ID: S3DestinationDefinitionID, Name: "S3", DisplayName: "S3", Config: nil, ResponseRules: nil}
+var s3DestinationDefinition = backendconfig.DestinationDefinitionT{ID: S3DestinationDefinitionID, Name: "S3", DisplayName: "S3", Config: nil}
 
 var workspaceID = `workspaceID`
 

@@ -785,9 +785,8 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 						"key3": []interface{}{"value"},
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name:          "destination-definition-name",
-						Config:        map[string]interface{}{},
-						ResponseRules: map[string]interface{}{},
+						Name:   "destination-definition-name",
+						Config: map[string]interface{}{},
 					},
 				},
 			},
@@ -828,9 +827,8 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 						"key3": []interface{}{"value"},
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Name:          "destination-definition-name",
-						Config:        map[string]interface{}{},
-						ResponseRules: map[string]interface{}{},
+						Name:   "destination-definition-name",
+						Config: map[string]interface{}{},
 					},
 				},
 			},

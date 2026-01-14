@@ -38,8 +38,7 @@
                 "ID": "enabled-destination-b-definition-id",
                 "Name": "MINIO",
                 "DisplayName": "enabled-destination-b-definition-display-name",
-                "Config": {},
-                "ResponseRules": null
+                "Config": {}
             },
             "Config": null,
             "Enabled": true,
@@ -103,8 +102,7 @@
                 "ID": "enabled-destination-b-definition-id",
                 "Name": "MINIO",
                 "DisplayName": "enabled-destination-b-definition-display-name",
-                "Config": {},
-                "ResponseRules": null
+                "Config": {}
             },
             "Config": null,
             "Enabled": true,
@@ -166,8 +164,7 @@
                 "ID": "enabled-destination-b-definition-id",
                 "Name": "MINIO",
                 "DisplayName": "enabled-destination-b-definition-display-name",
-                "Config": {},
-                "ResponseRules": null
+                "Config": {}
             },
             "Config": null,
             "Enabled": true,

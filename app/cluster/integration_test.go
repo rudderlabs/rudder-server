@@ -80,7 +80,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		workspaceID             = uuid.New().String()
 		gaDestinationDefinition = backendConfig.DestinationDefinitionT{
 			ID: GADestinationDefinitionID, Name: "GA",
-			DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+			DisplayName: "Google Analytics", Config: nil,
 		}
 		sampleBackendConfig = backendConfig.ConfigT{
 			WorkspaceID: workspaceID,
