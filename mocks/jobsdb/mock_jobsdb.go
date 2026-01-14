@@ -442,31 +442,31 @@ func (mr *MockJobsDBMockRecorder) StoreInTx(ctx, arg1, jobList any) *gomock.Call
 }
 
 // UpdateJobStatus mocks base method.
-func (m *MockJobsDB) UpdateJobStatus(ctx context.Context, statusList []*jobsdb.JobStatusT, customValFilters []string, parameterFilters []jobsdb.ParameterFilterT) error {
+func (m *MockJobsDB) UpdateJobStatus(ctx context.Context, statusList []*jobsdb.JobStatusT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, statusList, customValFilters, parameterFilters)
+	ret := m.ctrl.Call(m, "UpdateJobStatus", ctx, statusList)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatus indicates an expected call of UpdateJobStatus.
-func (mr *MockJobsDBMockRecorder) UpdateJobStatus(ctx, statusList, customValFilters, parameterFilters any) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) UpdateJobStatus(ctx, statusList any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatus), ctx, statusList, customValFilters, parameterFilters)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatus", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatus), ctx, statusList)
 }
 
 // UpdateJobStatusInTx mocks base method.
-func (m *MockJobsDB) UpdateJobStatusInTx(ctx context.Context, arg1 jobsdb.UpdateSafeTx, statusList []*jobsdb.JobStatusT, customValFilters []string, parameterFilters []jobsdb.ParameterFilterT) error {
+func (m *MockJobsDB) UpdateJobStatusInTx(ctx context.Context, arg1 jobsdb.UpdateSafeTx, statusList []*jobsdb.JobStatusT) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", ctx, arg1, statusList, customValFilters, parameterFilters)
+	ret := m.ctrl.Call(m, "UpdateJobStatusInTx", ctx, arg1, statusList)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // UpdateJobStatusInTx indicates an expected call of UpdateJobStatusInTx.
-func (mr *MockJobsDBMockRecorder) UpdateJobStatusInTx(ctx, arg1, statusList, customValFilters, parameterFilters any) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) UpdateJobStatusInTx(ctx, arg1, statusList any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatusInTx", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatusInTx), ctx, arg1, statusList, customValFilters, parameterFilters)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateJobStatusInTx", reflect.TypeOf((*MockJobsDB)(nil).UpdateJobStatusInTx), ctx, arg1, statusList)
 }
 
 // WithStoreSafeTx mocks base method.

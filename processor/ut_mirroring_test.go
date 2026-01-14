@@ -228,9 +228,9 @@ func TestUTMirroring(t *testing.T) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 		c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(
-			gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil,
+			gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)),
 		).Times(1).After(callStoreBatchRouter).
-			Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
+			Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT) {
 				for i := range unprocessedJobsList {
 					require.Equal(t, statuses[i].JobID, unprocessedJobsList[i].JobID)
 					require.Equal(t, statuses[i].JobState, jobsdb.Succeeded.State)

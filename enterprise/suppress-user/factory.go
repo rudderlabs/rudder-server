@@ -19,7 +19,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 
@@ -170,7 +169,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 }
 
 func alreadySynced(repoPath string) bool {
-	_, err := os.Stat(path.Join(repoPath, model.SyncDoneMarker))
+	_, err := os.Stat(filepath.Join(repoPath, model.SyncDoneMarker))
 	return err == nil
 }
 
@@ -220,8 +219,8 @@ func getRepoPath() (fullSuppressionPath, latestSuppressionPath string, err error
 	if err != nil {
 		return "", "", fmt.Errorf("could not create tmp dir: %w", err)
 	}
-	fullSuppressionPath = path.Join(tmpDir, "fullSuppression")
-	latestSuppressionPath = path.Join(tmpDir, "latestSuppression")
+	fullSuppressionPath = filepath.Join(tmpDir, "fullSuppression")
+	latestSuppressionPath = filepath.Join(tmpDir, "latestSuppression")
 	return fullSuppressionPath, latestSuppressionPath, err
 }
 

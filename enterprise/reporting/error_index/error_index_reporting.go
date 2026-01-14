@@ -158,6 +158,7 @@ func (eir *ErrorIndexReporter) Report(ctx context.Context, metrics []*types.PURe
 				EventPayload: payloadJSON,
 				EventCount:   1,
 				WorkspaceId:  workspaceID,
+				CustomVal:    "ERR_IDX",
 			})
 		}
 	}

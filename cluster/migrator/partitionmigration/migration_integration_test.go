@@ -289,8 +289,9 @@ func (env *itMigrationJobExecutorEnv) runVerifier(t *testing.T, ctx context.Cont
 					JobParameters: job.Parameters,
 					WorkspaceId:   job.WorkspaceId,
 					PartitionID:   job.PartitionID,
+					CustomVal:     job.CustomVal,
 				}
-			}), []string{"test"}, nil)
+			}))
 			if err != nil {
 				return fmt.Errorf("updating job statuses: %w", err)
 			}
