@@ -84,8 +84,10 @@ type GetQueryParams struct {
 	CustomValFilters []string
 	ParameterFilters []ParameterFilterT
 	PartitionFilters []string
-	stateFilters     []string
-	afterJobID       *int64
+
+	stateFilters                   []string
+	afterJobID                     *int64
+	ignoreReadPartitionsExclusions bool // if true, includes results from all partitions, ignoring any preconfigured excluded read partitions
 
 	// query limits
 
@@ -2254,7 +2256,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 	if len(partitionFilters) > 0 {
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id IN (%s)", strings.Join(lo.Map(partitionFilters, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
-	} else {
+	} else if !params.ignoreReadPartitionsExclusions {
 		// excludedReadPartitions are mutually exclusive with partitionFilters
 		jd.excludedReadPartitionsLock.RLock()
 		var excludedReadPartitions []string
@@ -3362,6 +3364,7 @@ func (jd *Handle) GetUnprocessed(ctx context.Context, params GetQueryParams) (Jo
 
 // GetImporting finds jobs in importing state
 func (jd *Handle) GetImporting(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+	params.ignoreReadPartitionsExclusions = true
 	return jd.getMoreJobs(ctx, []string{Importing.State}, params, more)
 }
 
