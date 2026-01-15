@@ -611,6 +611,34 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			Expect(resp).To(Equal(expectedResp))
 			Expect(err).To(BeNil())
 		})
+
+		It("Transform() Test -> successful with isHashRequired false", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2025-12-06T10:15:03+00:00\",\n    \"conversionValue\": \"15.942148760330578\",\n    \"microsoftClickId\": \"43d27c9a7f43100dcedc159df987176b\"\n  }\n}"),
+			}
+			uploader := &BingAdsBulkUploader{
+				isHashRequired: false,
+			}
+			expectedResp := `{"message":{"fields":{"conversionName":"Test-Integration","conversionTime":"12/6/2025 10:15:03 AM","conversionValue":"15.942148760330578","microsoftClickId":"43d27c9a7f43100dcedc159df987176b"},"action":"insert"},"metadata":{"jobId":0}}`
+
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
+
+		It("Transform() Test -> successful with email and phone when isHashRequired false", func() {
+			job := &jobsdb.JobT{
+				EventPayload: []byte("{\n  \"type\": \"record\",\n  \"action\": \"insert\",\n  \"fields\": {\n    \"conversionName\": \"Test-Integration\",\n    \"conversionTime\": \"2025-12-06T10:15:03+00:00\",\n    \"conversionValue\": \"15.942148760330578\",\n    \"microsoftClickId\": \"43d27c9a7f43100dcedc159df987176b\",\n    \"email\": \"test@example.com\",\n    \"phone\": \"+1234567890\"\n  }\n}"),
+			}
+			uploader := &BingAdsBulkUploader{
+				isHashRequired: false,
+			}
+			expectedResp := `{"message":{"fields":{"conversionName":"Test-Integration","conversionTime":"12/6/2025 10:15:03 AM","conversionValue":"15.942148760330578","email":"test@example.com","microsoftClickId":"43d27c9a7f43100dcedc159df987176b","phone":"+1234567890"},"action":"insert"},"metadata":{"jobId":0}}`
+
+			resp, err := uploader.Transform(job)
+			Expect(err).To(BeNil())
+			Expect(resp).To(Equal(expectedResp))
+		})
 	})
 })
 
