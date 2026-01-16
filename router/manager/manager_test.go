@@ -66,11 +66,11 @@ func TestRouterManager(t *testing.T) {
 		workspaceID             = uuid.New().String()
 		gaDestinationDefinition = backendconfig.DestinationDefinitionT{
 			ID: GADestinationDefinitionID, Name: "GA",
-			DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+			DisplayName: "Google Analytics", Config: nil,
 		}
 		gcsDestinationDefinition = backendconfig.DestinationDefinitionT{
 			ID: GADestinationDefinitionID, Name: "GCS",
-			DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+			DisplayName: "Google Analytics", Config: nil,
 		}
 		sampleBackendConfig = backendconfig.ConfigT{
 			WorkspaceID: workspaceID,

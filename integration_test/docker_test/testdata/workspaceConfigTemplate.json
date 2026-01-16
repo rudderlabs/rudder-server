@@ -73,7 +73,6 @@
               "saveDestinationResponse": false
             },
             "configSchema": null,
-            "responseRules": null,
             "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
             "name": "WEBHOOK",
             "displayName": "Webhook",
@@ -457,7 +456,6 @@
               },
               "additionalProperties": true
             },
-            "responseRules": null,
             "id": "xxxyyyzzNdkvBTzotNh0zta5jDm",
             "name": "POSTGRES",
             "displayName": "Postgres",
@@ -533,7 +531,6 @@
               "saveDestinationResponse": true
             },
             "configSchema": null,
-            "responseRules": {},
             "id": "xxxyyyzzl28zT3nxr8SWZp6xaWT",
             "name": "REDIS",
             "displayName": "Redis",
@@ -615,7 +612,6 @@
               "saveDestinationResponse": true
             },
             "configSchema": null,
-            "responseRules": null,
             "id": "xxxyyyzzsyAyCQ2QIxrKU9X5AoR",
             "name": "KAFKA",
             "displayName": "Apache Kafka",
@@ -684,7 +680,6 @@
               "saveDestinationResponse": false
             },
             "configSchema": null,
-            "responseRules": null,
             "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
             "name": "WEBHOOK",
             "displayName": "Webhook",

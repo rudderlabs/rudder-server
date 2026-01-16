@@ -96,7 +96,6 @@ func (rt *Handle) Setup(
 	rt.telemetry.failuresMetric = make(map[string]map[string]int)
 	rt.telemetry.diagnosisTicker = time.NewTicker(rt.diagnosisTickerTime)
 
-	rt.destinationResponseHandler = NewResponseHandler(rt.logger, destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
@@ -460,7 +459,6 @@ func (rt *Handle) backendConfigSubscriber() {
 						}
 						destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, *source)
 
-						rt.destinationResponseHandler = NewResponseHandler(rt.logger, destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
 						}
