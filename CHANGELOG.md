@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.66.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.65.0...v1.66.0-rc.1) (2026-01-19)
+
+
+### Features
+
+* handle transformer abort header in source hydration ([#6599](https://github.com/rudderlabs/rudder-server/issues/6599)) ([9d03e8c](https://github.com/rudderlabs/rudder-server/commit/9d03e8c85a16ee54a9678f7964099170135c43c0))
+* **jobsdb:** pending events decorator ([#6583](https://github.com/rudderlabs/rudder-server/issues/6583)) ([829820b](https://github.com/rudderlabs/rudder-server/commit/829820bcede85bcb2718d611e7d2018ecc1048d4))
+
+
+### Bug Fixes
+
+* async destination manager doesn't update job id metadata maps in case of an overflow ([#6608](https://github.com/rudderlabs/rudder-server/issues/6608)) ([b5c3476](https://github.com/rudderlabs/rudder-server/commit/b5c3476c7c99bb311657769f3139e96b12887ac0))
+* **destination:** bing ads offline conversion format conversionTime when isHashRequired is false ([#6601](https://github.com/rudderlabs/rudder-server/issues/6601)) ([a80db01](https://github.com/rudderlabs/rudder-server/commit/a80db014c961ccae5df7d7c54f28518e28957775))
+* klaviyo bulk upload manager panics after upload error ([#6603](https://github.com/rudderlabs/rudder-server/issues/6603)) ([fba7c0f](https://github.com/rudderlabs/rudder-server/commit/fba7c0f628829e1e4455811f8cdedfc0a05cd09c))
+
+
+### Miscellaneous
+
+* enforce the use of backoff v5 ([#6607](https://github.com/rudderlabs/rudder-server/issues/6607)) ([3547341](https://github.com/rudderlabs/rudder-server/commit/3547341f83e68a4e3c911ffc727013098f2129ce))
+* improve async destination bug logging ([#6594](https://github.com/rudderlabs/rudder-server/issues/6594)) ([5be2de8](https://github.com/rudderlabs/rudder-server/commit/5be2de89857ec342f2ce17ed495b5522e97da77b))
+* **jobsdb:** capture custom val in job status and honour it during cache invalidation ([#6575](https://github.com/rudderlabs/rudder-server/issues/6575)) ([6a13a30](https://github.com/rudderlabs/rudder-server/commit/6a13a3041fa61d75037952920715be441747df96))
+* remove response rules ([#6612](https://github.com/rudderlabs/rudder-server/issues/6612)) ([a91b2b0](https://github.com/rudderlabs/rudder-server/commit/a91b2b0d7f4f1f6e8d96426eda87aa6833060deb))
+* store temp file in subdir for error index and warehouse object storage validation ([#6597](https://github.com/rudderlabs/rudder-server/issues/6597)) ([79fd856](https://github.com/rudderlabs/rudder-server/commit/79fd856dc75b5ae63b272fa761e337b92bec472c))
+* sync release v1.65.0 to main branch ([#6593](https://github.com/rudderlabs/rudder-server/issues/6593)) ([84a39b7](https://github.com/rudderlabs/rudder-server/commit/84a39b70aefaf42d0f2327d94e93d53478ffdd9b))
+
 ## [1.65.3](https://github.com/rudderlabs/rudder-server/compare/v1.65.2...v1.65.3) (2026-01-14)
 
 
