@@ -656,8 +656,7 @@ func TestFlushErrors(t *testing.T) {
 		t.Run("partitions not buffered", func(t *testing.T) {
 			pb, _, _ := setup(t)
 			err := pb.FlushBufferedPartitions(t.Context(), []string{"partition-2"})
-			require.Error(t, err, "flush should not succeed if partition is not buffered")
-			require.EqualError(t, err, "partitions are not buffered, cannot flush: [partition-2]")
+			require.NoError(t, err, "shoud ignore flush for non-buffered partitions")
 		})
 
 		t.Run("trying to flush a partition that is already being flushed", func(t *testing.T) {

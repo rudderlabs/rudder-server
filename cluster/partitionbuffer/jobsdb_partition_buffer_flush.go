@@ -30,12 +30,16 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 			b.flushingPartitionsMu.Unlock()
 			return fmt.Errorf("acquiring a buffered partitions read lock during flush: %w", ctx.Err())
 		}
-		_, notBuffered := lo.Difference(slices.Collect(b.bufferedPartitions.Keys()), partitions)
+
+		// only keep partitions that are actually buffered
+		partitions = lo.Intersect(slices.Collect(b.bufferedPartitions.Keys()), partitions)
 		b.bufferedPartitionsMu.RUnlock()
-		if len(notBuffered) > 0 {
+
+		if len(partitions) == 0 {
 			b.flushingPartitionsMu.Unlock()
-			return fmt.Errorf("partitions are not buffered, cannot flush: %+v", notBuffered)
+			return nil
 		}
+
 		for _, partitionID := range partitions {
 			b.flushingPartitions[partitionID] = struct{}{}
 		}
