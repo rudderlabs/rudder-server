@@ -2012,7 +2012,7 @@ FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 					return fmt.Errorf("scanning pileup counts rows for %q: %w", ds.JobTable, err)
 				}
 				if count.Valid {
-					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, rmetrics.All, float64(count.Int64))
+					increaseFunc(jd.tablePrefix, workspace.String, customVal.String, destinationID.String, float64(count.Int64))
 				}
 			}
 			if err = rows.Err(); err != nil {

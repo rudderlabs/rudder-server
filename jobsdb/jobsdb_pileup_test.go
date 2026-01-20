@@ -22,6 +22,7 @@ func TestJobsdbPileupCount(t *testing.T) {
 		TablePrefix           = "prefix"
 		CustomVal             = "CUSTOMVAL"
 		WorkspaceID           = "workspaceID"
+		DestinationID         = "destinationID"
 		OriginalPendingEvents = 50
 	)
 	generateJobs := func(numOfJob int) []*JobT {
@@ -76,6 +77,7 @@ func TestJobsdbPileupCount(t *testing.T) {
 		require.Equal(t, TablePrefix, tablePrefix)
 		require.Equal(t, WorkspaceID, workspaceID)
 		require.Equal(t, CustomVal, destType)
+		require.Equal(t, DestinationID, destinationID)
 		pendingEventsCount += int(value)
 	}
 	require.NoError(t, jdb.GetPileUpCounts(context.Background(), time.Now(), increasePendingEvents))
