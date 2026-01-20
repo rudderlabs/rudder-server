@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.1](https://github.com/rudderlabs/rudder-server/compare/v1.66.0...v1.66.1) (2026-01-20)
+
+
+### Bug Fixes
+
+* negative pending events are recorded for destinations after startup ([#6619](https://github.com/rudderlabs/rudder-server/issues/6619)) ([78b8318](https://github.com/rudderlabs/rudder-server/commit/78b8318ad314f8ea60103b6600298a9c58071bc8))
+
 ## [1.66.0](https://github.com/rudderlabs/rudder-server/compare/v1.65.0...v1.66.0) (2026-01-19)
 
 
