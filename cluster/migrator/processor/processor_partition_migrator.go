@@ -96,6 +96,12 @@ func (ppm *processorPartitionMigrator) watchNewMigrations(ctx context.Context) {
 					if event.Value.Status != etcdtypes.PartitionMigrationStatusNew {
 						return false
 					}
+					// where this node is a source node, a target node, or both
+					pm := event.Value
+					if !slices.Contains(pm.SourceNodes(), ppm.nodeIndex) && !slices.Contains(pm.TargetNodes(), ppm.nodeIndex) {
+						return false
+					}
+
 					// skip if migration is already being processed,
 					// otherwise add it to pending migrations
 					ppm.pendingMigrationsMu.Lock()
@@ -104,12 +110,7 @@ func (ppm *processorPartitionMigrator) watchNewMigrations(ctx context.Context) {
 						ppm.pendingMigrations[event.Value.ID] = struct{}{}
 					}
 					ppm.pendingMigrationsMu.Unlock()
-					if exists {
-						return false
-					}
-					// where this node is a source node, a target node, or both
-					pm := event.Value
-					return slices.Contains(pm.SourceNodes(), ppm.nodeIndex) || slices.Contains(pm.TargetNodes(), ppm.nodeIndex)
+					return !exists
 				}).
 				Build()
 			if err != nil {

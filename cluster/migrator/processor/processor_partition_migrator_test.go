@@ -58,7 +58,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Create a migration where this node is both source and target
 		migrationID := rand.String(10)
-		ackKey := "/" + namespace + "/migration/ack/" + migrationID
+		ackKeyPrefix := "/" + namespace + "/migration/ack/" + migrationID
 		migration := &etcdtypes.PartitionMigration{
 			ID:     migrationID,
 			Status: etcdtypes.PartitionMigrationStatusNew,
@@ -76,7 +76,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 					Partitions: []string{"partition-2"},
 				},
 			},
-			AckKeyPrefix: ackKey,
+			AckKeyPrefix: ackKeyPrefix,
 		}
 
 		// Put the migration event in etcd
@@ -89,7 +89,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Wait for the ack event
 		require.Eventually(t, func() bool {
-			resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+			resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 			if err != nil {
 				return false
 			}
@@ -97,11 +97,11 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		}, 30*time.Second, 100*time.Millisecond, "ack event not received")
 
 		// Verify the ack content
-		resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+		resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 
-		require.Equal(t, path.Join(ackKey, nodeName), string(resp.Kvs[0].Key))
+		require.Equal(t, path.Join(ackKeyPrefix, nodeName), string(resp.Kvs[0].Key))
 		var ack etcdtypes.PartitionMigrationAck
 		err = jsonrs.Unmarshal(resp.Kvs[0].Value, &ack)
 		require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Test 3: Send duplicate migration events - same migration sent twice
 		duplicateMigrationID := rand.String(10)
-		duplicateAckKey := "/" + namespace + "/migration/ack/" + duplicateMigrationID
+		duplicateAckKeyPrefix := "/" + namespace + "/migration/ack/" + duplicateMigrationID
 		duplicateMigration := &etcdtypes.PartitionMigration{
 			ID:     duplicateMigrationID,
 			Status: etcdtypes.PartitionMigrationStatusNew,
@@ -283,7 +283,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 					Partitions: []string{"partition-1"},
 				},
 			},
-			AckKeyPrefix: duplicateAckKey,
+			AckKeyPrefix: duplicateAckKeyPrefix,
 		}
 		migrationValue, err = jsonrs.Marshal(duplicateMigration)
 		require.NoError(t, err)
@@ -296,7 +296,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Wait for the ack event
 		require.Eventually(t, func() bool {
-			resp, err := etcdResource.Client.Get(ctx, duplicateAckKey, clientv3.WithPrefix())
+			resp, err := etcdResource.Client.Get(ctx, duplicateAckKeyPrefix, clientv3.WithPrefix())
 			if err != nil {
 				return false
 			}
@@ -352,7 +352,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Create a migration where this node is the source
 		migrationID := rand.String(10)
-		ackKey := "/" + namespace + "/migration/ack/" + migrationID
+		ackKeyPrefix := "/" + namespace + "/migration/ack/" + migrationID
 		migration := &etcdtypes.PartitionMigration{
 			ID:     migrationID,
 			Status: etcdtypes.PartitionMigrationStatusNew,
@@ -364,7 +364,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 					Partitions: []string{"partition-1"},
 				},
 			},
-			AckKeyPrefix: ackKey,
+			AckKeyPrefix: ackKeyPrefix,
 		}
 
 		// Put the migration event in etcd
@@ -377,7 +377,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Wait for the ack event
 		require.Eventually(t, func() bool {
-			resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+			resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 			if err != nil {
 				return false
 			}
@@ -385,11 +385,11 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		}, 30*time.Second, 100*time.Millisecond, "ack event not received")
 
 		// Verify the ack content
-		resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+		resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 
-		require.Equal(t, path.Join(ackKey, nodeName), string(resp.Kvs[0].Key))
+		require.Equal(t, path.Join(ackKeyPrefix, nodeName), string(resp.Kvs[0].Key))
 		var ack etcdtypes.PartitionMigrationAck
 		err = jsonrs.Unmarshal(resp.Kvs[0].Value, &ack)
 		require.NoError(t, err)
@@ -445,7 +445,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Create a migration where this node is the target
 		migrationID := rand.String(10)
-		ackKey := "/" + namespace + "/migration/ack/" + migrationID
+		ackKeyPrefix := "/" + namespace + "/migration/ack/" + migrationID
 		migration := &etcdtypes.PartitionMigration{
 			ID:     migrationID,
 			Status: etcdtypes.PartitionMigrationStatusNew,
@@ -457,7 +457,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 					Partitions: []string{"partition-1"},
 				},
 			},
-			AckKeyPrefix: ackKey,
+			AckKeyPrefix: ackKeyPrefix,
 		}
 
 		// Put the migration event in etcd
@@ -470,7 +470,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Wait for the ack event
 		require.Eventually(t, func() bool {
-			resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+			resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 			if err != nil {
 				return false
 			}
@@ -478,11 +478,11 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		}, 30*time.Second, 100*time.Millisecond, "ack event not received")
 
 		// Verify the ack content
-		resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+		resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 
-		require.Equal(t, path.Join(ackKey, nodeName), string(resp.Kvs[0].Key))
+		require.Equal(t, path.Join(ackKeyPrefix, nodeName), string(resp.Kvs[0].Key))
 		var ack etcdtypes.PartitionMigrationAck
 		err = jsonrs.Unmarshal(resp.Kvs[0].Value, &ack)
 		require.NoError(t, err)
@@ -539,7 +539,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Create a migration where this node is the source
 		migrationID := rand.String(10)
-		ackKey := "/" + namespace + "/migration/ack/" + migrationID
+		ackKeyPrefix := "/" + namespace + "/migration/ack/" + migrationID
 		migration := &etcdtypes.PartitionMigration{
 			ID:     migrationID,
 			Status: etcdtypes.PartitionMigrationStatusNew,
@@ -551,7 +551,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 					Partitions: []string{"partition-1"},
 				},
 			},
-			AckKeyPrefix: ackKey,
+			AckKeyPrefix: ackKeyPrefix,
 		}
 
 		// Put the migration event in etcd (use the real client to ensure data is there)
@@ -564,7 +564,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		// Wait for the ack event - this proves the migrator recovered from initial errors
 		require.Eventually(t, func() bool {
-			resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+			resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 			if err != nil {
 				return false
 			}
@@ -572,11 +572,11 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		}, 30*time.Second, 100*time.Millisecond, "ack event not received")
 
 		// Verify the ack content
-		resp, err := etcdResource.Client.Get(ctx, ackKey, clientv3.WithPrefix())
+		resp, err := etcdResource.Client.Get(ctx, ackKeyPrefix, clientv3.WithPrefix())
 		require.NoError(t, err)
 		require.Len(t, resp.Kvs, 1)
 
-		require.Equal(t, path.Join(ackKey, nodeName), string(resp.Kvs[0].Key))
+		require.Equal(t, path.Join(ackKeyPrefix, nodeName), string(resp.Kvs[0].Key))
 		var ack etcdtypes.PartitionMigrationAck
 		err = jsonrs.Unmarshal(resp.Kvs[0].Value, &ack)
 		require.NoError(t, err)
