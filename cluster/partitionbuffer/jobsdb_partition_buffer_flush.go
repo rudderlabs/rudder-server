@@ -60,9 +60,10 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 
 	start := time.Now()
 	moveTimeout := time.After(b.flushMoveTimeout.Load())
+	var totalCount int
 
 	// move in batches until we stop reaching limits
-	b.logger.Infon("flushing jobs from buffer to primary jobsdb (move phase)",
+	b.logger.Infon("Flushing jobs from buffer to primary jobsdb (move phase)",
 		logger.NewStringField("partitions", strings.Join(partitions, ",")),
 		logger.NewStringField("prefix", b.Identifier()),
 	)
@@ -71,37 +72,42 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 		select {
 		case <-moveTimeout:
 			// timeout reached, break out to switchover
-			b.logger.Warnn("flush move timeout reached, proceeding to switchover",
+			b.logger.Warnn("Flush move timeout reached, proceeding to switchover",
 				logger.NewStringField("partitions", fmt.Sprintf("%v", partitions)),
 				logger.NewDurationField("duration", time.Since(start)),
 			)
 			limitsReached = false
 		default:
-			limitsReached, err = b.moveBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load())
+			var movedCount int
+			movedCount, limitsReached, err = b.moveBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load())
 			if err != nil {
 				return fmt.Errorf("moving buffered partitions: %w", err)
 			}
+			totalCount += movedCount
 		}
 	}
 	// switchover
-	b.logger.Infon("flushing jobs from buffer to primary jobsdb (switchover phase)",
+	b.logger.Infon("Flushing jobs from buffer to primary jobsdb (switchover phase)",
 		logger.NewStringField("partitions", strings.Join(partitions, ",")),
 		logger.NewStringField("prefix", b.Identifier()),
 	)
-	if err := b.switchoverBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load()); err != nil {
+	switchoverCount, err := b.switchoverBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load())
+	if err != nil {
 		return fmt.Errorf("switchover of buffered partitions: %w", err)
 	}
-	b.logger.Infon("completed flush of buffered partitions",
+	totalCount += switchoverCount
+	b.logger.Infon("Flushing of buffered partitions completed successfully",
 		logger.NewStringField("partitions", strings.Join(partitions, ",")),
 		logger.NewStringField("prefix", b.Identifier()),
 		logger.NewDurationField("duration", time.Since(start)),
+		logger.NewIntField("totalCount", int64(totalCount)),
 	)
 	return nil
 }
 
 // moveBufferedPartitions moves a batch of buffered jobs to the primary JobsDB for the given partition IDs. It returns whether any limits were reached during the fetch.
 // If limits were reached, the caller should call this method again to move more data.
-func (b *jobsDBPartitionBuffer) moveBufferedPartitions(ctx context.Context, partitionIDs []string, batchSize int, payloadSize int64) (limitsReached bool, err error) {
+func (b *jobsDBPartitionBuffer) moveBufferedPartitions(ctx context.Context, partitionIDs []string, batchSize int, payloadSize int64) (count int, limitsReached bool, err error) {
 	defer b.stats.NewTaggedStat("jobsdb_pbuffer_move_time", stats.TimerType, stats.Tags{
 		"prefix": b.Identifier(),
 	}).RecordDuration()()
@@ -112,7 +118,7 @@ func (b *jobsDBPartitionBuffer) moveBufferedPartitions(ctx context.Context, part
 		PayloadSizeLimit: payloadSize,
 	})
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	if len(bufferedJobs.Jobs) > 0 {
 		now := time.Now()
@@ -144,40 +150,41 @@ func (b *jobsDBPartitionBuffer) moveBufferedPartitions(ctx context.Context, part
 			}
 			return nil
 		}); err != nil {
-			return false, err
+			return 0, false, err
 		}
 		b.stats.NewTaggedStat("jobsdb_pbuffer_move_jobs_count", stats.CountType, stats.Tags{
 			"prefix": b.Identifier(),
 		}).Count(len(bufferedJobs.Jobs))
 	}
-	return bufferedJobs.DSLimitsReached || bufferedJobs.LimitsReached, nil
+	return len(bufferedJobs.Jobs), bufferedJobs.DSLimitsReached || bufferedJobs.LimitsReached, nil
 }
 
-func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context, partitionIDs []string, batchSize int, payloadSize int64) (err error) {
+func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context, partitionIDs []string, batchSize int, payloadSize int64) (count int, err error) {
 	defer b.stats.NewTaggedStat("jobsdb_pbuffer_switchover_time", stats.TimerType, stats.Tags{
 		"prefix": b.Identifier(),
 	}).RecordDuration()()
 
 	if !b.bufferedPartitionsMu.TryLockWithContext(ctx) {
-		return fmt.Errorf("acquiring a buffered partitions write lock during switchover: %w", ctx.Err())
+		return 0, fmt.Errorf("acquiring a buffered partitions write lock during switchover: %w", ctx.Err())
 	}
-	b.logger.Infon("buffered partitions write lock acquired (switchover phase)",
+	b.logger.Infon("Buffered partitions write lock acquired (switchover phase)",
 		logger.NewStringField("partitions", strings.Join(partitionIDs, ",")),
 		logger.NewStringField("prefix", b.Identifier()),
 	)
 	defer func() {
 		b.bufferedPartitionsMu.Unlock()
-		b.logger.Infon("buffered partitions write lock released (switchover phase)",
+		b.logger.Infon("Buffered partitions write lock released (switchover phase)",
 			logger.NewStringField("partitions", strings.Join(partitionIDs, ",")),
 			logger.NewStringField("prefix", b.Identifier()),
 		)
 	}()
-	return b.WithTx(func(tx *tx.Tx) error {
+	totalMoved := 0
+	err = b.WithTx(func(tx *tx.Tx) error {
 		// disable idle_in_transaction_session_timeout for the duration of this transaction, since it may take long to move all remaining data
 		if _, err := tx.ExecContext(ctx, "SET LOCAL idle_in_transaction_session_timeout = '0ms'"); err != nil {
 			return fmt.Errorf("disabling idle_in_transaction_session_timeout during switchover: %w", err)
 		}
-		if b.differentReaderWriterDBs {
+		if b.differentBufferDBs {
 			// mark partitions as unbuffered in the database early, for holding the global lock
 			if err := b.removeBufferPartitions(ctx, tx, partitionIDs); err != nil {
 				return fmt.Errorf("removing buffered partitions during switchover: %w", err)
@@ -189,12 +196,14 @@ func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context
 		}
 		// move any remaining buffered data
 		for limitsReached := true; limitsReached; {
-			limitsReached, err = b.moveBufferedPartitions(ctx, partitionIDs, batchSize, payloadSize)
+			var movedCount int
+			movedCount, limitsReached, err = b.moveBufferedPartitions(ctx, partitionIDs, batchSize, payloadSize)
 			if err != nil {
 				return fmt.Errorf("moving buffered partitions during switchover: %w", err)
 			}
+			totalMoved += movedCount
 		}
-		if !b.differentReaderWriterDBs {
+		if !b.differentBufferDBs {
 			// mark partitions as unbuffered in the database late
 			if err := b.removeBufferPartitions(ctx, tx, partitionIDs); err != nil {
 				return fmt.Errorf("removing buffered partitions during switchover: %w", err)
@@ -202,4 +211,8 @@ func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, err
+	}
+	return totalMoved, nil
 }

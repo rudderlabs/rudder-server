@@ -159,7 +159,7 @@ func NewProcIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, even
 	for u := range workspaces {
 		workspaceID := "workspace-" + strconv.Itoa(u)
 		s.workspaces = append(s.workspaces, workspaceID)
-		for i := 0; i < eventsPerWorkspace; i++ {
+		for range eventsPerWorkspace {
 			jobID := idx + 1
 			js := procIsolationJobSpec{
 				id:          jobID,
@@ -272,7 +272,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		c := r.Run(ctx, []string{"proc-isolation-test-rudder-server"})
+		c := r.Run(ctx, cancel, []string{"proc-isolation-test-rudder-server"})
 		if c != 0 {
 			t.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 		}

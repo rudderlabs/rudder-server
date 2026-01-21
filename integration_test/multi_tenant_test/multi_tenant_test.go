@@ -138,9 +138,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 	debugPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+
+	grpcPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
@@ -158,6 +159,12 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		cmd.Env = append(os.Environ(),
 			"APP_TYPE="+appType,
 			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
+			"PROCESSOR_INDEX=1",
+			"HOSTNAME=rudderstackmt-v0-rudderstack-1",
+			"PROCESSOR_NODE_HOST_PATTERN=rudderstackmt-v0-rudderstack-{index}",
+			"RSERVER_PARTITION_MIGRATION_GRPC_SERVER_PORT="+strconv.Itoa(grpcPort),
+			"RSERVER_PARTITION_MIGRATION_ENABLED=true",
+			"RSERVER_JOBS_DB_PARTITION_COUNT=4",
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
 			"JOBS_DB_HOST="+postgresContainer.Host,
@@ -167,7 +174,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"JOBS_DB_PASSWORD="+postgresContainer.Password,
 			"CONFIG_BACKEND_URL="+backendConfigSrv.URL,
 			"RSERVER_GATEWAY_WEB_PORT="+strconv.Itoa(httpPort),
-			"RSERVER_GATEWAY_ADMIN_WEB_PORT="+strconv.Itoa(httpAdminPort),
 			"RSERVER_PROFILER_PORT="+strconv.Itoa(debugPort),
 			"RSERVER_ENABLE_STATS=false",
 			"RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG=false",

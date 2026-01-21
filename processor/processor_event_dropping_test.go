@@ -283,7 +283,7 @@ func (s *eventDropScenario) startAll(t *testing.T, writeKey, workspaceID, source
 	gwPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	wg.Go(func() error {
-		err := s.runRudderServer(ctx, t, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+		err := s.runRudderServer(ctx, cancel, t, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		} else {
@@ -298,7 +298,7 @@ func (s *eventDropScenario) startAll(t *testing.T, writeKey, workspaceID, source
 	return url, postgresContainer.DB, cancel, wg
 }
 
-func (s *eventDropScenario) runRudderServer(ctx context.Context, t *testing.T, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
+func (s *eventDropScenario) runRudderServer(ctx context.Context, cancel context.CancelFunc, t *testing.T, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
 	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "enableStats"), "false")
 	t.Setenv("CONFIG_BACKEND_URL", cbURL)
 	t.Setenv("WORKSPACE_TOKEN", "token")
@@ -339,7 +339,7 @@ func (s *eventDropScenario) runRudderServer(ctx context.Context, t *testing.T, p
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN"})
-	c := r.Run(ctx, []string{"proc-events-dropping-test-rudder-server"})
+	c := r.Run(ctx, cancel, []string{"proc-events-dropping-test-rudder-server"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

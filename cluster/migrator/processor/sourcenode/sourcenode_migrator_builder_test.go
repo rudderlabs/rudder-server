@@ -140,6 +140,10 @@ func (m *mockEtcdClient) Put(ctx context.Context, key, val string, opts ...clien
 	return &clientv3.PutResponse{}, nil
 }
 
+func (m *mockEtcdClient) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
+	return &clientv3.DeleteResponse{}, nil
+}
+
 type mockJobsDB struct {
 	jobsdb.JobsDB
 }

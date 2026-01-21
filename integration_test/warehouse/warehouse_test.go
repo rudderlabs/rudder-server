@@ -1637,7 +1637,7 @@ func TestUploadsFromGatewayEvents(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runRudderServer(ctx, gwPort, postgresContainer, bcServer.URL, transformerResource.TransformerURL, t.TempDir(), []lo.Tuple2[string, any]{
+		err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcServer.URL, transformerResource.TransformerURL, t.TempDir(), []lo.Tuple2[string, any]{
 			{A: "Processor.enableWarehouseTransformations", B: true},
 			{A: "Processor.verifyWarehouseTransformations", B: true},
 		}...)
@@ -2177,6 +2177,7 @@ func TestDestinationTransformation(t *testing.T) {
 
 func runRudderServer(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, tmpDir string,
@@ -2217,7 +2218,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"warehouse"})
+	c := r.Run(ctx, cancel, []string{"warehouse"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

@@ -120,8 +120,6 @@ func testGatewayByAppType(t *testing.T, appType string) {
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 	debugPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
@@ -141,7 +139,6 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		fmt.Sprintf("JOBS_DB_PASSWORD=%s", postgresContainer.Password),
 		fmt.Sprintf("CONFIG_BACKEND_URL=%s", backendConfigSrv.URL),
 		fmt.Sprintf("RSERVER_GATEWAY_WEB_PORT=%d", httpPort),
-		fmt.Sprintf("RSERVER_GATEWAY_ADMIN_WEB_PORT=%d", httpAdminPort),
 		fmt.Sprintf("RSERVER_PROFILER_PORT=%d", debugPort),
 		fmt.Sprintf("RSERVER_ENABLE_STATS=%s", "false"),
 		fmt.Sprintf("RUDDER_TMPDIR=%s", rudderTmpDir),
