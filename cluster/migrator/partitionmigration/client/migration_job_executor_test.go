@@ -91,7 +91,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		c.Set("PartitionMigration.Executor.StreamTimeout", "1m")
 		c.Set("PartitionMigration.Executor.ProgressPeriod", "100ms")
 
-		mpe := NewMigrationJobExecutor("job1", []string{"1", "2"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
+		mpe := NewMigrationJobExecutor("job1", 0, []string{"1", "2"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
 		err := mpe.Run(t.Context())
 		require.NoError(t, err, "migration job should complete successfully")
 
@@ -127,7 +127,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		c.Set("PartitionMigration.Executor.StreamTimeout", "1m")
 		c.Set("PartitionMigration.Executor.ProgressPeriod", "100ms")
 
-		mpe := NewMigrationJobExecutor("job1", []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
+		mpe := NewMigrationJobExecutor("job1", 0, []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
 		err = mpe.Run(t.Context())
 		require.NoError(t, err, "migration job should complete successfully")
 
@@ -151,7 +151,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		c.Set("PartitionMigration.Executor.StreamTimeout", "1m")
 		c.Set("PartitionMigration.Executor.ProgressPeriod", "100ms")
 
-		mpe := NewMigrationJobExecutor("job1", []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
+		mpe := NewMigrationJobExecutor("job1", 0, []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
 
 		// run migration with a timeout context to simulate cancellation
 		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
@@ -187,7 +187,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		c.Set("PartitionMigration.Executor.SendTimeout", "1s")
 		c.Set("PartitionMigration.Executor.ProgressPeriod", "1s")
 
-		mpe := NewMigrationJobExecutor("job1", []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
+		mpe := NewMigrationJobExecutor("job1", 0, []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()
 		err = mpe.Run(ctx)
@@ -214,7 +214,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		c.Set("PartitionMigration.Executor.ReceiveTimeout", "1s")
 		c.Set("PartitionMigration.Executor.ProgressPeriod", "1s")
 
-		mpe := NewMigrationJobExecutor("job1", []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
+		mpe := NewMigrationJobExecutor("job1", 0, []string{"1"}, env.sourceJobsDB, env.target, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 		err = mpe.Run(ctx)
@@ -240,7 +240,7 @@ func TestMigrationJobExecutor(t *testing.T) {
 		port, err := testhelper.GetFreePort()
 		require.NoError(t, err)
 		invalidTarget := "127.0.0.1:" + strconv.Itoa(port)
-		mpe := NewMigrationJobExecutor("job1", []string{"1"}, env.sourceJobsDB, invalidTarget, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
+		mpe := NewMigrationJobExecutor("job1", 0, []string{"1"}, env.sourceJobsDB, invalidTarget, WithConfig(c), WithLogger(logger.NewFactory(c).NewLogger()))
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()
 		err = mpe.Run(ctx)
