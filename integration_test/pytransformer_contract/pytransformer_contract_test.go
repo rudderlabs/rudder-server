@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -60,10 +59,8 @@ def transformEvent(event, metadata):
 	require.NoError(t, err)
 
 	// 2. Create mock webhook destination to receive events
-	var webhookReceivedCount atomic.Int32
+	// Note: The mock transformer handles delivery, so this just needs to accept requests
 	webhookServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		webhookReceivedCount.Add(1)
-		t.Logf("Webhook received event #%d", webhookReceivedCount.Load())
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer webhookServer.Close()
@@ -98,8 +95,8 @@ def transformEvent(event, metadata):
 
 	// 5. Start rudder-pytransformer container with host network (Linux)
 	pyTransformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "rudder-pytransformer-transformer",
-		Tag:        "latest",
+		Repository: "rudderlabs/rudder-pytransformer",
+		Tag:        "poc-amd64", // TODO change to "latest" once merged to "main"
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + pyConfigBackend.URL,
 			"GUNICORN_WORKERS=1",
@@ -191,10 +188,13 @@ def transformEvent(event, metadata):
 	requireJobsCount(t, ctx, postgresContainer.DB, "gw", jobsdb.Succeeded.State, eventsCount)
 	requireJobsCount(t, ctx, postgresContainer.DB, "rt", jobsdb.Succeeded.State, eventsCount)
 
-	t.Logf("All %d events processed successfully through pytransformer!", eventsCount)
-	t.Logf("Webhook received %d events", webhookReceivedCount.Load())
+	// 12. Verify transformation was applied by checking router job payloads
+	// The Python transformation should have added foo=bar to each event
+	requireTransformationApplied(t, ctx, postgresContainer.DB, eventsCount)
 
-	// 12. Cleanup
+	t.Logf("All %d events processed successfully through pytransformer with foo=bar transformation!", eventsCount)
+
+	// 13. Cleanup
 	cancel()
 	require.NoError(t, wg.Wait())
 }
@@ -328,4 +328,42 @@ func requireJobsCount(
 		1*time.Second,
 		"%d %s events should be in %s state", expectedCount, queue, state,
 	)
+}
+
+// requireTransformationApplied verifies that the Python transformation was applied
+// by checking the router job payloads for the presence of "foo": "bar"
+func requireTransformationApplied(
+	t *testing.T,
+	ctx context.Context,
+	db *sql.DB,
+	expectedCount int,
+) {
+	t.Helper()
+
+	// Query the router jobs to get event payloads
+	rows, err := db.QueryContext(ctx, `SELECT event_payload FROM rt_jobs_1`)
+	require.NoError(t, err)
+	defer func() { _ = rows.Close() }()
+
+	var transformedCount int
+	for rows.Next() {
+		var payload string
+		require.NoError(t, rows.Scan(&payload))
+
+		var event map[string]any
+		require.NoError(t, jsonrs.Unmarshal([]byte(payload), &event))
+
+		// Check if foo=bar was added by the Python transformation
+		fooValue, exists := event["foo"]
+		if exists && fooValue == "bar" {
+			transformedCount++
+			t.Logf("Event %d has foo=%v (transformation applied)", transformedCount, fooValue)
+		} else {
+			t.Errorf("Event missing foo=bar transformation: foo exists=%v, value=%v", exists, fooValue)
+		}
+	}
+	require.NoError(t, rows.Err())
+
+	require.Equal(t, expectedCount, transformedCount,
+		"all %d events should have foo=bar transformation applied", expectedCount)
 }
