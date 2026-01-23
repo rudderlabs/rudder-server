@@ -3364,6 +3364,11 @@ func (jd *Handle) GetUnprocessed(ctx context.Context, params GetQueryParams) (Jo
 
 // GetImporting finds jobs in importing state
 func (jd *Handle) GetImporting(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
+	// Importing jobs are not to be migrated, they are a special case of [executing] jobs, which get queried by
+	// batchrouter's async handler periodically to check for the status of imports. Eventually, these jobs will
+	// transition to [succeeded]/[failed]/[aborted] state once the import is complete.
+	// Hence, we ignore read partition exclusions when fetching importing jobs, so that we can always
+	// find all of them regardless of any partition exclusions.
 	params.ignoreReadPartitionsExclusions = true
 	return jd.getMoreJobs(ctx, []string{Importing.State}, params, more)
 }
