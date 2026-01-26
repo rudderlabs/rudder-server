@@ -110,6 +110,10 @@ func (m *mockEtcdClient) Put(ctx context.Context, key, val string, opts ...clien
 	return &clientv3.PutResponse{}, nil
 }
 
+func (m *mockEtcdClient) Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error) {
+	return &clientv3.DeleteResponse{}, nil
+}
+
 type mockSourceMigrator struct{}
 
 func (m *mockSourceMigrator) Run(ctx context.Context, wg *errgroup.Group) error {

@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -31,15 +31,18 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/rudderserver"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func TestMultiTenant(t *testing.T) {
+	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
+	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)
 	for _, appType := range []string{app.GATEWAY, app.EMBEDDED} {
 		t.Run(appType, func(t *testing.T) {
-			testMultiTenantByAppType(t, appType)
+			testMultiTenantByAppType(t, appType, rsBinaryPath)
 		})
 	}
 }
@@ -56,7 +59,7 @@ func requireAuth(t *testing.T, secret string, handler http.HandlerFunc) http.Han
 	}
 }
 
-func testMultiTenantByAppType(t *testing.T, appType string) {
+func testMultiTenantByAppType(t *testing.T, appType, rsBinaryPath string) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
@@ -138,9 +141,10 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 	debugPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+
+	grpcPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
@@ -154,10 +158,16 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	go func() {
 		defer close(done)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "run", "../../main.go")
-		cmd.Env = append(os.Environ(),
+		g := &errgroup.Group{}
+		envs := append(append([]string{}, os.Environ()...),
 			"APP_TYPE="+appType,
 			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
+			"PROCESSOR_INDEX=1",
+			"HOSTNAME=rudderstackmt-v0-rudderstack-1",
+			"PROCESSOR_NODE_HOST_PATTERN=rudderstackmt-v0-rudderstack-{index}",
+			"RSERVER_PARTITION_MIGRATION_GRPC_SERVER_PORT="+strconv.Itoa(grpcPort),
+			"RSERVER_PARTITION_MIGRATION_ENABLED=true",
+			"RSERVER_JOBS_DB_PARTITION_COUNT=4",
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
 			"JOBS_DB_HOST="+postgresContainer.Host,
@@ -167,7 +177,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"JOBS_DB_PASSWORD="+postgresContainer.Password,
 			"CONFIG_BACKEND_URL="+backendConfigSrv.URL,
 			"RSERVER_GATEWAY_WEB_PORT="+strconv.Itoa(httpPort),
-			"RSERVER_GATEWAY_ADMIN_WEB_PORT="+strconv.Itoa(httpAdminPort),
 			"RSERVER_PROFILER_PORT="+strconv.Itoa(debugPort),
 			"RSERVER_ENABLE_STATS=false",
 			"RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG=false",
@@ -176,30 +185,15 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"DEST_TRANSFORM_URL="+transformerContainer.TransformerURL,
 			"HOSTED_SERVICE_SECRET="+hostedServiceSecret,
 			"WORKSPACE_NAMESPACE="+workspaceNamespace,
-			"RSERVER_WAREHOUSE_MODE=off",
-		)
-		stdout, err := cmd.StdoutPipe()
-		require.NoError(t, err)
-		stderr, err := cmd.StderrPipe()
-		require.NoError(t, err)
+			"RSERVER_WAREHOUSE_MODE=off")
+		rudderserver.StartRudderServer(t, ctx, g, "mt-test-"+strings.ToLower(appType), rsBinaryPath, map[string]string{}, envs...)
 
-		defer func() {
-			_ = stdout.Close()
-			_ = stderr.Close()
-		}()
-		require.NoError(t, cmd.Start())
-		if testing.Verbose() {
-			go func() { _, _ = io.Copy(os.Stdout, stdout) }()
-			go func() { _, _ = io.Copy(os.Stderr, stderr) }()
+		err := g.Wait()
+		if err != nil {
+			t.Errorf("Error running rudder-server: %v", err)
+			return
 		}
-
-		if err = cmd.Wait(); err != nil {
-			if err.Error() != "signal: killed" {
-				t.Errorf("Error running main.go: %v", err)
-				return
-			}
-		}
-		t.Log("main.go exited")
+		t.Log("rudder-server exited")
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 

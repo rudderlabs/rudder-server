@@ -27,7 +27,7 @@ type AppHandler interface {
 	// Setup to be called only once before starting the app.
 	Setup() error
 	// StartRudderCore starts the app
-	StartRudderCore(context.Context, *app.Options) error
+	StartRudderCore(context.Context, func(), *app.Options) error
 }
 
 func GetAppHandler(application app.App, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) (AppHandler, error) {

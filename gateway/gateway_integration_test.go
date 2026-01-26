@@ -61,7 +61,7 @@ func TestWebhook(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runGateway(ctx, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformerURL, t.TempDir())
+		err := runGateway(ctx, cancel, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -115,7 +115,7 @@ func TestDocsEndpoint(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runGateway(ctx, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformerURL, t.TempDir())
+		err := runGateway(ctx, cancel, gwPort, postgresContainer, bcServer.URL, transformerContainer.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -136,6 +136,7 @@ func TestDocsEndpoint(t *testing.T) {
 
 func runGateway(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, tmpDir string,
@@ -179,7 +180,7 @@ func runGateway(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"rudder-gw"})
+	c := r.Run(ctx, cancel, []string{"rudder-gw"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

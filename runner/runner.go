@@ -77,7 +77,7 @@ func New(releaseInfo ReleaseInfo) *Runner {
 }
 
 // Run runs the application and returns the exit code
-func (r *Runner) Run(ctx context.Context, args []string) int {
+func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int {
 	// Start stats
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
@@ -218,7 +218,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// Start rudder core
 	if r.canStartServer() {
 		g.Go(crash.Wrapper(func() (err error) {
-			if err := r.appHandler.StartRudderCore(ctx, options); err != nil {
+			if err := r.appHandler.StartRudderCore(ctx, shutdownFn, options); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
 			}
 			return nil

@@ -77,7 +77,6 @@ func TestMigrator(t *testing.T) {
 		// Create buffer gw jobsdb
 		gwBufJobsDB := jobsdb.NewForReadWrite("gw_buf",
 			jobsdb.WithDBHandle(pg.DB),
-			jobsdb.WithNumPartitions(64),
 			jobsdb.WithSkipMaintenanceErr(true),
 			jobsdb.WithConfig(conf),
 		)
@@ -103,7 +102,6 @@ func TestMigrator(t *testing.T) {
 		// Create buffer rt jobsdb
 		rtBufJobsDB := jobsdb.NewForReadWrite("rt_buf",
 			jobsdb.WithDBHandle(pg.DB),
-			jobsdb.WithNumPartitions(64),
 			jobsdb.WithSkipMaintenanceErr(true),
 			jobsdb.WithConfig(conf),
 		)

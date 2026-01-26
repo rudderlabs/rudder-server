@@ -183,7 +183,7 @@ func BatchrouterDisabledDestinationScenario(t testing.TB, spec *BrtDisabledDesti
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		c := r.Run(ctx, []string{"brt-isolation-test-rudder-server"})
+		c := r.Run(ctx, cancel, []string{"brt-isolation-test-rudder-server"})
 		if c != 0 {
 			t.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 		}

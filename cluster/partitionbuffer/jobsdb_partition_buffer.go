@@ -35,7 +35,6 @@ type JobsDBPartitionBuffer interface {
 type jobsDBPartitionBuffer struct {
 	jobsdb.JobsDB
 	primaryWriteJobsDB jobsdb.JobsDB   // primary JobsDB for write operations
-	primaryReadJobsDB  jobsdb.JobsDB   // primary JobsDB for read operations
 	bufferWriteJobsDB  jobsdb.JobsDB   // buffer JobsDB for write operations
 	bufferReadJobsDB   jobsdb.JobsDB   // buffer JobsDB for read operations
 	lifecycleJobsDBs   []jobsdb.JobsDB // JobsDBs involved in lifecycle operations (like Close)
@@ -43,13 +42,13 @@ type jobsDBPartitionBuffer struct {
 	stats              stats.Stats
 
 	// configuration
-	differentReaderWriterDBs bool                              // if having different reader/writer DBs, we need to refresh buffered partitions on every Store
-	canStore                 bool                              // indicates if Store operations are supported
-	canFlush                 bool                              // indicates if Flush operations are supported
-	numPartitions            int                               // number of partitions used in partition function
-	flushBatchSize           config.ValueLoader[int]           // number of records to flush in a single batch
-	flushPayloadSize         config.ValueLoader[int64]         // total payload size (in bytes) to flush in a single batch
-	flushMoveTimeout         config.ValueLoader[time.Duration] // timeout for move operation, before forcing switchover
+	differentBufferDBs bool                              // if having different reader/writer buffer DBs, we need to refresh buffered partitions on every Store
+	canStore           bool                              // indicates if Store operations are supported
+	canFlush           bool                              // indicates if Flush operations are supported
+	numPartitions      int                               // number of partitions used in partition function
+	flushBatchSize     config.ValueLoader[int]           // number of records to flush in a single batch
+	flushPayloadSize   config.ValueLoader[int64]         // total payload size (in bytes) to flush in a single batch
+	flushMoveTimeout   config.ValueLoader[time.Duration] // timeout for move operation, before forcing switchover
 
 	// state
 	bufferedPartitionsMu      *golock.CASMutex                       // mutex to protect bufferedPartitionsVersion & bufferedPartitions

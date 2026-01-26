@@ -43,7 +43,6 @@ func TestFlushBufferedPartitions(t *testing.T) {
 			})
 			bufferRW := jobsdb.NewForReadWrite("rt_buf",
 				jobsdb.WithDBHandle(pg.DB),
-				jobsdb.WithNumPartitions(64),
 				jobsdb.WithSkipMaintenanceErr(true),
 				jobsdb.WithConfig(c),
 			)
@@ -296,7 +295,6 @@ func TestFlushBufferedPartitions(t *testing.T) {
 
 			bufferWO := jobsdb.NewForWrite("gw_buf",
 				jobsdb.WithDBHandle(pg.DB),
-				jobsdb.WithNumPartitions(64),
 				jobsdb.WithSkipMaintenanceErr(true),
 				jobsdb.WithConfig(c),
 			)
@@ -307,7 +305,6 @@ func TestFlushBufferedPartitions(t *testing.T) {
 
 			bufferRO := jobsdb.NewForRead("gw_buf",
 				jobsdb.WithDBHandle(pg.DB),
-				jobsdb.WithNumPartitions(64),
 				jobsdb.WithSkipMaintenanceErr(true),
 				jobsdb.WithConfig(c),
 			)
@@ -567,7 +564,6 @@ func TestFlushErrors(t *testing.T) {
 		})
 		bufferRW := jobsdb.NewForReadWrite("rt_buf",
 			jobsdb.WithDBHandle(pg.DB),
-			jobsdb.WithNumPartitions(64),
 			jobsdb.WithSkipMaintenanceErr(true),
 		)
 		require.NoError(t, bufferRW.Start(), "it should be able to start JobsDB Buffer")
@@ -601,7 +597,7 @@ func TestFlushErrors(t *testing.T) {
 			pb, _, _ := setup(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			_, err := pb.moveBufferedPartitions(ctx, []string{"partition-1"}, 1, bytesize.MB)
+			_, _, err := pb.moveBufferedPartitions(ctx, []string{"partition-1"}, 1, bytesize.MB)
 			require.Error(t, err, "flush should fail with canceled context")
 			require.ErrorIs(t, err, context.Canceled, "error should be context.Canceled")
 		})
@@ -609,7 +605,7 @@ func TestFlushErrors(t *testing.T) {
 		t.Run("primaryWriteJobsDB.StoreInTx failing", func(t *testing.T) {
 			pb, primaryMock, _ := setup(t)
 			primaryMock.storeInTxErr = errors.New("failed")
-			_, err := pb.moveBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
+			_, _, err := pb.moveBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
 			require.Error(t, err, "moveBufferedPartitions should fail when StoreInTx fails")
 			require.EqualError(t, err, "moving buffered jobs to primary jobsdb: failed")
 		})
@@ -617,7 +613,7 @@ func TestFlushErrors(t *testing.T) {
 		t.Run("bufferReadJobsDB.UpdateJobStatusInTx failing", func(t *testing.T) {
 			pb, _, bufferMock := setup(t)
 			bufferMock.updateJobStatusInTxErr = errors.New("failed")
-			_, err := pb.moveBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
+			_, _, err := pb.moveBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
 			require.Error(t, err, "moveBufferedPartitions should fail when UpdateJobStatusInTx fails")
 			require.EqualError(t, err, "updating job statuses for moved jobs: failed")
 		})
@@ -628,25 +624,25 @@ func TestFlushErrors(t *testing.T) {
 			pb, _, _ := setup(t)
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			err := pb.switchoverBufferedPartitions(ctx, []string{"partition-1"}, 1, bytesize.MB)
+			_, err := pb.switchoverBufferedPartitions(ctx, []string{"partition-1"}, 1, bytesize.MB)
 			require.Error(t, err, "flush should fail with canceled context")
 			require.ErrorIs(t, err, context.Canceled, "error should be context.Canceled")
 		})
 
 		t.Run("bufferReadJobsDB.RefreshDSList failing", func(t *testing.T) {
 			pb, _, bufferMock := setup(t)
-			pb.differentReaderWriterDBs = true
+			pb.differentBufferDBs = true
 			bufferMock.refreshDSListErr = errors.New("failed")
-			err := pb.switchoverBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
+			_, err := pb.switchoverBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
 			require.Error(t, err, "switchoverBufferedPartitions should fail when RefreshDSList fails")
 			require.EqualError(t, err, "refreshing buffer DS list during switchover: failed")
 		})
 
 		t.Run("moveBufferedPartitions failing during switchover", func(t *testing.T) {
 			pb, _, bufferMock := setup(t)
-			pb.differentReaderWriterDBs = true
+			pb.differentBufferDBs = true
 			bufferMock.getUnprocessedErr = errors.New("failed")
-			err := pb.switchoverBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
+			_, err := pb.switchoverBufferedPartitions(t.Context(), []string{"partition-1"}, 1, bytesize.MB)
 			require.Error(t, err, "switchoverBufferedPartitions should fail when moveBufferedPartitions fails")
 			require.EqualError(t, err, "moving buffered partitions during switchover: failed")
 		})
@@ -678,7 +674,7 @@ func TestFlushErrors(t *testing.T) {
 
 		t.Run("switchoverBufferedPartitions failing", func(t *testing.T) {
 			pb, _, bufferMock := setup(t)
-			pb.differentReaderWriterDBs = true
+			pb.differentBufferDBs = true
 			bufferMock.refreshDSListErr = errors.New("failed")
 			err := pb.FlushBufferedPartitions(t.Context(), []string{"partition-1"})
 			require.Error(t, err, "flush should fail with canceled context")

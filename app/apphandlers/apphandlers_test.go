@@ -40,7 +40,7 @@ func TestAppHandlerStartSequence(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		t.Run("it shouldn't be able to start without setup being called first", func(t *testing.T) {
-			require.Error(t, appHandler.StartRudderCore(ctx, options))
+			require.Error(t, appHandler.StartRudderCore(ctx, cancel, options))
 		})
 
 		t.Run("it shouldn't be able to setup if database is down", func(t *testing.T) {
@@ -167,7 +167,7 @@ func TestAppHandlerStartSequence(t *testing.T) {
 
 			wg, ctx := errgroup.WithContext(ctx)
 			wg.Go(func() error {
-				err := appHandler.StartRudderCore(ctx, options)
+				err := appHandler.StartRudderCore(ctx, cancel, options)
 				if err != nil {
 					t.Fatalf("rudder-server exited with error: %v", err)
 				}

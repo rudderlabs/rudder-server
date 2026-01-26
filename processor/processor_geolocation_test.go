@@ -175,7 +175,7 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 	gwPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	wg.Go(func() error {
-		err := s.runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+		err := s.runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		} else {
@@ -190,7 +190,7 @@ func (s *geolocationScenario) startAll(t *testing.T, writeKey string) (gatewayUr
 	return url, postgresContainer.DB, cancel, wg
 }
 
-func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
+func (s *geolocationScenario) runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
 	config.Set("enableStats", false)
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
@@ -256,7 +256,7 @@ func (s *geolocationScenario) runRudderServer(ctx context.Context, port int, pos
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN"})
-	c := r.Run(ctx, []string{"proc-geolocation-test-rudder-server"})
+	c := r.Run(ctx, cancel, []string{"proc-geolocation-test-rudder-server"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

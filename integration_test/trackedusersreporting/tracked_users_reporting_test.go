@@ -215,7 +215,7 @@ func TestTrackedUsersReporting(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runRudderServer(t, ctx, tc)
+		err := runRudderServer(t, ctx, cancel, tc)
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -324,6 +324,7 @@ func setup(t testing.TB) testConfig {
 func runRudderServer(
 	t testing.TB,
 	ctx context.Context,
+	cancel context.CancelFunc,
 	tc testConfig,
 ) (err error) {
 	t.Setenv("CONFIG_BACKEND_URL", tc.configBEServer.URL)
@@ -368,7 +369,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"tracked-users-reporting"})
+	c := r.Run(ctx, cancel, []string{"tracked-users-reporting"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

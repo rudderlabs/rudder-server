@@ -63,7 +63,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		gwPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -136,7 +136,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		gwPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -205,7 +205,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			gwPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 			wg.Go(func() error {
-				err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -274,7 +274,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			gwPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 			wg.Go(func() error {
-				err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -344,7 +344,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 		gwPort, err := kithelper.GetFreePort()
 		require.NoError(t, err)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -419,7 +419,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			gwPort, err := kithelper.GetFreePort()
 			require.NoError(t, err)
 			wg.Go(func() error {
-				err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -503,7 +503,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 			require.NoError(t, err)
 			wg.Go(func() error {
 				config.Set("Router.toAbortDestinationIDs", "destination-1")
-				err := runRudderServer(ctx, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, bcserver.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -542,7 +542,7 @@ func TestReportingDroppedEvents(t *testing.T) {
 	})
 }
 
-func runRudderServer(ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
+func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string) (err error) {
 	config.Set("CONFIG_BACKEND_URL", cbURL)
 	config.Set("WORKSPACE_TOKEN", "token")
 	config.Set("DB.host", postgresContainer.Host)
@@ -575,7 +575,7 @@ func runRudderServer(ctx context.Context, port int, postgresContainer *postgres.
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN"})
-	c := r.Run(ctx, []string{"proc-isolation-test-rudder-server"})
+	c := r.Run(ctx, cancel, []string{"proc-isolation-test-rudder-server"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

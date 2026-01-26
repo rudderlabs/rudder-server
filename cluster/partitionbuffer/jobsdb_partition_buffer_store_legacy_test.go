@@ -64,7 +64,6 @@ func TestJobsDBPartitionBufferStoreLegacy(t *testing.T) {
 		})
 		ts.buffer = jobsdb.NewForReadWrite("buf",
 			jobsdb.WithDBHandle(pg.DB),
-			jobsdb.WithNumPartitions(numPartitions),
 			jobsdb.WithSkipMaintenanceErr(true),
 		)
 		require.NoError(t, ts.buffer.Start(), "it should be able to start JobsDB Buffer")

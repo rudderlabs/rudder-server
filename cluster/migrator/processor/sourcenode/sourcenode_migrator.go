@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,9 @@ func (m *migrator) Handle(ctx context.Context, migration *etcdtypes.PartitionMig
 	if err := m.addReadExcludedPartitions(ctx, sourcePartitions); err != nil {
 		return fmt.Errorf("adding read excluded partitions: %w", err)
 	}
+	m.logger.Infon("Marked source partitions as read-excluded",
+		logger.NewStringField("partitions", strings.Join(sourcePartitions, ",")),
+	)
 	// wait for sleep time so that in-flight queries can complete
 	if err := misc.SleepCtx(ctx, m.c.readExcludeSleep.Load()); err != nil {
 		return fmt.Errorf("waiting for read exclude sleep: %w", err)
@@ -122,10 +126,14 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 
 	getInProgressJobs := func(ctx context.Context, readerJobsDB jobsdb.JobsDB) (bool, error) {
 		for {
-			r, err := readerJobsDB.GetJobs(ctx, []string{jobsdb.Executing.State, jobsdb.Importing.State}, jobsdb.GetQueryParams{
-				PartitionFilters: sourcePartitions,
-				JobsLimit:        1,
-			})
+			r, err := readerJobsDB.GetJobs(
+				ctx,
+				[]string{jobsdb.Executing.State, jobsdb.Importing.State},
+				jobsdb.GetQueryParams{
+					PartitionFilters: sourcePartitions,
+					JobsLimit:        1,
+				},
+			)
 			if err != nil {
 				return false, fmt.Errorf("getting in-progress jobs from %q jobsdb: %w", readerJobsDB.Identifier(), err)
 			}
@@ -139,6 +147,7 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 	}
 	for _, readerJobsDB := range m.readerJobsDBs {
 		pollGroup.Go(func() error {
+			start := time.Now()
 			hasInProgressJobs := true
 			for hasInProgressJobs {
 				select {
@@ -151,8 +160,13 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 						return err
 					}
 					if hasInProgressJobs {
+						m.logger.Infon("Waiting for in-progress jobs to complete",
+							logger.NewStringField("jobsdb", readerJobsDB.Identifier()),
+							logger.NewStringField("partitions", fmt.Sprintf("%v", sourcePartitions)),
+							logger.NewDurationField("elapsed", time.Since(start)),
+						)
 						// sleep for a short duration before checking again
-						if err := misc.SleepCtx(pollCtx, 1*time.Second); err != nil {
+						if err := misc.SleepCtx(pollCtx, m.c.inProgressPollSleep.Load()); err != nil {
 							return fmt.Errorf("sleeping while waiting for no in-progress jobs in %q jobsdb: %w", readerJobsDB.Identifier(), err)
 						}
 					}
@@ -308,7 +322,7 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 			delete(m.pendingMigrationJobs, job.JobID)
 			m.pendingMigrationJobsMu.Unlock()
 
-			log.Infon("Partition migration job status marked as moved successfully",
+			log.Infon("Partition migration job status marked as moved in etcd successfully",
 				logger.NewIntField("revision", res.Header.Revision),
 			)
 			m.stats.NewTaggedStat("partition_mig_src_job", stats.TimerType, m.statsTags()).SendTiming(time.Since(start))

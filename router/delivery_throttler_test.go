@@ -163,7 +163,7 @@ func TestDeliveryThrottler(t *testing.T) {
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		c := r.Run(ctx, []string{"delivery-throttler-test-rudder-server"})
+		c := r.Run(ctx, cancel, []string{"delivery-throttler-test-rudder-server"})
 		t.Logf("server stopped: %d", c)
 		if c != 0 {
 			t.Errorf("server exited with a non-0 exit code: %d", c)

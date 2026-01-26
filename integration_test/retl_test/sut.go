@@ -160,10 +160,7 @@ func (s *SUT) Start(t *testing.T) {
 	s.URL = fmt.Sprintf("http://localhost:%s", httpPort)
 
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	// quick looops
@@ -197,7 +194,7 @@ func (s *SUT) Start(t *testing.T) {
 
 	go func() {
 		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
-		_ = r.Run(svcCtx, []string{"retl-test-rudder-server"})
+		_ = r.Run(svcCtx, svcCancel, []string{"retl-test-rudder-server"})
 		close(s.done)
 	}()
 

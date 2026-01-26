@@ -244,7 +244,7 @@ func RouterIsolationScenario(t testing.TB, spec *RtIsolationScenarioSpec) (overa
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		c := r.Run(ctx, []string{"rt-isolation-test-rudder-server"})
+		c := r.Run(ctx, cancel, []string{"rt-isolation-test-rudder-server"})
 		if c != 0 {
 			t.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 		}

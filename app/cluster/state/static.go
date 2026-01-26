@@ -2,8 +2,10 @@ package state
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -32,4 +34,8 @@ func (s *StaticProvider) ServerMode(ctx context.Context) <-chan servermode.Chang
 	}()
 
 	return ch
+}
+
+func (s *StaticProvider) EtcdClient() (etcdclient.Client, error) {
+	return nil, fmt.Errorf("static provider doesn't support an etcd client")
 }

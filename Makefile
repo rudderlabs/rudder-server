@@ -65,9 +65,9 @@ test-teardown:
     	echo "Tests passed, tearing down..." ;\
 		rm -f $(TESTFILE) ;\
 		echo "mode: atomic" > coverage.txt ;\
-		find . -name "profile.out" | while read file; do grep -v 'mode: atomic' $${file} >> coverage.txt; rm -f $${file}; done ;\
+		find . -name "*profile.out" | while read file; do grep -Ev 'mode: atomic|mode: set' $${file} >> coverage.txt; rm -f $${file}; done ;\
 	else \
-    	rm -f coverage.txt coverage.html ; find . -name "profile.out" | xargs rm -f ;\
+    	rm -f coverage.txt coverage.html ; find . -name "*profile.out" | xargs rm -f ;\
 		echo "Tests failed :-(" ;\
 		exit 1 ;\
 	fi

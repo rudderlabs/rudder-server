@@ -24,7 +24,7 @@ var (
 func main() {
 	c := config.Default
 	log := logger.NewLogger().Child("main")
-	ctx, cancel := kitctx.NotifyContextWithCallback(func() {
+	ctx, shutdownFn := kitctx.NotifyContextWithCallback(func() {
 		log.Infon("Server received termination signal...")
 	}, syscall.SIGINT, syscall.SIGTERM)
 
@@ -45,7 +45,7 @@ func main() {
 		default:
 			if shutdownOnNonReloadableConfigChange.Load() {
 				log.Infon("Config change detected, shutting down server...", logger.NewStringField("key", key))
-				cancel()
+				shutdownFn()
 			} else {
 				log.Infon("Config change detected, but server will not shut down", logger.NewStringField("key", key))
 			}
@@ -59,13 +59,13 @@ func main() {
 		BuiltBy:         builtBy,
 		EnterpriseToken: config.GetString("ENTERPRISE_TOKEN", enterpriseToken),
 	})
-	exitCode := r.Run(ctx, os.Args)
+	exitCode := r.Run(ctx, shutdownFn, os.Args)
 
 	log.Infon("Server was shut down",
 		logger.NewIntField("exitCode", int64(exitCode)),
 		logger.NewDurationField("uptime", time.Since(start)),
 	)
-	cancel()
+	shutdownFn()
 	wg.Wait()
 	os.Exit(exitCode)
 }

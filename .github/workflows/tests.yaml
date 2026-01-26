@@ -175,16 +175,19 @@ jobs:
         package:
           - cluster
           - jobsdb
+          - integration_test/backendconfigunavailability
           - integration_test/docker_test
           - integration_test/multi_tenant_test
+          - integration_test/partitionmigration
           - integration_test/reporting_dropped_events
           - integration_test/reporting_error_index
           - integration_test/warehouse
-          - integration_test/tracing
-          - integration_test/backendconfigunavailability
-          - integration_test/trackedusersreporting
+          - integration_test/retl_test
           - integration_test/snowpipestreaming
           - integration_test/srchydration
+          - integration_test/tracing
+          - integration_test/trackedusersreporting
+          - integration_test/transformer_contract
           - processor
           - regulation-worker
           - router

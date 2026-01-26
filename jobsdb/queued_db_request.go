@@ -27,6 +27,9 @@ func executeDbRequest[T any](jd *Handle, c *dbRequest[T]) T {
 	}
 
 	if queueEnabled {
+		if cap(queueCap) == 0 {
+			panic(fmt.Errorf("encountered queue channel with empty capacity, did you forget to Start %q JobsDB?", jd.tablePrefix))
+		}
 		queuedAt := time.Now()
 		waitTimeStat := jd.getTimerStat(fmt.Sprintf("jobsdb_%s_wait_time", c.name), c.tags)
 		queueCap <- struct{}{}

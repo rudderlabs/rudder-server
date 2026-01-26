@@ -231,7 +231,7 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 			delete(m.pendingMigrationJobs, job.JobID)
 			m.pendingMigrationJobsMu.Unlock()
 
-			log.Infon("Partition migration job status marked as completed successfully",
+			log.Infon("Partition migration job status marked as completed in etcd successfully",
 				logger.NewIntField("revision", res.Header.Revision),
 			)
 			m.stats.NewTaggedStat("partition_mig_target_job", stats.TimerType, m.statsTags()).SendTiming(time.Since(start))

@@ -46,7 +46,7 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		ctx := t.Context()
 
 		primary := jobsdb.NewForReadWrite("rw", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		buffer := jobsdb.NewForReadWrite("rw_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		buffer := jobsdb.NewForReadWrite("rw_buf", jobsdb.WithDBHandle(pg.DB))
 		require.NoError(t, buffer.Start(), "it should be able to start JobsDB Buffer")
 		pb, err := NewJobsDBPartitionBuffer(ctx, WithReadWriteJobsDBs(primary, buffer), WithLogger(logger.NOP))
 		require.NoError(t, err, "it should be able to create JobsDBPartitionBuffer")
@@ -83,7 +83,7 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		ctx := t.Context()
 
 		primaryWriter := jobsdb.NewForReadWrite("wo", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
-		bufferWriter := jobsdb.NewForReadWrite("wo_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		bufferWriter := jobsdb.NewForReadWrite("wo_buf", jobsdb.WithDBHandle(pg.DB))
 		pb, err := NewJobsDBPartitionBuffer(ctx, WithWriterOnlyJobsDBs(primaryWriter, bufferWriter), WithStats(stats.NOP))
 		require.NoError(t, err)
 		require.NoError(t, pb.Start(), "it should be able to start pb buffer")
@@ -124,13 +124,13 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		primaryReader := jobsdb.NewForRead("ro", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
 
 		// we need to first create a writer buffer DB to create journal tables, even though we won't use it
-		bufferWriter := jobsdb.NewForWrite("ro_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		bufferWriter := jobsdb.NewForWrite("ro_buf", jobsdb.WithDBHandle(pg.DB))
 		require.NoError(t, bufferWriter.Start(), "it should be able to start buffer reader JobsDB")
 		t.Cleanup(func() {
 			bufferWriter.TearDown()
 		})
 
-		bufferReader := jobsdb.NewForRead("ro_buf", jobsdb.WithDBHandle(pg.DB), jobsdb.WithNumPartitions(64))
+		bufferReader := jobsdb.NewForRead("ro_buf", jobsdb.WithDBHandle(pg.DB))
 
 		pb, err := NewJobsDBPartitionBuffer(ctx, WithReaderOnlyAndFlushJobsDBs(primaryReader, bufferReader, primaryWriter))
 		require.NoError(t, err)
@@ -193,7 +193,6 @@ func TestNewJobsDBPartitionBuffer(t *testing.T) {
 		})
 		buffer := jobsdb.NewForReadWrite("rw_buf",
 			jobsdb.WithDBHandle(pg.DB),
-			jobsdb.WithNumPartitions(64),
 			jobsdb.WithSkipMaintenanceErr(true),
 		)
 		require.NoError(t, buffer.Start(), "it should be able to start JobsDB Buffer")

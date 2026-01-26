@@ -114,7 +114,7 @@ func TestSrcHydration(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir(), nil)
+			err := runRudderServer(t, ctx, cancel, gwPort, postgresContainer, bcServer.URL, tr.TransformerURL, t.TempDir(), nil)
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -235,7 +235,7 @@ func TestSrcHydration(t *testing.T) {
 
 				wg, ctx := errgroup.WithContext(ctx)
 				wg.Go(func() error {
-					err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), minioResource)
+					err := runRudderServer(t, ctx, cancel, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), minioResource)
 					if err != nil {
 						t.Logf("rudder-server exited with error: %v", err)
 					}
@@ -519,7 +519,7 @@ func prepareBackendConfigServer(t *testing.T, webhookURL string, internalSecret 
 		Build()
 }
 
-func runRudderServer(t testing.TB, ctx context.Context, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string, minioResource *minio.Resource) (err error) {
+func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFunc, port int, postgresContainer *postgres.Resource, cbURL, transformerURL, tmpDir string, minioResource *minio.Resource) (err error) {
 	config.Reset()
 	t.Setenv("CONFIG_BACKEND_URL", cbURL)
 	t.Setenv("WORKSPACE_TOKEN", "token")
@@ -567,7 +567,7 @@ func runRudderServer(t testing.TB, ctx context.Context, port int, postgresContai
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"src-hydration"})
+	c := r.Run(ctx, cancel, []string{"src-hydration"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

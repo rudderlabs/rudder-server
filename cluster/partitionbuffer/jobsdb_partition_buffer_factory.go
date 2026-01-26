@@ -23,13 +23,12 @@ var ErrInvalidJobsDBPartitionBufferConfig = errors.New("invalid jobsdb partition
 func WithReadWriteJobsDBs(primary, buffer jobsdb.JobsDB) Opt {
 	return func(b *jobsDBPartitionBuffer) {
 		b.JobsDB = primary
-		b.primaryReadJobsDB = primary
 		b.primaryWriteJobsDB = primary
 		b.bufferReadJobsDB = buffer
 		b.bufferWriteJobsDB = buffer
 		b.canStore = true
 		b.canFlush = true
-		b.differentReaderWriterDBs = false
+		b.differentBufferDBs = false
 		b.lifecycleJobsDBs = []jobsdb.JobsDB{primary, buffer}
 	}
 }
@@ -42,7 +41,7 @@ func WithWriterOnlyJobsDBs(primaryWriter, bufferWriter jobsdb.JobsDB) Opt {
 		b.bufferWriteJobsDB = bufferWriter
 		b.canStore = true
 		b.canFlush = false
-		b.differentReaderWriterDBs = true
+		b.differentBufferDBs = true
 		b.lifecycleJobsDBs = []jobsdb.JobsDB{primaryWriter, bufferWriter}
 	}
 }
@@ -51,13 +50,26 @@ func WithWriterOnlyJobsDBs(primaryWriter, bufferWriter jobsdb.JobsDB) Opt {
 func WithReaderOnlyAndFlushJobsDBs(primaryReader, bufferReader, primaryWriter jobsdb.JobsDB) Opt {
 	return func(b *jobsDBPartitionBuffer) {
 		b.JobsDB = primaryReader
-		b.primaryReadJobsDB = primaryReader
 		b.bufferReadJobsDB = bufferReader
 		b.primaryWriteJobsDB = primaryWriter
 		b.canStore = false
 		b.canFlush = true
-		b.differentReaderWriterDBs = true
+		b.differentBufferDBs = true
 		b.lifecycleJobsDBs = []jobsdb.JobsDB{primaryReader, bufferReader, primaryWriter}
+	}
+}
+
+// WithSeparateReaderAndWriterPrimaryJobsDBs uses the primary writer as a delegate, however does not manage its lifecycle
+func WithSeparateReaderAndWriterPrimaryJobsDBs(primaryReader, primaryWriter, buffer jobsdb.JobsDB) Opt {
+	return func(b *jobsDBPartitionBuffer) {
+		b.JobsDB = primaryWriter
+		b.primaryWriteJobsDB = primaryWriter
+		b.bufferReadJobsDB = buffer
+		b.bufferWriteJobsDB = buffer
+		b.canStore = true
+		b.canFlush = true
+		b.differentBufferDBs = false
+		b.lifecycleJobsDBs = []jobsdb.JobsDB{primaryReader} // primaryWriter's and buffer's lifecycle are externally managed
 	}
 }
 
@@ -107,7 +119,7 @@ func WithFlushMoveTimeout(flushMoveTimeout config.ValueLoader[time.Duration]) Op
 func NewJobsDBPartitionBuffer(ctx context.Context, opts ...Opt) (JobsDBPartitionBuffer, error) {
 	jb := &jobsDBPartitionBuffer{
 		numPartitions:        64,
-		flushBatchSize:       config.SingleValueLoader(100000),
+		flushBatchSize:       config.SingleValueLoader(20000),
 		flushPayloadSize:     config.SingleValueLoader(500 * bytesize.MB),
 		flushMoveTimeout:     config.SingleValueLoader(30 * time.Minute),
 		bufferedPartitionsMu: golock.NewCASMutex(),

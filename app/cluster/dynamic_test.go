@@ -2,6 +2,7 @@ package cluster_test
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -24,6 +26,10 @@ type mockModeProvider struct {
 
 func (m *mockModeProvider) ServerMode(context.Context) <-chan servermode.ChangeEvent {
 	return m.modeCh
+}
+
+func (m *mockModeProvider) EtcdClient() (etcdclient.Client, error) {
+	return nil, fmt.Errorf("mock provider doesn't support an etcd client")
 }
 
 func (m *mockModeProvider) sendMode(newMode servermode.ChangeEvent) {
@@ -67,6 +73,7 @@ func TestDynamicCluster(t *testing.T) {
 	schemaForwarder := mockjobsforwarder.NewMockForwarder(gomock.NewController(t))
 	eschDB := &mockLifecycle{status: "", callCount: &callCount}
 	archDB := &mockLifecycle{status: "", callCount: &callCount}
+	partitionMigrator := &mockLifecycle{status: "", callCount: &callCount}
 	archiver := &mockLifecycle{status: "", callCount: &callCount}
 
 	processor := &mockLifecycle{status: "", callCount: &callCount}
@@ -74,16 +81,16 @@ func TestDynamicCluster(t *testing.T) {
 	dc := cluster.Dynamic{
 		Provider: provider,
 
-		GatewayDB:     gatewayDB,
-		RouterDB:      routerDB,
-		BatchRouterDB: batchRouterDB,
-		EventSchemaDB: eschDB,
-		ArchivalDB:    archDB,
-
-		Processor:       processor,
-		Router:          router,
-		SchemaForwarder: schemaForwarder,
-		Archiver:        archiver,
+		GatewayDB:         gatewayDB,
+		RouterDB:          routerDB,
+		BatchRouterDB:     batchRouterDB,
+		EventSchemaDB:     eschDB,
+		ArchivalDB:        archDB,
+		PartitionMigrator: partitionMigrator,
+		Processor:         processor,
+		Router:            router,
+		SchemaForwarder:   schemaForwarder,
+		Archiver:          archiver,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -112,6 +119,7 @@ func TestDynamicCluster(t *testing.T) {
 		require.Equal(t, "start", routerDB.status)
 		require.Equal(t, "start", batchRouterDB.status)
 
+		require.Equal(t, "start", partitionMigrator.status)
 		require.Equal(t, "start", processor.status)
 		require.Equal(t, "start", router.status)
 
@@ -119,6 +127,11 @@ func TestDynamicCluster(t *testing.T) {
 		require.True(t, gatewayDB.callOrder < processor.callOrder)
 		require.True(t, routerDB.callOrder < processor.callOrder)
 		require.True(t, batchRouterDB.callOrder < processor.callOrder)
+
+		t.Log("dbs should be started before partition migrator")
+		require.True(t, gatewayDB.callOrder < partitionMigrator.callOrder)
+		require.True(t, routerDB.callOrder < partitionMigrator.callOrder)
+		require.True(t, batchRouterDB.callOrder < partitionMigrator.callOrder)
 
 		t.Log("dbs should be started before router")
 		require.True(t, gatewayDB.callOrder < router.callOrder)
@@ -137,6 +150,10 @@ func TestDynamicCluster(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			return batchRouterDB.status == "start"
+		}, time.Second, time.Millisecond)
+
+		require.Eventually(t, func() bool {
+			return partitionMigrator.status == "start"
 		}, time.Second, time.Millisecond)
 
 		require.Eventually(t, func() bool {
@@ -164,8 +181,14 @@ func TestDynamicCluster(t *testing.T) {
 		require.Equal(t, "stop", routerDB.status)
 		require.Equal(t, "stop", batchRouterDB.status)
 
+		require.Equal(t, "stop", partitionMigrator.status)
 		require.Equal(t, "stop", processor.status)
 		require.Equal(t, "stop", router.status)
+
+		t.Log("dbs should be stopped after partition migrator")
+		require.True(t, gatewayDB.callOrder > partitionMigrator.callOrder)
+		require.True(t, routerDB.callOrder > partitionMigrator.callOrder)
+		require.True(t, batchRouterDB.callOrder > partitionMigrator.callOrder)
 
 		t.Log("dbs should be stopped after processor")
 		require.True(t, gatewayDB.callOrder > processor.callOrder)
@@ -186,8 +209,14 @@ func TestDynamicCluster(t *testing.T) {
 		require.Equal(t, "stop", routerDB.status)
 		require.Equal(t, "stop", batchRouterDB.status)
 
+		require.Equal(t, "stop", partitionMigrator.status)
 		require.Equal(t, "stop", processor.status)
 		require.Equal(t, "stop", router.status)
+
+		t.Log("dbs should be stopped after partition migrator")
+		require.True(t, gatewayDB.callOrder > partitionMigrator.callOrder)
+		require.True(t, routerDB.callOrder > partitionMigrator.callOrder)
+		require.True(t, batchRouterDB.callOrder > partitionMigrator.callOrder)
 
 		t.Log("dbs should be stopped after processor")
 		require.True(t, gatewayDB.callOrder > processor.callOrder)
