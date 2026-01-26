@@ -46,6 +46,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
+	handle.config.pythonTransformationURL = handle.conf.GetString("PYTHON_TRANSFORM_URL", "")
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.UserTransformer.maxRetry", "Processor.maxRetry")
@@ -68,6 +69,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 type Client struct {
 	config struct {
 		userTransformationURL      string
+		pythonTransformationURL    string
 		forMirroring               bool
 		maxRetry                   config.ValueLoader[int]
 		failOnUserTransformTimeout config.ValueLoader[bool]
@@ -93,7 +95,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		transformationID = clientEvents[0].Destination.Transformations[0].ID
 	}
 
-	userURL := u.userTransformURL()
+	transformationLanguage := u.getTransformationLanguage(clientEvents)
+	userURL := u.userTransformURLForLanguage(transformationLanguage)
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
 		Stage:            "user_transformer",
@@ -135,7 +138,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		batches,
 		func(batch []types.TransformerEvent, i int) {
 			go func() {
-				transformResponse[i] = u.sendBatch(ctx, u.userTransformURL(), labels, batch)
+				transformResponse[i] = u.sendBatch(ctx, userURL, labels, batch)
 				wg.Done()
 			}()
 		},
@@ -228,7 +231,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				transformationID = clientEvents[0].Destination.Transformations[0].ID
 				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
 			}
-			u.log.Errorn("JS HTTP connection error",
+			u.log.Errorn("User transformation HTTP connection error",
 				obskit.Error(err),
 				obskit.SourceID(clientEvents[0].Metadata.SourceID),
 				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
@@ -377,4 +380,24 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 
 func (u *Client) userTransformURL() string {
 	return u.config.userTransformationURL + "/customTransform"
+}
+
+func (u *Client) userTransformURLForLanguage(language string) string {
+	if strings.Contains(language, "python") && u.config.pythonTransformationURL != "" {
+		return u.config.pythonTransformationURL + "/customTransform"
+	}
+	return u.config.userTransformationURL + "/customTransform"
+}
+
+func (u *Client) getTransformationLanguage(clientEvents []types.TransformerEvent) string {
+	if len(clientEvents) == 0 {
+		return "javascript"
+	}
+	if len(clientEvents[0].Destination.Transformations) > 0 {
+		lang := clientEvents[0].Destination.Transformations[0].Language
+		if lang != "" {
+			return lang
+		}
+	}
+	return "javascript"
 }

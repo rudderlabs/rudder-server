@@ -234,6 +234,7 @@ type TransformationT struct {
 	VersionID string
 	ID        string
 	Config    map[string]interface{}
+	Language  string
 }
 
 type LibraryT struct {
