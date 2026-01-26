@@ -10,7 +10,7 @@ workspaceConfig.json
 imports/enterprise.go
 *.coverprofile
 junit*.xml
-**/profile.out
+**/*profile.out
 **/*.test
 .idea/*
 build/regulation-worker

@@ -161,7 +161,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
 	buildRudderServerBinary(t, rsBinaryPath)
 	node0Name := "node-0"
-	startRudderServer(ctx, g, node0Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
+	startRudderServer(t, ctx, g, node0Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
 		"PROCESSOR_INDEX":                     "0",
 		"HOSTNAME":                            node0Name,
 		"INSTANCE_ID":                         node0Name,
@@ -182,7 +182,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	)
 
 	node1Name := "node-1"
-	startRudderServer(ctx, g, node1Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
+	startRudderServer(t, ctx, g, node1Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
 		"PROCESSOR_INDEX":                     "1",
 		"HOSTNAME":                            node1Name,
 		"INSTANCE_ID":                         node1Name,
