@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/clustertest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/rudderserver"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -159,9 +160,9 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",    // poll faster for test speed
 	}
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
-	buildRudderServerBinary(t, rsBinaryPath)
+	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)
 	node0Name := "node-0"
-	startRudderServer(t, ctx, g, node0Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
+	rudderserver.StartRudderServer(t, ctx, g, node0Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
 		"PROCESSOR_INDEX":                     "0",
 		"HOSTNAME":                            node0Name,
 		"INSTANCE_ID":                         node0Name,
@@ -182,7 +183,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	)
 
 	node1Name := "node-1"
-	startRudderServer(t, ctx, g, node1Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
+	rudderserver.StartRudderServer(t, ctx, g, node1Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
 		"PROCESSOR_INDEX":                     "1",
 		"HOSTNAME":                            node1Name,
 		"INSTANCE_ID":                         node1Name,

@@ -1,4 +1,4 @@
-package partitionmigration_test
+package rudderserver
 
 import (
 	"context"
@@ -14,10 +14,10 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 )
 
-// buildRudderServerBinary builds the rudder-server binary and returns its path.
-func buildRudderServerBinary(t *testing.T, binaryPath string) {
+// BuildRudderServerBinary builds the rudder-server binary and returns its path.
+func BuildRudderServerBinary(t *testing.T, mainPath, binaryPath string) {
 	name := "testbinary"
-	buildCmd := exec.Command("go", "build", "-cover", "-o", binaryPath, "../../main.go")
+	buildCmd := exec.Command("go", "build", "-cover", "-o", binaryPath, mainPath)
 	buildCmd.Stderr = os.Stderr
 	buildCmd.Stdout = os.Stdout
 	if err := buildCmd.Run(); err != nil {
@@ -25,9 +25,9 @@ func buildRudderServerBinary(t *testing.T, binaryPath string) {
 	}
 }
 
-// startRudderServer starts a rudder-server process with the given environment configuration in a separate goroutine managed by the provided errgroup.Group.
+// StartRudderServer starts a rudder-server process with the given environment configuration in a separate goroutine managed by the provided errgroup.Group.
 // It sends SIGTERM when the context is cancelled to allow graceful shutdown and proper coverage data collection.
-func startRudderServer(t *testing.T, ctx context.Context, g *errgroup.Group, name, binaryPath string, configs map[string]string) {
+func StartRudderServer(t *testing.T, ctx context.Context, g *errgroup.Group, name, binaryPath string, configs map[string]string, otherEnv ...string) {
 	coverDir := t.TempDir()
 	configs["GOCOVERDIR"] = coverDir
 	// Don't use exec.CommandContext - it sends SIGKILL on context cancellation,
@@ -36,6 +36,7 @@ func startRudderServer(t *testing.T, ctx context.Context, g *errgroup.Group, nam
 	cmd.Env = append(os.Environ(), lo.MapToSlice(configs, func(k, v string) string {
 		return config.ConfigKeyToEnv(config.DefaultEnvPrefix, k) + "=" + v
 	})...)
+	cmd.Env = append(cmd.Env, otherEnv...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	if err := cmd.Start(); err != nil {
