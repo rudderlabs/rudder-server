@@ -66,7 +66,7 @@ func (b *GatewayPartitionMigratorBuilder) Build() (PartitionMigrator, error) {
 		b.config = config.Default
 	}
 	if b.logger == nil {
-		b.logger = logger.Default.NewLogger().Child("gw-partition-migrator")
+		b.logger = logger.Default.NewLogger().Child("partitionmigration")
 	}
 	b.logger = b.logger.Withn(
 		logger.NewIntField("nodeIndex", int64(b.nodeIndex)),
