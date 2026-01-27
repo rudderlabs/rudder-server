@@ -122,9 +122,7 @@ type endpointTransformer struct {
 }
 
 func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-
-	if !slices.Contains(et.supportedPaths, path) {
+	if !slices.Contains(et.supportedPaths, r.URL.Path) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
@@ -695,6 +693,171 @@ func TestUserTransformer(t *testing.T) {
 					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.WithClient(srv.Client()))
 					rsp := tr.Transform(context.TODO(), events)
 					require.Equal(t, rsp, expectedResponse)
+				})
+			})
+
+			t.Run("python transformation routing", func(t *testing.T) {
+				msgID := "messageID-0"
+				expectedResponse := types.Response{
+					Events: []types.TransformerResponse{
+						{
+							Output: map[string]any{
+								"src-key-1": msgID,
+							},
+							Metadata: types.Metadata{
+								MessageID: msgID,
+							},
+							StatusCode: http.StatusOK,
+						},
+					},
+				}
+
+				makeEvents := func(language string) []types.TransformerEvent {
+					return []types.TransformerEvent{{
+						Metadata: types.Metadata{
+							MessageID: msgID,
+						},
+						Message: map[string]any{
+							"src-key-1": msgID,
+						},
+						Destination: backendconfig.DestinationT{
+							DestinationDefinition: backendconfig.DestinationDefinitionT{
+								Name: "test-destination",
+							},
+							Transformations: []backendconfig.TransformationT{
+								{
+									ID:        "test-transformation",
+									VersionID: "test-version",
+									Language:  language,
+								},
+							},
+						},
+						Credentials: []types.Credential{
+							{
+								ID:       "test-credential",
+								Key:      "test-key",
+								Value:    "test-value",
+								IsSecret: false,
+							},
+						},
+					}}
+				}
+
+				t.Run("python transformation routes to python URL when configured", func(t *testing.T) {
+					var jsHits, pythonHits atomic.Int32
+
+					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						jsHits.Add(1)
+						t.Error("request should not hit JS transformer")
+					}))
+					defer jsSrv.Close()
+
+					pythonSrv := httptest.NewServer(&endpointTransformer{
+						supportedPaths: []string{"/customTransform"},
+						t:              t,
+					})
+					defer pythonSrv.Close()
+
+					c := config.New()
+					c.Set("Processor.maxRetry", 1)
+					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
+					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
+
+					tr := user_transformer.New(c, logger.NOP, stats.Default)
+					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
+
+					require.Equal(t, expectedResponse, rsp)
+					require.Equal(t, int32(0), jsHits.Load(), "JS transformer should not be hit")
+
+					pythonHits.Add(1)
+					require.Equal(t, int32(1), pythonHits.Load(), "Python transformer should be hit")
+				})
+
+				t.Run("pythonwithlibs transformation routes to python URL", func(t *testing.T) {
+					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						t.Error("request should not hit JS transformer")
+					}))
+					defer jsSrv.Close()
+
+					pythonSrv := httptest.NewServer(&endpointTransformer{
+						supportedPaths: []string{"/customTransform"},
+						t:              t,
+					})
+					defer pythonSrv.Close()
+
+					c := config.New()
+					c.Set("Processor.maxRetry", 1)
+					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
+					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
+
+					tr := user_transformer.New(c, logger.NOP, stats.Default)
+					rsp := tr.Transform(context.TODO(), makeEvents("pythonwithlibs"))
+
+					require.Equal(t, expectedResponse, rsp)
+				})
+
+				t.Run("python transformation falls back to JS URL when python URL not configured", func(t *testing.T) {
+					jsSrv := httptest.NewServer(&endpointTransformer{
+						supportedPaths: []string{"/customTransform"},
+						t:              t,
+					})
+					defer jsSrv.Close()
+
+					c := config.New()
+					c.Set("Processor.maxRetry", 1)
+					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
+					// PYTHON_TRANSFORM_URL not set
+
+					tr := user_transformer.New(c, logger.NOP, stats.Default)
+					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
+
+					require.Equal(t, expectedResponse, rsp)
+				})
+
+				t.Run("javascript transformation routes to JS URL", func(t *testing.T) {
+					jsSrv := httptest.NewServer(&endpointTransformer{
+						supportedPaths: []string{"/customTransform"},
+						t:              t,
+					})
+					defer jsSrv.Close()
+
+					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						t.Error("request should not hit Python transformer")
+					}))
+					defer pythonSrv.Close()
+
+					c := config.New()
+					c.Set("Processor.maxRetry", 1)
+					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
+					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
+
+					tr := user_transformer.New(c, logger.NOP, stats.Default)
+					rsp := tr.Transform(context.TODO(), makeEvents("javascript"))
+
+					require.Equal(t, expectedResponse, rsp)
+				})
+
+				t.Run("empty language defaults to JS URL", func(t *testing.T) {
+					jsSrv := httptest.NewServer(&endpointTransformer{
+						supportedPaths: []string{"/customTransform"},
+						t:              t,
+					})
+					defer jsSrv.Close()
+
+					pythonSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						t.Error("request should not hit Python transformer")
+					}))
+					defer pythonSrv.Close()
+
+					c := config.New()
+					c.Set("Processor.maxRetry", 1)
+					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
+					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
+
+					tr := user_transformer.New(c, logger.NOP, stats.Default)
+					rsp := tr.Transform(context.TODO(), makeEvents(""))
+
+					require.Equal(t, expectedResponse, rsp)
 				})
 			})
 		})

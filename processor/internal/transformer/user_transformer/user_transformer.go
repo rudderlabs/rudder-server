@@ -258,7 +258,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	case http.StatusOK:
 		integrations.CollectIntgTransformErrorStats(respData)
 		err = jsonrs.Unmarshal(respData, &transformerResponses)
-		// This is returned by our JS engine so should  be parsable
+		// This is returned by our JS engine so should be parseable
 		// Panic the processor to avoid replays
 		if err != nil {
 			u.log.Errorn("Data sent to transformer", logger.NewStringField("payload", string(rawJSON)))
@@ -360,9 +360,8 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
 			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
-		} else {
-			return nil, 0, err
 		}
+		return nil, 0, err
 	}
 
 	// perform version compatibility check only on success
@@ -379,7 +378,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 }
 
 func (u *Client) userTransformURL(language string) string {
-	if strings.Contains(language, "python") && u.config.pythonTransformationURL != "" {
+	if strings.Index(language, "python") == 0 && u.config.pythonTransformationURL != "" {
 		return u.config.pythonTransformationURL + "/customTransform"
 	}
 	return u.config.userTransformationURL + "/customTransform"
