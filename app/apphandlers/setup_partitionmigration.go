@@ -68,7 +68,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		Finally: func() {},
 	}
 
-	log := logger.NewLogger().Child("partitionmigrator")
+	log := logger.NewLogger().Child("partitionmigration")
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
 	if partitionCount == 0 {
 		return ppmSetup, fmt.Errorf("partition migrator needs partition count > 0")
