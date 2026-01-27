@@ -19,8 +19,8 @@ type logger interface {
 // and counts out-of-order events based on [userId] and [eventIndex] fields.
 func newTestWebhook(l logger) *testWebhook {
 	wh := &testWebhook{
-		outOfOrderEvents: make(map[string][]int),
-		lastEventIndex:   make(map[string]int),
+		outOfOrderEvents: make(map[string][]eventIndexAndInstanceID),
+		lastEventIndex:   make(map[string]eventIndexAndInstanceID),
 	}
 	wh.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -34,26 +34,28 @@ func newTestWebhook(l logger) *testWebhook {
 			return
 		}
 		eventIndex := int(gjson.GetBytes(body, "eventIndex").Int())
+		instanceID := r.Header.Get("X-Rudder-Instance-ID")
 
 		wh.mu.Lock()
 		defer wh.mu.Unlock()
-		lastIndex, exists := wh.lastEventIndex[userID]
+		last, exists := wh.lastEventIndex[userID]
 		if !exists { // first event for this userID
 			wh.totalEvents.Add(1)
-			wh.lastEventIndex[userID] = eventIndex
-		} else if eventIndex < lastIndex { // out of order event
-			l.Logf("webhooktest: received out-of-order webhook request for user %q and eventIndex %d (lastIndex: %d)", userID, eventIndex, lastIndex)
-			wh.totalEvents.Add(1)
+			wh.lastEventIndex[userID] = eventIndexAndInstanceID{eventIndex: eventIndex, instanceID: instanceID}
+		} else if eventIndex == last.eventIndex { // duplicate event (from router retry?)
+			l.Logf("webhooktest: received duplicate webhook request for user %q and eventIndex %d [%s]", userID, eventIndex, instanceID)
+		} else if eventIndex != last.eventIndex+1 { // out of order event
+			l.Logf("webhooktest: received out-of-order webhook request for user %q and eventIndex %d [%s] (lastIndex: %d [%s])", userID, eventIndex, instanceID, last.eventIndex, last.instanceID)
 			wh.outOfOrderCount.Add(1)
-			wh.outOfOrderEvents[userID] = append(wh.outOfOrderEvents[userID], wh.lastEventIndex[userID], eventIndex)
-		} else if eventIndex == lastIndex { // duplicate event (from router retry?)
-			l.Logf("webhooktest: received duplicate webhook request for user %q and eventIndex %d", userID, eventIndex)
+			wh.outOfOrderEvents[userID] = append(wh.outOfOrderEvents[userID], wh.lastEventIndex[userID], eventIndexAndInstanceID{eventIndex: eventIndex, instanceID: instanceID})
+			wh.lastEventIndex[userID] = eventIndexAndInstanceID{eventIndex: eventIndex, instanceID: instanceID}
+			wh.totalEvents.Add(1)
 		} else {
-			if eventIndex > lastIndex+1 {
-				l.Logf("webhooktest: detected missing events for user %q: lastIndex=%d, currentIndex=%d", userID, lastIndex, eventIndex)
+			if instanceID != last.instanceID {
+				l.Logf("webhooktest: instanceID change for user %q on index %d: [%s -> %s]", userID, eventIndex, last.instanceID, instanceID)
 			}
 			// in order event
-			wh.lastEventIndex[userID] = eventIndex
+			wh.lastEventIndex[userID] = eventIndexAndInstanceID{eventIndex: eventIndex, instanceID: instanceID}
 			wh.totalEvents.Add(1)
 		}
 	}))
@@ -65,6 +67,11 @@ type testWebhook struct {
 	totalEvents      atomic.Int64
 	outOfOrderCount  atomic.Int64
 	mu               sync.Mutex
-	outOfOrderEvents map[string][]int
-	lastEventIndex   map[string]int
+	outOfOrderEvents map[string][]eventIndexAndInstanceID
+	lastEventIndex   map[string]eventIndexAndInstanceID
+}
+
+type eventIndexAndInstanceID struct {
+	eventIndex int
+	instanceID string
 }

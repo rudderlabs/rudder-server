@@ -28,7 +28,7 @@ func GetConnectionString(c *config.Config, componentName string) string {
 
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
-	appName := DefaultString("rudder-server").OnError(os.Hostname())
+	appName := c.GetString("HOSTNAME", DefaultString("rudder-server").OnError(os.Hostname()))
 	if len(componentName) > 0 {
 		appName = fmt.Sprintf("%s-%s", componentName, appName)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
+	migrator "github.com/rudderlabs/rudder-server/cluster/migrator/gateway"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/processor"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/processor/sourcenode"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/processor/targetnode"
@@ -83,10 +84,10 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		// we have separate reader and writer gw DBs, writer is externally managed
 		// and we are going to create a single buffer using both
 		gwBuffRWHandle := jobsdb.NewForReadWrite(
-			"gw_buff",
+			"gw_buf",
 			jobsdb.WithClearDB(false),
-			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.gw_buff.dsLimit", "JobsDB.dsLimit")),
-			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buff.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
+			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.gw_buf.dsLimit", "JobsDB.dsLimit")),
+			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(stats),
 			jobsdb.WithDBHandle(dbPool),
 		)
@@ -108,10 +109,9 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 			jobsdb.WithNumPartitions(partitionCount),
 		)
 		gwBuffROHandle := jobsdb.NewForRead(
-			"gw_buff",
-			jobsdb.WithClearDB(false),
-			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.gw_buff.dsLimit", "JobsDB.dsLimit")),
-			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buff.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
+			"gw_buf",
+			jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.gw_buf.dsLimit", "JobsDB.dsLimit")),
+			jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
 			jobsdb.WithStats(stats),
 			jobsdb.WithDBHandle(dbPool),
 		)
@@ -134,7 +134,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 
 	// setup partition buffer for router jobsDB
 	rtBuffRWHandle := jobsdb.NewForReadWrite(
-		"rt_buff",
+		"rt_buf",
 		jobsdb.WithClearDB(false),
 		jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.rt_buff.dsLimit", "JobsDB.dsLimit")),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.rt_buff.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
@@ -157,7 +157,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 
 	// setup partition buffer for batchrouter jobsDB
 	brtBuffRWHandle := jobsdb.NewForReadWrite(
-		"batch_rt_buff",
+		"batch_rt_buf",
 		jobsdb.WithClearDB(false),
 		jobsdb.WithDSLimit(config.GetReloadableIntVar(0, 1, "JobsDB.batch_rt_buff.dsLimit", "JobsDB.dsLimit")),
 		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.batch_rt_buff.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
@@ -255,10 +255,68 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	return ppmSetup, nil
 }
 
-func setupGatewayPartitionMigrator(_ context.Context, _ *config.Config, gwWODB jobsdb.JobsDB,
+func setupGatewayPartitionMigrator(ctx context.Context,
+	dbPool *sql.DB, // database handle pool
+	config *config.Config, stats stats.Stats,
+	gwWODB jobsdb.JobsDB,
+	etcdClientProvider func() (etcdclient.Client, error),
 ) (partitionMigrator PartitionMigrator, gwDB jobsdb.JobsDB, err error) {
-	// TODO: implement partition migrator setup logic
-	return &noOpPartitionMigrator{}, gwWODB, nil
+	if !config.GetBool("PartitionMigration.enabled", false) {
+		return &noOpPartitionMigrator{}, gwWODB, nil
+	}
+	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
+	if partitionCount == 0 {
+		return nil, nil, fmt.Errorf("partition migrator needs partition count > 0")
+	}
+	log := logger.NewLogger().Child("partitionmigration")
+
+	gwBuffWOHandle := jobsdb.NewForWrite(
+		"gw_buf",
+		jobsdb.WithClearDB(false),
+		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "JobsDB.gw_buf.skipMaintenanceError", "JobsDB.buff.skipMaintenanceError", "JobsDB.skipMaintenanceError")),
+		jobsdb.WithStats(stats),
+		jobsdb.WithDBHandle(dbPool),
+	)
+	if err := gwBuffWOHandle.Start(); err != nil {
+		return nil, nil, fmt.Errorf("starting gw buffer jobsdb handle: %w", err)
+	}
+	// TODO: stopping?
+	gwPartitionBuffer, err := partitionbuffer.NewJobsDBPartitionBuffer(ctx,
+		partitionbuffer.WithWriterOnlyJobsDBs(gwWODB, gwBuffWOHandle),
+		partitionbuffer.WithNumPartitions(partitionCount),
+		partitionbuffer.WithStats(stats),
+		partitionbuffer.WithLogger(log),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating partition buffer: %w", err)
+	}
+
+	// setup partition migrator
+	etcdClient, err := etcdClientProvider()
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting etcd client: %w", err)
+	}
+	nodeIndex := config.GetIntVar(-1, 1, "GATEWAY_INDEX")
+	if nodeIndex < 0 {
+		return nil, nil, fmt.Errorf("got invalid node index from config: %d", nodeIndex)
+	}
+	nodeName := config.GetStringVar("", "INSTANCE_ID")
+	if nodeName == "" {
+		return nil, nil, fmt.Errorf("got empty node name from config")
+	}
+
+	gpm, err := migrator.NewGatewayPartitionMigratorBuilder(nodeIndex, nodeName).
+		WithConfig(config).
+		WithStats(stats).
+		WithLogger(log).
+		WithEtcdClient(etcdClient).
+		WithPartitionRefresher(gwPartitionBuffer).
+		Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating gateway partition migrator: %w", err)
+	}
+
+	return gpm, gwPartitionBuffer, nil
 }
 
 type noOpPartitionMigrator struct{}
