@@ -128,18 +128,24 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"APP_TYPE":                                        "embedded",
 		"PartitionMigration.enabled":                      "true",
 		"JobsDB.partitionCount":                           strconv.Itoa(numPartitions),
-		"PROCESSOR_NODE_HOST_PATTERN":                     "node-{index}.localhost",
+		"PROCESSOR_NODE_HOST_PATTERN":                     "proc-node-{index}.localhost",
 		"PartitionMigration.failOnInvalidNodeHostPattern": "false",
-		"ETCD_HOSTS":                                      etcdResource.Hosts[0],
-		"DEST_TRANSFORM_URL":                              tr.TransformerURL,
-		"WORKSPACE_NAMESPACE":                             namespace,
-		"RELEASE_NAME":                                    namespace,
-		"CONFIG_BACKEND_URL":                              bc.URL,
-		"HOSTED_SERVICE_SECRET":                           "123",   // random one
-		"Warehouse.mode":                                  "off",   // turn off warehouse for simiplicity
-		"enableStats":                                     "false", // disable stats for simplicity
-		"RUDDER_TMPDIR":                                   t.TempDir(),
-		"DEPLOYMENT_TYPE":                                 string(deployment.MultiTenantType), // we need etcd
+
+		// let migrations do multiple small batches
+		"PartitionMigration.Executor.BatchSize": "100",
+		"PartitionMigration.Executor.ChunkSize": "10",
+
+		"ETCD_HOSTS":            etcdResource.Hosts[0],
+		"DEST_TRANSFORM_URL":    tr.TransformerURL,
+		"WORKSPACE_NAMESPACE":   namespace,
+		"RELEASE_NAME":          namespace,
+		"CONFIG_BACKEND_URL":    bc.URL,
+		"HOSTED_SERVICE_SECRET": "123",   // random one
+		"Warehouse.mode":        "off",   // turn off warehouse for simiplicity
+		"enableStats":           "false", // disable stats for simplicity
+		"RUDDER_TMPDIR":         t.TempDir(),
+		"DEPLOYMENT_TYPE":       string(deployment.MultiTenantType), // we need etcd
+		"archival.Enabled":      "false",                            // disable archival for simplicity
 
 		// disable all live event debuggers for simplicity
 		"DestinationDebugger.disableEventDeliveryStatusUploads":     "true",
@@ -158,10 +164,16 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"Gateway.allowPartialWriteWithErrors":                      "false", // not going through the lecacy gateway path
 		"PartitionMigration.Processor.SourceNode.readExcludeSleep": "5s",    // sleep a bit less than the default one to speed up the test
 		"PartitionMigration.SourceNode.inProgressPollSleep":        "1s",    // poll faster for test speed
+
+		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
+		"JobsDB.maxDSSize":                      "200",
+		"JobsDB.addNewDSLoopSleepDuration":      "1s",
+		"JobsDB.dsLimit":                        "2",
+		"JobsDB.refreshDSListLoopSleepDuration": "5s",
 	}
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
 	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)
-	node0Name := "node-0"
+	node0Name := "proc-node-0"
 	rudderserver.StartRudderServer(t, ctx, g, node0Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
 		"PROCESSOR_INDEX":                     "0",
 		"HOSTNAME":                            node0Name,
@@ -182,7 +194,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		t.Name(),
 	)
 
-	node1Name := "node-1"
+	node1Name := "proc-node-1"
 	rudderserver.StartRudderServer(t, ctx, g, node1Name, rsBinaryPath, lo.Assign(commonEnv, map[string]string{
 		"PROCESSOR_INDEX":                     "1",
 		"HOSTNAME":                            node1Name,

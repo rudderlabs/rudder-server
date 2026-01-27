@@ -127,7 +127,11 @@ func (pw *partitionWorker) Work() bool {
 
 // SleepDurations returns the min and max sleep durations for the partitioned worker while not working
 func (pw *partitionWorker) SleepDurations() (min, max time.Duration) {
-	return pw.rt.reloadableConfig.readSleep.Load(), pw.rt.reloadableConfig.readSleep.Load() * 10
+	maxReadSleep := pw.rt.reloadableConfig.maxReadSleep.Load()
+	if maxReadSleep == 0 {
+		maxReadSleep = pw.rt.reloadableConfig.readSleep.Load() * 10
+	}
+	return pw.rt.reloadableConfig.readSleep.Load(), maxReadSleep
 }
 
 // Stop stops the partitioned worker by closing the input channel of all its internal workers and waiting for them to finish
