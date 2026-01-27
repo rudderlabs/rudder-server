@@ -96,7 +96,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 
 	transformationLanguage := u.getTransformationLanguage(clientEvents)
-	userURL := u.userTransformURLForLanguage(transformationLanguage)
+	userURL := u.userTransformURL(transformationLanguage)
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
 		Stage:            "user_transformer",
@@ -378,11 +378,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) userTransformURL() string {
-	return u.config.userTransformationURL + "/customTransform"
-}
-
-func (u *Client) userTransformURLForLanguage(language string) string {
+func (u *Client) userTransformURL(language string) string {
 	if strings.Contains(language, "python") && u.config.pythonTransformationURL != "" {
 		return u.config.pythonTransformationURL + "/customTransform"
 	}
