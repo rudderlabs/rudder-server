@@ -101,8 +101,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 
 	transformationLanguage := u.getTransformationLanguage(clientEvents)
-	userURL := u.userTransformURL(transformationLanguage)
-	if userURL == "" && u.config.forMirroring {
+	userURL, skip := u.userTransformURL(transformationLanguage)
+	if skip {
 		u.skippedEventsForMirroring.Count(len(clientEvents))
 		return types.Response{}
 	}
@@ -387,11 +387,17 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) userTransformURL(language string) string {
+func (u *Client) userTransformURL(language string) (string, bool) {
 	if strings.Index(language, "python") == 0 && u.config.pythonTransformationURL != "" {
-		return u.config.pythonTransformationURL + "/customTransform"
+		if u.config.forMirroring && u.config.pythonTransformationURL == "" {
+			return "", true
+		}
+		return u.config.pythonTransformationURL + "/customTransform", false
 	}
-	return u.config.userTransformationURL + "/customTransform"
+	if u.config.forMirroring && u.config.userTransformationURL == "" {
+		return "", true
+	}
+	return u.config.userTransformationURL + "/customTransform", false
 }
 
 func (u *Client) getTransformationLanguage(clientEvents []types.TransformerEvent) string {
