@@ -388,7 +388,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 }
 
 func (u *Client) userTransformURL(language string) (string, bool) {
-	if strings.Index(language, "python") == 0 && u.config.pythonTransformationURL != "" {
+	if strings.Index(language, "python") == 0 {
 		if u.config.forMirroring && u.config.pythonTransformationURL == "" {
 			return "", true
 		}
