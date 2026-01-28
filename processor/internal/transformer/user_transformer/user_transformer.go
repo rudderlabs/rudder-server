@@ -61,6 +61,10 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 
 	if handle.config.forMirroring {
 		handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_MIRROR_URL", "")
+		handle.config.pythonTransformationURL = handle.conf.GetString("PYTHON_TRANSFORM_MIRROR_URL", "")
+		handle.skippedEventsForMirroring = handle.stat.NewStat(
+			"processor_transformer_skipped_events_for_mirroring", stats.CountType,
+		)
 	}
 
 	return handle
@@ -79,10 +83,11 @@ type Client struct {
 		collectInstanceLevelStats  bool
 		batchSize                  config.ValueLoader[int]
 	}
-	conf   *config.Config
-	log    logger.Logger
-	stat   stats.Stats
-	client transformerclient.Client
+	conf                      *config.Config
+	log                       logger.Logger
+	stat                      stats.Stats
+	client                    transformerclient.Client
+	skippedEventsForMirroring stats.Counter
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -97,6 +102,11 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 
 	transformationLanguage := u.getTransformationLanguage(clientEvents)
 	userURL := u.userTransformURL(transformationLanguage)
+	if userURL == "" && u.config.forMirroring {
+		u.skippedEventsForMirroring.Count(len(clientEvents))
+		return types.Response{}
+	}
+
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
 		Stage:            "user_transformer",
