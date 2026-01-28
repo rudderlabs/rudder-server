@@ -392,7 +392,10 @@ func (u *Client) userTransformURL(language string) (string, bool) {
 		if u.config.forMirroring && u.config.pythonTransformationURL == "" {
 			return "", true
 		}
-		return u.config.pythonTransformationURL + "/customTransform", false
+		if u.config.pythonTransformationURL != "" {
+			return u.config.pythonTransformationURL + "/customTransform", false
+		}
+		// else -> fall back to default rudder-transformer
 	}
 	if u.config.forMirroring && u.config.userTransformationURL == "" {
 		return "", true
