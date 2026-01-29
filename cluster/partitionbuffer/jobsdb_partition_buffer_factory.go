@@ -122,6 +122,7 @@ func NewJobsDBPartitionBuffer(ctx context.Context, opts ...Opt) (JobsDBPartition
 		flushBatchSize:       config.SingleValueLoader(20000),
 		flushPayloadSize:     config.SingleValueLoader(500 * bytesize.MB),
 		flushMoveTimeout:     config.SingleValueLoader(30 * time.Minute),
+		watchdogInterval:     config.SingleValueLoader(5 * time.Minute),
 		bufferedPartitionsMu: golock.NewCASMutex(),
 		flushingPartitions:   make(map[string]struct{}),
 	}
