@@ -49,11 +49,15 @@ type jobsDBPartitionBuffer struct {
 	flushBatchSize     config.ValueLoader[int]           // number of records to flush in a single batch
 	flushPayloadSize   config.ValueLoader[int64]         // total payload size (in bytes) to flush in a single batch
 	flushMoveTimeout   config.ValueLoader[time.Duration] // timeout for move operation, before forcing switchover
+	watchdogInterval   config.ValueLoader[time.Duration] // interval for watchdog to check for unbuffered partitions with buffered jobs
 
 	// state
 	bufferedPartitionsMu      *golock.CASMutex                       // mutex to protect bufferedPartitionsVersion & bufferedPartitions
 	bufferedPartitionsVersion int                                    // version gets bumped whenever partitions change in the database, used for comparing cache validity
 	bufferedPartitions        *maputil.ReadOnlyMap[string, struct{}] // buffered partitions
+	lifecycleCtx              context.Context                        // context used for lifecycle operations
+	lifecycleCancel           context.CancelFunc                     // cancel function for lifecycleCtx
+	lifecycleWG               sync.WaitGroup                         // waitgroup to wait for lifecycle goroutines to finish
 
 	flushingPartitionsMu sync.Mutex          // mutex to protect flushingPartitions
 	flushingPartitions   map[string]struct{} // partitions that are currently being flushed
