@@ -58,6 +58,10 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo 'Not formatted files. Ensure you have run `make fmt` and committed the files locally.'
+      - name: Setup Node.js # pin nodeJs to 20 due to apidom-validate incompatibility with v21+ 
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
       - name: Validate OpenAPI definition
         uses: swaggerexpert/apidom-validate@e5f5f23a9258709b041cf2b8d7040858057fface # v1.4.0
         with:
