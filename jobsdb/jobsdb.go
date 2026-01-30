@@ -2739,7 +2739,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 		}
 		if err := addNewDS(); err != nil {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
-				panic(err)
+				panic(fmt.Errorf("adding new ds for %q: %w", jd.tablePrefix, err))
 			}
 			jd.logger.Errorn("addNewDSLoop error", obskit.Error(err))
 		}

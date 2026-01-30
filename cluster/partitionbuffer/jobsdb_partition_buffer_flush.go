@@ -90,6 +90,7 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 	b.logger.Infon("Flushing jobs from buffer to primary jobsdb (switchover phase)",
 		logger.NewStringField("partitions", strings.Join(partitions, ",")),
 		logger.NewStringField("prefix", b.Identifier()),
+		logger.NewIntField("movedCount", int64(totalCount)),
 	)
 	switchoverCount, err := b.switchoverBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load())
 	if err != nil {

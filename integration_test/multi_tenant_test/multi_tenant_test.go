@@ -163,6 +163,7 @@ func testMultiTenantByAppType(t *testing.T, appType, rsBinaryPath string) {
 			"APP_TYPE="+appType,
 			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
 			"PROCESSOR_INDEX=1",
+			"GATEWAY_INDEX=1",
 			"HOSTNAME=rudderstackmt-v0-rudderstack-1",
 			"PROCESSOR_NODE_HOST_PATTERN=rudderstackmt-v0-rudderstack-{index}",
 			"RSERVER_PARTITION_MIGRATION_GRPC_SERVER_PORT="+strconv.Itoa(grpcPort),

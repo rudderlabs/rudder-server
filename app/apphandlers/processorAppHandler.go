@@ -162,7 +162,6 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 
 	gwROHandle := jobsdb.NewForRead(
 		"gw",
-		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
