@@ -59,9 +59,7 @@ jobs:
         if: ${{ failure() }}
         run: echo 'Not formatted files. Ensure you have run `make fmt` and committed the files locally.'
       - name: Validate OpenAPI definition
-        uses: char0n/apidom-validate@248675e12929bb9b55eff78e9f5ea1a0844a083d # v1.2.0
-        with:
-          definition-file: gateway/openapi.yaml
+        run: npx --yes @apidevtools/swagger-cli validate gateway/openapi.yaml
 
       - name: Login to Docker Hub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
