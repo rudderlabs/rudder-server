@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
@@ -19,6 +20,8 @@ var (
 
 type ChangeEventProvider interface {
 	ServerMode(ctx context.Context) <-chan servermode.ChangeEvent
+	// EtcdClient returns an etcd client if supported by the provider. Otherwise, it returns an error.
+	EtcdClient() (etcdclient.Client, error)
 }
 
 type lifecycle interface {
@@ -37,8 +40,9 @@ type Dynamic struct {
 	EventSchemaDB lifecycle
 	ArchivalDB    lifecycle
 
-	Processor lifecycle
-	Router    lifecycle
+	PartitionMigrator lifecycle
+	Processor         lifecycle
+	Router            lifecycle
 
 	SchemaForwarder lifecycle
 	Archiver        lifecycle
@@ -139,6 +143,9 @@ func (d *Dynamic) start() error {
 	if err := d.BatchRouterDB.Start(); err != nil {
 		return fmt.Errorf("batch router db start: %w", err)
 	}
+	if err := d.PartitionMigrator.Start(); err != nil {
+		return fmt.Errorf("partition migrator start: %w", err)
+	}
 	if err := d.Processor.Start(); err != nil {
 		return fmt.Errorf("processor start: %w", err)
 	}
@@ -171,6 +178,9 @@ func (d *Dynamic) stop() {
 	d.logger.Debugn("Archiver stopped")
 	d.Processor.Stop()
 	d.logger.Debugn("Processor stopped")
+
+	d.PartitionMigrator.Stop()
+	d.logger.Debugn("PartitionMigrator stopped")
 
 	d.BatchRouterDB.Stop()
 	d.logger.Debugn("BatchRouterDB stopped")

@@ -112,8 +112,6 @@ func Test_RouterThrottling(t *testing.T) {
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 	debugPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
@@ -152,7 +150,6 @@ func Test_RouterThrottling(t *testing.T) {
 	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
 	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	t.Setenv("RSERVER_PROFILER_PORT", strconv.Itoa(debugPort))
 	t.Setenv("RSERVER_WAREHOUSE_MODE", "off")
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
@@ -180,7 +177,7 @@ func Test_RouterThrottling(t *testing.T) {
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		exitCode := r.Run(ctx, []string{"eventorder-test-rudder-server"})
+		exitCode := r.Run(ctx, cancel, []string{"eventorder-test-rudder-server"})
 		if exitCode != 0 {
 			t.Errorf("server exited with a non-0 exit code: %d", exitCode)
 		} else {

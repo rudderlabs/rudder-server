@@ -35,7 +35,7 @@ func BootstrapSvc(t *testing.T, workspaceConfig backendconfig.ConfigT, httpPort,
 
 	go func() {
 		r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN"})
-		_ = r.Run(ctx, []string{"integration-test"})
+		_ = r.Run(ctx, cancel, []string{"integration-test"})
 		close(svcDone)
 	}()
 

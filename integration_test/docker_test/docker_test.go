@@ -91,7 +91,7 @@ func TestMainFlow(t *testing.T) {
 		}()
 
 		svcCtx, svcCancel := context.WithCancel(context.Background())
-		svcDone := setupMainFlow(svcCtx, t, true)
+		svcDone := setupMainFlow(svcCtx, svcCancel, t, true)
 		sendEventsToGateway(t)
 
 		testCases(t)
@@ -115,7 +115,7 @@ func TestMainFlow(t *testing.T) {
 		}()
 
 		svcCtx, svcCancel := context.WithCancel(context.Background())
-		svcDone := setupMainFlow(svcCtx, t, false)
+		svcDone := setupMainFlow(svcCtx, svcCancel, t, false)
 		sendEventsToGateway(t)
 
 		testCases(t)
@@ -298,7 +298,7 @@ func testCases(t *testing.T) {
 	})
 }
 
-func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan struct{} {
+func setupMainFlow(svcCtx context.Context, cancel context.CancelFunc, t *testing.T, commonPool bool) <-chan struct{} {
 	setupStart := time.Now()
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
@@ -362,10 +362,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan
 
 	httpPort = strconv.Itoa(httpPortInt)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
 	t.Setenv("RSERVER_ENABLE_STATS", "false")
 
 	webhook = whUtil.NewRecorder()
@@ -415,7 +412,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T, commonPool bool) <-chan
 	svcDone := make(chan struct{})
 	go func() {
 		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
-		_ = r.Run(svcCtx, []string{"docker-test-rudder-server"})
+		_ = r.Run(svcCtx, cancel, []string{"docker-test-rudder-server"})
 		close(svcDone)
 	}()
 

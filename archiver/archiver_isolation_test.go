@@ -183,7 +183,7 @@ func ArchivalScenario(
 			}
 		}()
 		r := runner.New(runner.ReleaseInfo{})
-		ec := r.Run(ctx, []string{"brt-isolation-test-rudder-server"})
+		ec := r.Run(ctx, cancel, []string{"brt-isolation-test-rudder-server"})
 		require.Equalf(t, 0, ec, "rudder-server exited with a non-0 exit code: %d", ec)
 		close(svcDone)
 	}()
