@@ -1130,7 +1130,7 @@ func TestUserTransformer(t *testing.T) {
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
 					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", []string{"allowed-version-1", "allowed-version-2"})
+					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1,allowed-version-2")
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
 					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "allowed-version-1"))
@@ -1155,7 +1155,7 @@ func TestUserTransformer(t *testing.T) {
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
 					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", []string{"allowed-version-1", "allowed-version-2"})
+					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1,allowed-version-2")
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
 					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "not-allowed-version"))
@@ -1186,7 +1186,7 @@ func TestUserTransformer(t *testing.T) {
 					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
 					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", []string{"allowed-version-1"})
+					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
 					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "allowed-version-1"))
@@ -1211,7 +1211,7 @@ func TestUserTransformer(t *testing.T) {
 					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
 					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", []string{"allowed-version-1"})
+					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
 					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "not-allowed-version"))
@@ -1230,7 +1230,7 @@ func TestUserTransformer(t *testing.T) {
 					// USER_TRANSFORM_MIRROR_URL not set
 					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", []string{"allowed-version-1"})
+					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
 
 					memStats, err := memstats.New()
 					require.NoError(t, err)
@@ -1259,7 +1259,7 @@ func TestUserTransformer(t *testing.T) {
 					c.Set("USER_TRANSFORM_URL", jsSrv.URL)
 					c.Set("PYTHON_TRANSFORM_URL", pythonSrv.URL)
 					// PYTHON_TRANSFORM_VERSION_IDS_ENABLE defaults to false
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", []string{"some-other-version"})
+					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "some-other-version")
 
 					tr := user_transformer.New(c, logger.NOP, stats.Default)
 					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "any-version-id"))

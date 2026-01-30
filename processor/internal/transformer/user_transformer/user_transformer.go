@@ -49,10 +49,12 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.pythonTransformationURL = handle.conf.GetString("PYTHON_TRANSFORM_URL", "")
 	handle.config.pythonTransformationVersionIDsEnabled = handle.conf.GetBool("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", false)
 	if handle.config.pythonTransformationVersionIDsEnabled {
-		allowedVersionIDs := handle.conf.GetStringSlice("PYTHON_TRANSFORM_VERSION_IDS", nil)
-		handle.config.pythonTransformationVersionIDs = make(map[string]struct{}, len(allowedVersionIDs))
-		for _, versionID := range allowedVersionIDs {
-			handle.config.pythonTransformationVersionIDs[versionID] = struct{}{}
+		if versionIDsStr := handle.conf.GetString("PYTHON_TRANSFORM_VERSION_IDS", ""); versionIDsStr != "" {
+			allowedVersionIDs := strings.Split(versionIDsStr, ",")
+			handle.config.pythonTransformationVersionIDs = make(map[string]struct{}, len(allowedVersionIDs))
+			for _, versionID := range allowedVersionIDs {
+				handle.config.pythonTransformationVersionIDs[versionID] = struct{}{}
+			}
 		}
 	}
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
