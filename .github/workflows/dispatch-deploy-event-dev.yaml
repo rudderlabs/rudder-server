@@ -15,10 +15,19 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          permission-contents: write # to create release commits and tags
+          permission-pull-requests: write # to create release PRs
+
       - name: Repository dispatch
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         with:
-          token: "${{ secrets.PAT }}"
+          token: ${{ steps.generate-token.outputs.token }}
           repository: rudderlabs/rudder-devops
           event-type: deploy-event
           client-payload: |
