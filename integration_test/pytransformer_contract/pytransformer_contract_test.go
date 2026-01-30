@@ -163,7 +163,7 @@ def transformEvent(event, metadata):
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
 		err := runRudderServer(
-			t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, pyTransformerURL, t.TempDir(),
+			t, ctx, cancel, gwPort, postgresContainer, bcServer.URL, trServer.URL, pyTransformerURL, t.TempDir(),
 		)
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
@@ -201,6 +201,7 @@ def transformEvent(event, metadata):
 func runRudderServer(
 	t testing.TB,
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, userTransformURL,
@@ -242,7 +243,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"pytransformer-contract"})
+	c := r.Run(ctx, cancel, []string{"pytransformer-contract"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
