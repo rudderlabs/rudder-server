@@ -48,7 +48,7 @@ func (a *gatewayApp) Setup() error {
 	return nil
 }
 
-func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app.Options) error {
 	config := config.Default
 	statsFactory := stats.Default
 	if !a.setupDone {
@@ -80,7 +80,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
 
-	gatewayDB := jobsdb.NewForWrite(
+	gwWOHandle := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
@@ -88,24 +88,30 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer gatewayDB.Close()
+	defer gwWOHandle.Close()
+	var gwWODB jobsdb.JobsDB = gwWOHandle
 
-	if err := gatewayDB.Start(); err != nil {
+	if err := gwWODB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
 	}
-	defer gatewayDB.Stop()
+	defer gwWODB.Stop()
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
-		return err
+		return fmt.Errorf("resolving mode provider: %w", err)
 	}
+	partitionMigrator, gwWODB, err := setupGatewayPartitionMigrator(ctx, config, gwWODB)
+	if err != nil {
+		return fmt.Errorf("setting up partition migrator: %w", err)
+	}
+	if err := partitionMigrator.Start(); err != nil {
+		return fmt.Errorf("starting partition migrator: %w", err)
+	}
+	defer partitionMigrator.Stop()
 
-	dm := cluster.Dynamic{
-		Provider:         modeProvider,
-		GatewayComponent: true,
-	}
+	dm := cluster.Dynamic{Provider: modeProvider, GatewayComponent: true}
 	g.Go(func() error {
 		return dm.Run(ctx)
 	})
@@ -136,7 +142,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	streamMsgValidator := stream.NewMessageValidator()
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gwWODB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigHttpHandler,

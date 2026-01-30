@@ -70,7 +70,7 @@ func (b *ProcessorPartitionMigratorBuilder) WithTargetMigrator(targetMigrator ta
 }
 
 // Build constructs the ProcessorPartitionMigrator with the provided dependencies
-func (b *ProcessorPartitionMigratorBuilder) Build() (ProcessorPartitionMigrator, error) {
+func (b *ProcessorPartitionMigratorBuilder) Build() (PartitionMigrator, error) {
 	if b.config == nil {
 		b.config = config.Default
 	}

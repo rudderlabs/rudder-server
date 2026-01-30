@@ -25,8 +25,8 @@ import (
 	"github.com/rudderlabs/rudder-server/cluster/migrator/retry"
 )
 
-// ProcessorPartitionMigrator handles partition migrations for a processor node
-type ProcessorPartitionMigrator interface {
+// PartitionMigrator handles partition migrations for a processor node
+type PartitionMigrator interface {
 	// Start starts the partition migrator
 	Start() error
 
@@ -187,6 +187,7 @@ func (ppm *processorPartitionMigrator) onNewMigration(ctx context.Context, pm *e
 				logger.NewStringField("migrationId", pm.ID),
 				logger.NewStringField("ackKey", ackKey),
 				logger.NewIntField("revision", resp.Header.Revision),
+				logger.NewDurationField("duration", time.Since(start)),
 			)
 			// remove from pending migrations
 			ppm.pendingMigrationsMu.Lock()

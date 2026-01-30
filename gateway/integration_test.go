@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
@@ -28,19 +28,23 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/rudderserver"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 func TestGatewayIntegration(t *testing.T) {
+	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
+	rudderserver.BuildRudderServerBinary(t, "../main.go", rsBinaryPath)
+
 	for _, appType := range []string{app.GATEWAY, app.EMBEDDED} {
 		t.Run(appType, func(t *testing.T) {
-			testGatewayByAppType(t, appType)
+			testGatewayByAppType(t, appType, rsBinaryPath)
 		})
 	}
 }
 
-func testGatewayByAppType(t *testing.T, appType string) {
+func testGatewayByAppType(t *testing.T, appType, rsBinaryPath string) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
@@ -120,8 +124,6 @@ func testGatewayByAppType(t *testing.T, appType string) {
 
 	httpPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
 	debugPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 
@@ -141,7 +143,6 @@ func testGatewayByAppType(t *testing.T, appType string) {
 		fmt.Sprintf("JOBS_DB_PASSWORD=%s", postgresContainer.Password),
 		fmt.Sprintf("CONFIG_BACKEND_URL=%s", backendConfigSrv.URL),
 		fmt.Sprintf("RSERVER_GATEWAY_WEB_PORT=%d", httpPort),
-		fmt.Sprintf("RSERVER_GATEWAY_ADMIN_WEB_PORT=%d", httpAdminPort),
 		fmt.Sprintf("RSERVER_PROFILER_PORT=%d", debugPort),
 		fmt.Sprintf("RSERVER_ENABLE_STATS=%s", "false"),
 		fmt.Sprintf("RUDDER_TMPDIR=%s", rudderTmpDir),
@@ -155,31 +156,15 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "run", "../main.go")
-		cmd.Env = append(os.Environ(), envArr...)
-		stdout, err := cmd.StdoutPipe()
-		require.NoError(t, err)
-		stderr, err := cmd.StderrPipe()
-		require.NoError(t, err)
-
-		defer func() {
-			_ = stdout.Close()
-			_ = stderr.Close()
-		}()
-		require.NoError(t, cmd.Start())
-		if testing.Verbose() {
-			go func() { _, _ = io.Copy(os.Stdout, stdout) }()
-			go func() { _, _ = io.Copy(os.Stderr, stderr) }()
+		g := &errgroup.Group{}
+		envs := append(append([]string{}, os.Environ()...), envArr...)
+		rudderserver.StartRudderServer(t, ctx, g, "gw-"+strings.ToLower(appType), rsBinaryPath, map[string]string{}, envs...)
+		err := g.Wait()
+		if err != nil {
+			t.Errorf("Error running rudder-server: %v", err)
+			return
 		}
-
-		if err = cmd.Wait(); err != nil {
-			if err.Error() != "signal: killed" {
-				t.Errorf("Error running main.go: %v", err)
-				return
-			}
-		}
-		t.Log("main.go exited")
+		t.Log("rudder-server exited")
 	}()
 	t.Cleanup(func() { cancel(); <-done })
 
