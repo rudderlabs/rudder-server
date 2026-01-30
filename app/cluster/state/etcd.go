@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
@@ -215,6 +216,13 @@ func (manager *ETCDManager) ServerMode(ctx context.Context) <-chan servermode.Ch
 	}()
 
 	return resultChan
+}
+
+func (manager *ETCDManager) EtcdClient() (etcdclient.Client, error) {
+	if err := manager.init(); err != nil {
+		return nil, err
+	}
+	return manager.Client, nil
 }
 
 func (manager *ETCDManager) Close() {

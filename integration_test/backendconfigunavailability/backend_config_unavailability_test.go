@@ -61,7 +61,7 @@ func TestBackendConfigUnavailabilityForTransformer(t *testing.T) {
 
 	wg, ctx := errgroup.WithContext(ctx)
 	wg.Go(func() error {
-		err := runRudderServer(t, ctx, tc.gwPort, tc.postgresResource, tc.configBEServer.URL, tc.transformerResource.TransformerURL, t.TempDir())
+		err := runRudderServer(t, ctx, cancel, tc.gwPort, tc.postgresResource, tc.configBEServer.URL, tc.transformerResource.TransformerURL, t.TempDir())
 		if err != nil {
 			t.Logf("rudder-server exited with error: %v", err)
 		}
@@ -165,6 +165,7 @@ func setup(t testing.TB) testConfig {
 func runRudderServer(
 	t testing.TB,
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, tmpDir string,
@@ -204,7 +205,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"rudder-backend-config-unavailability"})
+	c := r.Run(ctx, cancel, []string{"rudder-backend-config-unavailability"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
