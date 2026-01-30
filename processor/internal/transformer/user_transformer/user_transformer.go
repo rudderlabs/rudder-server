@@ -400,18 +400,34 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 }
 
 func (u *Client) userTransformURL(language, versionID string) (string, bool) {
-	if strings.Index(language, "python") == 0 && u.isPythonVersionAllowed(versionID) {
-		if u.config.forMirroring && u.config.pythonTransformationURL == "" {
-			return "", true
-		}
-		if u.config.pythonTransformationURL != "" {
+	isPython := strings.Index(language, "python") == 0
+
+	if !u.config.forMirroring { // Common production branch
+		if isPython && u.isPythonVersionAllowed(versionID) && u.config.pythonTransformationURL != "" {
 			return u.config.pythonTransformationURL + "/customTransform", false
 		}
-		// else -> fall back to default rudder-transformer
+		return u.config.userTransformationURL + "/customTransform", false
 	}
-	if u.config.forMirroring && u.config.userTransformationURL == "" {
+
+	// Mirroring
+	if isPython {
+		if u.config.pythonTransformationURL == "" {
+			// mirroring is enabled but without a URL for the PyTransformer, SKIP!
+			return "", true
+		}
+		if !u.isPythonVersionAllowed(versionID) {
+			// mirroring is enabled, but this transformation version is not allowed, SKIP!
+			return "", true
+		}
+		return u.config.pythonTransformationURL + "/customTransform", false
+	}
+
+	// Mirroring JS
+	if u.config.userTransformationURL == "" {
+		// mirroring is enabled but without a URL for the JSTransformer, SKIP!
 		return "", true
 	}
+
 	return u.config.userTransformationURL + "/customTransform", false
 }
 
