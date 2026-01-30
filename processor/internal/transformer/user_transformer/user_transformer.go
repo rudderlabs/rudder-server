@@ -47,6 +47,14 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
 	handle.config.pythonTransformationURL = handle.conf.GetString("PYTHON_TRANSFORM_URL", "")
+	handle.config.pythonTransformationVersionIDsEnabled = handle.conf.GetBool("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", false)
+	if handle.config.pythonTransformationVersionIDsEnabled {
+		allowedVersionIDs := handle.conf.GetStringSlice("PYTHON_TRANSFORM_VERSION_IDS", nil)
+		handle.config.pythonTransformationVersionIDs = make(map[string]struct{}, len(allowedVersionIDs))
+		for _, versionID := range allowedVersionIDs {
+			handle.config.pythonTransformationVersionIDs[versionID] = struct{}{}
+		}
+	}
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.UserTransformer.maxRetry", "Processor.maxRetry")
@@ -72,16 +80,18 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 
 type Client struct {
 	config struct {
-		userTransformationURL      string
-		pythonTransformationURL    string
-		forMirroring               bool
-		maxRetry                   config.ValueLoader[int]
-		failOnUserTransformTimeout config.ValueLoader[bool]
-		failOnError                config.ValueLoader[bool]
-		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
-		timeoutDuration            time.Duration
-		collectInstanceLevelStats  bool
-		batchSize                  config.ValueLoader[int]
+		userTransformationURL                 string
+		pythonTransformationURL               string
+		pythonTransformationVersionIDs        map[string]struct{}
+		pythonTransformationVersionIDsEnabled bool
+		forMirroring                          bool
+		maxRetry                              config.ValueLoader[int]
+		failOnUserTransformTimeout            config.ValueLoader[bool]
+		failOnError                           config.ValueLoader[bool]
+		maxRetryBackoffInterval               config.ValueLoader[time.Duration]
+		timeoutDuration                       time.Duration
+		collectInstanceLevelStats             bool
+		batchSize                             config.ValueLoader[int]
 	}
 	conf                      *config.Config
 	log                       logger.Logger
@@ -100,8 +110,8 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		transformationID = clientEvents[0].Destination.Transformations[0].ID
 	}
 
-	transformationLanguage := u.getTransformationLanguage(clientEvents)
-	userURL, skip := u.userTransformURL(transformationLanguage)
+	transformationLanguage, transformationVersionID := u.getTransformationInfo(clientEvents)
+	userURL, skip := u.userTransformURL(transformationLanguage, transformationVersionID)
 	if skip {
 		u.skippedEventsForMirroring.Count(len(clientEvents))
 		return types.Response{}
@@ -387,8 +397,8 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) userTransformURL(language string) (string, bool) {
-	if strings.Index(language, "python") == 0 {
+func (u *Client) userTransformURL(language, versionID string) (string, bool) {
+	if strings.Index(language, "python") == 0 && u.isPythonVersionAllowed(versionID) {
 		if u.config.forMirroring && u.config.pythonTransformationURL == "" {
 			return "", true
 		}
@@ -403,15 +413,25 @@ func (u *Client) userTransformURL(language string) (string, bool) {
 	return u.config.userTransformationURL + "/customTransform", false
 }
 
-func (u *Client) getTransformationLanguage(clientEvents []types.TransformerEvent) string {
+func (u *Client) isPythonVersionAllowed(versionID string) bool {
+	if !u.config.pythonTransformationVersionIDsEnabled {
+		return true
+	}
+	_, ok := u.config.pythonTransformationVersionIDs[versionID]
+	return ok
+}
+
+func (u *Client) getTransformationInfo(clientEvents []types.TransformerEvent) (language, versionID string) {
+	language = "javascript"
 	if len(clientEvents) == 0 {
-		return "javascript"
+		return language, ""
 	}
 	if len(clientEvents[0].Destination.Transformations) > 0 {
-		lang := clientEvents[0].Destination.Transformations[0].Language
-		if lang != "" {
-			return lang
+		transformation := clientEvents[0].Destination.Transformations[0]
+		versionID = transformation.VersionID
+		if transformation.Language != "" {
+			language = transformation.Language
 		}
 	}
-	return "javascript"
+	return language, versionID
 }
