@@ -1194,11 +1194,10 @@ func TestUserTransformer(t *testing.T) {
 					require.Equal(t, expectedResponse, rsp)
 				})
 
-				t.Run("mirroring with version not in allowlist routes to JS mirror", func(t *testing.T) {
-					jsMirrorSrv := httptest.NewServer(&endpointTransformer{
-						supportedPaths: []string{"/customTransform"},
-						t:              t,
-					})
+				t.Run("mirroring with version not in allowlist skips", func(t *testing.T) {
+					jsMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						t.Error("request should not hit JS mirror transformer")
+					}))
 					defer jsMirrorSrv.Close()
 
 					pythonMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1209,25 +1208,6 @@ func TestUserTransformer(t *testing.T) {
 					c := config.New()
 					c.Set("Processor.maxRetry", 1)
 					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
-
-					tr := user_transformer.New(c, logger.NOP, stats.Default, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "not-allowed-version"))
-
-					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("mirroring with version not in allowlist skips when JS mirror not configured", func(t *testing.T) {
-					pythonMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python mirror transformer")
-					}))
-					defer pythonMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					// USER_TRANSFORM_MIRROR_URL not set
 					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
 					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
