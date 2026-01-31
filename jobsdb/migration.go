@@ -86,7 +86,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	var lockChan chan<- lock.LockToken
 
 	lockStart := time.Now()
-	err = jd.WithTx(func(tx *Tx) error {
+	err = jd.WithTx(ctx, func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
 			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
@@ -226,7 +226,7 @@ type dsWithPendingJobCount struct {
 func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
-	rows, err := jd.dbHandle.QueryContext(
+	rows, err := jd.getDB(ctx).QueryContext(
 		ctx,
 		`SELECT pg_table_size(oid) AS size, relname
 		FROM pg_class
@@ -273,7 +273,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
 	var rows *sql.Rows
-	rows, err := jd.dbHandle.QueryContext(
+	rows, err := jd.getDB(ctx).QueryContext(
 		ctx,
 		`SELECT reltuples AS estimate, relname
 		FROM pg_class
@@ -339,7 +339,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 		stats.Tags{"customVal": jd.tablePrefix},
 	).Since(start)
 
-	if err := jd.WithTx(func(tx *Tx) error {
+	if err := jd.WithTx(ctx, func(tx *Tx) error {
 		for _, statusTable := range toCompact {
 			table := statusTable.JobStatusTable
 			// clean up and vacuum if not present in toVacuumFullMap
@@ -360,14 +360,14 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 	// vacuum full
 	for _, table := range toVacuumFull {
 		jd.logger.Infon("vacuuming full", logger.NewStringField("table", table))
-		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
+		if _, err := jd.getDB(ctx).ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 			return err
 		}
 	}
 	// vacuum analyze
 	for _, table := range toVacuum {
 		jd.logger.Infon("vacuuming", logger.NewStringField("table", table))
-		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
+		if _, err := jd.getDB(ctx).ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
 			return err
 		}
 	}

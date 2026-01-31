@@ -372,7 +372,7 @@ func TestRefreshDSList(t *testing.T) {
 	defer jobsDB.TearDown()
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	require.NoError(t, jobsDB.WithTx(func(tx *Tx) error {
+	require.NoError(t, jobsDB.WithTx(context.Background(), func(tx *Tx) error {
 		return jobsDB.createDSInTx(context.Background(), tx, newDataSet(prefix, "2"))
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
@@ -1789,6 +1789,84 @@ func TestUpdateJobStatus(t *testing.T) {
 		measurement := statStore.Get("jobsdb_updated_jobs", statsTags)
 		require.NotNil(t, measurement)
 		require.EqualValues(t, 3, measurement.LastValue())
+	})
+}
+
+func TestPriorityPoolOperations(t *testing.T) {
+	postgresResource := startPostgres(t)
+
+	// Create a separate priority pool from the same postgres resource
+	priorityPool, err := sql.Open("postgres", postgresResource.DBDsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = priorityPool.Close() })
+
+	db := NewForReadWrite(
+		"prioritypool",
+		WithDBHandle(postgresResource.DB),
+		WithPriorityPoolDB(priorityPool),
+		WithSkipMaintenanceErr(true), // Skip maintenance errors when main pool is closed
+	)
+	require.NoError(t, db.Start(), "it should be able to start the jobs db handle")
+	defer db.TearDown()
+
+	// Close the main pool to ensure operations don't use it
+	require.NoError(t, postgresResource.DB.Close(), "it should be able to close the main pool")
+
+	// Create context with priority pool
+	ctx := WithPriorityPool(context.Background())
+
+	t.Run("Store with priority pool", func(t *testing.T) {
+		err := db.Store(ctx, []*JobT{
+			{
+				UUID:         uuid.New(),
+				WorkspaceId:  "workspace-1",
+				UserID:       "user-1",
+				CustomVal:    "custom-val-1",
+				Parameters:   []byte(`{}`),
+				EventPayload: []byte(`{"key":"value"}`),
+				EventCount:   1,
+			},
+		})
+		require.NoError(t, err, "Store should work with priority pool even when main pool is closed")
+	})
+
+	t.Run("GetUnprocessed with priority pool", func(t *testing.T) {
+		result, err := db.GetUnprocessed(ctx, GetQueryParams{JobsLimit: 10})
+		require.NoError(t, err, "GetUnprocessed should work with priority pool even when main pool is closed")
+		require.Len(t, result.Jobs, 1, "should return the stored job")
+	})
+
+	t.Run("UpdateJobStatus with priority pool", func(t *testing.T) {
+		result, err := db.GetUnprocessed(ctx, GetQueryParams{JobsLimit: 10})
+		require.NoError(t, err)
+		require.Len(t, result.Jobs, 1)
+
+		statuses := []*JobStatusT{
+			{
+				JobID:       result.Jobs[0].JobID,
+				JobState:    Succeeded.State,
+				AttemptNum:  1,
+				WorkspaceId: "workspace-1",
+			},
+		}
+		err = db.UpdateJobStatus(ctx, statuses)
+		require.NoError(t, err, "UpdateJobStatus should work with priority pool even when main pool is closed")
+	})
+
+	t.Run("operations without priority context should fail", func(t *testing.T) {
+		// Without priority pool context, operations should fail since main pool is closed
+		err := db.Store(context.Background(), []*JobT{
+			{
+				UUID:         uuid.New(),
+				WorkspaceId:  "workspace-2",
+				UserID:       "user-2",
+				CustomVal:    "custom-val-2",
+				Parameters:   []byte(`{}`),
+				EventPayload: []byte(`{"key":"value2"}`),
+				EventCount:   1,
+			},
+		})
+		require.Error(t, err, "Store without priority context should fail when main pool is closed")
 	})
 }
 

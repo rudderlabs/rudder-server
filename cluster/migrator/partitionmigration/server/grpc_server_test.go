@@ -735,11 +735,11 @@ type mockJobsDB struct {
 }
 
 // WithTx overrides the JobsDB's WithTx method to simulate a transaction begin error if txErr is set.
-func (m *mockJobsDB) WithTx(fn func(tx *tx.Tx) error) error {
+func (m *mockJobsDB) WithTx(ctx context.Context, fn func(tx *tx.Tx) error) error {
 	if m.txErr != nil {
 		return m.txErr
 	}
-	return m.JobsDB.WithTx(fn)
+	return m.JobsDB.WithTx(ctx, fn)
 }
 
 // StoreInTx overrides the JobsDB's StoreInTx method to simulate a store error if storeErr is set.

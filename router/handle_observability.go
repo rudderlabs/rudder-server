@@ -148,7 +148,7 @@ func (rt *Handle) eventOrderDebugInfo(orderKey eventorder.BarrierKey) (res strin
 		}
 	}()
 	userID, destinationID := orderKey.UserID, orderKey.DestinationID
-	if err := rt.jobsDB.WithTx(func(tx *Tx) error {
+	if err := rt.jobsDB.WithTx(context.Background(), func(tx *Tx) error {
 		rows, err := tx.Query(`SELECT * FROM joborderlog($1, $2, 10) LIMIT 100`, destinationID, userID)
 		if err != nil {
 			return err
