@@ -75,6 +75,7 @@ func (rt *Handle) Setup(
 			dest, destFound := rt.destinationsMap[destinationID]
 			return dest, destFound
 		})
+	rt.drainingPartitions = make(map[string]struct{})
 	rt.reloadableConfig = &reloadableConfig{}
 	rt.setupReloadableVars()
 	rt.crashRecover()
