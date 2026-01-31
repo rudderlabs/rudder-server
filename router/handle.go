@@ -132,7 +132,9 @@ type Handle struct {
 		}
 	}
 
-	drainer routerutils.Drainer
+	drainer              routerutils.Drainer
+	drainingPartitionsMu sync.RWMutex
+	drainingPartitions   map[string]struct{} // keeps track of router partitions which are currently draining
 }
 
 // activePartitions returns the list of active partitions, depending on the active isolation strategy
@@ -180,7 +182,25 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		"Router.jobIterator.discardedPercentageTolerance")
 
 	jobQueryBatchSize := rt.reloadableConfig.jobQueryBatchSize.Load()
-	if rt.isolationStrategy.SupportsPickupQueryThrottling() {
+
+	// keep track of which partitions are draining
+	var drainingInPreviousPickup, drainingInCurrentPickup bool
+	rt.drainingPartitionsMu.RLock()
+	_, drainingInPreviousPickup = rt.drainingPartitions[partition]
+	rt.drainingPartitionsMu.RUnlock()
+	defer func() {
+		if drainingInPreviousPickup != drainingInCurrentPickup {
+			rt.drainingPartitionsMu.Lock()
+			defer rt.drainingPartitionsMu.Unlock()
+			if drainingInCurrentPickup {
+				rt.drainingPartitions[partition] = struct{}{}
+			} else {
+				delete(rt.drainingPartitions, partition)
+			}
+		}
+	}()
+
+	if rt.isolationStrategy.SupportsPickupQueryThrottling() && !drainingInPreviousPickup {
 		jobQueryBatchSize = rt.getAdaptedJobQueryBatchSize(
 			jobQueryBatchSize,
 			func() []throttler.PickupThrottler {
@@ -188,6 +208,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			},
 			rt.reloadableConfig.readSleep.Load(),
 			rt.reloadableConfig.maxJobQueryBatchSize.Load(),
+			drainingInPreviousPickup,
 		)
 	}
 	pickupBatchSizeGauge.Gauge(jobQueryBatchSize)
@@ -301,6 +322,9 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			}
 			statusList = append(statusList, &status)
 			reservedJobs = append(reservedJobs, reservedJob{slot: workerJobSlot.slot, job: job, drainReason: workerJobSlot.drainReason, parameters: parameters})
+			if workerJobSlot.drainReason != "" && !drainingInCurrentPickup {
+				drainingInCurrentPickup = true
+			}
 			if shouldFlush() {
 				flush()
 			}
@@ -347,7 +371,7 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 }
 
 // getAdaptedJobQueryBatchSize returns the adapted job query batch size based on the throttling limits
-func (*Handle) getAdaptedJobQueryBatchSize(input int, pickupThrottlers func() []throttler.PickupThrottler, readSleep time.Duration, maxLimit int) int {
+func (*Handle) getAdaptedJobQueryBatchSize(input int, pickupThrottlers func() []throttler.PickupThrottler, readSleep time.Duration, maxLimit int, draining bool) int {
 	jobQueryBatchSize := input
 	readSleepSeconds := int((readSleep + time.Second - 1) / time.Second) // rounding up to the nearest second
 	// Calculate the total limit of all active throttlers:
@@ -376,10 +400,17 @@ func (*Handle) getAdaptedJobQueryBatchSize(input int, pickupThrottlers func() []
 	//  - we will be setting the batch size to be min(totalLimit * readSleepSeconds, maxLimit)
 	if totalLimit > 0 {
 		readSleepSeconds := int((readSleep + time.Second - 1) / time.Second) // rounding up to the nearest second
-		jobQueryBatchSize = totalLimit * readSleepSeconds
-		if jobQueryBatchSize > maxLimit {
+		throttlingJobQueryBatchSize := totalLimit * readSleepSeconds
+
+		// cap to maxLimit
+		if throttlingJobQueryBatchSize > maxLimit {
 			return maxLimit
 		}
+		// if we are draining and the throttling batch size is less than standard one, we should not reduce it
+		if draining && throttlingJobQueryBatchSize < jobQueryBatchSize {
+			return jobQueryBatchSize
+		}
+		return throttlingJobQueryBatchSize
 	}
 	return jobQueryBatchSize
 }

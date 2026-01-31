@@ -48,7 +48,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 5 * time.Second
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		require.Equal(t, input, result)
 	})
@@ -64,7 +64,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 1 * time.Second
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		// Should use the first throttler's limit (50) since subsequent global throttlers are ignored
 		require.Equal(t, 50, result)
@@ -81,7 +81,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 1 * time.Second
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		require.Equal(t, input, result)
 	})
@@ -99,7 +99,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 1 * time.Second
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		// Should sum all limits: 20 + 30 + 25 = 75
 		require.Equal(t, 75, result)
@@ -117,7 +117,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 1 * time.Second
 		maxLimit := 800
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		// Sum would be 1200, but should be capped at maxLimit
 		require.Equal(t, maxLimit, result)
@@ -133,7 +133,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 300 * time.Millisecond // Less than 1 second
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		// Should use 1 second minimum: 50 * 1 = 50
 		require.Equal(t, 50, result)
@@ -149,7 +149,7 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 2 * time.Second
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		// Should use 2 seconds: 30 * 2 = 60
 		require.Equal(t, 60, result)
@@ -165,9 +165,71 @@ func TestHandle_getAdaptedJobQueryBatchSize(t *testing.T) {
 		readSleep := 1500 * time.Millisecond // 1.5 seconds
 		maxLimit := 1000
 
-		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit)
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, false)
 
 		// Should round up to 2 seconds: 40 * 2 = 80
 		require.Equal(t, 80, result)
+	})
+
+	t.Run("draining true with throttling batch size less than input should return input", func(t *testing.T) {
+		input := 100
+		pickupThrottlers := func() []throttler.PickupThrottler {
+			return []throttler.PickupThrottler{
+				&MockPickupThrottler{limitPerSecond: 30, eventType: "track", lastUsed: time.Now()},
+			}
+		}
+		readSleep := 1 * time.Second
+		maxLimit := 1000
+
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, true)
+
+		// Throttling batch size would be 30, but since draining=true and 30 < 100, should return input
+		require.Equal(t, input, result)
+	})
+
+	t.Run("draining true with throttling batch size greater than input should return throttling batch size", func(t *testing.T) {
+		input := 100
+		pickupThrottlers := func() []throttler.PickupThrottler {
+			return []throttler.PickupThrottler{
+				&MockPickupThrottler{limitPerSecond: 200, eventType: "track", lastUsed: time.Now()},
+			}
+		}
+		readSleep := 1 * time.Second
+		maxLimit := 1000
+
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, true)
+
+		// Throttling batch size is 200 > input (100), should return throttling batch size
+		require.Equal(t, 200, result)
+	})
+
+	t.Run("draining true with throttling batch size greater than max limit should cap at max limit", func(t *testing.T) {
+		input := 100
+		pickupThrottlers := func() []throttler.PickupThrottler {
+			return []throttler.PickupThrottler{
+				&MockPickupThrottler{limitPerSecond: 500, eventType: "track", lastUsed: time.Now()},
+			}
+		}
+		readSleep := 2 * time.Second
+		maxLimit := 800
+
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, true)
+
+		// Throttling batch size would be 500 * 2 = 1000, but should cap at maxLimit
+		require.Equal(t, maxLimit, result)
+	})
+
+	t.Run("draining true with no throttlers should return input", func(t *testing.T) {
+		input := 100
+		pickupThrottlers := func() []throttler.PickupThrottler {
+			return []throttler.PickupThrottler{}
+		}
+		readSleep := 1 * time.Second
+		maxLimit := 1000
+
+		result := h.getAdaptedJobQueryBatchSize(input, pickupThrottlers, readSleep, maxLimit, true)
+
+		// No throttlers, should return input regardless of draining
+		require.Equal(t, input, result)
 	})
 }
