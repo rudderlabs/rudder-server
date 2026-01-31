@@ -1,15 +1,21 @@
 package jobsdb
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
 
-func executeDbRequest[T any](jd *Handle, c *dbRequest[T]) T {
+func executeDbRequest[T any](ctx context.Context, jd *Handle, c *dbRequest[T]) T {
 	defer jd.getTimerStat(
 		fmt.Sprintf("jobsdb_%s_total_time", c.name),
 		c.tags,
 	).RecordDuration()()
+
+	// If priority pool is requested and configured, bypass the queue
+	if usePriorityPool(ctx) && jd.priorityPool != nil {
+		return c.command()
+	}
 
 	var queueEnabled bool
 	var queueCap chan struct{}
