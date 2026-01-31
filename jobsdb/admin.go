@@ -31,7 +31,7 @@ func (jd *Handle) DeleteExecuting() {
 		jd.deleteJobStatus()
 		return nil
 	}
-	_ = executeDbRequest(jd, newWriteDbRequest("delete_job_status", &tags, command))
+	_ = executeDbRequest(context.Background(), jd, newWriteDbRequest("delete_job_status", &tags, command))
 }
 
 // deleteJobStatus deletes the latest status of a batch of jobs
@@ -92,7 +92,7 @@ func (jd *Handle) FailExecuting() {
 		jd.failExecuting()
 		return nil
 	}
-	_ = executeDbRequest(jd, newWriteDbRequest("fail_executing", &tags, command))
+	_ = executeDbRequest(context.Background(), jd, newWriteDbRequest("fail_executing", &tags, command))
 }
 
 // failExecuting sets the state of the executing jobs to failed
@@ -147,7 +147,7 @@ func (jd *Handle) doCleanup(ctx context.Context) error {
 	{
 		deleteStmt := "DELETE FROM %s_journal WHERE start_time < NOW() - INTERVAL '%d DAY'"
 		var journalEntryCount int64
-		res, err := jd.dbHandle.ExecContext(
+		res, err := jd.getDB(ctx).ExecContext(
 			ctx,
 			fmt.Sprintf(
 				deleteStmt,
@@ -175,7 +175,7 @@ func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
 	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
 	maxAge := jd.conf.jobMaxAge.Load()
 	for _, ds := range dsList {
-		res, err := jd.dbHandle.ExecContext(
+		res, err := jd.getDB(ctx).ExecContext(
 			ctx,
 			fmt.Sprintf(
 				`INSERT INTO %[1]q (job_id, job_state, error_response)

@@ -19,7 +19,7 @@ func (b *jobsDBPartitionBuffer) BufferPartitions(ctx context.Context, partitionI
 	// dedup and sort partitionIds to avoid deadlocks
 	partitionIds = lo.Uniq(partitionIds)
 	slices.Sort(partitionIds)
-	if err := b.WithTx(func(tx *tx.Tx) error {
+	if err := b.WithTx(ctx, func(tx *tx.Tx) error {
 		query := `INSERT INTO ` + b.Identifier() + `_buffered_partitions (partition_id) VALUES ($1) ON CONFLICT DO NOTHING`
 		for _, partition := range partitionIds {
 			if _, err := tx.ExecContext(ctx, query, partition); err != nil {
@@ -53,7 +53,7 @@ func (b *jobsDBPartitionBuffer) RefreshBufferedPartitions(ctx context.Context) e
 		dbVersion          int
 		bufferedPartitions *maputil.ReadOnlyMap[string, struct{}]
 	)
-	err := b.WithTx(func(tx *tx.Tx) (err error) {
+	err := b.WithTx(ctx, func(tx *tx.Tx) (err error) {
 		dbVersion, err = b.getBufferedPartitionsVersionInTx(ctx, tx)
 		if err != nil {
 			return err
