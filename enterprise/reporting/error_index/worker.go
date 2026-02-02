@@ -198,11 +198,16 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 			return &jobsdb.JobStatusT{
 				JobID:         item.JobID,
 				JobState:      jobsdb.Succeeded.State,
-				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
-				Parameters:    []byte(`{}`),
 				AttemptNum:    item.LastJobStatus.AttemptNum + 1,
 				ExecTime:      w.now(),
 				RetryTime:     w.now(),
+				ErrorCode:     "200",
+				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
+				Parameters:    []byte(`{}`),
+				JobParameters: item.Parameters,
+				WorkspaceId:   item.WorkspaceId,
+				PartitionID:   item.PartitionID,
+				CustomVal:     item.CustomVal,
 			}
 		})...)
 	}
@@ -295,7 +300,7 @@ func (w *worker) markJobsStatus(statusList []*jobsdb.JobStatusT) error {
 		w.config.jobsDBCommandTimeout,
 		w.config.jobsDBMaxRetries.Load(),
 		func(ctx context.Context) error {
-			return w.jobsDB.UpdateJobStatus(ctx, statusList, nil, nil)
+			return w.jobsDB.UpdateJobStatus(ctx, statusList)
 		},
 		func(attempt int) {
 			w.log.Warnn("failed to mark job's status", logger.NewIntField("attempt", int64(attempt)))

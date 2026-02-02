@@ -33,40 +33,6 @@ jobs:
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-
-  enterprise-dockerhub:
-    uses: ./.github/workflows/docker-build-dockerhub.yml
-    with:
-      image_names: |
-        ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
-      dockerfile: Dockerfile
-      tags: |
-        type=ref,event=branch
-        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-        type=semver,pattern={{version}}
-        type=semver,pattern={{major}}.{{minor}}
-        type=semver,pattern={{major}}
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
-  enterprise-dockerhub-race:
-    uses: ./.github/workflows/docker-build-dockerhub.yml
-    with:
-      image_names: |
-        ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
-      dockerfile: Dockerfile
-      tags: |
-        type=ref,event=branch,suffix=-race
-        type=raw,value=pr-${{ github.event.pull_request.number }}-race,enable=${{ github.event_name == 'pull_request' }}
-        type=semver,pattern={{version}}-race
-        type=semver,pattern={{major}}.{{minor}}-race
-      race: true
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
   enterprise-ecr:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
@@ -100,23 +66,6 @@ jobs:
       race: true
     secrets:
       ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
-  sbsvc-dockerhub:
-    uses: ./.github/workflows/docker-build-dockerhub.yml
-    with:
-      image_names: |
-        ["rudderstack/develop-suppression-backup-service", "rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
-      dockerfile: ./suppression-backup-service/Dockerfile
-      tags: |
-        type=ref,event=branch
-        type=raw,value=latest,enable=${{ github.event_name == 'release' }}
-        type=raw,value=pr-${{ github.event.pull_request.number }},enable=${{ github.event_name == 'pull_request' }}
-        type=semver,pattern={{version}}
-        type=semver,pattern={{major}}.{{minor}}
-        type=semver,pattern={{major}}
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-
   sbsvc-ecr:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:

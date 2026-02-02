@@ -116,7 +116,6 @@ func (m testPartitionBufferIntegrationTestMethods) ReadWriteSetup(t *testing.T) 
 	})
 	buffer := jobsdb.NewForReadWrite("buf",
 		jobsdb.WithDBHandle(pg.DB),
-		jobsdb.WithNumPartitions(m.totalPartitionsNum),
 		jobsdb.WithSkipMaintenanceErr(true),
 		jobsdb.WithDSLimit(config.SingleValueLoader(10)),
 		jobsdb.WithConfig(c),
@@ -187,7 +186,6 @@ func (m testPartitionBufferIntegrationTestMethods) ReadOnlyWithWriteBufferSetup(
 
 	bufferWO := jobsdb.NewForWrite("buf",
 		jobsdb.WithDBHandle(pg.DB),
-		jobsdb.WithNumPartitions(m.totalPartitionsNum),
 		jobsdb.WithSkipMaintenanceErr(true),
 		jobsdb.WithDSLimit(config.SingleValueLoader(10)),
 		jobsdb.WithConfig(c),
@@ -199,7 +197,6 @@ func (m testPartitionBufferIntegrationTestMethods) ReadOnlyWithWriteBufferSetup(
 
 	bufferRO := jobsdb.NewForRead("buf",
 		jobsdb.WithDBHandle(pg.DB),
-		jobsdb.WithNumPartitions(m.totalPartitionsNum),
 		jobsdb.WithSkipMaintenanceErr(true),
 		jobsdb.WithDSLimit(config.SingleValueLoader(10)),
 		jobsdb.WithConfig(c),
@@ -374,6 +371,7 @@ func (m testPartitionBufferIntegrationTestMethods) RunSequence(t *testing.T, ctx
 								JobParameters: job.Parameters,
 								WorkspaceId:   job.WorkspaceId,
 								PartitionID:   job.PartitionID,
+								CustomVal:     job.CustomVal,
 							})
 							seqNum := gjson.GetBytes(job.EventPayload, "sequence").Int()
 							history[job.PartitionID] = append(history[job.PartitionID], int(seqNum))
@@ -385,7 +383,7 @@ func (m testPartitionBufferIntegrationTestMethods) RunSequence(t *testing.T, ctx
 						}
 						if len(statusList) > 0 {
 							updateCtx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-							err := reader.UpdateJobStatus(updateCtx, statusList, []string{customVal}, nil)
+							err := reader.UpdateJobStatus(updateCtx, statusList)
 							cancel()
 							if err != nil {
 								return fmt.Errorf("updating job statuses for custom val %s: %w", customVal, err)

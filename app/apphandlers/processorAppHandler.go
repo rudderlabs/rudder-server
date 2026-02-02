@@ -86,7 +86,7 @@ func (a *processorApp) Setup() error {
 	return nil
 }
 
-func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), options *app.Options) error {
 	config := config.Default
 	statsFactory := stats.Default
 	if !a.setupDone {
@@ -158,8 +158,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
+	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
 
-	gwDBForProcessor := jobsdb.NewForRead(
+	gwROHandle := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
@@ -168,8 +169,9 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer gwDBForProcessor.Close()
-	routerDB := jobsdb.NewForReadWrite(
+	defer gwROHandle.Close()
+	var gwRODB jobsdb.JobsDB = gwROHandle
+	rtRWHandle := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.rtDSLimit),
@@ -178,8 +180,10 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer routerDB.Close()
-	batchRouterDB := jobsdb.NewForReadWrite(
+	defer rtRWHandle.Close()
+	rtRWDB := jobsdb.NewPendingEventsJobsDB(rtRWHandle, pendingEventsRegistry)
+
+	brtRWHandle := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchrtDSLimit),
@@ -188,17 +192,18 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer batchRouterDB.Close()
-	schemaDB := jobsdb.NewForReadWrite(
+	defer brtRWHandle.Close()
+	brtRWDB := jobsdb.NewPendingEventsJobsDB(brtRWHandle, pendingEventsRegistry)
+	eschRWDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.eschDSLimit),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer schemaDB.Close()
+	defer eschRWDB.Close()
 
-	archivalDB := jobsdb.NewForReadWrite(
+	arcRWDB := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.arcDSLimit),
@@ -207,7 +212,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "archival.jobRetention")),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer archivalDB.Close()
+	defer arcRWDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
@@ -216,15 +221,31 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, eschRWDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, eschRWDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
 		return err
 	}
+
+	// setup partition migrator
+	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, dbPool,
+		config, statsFactory,
+		gwRODB, nil,
+		rtRWDB, brtRWDB,
+		modeProvider.EtcdClient,
+	)
+	defer ppmSetup.Finally() // always run finally to clean up resources regardless of error
+	if err != nil {
+		return fmt.Errorf("setting up partition migrator: %w", err)
+	}
+	partitionMigrator := ppmSetup.PartitionMigrator
+	gwRODB = ppmSetup.GwDB
+	rtRWDB = ppmSetup.RtDB
+	brtRWDB = ppmSetup.BrtDB
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
@@ -251,16 +272,14 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return drainConfigManager.CleanupRoutine(ctx)
 	}))
 
-	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
-
 	p := proc.New(
 		ctx,
 		&options.ClearDB,
-		gwDBForProcessor,
-		routerDB,
-		batchRouterDB,
-		schemaDB,
-		archivalDB,
+		gwRODB,
+		rtRWDB,
+		brtRWDB,
+		eschRWDB,
+		arcRWDB,
 		reporting,
 		transientSources,
 		fileUploaderProvider,
@@ -284,7 +303,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple routers can share the same cache and not hit the DB every time
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
-			routerDB,
+			rtRWDB,
 		),
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
@@ -292,36 +311,35 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ThrottlerFactory:           throttlerFactory,
 		Debugger:                   destinationHandle,
 		AdaptiveLimit:              adaptiveLimit,
-		PendingEventsRegistry:      pendingEventsRegistry,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:     reporting,
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple batch routers can share the same cache and not hit the DB every time
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
-			batchRouterDB,
+			brtRWDB,
 		),
-		TransientSources:      transientSources,
-		RsourcesService:       rsourcesService,
-		Debugger:              destinationHandle,
-		AdaptiveLimit:         adaptiveLimit,
-		PendingEventsRegistry: pendingEventsRegistry,
+		TransientSources: transientSources,
+		RsourcesService:  rsourcesService,
+		Debugger:         destinationHandle,
+		AdaptiveLimit:    adaptiveLimit,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 
 	dm := cluster.Dynamic{
-		Provider:         modeProvider,
-		GatewayComponent: false,
-		GatewayDB:        gwDBForProcessor,
-		RouterDB:         routerDB,
-		BatchRouterDB:    batchRouterDB,
-		SchemaForwarder:  schemaForwarder,
-		EventSchemaDB:    schemaDB,
-		ArchivalDB:       archivalDB,
-		Processor:        p,
-		Router:           rt,
+		Provider:          modeProvider,
+		GatewayComponent:  false,
+		GatewayDB:         gwRODB,
+		RouterDB:          rtRWDB,
+		BatchRouterDB:     brtRWDB,
+		SchemaForwarder:   schemaForwarder,
+		EventSchemaDB:     eschRWDB,
+		ArchivalDB:        arcRWDB,
+		PartitionMigrator: partitionMigrator,
+		Processor:         p,
+		Router:            rt,
 		Archiver: archiver.New(
-			archivalDB,
+			arcRWDB,
 			fileUploaderProvider,
 			config,
 			statsFactory,
@@ -330,7 +348,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 
 	g.Go(func() error {
-		return a.startHealthWebHandler(ctx, gwDBForProcessor)
+		return a.startHealthWebHandler(ctx, gwRODB)
 	})
 
 	g.Go(func() error {
@@ -354,7 +372,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	return g.Wait()
 }
 
-func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.Handle) error {
+func (a *processorApp) startHealthWebHandler(ctx context.Context, db jobsdb.JobsDB) error {
 	// Port where Processor health handler is running
 	a.log.Infon("Starting in", logger.NewIntField("webPort", int64(a.config.http.webPort)))
 	srvMux := chi.NewMux()

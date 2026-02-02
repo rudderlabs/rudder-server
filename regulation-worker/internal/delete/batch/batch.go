@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -27,6 +27,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 )
 
 var (
@@ -227,20 +228,20 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string) (string, error), fileName string) (string, error) {
 	pkgLogger.Debugn("downloading file with exponential backoff", logger.NewStringField("fileName", fileName))
 
-	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
-	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = maxWait
 
 	var absFileName string
 	var err error
 
 	err = func() error {
-		if err = backoff.Retry(func() error {
+		if err = backoffvoid.Retry(ctx, func() error {
 			absFileName, err = fu(ctx, fileName)
 			return err
-		}, boCtx); err != nil {
+		},
+			backoff.WithBackOff(bo),
+			backoff.WithMaxElapsedTime(10*time.Minute),
+		); err != nil {
 			if bo.NextBackOff() == backoff.Stop {
 				return err
 			}
@@ -254,16 +255,17 @@ func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string
 func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
 	pkgLogger.Debugn("uploading cleaned file with exponential backoff")
 
-	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
-	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = maxWait
 
-	if err := backoff.Retry(func() error {
-		err := fu(ctx, uploadFileAbsPath, actualFileName, absStatusTrackerFileName)
-		return err
-	}, boCtx); err != nil {
+	if err := backoffvoid.Retry(ctx,
+		func() error {
+			err := fu(ctx, uploadFileAbsPath, actualFileName, absStatusTrackerFileName)
+			return err
+		},
+		backoff.WithBackOff(bo),
+		backoff.WithMaxElapsedTime(10*time.Minute),
+	); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
 			return err
 		}

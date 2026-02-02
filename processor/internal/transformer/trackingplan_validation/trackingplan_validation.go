@@ -14,7 +14,7 @@ import (
 
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -167,12 +168,11 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	)
 
 	// endless retry if transformer-control plane connection is down
-	endlessBackoff := backoff.NewExponentialBackOff()
-	endlessBackoff.MaxElapsedTime = 0 // no max time -> ends only when no error
-	endlessBackoff.MaxInterval = t.config.maxRetryBackoffInterval.Load()
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = t.config.maxRetryBackoffInterval.Load()
 
 	// endless backoff loop, only nil error or panics inside
-	_ = backoff.RetryNotify(
+	_ = backoffvoid.Retry(context.Background(),
 		func() error {
 			respData, statusCode, err = t.doPost(ctx, rawJSON, url, labels)
 			if err != nil {
@@ -185,8 +185,9 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			t.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
-		endlessBackoff,
-		func(err error, time time.Duration) {
+		backoff.WithBackOff(bo),
+		backoff.WithMaxElapsedTime(0), // disable max elapsed time --> endless
+		backoff.WithNotify(func(err error, time time.Duration) {
 			var transformationID, transformationVersionID string
 			if len(clientEvents[0].Destination.Transformations) > 0 {
 				transformationID = clientEvents[0].Destination.Transformations[0].ID
@@ -201,7 +202,7 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				logger.NewStringField("transformationID", transformationID),
 				logger.NewStringField("transformationVersionID", transformationVersionID),
 			)
-		},
+		}),
 	)
 	// control plane back up
 
@@ -245,11 +246,11 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		resp       *http.Response
 		respData   []byte
 	)
-	retryStrategy := backoff.NewExponentialBackOff()
-	// MaxInterval caps the RetryInterval
-	retryStrategy.MaxInterval = t.config.maxRetryBackoffInterval.Load()
+	bo := backoff.NewExponentialBackOff()
+	bo.MaxInterval = t.config.maxRetryBackoffInterval.Load()
 
-	err := backoff.RetryNotify(
+	err := backoffvoid.Retry(
+		ctx,
 		transformerutils.WithProcTransformReqTimeStat(func() error {
 			var reqErr error
 			requestStartTime := time.Now()
@@ -287,15 +288,16 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			}
 			return reqErr
 		}, t.stat, labels),
-		backoff.WithMaxRetries(retryStrategy, uint64(t.config.maxRetry.Load())),
-		func(err error, time time.Duration) {
+		backoff.WithBackOff(bo),
+		backoff.WithMaxTries(uint(t.config.maxRetry.Load()+1)),
+		backoff.WithNotify(func(err error, time time.Duration) {
 			retryCount++
 			t.log.Warnn(
 				"JS HTTP connection error",
 				obskit.Error(err),
 				logger.NewIntField("attempts", int64(retryCount)),
 			)
-		},
+		}),
 	)
 	if err != nil {
 		if t.config.failOnError.Load() {

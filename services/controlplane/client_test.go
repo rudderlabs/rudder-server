@@ -98,7 +98,6 @@ func TestDestinationHistory(t *testing.T) {
 				"transformAtV1":           "processor",
 				"saveDestinationResponse": false,
 			},
-			ResponseRules: map[string]interface{}(nil),
 		},
 		Config: map[string]interface{}{
 			"webhookMethod": "POST",

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -836,21 +836,18 @@ func (m *Manager) resetBackoff() {
 }
 
 func (m *Manager) setBackOff(err error) {
-	b := backoff.NewExponentialBackOff(
-		backoff.WithInitialInterval(m.config.backoff.initialInterval.Load()),
-		backoff.WithMultiplier(m.config.backoff.multiplier.Load()),
-		backoff.WithClockProvider(m),
-		backoff.WithRandomizationFactor(0),
-		backoff.WithMaxElapsedTime(0),
-		backoff.WithMaxInterval(m.config.backoff.maxInterval.Load()),
-	)
-	b.Reset()
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = m.config.backoff.initialInterval.Load()
+	bo.Multiplier = m.config.backoff.multiplier.Load()
+	bo.MaxInterval = m.config.backoff.maxInterval.Load()
+	bo.RandomizationFactor = 0
+	bo.Reset()
 	m.backoff.attempts++
 	m.backoff.error = err.Error()
 
 	var d time.Duration
 	for index := int64(0); index < int64(m.backoff.attempts); index++ {
-		d = b.NextBackOff()
+		d = bo.NextBackOff()
 	}
 	m.backoff.next = m.Now().Add(d)
 }

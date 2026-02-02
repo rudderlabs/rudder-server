@@ -32,7 +32,6 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 		})
 		rtBuffer := jobsdb.NewForReadWrite("rt_buf",
 			jobsdb.WithDBHandle(pg.DB),
-			jobsdb.WithNumPartitions(64),
 			jobsdb.WithSkipMaintenanceErr(true),
 		)
 		require.NoError(t, rtBuffer.Start(), "it should be able to start JobsDB Buffer")

@@ -72,6 +72,13 @@ linters:
         - pattern: NewErrorField$
           pkg: ^github.com/rudderlabs/rudder-go-kit/logger$
           msg: use rudder-observability-kit Error function
+        # Rules for enforcing cenkalti/backoff/v5
+        - pattern: ^backoff\..*$
+          pkg: ^github.com/cenkalti/backoff$
+          msg: use github.com/cenkalti/backoff/v5
+        - pattern: ^backoff\..*$
+          pkg: ^github.com/cenkalti/backoff/v[1-4]$
+          msg: use github.com/cenkalti/backoff/v5
       analyze-types: true
   exclusions:
     generated: lax

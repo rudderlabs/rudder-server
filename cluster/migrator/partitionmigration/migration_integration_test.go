@@ -240,7 +240,7 @@ func (env *itMigrationJobExecutorEnv) runMigrationExecutor(t *testing.T, ctx con
 	c.Set("PartitionMigration.Executor.BatchSize", 100)
 	c.Set("PartitionMigration.Executor.ChunkSize", 20)
 	jobID := "job-" + uuid.New().String()
-	mpe := client.NewMigrationJobExecutor(jobID, partitions, sourceJobsDB, env.target, client.WithConfig(c), client.WithLogger(logger.NewFactory(c).NewLogger()))
+	mpe := client.NewMigrationJobExecutor(jobID, 0, partitions, sourceJobsDB, env.target, client.WithConfig(c), client.WithLogger(logger.NewFactory(c).NewLogger()))
 	for {
 		restartingCtx, cancel := context.WithTimeout(ctx, restartEvery)
 		t.Logf("Running partition migration executor for migrating %+v from %q", partitions, sourceJobsDB.Identifier())
@@ -289,8 +289,9 @@ func (env *itMigrationJobExecutorEnv) runVerifier(t *testing.T, ctx context.Cont
 					JobParameters: job.Parameters,
 					WorkspaceId:   job.WorkspaceId,
 					PartitionID:   job.PartitionID,
+					CustomVal:     job.CustomVal,
 				}
-			}), []string{"test"}, nil)
+			}))
 			if err != nil {
 				return fmt.Errorf("updating job statuses: %w", err)
 			}

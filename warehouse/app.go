@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
+	"github.com/cenkalti/backoff/v5"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/notifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/validators"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -296,13 +297,16 @@ func (a *App) migrate() error {
 		return m.Migrate("warehouse")
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		a.logger.Warnn("retrying warehouse database migration",
-			logger.NewDurationField("retryIn", t),
-			obskit.Error(err),
-		)
-	})
+	err := backoffvoid.Retry(context.TODO(),
+		operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			a.logger.Warnn("retrying warehouse database migration",
+				logger.NewDurationField("retryIn", t),
+				obskit.Error(err),
+			)
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("could not migrate: %w", err)
 	}
@@ -323,13 +327,15 @@ func (a *App) migrateAlways() error {
 			"config": a.conf,
 		})
 	}
-
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		a.logger.Warnn("retrying warehouse database run always migration",
-			logger.NewDurationField("backoffDelay", t),
-			obskit.Error(err))
-	})
+	err := backoffvoid.Retry(context.TODO(),
+		operation,
+		backoff.WithMaxTries(3+1),
+		backoff.WithNotify(func(err error, t time.Duration) {
+			a.logger.Warnn("retrying warehouse database run always migration",
+				logger.NewDurationField("backoffDelay", t),
+				obskit.Error(err))
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("could not migrate always: %w", err)
 	}

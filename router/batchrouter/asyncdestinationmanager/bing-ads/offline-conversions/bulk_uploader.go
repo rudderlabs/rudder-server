@@ -115,6 +115,14 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 			}
 		}
 	}
+
+	// Always update event.Fields with the transformed fields (including formatted datetime)
+	event.Fields, err = jsonrs.Marshal(fields)
+	if err != nil {
+		return payload, fmt.Errorf("unable to marshal fields: %w", err)
+	}
+
+	// If hashing is required, apply it on top of the already transformed fields
 	if b.isHashRequired {
 		event.Fields, err = hashFields(fields)
 		if err != nil {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,9 +49,10 @@ func WithStats(stats stats.Stats) Opt {
 }
 
 // NewMigrationJobExecutor creates a new MigrationJobExecutor
-func NewMigrationJobExecutor(migrationJobID string, partitionIDs []string, sourceDB jobsdb.JobsDB, target string, opts ...Opt) MigrationJobExecutor {
+func NewMigrationJobExecutor(migrationJobID string, nodeIndex int, partitionIDs []string, sourceDB jobsdb.JobsDB, target string, opts ...Opt) MigrationJobExecutor {
 	mpe := &migrationJobExecutor{
 		migrationJobID: migrationJobID,
+		nodeIndex:      nodeIndex,
 		partitionIDs:   partitionIDs,
 		sourceDB:       sourceDB,
 		target:         target,
@@ -88,6 +90,7 @@ type MigrationJobExecutor interface {
 
 type migrationJobExecutor struct {
 	migrationJobID string   // unique identifier for the migration job
+	nodeIndex      int      // source node index
 	partitionIDs   []string // partitions to be migrated
 
 	sourceDB jobsdb.JobsDB // source jobsdb
@@ -106,7 +109,7 @@ type migrationJobExecutor struct {
 
 // Run executes the migration job
 func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
-	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_run_time", stats.TimerType, mpe.statsTags()).RecordDuration()()
+	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_run", stats.TimerType, mpe.statsTags()).RecordDuration()()
 	mpe.logger.Infon("Starting partition migration")
 
 	// mark any executing jobs as failed to handle previous interrupted migrations
@@ -306,8 +309,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 				delete(unackedBatches, batchToAck.A)
 				unackedBatchesMu.Unlock()
 				totalAcked.Add(int64(len(batchToAck.B)))
-				mpe.stats.NewTaggedStat("partition_mig_jobexec_jobs_acked_time", stats.TimerType, mpe.statsTags()).SendTiming(time.Since(start))
-				mpe.stats.NewTaggedStat("partition_mig_jobexec_jobs_acked", stats.CountType, mpe.statsTags()).Count(len(batchToAck.B))
+				mpe.stats.NewTaggedStat("partition_mig_jobexec_jobs_acked", stats.TimerType, mpe.statsTags()).SendTiming(time.Since(start))
 			}
 		}
 	})
@@ -321,7 +323,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			case <-done:
 				return nil
 			case <-time.After(mpe.progressPeriod.Load()):
-				mpe.logger.Infon("Partition migration in progress",
+				mpe.logger.Infon("Partition migration job in progress",
 					logger.NewIntField("sent", totalSent.Load()),
 					logger.NewIntField("acked", totalAcked.Load()),
 				)
@@ -333,7 +335,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 		defer close(done)
 		if err := streamGroup.Wait(); err != nil {
 			if ctx.Err() == nil {
-				mpe.logger.Errorn("Partition migration failed", obskit.Error(err))
+				mpe.logger.Errorn("Partition migration job failed", obskit.Error(err))
 				for index, jobs := range unackedBatches { // no need to lock unackedBatches, we are done with sender and receiver goroutines
 					if err := mpe.updateJobStatus(ctx, jobs, jobsdb.Failed.State, fmt.Errorf("job migration interrupted: %w", err)); err != nil {
 						mpe.logger.Warnn("Could not mark non-migrated jobs as failed",
@@ -348,13 +350,13 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			}
 			return fmt.Errorf("migrating partitions: %w", err)
 		}
-		mpe.logger.Infon("Partition migration completed successfully",
+		mpe.logger.Infon("Partition migration job completed successfully",
 			logger.NewIntField("total", totalAcked.Load()),
 		)
 		return nil
 	})
 	err = g.Wait()
-	mpe.logger.Infon("Partition migration progress final status",
+	mpe.logger.Infon("Partition migration job progress final status",
 		logger.NewIntField("sent", totalSent.Load()),
 		logger.NewIntField("acked", totalAcked.Load()),
 		obskit.Error(err),
@@ -364,7 +366,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 
 // markExecutingJobsAsFailed marks any executing jobs as failed to handle previous interrupted migrations
 func (mpe *migrationJobExecutor) markExecutingJobsAsFailed(ctx context.Context) error {
-	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_fail_executing_time", stats.TimerType, mpe.statsTags()).RecordDuration()()
+	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_fail_executing", stats.TimerType, mpe.statsTags()).RecordDuration()()
 	var total int
 	for done := false; !done; {
 		executingJobsResult, err := mpe.sourceDB.GetJobs(ctx, []string{jobsdb.Executing.State}, jobsdb.GetQueryParams{
@@ -427,10 +429,10 @@ func (mpe *migrationJobExecutor) updateJobStatus(ctx context.Context, jobs []*jo
 			JobParameters: job.Parameters,
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
+			CustomVal:     job.CustomVal,
 		}
 	}
-	customValFilters := []string{"migrated"} // TODO: this is fine for now, but we'll need adaptations as soon as we start worrying about pending events
-	return mpe.sourceDB.UpdateJobStatus(ctx, statusList, customValFilters, nil)
+	return mpe.sourceDB.UpdateJobStatus(ctx, statusList)
 }
 
 // receiveWithTimeout wraps stream.Recv with a timeout and context cancellation support
@@ -467,6 +469,7 @@ func (mpe *migrationJobExecutor) sendWithTimeout(ctx context.Context, stream pro
 
 func (mpe *migrationJobExecutor) statsTags() stats.Tags {
 	return stats.Tags{
+		"nodeIndex":   strconv.Itoa(mpe.nodeIndex),
 		"tablePrefix": mpe.sourceDB.Identifier(),
 		"target":      mpe.target,
 	}

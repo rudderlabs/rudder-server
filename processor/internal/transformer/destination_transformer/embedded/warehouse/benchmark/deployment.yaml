@@ -120,8 +120,7 @@ spec:
                       "ID": "",
                       "Name": "POSTGRES",
                       "DisplayName": "",
-                      "Config": null,
-                      "ResponseRules": null
+                      "Config": null
                     },
                     "Config": {
                       "allowUsersContextTraits": true

@@ -80,7 +80,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		workspaceID             = uuid.New().String()
 		gaDestinationDefinition = backendConfig.DestinationDefinitionT{
 			ID: GADestinationDefinitionID, Name: "GA",
-			DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
+			DisplayName: "Google Analytics", Config: nil,
 		}
 		sampleBackendConfig = backendConfig.ConfigT{
 			WorkspaceID: workspaceID,
@@ -180,12 +180,13 @@ func TestDynamicClusterManager(t *testing.T) {
 
 	provider := &mockModeProvider{modeCh: make(chan servermode.ChangeEvent)}
 	dCM := &cluster.Dynamic{
-		GatewayDB:       gwDB,
-		RouterDB:        rtDB,
-		BatchRouterDB:   brtDB,
-		EventSchemaDB:   eschDB,
-		ArchivalDB:      archDB,
-		SchemaForwarder: schemaForwarder,
+		GatewayDB:         gwDB,
+		RouterDB:          rtDB,
+		BatchRouterDB:     brtDB,
+		EventSchemaDB:     eschDB,
+		ArchivalDB:        archDB,
+		PartitionMigrator: &noopLifecycler{},
+		SchemaForwarder:   schemaForwarder,
 		Archiver: arc.New(
 			archDB,
 			nil,
@@ -233,3 +234,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		}
 	}, 30*time.Second, time.Millisecond)
 }
+
+type noopLifecycler struct{}
+
+func (n *noopLifecycler) Start() error { return nil }
+func (n *noopLifecycler) Stop()        {}

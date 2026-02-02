@@ -25,19 +25,19 @@ func TestRunner(t *testing.T) {
 		config.Set("Warehouse.mode", "embedded")
 
 		t.Run("it shouldn't be able to start if both databases are down", func(t *testing.T) {
-			exitCode := New(ReleaseInfo{}).Run(ctx, []string{"app"})
+			exitCode := New(ReleaseInfo{}).Run(ctx, cancel, []string{"app"})
 			require.Equal(t, 1, exitCode)
 		})
 
 		t.Run("it shouldn't be able to start if jobsdb database is down", func(t *testing.T) {
 			startWarehousePostgresql(t)
-			exitCode := New(ReleaseInfo{}).Run(ctx, []string{"app"})
+			exitCode := New(ReleaseInfo{}).Run(ctx, cancel, []string{"app"})
 			require.Equal(t, 1, exitCode)
 		})
 
 		t.Run("it shouldn't be able to start if warehouse database is down", func(t *testing.T) {
 			startJobsDBPostgresql(t)
-			exitCode := New(ReleaseInfo{}).Run(ctx, []string{"app"})
+			exitCode := New(ReleaseInfo{}).Run(ctx, cancel, []string{"app"})
 			require.Equal(t, 1, exitCode)
 		})
 	})

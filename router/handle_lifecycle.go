@@ -32,7 +32,6 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
-	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -52,7 +51,6 @@ func (rt *Handle) Setup(
 	transformerFeaturesService transformerFeaturesService.FeaturesService,
 	debugger destinationdebugger.DestinationDebugger,
 	throttlerFactory throttler.Factory,
-	pendingEventsRegistry rmetrics.PendingEventsRegistry,
 ) {
 	rt.backendConfig = backendConfig
 	rt.debugger = debugger
@@ -68,8 +66,6 @@ func (rt *Handle) Setup(
 
 	rt.jobsDB = jobsDB
 	rt.destType = destType
-
-	rt.pendingEventsRegistry = pendingEventsRegistry
 
 	rt.drainer = routerutils.NewDrainer(
 		config,
@@ -100,7 +96,6 @@ func (rt *Handle) Setup(
 	rt.telemetry.failuresMetric = make(map[string]map[string]int)
 	rt.telemetry.diagnosisTicker = time.NewTicker(rt.diagnosisTickerTime)
 
-	rt.destinationResponseHandler = NewResponseHandler(rt.logger, destinationDefinition.ResponseRules)
 	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
@@ -464,7 +459,6 @@ func (rt *Handle) backendConfigSubscriber() {
 						}
 						destinationsMap[destination.ID].Sources = append(destinationsMap[destination.ID].Sources, *source)
 
-						rt.destinationResponseHandler = NewResponseHandler(rt.logger, destination.DestinationDefinition.ResponseRules)
 						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 							rt.saveDestinationResponse = value
 						}

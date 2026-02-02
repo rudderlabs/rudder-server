@@ -83,16 +83,17 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 		errResponse = routerutils.EnhanceJSON(errResponse, "payloadStage", "router_input")
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
 			JobState:      jobsdb.Aborted.State,
+			AttemptNum:    job.LastJobStatus.AttemptNum,
 			ExecTime:      time.Now(),
 			RetryTime:     time.Now(),
 			ErrorCode:     routerutils.DRAIN_ERROR_CODE,
+			ErrorResponse: errResponse,
 			Parameters:    routerutils.EmptyPayload,
 			JobParameters: job.Parameters,
-			ErrorResponse: errResponse,
 			WorkspaceId:   job.WorkspaceId,
 			PartitionID:   job.PartitionID,
+			CustomVal:     job.CustomVal,
 		}
 		// Enhancing job parameter with the drain reason.
 		job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
@@ -141,15 +142,16 @@ func (w *worker) acceptWorkerJob(workerJob workerJob) *types.RouterJobT {
 			resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
+				JobState:      jobsdb.Waiting.State,
 				AttemptNum:    job.LastJobStatus.AttemptNum,
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
-				JobState:      jobsdb.Waiting.State,
 				ErrorResponse: resp, // check
 				Parameters:    routerutils.EmptyPayload,
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,
 				PartitionID:   job.PartitionID,
+				CustomVal:     job.CustomVal,
 			}
 			w.rt.responseQ <- workerJobStatus{userID: userID, worker: w, job: job, status: &status, parameters: *parameters}
 			return nil
@@ -629,7 +631,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 		}
 
 		w.updateFailedJobOrderKeys(failedJobOrderKeys, &destinationJob, respStatusCodes)
-		routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt, transformerProxy)...)
+		routerJobResponses = append(routerJobResponses, w.prepareRouterJobResponses(destinationJob, respStatusCodes, respBodys, errorAt)...)
 	}
 
 	sort.Slice(routerJobResponses, func(i, j int) bool {
@@ -653,6 +655,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 			JobParameters: destinationJobMetadata.JobT.Parameters,
 			WorkspaceId:   destinationJobMetadata.WorkspaceID,
 			PartitionID:   destinationJobMetadata.JobT.PartitionID,
+			CustomVal:     destinationJobMetadata.JobT.CustomVal,
 		}
 
 		routerJobResponse.status = &status
@@ -831,21 +834,8 @@ func (w *worker) updateFailedJobOrderKeys(failedJobOrderKeys map[eventorder.Barr
 	}
 }
 
-func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string, errorAt string, transformerProxy bool) []*JobResponse {
+func (w *worker) prepareRouterJobResponses(destinationJob types.DestinationJobT, respStatusCodes map[int64]int, respBodys map[int64]string, errorAt string) []*JobResponse {
 	w.hydrateRespStatusCodes(destinationJob, respStatusCodes, respBodys)
-
-	var destinationResponseHandler ResponseHandler
-	w.rt.destinationsMapMu.RLock()
-	destinationResponseHandler = w.rt.destinationResponseHandler
-	w.rt.destinationsMapMu.RUnlock()
-
-	// Using response status code and body to get response code rudder router logic is based on.
-	// Works when transformer proxy in disabled
-	if !transformerProxy && destinationResponseHandler != nil {
-		for k, respStatusCode := range respStatusCodes {
-			respStatusCodes[k] = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBodys[k])
-		}
-	}
 
 	// Failure - Save response body
 	// Success - Skip saving response body

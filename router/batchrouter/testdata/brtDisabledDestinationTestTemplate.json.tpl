@@ -62,7 +62,6 @@
                                 "saveDestinationResponse": true
                             },
                             "configSchema": {},
-                            "responseRules": null,
                             "options": null,
                             "uiConfig": [
                                 {

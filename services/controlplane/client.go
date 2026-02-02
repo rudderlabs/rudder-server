@@ -11,11 +11,12 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
@@ -123,13 +124,7 @@ func NewAdminClient(baseURL string, authorizer identity.Authorizer, fns ...OptFn
 type PerComponent = map[string][]string
 
 func (c *commonClient) retry(ctx context.Context, fn func() error) error {
-	var opts backoff.BackOff
-
-	opts = backoff.NewExponentialBackOff()
-	opts = backoff.WithMaxRetries(opts, uint64(c.retries))
-	opts = backoff.WithContext(opts, ctx)
-
-	return backoff.Retry(fn, opts)
+	return backoffvoid.Retry(ctx, fn, backoff.WithMaxTries(uint(c.retries+1)))
 }
 
 func (c *AdminClient) GetDestinationSSHKeyPair(ctx context.Context, destID string) (kp SSHKeyPair, err error) {

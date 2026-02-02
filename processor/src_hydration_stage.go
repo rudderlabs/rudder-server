@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"sync"
@@ -88,10 +89,12 @@ func (proc *Handle) srcHydrationStage(partition string, message *srcHydrationMes
 					proc.logger.Warnn("context cancelled during source hydration", obskit.SourceID(string(sourceId)))
 					return err
 				}
-				proc.logger.Errorn("failed to hydrate source events, skipping jobs",
-					obskit.SourceID(string(sourceId)),
-					obskit.Error(err),
-				)
+				if !errors.Is(err, types.ErrPermanentTransformerFailure) {
+					proc.logger.Errorn("failed to hydrate source events, skipping jobs",
+						obskit.SourceID(string(sourceId)),
+						obskit.Error(err),
+					)
+				}
 				// report metrics for failed hydration
 				hydrationFailedReports = proc.getHydrationFailedReports(source, jobs, err)
 			}

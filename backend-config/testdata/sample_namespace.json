@@ -396,7 +396,6 @@
                                     }
                                 }
                             },
-                            "responseRules": null,
                             "options": null,
                             "id": "1Q8kZOyJE87ECoQ8kc26TOpgpXl",
                             "name": "GA",
@@ -814,7 +813,6 @@
                                     }
                                 }
                             },
-                            "responseRules": null,
                             "options": null,
                             "id": "1Q8kZOyJE87ECoQ8kc26TOpgpXl",
                             "name": "GA",
@@ -952,7 +950,6 @@
                                     }
                                 }
                             },
-                            "responseRules": null,
                             "options": null,
                             "id": "1ZDvxpIGSOU9pLRavMf0GuVnWV3",
                             "name": "WEBHOOK",

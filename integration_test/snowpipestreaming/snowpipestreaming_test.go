@@ -74,7 +74,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -135,7 +135,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -189,7 +189,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -245,7 +245,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -316,7 +316,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -517,7 +517,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -585,7 +585,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -653,7 +653,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -721,7 +721,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -810,7 +810,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -879,7 +879,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -950,7 +950,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1031,7 +1031,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1114,7 +1114,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1177,7 +1177,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1238,7 +1238,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1297,7 +1297,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		done := make(chan error)
 		go func() {
 			defer close(done)
-			done <- runRudderServer(ctx, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir())
 		}()
 
 		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
@@ -1403,6 +1403,7 @@ func setupBackendConfigTestServer(
 
 func runRudderServer(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, snowpipeClientsURL,
@@ -1448,7 +1449,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "TOKEN", Version: uuid.NewString()})
-	c := r.Run(ctx, []string{"snowpipe-streaming-rudder-server"})
+	c := r.Run(ctx, cancel, []string{"snowpipe-streaming-rudder-server"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}
