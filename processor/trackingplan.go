@@ -2,9 +2,11 @@ package processor
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
@@ -23,7 +25,7 @@ type TrackingPlanStatT struct {
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:
 // 1. sourceSchemaConfig in Metadata.MergedTpConfig should be true
-func reportViolations(validateEvent *types.TransformerResponse, trackingPlanID string, trackingPlanVersion int) {
+func reportViolations(validateEvent *types.TransformerResponse, trackingPlanID string, trackingPlanVersion int, log logger.Logger) {
 	if validateEvent.Metadata.MergedTpConfig["propagateValidationErrors"] == "false" {
 		return
 	}
@@ -36,6 +38,18 @@ func reportViolations(validateEvent *types.TransformerResponse, trackingPlanID s
 		context["trackingPlanId"] = trackingPlanID
 		context["trackingPlanVersion"] = trackingPlanVersion
 		context["violationErrors"] = validationErrors
+		if output == nil {
+			log.Errorn("Received nil output in TransformerResponse while adding violation errors",
+				logger.NewStringField("workspaceId", validateEvent.Metadata.WorkspaceID),
+				logger.NewStringField("sourceId", validateEvent.Metadata.SourceID),
+				logger.NewStringField("trackingPlanID", validateEvent.Metadata.TrackingPlanID),
+				logger.NewStringField("validationErrors", fmt.Sprintf("%+v", validationErrors)),
+			)
+			if config.GetBool("TRACKINGPLAN_HANDLE_NIL_OUTPUTS", false) {
+				output = make(map[string]interface{})
+				validateEvent.Output = output
+			}
+		}
 		output["context"] = context
 		return
 	}
@@ -51,15 +65,15 @@ func reportViolations(validateEvent *types.TransformerResponse, trackingPlanID s
 // enhanceWithViolation It enhances extra information of ValidationErrors in context for:
 // 1. response.Events
 // 1. response.FailedEvents
-func enhanceWithViolation(response types.Response, trackingPlanID string, trackingPlanVersion int) {
+func enhanceWithViolation(response types.Response, trackingPlanID string, trackingPlanVersion int, logger logger.Logger) {
 	for i := range response.Events {
 		validatedEvent := &response.Events[i]
-		reportViolations(validatedEvent, trackingPlanID, trackingPlanVersion)
+		reportViolations(validatedEvent, trackingPlanID, trackingPlanVersion, logger)
 	}
 
 	for i := range response.FailedEvents {
 		validatedEvent := &response.FailedEvents[i]
-		reportViolations(validatedEvent, trackingPlanID, trackingPlanVersion)
+		reportViolations(validatedEvent, trackingPlanID, trackingPlanVersion, logger)
 	}
 }
 
@@ -103,7 +117,7 @@ func (proc *Handle) validateEvents(groupedEventsBySourceId map[SourceIDT][]types
 			continue
 		}
 
-		enhanceWithViolation(response, trackingPlanID, trackingPlanVersion)
+		enhanceWithViolation(response, trackingPlanID, trackingPlanVersion, proc.logger)
 		// Set sourcePipelineSteps.trackingPlanValidation for the sourceID to true.
 		// This is being used to distinguish the flows in reporting service
 		sourceSteps := sourcePipelineSteps[sourceId]
