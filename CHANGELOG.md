@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.67.0](https://github.com/rudderlabs/rudder-server/compare/v1.66.0...v1.67.0) (2026-02-02)
+
+
+### Features
+
+* gateway partition migrator ([#6631](https://github.com/rudderlabs/rudder-server/issues/6631)) ([344c85e](https://github.com/rudderlabs/rudder-server/commit/344c85e372357a1c812c8ad959ca6d742b3a50aa))
+* integrate processor partition migrator in processor and embedded apps ([#6622](https://github.com/rudderlabs/rudder-server/issues/6622)) ([b5ee878](https://github.com/rudderlabs/rudder-server/commit/b5ee8784d3f06a2c7977dcee9d0009ea782ab02e))
+* processor partition migrator watch for new migrations ([#6611](https://github.com/rudderlabs/rudder-server/issues/6611)) ([8bfb2ca](https://github.com/rudderlabs/rudder-server/commit/8bfb2caff8099405259d2baec4610f2309d820cc))
+* source node partition migrator ([#6614](https://github.com/rudderlabs/rudder-server/issues/6614)) ([9e8b458](https://github.com/rudderlabs/rudder-server/commit/9e8b458311a00ac0201b6c49fd2df844388dc6a8))
+* target node partition migrator ([#6617](https://github.com/rudderlabs/rudder-server/issues/6617)) ([1cffea7](https://github.com/rudderlabs/rudder-server/commit/1cffea771a69f3d935cb600342810143235066ad))
+* transformation language support ([#6637](https://github.com/rudderlabs/rudder-server/issues/6637)) ([c989784](https://github.com/rudderlabs/rudder-server/commit/c98978485b53583e67363831b106e619788744d9))
+
+
+### Bug Fixes
+
+* negative pending events are recorded for destinations after startup ([#6619](https://github.com/rudderlabs/rudder-server/issues/6619)) ([1e43b02](https://github.com/rudderlabs/rudder-server/commit/1e43b0251c1d683202fa1ce7a4ef9736b0fae98d))
+* openapi definition validation ([#6643](https://github.com/rudderlabs/rudder-server/issues/6643)) ([905f2ee](https://github.com/rudderlabs/rudder-server/commit/905f2eeab3ee1fe57dcb57944c05c875ba886f96))
+* tracking plan causing a panic in case of transformer non 200 status code response ([#6653](https://github.com/rudderlabs/rudder-server/issues/6653)) ([b51ca68](https://github.com/rudderlabs/rudder-server/commit/b51ca681d05b522aec786dca9c303bc8d7f04289))
+
+
+### Miscellaneous
+
+* cleanup code to push image to dockerhub for rudder-server ent ([#6628](https://github.com/rudderlabs/rudder-server/issues/6628)) ([cf59323](https://github.com/rudderlabs/rudder-server/commit/cf5932321b83f5a37ffa1d0fce21a8bb757f9fb3))
+* migrate from PAT to GitHub App token (SEC-58) ([#6641](https://github.com/rudderlabs/rudder-server/issues/6641)) ([3c78db1](https://github.com/rudderlabs/rudder-server/commit/3c78db195c71485cd340bdac8a3e5f159dbcfcde))
+* sync release v1.66.0 to main branch ([#6618](https://github.com/rudderlabs/rudder-server/issues/6618)) ([c0b9619](https://github.com/rudderlabs/rudder-server/commit/c0b9619193ed3be609a6c33436bea360153ebe03))
+
 ## [1.66.1](https://github.com/rudderlabs/rudder-server/compare/v1.66.0...v1.66.1) (2026-01-20)
 
 
