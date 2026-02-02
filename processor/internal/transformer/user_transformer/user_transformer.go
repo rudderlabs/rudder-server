@@ -400,7 +400,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 }
 
 func (u *Client) userTransformURL(language, versionID string) (string, bool) {
-	isPython := strings.Index(language, "python") == 0
+	isPython := strings.HasPrefix(language, "python")
 
 	if !u.config.forMirroring { // Common production branch
 		if isPython && u.isPythonVersionAllowed(versionID) && u.config.pythonTransformationURL != "" {
