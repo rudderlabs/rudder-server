@@ -25,24 +25,24 @@ func TestReportViolations(t *testing.T) {
 			Events: []types.TransformerResponse{
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "false",
 						},
 					},
-					Output: map[string]interface{}{
-						"context": map[string]interface{}{},
+					Output: map[string]any{
+						"context": map[string]any{},
 					},
 				},
 			},
 			FailedEvents: []types.TransformerResponse{
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "false",
 						},
 					},
-					Output: map[string]interface{}{
-						"context": map[string]interface{}{},
+					Output: map[string]any{
+						"context": map[string]any{},
 					},
 				},
 			},
@@ -50,7 +50,7 @@ func TestReportViolations(t *testing.T) {
 
 		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
 		for _, event := range eventsFromTransformerResponse(&response) {
-			eventContext, castOk := event.Output["context"].(map[string]interface{})
+			eventContext, castOk := event.Output["context"].(map[string]any)
 			assert.True(t, castOk)
 			assert.Nil(t, eventContext["trackingPlanId"])
 			assert.Nil(t, eventContext["trackingPlanVersion"])
@@ -68,11 +68,11 @@ func TestReportViolations(t *testing.T) {
 			Events: []types.TransformerResponse{
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "false",
 						},
 					},
-					Output: map[string]interface{}{
+					Output: map[string]any{
 						"context": "some context",
 					},
 				},
@@ -80,11 +80,11 @@ func TestReportViolations(t *testing.T) {
 			FailedEvents: []types.TransformerResponse{
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "true",
 						},
 					},
-					Output: map[string]interface{}{
+					Output: map[string]any{
 						"context": 1234,
 					},
 					ValidationErrors: []types.ValidationError{
@@ -103,7 +103,7 @@ func TestReportViolations(t *testing.T) {
 
 		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
 		for _, event := range eventsFromTransformerResponse(&response) {
-			_, castOk := event.Output["context"].(map[string]interface{})
+			_, castOk := event.Output["context"].(map[string]any)
 			assert.False(t, castOk)
 		}
 	})
@@ -113,12 +113,12 @@ func TestReportViolations(t *testing.T) {
 			Events: []types.TransformerResponse{
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "true",
 						},
 					},
-					Output: map[string]interface{}{
-						"context": map[string]interface{}{},
+					Output: map[string]any{
+						"context": map[string]any{},
 					},
 					ValidationErrors: []types.ValidationError{
 						{
@@ -133,11 +133,11 @@ func TestReportViolations(t *testing.T) {
 				},
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "true",
 						},
 					},
-					Output: map[string]interface{}{
+					Output: map[string]any{
 						"context": nil,
 					},
 					ValidationErrors: []types.ValidationError{
@@ -155,12 +155,12 @@ func TestReportViolations(t *testing.T) {
 			FailedEvents: []types.TransformerResponse{
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "true",
 						},
 					},
-					Output: map[string]interface{}{
-						"context": map[string]interface{}{},
+					Output: map[string]any{
+						"context": map[string]any{},
 					},
 					ValidationErrors: []types.ValidationError{
 						{
@@ -175,11 +175,11 @@ func TestReportViolations(t *testing.T) {
 				},
 				{
 					Metadata: types.Metadata{
-						MergedTpConfig: map[string]interface{}{
+						MergedTpConfig: map[string]any{
 							"propagateValidationErrors": "true",
 						},
 					},
-					Output: map[string]interface{}{},
+					Output: map[string]any{},
 					ValidationErrors: []types.ValidationError{
 						{
 							Type: "Datatype-Mismatch",
@@ -198,7 +198,7 @@ func TestReportViolations(t *testing.T) {
 
 		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
 		for _, event := range eventsFromTransformerResponse(&response) {
-			eventContext, castOk := event.Output["context"].(map[string]interface{})
+			eventContext, castOk := event.Output["context"].(map[string]any)
 			assert.True(t, castOk)
 			assert.Equal(t, eventContext["trackingPlanId"], trackingPlanId)
 			assert.Equal(t, eventContext["trackingPlanVersion"], trackingPlanVersion)
