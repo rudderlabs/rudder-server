@@ -62,6 +62,9 @@ func TestUpload(t *testing.T) {
 			"111222334": 1,
 			"222333445": 2,
 		},
+		BatchSize:             10000,
+		MaxPayloadSize:        4600000,
+		MaxAllowedProfileSize: 512000,
 	}
 
 	// Create a temporary file with test data
@@ -127,6 +130,152 @@ func TestUpload(t *testing.T) {
 		assert.Equal(t, destination.ID, output.DestinationID)
 		assert.NotEmpty(t, output.FailedJobIDs)
 		assert.Empty(t, output.ImportingJobIDs)
+	})
+	t.Run("UploadThreeChunksWithMiddleFailure", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		defer ctrl.Finish()
+
+		mockKlaviyoAPIService := mockAPIService.NewMockKlaviyoAPIService(ctrl)
+		uploader.BatchSize = 2
+		uploader.KlaviyoAPIService = mockKlaviyoAPIService
+
+		// Create a temporary file with test data
+		tempFile, err := os.CreateTemp("", "test_upload_3chunks_*.jsonl")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(tempFile.Name())
+
+		const testProfileTemplate = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"%s@mail.com","jobIdentifier":"%s:%d"}}]}}}}}},"metadata":{"jobId":%d}}`
+
+		profiles := []string{
+			fmt.Sprintf(testProfileTemplate, "user1", "user1", 1, 1),
+			fmt.Sprintf(testProfileTemplate, "user2", "user2", 2, 2),
+			fmt.Sprintf(testProfileTemplate, "user3", "user3", 3, 3),
+			fmt.Sprintf(testProfileTemplate, "user4", "user4", 4, 4),
+			fmt.Sprintf(testProfileTemplate, "user5", "user5", 5, 5),
+			fmt.Sprintf(testProfileTemplate, "user6", "user6", 6, 6),
+		}
+
+		// Write profiles to file, one per line
+		for i, profile := range profiles {
+			if i > 0 {
+				_, err = tempFile.WriteString("\n")
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err = tempFile.WriteString(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		tempFile.Close()
+
+		// Mock expectations: Chunk 1 succeeds, Chunk 2 fails, Chunk 3 succeeds
+		// Track which job IDs are in each chunk
+		var chunk1JobIDs []int64
+		var chunk2JobIDs []int64
+		var chunk3JobIDs []int64
+		callCount := 0
+
+		mockKlaviyoAPIService.EXPECT().
+			UploadProfiles(gomock.Any()).
+			DoAndReturn(func(payload klaviyobulkupload.Payload) (*klaviyobulkupload.UploadResp, error) {
+				callCount++
+
+				// Extract job IDs from this chunk by checking the profiles
+				// We'll identify jobs by their email addresses
+				var jobIDsInChunk []int64
+				for _, profile := range payload.Data.Attributes.Profiles.Data {
+					email := profile.Attributes.Email
+					switch email {
+					case "user1@mail.com":
+						jobIDsInChunk = append(jobIDsInChunk, 1)
+					case "user2@mail.com":
+						jobIDsInChunk = append(jobIDsInChunk, 2)
+					case "user3@mail.com":
+						jobIDsInChunk = append(jobIDsInChunk, 3)
+					case "user4@mail.com":
+						jobIDsInChunk = append(jobIDsInChunk, 4)
+					case "user5@mail.com":
+						jobIDsInChunk = append(jobIDsInChunk, 5)
+					case "user6@mail.com":
+						jobIDsInChunk = append(jobIDsInChunk, 6)
+					}
+				}
+
+				switch callCount {
+				case 1:
+					// First chunk - succeed
+					chunk1JobIDs = jobIDsInChunk
+					return &klaviyobulkupload.UploadResp{
+						Data: struct {
+							Id string "json:\"id\""
+						}{
+							Id: "importId1",
+						},
+						Errors: nil,
+					}, nil
+				case 2:
+					// Second chunk - fail
+					chunk2JobIDs = jobIDsInChunk
+					return &klaviyobulkupload.UploadResp{
+						Errors: []klaviyobulkupload.ErrorDetail{
+							{Detail: "chunk 2 upload failed"},
+						},
+					}, fmt.Errorf("chunk 2 upload failed")
+				case 3:
+					// Third chunk - succeed
+					chunk3JobIDs = jobIDsInChunk
+					return &klaviyobulkupload.UploadResp{
+						Data: struct {
+							Id string "json:\"id\""
+						}{
+							Id: "importId3",
+						},
+						Errors: nil,
+					}, nil
+				}
+				// Should not reach here
+				return nil, fmt.Errorf("unexpected call count: %d", callCount)
+			}).
+			AnyTimes() // Allow any number of calls, but we expect 3
+
+		asyncDestStruct := &common.AsyncDestinationStruct{
+			Destination:     destination,
+			FileName:        tempFile.Name(),
+			ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
+		}
+
+		output := uploader.Upload(asyncDestStruct)
+		assert.NotNil(t, output)
+
+		// Verify that job IDs from chunk 2 (the failed chunk) are in FailedJobIDs
+		assert.NotEmpty(t, chunk2JobIDs, "Chunk 2 should contain at least one job ID")
+		for _, jobID := range chunk2JobIDs {
+			assert.Contains(t, output.FailedJobIDs, jobID, "Job IDs from failed chunk 2 should be in FailedJobIDs")
+		}
+
+		allSuccessfulJobIDs := append(chunk1JobIDs, chunk3JobIDs...)
+		for _, jobID := range allSuccessfulJobIDs {
+			assert.Contains(t, output.ImportingJobIDs, jobID, "Job IDs from successful chunks should be in ImportingJobIDs")
+			assert.NotContains(t, output.FailedJobIDs, jobID, "Job IDs from successful chunks should not be in FailedJobIDs")
+		}
+
+		// Verify ImportingParameters contains import IDs for successful chunks only
+		assert.NotNil(t, output.ImportingParameters)
+		importParamsJSON := string(output.ImportingParameters)
+		assert.Contains(t, importParamsJSON, "importId1", "Should contain importId1 from chunk 1")
+		assert.Contains(t, importParamsJSON, "importId3", "Should contain importId3 from chunk 3")
+		assert.NotContains(t, importParamsJSON, "importId2", "Should not contain importId2 since chunk 2 failed")
+
+		// Verify FailedCount matches the number of failed job IDs
+		assert.Equal(t, len(output.FailedJobIDs), output.FailedCount, "FailedCount should match the number of failed job IDs")
+
+		// Verify that all 6 job IDs are accounted for (either in failed or successful)
+		totalAccounted := len(output.FailedJobIDs) + len(output.ImportingJobIDs)
+		assert.Equal(t, 6, totalAccounted, "All 6 job IDs should be accounted for")
 	})
 }
 

@@ -62,11 +62,14 @@ func NewManager(logger logger.Logger, StatsFactory stats.Stats, destination *bac
 		return nil, err
 	}
 	return &KlaviyoBulkUploader{
-		DestName:          destination.DestinationDefinition.Name,
-		DestinationConfig: destination.Config,
-		Logger:            klaviyoLogger,
-		StatsFactory:      StatsFactory,
-		KlaviyoAPIService: apiService,
+		DestName:              destination.DestinationDefinition.Name,
+		DestinationConfig:     destination.Config,
+		Logger:                klaviyoLogger,
+		StatsFactory:          StatsFactory,
+		KlaviyoAPIService:     apiService,
+		BatchSize:             BATCHSIZE,
+		MaxPayloadSize:        MAXPAYLOADSIZE,
+		MaxAllowedProfileSize: MAXALLOWEDPROFILESIZE,
 	}, nil
 }
 
@@ -294,7 +297,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		profileStructureJSON, _ := jsonrs.Marshal(profileStructure)
 		profileSize := float64(len(profileStructureJSON))
 		profileSizeStat.Observe(profileSize) // Record the size in the histogram
-		if len(profileStructureJSON) >= MAXALLOWEDPROFILESIZE {
+		if len(profileStructureJSON) >= kbu.MaxAllowedProfileSize {
 			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB for a single profile."
 			abortedJobs = append(abortedJobs, int64(metadata.JobID))
 			continue
@@ -303,7 +306,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		jobIDsForProfiles = append(jobIDsForProfiles, int64(metadata.JobID))
 	}
 
-	profileChunks, jobIDChunks, _ := chunkBySizeAndElements(combinedProfiles, jobIDsForProfiles, MAXPAYLOADSIZE, BATCHSIZE)
+	profileChunks, jobIDChunks, _ := chunkBySizeAndElements(combinedProfiles, jobIDsForProfiles, kbu.MaxPayloadSize, kbu.BatchSize)
 
 	eventsSuccessStat := kbu.StatsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
