@@ -404,6 +404,9 @@ func TestTrackingPlanValidator(t *testing.T) {
 							Events: nil,
 							FailedEvents: []types.TransformerResponse{
 								{
+									Output: map[string]interface{}{
+										"src-key-1": msgID,
+									},
 									Metadata: types.Metadata{
 										MessageID: msgID,
 									},
