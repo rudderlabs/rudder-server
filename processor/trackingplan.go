@@ -29,17 +29,21 @@ func reportViolations(validateEvent *types.TransformerResponse, trackingPlanID s
 	}
 	validationErrors := validateEvent.ValidationErrors
 	output := validateEvent.Output
+	if output == nil {
+		output = make(map[string]any)
+		validateEvent.Output = output
+	}
 
 	eventContext, ok := output["context"]
 	if !ok || eventContext == nil {
-		context := make(map[string]interface{})
+		context := make(map[string]any)
 		context["trackingPlanId"] = trackingPlanID
 		context["trackingPlanVersion"] = trackingPlanVersion
 		context["violationErrors"] = validationErrors
 		output["context"] = context
 		return
 	}
-	context, castOk := eventContext.(map[string]interface{})
+	context, castOk := eventContext.(map[string]any)
 	if !castOk {
 		return
 	}

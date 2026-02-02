@@ -4,8 +4,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
-
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReportViolations(t *testing.T) {
@@ -51,10 +50,10 @@ func TestReportViolations(t *testing.T) {
 		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
 		for _, event := range eventsFromTransformerResponse(&response) {
 			eventContext, castOk := event.Output["context"].(map[string]interface{})
-			assert.True(t, castOk)
-			assert.Nil(t, eventContext["trackingPlanId"])
-			assert.Nil(t, eventContext["trackingPlanVersion"])
-			assert.Nil(t, eventContext["violationErrors"])
+			require.True(t, castOk)
+			require.Nil(t, eventContext["trackingPlanId"])
+			require.Nil(t, eventContext["trackingPlanVersion"])
+			require.Nil(t, eventContext["violationErrors"])
 		}
 	})
 
@@ -104,7 +103,7 @@ func TestReportViolations(t *testing.T) {
 		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
 		for _, event := range eventsFromTransformerResponse(&response) {
 			_, castOk := event.Output["context"].(map[string]interface{})
-			assert.False(t, castOk)
+			require.False(t, castOk)
 		}
 	})
 
@@ -199,10 +198,43 @@ func TestReportViolations(t *testing.T) {
 		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
 		for _, event := range eventsFromTransformerResponse(&response) {
 			eventContext, castOk := event.Output["context"].(map[string]interface{})
-			assert.True(t, castOk)
-			assert.Equal(t, eventContext["trackingPlanId"], trackingPlanId)
-			assert.Equal(t, eventContext["trackingPlanVersion"], trackingPlanVersion)
-			assert.Equal(t, eventContext["violationErrors"], event.ValidationErrors)
+			require.True(t, castOk)
+			require.Equal(t, eventContext["trackingPlanId"], trackingPlanId)
+			require.Equal(t, eventContext["trackingPlanVersion"], trackingPlanVersion)
+			require.Equal(t, eventContext["violationErrors"], event.ValidationErrors)
+		}
+	})
+
+	t.Run("Propagate validation errors when Output is nil", func(t *testing.T) {
+		response := types.Response{
+			Events: []types.TransformerResponse{
+				{
+					Metadata: types.Metadata{
+						MergedTpConfig: map[string]interface{}{
+							"propagateValidationErrors": "true",
+						},
+					},
+					Output: nil,
+					ValidationErrors: []types.ValidationError{
+						{
+							Type:    "Datatype-Mismatch",
+							Message: "must be number",
+						},
+					},
+				},
+			},
+		}
+		trackingPlanId := "tp_2BFrdaslxH9A7B2hSDFKxw8wPN6knOb57"
+		trackingPlanVersion := 1
+
+		enhanceWithViolation(response, trackingPlanId, trackingPlanVersion)
+		for _, event := range response.Events {
+			require.NotNil(t, event.Output)
+			eventContext, castOk := event.Output["context"].(map[string]interface{})
+			require.True(t, castOk)
+			require.Equal(t, eventContext["trackingPlanId"], trackingPlanId)
+			require.Equal(t, eventContext["trackingPlanVersion"], trackingPlanVersion)
+			require.Equal(t, eventContext["violationErrors"], event.ValidationErrors)
 		}
 	})
 }
