@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
