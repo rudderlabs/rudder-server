@@ -34,13 +34,7 @@ func NewManager(
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
 ) (common.AsyncDestinationManager, error) {
-	destinationInfo := &oauthv2.DestinationInfo{
-		Config:           destination.Config,
-		DefinitionConfig: destination.DestinationDefinition.Config,
-		WorkspaceID:      destination.WorkspaceID,
-		DestType:         destination.DestinationDefinition.Name,
-		ID:               destination.ID,
-	}
+	destinationInfo := oauthv2.NewDestinationInfo(destination, destination.DeliveryAccount)
 	httpClientTimeout := conf.GetDurationVar(30, time.Second, "SalesforceBulkUpload.httpClientTimeout")
 	cache := oauthv2.NewOauthTokenCache()
 	childLogger := logger.Child("salesforcebulkupload").Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID))

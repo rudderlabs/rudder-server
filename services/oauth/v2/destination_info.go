@@ -3,6 +3,7 @@ package v2
 import (
 	"fmt"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
@@ -12,6 +13,20 @@ type DestinationInfo struct {
 	DefinitionConfig map[string]any
 	ID               string
 	Config           map[string]any
+	Account          *backendconfig.Account
+}
+
+// NewDestinationInfo creates a DestinationInfo from a backendconfig.DestinationT.
+// Pass the appropriate account (DeliveryAccount or DeleteAccount) based on the flow.
+func NewDestinationInfo(dest *backendconfig.DestinationT, account *backendconfig.Account) *DestinationInfo {
+	return &DestinationInfo{
+		WorkspaceID:      dest.WorkspaceID,
+		DestType:         dest.DestinationDefinition.Name,
+		DefinitionConfig: dest.DestinationDefinition.Config,
+		ID:               dest.ID,
+		Config:           dest.Config,
+		Account:          account,
+	}
 }
 
 /*
@@ -22,7 +37,7 @@ Example:
 `GetAccountID(common.RudderFlowDelivery)` --> To be used when we make use of OAuth during normal event delivery
 */
 func (d *DestinationInfo) GetAccountID(flow common.RudderFlow) (string, error) {
-	oauthDest, err := IsOAuthDestination(d.DefinitionConfig, flow)
+	oauthDest, err := IsOAuthDestination(d, flow)
 	if err != nil {
 		return "", fmt.Errorf("failed to check if destination is oauth destination: %v", err)
 	}

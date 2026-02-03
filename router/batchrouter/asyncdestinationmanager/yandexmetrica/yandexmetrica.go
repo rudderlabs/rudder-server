@@ -90,13 +90,7 @@ type YandexMetricaBulkUploader struct {
 }
 
 func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
-	destinationInfo := &oauthv2.DestinationInfo{
-		Config:           destination.Config,
-		DefinitionConfig: destination.DestinationDefinition.Config,
-		WorkspaceID:      destination.WorkspaceID,
-		DestType:         destination.DestinationDefinition.Name,
-		ID:               destination.ID,
-	}
+	destinationInfo := oauthv2.NewDestinationInfo(destination, destination.DeliveryAccount)
 	yandexUploadManager := &YandexMetricaBulkUploader{
 		destinationInfo: destinationInfo,
 		logger:          logger.Child("YandexMetrica").Child("YandexMetricaBulkUploader"),

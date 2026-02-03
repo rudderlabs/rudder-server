@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
@@ -90,14 +91,17 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	dest := &oauthv2.DestinationInfo{
-		WorkspaceID:      job.WorkspaceID,
-		DestType:         destination.Name,
-		ID:               destination.DestinationID,
-		Config:           destination.Config,
-		DefinitionConfig: destination.DestDefConfig,
+	backendDest := &backendconfig.DestinationT{
+		ID:          destination.DestinationID,
+		Config:      destination.Config,
+		WorkspaceID: job.WorkspaceID,
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name:   destination.Name,
+			Config: destination.DestDefConfig,
+		},
 	}
-	isOAuth, err := oauthv2.IsOAuthDestination(dest.DefinitionConfig, common.RudderFlowDelete)
+	dest := oauthv2.NewDestinationInfo(backendDest, destination.DeleteAccount)
+	isOAuth, err := oauthv2.IsOAuthDestination(dest, common.RudderFlowDelete)
 	if err != nil {
 		pkgLogger.Errorn("deleteWithRetry IsOAuthDestination error", obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}

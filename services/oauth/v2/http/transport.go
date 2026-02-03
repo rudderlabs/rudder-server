@@ -233,7 +233,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	startTime := time.Now()
 	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
-	isOauthDestination, err := v2.IsOAuthDestination(destination.DefinitionConfig, t.flow)
+	isOauthDestination, err := v2.IsOAuthDestination(destination, t.flow)
 	if err != nil {
 		t.log.Errorn("[OAuthPlatformError]checking if destination is oauth destination",
 			obskit.DestinationID(destination.ID),
