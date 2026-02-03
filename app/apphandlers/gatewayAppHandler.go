@@ -94,7 +94,12 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	if err := gwWODB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
 	}
-	defer gwWODB.Stop()
+	defer func() {
+		// wrapping Stop call in an anonymous function
+		// so that we can decorate gwWODB later for partition migrations
+		// and call Stop on the decorated instance
+		gwWODB.Stop()
+	}()
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -102,10 +107,11 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	if err != nil {
 		return fmt.Errorf("resolving mode provider: %w", err)
 	}
-	partitionMigrator, gwWODB, err := setupGatewayPartitionMigrator(ctx, config, gwWODB)
+	partitionMigrator, gwDB, err := setupGatewayPartitionMigrator(ctx, dbPool, config, statsFactory, gwWODB, modeProvider.EtcdClient)
 	if err != nil {
 		return fmt.Errorf("setting up partition migrator: %w", err)
 	}
+	gwWODB = gwDB
 	if err := partitionMigrator.Start(); err != nil {
 		return fmt.Errorf("starting partition migrator: %w", err)
 	}

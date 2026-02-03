@@ -60,20 +60,28 @@ func (me *migrationExecutor) Run(ctx context.Context) error {
 		migrationKeyPrefix    = "/" + me.namespace + "/migration/request/"
 		migrationAckKeyPrefix = "/" + me.namespace + "/migration/ack/"
 		migrationJobKeyPrefix = "/" + me.namespace + "/migration/job/"
+		reloadGwKeyPrefix     = "/" + me.namespace + "/reload/gateway/request/"
+		reloadGwAckKeyPrefix  = "/" + me.namespace + "/reload/gateway/ack/"
 	)
+
+	putMigration := func() error {
+		v, err := jsonrs.Marshal(me.migration)
+		if err != nil {
+			return fmt.Errorf("marshalling migration request: %w", err)
+		}
+		_, err = me.client.Put(ctx, path.Join(migrationKeyPrefix, me.migration.ID), string(v))
+		if err != nil {
+			return fmt.Errorf("putting migration request to etcd: %w", err)
+		}
+		return nil
+	}
 
 	// prepare migration
 	me.migration.Status = etcdtypes.PartitionMigrationStatusNew
 	me.migration.AckKeyPrefix = path.Join(migrationAckKeyPrefix, me.migration.ID)
-
-	me.logger.Logf("migrationexecutor: putting migration in etcd")
-	v, err := jsonrs.Marshal(me.migration)
-	if err != nil {
-		return fmt.Errorf("marshalling migration request: %w", err)
-	}
-	_, err = me.client.Put(ctx, path.Join(migrationKeyPrefix, me.migration.ID), string(v))
-	if err != nil {
-		return fmt.Errorf("putting migration request to etcd: %w", err)
+	me.logger.Logf("migrationexecutor: putting new migration in etcd")
+	if err := putMigration(); err != nil {
+		return fmt.Errorf("putting new migration in etcd: %w", err)
 	}
 
 	requiredAcks := lo.Uniq(slices.Concat(me.migration.SourceNodes(), me.migration.TargetNodes()))
@@ -102,16 +110,68 @@ func (me *migrationExecutor) Run(ctx context.Context) error {
 	leave()
 
 	if me.separateGateway {
-		// TODO: reload gateways
+		me.logger.Logf("migrationexecutor: updating migration status to reloading gw in etcd")
+		me.migration.Status = etcdtypes.PartitionMigrationStatusReloadingGW
+		if err := putMigration(); err != nil {
+			return fmt.Errorf("updating migration status to reloading gw in etcd: %w", err)
+		}
+
 		me.logger.Logf("migrationexecutor: reloading gateways")
+		rgc := etcdtypes.ReloadGatewayCommand{
+			Nodes:        me.migration.TargetNodes(),
+			AckKeyPrefix: path.Join(reloadGwAckKeyPrefix, me.migration.ID),
+		}
+		v, err := jsonrs.Marshal(rgc)
+		if err != nil {
+			return fmt.Errorf("marshalling reload gateway command: %w", err)
+		}
+		_, err = me.client.Put(ctx, path.Join(reloadGwKeyPrefix, me.migration.ID), string(v))
+		if err != nil {
+			return fmt.Errorf("putting reload gateway command to etcd: %w", err)
+		}
+		me.logger.Logf("migrationexecutor: waiting for acks from all involved gateway nodes")
+		reloadAckWatcher, err := etcdwatcher.NewBuilder[etcdtypes.ReloadGatewayAck](me.client, rgc.AckKeyPrefix).
+			WithPrefix().
+			WithWatchEventType(etcdwatcher.PutWatchEventType).
+			WithWatchMode(etcdwatcher.AllMode).
+			Build()
+		if err != nil {
+			return fmt.Errorf("building etcd watcher for migration acks: %w", err)
+		}
+		acksReceived := make(map[int]struct{})
+		acks, leave := reloadAckWatcher.Watch(ctx)
+		for ack := range acks {
+			if ack.Error != nil {
+				leave()
+				return fmt.Errorf("watching for migration acks: %w", ack.Error)
+			}
+			acksReceived[ack.Event.Value.NodeIndex] = struct{}{}
+			if lo.ElementsMatch(lo.Keys(acksReceived), rgc.Nodes) {
+				break
+			}
+		}
+		leave()
+		me.logger.Logf("migrationexecutor: gateways reloaded")
 	}
 
+	me.logger.Logf("migrationexecutor: updating migration status to reloading src router in etcd")
+	me.migration.Status = etcdtypes.PartitionMigrationStatusReloadingSrcRouter
+	if err := putMigration(); err != nil {
+		return fmt.Errorf("updating migration status to reloading src router in etcd: %w", err)
+	}
 	me.logger.Logf("migrationexecutor: notifying partition switches to target nodes")
 	for _, job := range me.migration.Jobs {
 		for _, partitionID := range job.Partitions {
 			me.partitionChangeListener(partitionID, job.TargetNode)
 		}
 	}
+
+	me.logger.Logf("migrationexecutor: updating migration status to migrating in etcd")
+	me.migration.Status = etcdtypes.PartitionMigrationStatusMigrating
+	if err := putMigration(); err != nil {
+		return fmt.Errorf("updating migration status to migrating in etcd: %w", err)
+	}
+
 	// sleep to allow for some jobsdb jobs to be buffered before starting the migration jobs
 	time.Sleep(2 * time.Second)
 
@@ -160,6 +220,11 @@ func (me *migrationExecutor) Run(ctx context.Context) error {
 	}
 	leave()
 
+	me.logger.Logf("migrationexecutor: updating migration status to completed in etcd")
+	me.migration.Status = etcdtypes.PartitionMigrationStatusCompleted
+	if err := putMigration(); err != nil {
+		return fmt.Errorf("updating migration status to completed in etcd: %w", err)
+	}
 	me.logger.Logf("migrationexecutor: deleting migration jobs")
 	if _, err := me.client.Delete(ctx, path.Join(migrationJobKeyPrefix, me.migration.ID), clientv3.WithPrefix()); err != nil {
 		return fmt.Errorf("deleting migration jobs: %w", err)
