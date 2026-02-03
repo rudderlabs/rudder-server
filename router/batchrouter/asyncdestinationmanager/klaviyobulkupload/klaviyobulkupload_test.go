@@ -253,9 +253,7 @@ func TestUpload(t *testing.T) {
 
 		// Verify that job IDs from chunk 2 (the failed chunk) are in FailedJobIDs
 		assert.NotEmpty(t, chunk2JobIDs, "Chunk 2 should contain at least one job ID")
-		for _, jobID := range chunk2JobIDs {
-			assert.Contains(t, output.FailedJobIDs, jobID, "Job IDs from failed chunk 2 should be in FailedJobIDs")
-		}
+		assert.Equal(t, chunk2JobIDs, output.FailedJobIDs, "FailedCount should match the number of failed job IDs")
 
 		allSuccessfulJobIDs := append(chunk1JobIDs, chunk3JobIDs...)
 		for _, jobID := range allSuccessfulJobIDs {
