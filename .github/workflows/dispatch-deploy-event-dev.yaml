@@ -16,7 +16,7 @@ jobs:
           egress-policy: audit
 
       - name: Generate GitHub App Token for Cross-Repo Dispatch
-        id: generate-dispatch-token
+        id: app-dispatch-token
         uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
@@ -27,7 +27,7 @@ jobs:
       - name: Repository dispatch
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         with:
-          token: ${{ steps.generate-dispatch-token.outputs.token }}
+          token: ${{ steps.app-dispatch-token.outputs.token }}
           repository: rudderlabs/rudder-devops
           event-type: deploy-event
           client-payload: |
