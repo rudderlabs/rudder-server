@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -159,7 +158,7 @@ func TestTransformerContract(t *testing.T) {
 
 			wg, ctx := errgroup.WithContext(ctx)
 			wg.Go(func() error {
-				err := runRudderServer(t, ctx, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), v)
+				err := runRudderServer(t, ctx, cancel, gwPort, postgresContainer, bcServer.URL, trServer.URL, t.TempDir(), v)
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -189,6 +188,7 @@ func TestTransformerContract(t *testing.T) {
 func runRudderServer(
 	t testing.TB,
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL,
@@ -228,7 +228,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"transformer-contract"})
+	c := r.Run(ctx, cancel, []string{"transformer-contract"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

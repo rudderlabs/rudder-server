@@ -116,9 +116,9 @@ func (b *MigratorBuilder) Build() (Migrator, error) {
 		targetURLProvider:    b.targetURLProvider,
 		pendingMigrationJobs: map[string]struct{}{},
 	}
-	m.c.readExcludeSleep = b.config.GetReloadableDurationVar(15, time.Second, "PartitionMigration.Processor.SourceNode.readExcludeSleep")
+	m.c.readExcludeSleep = b.config.GetReloadableDurationVar(30, time.Second, "PartitionMigration.Processor.SourceNode.readExcludeSleep")
 	m.c.waitForInProgressTimeout = b.config.GetReloadableDurationVar(5, time.Minute, "PartitionMigration.Processor.SourceNode.waitForInProgressTimeout")
-	m.c.inProgressPollSleep = b.config.GetReloadableDurationVar(1, time.Second, "PartitionMigration.SourceNode.inProgressPollSleep")
+	m.c.inProgressPollSleep = b.config.GetReloadableDurationVar(5, time.Second, "PartitionMigration.SourceNode.inProgressPollSleep")
 
 	return m, nil
 }

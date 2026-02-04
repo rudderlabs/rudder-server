@@ -77,7 +77,7 @@ func (a *embeddedApp) Setup() error {
 	return nil
 }
 
-func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+func (a *embeddedApp) StartRudderCore(ctx context.Context, shutdownFn func(), options *app.Options) error {
 	config := config.Default
 	statsFactory := stats.Default
 
@@ -158,31 +158,32 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-	gatewayDB := jobsdb.NewForWrite(
+	gwWOHandle := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer gatewayDB.Close()
-	if err = gatewayDB.Start(); err != nil {
+	defer gwWOHandle.Close()
+	if err = gwWOHandle.Start(); err != nil {
 		return fmt.Errorf("could not start gateway: %w", err)
 	}
-	defer gatewayDB.Stop()
+	defer gwWOHandle.Stop()
+	var gwWODB jobsdb.JobsDB = gwWOHandle
 
-	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
-	// Processor.
-	gwDBForProcessor := jobsdb.NewForRead(
+	gwROHandle := jobsdb.NewForRead(
 		"gw",
-		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer gwDBForProcessor.Close()
-	routerDBHandle := jobsdb.NewForReadWrite(
+	defer gwROHandle.Close()
+	var gwRODB jobsdb.JobsDB = gwROHandle
+
+	rtRWHandle := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.rtDSLimit),
@@ -191,10 +192,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer routerDBHandle.Close()
-	routerDB := jobsdb.NewPendingEventsJobsDB(routerDBHandle, pendingEventsRegistry)
+	defer rtRWHandle.Close()
+	rtRWDB := jobsdb.NewPendingEventsJobsDB(rtRWHandle, pendingEventsRegistry)
 
-	batchRouterDBHandle := jobsdb.NewForReadWrite(
+	brtRWHandle := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchrtDSLimit),
@@ -203,10 +204,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithDBHandle(dbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
-	defer batchRouterDBHandle.Close()
-	batchRouterDB := jobsdb.NewPendingEventsJobsDB(batchRouterDBHandle, pendingEventsRegistry)
+	defer brtRWHandle.Close()
+	brtRWDB := jobsdb.NewPendingEventsJobsDB(brtRWHandle, pendingEventsRegistry)
 
-	schemaDB := jobsdb.NewForReadWrite(
+	eschRWDB := jobsdb.NewForReadWrite(
 		"esch",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.eschDSLimit),
@@ -214,9 +215,9 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer schemaDB.Close()
+	defer eschRWDB.Close()
 
-	archivalDB := jobsdb.NewForReadWrite(
+	arcRWDB := jobsdb.NewForReadWrite(
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.arcDSLimit),
@@ -225,7 +226,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "archival.jobRetention")),
 		jobsdb.WithDBHandle(dbPool),
 	)
-	defer archivalDB.Close()
+	defer arcRWDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
 	if config.GetBool("EventSchemas2.enabled", false) {
@@ -234,15 +235,31 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 			return err
 		}
 		defer client.Close()
-		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, schemaDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
+		schemaForwarder = schema_forwarder.NewForwarder(terminalErrFn, eschRWDB, &client, backendconfig.DefaultBackendConfig, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	} else {
-		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, schemaDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
+		schemaForwarder = schema_forwarder.NewAbortingForwarder(terminalErrFn, eschRWDB, logger.NewLogger().Child("jobs_forwarder"), config, statsFactory)
 	}
 
 	modeProvider, err := resolveModeProvider(a.log, deploymentType)
 	if err != nil {
 		return err
 	}
+
+	// setup partition migrator
+	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, dbPool,
+		config, statsFactory,
+		gwRODB, gwWODB,
+		rtRWDB, brtRWDB,
+		modeProvider.EtcdClient,
+	)
+	defer ppmSetup.Finally() // always run finally to clean up resources regardless of error
+	if err != nil {
+		return fmt.Errorf("setting up partition migrator: %w", err)
+	}
+	partitionMigrator := ppmSetup.PartitionMigrator
+	gwWODB = ppmSetup.GwDB
+	rtRWDB = ppmSetup.RtDB
+	brtRWDB = ppmSetup.BrtDB
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
 
@@ -260,11 +277,11 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	proc := processor.New(
 		ctx,
 		&options.ClearDB,
-		gwDBForProcessor,
-		routerDB,
-		batchRouterDB,
-		schemaDB,
-		archivalDB,
+		gwRODB,
+		rtRWDB,
+		brtRWDB,
+		eschRWDB,
+		arcRWDB,
 		reporting,
 		transientSources,
 		fileUploaderProvider,
@@ -288,7 +305,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple routers can share the same cache and not hit the DB every time
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
-			routerDB,
+			rtRWDB,
 		),
 		TransientSources:           transientSources,
 		RsourcesService:            rsourcesService,
@@ -302,7 +319,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		BackendConfig: backendconfig.DefaultBackendConfig,
 		RouterDB: jobsdb.NewCachingDistinctParameterValuesJobsdb( // using a cache so that multiple batch routers can share the same cache and not hit the DB every time
 			config.GetReloadableDurationVar(1, time.Second, "JobsDB.rt.parameterValuesCacheTtl", "JobsDB.parameterValuesCacheTtl"),
-			batchRouterDB,
+			brtRWDB,
 		),
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
@@ -312,17 +329,18 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig, logger.NewLogger())
 
 	dm := cluster.Dynamic{
-		Provider:        modeProvider,
-		GatewayDB:       gwDBForProcessor,
-		RouterDB:        routerDB,
-		BatchRouterDB:   batchRouterDB,
-		EventSchemaDB:   schemaDB,
-		ArchivalDB:      archivalDB,
-		Processor:       proc,
-		Router:          rt,
-		SchemaForwarder: schemaForwarder,
+		Provider:          modeProvider,
+		GatewayDB:         gwRODB,
+		RouterDB:          rtRWDB,
+		BatchRouterDB:     brtRWDB,
+		EventSchemaDB:     eschRWDB,
+		ArchivalDB:        arcRWDB,
+		PartitionMigrator: partitionMigrator,
+		Processor:         proc,
+		Router:            rt,
+		SchemaForwarder:   schemaForwarder,
 		Archiver: archiver.New(
-			archivalDB,
+			arcRWDB,
 			fileUploaderProvider,
 			config,
 			statsFactory,
@@ -348,7 +366,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	streamMsgValidator := stream.NewMessageValidator()
 	gw := gateway.Handle{}
 	err = gw.Setup(ctx, config, logger.NewLogger().Child("gateway"), statsFactory, a.app, backendconfig.DefaultBackendConfig,
-		gatewayDB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
+		gwWODB, rateLimiter, a.versionHandler, rsourcesService, transformerFeaturesService, sourceHandle,
 		streamMsgValidator, gateway.WithInternalHttpHandlers(
 			map[string]http.Handler{
 				"/drain": drainConfigManager.DrainConfigHttpHandler(),

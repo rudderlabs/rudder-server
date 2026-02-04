@@ -51,6 +51,7 @@ type reloadableConfig struct {
 	maxJobQueryBatchSize                   config.ValueLoader[int] // absolute max limit on job query batch size when adapting based on throttling limits
 	updateStatusBatchSize                  config.ValueLoader[int]
 	readSleep                              config.ValueLoader[time.Duration]
+	maxReadSleep                           config.ValueLoader[time.Duration]
 	maxStatusUpdateWait                    config.ValueLoader[time.Duration]
 	minRetryBackoff                        config.ValueLoader[time.Duration]
 	maxRetryBackoff                        config.ValueLoader[time.Duration]

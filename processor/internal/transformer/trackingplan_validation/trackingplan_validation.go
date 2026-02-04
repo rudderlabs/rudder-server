@@ -230,8 +230,12 @@ func (t *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	default:
 		for i := range data {
 			transformEvent := &data[i]
-			resp := types.TransformerResponse{StatusCode: statusCode, Error: string(respData), Metadata: transformEvent.Metadata}
-			transformerResponses = append(transformerResponses, resp)
+			transformerResponses = append(transformerResponses, types.TransformerResponse{
+				Output:     transformEvent.Message,
+				Metadata:   transformEvent.Metadata,
+				StatusCode: statusCode,
+				Error:      string(respData),
+			})
 		}
 	}
 	t.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))

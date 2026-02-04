@@ -112,6 +112,11 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_run", stats.TimerType, mpe.statsTags()).RecordDuration()()
 	mpe.logger.Infon("Starting partition migration")
 
+	// refresh the DS list to ensure that we'll move partition data from all datasets
+	if err := mpe.sourceDB.RefreshDSList(ctx); err != nil {
+		return fmt.Errorf("refreshing DS list: %w", err)
+	}
+
 	// mark any executing jobs as failed to handle previous interrupted migrations
 	if err := mpe.markExecutingJobsAsFailed(ctx); err != nil {
 		return fmt.Errorf("marking executing jobs as failed: %w", err)
@@ -323,7 +328,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			case <-done:
 				return nil
 			case <-time.After(mpe.progressPeriod.Load()):
-				mpe.logger.Infon("Partition migration in progress",
+				mpe.logger.Infon("Partition migration job in progress",
 					logger.NewIntField("sent", totalSent.Load()),
 					logger.NewIntField("acked", totalAcked.Load()),
 				)
@@ -335,7 +340,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 		defer close(done)
 		if err := streamGroup.Wait(); err != nil {
 			if ctx.Err() == nil {
-				mpe.logger.Errorn("Partition migration failed", obskit.Error(err))
+				mpe.logger.Errorn("Partition migration job failed", obskit.Error(err))
 				for index, jobs := range unackedBatches { // no need to lock unackedBatches, we are done with sender and receiver goroutines
 					if err := mpe.updateJobStatus(ctx, jobs, jobsdb.Failed.State, fmt.Errorf("job migration interrupted: %w", err)); err != nil {
 						mpe.logger.Warnn("Could not mark non-migrated jobs as failed",
@@ -350,13 +355,13 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			}
 			return fmt.Errorf("migrating partitions: %w", err)
 		}
-		mpe.logger.Infon("Partition migration completed successfully",
+		mpe.logger.Infon("Partition migration job completed successfully",
 			logger.NewIntField("total", totalAcked.Load()),
 		)
 		return nil
 	})
 	err = g.Wait()
-	mpe.logger.Infon("Partition migration progress final status",
+	mpe.logger.Infon("Partition migration job progress final status",
 		logger.NewIntField("sent", totalSent.Load()),
 		logger.NewIntField("acked", totalAcked.Load()),
 		obskit.Error(err),

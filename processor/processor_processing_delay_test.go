@@ -173,7 +173,7 @@ func ProcProcessingDelayScenario(t testing.TB, spec *ProcProcessingDelayScenario
 				}
 			}()
 			r := runner.New(runner.ReleaseInfo{})
-			c := r.Run(ctx, []string{"proc-isolation-test-rudder-server"})
+			c := r.Run(ctx, cancel, []string{"proc-isolation-test-rudder-server"})
 			if c != 0 {
 				t.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 			}

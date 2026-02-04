@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -85,7 +85,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -159,7 +159,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -231,7 +231,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			wg, ctx := errgroup.WithContext(ctx)
 			wg.Go(func() error {
-				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -304,7 +304,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			wg, ctx := errgroup.WithContext(ctx)
 			wg.Go(func() error {
-				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -376,7 +376,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 		wg, ctx := errgroup.WithContext(ctx)
 		wg.Go(func() error {
-			err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+			err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 			if err != nil {
 				t.Logf("rudder-server exited with error: %v", err)
 			}
@@ -454,7 +454,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 			wg, ctx := errgroup.WithContext(ctx)
 			wg.Go(func() error {
-				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -531,7 +531,7 @@ func TestReportingErrorIndex(t *testing.T) {
 			wg.Go(func() error {
 				config.Set("Router.toAbortDestinationIDs", "destination-1")
 
-				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -607,7 +607,7 @@ func TestReportingErrorIndex(t *testing.T) {
 				config.Set("BatchRouter.S3.retryTimeWindow", "0s")
 				config.Set("BatchRouter.S3.maxFailedCountForJob", 0)
 
-				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -689,7 +689,7 @@ func TestReportingErrorIndex(t *testing.T) {
 			wg.Go(func() error {
 				config.Set("BatchRouter.warehouseServiceMaxRetryTime", "0s")
 
-				err := runRudderServer(ctx, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
+				err := runRudderServer(ctx, cancel, gwPort, postgresContainer, minioResource, bcServer.URL, trServer.URL, t.TempDir())
 				if err != nil {
 					t.Logf("rudder-server exited with error: %v", err)
 				}
@@ -722,6 +722,7 @@ func TestReportingErrorIndex(t *testing.T) {
 
 func runRudderServer(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	port int,
 	postgresContainer *postgres.Resource,
 	minioResource *minio.Resource,
@@ -771,7 +772,7 @@ func runRudderServer(
 		}
 	}()
 	r := runner.New(runner.ReleaseInfo{EnterpriseToken: "DUMMY"})
-	c := r.Run(ctx, []string{"rudder-error-reporting"})
+	c := r.Run(ctx, cancel, []string{"rudder-error-reporting"})
 	if c != 0 {
 		err = fmt.Errorf("rudder-server exited with a non-0 exit code: %d", c)
 	}

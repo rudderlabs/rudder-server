@@ -116,7 +116,6 @@ func (m testPartitionBufferIntegrationTestMethods) ReadWriteSetup(t *testing.T) 
 	})
 	buffer := jobsdb.NewForReadWrite("buf",
 		jobsdb.WithDBHandle(pg.DB),
-		jobsdb.WithNumPartitions(m.totalPartitionsNum),
 		jobsdb.WithSkipMaintenanceErr(true),
 		jobsdb.WithDSLimit(config.SingleValueLoader(10)),
 		jobsdb.WithConfig(c),
@@ -187,7 +186,6 @@ func (m testPartitionBufferIntegrationTestMethods) ReadOnlyWithWriteBufferSetup(
 
 	bufferWO := jobsdb.NewForWrite("buf",
 		jobsdb.WithDBHandle(pg.DB),
-		jobsdb.WithNumPartitions(m.totalPartitionsNum),
 		jobsdb.WithSkipMaintenanceErr(true),
 		jobsdb.WithDSLimit(config.SingleValueLoader(10)),
 		jobsdb.WithConfig(c),
@@ -199,7 +197,6 @@ func (m testPartitionBufferIntegrationTestMethods) ReadOnlyWithWriteBufferSetup(
 
 	bufferRO := jobsdb.NewForRead("buf",
 		jobsdb.WithDBHandle(pg.DB),
-		jobsdb.WithNumPartitions(m.totalPartitionsNum),
 		jobsdb.WithSkipMaintenanceErr(true),
 		jobsdb.WithDSLimit(config.SingleValueLoader(10)),
 		jobsdb.WithConfig(c),

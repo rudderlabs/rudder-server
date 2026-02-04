@@ -44,6 +44,7 @@ type netHandle struct {
 	blockPrivateIPs      bool
 	blockPrivateIPsCIDRs netutil.CIDRs
 	destType             string
+	instanceID           string
 }
 
 // NetHandle interface
@@ -117,7 +118,12 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		}
 
 		var payload io.Reader
-		headers := map[string]string{"User-Agent": "RudderLabs"}
+		headers := map[string]string{
+			"User-Agent": "RudderLabs",
+		}
+		if network.instanceID != "" {
+			headers["X-Rudder-Instance-Id"] = network.instanceID
+		}
 		// support for JSON and FORM body type
 		if len(bodyValue) > 0 {
 			switch bodyFormat {
@@ -362,5 +368,9 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 		logger.NewDurationField("timeout", netClientTimeout),
 	)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
+	if config.GetBoolVar(false, "Router.Network.IncludeInstanceIdInHeader") {
+		network.instanceID = config.GetString("INSTANCE_ID", "")
+	}
+
 	return nil
 }

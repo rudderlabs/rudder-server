@@ -33,7 +33,7 @@ func (b *jobsDBPartitionBuffer) WithStoreSafeTx(ctx context.Context, fn func(tx 
 			return fmt.Errorf("acquiring a buffered partitions read lock: %w", ctx.Err())
 		}
 		err := b.primaryWriteJobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) (err error) {
-			if !b.differentReaderWriterDBs { // no need to check for stale version
+			if !b.differentBufferDBs { // no need to check for stale version
 				return fn(tx)
 			}
 			diff, err := b.versionDiff(ctx, tx.Tx()) // get the version difference
