@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 
 	"github.com/rudderlabs/rudder-server/processor/isolation"
@@ -30,7 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/samber/lo"
 
 	proctypes "github.com/rudderlabs/rudder-server/processor/types"
@@ -145,7 +146,6 @@ func TestSrcHydration(t *testing.T) {
 		expectedReports := append(prepareExpectedReports(t, sourceID1, false, numEvents), prepareExpectedReports(t, sourceID2, false, numEvents)...)
 		requireReports(t, ctx, postgresContainer.DB, expectedReports)
 	})
-
 	t.Run("with test transformer", func(t *testing.T) {
 		tests := []struct {
 			name                   string
@@ -186,8 +186,8 @@ func TestSrcHydration(t *testing.T) {
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.isolationMode"), tt.procIsolation)
-				t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.failOnError"),
+				t.Setenv(configKeyToEnv("Processor.isolationMode"), tt.procIsolation)
+				t.Setenv(configKeyToEnv("Processor.SourceHydration.failOnError"),
 					strconv.FormatBool(tt.failOnHydrationFailure))
 
 				webhook := webhookutil.NewRecorder()
@@ -525,41 +525,41 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	t.Setenv("WORKSPACE_TOKEN", "token")
 	t.Setenv("DEST_TRANSFORM_URL", transformerURL)
 
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.host"), postgresContainer.Host)
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.port"), postgresContainer.Port)
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.user"), postgresContainer.User)
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.name"), postgresContainer.Database)
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DB.password"), postgresContainer.Password)
-
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Warehouse.mode"), "off")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "SourceDebugger.disableEventUploads"), "true")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "TransformationDebugger.disableTransformationStatusUploads"), "true")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.backup.enabled"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "JobsDB.migrateDSLoopSleepDuration"), "60m")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "archival.Enabled"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.syncer.enabled"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "BatchRouter.pingFrequency"), "1s")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "BatchRouter.uploadFreq"), "1s")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.webPort"), strconv.Itoa(port))
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "RUDDER_TMPDIR"), os.TempDir())
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "recovery.storagePath"), path.Join(tmpDir, "/recovery_data.json"))
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "recovery.enabled"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Profiler.Enabled"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Gateway.enableSuppressUserFeature"), "false")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.archiveInPreProcess"), "true")
-	t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Processor.SourceHydration.maxRetry"), "2")
+	t.Setenv(configKeyToEnv("DB.host"), postgresContainer.Host)
+	t.Setenv(configKeyToEnv("DB.port"), postgresContainer.Port)
+	t.Setenv(configKeyToEnv("DB.user"), postgresContainer.User)
+	t.Setenv(configKeyToEnv("DB.name"), postgresContainer.Database)
+	t.Setenv(configKeyToEnv("DB.password"), postgresContainer.Password)
+	t.Setenv(configKeyToEnv("Warehouse.mode"), "off")
+	t.Setenv(configKeyToEnv("DestinationDebugger.disableEventDeliveryStatusUploads"), "true")
+	t.Setenv(configKeyToEnv("SourceDebugger.disableEventUploads"), "true")
+	t.Setenv(configKeyToEnv("TransformationDebugger.disableTransformationStatusUploads"), "true")
+	t.Setenv(configKeyToEnv("JobsDB.backup.enabled"), "false")
+	t.Setenv(configKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "60m")
+	t.Setenv(configKeyToEnv("archival.Enabled"), "false")
+	t.Setenv(configKeyToEnv("Reporting.syncer.enabled"), "false")
+	t.Setenv(configKeyToEnv("BatchRouter.pingFrequency"), "1s")
+	t.Setenv(configKeyToEnv("BatchRouter.uploadFreq"), "1s")
+	t.Setenv(configKeyToEnv("Gateway.webPort"), strconv.Itoa(port))
+	t.Setenv(configKeyToEnv("RUDDER_TMPDIR"), os.TempDir())
+	t.Setenv(configKeyToEnv("recovery.storagePath"), path.Join(tmpDir, "/recovery_data.json"))
+	t.Setenv(configKeyToEnv("recovery.enabled"), "false")
+	t.Setenv(configKeyToEnv("Profiler.Enabled"), "false")
+	t.Setenv(configKeyToEnv("Gateway.enableSuppressUserFeature"), "false")
+	t.Setenv(configKeyToEnv("Processor.archiveInPreProcess"), "true")
+	t.Setenv(configKeyToEnv("Processor.SourceHydration.maxRetry"), "2")
+	t.Setenv(configKeyToEnv("enableStats"), "false")
 	if minioResource != nil {
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.enabled"), "true")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.SleepDuration"), "1s")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.minWorkerSleep"), "1s")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "Reporting.errorIndexReporting.uploadFrequency"), "1s")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.Bucket"), minioResource.BucketName)
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.Endpoint"), fmt.Sprintf("http://%s", minioResource.Endpoint))
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.AccessKey"), minioResource.AccessKeyID)
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.SecretAccessKey"), minioResource.AccessKeySecret)
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.S3ForcePathStyle"), "true")
-		t.Setenv(config.ConfigKeyToEnv(config.DefaultEnvPrefix, "ErrorIndex.storage.DisableSSL"), "true")
+		t.Setenv(configKeyToEnv("Reporting.errorIndexReporting.enabled"), "true")
+		t.Setenv(configKeyToEnv("Reporting.errorIndexReporting.SleepDuration"), "1s")
+		t.Setenv(configKeyToEnv("Reporting.errorIndexReporting.minWorkerSleep"), "1s")
+		t.Setenv(configKeyToEnv("Reporting.errorIndexReporting.uploadFrequency"), "1s")
+		t.Setenv(configKeyToEnv("ErrorIndex.storage.Bucket"), minioResource.BucketName)
+		t.Setenv(configKeyToEnv("ErrorIndex.storage.Endpoint"), fmt.Sprintf("http://%s", minioResource.Endpoint))
+		t.Setenv(configKeyToEnv("ErrorIndex.storage.AccessKey"), minioResource.AccessKeyID)
+		t.Setenv(configKeyToEnv("ErrorIndex.storage.SecretAccessKey"), minioResource.AccessKeySecret)
+		t.Setenv(configKeyToEnv("ErrorIndex.storage.S3ForcePathStyle"), "true")
+		t.Setenv(configKeyToEnv("ErrorIndex.storage.DisableSSL"), "true")
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -574,12 +574,12 @@ func runRudderServer(t testing.TB, ctx context.Context, cancel context.CancelFun
 	return err
 }
 
+func configKeyToEnv(key string) string {
+	return config.ConfigKeyToEnv(config.DefaultEnvPrefix, key)
+}
+
 // nolint: unparam, bodyclose
-func sendEvents(
-	num int,
-	eventType, writeKey,
-	url string,
-) error {
+func sendEvents(num int, eventType, writeKey, url string) error {
 	for i := 0; i < num; i++ {
 		payload := []byte(fmt.Sprintf(`
 			{
@@ -632,27 +632,23 @@ func requireJobsCount(
 ) {
 	t.Helper()
 
-	query := fmt.Sprintf(`
-		SELECT
-		  count(*)
-		FROM
-		  unionjobsdbmetadata('%s', 1)
-		WHERE
-		  job_state = '%s';
-	`,
-		queue,
-		state,
-	)
+	query := fmt.Sprintf(`SELECT count(*) FROM unionjobsdbmetadata('%s', 1) WHERE job_state = '%s'`, queue, state)
+
 	require.Eventuallyf(t, func() bool {
 		var jobsCount int
 		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&jobsCount))
 		t.Logf("%s %sJobCount: %d", queue, state, jobsCount)
-		return jobsCount == expectedCount
-	},
-		30*time.Second,
-		1*time.Second,
-		"%d %s events should be in %s state", expectedCount, queue, state,
-	)
+		if jobsCount != expectedCount {
+			rows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT job_state, count(*) as "count" FROM unionjobsdbmetadata('%s', 1) group by job_state`, queue)) // nolint:rowserrcheck
+			require.NoError(t, err)
+			defer func() { _ = rows.Close() }()
+			var b strings.Builder
+			_ = sqlutil.PrintRowsToTable(rows, &b)
+			t.Log(b.String())
+			return false
+		}
+		return true
+	}, 30*time.Second, 1*time.Second, "%d %s events should be in %s state", expectedCount, queue, state)
 }
 
 // nolint: unparam
