@@ -10,7 +10,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.sha }}
   cancel-in-progress: true
 env:
-  FB_TEST_PAGE_ACCESS_TOKEN: ${{ secrets.FB_TEST_PAGE_ACCESS_TOKEN }}
+  FBLA_SRCHYDRATION_TEST_DATA: ${{ secrets.FBLA_SRCHYDRATION_TEST_DATA }}
 
 permissions:
   contents: read # Required for actions/checkout
