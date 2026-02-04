@@ -80,14 +80,24 @@ type reportRow struct {
 
 func TestSrcHydration(t *testing.T) {
 	t.Run("with actual transformer", func(t *testing.T) {
-		envKey := "FB_TEST_PAGE_ACCESS_TOKEN"
-		if v, exists := os.LookupEnv(envKey); !exists || v == "" {
+		testSecretsEnv := "FBLA_SRCHYDRATION_TEST_DATA"
+		if v, exists := os.LookupEnv(testSecretsEnv); !exists || v == "" {
 			if os.Getenv("FORCE_RUN_INTEGRATION_TESTS") == "true" {
-				t.Fatalf("%s environment variable not set", envKey)
+				t.Fatalf("%s environment variable not set", testSecretsEnv)
 			}
-			t.Skipf("Skipping %s as %s is not set", t.Name(), envKey)
+			t.Skipf("Skipping %s as %s is not set", t.Name(), testSecretsEnv)
 		}
-		pageAccessToken := os.Getenv("FB_TEST_PAGE_ACCESS_TOKEN")
+
+		testSecrets := os.Getenv(testSecretsEnv)
+		pageAccessToken := jsonparser.GetStringOrEmpty([]byte(testSecrets), "pageAccessToken")
+		if pageAccessToken == "" {
+			t.Fatalf("Failing %s as pageAccessToken is not set", t.Name())
+		}
+		anonID := jsonparser.GetStringOrEmpty([]byte(testSecrets), "anonymousId")
+		if anonID == "" {
+			t.Fatalf("Failing %s as anonymousId is not set", t.Name())
+		}
+
 		require.NotNil(t, pageAccessToken, "pageAccessToken is not set")
 		internalSecret := json.RawMessage(fmt.Sprintf(`{"pageAccessToken": "%s"}`, pageAccessToken))
 
@@ -128,11 +138,11 @@ func TestSrcHydration(t *testing.T) {
 		numEvents := 6
 		var eventsCount int
 
-		err = sendEvents(numEvents, "identify", writeKey1, url)
+		err = sendEvents(numEvents, "identify", writeKey1, url, anonID)
 		require.NoError(t, err)
 		eventsCount += numEvents
 
-		err = sendEvents(numEvents, "identify", writeKey2, url)
+		err = sendEvents(numEvents, "identify", writeKey2, url, anonID)
 		require.NoError(t, err)
 		eventsCount += numEvents
 
@@ -249,18 +259,18 @@ func TestSrcHydration(t *testing.T) {
 				var successfulEventCount int
 				var totalEventCount int
 
-				err = sendEvents(numEvents, "identify", writeKey1, url)
+				err = sendEvents(numEvents, "identify", writeKey1, url, "ananymous-id-1")
 				require.NoError(t, err)
 				successfulEventCount += numEvents
 				totalEventCount += numEvents
 
-				err = sendEvents(numEvents, "identify", writeKey2, url)
+				err = sendEvents(numEvents, "identify", writeKey2, url, "ananymous-id-2")
 				require.NoError(t, err)
 				successfulEventCount += numEvents
 				totalEventCount += numEvents
 
 				if tt.failOnHydrationFailure {
-					err = sendEvents(numEvents, "identify", writeKey3, url)
+					err = sendEvents(numEvents, "identify", writeKey3, url, "ananymous-id-4")
 					require.NoError(t, err)
 					totalEventCount += numEvents
 				}
@@ -579,13 +589,13 @@ func configKeyToEnv(key string) string {
 }
 
 // nolint: unparam, bodyclose
-func sendEvents(num int, eventType, writeKey, url string) error {
+func sendEvents(num int, eventType, writeKey, url, anonID string) error {
 	for i := 0; i < num; i++ {
 		payload := []byte(fmt.Sprintf(`
 			{
 			  "batch": [
 				{
-				  "anonymousId": "1201391398519677",
+				  "anonymousId": %[2]q,
 				  "type": %[1]q,
 				  "context": {
 					"traits": {
@@ -600,7 +610,7 @@ func sendEvents(num int, eventType, writeKey, url string) error {
 				}
 			  ]
 			}`,
-			eventType,
+			eventType, anonID,
 		))
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
