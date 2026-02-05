@@ -139,7 +139,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 		t.Run("successfully removes single partition", func(t *testing.T) {
 			currentVersion := jdbpb.bufferedPartitionsVersion
 
-			err := jdbpb.WithTx(func(tx *tx.Tx) error {
+			err := jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				return jdbpb.removeBufferPartitions(t.Context(), tx, []string{"partition-1"})
@@ -169,7 +169,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 		t.Run("successfully removes multiple partitions", func(t *testing.T) {
 			currentVersion := jdbpb.bufferedPartitionsVersion
 
-			err := jdbpb.WithTx(func(tx *tx.Tx) error {
+			err := jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				return jdbpb.removeBufferPartitions(t.Context(), tx, []string{"partition-2", "partition-3"})
@@ -199,7 +199,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 			err := pb.BufferPartitions(t.Context(), []string{"partition-4", "partition-5"})
 			require.NoError(t, err, "it should be able to buffer partitions")
 
-			err = jdbpb.WithTx(func(tx *tx.Tx) error {
+			err = jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				return jdbpb.removeBufferPartitions(t.Context(), tx, []string{"partition-4", "partition-4", "partition-5", "partition-5"})
@@ -222,7 +222,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 			currentVersion := jdbpb.bufferedPartitionsVersion
 
 			// Try to remove a mix of existing and non-existent partitions
-			err = jdbpb.WithTx(func(tx *tx.Tx) error {
+			err = jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				return jdbpb.removeBufferPartitions(t.Context(), tx, []string{"partition-6", "partition-non-existent"})
@@ -247,7 +247,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
 
-			err = jdbpb.WithTx(func(tx *tx.Tx) error {
+			err = jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				return jdbpb.removeBufferPartitions(ctx, tx, []string{"partition-7"})
@@ -270,7 +270,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 			currentVersion := jdbpb.bufferedPartitionsVersion
 
 			// Intentionally cause transaction to rollback
-			err = jdbpb.WithTx(func(tx *tx.Tx) error {
+			err = jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				if err := jdbpb.removeBufferPartitions(t.Context(), tx, []string{"partition-9"}); err != nil {
@@ -301,7 +301,7 @@ func TestJobsDBPartitionBufferManagement(t *testing.T) {
 			currentVersion := jdbpb.bufferedPartitionsVersion
 
 			// Try to remove empty partition list
-			err := jdbpb.WithTx(func(tx *tx.Tx) error {
+			err := jdbpb.WithTx(t.Context(), func(tx *tx.Tx) error {
 				jdbpb.bufferedPartitionsMu.Lock()
 				defer jdbpb.bufferedPartitionsMu.Unlock()
 				return jdbpb.removeBufferPartitions(t.Context(), tx, []string{})
