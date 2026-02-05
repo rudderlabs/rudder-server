@@ -9,8 +9,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-func IsOAuthDestination(definitionConfig map[string]any, flow common.RudderFlow) (bool, error) {
-	authValue, _ := misc.NestedMapLookup(definitionConfig, "auth", "type")
+func IsOAuthDestination(dest *DestinationInfo, flow common.RudderFlow) (bool, error) {
+	// Check account's AuthenticationType first
+	if dest.Account != nil && dest.Account.AccountDefinition != nil {
+		return dest.Account.AccountDefinition.AuthenticationType == "oauth", nil
+	}
+
+	// Fallback to existing logic using definitionConfig
+	authValue, _ := misc.NestedMapLookup(dest.DefinitionConfig, "auth", "type")
 	if authValue == nil {
 		// valid use-case for non-OAuth destinations
 		return false, nil
@@ -20,7 +26,7 @@ func IsOAuthDestination(definitionConfig map[string]any, flow common.RudderFlow)
 		// we should throw error here, as we expect authValue to be a string if present
 		return false, fmt.Errorf("auth type is not a string: %v", authValue)
 	}
-	isScopeSupported, err := isOAuthSupportedForFlow(definitionConfig, string(flow))
+	isScopeSupported, err := isOAuthSupportedForFlow(dest.DefinitionConfig, string(flow))
 	if err != nil {
 		return false, err
 	}

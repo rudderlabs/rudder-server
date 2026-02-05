@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
@@ -19,6 +20,7 @@ type destInfoTestCase struct {
 	description    string
 	flow           common.RudderFlow
 	inputDefConfig map[string]interface{}
+	account        *backendconfig.Account
 	expected       isOAuthResult
 }
 
@@ -109,6 +111,46 @@ var isOAuthDestTestCases = []destInfoTestCase{
 			isOAuth: false,
 		},
 	},
+	{
+		description:    "should return 'truer' when account has AuthenticationType=oauth",
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.Account{
+			AccountDefinition: &backendconfig.AccountDefinition{
+				AuthenticationType: "oauth",
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
+	{
+		description:    "should return 'false' when account has non-OAuth AuthenticationType",
+		inputDefConfig: map[string]interface{}{},
+		account: &backendconfig.Account{
+			AccountDefinition: &backendconfig.AccountDefinition{
+				AuthenticationType: "basic",
+			},
+		},
+		expected: isOAuthResult{
+			isOAuth: false,
+		},
+	},
+	{
+		description: "should fallback to definitionConfig when account.AccountDefinition is nil",
+		flow:        common.RudderFlowDelivery,
+		inputDefConfig: map[string]interface{}{
+			"auth": map[string]interface{}{
+				"type":         "OAuth",
+				"rudderScopes": []interface{}{"delivery"},
+			},
+		},
+		account: &backendconfig.Account{
+			AccountDefinition: nil,
+		},
+		expected: isOAuthResult{
+			isOAuth: true,
+		},
+	},
 }
 
 var _ = Describe("DestinationInfo tests", func() {
@@ -116,10 +158,11 @@ var _ = Describe("DestinationInfo tests", func() {
 		for _, tc := range isOAuthDestTestCases {
 			It(tc.description, func() {
 				d := &v2.DestinationInfo{
-					DestType: "dest_def_name",
+					DestType:         "dest_def_name",
+					DefinitionConfig: tc.inputDefConfig,
+					Account:          tc.account,
 				}
-				d.DefinitionConfig = tc.inputDefConfig
-				isOAuth, err := v2.IsOAuthDestination(d.DefinitionConfig, tc.flow)
+				isOAuth, err := v2.IsOAuthDestination(d, tc.flow)
 
 				Expect(isOAuth).To(Equal(tc.expected.isOAuth))
 				if tc.expected.err != nil {

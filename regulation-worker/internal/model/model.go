@@ -3,6 +3,8 @@ package model
 import (
 	"errors"
 	"time"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 var (
@@ -54,6 +56,7 @@ type Destination struct {
 	DestDefConfig map[string]interface{}
 	DestinationID string
 	Name          string
+	DeleteAccount *backendconfig.Account
 }
 
 type APIReqErr struct {

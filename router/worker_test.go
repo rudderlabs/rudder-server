@@ -426,7 +426,6 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             true,
 			reloadableConfig:               &reloadableConfig{},
 		},
 	}
@@ -437,10 +436,16 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
 	worker.rt.limiter.stats.transform = partition.NewStats()
 
+	oauthDestDefConfig := map[string]interface{}{
+		"auth": map[string]interface{}{
+			"type": "OAuth",
+		},
+	}
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:                    "d1",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{Config: oauthDestDefConfig},
 			},
 			Message: json.RawMessage(`{"event": "d1-test1"}`),
 			JobMetadata: types.JobMetadataT{
@@ -584,7 +589,6 @@ func TestTransformForNonOAuthDestination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             false,
 			reloadableConfig:               &reloadableConfig{},
 		},
 	}
