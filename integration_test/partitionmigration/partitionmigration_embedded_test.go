@@ -132,8 +132,10 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"PartitionMigration.failOnInvalidNodeHostPattern": "false",
 
 		// let migrations do multiple small batches
-		"PartitionMigration.Executor.BatchSize": "100",
-		"PartitionMigration.Executor.ChunkSize": "10",
+		"PartitionMigration.Executor.BatchSize":     "100",
+		"PartitionMigration.Executor.ChunkSize":     "10",
+		"PartitionMigration.bufferFlushBatchSize":   "100",
+		"PartitionMigration.bufferWatchdogInterval": "10s", // watch more frequently for surfacing potentials issues
 
 		"ETCD_HOSTS":            etcdResource.Hosts[0],
 		"DEST_TRANSFORM_URL":    tr.TransformerURL,

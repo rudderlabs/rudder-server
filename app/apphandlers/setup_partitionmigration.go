@@ -77,6 +77,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	bufferFlushBatchSize := config.GetReloadableIntVar(20000, 1, "PartitionMigration.bufferFlushBatchSize")
 	bufferFlushPayloadSize := config.GetReloadableInt64Var(500, bytesize.MB, "PartitionMigration.bufferFlushPayloadSize")
 	bufferFlushMoveTimeout := config.GetReloadableDurationVar(30, time.Minute, "PartitionMigration.bufferFlushMoveTimeout")
+	bufferWatchdogInterval := config.GetReloadableDurationVar(5, time.Minute, "PartitionMigration.bufferWatchdogInterval")
 
 	// setup partition buffer for gateway jobsDB
 	var gwSetupOpt partitionbuffer.Opt
@@ -126,6 +127,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
 		partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
 		partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+		partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
 	)
 	if err != nil {
 		return ppmSetup, fmt.Errorf("creating gw partition buffer: %w", err)
@@ -149,6 +151,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
 		partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
 		partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+		partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
 	)
 	if err != nil {
 		return ppmSetup, fmt.Errorf("creating rt partition buffer: %w", err)
@@ -172,6 +175,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
 		partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
 		partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+		partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
 	)
 	if err != nil {
 		return ppmSetup, fmt.Errorf("creating batch rt partition buffer: %w", err)
