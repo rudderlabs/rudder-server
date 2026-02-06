@@ -17,10 +17,6 @@ import (
 
 // FlushBufferedPartitions flushes the buffered data for the provided partition ids to the database and unmarks them as buffered.
 func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, partitions []string) error {
-	return b.doFlushBufferedPartitions(ctx, partitions, true)
-}
-
-func (b *jobsDBPartitionBuffer) doFlushBufferedPartitions(ctx context.Context, partitions []string, onlyBuffered bool) error {
 	{ // block for validation and marking partitions as flushing
 		if !b.canFlush {
 			return ErrFlushNotSupported
@@ -35,10 +31,8 @@ func (b *jobsDBPartitionBuffer) doFlushBufferedPartitions(ctx context.Context, p
 			return fmt.Errorf("acquiring a buffered partitions read lock during flush: %w", ctx.Err())
 		}
 
-		if onlyBuffered {
-			// only keep partitions that are actually buffered
-			partitions = lo.Intersect(slices.Collect(b.bufferedPartitions.Keys()), partitions)
-		}
+		// only keep partitions that are actually buffered
+		partitions = lo.Intersect(slices.Collect(b.bufferedPartitions.Keys()), partitions)
 		b.bufferedPartitionsMu.RUnlock()
 
 		if len(partitions) == 0 {
