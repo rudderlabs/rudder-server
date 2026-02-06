@@ -146,8 +146,13 @@ func TestCommonPool(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	conf.Set("db.test.pool.configUpdateInterval", 10*time.Millisecond)
-	db, err := misc.NewDatabaseConnectionPool(ctx, conf, stats.NOP, "test")
+	db, err := misc.NewDatabaseConnectionPool(ctx, "test", misc.DatabaseConnectionPoolConfig{
+		MaxOpenConns:    conf.GetReloadableIntVar(80, 1, "db.test.pool.maxOpenConnections"),
+		MaxIdleConns:    config.SingleValueLoader(10),
+		ConnMaxIdleTime: config.SingleValueLoader(15 * time.Minute),
+		ConnMaxLifetime: config.SingleValueLoader(0 * time.Second),
+		UpdateInterval:  10 * time.Millisecond,
+	}, conf, stats.NOP)
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
 	defer db.Close()

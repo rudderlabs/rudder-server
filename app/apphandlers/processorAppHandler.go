@@ -148,15 +148,36 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		FeaturesRetryMaxAttempts: 10,
 	})
 
-	var dbPool *sql.DB
-	if config.GetBoolVar(true, "db.processor.pool.shared", "db.pool.shared") {
-		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "processor-app")
+	var (
+		jobsdbPool   *sql.DB
+		priorityPool *sql.DB
+	)
+	if config.GetBoolVar(true, "DB.processor.Pool.enabled", "DB.Pool.enabled") {
+		jobsdbPool, err = misc.NewDatabaseConnectionPool(ctx, "processor", misc.DatabaseConnectionPoolConfig{
+			MaxOpenConns:    config.GetReloadableIntVar(80, 1, "DB.processor.Pool.maxOpenConnections", "DB.Pool.maxOpenConnections"),
+			MaxIdleConns:    config.GetReloadableIntVar(10, 1, "DB.processor.Pool.maxIdleConnections", "DB.Pool.maxIdleConnections"),
+			ConnMaxIdleTime: config.GetReloadableDurationVar(15, time.Minute, "DB.processor.Pool.maxIdleTime", "DB.Pool.maxIdleTime"),
+			ConnMaxLifetime: config.GetReloadableDurationVar(0, time.Second, "DB.processor.Pool.maxConnLifetime", "DB.Pool.maxConnLifetime"),
+			UpdateInterval:  config.GetDurationVar(60, time.Second, "DB.processor.Pool.updateInterval", "DB.Pool.updateInterval"),
+		}, config, statsFactory)
 		if err != nil {
 			return err
 		}
-		defer dbPool.Close()
+		defer jobsdbPool.Close()
 	}
-
+	if config.GetBoolVar(false, "DB.processor.PriorityPool.enabled", "DB.PriorityPool.enabled", "PartitionMigration.enabled") {
+		priorityPool, err = misc.NewDatabaseConnectionPool(ctx, "pp", misc.DatabaseConnectionPoolConfig{
+			MaxOpenConns:    config.GetReloadableIntVar(10, 1, "DB.processor.PriorityPool.maxOpenConnections", "DB.PriorityPool.maxOpenConnections"),
+			MaxIdleConns:    config.GetReloadableIntVar(1, 1, "DB.processor.PriorityPool.maxIdleConnections", "DB.PriorityPool.maxIdleConnections"),
+			ConnMaxIdleTime: config.GetReloadableDurationVar(15, time.Minute, "DB.processor.PriorityPool.maxIdleTime", "DB.PriorityPool.maxIdleTime"),
+			ConnMaxLifetime: config.GetReloadableDurationVar(0, time.Second, "DB.processor.PriorityPool.maxConnLifetime", "DB.PriorityPool.maxConnLifetime"),
+			UpdateInterval:  config.GetDurationVar(60, time.Second, "DB.processor.PriorityPool.updateInterval", "DB.PriorityPool.updateInterval"),
+		}, config, statsFactory)
+		if err != nil {
+			return err
+		}
+		defer priorityPool.Close()
+	}
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
 	pendingEventsRegistry := rmetrics.NewPendingEventsRegistry()
 
@@ -165,7 +186,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithDBHandle(jobsdbPool),
+		jobsdb.WithPriorityPoolDB(priorityPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gwROHandle.Close()
@@ -176,7 +198,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		jobsdb.WithDSLimit(a.config.rtDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithDBHandle(jobsdbPool),
+		jobsdb.WithPriorityPoolDB(priorityPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer rtRWHandle.Close()
@@ -188,7 +211,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		jobsdb.WithDSLimit(a.config.batchrtDSLimit),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithDBHandle(jobsdbPool),
+		jobsdb.WithPriorityPoolDB(priorityPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer brtRWHandle.Close()
@@ -198,7 +222,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.eschDSLimit),
 		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithDBHandle(jobsdbPool),
 	)
 	defer eschRWDB.Close()
 
@@ -209,7 +233,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "archival.jobRetention")),
-		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithDBHandle(jobsdbPool),
 	)
 	defer arcRWDB.Close()
 
@@ -231,7 +255,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	}
 
 	// setup partition migrator
-	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, dbPool,
+	ppmSetup, err := setupProcessorPartitionMigrator(ctx, shutdownFn, jobsdbPool, priorityPool,
 		config, statsFactory,
 		gwRODB, nil,
 		rtRWDB, brtRWDB,

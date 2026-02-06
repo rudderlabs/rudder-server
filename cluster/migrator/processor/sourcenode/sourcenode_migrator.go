@@ -187,6 +187,7 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 // Run watches for new migration jobs assigned to this source node and handles them asynchronously.
 // All go routines are added to the provided errgroup.Group. It returns an error if the watcher cannot be created.
 func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
+	ctx = jobsdb.WithPriorityPool(ctx)                 // use priority pool for migration job handling
 	m.pendingMigrationJobs = make(map[string]struct{}) // reset pending migration jobs map
 
 	// create a watcher for partition migration jobs
