@@ -111,11 +111,7 @@ func TestUpload(t *testing.T) {
 	t.Run("Unsuccessful Upload", func(t *testing.T) {
 		mockKlaviyoAPIService.EXPECT().
 			UploadProfiles(gomock.Any()).
-			Return(&klaviyobulkupload.UploadResp{
-				Errors: []klaviyobulkupload.ErrorDetail{
-					{Detail: "upload failed"},
-				},
-			}, fmt.Errorf("upload failed with errors: %+v", []klaviyobulkupload.ErrorDetail{
+			Return(nil, fmt.Errorf("upload failed with errors: %+v", []klaviyobulkupload.ErrorDetail{
 				{Detail: "upload failed"},
 			}))
 
