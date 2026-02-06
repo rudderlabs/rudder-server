@@ -144,6 +144,10 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub"]
 
       - name: Build, scan and push
         uses: rudderlabs/build-scan-push-action@96d7bfca912dd2e8805dbb322dc2540504ecac1e # v2.1.0

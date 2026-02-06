@@ -211,7 +211,7 @@ type JobsDB interface {
 	// WithTx begins a new transaction that can be used by the provided function.
 	// If the function returns an error, the transaction will be rollbacked and return the error,
 	// otherwise the transaction will be committed and a nil error will be returned.
-	WithTx(func(tx *Tx) error) error
+	WithTx(context.Context, func(tx *Tx) error) error
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
 	// that can be used by the provided function.
@@ -361,7 +361,7 @@ func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, stat
 		command := func() error {
 			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList)
 		}
-		err := executeDbRequest(jd, newWriteDbRequest("update_job_status", &tags, command))
+		err := executeDbRequest(ctx, jd, newWriteDbRequest("update_job_status", &tags, command))
 		return err
 	}
 
@@ -526,6 +526,7 @@ jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
 	dbHandle             *sql.DB
+	priorityPool         *sql.DB // dedicated connection pool for high-priority operations (e.g., partition migration)
 	sharedConnectionPool bool
 	ownerType            OwnerType
 	tablePrefix          string
@@ -836,6 +837,15 @@ func WithNumPartitions(numPartitions int) OptsFunc {
 	}
 }
 
+// WithPriorityPoolDB sets a dedicated connection pool for high-priority operations.
+// Operations that use WithPriorityPool(ctx) context will use this pool and bypass
+// the regular reader/writer queues.
+func WithPriorityPoolDB(pool *sql.DB) OptsFunc {
+	return func(jd *Handle) {
+		jd.priorityPool = pool
+	}
+}
+
 // withDatabaseTablesVersion sets the database tables version to use (internal use only for verifying database table migrations)
 func withDatabaseTablesVersion(dbVersion int) OptsFunc {
 	return func(jd *Handle) {
@@ -952,7 +962,7 @@ func (jd *Handle) init() {
 
 	jd.workersAndAuxSetup()
 
-	err := jd.WithTx(func(tx *Tx) error {
+	err := jd.WithTx(context.Background(), func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
 			// Database schema migration should happen early, even before jobsdb is started,
@@ -1463,7 +1473,7 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 }
 
 func (jd *Handle) addNewDS(ctx context.Context, l lock.LockToken, ds dataSetT) {
-	err := jd.WithTx(func(tx *Tx) error {
+	err := jd.WithTx(ctx, func(tx *Tx) error {
 		dsList, err := jd.doRefreshDSList(l)
 		jd.assertError(err)
 		return jd.addNewDSInTx(ctx, tx, l, dsList, ds)
@@ -1710,7 +1720,7 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 }
 
 func (jd *Handle) dropDS(ds dataSetT) error {
-	return jd.WithTx(func(tx *Tx) error {
+	return jd.WithTx(context.Background(), func(tx *Tx) error {
 		return jd.dropDSInTx(tx, ds)
 	})
 }
@@ -1805,7 +1815,7 @@ func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT
 
 func (jd *Handle) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
 	return jd.inStoreSafeCtx(ctx, func() error {
-		return jd.WithTx(func(tx *Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
+		return jd.WithTx(ctx, func(tx *Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
@@ -1845,7 +1855,7 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
 
 func (jd *Handle) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) error) error {
 	return jd.inUpdateSafeCtx(ctx, func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
-		return jd.WithTx(func(tx *Tx) error {
+		return jd.WithTx(ctx, func(tx *Tx) error {
 			return f(&updateSafeTx{
 				tx:          tx,
 				identity:    jd.tablePrefix,
@@ -1885,8 +1895,8 @@ func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT,
 	return f(dsList, dsRangeList)
 }
 
-func (jd *Handle) WithTx(f func(tx *Tx) error) error {
-	sqltx, err := jd.dbHandle.Begin()
+func (jd *Handle) WithTx(ctx context.Context, f func(tx *Tx) error) error {
+	sqltx, err := jd.getDB(ctx).BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
@@ -1994,7 +2004,7 @@ FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 	for _, ds := range dsList {
 		ds := ds
 		g.Go(func() error {
-			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
+			rows, err := jd.getDB(ctx).QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
 				cutoffTime,
 				pq.Array([]string{Executing.State, Failed.State, Importing.State, Waiting.State}))
 			if err != nil {
@@ -2063,7 +2073,7 @@ func (jd *Handle) getDistinctValuesPerDataset(
 		}
 	}
 	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.QueryContext(ctx, query)
+	rows, err := jd.getDB(ctx).QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", param.string(), err)
 	}
@@ -2326,7 +2336,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		sqlStatement = `SELECT * FROM (` + sqlStatement + `) t WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
-	stmt, err := jd.dbHandle.PrepareContext(ctx, sqlStatement)
+	stmt, err := jd.getDB(ctx).PrepareContext(ctx, sqlStatement)
 	if err != nil {
 		return JobsResult{}, false, err
 	}
@@ -2674,7 +2684,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			}()
 			// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
 			// start a transaction
-			err := jd.WithTx(func(tx *Tx) error {
+			err := jd.WithTx(ctx, func(tx *Tx) error {
 				return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 					return jd.withDistributedLock(ctx, tx, "add_ds", func() error { // only one add_ds can run at a time
 						var err error
@@ -2739,7 +2749,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 		}
 		if err := addNewDS(); err != nil {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
-				panic(err)
+				panic(fmt.Errorf("adding new ds for %q: %w", jd.tablePrefix, err))
 			}
 			jd.logger.Errorn("addNewDSLoop error", obskit.Error(err))
 		}
@@ -2795,7 +2805,7 @@ func (jd *Handle) RefreshDSList(ctx context.Context) error {
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
 	jd.dsListLock.RUnlock()
-	nextDS, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+	nextDS, err := getDSList(jd, jd.getDB(ctx), jd.tablePrefix)
 	if err != nil {
 		return fmt.Errorf("getDSList: %w", err)
 	}
@@ -2819,6 +2829,16 @@ func (jd *Handle) RefreshDSList(ctx context.Context) error {
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
 func (jd *Handle) Identifier() string {
 	return jd.tablePrefix
+}
+
+// getDB returns the appropriate database handle based on context.
+// If the context requests priority pool usage and a priority pool is configured,
+// it returns the priority pool. Otherwise, it returns the regular dbHandle.
+func (jd *Handle) getDB(ctx context.Context) *sql.DB {
+	if usePriorityPool(ctx) && jd.priorityPool != nil {
+		return jd.priorityPool
+	}
+	return jd.dbHandle
 }
 
 /*
@@ -2847,7 +2867,7 @@ func (jd *Handle) dropJournal() {
 
 func (jd *Handle) JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error) {
 	var opID int64
-	return opID, jd.WithTx(func(tx *Tx) error {
+	return opID, jd.WithTx(context.Background(), func(tx *Tx) error {
 		var err error
 		opID, err = jd.JournalMarkStartInTx(tx, opType, opPayload)
 		return err
@@ -2870,7 +2890,7 @@ func (jd *Handle) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.Raw
 
 // JournalMarkDone marks the end of a journal action
 func (jd *Handle) JournalMarkDone(opID int64) error {
-	return jd.WithTx(func(tx *Tx) error {
+	return jd.WithTx(context.Background(), func(tx *Tx) error {
 		return jd.journalMarkDoneInTx(tx, opID)
 	})
 }
@@ -3219,7 +3239,7 @@ func (jd *Handle) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT
 			err := jd.internalStoreJobsInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
 			return err
 		}
-		err := executeDbRequest(jd, newWriteDbRequest("store", nil, command))
+		err := executeDbRequest(ctx, jd, newWriteDbRequest("store", nil, command))
 		return err
 	}
 
@@ -3262,7 +3282,7 @@ func (jd *Handle) StoreEachBatchRetryInTx(
 			)
 			return res
 		}
-		res = executeDbRequest(jd, newWriteDbRequest("store_each_batch_retry", nil, command))
+		res = executeDbRequest(ctx, jd, newWriteDbRequest("store_each_batch_retry", nil, command))
 		return err
 	}
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
@@ -3539,7 +3559,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))
 	}
-	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
+	res := executeDbRequest(ctx, jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.JobsResult, res.err
 }
 
@@ -3560,7 +3580,7 @@ func (jd *Handle) getMoreJobs(ctx context.Context, states []string, params GetQu
 	command := func() moreQueryResult {
 		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
 	}
-	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
+	res := executeDbRequest(ctx, jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.MoreJobsResult, res.err
 }
 
@@ -3615,7 +3635,7 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
-	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+	err := jd.getDB(ctx).QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		jd.assertError(err)
 	}

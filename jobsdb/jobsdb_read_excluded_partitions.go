@@ -30,7 +30,7 @@ func (jd *Handle) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs 
 
 	partitionIDs = lo.Uniq(partitionIDs)
 	slices.Sort(partitionIDs) // Sort to avoid deadlocks
-	if err := jd.WithTx(func(tx *tx.Tx) error {
+	if err := jd.WithTx(ctx, func(tx *tx.Tx) error {
 		query := `INSERT INTO ` + jd.tablePrefix + `_read_excluded_partitions (partition_id) VALUES ($1) ON CONFLICT DO NOTHING`
 		for _, partitionID := range partitionIDs {
 			if _, err := tx.ExecContext(ctx, query, partitionID); err != nil {
@@ -67,7 +67,7 @@ func (jd *Handle) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionI
 	query := `DELETE FROM ` + jd.tablePrefix + `_read_excluded_partitions WHERE partition_id IN (` +
 		strings.Join(lo.Map(partitionIDs, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",") + `)`
 
-	if _, err := jd.dbHandle.ExecContext(ctx, query); err != nil {
+	if _, err := jd.getDB(ctx).ExecContext(ctx, query); err != nil {
 		return fmt.Errorf("removing excluded read partition IDs %+v: %w", partitionIDs, err)
 	}
 	jd.excludedReadPartitionsLock.Lock()

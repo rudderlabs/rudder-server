@@ -16,6 +16,15 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          permission-contents: write # to create release commits and tags
+          permission-pull-requests: write # to create release PRs
+
       - name: Extract branch name
         shell: bash
         run: echo "branch=$(echo "${GITHUB_REF#refs/heads/}")" >> $GITHUB_OUTPUT
@@ -23,7 +32,7 @@ jobs:
       - uses: google-github-actions/release-please-action@db8f2c60ee802b3748b512940dde88eabd7b7e01 # v3.7.13
         id: release
         with:
-          token: ${{ secrets.PAT }}
+          token: ${{ steps.generate-token.outputs.token }}
           pull-request-title-pattern: "chore: release ${version}"
           release-type: go
           package-name: rudder-server
@@ -42,7 +51,7 @@ jobs:
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
-          token: "${{ secrets.PAT }}"
+          token: ${{ steps.generate-token.outputs.token }}
           repository: rudderlabs/rudderstack-operator
           event-type: release-rudder-server
           client-payload: |
@@ -55,7 +64,7 @@ jobs:
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
-          token: "${{ secrets.PAT }}"
+          token: ${{ steps.generate-token.outputs.token }}
           repository: rudderlabs/rudderstack-operator
           event-type: release-rudder-server
           client-payload: |
@@ -68,7 +77,7 @@ jobs:
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
-          token: "${{ secrets.PAT }}"
+          token: ${{ steps.generate-token.outputs.token }}
           repository: rudderlabs/rudder-devops
           event-type: release-server-hosted
           client-payload: |

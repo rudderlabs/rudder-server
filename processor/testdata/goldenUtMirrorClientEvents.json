@@ -47,7 +47,8 @@
                 {
                     "VersionID": "transformation-version-id",
                     "ID": "",
-                    "Config": null
+                    "Config": null,
+                    "Language": ""
                 }
             ],
             "IsProcessorEnabled": true,
@@ -111,7 +112,8 @@
                 {
                     "VersionID": "transformation-version-id",
                     "ID": "",
-                    "Config": null
+                    "Config": null,
+                    "Language": ""
                 }
             ],
             "IsProcessorEnabled": true,
@@ -173,7 +175,8 @@
                 {
                     "VersionID": "transformation-version-id",
                     "ID": "",
-                    "Config": null
+                    "Config": null,
+                    "Language": ""
                 }
             ],
             "IsProcessorEnabled": true,

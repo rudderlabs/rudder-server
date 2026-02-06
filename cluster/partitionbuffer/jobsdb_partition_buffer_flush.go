@@ -90,6 +90,7 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 	b.logger.Infon("Flushing jobs from buffer to primary jobsdb (switchover phase)",
 		logger.NewStringField("partitions", strings.Join(partitions, ",")),
 		logger.NewStringField("prefix", b.Identifier()),
+		logger.NewIntField("movedCount", int64(totalCount)),
 	)
 	switchoverCount, err := b.switchoverBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load())
 	if err != nil {
@@ -179,7 +180,7 @@ func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context
 		)
 	}()
 	totalMoved := 0
-	err = b.WithTx(func(tx *tx.Tx) error {
+	err = b.WithTx(ctx, func(tx *tx.Tx) error {
 		// disable idle_in_transaction_session_timeout for the duration of this transaction, since it may take long to move all remaining data
 		if _, err := tx.ExecContext(ctx, "SET LOCAL idle_in_transaction_session_timeout = '0ms'"); err != nil {
 			return fmt.Errorf("disabling idle_in_transaction_session_timeout during switchover: %w", err)
