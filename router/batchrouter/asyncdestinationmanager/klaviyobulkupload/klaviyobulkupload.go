@@ -317,8 +317,8 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
 			// Mark all job IDs in this profile chunk as failed
-			uploadError := ``
-			if uploadResp != nil {
+			uploadError := ""
+			if uploadResp != nil && len(uploadResp.Errors) > 0 {
 				uploadError = uploadResp.Errors.String()
 			}
 			failedJobs = append(failedJobs, jobIDChunks[idx]...)
