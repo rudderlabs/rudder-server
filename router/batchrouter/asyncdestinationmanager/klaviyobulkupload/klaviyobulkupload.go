@@ -62,42 +62,51 @@ func NewManager(logger logger.Logger, StatsFactory stats.Stats, destination *bac
 		return nil, err
 	}
 	return &KlaviyoBulkUploader{
-		DestName:          destination.DestinationDefinition.Name,
-		DestinationConfig: destination.Config,
-		Logger:            klaviyoLogger,
-		StatsFactory:      StatsFactory,
-		KlaviyoAPIService: apiService,
+		DestName:              destination.DestinationDefinition.Name,
+		DestinationConfig:     destination.Config,
+		Logger:                klaviyoLogger,
+		StatsFactory:          StatsFactory,
+		KlaviyoAPIService:     apiService,
+		BatchSize:             BATCHSIZE,
+		MaxPayloadSize:        MAXPAYLOADSIZE,
+		MaxAllowedProfileSize: MAXALLOWEDPROFILESIZE,
 	}, nil
 }
 
-func chunkBySizeAndElements(combinedProfiles []Profile, maxBytes, maxElements int) ([][]Profile, error) {
-	var chunks [][]Profile
-	chunk := make([]Profile, 0)
+func chunkBySizeAndElements(combinedProfiles []Profile, jobIDs []int64, maxBytes, maxElements int) ([][]Profile, [][]int64, error) {
+	var profileChunks [][]Profile
+	var jobIDChunks [][]int64
+	profileChunk := make([]Profile, 0)
+	jobIDChunk := make([]int64, 0)
 	chunkSize := 0
 
-	for _, profile := range combinedProfiles {
+	for idx, profile := range combinedProfiles {
 		profileJSON, err := jsonrs.Marshal(profile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal profile: %w", err)
+			return nil, nil, fmt.Errorf("failed to marshal profile: %w", err)
 		}
 
 		profileSize := len(profileJSON) + 1 // +1 for comma character
 
-		if (chunkSize+profileSize >= maxBytes || len(chunk) == maxElements) && len(chunk) > 0 {
-			chunks = append(chunks, chunk)
-			chunk = make([]Profile, 0)
+		if (chunkSize+profileSize >= maxBytes || len(profileChunk) == maxElements) && len(profileChunk) > 0 {
+			profileChunks = append(profileChunks, profileChunk)
+			jobIDChunks = append(jobIDChunks, jobIDChunk)
+			profileChunk = make([]Profile, 0)
+			jobIDChunk = make([]int64, 0)
 			chunkSize = 0
 		}
 
-		chunk = append(chunk, profile)
+		profileChunk = append(profileChunk, profile)
+		jobIDChunk = append(jobIDChunk, jobIDs[idx])
 		chunkSize += profileSize
 	}
 
-	if len(chunk) > 0 {
-		chunks = append(chunks, chunk)
+	if len(profileChunk) > 0 {
+		profileChunks = append(profileChunks, profileChunk)
+		jobIDChunks = append(jobIDChunks, jobIDChunk)
 	}
 
-	return chunks, nil
+	return profileChunks, jobIDChunks, nil
 }
 
 func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
@@ -267,6 +276,7 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 	}
 	defer file.Close()
 	var combinedProfiles []Profile
+	var jobIDsForProfiles []int64 // Track job IDs for each profile
 	scanner := bufio.NewScanner(file)
 	profileSizeStat := kbu.StatsFactory.NewTaggedStat("profile_size", stats.HistogramType, statLabels)
 	for scanner.Scan() {
@@ -287,34 +297,31 @@ func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationS
 		profileStructureJSON, _ := jsonrs.Marshal(profileStructure)
 		profileSize := float64(len(profileStructureJSON))
 		profileSizeStat.Observe(profileSize) // Record the size in the histogram
-		if len(profileStructureJSON) >= MAXALLOWEDPROFILESIZE {
+		if len(profileStructureJSON) >= kbu.MaxAllowedProfileSize {
 			abortReason = "Error while marshaling profiles. The profile size exceeds Klaviyo's limit of 500 kB for a single profile."
 			abortedJobs = append(abortedJobs, int64(metadata.JobID))
 			continue
 		}
 		combinedProfiles = append(combinedProfiles, profileStructure)
+		jobIDsForProfiles = append(jobIDsForProfiles, int64(metadata.JobID))
 	}
 
-	chunks, _ := chunkBySizeAndElements(combinedProfiles, MAXPAYLOADSIZE, BATCHSIZE)
+	profileChunks, jobIDChunks, _ := chunkBySizeAndElements(combinedProfiles, jobIDsForProfiles, kbu.MaxPayloadSize, kbu.BatchSize)
 
 	eventsSuccessStat := kbu.StatsFactory.NewTaggedStat("success_job_count", stats.CountType, statLabels)
 
 	var importIds []string // DelimitedImportIds is : separated importIds
 
-	for idx, chunk := range chunks {
-		combinedPayload := createFinalPayload(chunk, listId)
+	for idx, profileChunk := range profileChunks {
+		combinedPayload := createFinalPayload(profileChunk, listId)
 		uploadResp, err := kbu.KlaviyoAPIService.UploadProfiles(combinedPayload)
 		if err != nil {
-			failedJobs = append(failedJobs, importingJobIDs[idx])
-			uploadErrors := ""
-			if uploadResp != nil && len(uploadResp.Errors) > 0 {
-				uploadErrors = uploadResp.Errors.String()
-			}
+			// Mark all job IDs in this profile chunk as failed
+			failedJobs = append(failedJobs, jobIDChunks[idx]...)
 			kbu.Logger.Errorn("Error while uploading profiles",
 				obskit.Error(err),
 				obskit.DestinationID(destinationID),
-				logger.NewStringField("uploadErrors", uploadErrors),
-			)
+				logger.NewStringField("uploadErrors", uploadResp.Errors.String()))
 			continue
 		}
 
