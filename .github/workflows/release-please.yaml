@@ -16,8 +16,8 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Generate GitHub App Token
-        id: generate-token
+      - name: Create app token
+        id: app-token
         uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
         with:
           app-id: ${{ vars.RELEASE_APP_ID }}
@@ -32,7 +32,7 @@ jobs:
       - uses: google-github-actions/release-please-action@db8f2c60ee802b3748b512940dde88eabd7b7e01 # v3.7.13
         id: release
         with:
-          token: ${{ steps.generate-token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token }}
           pull-request-title-pattern: "chore: release ${version}"
           release-type: go
           package-name: rudder-server
@@ -46,12 +46,20 @@ jobs:
           version=$(echo "${tag_name#v}")
           echo "version=${version}" >> $GITHUB_OUTPUT
         id: extract_version
+      - name: Create app token for cross-repo dispatch
+        id: app-dispatch-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PRIVATE_KEY }}
+          permission-contents: write
+          repositories: rudderstack-operator,rudder-devops
       - name: Trigger dispatch event - Enterprise
         uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
-          token: ${{ steps.generate-token.outputs.token }}
+          token: ${{ steps.app-dispatch-token.outputs.token }}
           repository: rudderlabs/rudderstack-operator
           event-type: release-rudder-server
           client-payload: |
@@ -64,7 +72,7 @@ jobs:
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
-          token: ${{ steps.generate-token.outputs.token }}
+          token: ${{ steps.app-dispatch-token.outputs.token }}
           repository: rudderlabs/rudderstack-operator
           event-type: release-rudder-server
           client-payload: |
@@ -77,7 +85,7 @@ jobs:
         # release please run 2 times, first for creating the PR and second for creating the release
         if: ${{ steps.release.outputs.releases_created == 'true' }}
         with:
-          token: ${{ steps.generate-token.outputs.token }}
+          token: ${{ steps.app-dispatch-token.outputs.token }}
           repository: rudderlabs/rudder-devops
           event-type: release-server-hosted
           client-payload: |
