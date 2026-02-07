@@ -2,6 +2,7 @@ package destination_transformer
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -80,6 +81,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.batchSize", "Processor.transformBatchSize")
+	handle.config.gzipCompress = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.gzipCompress", "Processor.Transformer.gzipCompress", "Transformer.gzipCompress")
 
 	handle.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Processor.DestinationTransformer.maxLoggedEvents")
 
@@ -121,6 +123,7 @@ type Client struct {
 			verify config.ValueLoader[bool]
 		}
 		compactionSupported bool
+		gzipCompress        config.ValueLoader[bool]
 	}
 	conf            *config.Config
 	log             logger.Logger
@@ -293,13 +296,34 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			var reqErr error
 			requestStartTime := time.Now()
 
+			var reqBody io.Reader
+			var reqBytesLen int
+			if d.config.gzipCompress.Load() {
+				var buf bytes.Buffer
+				gzWriter := gzip.NewWriter(&buf)
+				if _, reqErr = gzWriter.Write(rawJSON); reqErr != nil {
+					return reqErr
+				}
+				if reqErr = gzWriter.Close(); reqErr != nil {
+					return reqErr
+				}
+				reqBody = &buf
+				reqBytesLen = buf.Len()
+			} else {
+				reqBody = bytes.NewReader(rawJSON)
+				reqBytesLen = len(rawJSON)
+			}
+
 			var req *http.Request
-			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+			req, reqErr = http.NewRequestWithContext(ctx, "POST", url, reqBody)
 			if reqErr != nil {
 				return reqErr
 			}
 
 			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+			if d.config.gzipCompress.Load() {
+				req.Header.Set("Content-Encoding", "gzip")
+			}
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
@@ -312,7 +336,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
-			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+			d.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(reqBytesLen)
 			d.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 
 			if reqErr != nil {

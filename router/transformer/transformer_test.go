@@ -1,8 +1,10 @@
 package transformer
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -35,6 +37,23 @@ import (
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
+
+// decompressMiddleware transparently decompresses gzip-encoded request bodies in tests.
+func decompressMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			gr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, "failed to decompress gzip body", http.StatusBadRequest)
+				return
+			}
+			defer gr.Close()
+			r.Body = io.NopCloser(gr)
+			r.Header.Del("Content-Encoding")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 type mockAdapter struct {
 	url string
@@ -372,6 +391,7 @@ func TestProxyRequest(t *testing.T) {
 				// Just a default value
 				tr = NewTransformer("destType", 2*time.Millisecond, httpClientTimeout, nil, expTimeDiff, nil, config.New())
 			}
+			(tr.(*handle)).gzipCompress = config.SingleValueLoader(false)
 			// Logic to include context timing out
 			ctx := context.TODO()
 			var cancelFunc context.CancelFunc
@@ -618,7 +638,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 
 	for _, tc := range oauthV2RtTcs {
 		t.Run(tc.description, func(t *testing.T) {
-			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			svr := httptest.NewServer(decompressMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 				var err error
 				outputJson := []byte("Reset Content")
@@ -633,7 +653,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 				w.WriteHeader(statusCode)
 				_, err = w.Write(outputJson)
 				require.NoError(t, err)
-			}))
+			})))
 
 			cpRespProducer := &testutils.CpResponseProducer{
 				Responses: tc.cpResponses,
@@ -645,6 +665,7 @@ func TestRouterTransformationWithOAuthV2(t *testing.T) {
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+			t.Setenv("RSERVER_TRANSFORMER_GZIP_COMPRESS", "true")
 			config.Set("Processor.maxRetry", 1) // no retries
 
 			backendconfig.Init()
@@ -1643,7 +1664,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 
 	for _, tc := range oauthv2ProxyTestCases {
 		t.Run(tc.description, func(t *testing.T) {
-			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			svr := httptest.NewServer(decompressMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 				b := []byte("LB cannot send to transformer")
 				statusCode := http.StatusBadGateway
@@ -1671,7 +1692,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				}
 
 				require.NoError(t, err)
-			}))
+			})))
 
 			cpRespProducer := &testutils.CpResponseProducer{
 				Responses: tc.cpResponses,
@@ -1683,6 +1704,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 			defer cfgBeSvr.Close()
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSvr.URL)
+			t.Setenv("RSERVER_GZIP_COMPRESS", "true")
 
 			backendconfig.Init()
 			expTimeDiff := config.SingleValueLoader(1 * time.Minute)
@@ -1983,6 +2005,7 @@ func TestTransformerMetrics(t *testing.T) {
 		tr:                        &http.Transport{},
 		expirationTimeDiff:        expTimeDiff,
 		transformRequestTimerStat: statsStore.NewStat("router.transformer_request_time", stats.TimerType), // Add this line
+		gzipCompress:              config.SingleValueLoader(false),
 	}
 
 	// Create test message
