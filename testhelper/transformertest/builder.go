@@ -1,6 +1,7 @@
 package transformertest
 
 import (
+	"compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -172,7 +173,7 @@ func (b *Builder) Build() *httptest.Server {
 			_, _ = w.Write(features)
 		}
 	})
-	return httptest.NewServer(mux)
+	return httptest.NewServer(decompressMiddleware(mux))
 }
 
 func transformerFunc(h TransformerHandler) http.HandlerFunc {
@@ -284,6 +285,23 @@ func routerBatchTransformerFunc(h RouterTransformerHandler) http.HandlerFunc {
 func apiVersionMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("apiVersion", "2")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// decompressMiddleware transparently decompresses gzip-encoded request bodies.
+func decompressMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			gr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, "failed to decompress gzip body", http.StatusBadRequest)
+				return
+			}
+			defer gr.Close()
+			r.Body = io.NopCloser(gr)
+			r.Header.Del("Content-Encoding")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

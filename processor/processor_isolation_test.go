@@ -249,6 +249,7 @@ func ProcIsolationScenario(t testing.TB, spec *ProcIsolationScenarioSpec) (overa
 	config.Set("Router.toAbortDestinationIDs", destinationIDs)
 	config.Set("archival.Enabled", false)
 	config.Set("enableStats", false)
+	config.Set("Transformer.gzipCompress", true)
 
 	config.Set("Processor.pipelinesPerPartition", spec.pipelinesPerPartition)
 	config.Set("Processor.isolationMode", string(spec.isolationMode))
