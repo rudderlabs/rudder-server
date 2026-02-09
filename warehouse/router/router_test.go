@@ -1026,7 +1026,7 @@ func TestRouter(t *testing.T) {
 			{
 				name:     "invalid metadata",
 				destType: "test-destinationType-1",
-				wantErr:  fmt.Errorf("count pending jobs: pq: invalid input syntax for type timestamp with time zone: \"\""),
+				wantErr:  fmt.Errorf("count pending jobs: pq: invalid input syntax for type timestamp with time zone: \"\" (22007)"),
 			},
 			{
 				name:           "no next retry time",

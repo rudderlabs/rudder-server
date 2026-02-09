@@ -95,7 +95,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStr
 		if err = googleutil.CompatibleGoogleCredentialsJSON(confCreds); err != nil {
 			return nil, createErr(err, "incompatible credentials")
 		}
-		opts = append(opts, option.WithCredentialsJSON(confCreds))
+		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
+		opts = append(opts, option.WithCredentialsJSON(confCreds)) // nolint: staticcheck
 	}
 	bqClient, err := bigquery.NewClient(context.Background(), config.ProjectId, opts...)
 	if err != nil {
