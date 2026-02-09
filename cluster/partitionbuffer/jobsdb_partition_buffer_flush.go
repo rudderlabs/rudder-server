@@ -17,6 +17,8 @@ import (
 
 // FlushBufferedPartitions flushes the buffered data for the provided partition ids to the database and unmarks them as buffered.
 func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, partitions []string) error {
+	ctx = jobsdb.WithPriorityPool(ctx) // use priority pool for flush operations
+
 	{ // block for validation and marking partitions as flushing
 		if !b.canFlush {
 			return ErrFlushNotSupported

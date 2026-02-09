@@ -103,6 +103,7 @@ func (s *partitionMigrationServer) StreamJobs(stream proto.PartitionMigration_St
 		// merge the stream context with the server lifecycle context
 		ctx, cancel := kitctx.MergedContext(stream.Context(), s.lifecycleCtx)
 		defer cancel()
+		ctx = jobsdb.WithPriorityPool(ctx) // use priority pool for migration job handling (values from lifecycleCtx are not copied to the merged context)
 
 		// receive the first message containing metadata
 		r, err := s.receiveWithTimeout(ctx, stream)

@@ -81,6 +81,7 @@ func (m *migrator) Handle(ctx context.Context, migration *etcdtypes.PartitionMig
 // All go routines are added to the provided errgroup.Group.
 // It returns an error if the watcher cannot be created, or if the gRPC server fails to start.
 func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
+	ctx = jobsdb.WithPriorityPool(ctx)                 // use priority pool for migration job handling
 	m.pendingMigrationJobs = make(map[string]struct{}) // reset pending migration jobs map
 
 	// create a watcher for partition migration jobs

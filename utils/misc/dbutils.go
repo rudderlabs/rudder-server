@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -18,20 +19,37 @@ import (
 
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString(c *config.Config, componentName string) string {
-	host := c.GetString("DB.host", "localhost")
-	user := c.GetString("DB.user", "ubuntu")
-	dbname := c.GetString("DB.name", "ubuntu")
-	port := c.GetInt("DB.port", 5432)
-	password := c.GetString("DB.password", "ubuntu") // Reading secrets from
-	sslmode := c.GetString("DB.sslMode", "disable")
-	idleTxTimeout := c.GetDuration("DB.IdleTxTimeout", 5, time.Minute)
-
-	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
-	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
-	appName := c.GetString("HOSTNAME", DefaultString("rudder-server").OnError(os.Hostname()))
-	if len(componentName) > 0 {
-		appName = fmt.Sprintf("%s-%s", componentName, appName)
+	host := c.GetStringVar("localhost", "DB.host")
+	user := c.GetStringVar("ubuntu", "DB.user")
+	dbname := c.GetStringVar("ubuntu", "DB.name")
+	port := c.GetIntVar(5432, 1, "DB.port")
+	password := c.GetStringVar("ubuntu", "DB.password")
+	sslmode := c.GetStringVar("disable", "DB.sslMode")
+	// same database with potentially different idle tx timeouts per component
+	dbConfigKeys := func(key string) (keys []string) {
+		if componentName != "" {
+			keys = append(keys, "DB."+componentName+"."+key)
+		}
+		keys = append(keys, "DB."+key)
+		return keys
 	}
+	idleTxTimeout := c.GetDurationVar(5, time.Minute, dbConfigKeys("idleTxTimeout")...)
+
+	hostname := c.GetString("HOSTNAME", DefaultString("rudder-server").OnError(os.Hostname()))
+
+	// [application_name] can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
+	// Format: [component_prefix][hostname_suffix]
+	//   - component_prefix: first 2 characters of componentName + "-" (omitted if componentName is empty)
+	//   - hostname_suffix:  first 60 characters of hostname
+	// It is important not to rely on postgresql's own truncation mechanism, since we are using the [app_name] for terminating dangling connections
+	// and we need all connections from the same host to be terminated, regardless of the component name, thus the last part of the [app_name] needs to be the same
+	// across all components.
+	var componentPart string
+	if componentName != "" {
+		componentPart = lo.Substring(componentName, 0, 2) + "-"
+	}
+	appName := componentPart + lo.Substring(hostname, 0, 60)
+
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s "+
 		" options='-c idle_in_transaction_session_timeout=%d'",
@@ -40,13 +58,16 @@ func GetConnectionString(c *config.Config, componentName string) string {
 	)
 }
 
-func NewDatabaseConnectionPool(
-	ctx context.Context,
-	conf *config.Config,
-	stat stats.Stats,
-	componentName string,
-) (*sql.DB, error) {
-	connStr := GetConnectionString(conf, componentName)
+type DatabaseConnectionPoolConfig struct {
+	MaxOpenConns    config.ValueLoader[int]           // MaxOpenConns controls the maximum number of open connections to the database. Setting it to zero means unlimited.
+	MaxIdleConns    config.ValueLoader[int]           // MaxIdleConns controls the maximum number of connections in the idle connection pool. Setting it to zero means no idle connections are retained.
+	ConnMaxIdleTime config.ValueLoader[time.Duration] // ConnMaxIdleTime sets the maximum amount of time a connection may be idle. Setting it to zero means no limit.
+	ConnMaxLifetime config.ValueLoader[time.Duration] // ConnMaxLifetime sets the maximum amount of time a connection may be reused. Setting it to zero means no limit.
+	UpdateInterval  time.Duration                     // UpdateInterval sets the interval at which the connection pool configuration is reloaded. Setting it to zero means no reloads.
+}
+
+func NewDatabaseConnectionPool(ctx context.Context, componentName string, conf DatabaseConnectionPoolConfig, c *config.Config, stat stats.Stats) (*sql.DB, error) {
+	connStr := GetConnectionString(c, componentName)
 	db, err := sql.Open("postgres", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("opening connection to database: %w", err)
@@ -55,55 +76,35 @@ func NewDatabaseConnectionPool(
 		return nil, fmt.Errorf("Error pinging database: %w", err)
 	}
 	if err := stat.RegisterCollector(
-		collectors.NewDatabaseSQLStats(
-			componentName,
-			db,
-		),
+		collectors.NewDatabaseSQLStats(componentName, db),
 	); err != nil {
 		return nil, fmt.Errorf("Error registering database stats collector: %w", err)
 	}
-	defaultMaxOpenConnections := 80
-	if componentName == "gateway-app" {
-		defaultMaxOpenConnections = 20
-	}
-	maxConnsVar := conf.GetReloadableIntVar(defaultMaxOpenConnections, 1, "db."+componentName+".pool.maxOpenConnections", "db.pool.maxOpenConnections")
-	maxConns := maxConnsVar.Load()
-	db.SetMaxOpenConns(maxConns)
-
-	maxIdleConnsVar := conf.GetReloadableIntVar(5, 1, "db."+componentName+".pool.maxIdleConnections", "db.pool.maxIdleConnections")
-	maxIdleConns := maxIdleConnsVar.Load()
+	maxOpenConns := conf.MaxOpenConns.Load()
+	maxIdleConns := conf.MaxIdleConns.Load()
+	maxIdleTime := conf.ConnMaxIdleTime.Load()
+	maxConnLifetime := conf.ConnMaxLifetime.Load()
+	db.SetMaxOpenConns(maxOpenConns)
 	db.SetMaxIdleConns(maxIdleConns)
-
-	maxIdleTimeVar := conf.GetReloadableDurationVar(15, time.Minute, "db."+componentName+".pool.maxIdleTime", "db.pool.maxIdleTime")
-	maxIdleTime := maxIdleTimeVar.Load()
 	db.SetConnMaxIdleTime(maxIdleTime)
-
-	maxConnLifetimeVar := conf.GetReloadableDurationVar(0, 0, "db."+componentName+".pool.maxConnLifetime", "db.pool.maxConnLifetime")
-	maxConnLifetime := maxConnLifetimeVar.Load()
 	db.SetConnMaxLifetime(maxConnLifetime)
-
-	rruntime.Go(func() {
-		ticker := time.NewTicker(
-			conf.GetDurationVar(
-				5,
-				time.Second,
-				"db."+componentName+".pool.configUpdateInterval",
-				"db.pool.configUpdateInterval",
-			),
-		)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				updatePoolConfig(db.SetMaxOpenConns, &maxConns, maxConnsVar)
-				updatePoolConfig(db.SetConnMaxIdleTime, &maxIdleTime, maxIdleTimeVar)
-				updatePoolConfig(db.SetMaxIdleConns, &maxIdleConns, maxIdleConnsVar)
-				updatePoolConfig(db.SetConnMaxLifetime, &maxConnLifetime, maxConnLifetimeVar)
+	if conf.UpdateInterval > 0 {
+		rruntime.Go(func() {
+			ticker := time.NewTicker(conf.UpdateInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					updatePoolConfig(db.SetMaxOpenConns, &maxOpenConns, conf.MaxOpenConns)
+					updatePoolConfig(db.SetConnMaxIdleTime, &maxIdleTime, conf.ConnMaxIdleTime)
+					updatePoolConfig(db.SetMaxIdleConns, &maxIdleConns, conf.MaxIdleConns)
+					updatePoolConfig(db.SetConnMaxLifetime, &maxConnLifetime, conf.ConnMaxLifetime)
+				}
 			}
-		}
-	})
+		})
+	}
 	return db, nil
 }
 
