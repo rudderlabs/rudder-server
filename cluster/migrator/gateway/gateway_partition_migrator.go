@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -87,19 +88,14 @@ func (gpm *gatewayPartitionMigrator) watchReloadRequests(ctx context.Context) {
 				WithWatchMode(etcdwatcher.AllMode).
 				WithFilter(func(event *etcdwatcher.Event[*etcdtypes.ReloadGatewayCommand]) bool {
 					// only handle reload commands for this node
-					if !slices.Contains(event.Value.Nodes, gpm.nodeIndex) {
-						return false
+					return slices.Contains(event.Value.Nodes, gpm.nodeIndex)
+				}).
+				WithTxnGate(func(rgc *etcdtypes.ReloadGatewayCommand) []clientv3.Cmp {
+					// if ack key already exists, no need to process again
+					ackKey := rgc.AckKey(gpm.nodeName)
+					return []clientv3.Cmp{
+						clientv3.Compare(clientv3.Version(ackKey), "=", 0),
 					}
-
-					// skip if reload is already being processed,
-					// otherwise add it to pending reloads
-					gpm.pendingReloadsMu.Lock()
-					_, exists := gpm.pendingReloads[event.Value.AckKeyPrefix]
-					if !exists {
-						gpm.pendingReloads[event.Value.AckKeyPrefix] = struct{}{}
-					}
-					gpm.pendingReloadsMu.Unlock()
-					return !exists
 				}).
 				Build()
 			if err != nil {
@@ -113,6 +109,21 @@ func (gpm *gatewayPartitionMigrator) watchReloadRequests(ctx context.Context) {
 				if value.Error != nil {
 					return fmt.Errorf("watching reload events: %w", value.Error)
 				}
+				// skip if reload is already being processed,
+				// otherwise add it to pending reloads
+				gpm.pendingReloadsMu.Lock()
+				_, exists := gpm.pendingReloads[value.Event.Value.AckKeyPrefix]
+				if !exists {
+					gpm.pendingReloads[value.Event.Value.AckKeyPrefix] = struct{}{}
+				}
+				gpm.pendingReloadsMu.Unlock()
+				if exists {
+					gpm.logger.Infon("Received duplicate gateway reload request, already being processed",
+						logger.NewStringField("ackKeyPrefix", value.Event.Value.AckKeyPrefix),
+					)
+					continue
+				}
+
 				// handle reload event asynchronously
 				gpm.wg.Go(func() error {
 					gpm.onReloadRequest(ctx, value.Event.Value)
