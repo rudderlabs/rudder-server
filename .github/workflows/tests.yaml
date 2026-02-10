@@ -233,7 +233,7 @@ jobs:
         if: matrix.package == 'integration_test/pytransformer_contract'
         uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
         with:
-          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
           role-session-name: pytransformer-contract-test
       - name: Login to Amazon ECR
