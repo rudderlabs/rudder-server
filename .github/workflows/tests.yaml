@@ -169,6 +169,9 @@ jobs:
   package-unit:
     name: Package Unit
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Required for ECR login via OIDC (pytransformer_contract)
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -187,6 +190,7 @@ jobs:
           - integration_test/srchydration
           - integration_test/tracing
           - integration_test/trackedusersreporting
+          - integration_test/pytransformer_contract
           - integration_test/transformer_contract
           - processor
           - regulation-worker
@@ -225,6 +229,16 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
+      - name: Configure AWS credentials
+        if: matrix.package == 'integration_test/pytransformer_contract'
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_IAM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-session-name: pytransformer-contract-test
+      - name: Login to Amazon ECR
+        if: matrix.package == 'integration_test/pytransformer_contract'
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
