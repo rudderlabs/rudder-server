@@ -94,7 +94,7 @@ def transformEvent(event, metadata):
 	// 5. Start rudder-pytransformer container with host network (Linux)
 	pyTransformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:        "poc", // TODO change to "latest" once merged to "main"
+		Tag:        "main",
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + pyConfigBackend.URL,
 			"GUNICORN_WORKERS=1",
