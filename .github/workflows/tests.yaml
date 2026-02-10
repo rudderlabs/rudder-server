@@ -242,11 +242,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
-        with:
-          go-version-file: 'go.mod'
-      - run: go version
-      - run: go mod download # Not required, used to segregate module download vs test times
+
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           AWS_REGION: "" # undo the effects of configure-aws-credentials
@@ -274,10 +270,12 @@ jobs:
           RSERVER_OAUTH_TEST_CREDENTIALS: ${{ secrets.RSERVER_OAUTH_TEST_CREDENTIALS }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
         run: make test exclude="${{ matrix.exclude }}" package=${{ matrix.package }}
+
       - name: Sanitize name for Artifact
         run: |
           name=$(echo -n "${{ matrix.package }}" | sed -e 's/[ \t:\/\\"<>|*?]/-/g' -e 's/--*/-/g')
           echo "ARTIFACT_NAME=$name" >> $GITHUB_ENV
+
       - name: Upload coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
