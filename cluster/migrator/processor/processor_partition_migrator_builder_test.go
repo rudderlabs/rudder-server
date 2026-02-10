@@ -114,6 +114,10 @@ func (m *mockEtcdClient) Delete(ctx context.Context, key string, opts ...clientv
 	return &clientv3.DeleteResponse{}, nil
 }
 
+func (m *mockEtcdClient) Txn(ctx context.Context) clientv3.Txn {
+	return nil
+}
+
 type mockSourceMigrator struct{}
 
 func (m *mockSourceMigrator) Run(ctx context.Context, wg *errgroup.Group) error {

@@ -641,7 +641,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		defer stmt.Close()
 		_, err = stmt.Exec(jobs[0].UUID, jobs[0].UserID, jobs[0].CustomVal, string(jobs[0].Parameters), string(jobs[0].EventPayload), jobs[0].WorkspaceId)
 		require.Error(t, err, "expected error as trigger is set on DS")
-		require.Equal(t, "pq: table is readonly", err.Error())
+		require.Equal(t, "pq: table is readonly (RS001)", err.Error())
 		var e *pq.Error
 		errors.As(err, &e)
 		require.EqualValues(t, e.Code, pgErrorCodeTableReadonly)

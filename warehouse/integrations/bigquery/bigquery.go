@@ -596,7 +596,8 @@ func (bq *BigQuery) jobStatistics(
 ) (*bqservice.JobStatistics, error) {
 	serv, err := bqservice.NewService(
 		ctx,
-		option.WithCredentialsJSON([]byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))),
+		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
+		option.WithCredentialsJSON([]byte(bq.warehouse.GetStringDestinationConfig(bq.conf, model.CredentialsSetting))), // nolint: staticcheck
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating service: %w", err)
@@ -776,8 +777,8 @@ func (bq *BigQuery) connect(ctx context.Context) (*middleware.Client, error) {
 		credBytes := []byte(credentials)
 		if err := googleutil.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
 			return nil, err
-		}
-		opts = append(opts, option.WithCredentialsJSON(credBytes))
+		} // TODO: switching to WithAuthCredentialsJSON requires auth type handling
+		opts = append(opts, option.WithCredentialsJSON(credBytes)) // nolint: staticcheck
 	}
 
 	bqClient, err := bigquery.NewClient(ctx, projectID, opts...)
