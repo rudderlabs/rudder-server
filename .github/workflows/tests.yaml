@@ -230,14 +230,14 @@ jobs:
           username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
       - name: Configure AWS credentials
-        if: matrix.package == 'integration_test/pytransformer_contract'
         uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
           aws-region: ${{ vars.AWS_ECR_REGION }}
-          role-session-name: pytransformer-contract-test
-      - name: Login to Amazon ECR
-        if: matrix.package == 'integration_test/pytransformer_contract'
+          role-session-name: ${{ github.event.repository.name }}
+
+      - name: Login to ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
@@ -253,9 +253,9 @@ jobs:
           SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWPIPE_STREAMING_KEYPAIR_ENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_PRIVILEGE_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
-          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ vars.DOCKER_REGISTRY_MIRROR_USERNAME }}
-          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
-          DOCKER_REGISTRY_MIRROR: ${{ vars.DOCKER_REGISTRY_MIRROR }}
+          DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
+          DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
+          DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           RACE_ENABLED: ${{ matrix.race || false }}
           RSERVER_OAUTH_TEST_CREDENTIALS: ${{ secrets.RSERVER_OAUTH_TEST_CREDENTIALS }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
