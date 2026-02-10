@@ -3,7 +3,6 @@ package pytransformer_contract
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
@@ -217,7 +217,7 @@ func newContractConfigBackend(t *testing.T, transformations map[string]string) *
 				"imports":        []any{},
 				"secrets":        map[string]any{},
 			}
-			if err := json.NewEncoder(w).Encode(resp); err != nil {
+			if err := jsonrs.NewEncoder(w).Encode(resp); err != nil {
 				t.Errorf("ConfigBackend: failed to encode response: %v", err)
 			}
 		case "/transformationLibrary/getByVersionId":
@@ -264,7 +264,7 @@ func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) (*httptest.Se
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/system/function/"):
 			name := strings.TrimPrefix(r.URL.Path, "/system/function/")
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
 				"name":     name,
 				"replicas": 1,
 			})
