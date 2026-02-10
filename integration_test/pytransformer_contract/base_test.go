@@ -2,21 +2,29 @@ package pytransformer_contract
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
 // TestBaseContract is the base contract test that compares responses from the
@@ -24,20 +32,19 @@ import (
 // architecture (rudder-pytransformer).
 //
 // This test:
-// 1. Builds the openfaas-flask-base Docker image from local source
-// 2. Starts a mock config backend serving Python transformation code
-// 3. Starts openfaas-flask-base with the transformation pre-loaded
-// 4. Starts a mock OpenFaaS gateway that proxies invocations to openfaas-flask-base
-// 5. Starts rudder-transformer connected to the mock gateway
-// 6. Starts rudder-pytransformer connected to the mock config backend
-// 7. Sends the same /customTransform request to both
+// 1. Starts a mock config backend serving Python transformation code
+// 2. Starts openfaas-flask-base with the transformation pre-loaded
+// 3. Starts a mock OpenFaaS gateway that proxies invocations to openfaas-flask-base
+// 4. Starts rudder-transformer connected to the mock gateway
+// 5. Starts rudder-pytransformer connected to the mock config backend
+// 6. Uses the actual user_transformer.Client to send /customTransform to both
+// 7. Asserts the OpenFaaS gateway was invoked (proving the old architecture path)
 // 8. Compares the responses for equivalence
 //
-// Copy this test and change pythonCode + testEvents to create new contract test cases.
+// Copy this test and change pythonCode + events to create new contract test cases.
 //
 // To be able to run these tests, make sure you're able to pull Docker images from ECR (see Notion docs).
 func TestBaseContract(t *testing.T) {
-	// --- Test configuration ---
 	const versionID = "contract-test-v1"
 
 	pythonCode := `
@@ -46,32 +53,46 @@ def transformEvent(event, metadata):
     return event
 `
 
-	testEvents := []map[string]any{
+	// Language "pythonfaas" is required: the user_transformer.Client reads it from
+	// Destination.Transformations[0].Language to decide URL routing.
+	// - When PYTHON_TRANSFORM_URL is empty, python falls through to USER_TRANSFORM_URL (old architecture).
+	// - When PYTHON_TRANSFORM_URL is set, python routes there (new architecture).
+	events := []types.TransformerEvent{
 		{
-			"messageId": "msg-1",
-			"type":      "track",
-			"event":     "Test Event",
-			"properties": map[string]any{
-				"key": "value",
+			Message: types.SingularEventT{
+				"messageId":  "msg-1",
+				"type":       "track",
+				"event":      "Test Event",
+				"properties": map[string]any{"key": "value"},
 			},
-			"_metadata": map[string]any{
-				"sourceId":      "src-1",
-				"destinationId": "dest-1",
-				"workspaceId":   "ws-1",
-				"messageId":     "msg-1",
+			Metadata: types.Metadata{
+				SourceID:      "src-1",
+				DestinationID: "dest-1",
+				WorkspaceID:   "ws-1",
+				MessageID:     "msg-1",
+			},
+			Destination: backendconfig.DestinationT{
+				Transformations: []backendconfig.TransformationT{
+					{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
+				},
 			},
 		},
 		{
-			"messageId": "msg-2",
-			"type":      "identify",
-			"traits": map[string]any{
-				"name": "Test User",
+			Message: types.SingularEventT{
+				"messageId": "msg-2",
+				"type":      "identify",
+				"traits":    map[string]any{"name": "Test User"},
 			},
-			"_metadata": map[string]any{
-				"sourceId":      "src-1",
-				"destinationId": "dest-1",
-				"workspaceId":   "ws-1",
-				"messageId":     "msg-2",
+			Metadata: types.Metadata{
+				SourceID:      "src-1",
+				DestinationID: "dest-1",
+				WorkspaceID:   "ws-1",
+				MessageID:     "msg-2",
+			},
+			Destination: backendconfig.DestinationT{
+				Transformations: []backendconfig.TransformationT{
+					{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
+				},
 			},
 		},
 	}
@@ -108,7 +129,7 @@ def transformEvent(event, metadata):
 	waitForOpenFaasFlask(t, pool, openFaasURL)
 
 	t.Log("Starting mock OpenFaaS gateway...")
-	mockGateway := newMockOpenFaaSGateway(t, openFaasURL)
+	mockGateway, openFaaSInvocations := newMockOpenFaaSGateway(t, openFaasURL)
 	defer mockGateway.Close()
 	t.Logf("Mock OpenFaaS gateway at %s", mockGateway.URL)
 
@@ -132,31 +153,34 @@ def transformEvent(event, metadata):
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
 	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
-	requestBody := buildCustomTransformRequest(versionID, testEvents)
-	t.Logf("Request payload: %s", string(requestBody))
-
+	// Old architecture: PYTHON_TRANSFORM_URL is empty, so the client falls through
+	// to USER_TRANSFORM_URL for python transformations (same as production before pytransformer).
 	t.Log("Sending request to rudder-transformer (old architecture)...")
-	oldResp := sendCustomTransform(t, transformerURL, requestBody)
-	t.Logf("Old architecture returned %d responses", len(oldResp))
+	oldArchConf := config.New()
+	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
+	oldClient := usertransformer.New(oldArchConf, logger.NOP, stats.NOP)
+	oldResp := oldClient.Transform(context.Background(), events)
+	t.Logf("Old architecture returned %d events, %d failed", len(oldResp.Events), len(oldResp.FailedEvents))
 
+	t.Log("Asserting OpenFaaS gateway was invoked by rudder-transformer...")
+	require.Greater(t, openFaaSInvocations.Load(), int64(0),
+		"expected OpenFaaS gateway to be invoked at least once by rudder-transformer")
+	t.Logf("OpenFaaS gateway was invoked %d times", openFaaSInvocations.Load())
+
+	// New architecture: PYTHON_TRANSFORM_URL is set, so the client routes python
+	// transformations directly to rudder-pytransformer.
 	t.Log("Sending request to rudder-pytransformer (new architecture)...")
-	newResp := sendCustomTransform(t, pyTransformerURL, requestBody)
-	t.Logf("New architecture returned %d responses", len(newResp))
+	newArchConf := config.New()
+	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
+	newClient := usertransformer.New(newArchConf, logger.NOP, stats.NOP)
+	newResp := newClient.Transform(context.Background(), events)
+	t.Logf("New architecture returned %d events, %d failed", len(newResp.Events), len(newResp.FailedEvents))
 
 	t.Log("Comparing responses...")
-	compareResponses(t, oldResp, newResp)
+	diff, equal := oldResp.Equal(&newResp)
+	require.True(t, equal, "responses differ:\n%s", diff)
 
 	t.Log("Contract test passed: old and new architectures return equivalent responses")
-}
-
-// transformerResponse is the response format returned by both
-// rudder-transformer and rudder-pytransformer from /customTransform.
-type transformerResponse struct {
-	Output     map[string]any `json:"output"`
-	Metadata   map[string]any `json:"metadata"`
-	StatusCode int            `json:"statusCode"`
-	Error      string         `json:"error,omitempty"`
-	StatTags   map[string]any `json:"statTags,omitempty"`
 }
 
 // newContractConfigBackend creates a mock config backend that serves
@@ -210,9 +234,12 @@ func newContractConfigBackend(t *testing.T, transformations map[string]string) *
 // - Accepts function deployment requests (POST /system/functions)
 // - Reports functions as healthy (GET /function/*)
 // - Proxies function invocations (POST /function/*) to the openfaas-flask-base container
-func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) *httptest.Server {
+//
+// Returns the server and an atomic counter tracking POST /function/* invocations.
+func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	invocations := &atomic.Int64{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Logf("MockOpenFaaS: %s %s", r.Method, r.URL.Path)
 
 		switch {
@@ -251,6 +278,8 @@ func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) *httptest.Ser
 				return
 			}
 			if r.Method == http.MethodPost {
+				invocations.Add(1)
+
 				// Invoke: proxy to openfaas-flask-base
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
@@ -294,6 +323,7 @@ func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) *httptest.Ser
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
+	return srv, invocations
 }
 
 // startOpenFaasFlask starts an openfaas-flask-base container with transformation code
@@ -407,123 +437,4 @@ func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
 	})
 	require.NoError(t, err, "openfaas-flask-base failed to become healthy")
 	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
-}
-
-// buildCustomTransformRequest builds a /customTransform request payload.
-func buildCustomTransformRequest(versionID string, events []map[string]any) []byte {
-	var payload []map[string]any
-	for _, event := range events {
-		payload = append(payload, map[string]any{
-			"message":  event,
-			"metadata": event["_metadata"],
-			"destination": map[string]any{
-				"Transformations": []map[string]any{
-					{"VersionID": versionID},
-				},
-			},
-			"credentials": []any{},
-			"libraries":   []any{},
-		})
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal request: %v", err))
-	}
-	return data
-}
-
-// sendCustomTransform sends a POST /customTransform request and returns parsed responses.
-func sendCustomTransform(t *testing.T, baseURL string, body []byte) []transformerResponse {
-	t.Helper()
-
-	req, err := http.NewRequest(http.MethodPost, baseURL+"/customTransform", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	req.Header.Set("X-Feature-Filter-Code", "?1")
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	require.Equal(t, http.StatusOK, resp.StatusCode,
-		"expected 200 from /customTransform, got %d: %s", resp.StatusCode, string(respBody))
-
-	// Verify apiVersion header
-	apiVersion := resp.Header.Get("apiVersion")
-	require.Equal(t, "2", apiVersion, "expected apiVersion: 2 header")
-
-	var responses []transformerResponse
-	require.NoError(t, json.Unmarshal(respBody, &responses),
-		"failed to unmarshal response: %s", string(respBody))
-	return responses
-}
-
-// compareResponses asserts that responses from the old architecture (rudder-transformer)
-// and new architecture (rudder-pytransformer) are equivalent.
-func compareResponses(t *testing.T, old, new []transformerResponse) {
-	t.Helper()
-
-	require.Equal(t, len(old), len(new),
-		"response count mismatch: old=%d, new=%d", len(old), len(new))
-
-	// Sort both by messageId for deterministic comparison
-	sortByMessageID := func(responses []transformerResponse) {
-		sort.Slice(responses, func(i, j int) bool {
-			iID := getMessageID(responses[i])
-			jID := getMessageID(responses[j])
-			return iID < jID
-		})
-	}
-	sortByMessageID(old)
-	sortByMessageID(new)
-
-	for i := range old {
-		o := old[i]
-		n := new[i]
-		msgID := getMessageID(o)
-
-		// Status codes must match exactly
-		require.Equal(t, o.StatusCode, n.StatusCode,
-			"statusCode mismatch for messageId %s: old=%d, new=%d", msgID, o.StatusCode, n.StatusCode)
-
-		// Output must match (for success responses)
-		if o.StatusCode == 200 {
-			require.Equal(t, o.Output, n.Output,
-				"output mismatch for messageId %s", msgID)
-		}
-
-		// Error presence must match
-		if o.Error != "" {
-			require.NotEmpty(t, n.Error,
-				"old has error %q for messageId %s but new has no error", o.Error, msgID)
-		} else {
-			require.Empty(t, n.Error,
-				"old has no error for messageId %s but new has error %q", msgID, n.Error)
-		}
-
-		// Metadata key fields must match
-		for _, key := range []string{"sourceId", "destinationId", "workspaceId"} {
-			require.Equal(t, o.Metadata[key], n.Metadata[key],
-				"metadata.%s mismatch for messageId %s", key, msgID)
-		}
-	}
-}
-
-// getMessageID extracts the messageId from a response (checks output first, then metadata).
-func getMessageID(r transformerResponse) string {
-	if r.Output != nil {
-		if id, ok := r.Output["messageId"].(string); ok {
-			return id
-		}
-	}
-	if r.Metadata != nil {
-		if id, ok := r.Metadata["messageId"].(string); ok {
-			return id
-		}
-	}
-	return ""
 }
