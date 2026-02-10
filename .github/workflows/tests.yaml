@@ -224,12 +224,14 @@ jobs:
           go-version-file: 'go.mod'
       - run: go version
       - run: go mod download
+
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
-      - name: Configure AWS credentials
+
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
         with:
           role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
@@ -239,13 +241,20 @@ jobs:
       - name: Login to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version-file: 'go.mod'
+      - run: go version
+      - run: go mod download # Not required, used to segregate module download vs test times
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           AWS_REGION: "" # undo the effects of configure-aws-credentials
           AWS_DEFAULT_REGION: "" # undo the effects of configure-aws-credentials
-          AWS_ACCESS_KEY_ID: "" # undo the effects of configure-aws-credentials
-          AWS_SECRET_ACCESS_KEY: "" # undo the effects of configure-aws-credentials
           AWS_SESSION_TOKEN: "" # undo the effects of configure-aws-credentials
+          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
           TEST_KAFKA_CONFLUENT_CLOUD_KEY: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_KEY }}
           TEST_KAFKA_CONFLUENT_CLOUD_SECRET: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_SECRET }}
