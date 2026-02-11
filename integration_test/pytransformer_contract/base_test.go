@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
@@ -336,6 +337,7 @@ func startOpenFaasFlask(
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		Tag:        "latest",
+		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, configBackendURL),
 			fmt.Sprintf("port=%d", port),
@@ -357,6 +359,7 @@ func startRudderTransformer(
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "rudderstack/rudder-transformer",
 		Tag:        "latest",
+		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + configBackendURL,
 			"OPENFAAS_GATEWAY_URL=" + openfaasGatewayURL,
@@ -380,6 +383,7 @@ func startRudderPytransformer(
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:        "main",
+		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + configBackendURL,
 			"GUNICORN_WORKERS=1",
