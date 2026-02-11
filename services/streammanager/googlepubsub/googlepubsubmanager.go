@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
 	"github.com/cenkalti/backoff/v5"
 	"github.com/tidwall/gjson"
 	"google.golang.org/api/option"
@@ -42,7 +42,7 @@ type TestConfig struct {
 
 type PubsubClient struct {
 	pbs      *pubsub.Client
-	topicMap map[string]*pubsub.Topic
+	topicMap map[string]*pubsub.Publisher
 	opts     common.Opts
 }
 
@@ -92,14 +92,15 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 		if err = googleutil.CompatibleGoogleCredentialsJSON(credsBytes); err != nil {
 			return nil, err
 		}
-		options = append(options, option.WithCredentialsJSON(credsBytes))
+		// TODO: switching to WithAuthCredentialsJSON requires auth type handling
+		options = append(options, option.WithCredentialsJSON(credsBytes)) // nolint: staticcheck
 	}
 	if client, err = pubsub.NewClient(ctx, pubsubConfig.ProjectId, options...); err != nil {
 		return nil, err
 	}
-	topicMap := make(map[string]*pubsub.Topic, len(pubsubConfig.EventToTopicMap))
+	topicMap := make(map[string]*pubsub.Publisher, len(pubsubConfig.EventToTopicMap))
 	for _, s := range pubsubConfig.EventToTopicMap {
-		topic := client.Topic(s["to"])
+		topic := client.Publisher(s["to"])
 		topic.PublishSettings.NumGoroutines = config.GetIntVar(25, 1, "Router.GOOGLEPUBSUB.Client.NumGoroutines")
 		topic.PublishSettings.DelayThreshold = config.GetDurationVar(10, time.Millisecond, "Router.GOOGLEPUBSUB.Client.DelayThreshold")
 		topic.PublishSettings.CountThreshold = config.GetIntVar(64, 1, "Router.GOOGLEPUBSUB.Client.CountThreshold", "Router.GOOGLEPUBSUB.noOfWorkers", "Router.noOfWorkers")
@@ -124,12 +125,12 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Googl
 	}, nil
 }
 
-func (producer *GooglePubSubProducer) publish(ctx context.Context, topic *pubsub.Topic, message *pubsub.Message) (string, error) {
+func (producer *GooglePubSubProducer) publish(ctx context.Context, topic *pubsub.Publisher, message *pubsub.Message) (string, error) {
 	return topic.Publish(ctx, message).Get(ctx)
 }
 
 // publishWithRetry publishes a message with retry logic for intermittent authentication errors
-func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topic *pubsub.Topic, message *pubsub.Message) (string, error) {
+func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topic *pubsub.Publisher, message *pubsub.Message) (string, error) {
 	var serverID string
 
 	operation := func() error {

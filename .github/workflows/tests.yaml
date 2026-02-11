@@ -19,6 +19,9 @@ jobs:
   integration:
     name: Integration
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write 
+      contents: read 
     strategy:
       matrix:
         FEATURES: [ oss ,enterprise ]
@@ -27,7 +30,22 @@ jobs:
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
-
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+      - name: Unset AWS Credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=" >> $GITHUB_ENV
+          echo "AWS_REGION=" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=" >> $GITHUB_ENV
       - name: Disable IPv6 (temporary fix)
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -45,20 +63,23 @@ jobs:
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
           ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
-          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ vars.DOCKER_REGISTRY_MIRROR_USERNAME }}
-          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
-          DOCKER_REGISTRY_MIRROR: ${{ vars.DOCKER_REGISTRY_MIRROR }}
+          DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
+          DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
+          DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
       - name: oss
         if: matrix.FEATURES == 'oss'
         run: go test -v ./integration_test/docker_test/docker_test.go -count 1
         env:
           RSERVER_ENABLE_MULTITENANCY: false
-          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ vars.DOCKER_REGISTRY_MIRROR_USERNAME }}
-          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
-          DOCKER_REGISTRY_MIRROR: ${{ vars.DOCKER_REGISTRY_MIRROR }}
+          DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
+          DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
+          DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
   warehouse-integration:
     name: Warehouse Integration
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write 
+      contents: read 
     strategy:
       fail-fast: false
       matrix:
@@ -87,7 +108,29 @@ jobs:
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
-
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+      - name: Unset AWS Credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=" >> $GITHUB_ENV
+          echo "AWS_REGION=" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=" >> $GITHUB_ENV
+      - name: Configure Docker registry mirror
+        run: |
+          echo '{
+            "registry-mirrors": ["https://422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub"]
+          }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info | grep -iA 1 mirror
       - name: Disable IPv6 (temporary fix)
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -100,11 +143,6 @@ jobs:
           go-version-file: 'go.mod'
       - run: go version
       - run: go mod download # Not required, used to segregate module download vs test times
-      - name: Login to DockerHub
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
-        with:
-          username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
       - name: Set Redshift Ginkgo AWS Credentials
         if: matrix.destination == 'redshift'
         run: |
@@ -124,9 +162,9 @@ jobs:
           SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_RBAC_INTEGRATION_TEST_CREDENTIALS }}
           SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.SNOWFLAKE_KEYPAIR_UNENCRYPTED_INTEGRATION_TEST_CREDENTIALS }}
           RSERVER_FILE_MANAGER_USE_AWS_SDK_V2: "true"
-          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ vars.DOCKER_REGISTRY_MIRROR_USERNAME }}
-          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
-          DOCKER_REGISTRY_MIRROR: ${{ vars.DOCKER_REGISTRY_MIRROR }}
+          DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
+          DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
+          DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           RACE_ENABLED: "true"
           FORCE_RUN_INTEGRATION_TESTS: "true"
       - name: Upload coverage report
@@ -137,12 +175,30 @@ jobs:
   unit:
     name: Unit
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write 
+      contents: read 
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
-
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+      - name: Unset AWS Credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=" >> $GITHUB_ENV
+          echo "AWS_REGION=" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=" >> $GITHUB_ENV
       - name: Disable IPv6 (temporary fix)
         run: |
           sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
@@ -157,9 +213,9 @@ jobs:
         run: make test exclude="/rudder-server/(cluster|jobsdb|integration_test|processor|regulation-worker|router|services|suppression-backup-service|warehouse)"
         env:
           RSERVER_PROCESSOR_ENABLE_CONCURRENT_STORE: "true"
-          DOCKER_REGISTRY_MIRROR_USERNAME: ${{ vars.DOCKER_REGISTRY_MIRROR_USERNAME }}
-          DOCKER_REGISTRY_MIRROR_PASSWORD: ${{ secrets.DOCKER_REGISTRY_MIRROR_PASSWORD }}
-          DOCKER_REGISTRY_MIRROR: ${{ vars.DOCKER_REGISTRY_MIRROR }}
+          DOCKERHUB_REGISTRY_MIRROR: 422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub
+          DOCKERHUB_REGISTRY_MIRROR_USERNAME: ${{ steps.login-ecr.outputs.docker_username_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
+          DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
           FORCE_RUN_INTEGRATION_TESTS: "true"
       - name: Upload coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -170,8 +226,8 @@ jobs:
     name: Package Unit
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # Allows the JWT to be requested from GitHub's OIDC provider
-      contents: read # This is required for actions/checkout
+      id-token: write 
+      contents: read 
     strategy:
       fail-fast: false
       matrix:
@@ -212,7 +268,22 @@ jobs:
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
         with:
           egress-policy: audit
-
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_ECR_REGION }}
+          role-session-name: ${{ github.event.repository.name }}
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
+      - name: Unset AWS Credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=" >> $GITHUB_ENV
+          echo "AWS_REGION=" >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=" >> $GITHUB_ENV
       - name: Disable IPv6 (temporary fix)
         if: matrix.package != 'services/dedup'
         run: |
@@ -224,25 +295,6 @@ jobs:
           go-version-file: 'go.mod'
       - run: go version
       - run: go mod download
-
-      - name: Login to DockerHub
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
-        with:
-          username: ${{ vars.DOCKERHUB_READONLY_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_READONLY_TOKEN }}
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@a03048d87541d1d9fcf2ecf528a4a65ba9bd7838 # v5.0.0
-        with:
-          role-to-assume: ${{ vars.AWS_ECR_READ_ONLY_IAM_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_ECR_REGION }}
-          role-session-name: ${{ github.event.repository.name }}
-
-      - name: Login to ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2.0.1
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
       - name: Package Unit [ ${{ matrix.package }} ]
         env:
           AWS_REGION: "" # undo the effects of configure-aws-credentials

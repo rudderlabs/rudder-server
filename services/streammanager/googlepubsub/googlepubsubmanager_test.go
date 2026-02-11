@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/pubsub"
+	"cloud.google.com/go/pubsub/v2"
+	"cloud.google.com/go/pubsub/v2/apiv1/pubsubpb"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -488,7 +489,9 @@ func SetupTestGooglePubSub(pool *dockertest.Pool, cln cleaner) (*TestConfig, err
 	if err := pool.Retry(func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		_, err = client.CreateTopic(ctx, topic)
+		_, err = client.TopicAdminClient.CreateTopic(ctx, &pubsubpb.Topic{
+			Name: fmt.Sprintf("projects/%s/topics/%s", projectId, topic),
+		})
 		return err
 	}); err != nil {
 		return nil, err

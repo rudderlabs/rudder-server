@@ -11,4 +11,5 @@ type Client interface {
 	Watch(ctx context.Context, key string, opts ...clientv3.OpOption) clientv3.WatchChan
 	Put(ctx context.Context, key, val string, opts ...clientv3.OpOption) (*clientv3.PutResponse, error)
 	Delete(ctx context.Context, key string, opts ...clientv3.OpOption) (*clientv3.DeleteResponse, error)
+	Txn(ctx context.Context) clientv3.Txn
 }

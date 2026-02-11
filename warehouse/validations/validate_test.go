@@ -125,7 +125,7 @@ func TestValidator(t *testing.T) {
 				config: map[string]interface{}{
 					"database": "invalid_database",
 				},
-				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist"),
+				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist (3D000)"),
 			},
 			{
 				name: "valid credentials",
@@ -194,7 +194,7 @@ func TestValidator(t *testing.T) {
 					"password":  password,
 					"namespace": "test_namespace_with_no_privilege",
 				},
-				wantError: errors.New("pq: permission denied for database jobsdb"),
+				wantError: errors.New("pq: permission denied for database jobsdb (42501)"),
 			},
 			{
 				name: "with privilege",
@@ -280,7 +280,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithNoPrivilege,
 					"password": password,
 				},
-				wantError: errors.New("create table: pq: permission denied for schema cat_test_namespace"),
+				wantError: errors.New("create table: pq: permission denied for schema cat_test_namespace at column 28 (42501)"),
 			},
 			{
 				name: "create table privilege",
@@ -288,7 +288,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithCreateTablePrivilege,
 					"password": password,
 				},
-				wantError: errors.New("alter table: pq: permission denied for schema cat_test_namespace"),
+				wantError: errors.New("alter table: pq: permission denied for schema cat_test_namespace (42501)"),
 			},
 			{
 				name: "alter privilege",
@@ -428,7 +428,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithNoPrivilege,
 					"password": password,
 				},
-				wantError: errors.New("create table: pq: permission denied for schema lt_test_namespace"),
+				wantError: errors.New("create table: pq: permission denied for schema lt_test_namespace at column 28 (42501)"),
 			},
 			{
 				name: "create table privilege",
@@ -436,7 +436,7 @@ func TestValidator(t *testing.T) {
 					"user":     userWithCreateTablePrivilege,
 					"password": password,
 				},
-				wantError: errors.New("load test table: pq: permission denied for schema lt_test_namespace"),
+				wantError: errors.New("load test table: pq: permission denied for schema lt_test_namespace at column 13 (42501)"),
 			},
 			{
 				name: "insert privilege",
