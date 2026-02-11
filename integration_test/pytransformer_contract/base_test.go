@@ -359,7 +359,6 @@ func startRudderTransformer(
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "rudderstack/rudder-transformer",
 		Tag:        "latest",
-		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + configBackendURL,
 			"OPENFAAS_GATEWAY_URL=" + openfaasGatewayURL,
