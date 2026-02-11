@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -95,6 +96,7 @@ def transformEvent(event, metadata):
 	pyTransformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:        "latest",
+		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + pyConfigBackend.URL,
 			"GUNICORN_WORKERS=1",
