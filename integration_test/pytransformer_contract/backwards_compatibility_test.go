@@ -624,6 +624,9 @@ def transformEvent(event, metadata):
 				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
 				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
 
+				// Normalize JSON key ordering in Error strings (raw JSON body from non-200 responses)
+				normalizeResponseErrors(&oldResp)
+				normalizeResponseErrors(&newResp)
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Both architectures produce identical responses for 500 config backend")
@@ -660,6 +663,8 @@ def transformEvent(event, metadata):
 						require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
 						require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
 
+						normalizeResponseErrors(&oldResp)
+						normalizeResponseErrors(&newResp)
 						diff, equal := oldResp.Equal(&newResp)
 						if equal {
 							t.Logf("Both architectures produce identical responses for %d config backend", statusCode)
@@ -692,6 +697,8 @@ def transformEvent(event, metadata):
 				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
 				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
 
+				normalizeResponseErrors(&oldResp)
+				normalizeResponseErrors(&newResp)
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Both architectures produce identical responses for 400 config backend")

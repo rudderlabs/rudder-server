@@ -338,3 +338,29 @@ func waitForOpenFaasFlask(t *testing.T, pool *dockertest.Pool, baseURL string) {
 	require.NoError(t, err, "openfaas-flask-base failed to become healthy")
 	t.Logf("openfaas-flask-base is healthy at %s", baseURL)
 }
+
+// normalizeJSON re-marshals a JSON string so keys are in deterministic (sorted) order.
+// For non-200 responses, the Go usertransformer client stores the raw JSON body as the
+// Error string. Different transformers (JS vs Python) may serialize JSON keys in different
+// orders, so we normalize before comparison.
+func normalizeJSON(s string) string {
+	var v any
+	if err := jsonrs.Unmarshal([]byte(s), &v); err != nil {
+		return s // not valid JSON, return as-is
+	}
+	b, err := jsonrs.Marshal(v)
+	if err != nil {
+		return s
+	}
+	return string(b)
+}
+
+// normalizeResponseErrors normalizes JSON Error strings in a Response for comparison.
+func normalizeResponseErrors(r *types.Response) {
+	for i := range r.Events {
+		r.Events[i].Error = normalizeJSON(r.Events[i].Error)
+	}
+	for i := range r.FailedEvents {
+		r.FailedEvents[i].Error = normalizeJSON(r.FailedEvents[i].Error)
+	}
+}
