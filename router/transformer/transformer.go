@@ -95,7 +95,7 @@ type ProxyRequestParams struct {
 	ResponseData ProxyRequestPayload
 	DestName     string
 	Adapter      transformerProxyAdapter
-	DestInfo     *oauthv2.DestinationInfo
+	DestInfo     *backendconfig.DestinationT
 	Connection   backendconfig.Connection `json:"connection"`
 }
 
@@ -223,14 +223,8 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 
-		destinationInfo := &oauthv2.DestinationInfo{
-			Config:           transformMessageCopy.Data[0].Destination.Config,
-			DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
-			WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
-			DestType:         transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-			ID:               transformMessageCopy.Data[0].Destination.ID,
-		}
-		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
+		dest := &transformMessageCopy.Data[0].Destination
+		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), dest))
 		resp, err = trans.clientOAuthV2.Do(req)
 
 		duration := time.Since(s)

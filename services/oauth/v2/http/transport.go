@@ -57,7 +57,7 @@ type OAuthTransport struct {
 
 // This struct is used to transport common information across the pre and post round trip methods.
 type roundTripState struct {
-	destination *v2.DestinationInfo
+	destination *backendconfig.DestinationT
 	accountID   string
 	tokenParams *v2.OAuthTokenParams
 	res         *http.Response
@@ -101,7 +101,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] reading request body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestType),
+			obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)))
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("reading request body pre roundTrip: %w", err).Error()))
 	}
@@ -115,7 +115,7 @@ func (t *OAuthTransport) preRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] secret augmentation",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestType),
+			obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err))
 		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Errorf("augmenting the secret pre roundTrip: %w", err).Error()))
@@ -129,7 +129,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] reading response body",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestType),
+			obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
@@ -152,7 +152,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 		t.log.Errorn("[OAuthPlatformError] get authErrorCategory",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestType),
+			obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(errors.New(string(respData))),
 		)
@@ -173,7 +173,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			t.log.Errorn("[OAuthPlatformError] get secret from context",
 				obskit.DestinationID(rts.destination.ID),
 				obskit.WorkspaceID(rts.destination.WorkspaceID),
-				obskit.DestinationType(rts.destination.DestType),
+				obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 				logger.NewStringField("flow", string(t.flow)))
 			// Instead of returning an error, set a 500 status code in the interceptor response
 			interceptorResp.StatusCode = http.StatusInternalServerError
@@ -228,17 +228,17 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		"flow":           string(t.flow),
 		"destinationId":  destination.ID,
 		"workspaceId":    destination.WorkspaceID,
-		"destType":       destination.DestType,
+		"destType":       destination.DestinationDefinition.Name,
 		"origRequestURL": req.URL.Path,
 	}
 	startTime := time.Now()
 	defer t.fireTimerStats("oauth_v2_http_total_roundtrip_latency", tags, startTime)
-	isOauthDestination, err := v2.IsOAuthDestination(destination.DefinitionConfig, t.flow)
+	isOauthDestination, err := destination.IsOAuthDestination(t.flow)
 	if err != nil {
 		t.log.Errorn("[OAuthPlatformError]checking if destination is oauth destination",
 			obskit.DestinationID(destination.ID),
 			obskit.WorkspaceID(destination.WorkspaceID),
-			obskit.DestinationType(destination.DestType),
+			obskit.DestinationType(destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
@@ -254,7 +254,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.log.Errorn("[OAuthPlatformError]accountId not found or empty for destination",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestType),
+			obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
@@ -263,7 +263,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	rts.tokenParams = &v2.OAuthTokenParams{
 		AccountID:     rts.accountID,
 		WorkspaceID:   rts.destination.WorkspaceID,
-		DestType:      rts.destination.DestType,
+		DestType:      rts.destination.DestinationDefinition.Name,
 		DestinationID: rts.destination.ID,
 	}
 	rts.req = req
@@ -279,7 +279,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.log.Errorn("[RoundTrip]transport round trip",
 			obskit.DestinationID(rts.destination.ID),
 			obskit.WorkspaceID(rts.destination.WorkspaceID),
-			obskit.DestinationType(rts.destination.DestType),
+			obskit.DestinationType(rts.destination.DestinationDefinition.Name),
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err))
 		// Return a 500 error response instead of propagating the error
