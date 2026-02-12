@@ -125,15 +125,6 @@ require (
 )
 
 require (
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.3 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.3.3 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.3.3 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.3.3 // indirect
-	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
-)
-
-require (
 	cel.dev/expr v0.24.0 // indirect
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.18.1 // indirect
@@ -145,6 +136,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.2 // indirect
+	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AthenZ/athenz v1.12.13 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
@@ -210,6 +202,11 @@ require (
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/duckdb/duckdb-go-bindings v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-amd64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/darwin-arm64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-amd64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/linux-arm64 v0.3.3 // indirect
+	github.com/duckdb/duckdb-go-bindings/lib/windows-amd64 v0.3.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
@@ -310,6 +307,7 @@ require (
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/segmentio/backo-go v1.1.0 // indirect
 	github.com/shirou/gopsutil/v3 v3.24.5 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
