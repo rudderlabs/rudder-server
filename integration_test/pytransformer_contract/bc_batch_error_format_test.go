@@ -9,8 +9,8 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
-func Test_TransformBatchErrorCount(t *testing.T) {
-	const versionID = "bc-batch-error-v1"
+func Test_TransformBatchErrorFormat(t *testing.T) {
+	const versionID = "bc-batch-error-format-v1"
 
 	pythonCode := `
 def transformBatch(events, metadata):
