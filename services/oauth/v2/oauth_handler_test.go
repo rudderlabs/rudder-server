@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mockhttpclient "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	mock_oauthV2 "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"

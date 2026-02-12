@@ -29,7 +29,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -281,12 +280,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	var destinationJobs []types.DestinationJobT
-	if w.rt.isOAuthDestination {
-		destinationJobs = w.transformJobsPerDestination(routerJobs)
-	} else {
-		destinationJobs = w.transformJobs(routerJobs)
-	}
+	destinationJobs := w.transformJobsPerDestination(routerJobs)
 	// the following stats (in combination with the limiter's timer stats) are used to capture the transform stage
 	// average latency, batching efficiency and max processing capacity
 	w.rt.batchSizeHistogramStat.Observe(float64(len(routerJobs)))
@@ -791,13 +785,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			Metadata:          m,
 			DestinationConfig: destinationJob.Destination.Config,
 		},
-		DestInfo: &oauthv2.DestinationInfo{
-			Config:           destinationJob.Destination.Config,
-			DefinitionConfig: destinationJob.Destination.DestinationDefinition.Config,
-			WorkspaceID:      destinationJob.Destination.WorkspaceID,
-			DestType:         destinationJob.Destination.DestinationDefinition.Name,
-			ID:               destinationJob.Destination.ID,
-		},
+		DestInfo:   &destinationJob.Destination,
 		Connection: destinationJob.Connection,
 		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}

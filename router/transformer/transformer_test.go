@@ -32,7 +32,6 @@ import (
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 
@@ -344,9 +343,11 @@ func TestProxyRequest(t *testing.T) {
 					ResponseData: tc.postParameters,
 					DestName:     "not_found_dest",
 					Adapter:      &mockAdapter{url: srv.URL},
-					DestInfo: &v2.DestinationInfo{
-						Config:           tc.postParameters.DestinationConfig,
-						DefinitionConfig: tc.postParameters.DestinationConfig,
+					DestInfo: &backendconfig.DestinationT{
+						Config: tc.postParameters.DestinationConfig,
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Config: tc.postParameters.DestinationConfig,
+						},
 					},
 				}
 				r := tr.ProxyRequest(ctx, reqParams)
@@ -387,9 +388,11 @@ func TestProxyRequest(t *testing.T) {
 				ResponseData: tc.postParameters,
 				DestName:     tc.destName,
 				Adapter:      &mockAdapter{url: srv.URL},
-				DestInfo: &v2.DestinationInfo{
-					Config:           tc.postParameters.DestinationConfig,
-					DefinitionConfig: tc.postParameters.DestinationConfig,
+				DestInfo: &backendconfig.DestinationT{
+					Config: tc.postParameters.DestinationConfig,
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: tc.postParameters.DestinationConfig,
+					},
 				},
 			}
 			r := tr.ProxyRequest(ctx, reqParams)
@@ -1695,18 +1698,13 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				adapter = NewTransformerProxyAdapter("v0", loggerOverride)
 			}
 
-			destinationInfo := &v2.DestinationInfo{
-				Config:           tc.destination.Config,
-				DefinitionConfig: tc.destination.DestinationDefinition.Config,
-				WorkspaceID:      tc.reqPayload.Metadata[0].WorkspaceID,
-				DestType:         tc.destination.DestinationDefinition.Name,
-				ID:               tc.destination.DestinationDefinition.ID,
-			}
+			dest := tc.destination
+			dest.WorkspaceID = tc.reqPayload.Metadata[0].WorkspaceID
 			reqParams := &ProxyRequestParams{
 				ResponseData: tc.reqPayload,
 				DestName:     tc.destType,
 				Adapter:      adapter,
-				DestInfo:     destinationInfo,
+				DestInfo:     &dest,
 			}
 
 			proxyResp := tr.ProxyRequest(context.Background(), reqParams)

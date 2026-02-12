@@ -116,6 +116,10 @@ var _ = Describe("Http/Client", func() {
 					"rudderAccountId": "7693729833",
 				},
 				WorkspaceID: "1234",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
+					Config: oauthDefinitionConfig,
+				},
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -176,6 +180,10 @@ var _ = Describe("Http/Client", func() {
 				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
+					Config: oauthDefinitionConfig,
+				},
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -221,6 +229,10 @@ var _ = Describe("Http/Client", func() {
 				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]any{
 					"rudderAccountId": "7693729833",
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
+					Config: oauthDefinitionConfig,
 				},
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
@@ -277,6 +289,10 @@ var _ = Describe("Http/Client", func() {
 					"rudderAccountId": "7693729833",
 				},
 				WorkspaceID: "1234",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
+					Config: oauthDefinitionConfig,
+				},
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)

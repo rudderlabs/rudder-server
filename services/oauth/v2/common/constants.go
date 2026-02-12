@@ -3,7 +3,6 @@ package common
 import "errors"
 
 const (
-	OAuth                = "OAuth"
 	CategoryRefreshToken = "REFRESH_TOKEN"
 	// CategoryAuthStatusInactive Identifier to be sent from destination(during transformation/delivery)
 	CategoryAuthStatusInactive = "AUTH_STATUS_INACTIVE"
@@ -15,12 +14,10 @@ const (
 	NetworkError            = "network_error"
 	None                    = "none"
 
-	DestKey              ContextKey = "destination"
-	SecretKey            ContextKey = "secret"
-	RudderFlowDelivery   RudderFlow = "delivery"
-	RudderFlowDelete     RudderFlow = "delete"
-	DeleteAccountIDKey              = "rudderDeleteAccountId"
-	DeliveryAccountIDKey            = "rudderAccountId"
+	DestKey            ContextKey = "destination"
+	SecretKey          ContextKey = "secret"
+	RudderFlowDelivery RudderFlow = "delivery"
+	RudderFlowDelete   RudderFlow = "delete"
 
 	AuthStatusInactive = "inactive"
 

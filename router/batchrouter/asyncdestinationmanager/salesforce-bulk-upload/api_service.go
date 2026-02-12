@@ -13,19 +13,19 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	cntx "github.com/rudderlabs/rudder-server/services/oauth/v2/context"
 )
 
 func newAPIService(
 	logger logger.Logger,
-	destinationInfo *oauthv2.DestinationInfo,
+	destination *backendconfig.DestinationT,
 	client *http.Client,
 ) APIServiceInterface {
 	return &apiService{
-		logger:          logger,
-		destinationInfo: destinationInfo,
-		client:          client,
+		logger:      logger,
+		destination: destination,
+		client:      client,
 	}
 }
 
@@ -218,7 +218,7 @@ func (s *apiService) makeRequest(
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), s.destinationInfo))
+	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), s.destination))
 
 	resp, err := s.client.Do(req)
 	if err != nil {
