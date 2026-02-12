@@ -52,22 +52,48 @@ func makeEvent(messageID, versionID string) types.TransformerEvent {
 	}
 }
 
+// configBackendEntry controls what the mock config backend returns for a given versionId.
+//
+// When statusCode is 0 (default), the entry is treated as a normal transformation:
+// HTTP 200 with the standard JSON envelope wrapping the code field.
+//
+// When statusCode is non-zero, the config backend returns that status code with body
+// as the raw response body (no JSON envelope).
+type configBackendEntry struct {
+	statusCode int
+	body       string
+	code       string
+}
+
 // newContractConfigBackend creates a mock config backend that serves
 // transformation code for both rudder-transformer and rudder-pytransformer.
 //
 // The response includes language: "pythonfaas" so rudder-transformer routes
 // to the OpenFaaS path. rudder-pytransformer and openfaas-flask-base only
 // use the "code" field.
-func newContractConfigBackend(t *testing.T, transformations map[string]string) *httptest.Server {
+func newContractConfigBackend(t *testing.T, entries map[string]configBackendEntry) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/transformation/getByVersionId":
 			versionID := r.URL.Query().Get("versionId")
-			code, ok := transformations[versionID]
+			entry, ok := entries[versionID]
 			if !ok {
 				t.Logf("ConfigBackend: unknown versionId %q", versionID)
 				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			if entry.statusCode != 0 {
+				t.Logf("ConfigBackend: returning %d for versionId %q", entry.statusCode, versionID)
+				w.WriteHeader(entry.statusCode)
+				if entry.body != "" {
+					_, _ = w.Write([]byte(entry.body))
+				}
+				return
+			}
+			if entry.code == "" && entry.body != "" {
+				t.Logf("ConfigBackend: returning 200 with raw body for versionId %q", versionID)
+				_, _ = w.Write([]byte(entry.body))
 				return
 			}
 			t.Logf("ConfigBackend: serving code for versionId %q", versionID)
@@ -79,7 +105,7 @@ func newContractConfigBackend(t *testing.T, transformations map[string]string) *
 				"versionId":      versionID,
 				"name":           "Contract test transformation",
 				"description":    "",
-				"code":           code,
+				"code":           entry.code,
 				"language":       "pythonfaas",
 				"codeVersion":    "1",
 				"secretsVersion": nil,

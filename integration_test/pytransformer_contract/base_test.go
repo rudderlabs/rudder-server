@@ -91,8 +91,8 @@ def transformEvent(event, metadata):
 	require.NoError(t, err)
 
 	t.Log("Starting mock config backend...")
-	configBackend := newContractConfigBackend(t, map[string]string{
-		versionID: pythonCode,
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		versionID: {code: pythonCode},
 	})
 	defer configBackend.Close()
 	t.Logf("Config backend at %s", configBackend.URL)

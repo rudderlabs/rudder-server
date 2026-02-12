@@ -3,6 +3,8 @@ package pytransformer_contract
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -28,20 +30,19 @@ import (
 // since openfaas loads transformation code at startup (one version per container).
 func TestBackwardsCompatibility(t *testing.T) {
 	type subtest struct {
-		name       string
-		versionID  string
-		pythonCode string
-		run        func(t *testing.T, env *bcTestEnv)
+		name      string
+		versionID string
+		config    configBackendEntry
+		run       func(t *testing.T, env *bcTestEnv)
 	}
 
 	subtests := []subtest{
 		{
 			name:      "TransformationCodeNotFound",
 			versionID: "bc-not-found-v1",
-			// pythonCode is empty — versionId is NOT registered in config backend.
+			// config is zero-value — versionId is NOT registered in config backend.
 			// Config backend returns 404 for unknown versionIds.
 			// No openfaas container is needed (error happens before execution).
-			pythonCode: "",
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-not-found-v1"
 
@@ -74,14 +75,14 @@ func TestBackwardsCompatibility(t *testing.T) {
 		{
 			name:      "EventExpansion",
 			versionID: "bc-event-expansion-v1",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     # Return a list to expand one event into multiple events
     return [
         {"messageId": "exp-1", "type": "track", "event": "Click", "original": event.get("messageId")},
         {"messageId": "exp-2", "type": "track", "event": "View", "original": event.get("messageId")},
     ]
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-event-expansion-v1"
 
@@ -114,7 +115,7 @@ def transformEvent(event, metadata):
 		{
 			name:      "ErrorMessageFormat",
 			versionID: "bc-error-format-v1",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     # Raise an error to trigger per-event error handling.
     # Call through a helper function to create a multi-line stack trace.
@@ -122,7 +123,7 @@ def transformEvent(event, metadata):
 
 def helper(event):
     raise ValueError("intentional error for testing")
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-error-format-v1"
 
@@ -168,10 +169,10 @@ def helper(event):
 		{
 			name:      "BatchErrorFormat",
 			versionID: "bc-batch-error-format-v1",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformBatch(events, metadata):
     raise ValueError("intentional batch error for testing")
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-batch-error-format-v1"
 
@@ -214,10 +215,10 @@ def transformBatch(events, metadata):
 		{
 			name:      "TransformEventNonDictReturn",
 			versionID: "bc-non-dict-v1",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     return "this is a string, not a dict"
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-non-dict-v1"
 
@@ -255,7 +256,7 @@ def transformEvent(event, metadata):
 		{
 			name:      "MetadataMissingKeys",
 			versionID: "bc-metadata-keys-v1",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     m = metadata(event)
     # trackingPlanId is NOT in the input metadata.
@@ -263,7 +264,7 @@ def transformEvent(event, metadata):
     event["has_source_id"] = "sourceId" in m  # control: sourceId IS in metadata
     event["metadata_keys_count"] = len(m)
     return event
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-metadata-keys-v1"
 
@@ -312,11 +313,11 @@ def transformEvent(event, metadata):
 		{
 			name:      "BatchMetadata",
 			versionID: "bc-batch-metadata-v1",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformBatch(events, metadata):
     # Pass through all events unchanged to check if there is difference in metadata with transformBatch
     return events
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-batch-metadata-v1"
 
@@ -383,13 +384,13 @@ def transformBatch(events, metadata):
 		{
 			name:      "FilterWithNone",
 			versionID: "bc-filter-with-none",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     # Filter some events (return None) to trigger 298 filter detection.
     if event["messageId"] != "body-msg-2":
         return None
     return event
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-filter-with-none"
 
@@ -444,11 +445,11 @@ def transformEvent(event, metadata):
 		{
 			name:      "FilterWithDifferentMessageIds",
 			versionID: "bc-filter-with-diff-msg-ids",
-			pythonCode: `
+			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     # Filter all events (return None) to trigger 298 filter detection.
     return None
-`,
+`},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-filter-with-diff-msg-ids"
 
@@ -511,21 +512,213 @@ def transformEvent(event, metadata):
 				}
 			},
 		},
+		{
+			name:      "ConfigBackendEmptyBody",
+			versionID: "bc-cb-empty-body-v1",
+			config:    configBackendEntry{statusCode: http.StatusOK, body: ""},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-empty-body-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for empty config backend body")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "ConfigBackendUnexpectedBody",
+			versionID: "bc-cb-unexpected-body-v1",
+			config:    configBackendEntry{statusCode: http.StatusOK, body: "hello world"},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-unexpected-body-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for unexpected config backend body")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "ConfigBackendNotFound",
+			versionID: "bc-cb-not-found-v1",
+			config:    configBackendEntry{statusCode: http.StatusNotFound},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-not-found-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 404 config backend")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "ConfigBackendInternalError",
+			versionID: "bc-cb-500-v1",
+			config:    configBackendEntry{statusCode: http.StatusInternalServerError},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-500-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 500 config backend")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "ConfigBackend5xx",
+			versionID: "bc-cb-5xx-v1",
+			// config is zero-value — the individual 5xx versionIDs are registered separately below.
+			run: func(t *testing.T, env *bcTestEnv) {
+				for _, statusCode := range []int{
+					http.StatusNotImplemented,
+					http.StatusBadGateway,
+					http.StatusServiceUnavailable,
+				} {
+					t.Run(strconv.Itoa(statusCode), func(t *testing.T) {
+						versionID := fmt.Sprintf("bc-cb-%d-v1", statusCode)
+
+						events := []types.TransformerEvent{
+							makeEvent("msg-1", versionID),
+							makeEvent("msg-2", versionID),
+						}
+
+						oldResp := env.OldClient.Transform(context.Background(), events)
+						t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+						newResp := env.NewClient.Transform(context.Background(), events)
+						t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+						require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+						require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+						require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+						require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+						diff, equal := oldResp.Equal(&newResp)
+						if equal {
+							t.Logf("Both architectures produce identical responses for %d config backend", statusCode)
+						} else {
+							t.Errorf("Responses differ:\n%s", diff)
+						}
+					})
+				}
+			},
+		},
+		{
+			name:      "ConfigBackendBadRequest",
+			versionID: "bc-cb-400-v1",
+			config:    configBackendEntry{statusCode: http.StatusBadRequest},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-400-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 400 config backend")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
 	}
 
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	// Collect all transformation codes for the shared config backend.
-	// Subtests with empty pythonCode are not registered — the config backend
+	// Collect all config backend entries for the shared config backend.
+	// Subtests with zero-value config are not registered — the config backend
 	// returns 404 for those versionIds, which tests error handling paths.
-	allTransformations := make(map[string]string, len(subtests))
+	allEntries := make(map[string]configBackendEntry, len(subtests))
 	for _, st := range subtests {
-		if st.pythonCode != "" {
-			allTransformations[st.versionID] = st.pythonCode
+		if st.config != (configBackendEntry{}) {
+			allEntries[st.versionID] = st.config
 		}
 	}
-	configBackend := newContractConfigBackend(t, allTransformations)
+	// Register individual 5xx entries for the ConfigBackend5xx grouped subtest.
+	for _, code := range []int{http.StatusNotImplemented, http.StatusBadGateway, http.StatusServiceUnavailable} {
+		allEntries[fmt.Sprintf("bc-cb-%d-v1", code)] = configBackendEntry{statusCode: code}
+	}
+	configBackend := newContractConfigBackend(t, allEntries)
 	t.Cleanup(configBackend.Close)
 
 	// Create a mock OpenFaaS gateway with a dynamic proxy target.
@@ -597,12 +790,12 @@ def transformEvent(event, metadata):
 		NewClient: usertransformer.New(newArchConf, newArchLogger, stats.NOP),
 	}
 
-	// Run subtests sequentially. Each subtest with pythonCode spins up its own
+	// Run subtests sequentially. Each subtest with python code spins up its own
 	// openfaas-flask-base since openfaas loads code at startup.
-	// Subtests with empty pythonCode skip openfaas (error happens before execution).
+	// Subtests without python code skip openfaas (error happens before execution).
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			if st.pythonCode != "" {
+			if st.config.code != "" {
 				openFaasPort, err := kithelper.GetFreePort()
 				require.NoError(t, err)
 				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
