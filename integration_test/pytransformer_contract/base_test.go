@@ -1,28 +1,17 @@
 package pytransformer_contract
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"strconv"
-	"strings"
-	"sync/atomic"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
@@ -130,7 +119,7 @@ def transformEvent(event, metadata):
 	waitForOpenFaasFlask(t, pool, openFaasURL)
 
 	t.Log("Starting mock OpenFaaS gateway...")
-	mockGateway, openFaaSInvocations := newMockOpenFaaSGateway(t, openFaasURL)
+	mockGateway, openFaaSInvocations := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
 	defer mockGateway.Close()
 	t.Logf("Mock OpenFaaS gateway at %s", mockGateway.URL)
 

@@ -51,99 +51,6 @@ func makeEvent(messageID, versionID string) types.TransformerEvent {
 	}
 }
 
-// newDynamicMockOpenFaaSGateway creates a mock OpenFaaS gateway with a dynamic
-// proxy target. Unlike newMockOpenFaaSGateway which takes a fixed URL, this
-// version calls getTarget() on each invocation to get the current
-// openfaas-flask-base URL, allowing it to be updated between subtests.
-func newDynamicMockOpenFaaSGateway(t *testing.T, getTarget func() string) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		// Deploy function
-		case r.Method == http.MethodPost && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// Update function
-		case r.Method == http.MethodPut && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// Delete function
-		case r.Method == http.MethodDelete && r.URL.Path == "/system/functions":
-			w.WriteHeader(http.StatusOK)
-
-		// List functions
-		case r.Method == http.MethodGet && r.URL.Path == "/system/functions":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte("[]"))
-
-		// Get function info
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/system/function/"):
-			name := strings.TrimPrefix(r.URL.Path, "/system/function/")
-			w.Header().Set("Content-Type", "application/json")
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"name":     name,
-				"replicas": 1,
-			})
-
-		// Health check or invoke function
-		case strings.HasPrefix(r.URL.Path, "/function/"):
-			if r.Method == http.MethodGet {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"service": "UP"}`))
-				return
-			}
-			if r.Method == http.MethodPost {
-				targetURL := getTarget()
-				if targetURL == "" {
-					t.Log("DynamicMockOpenFaaS: no target URL set")
-					w.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
-
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Logf("DynamicMockOpenFaaS: failed to read body: %v", err)
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				proxyReq, err := http.NewRequest(http.MethodPost, targetURL+"/", bytes.NewReader(body))
-				if err != nil {
-					t.Logf("DynamicMockOpenFaaS: failed to create proxy request: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				proxyReq.Header.Set("Content-Type", "application/json")
-
-				resp, err := http.DefaultClient.Do(proxyReq)
-				if err != nil {
-					t.Logf("DynamicMockOpenFaaS: failed to proxy to openfaas-flask-base: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-				defer func() { _ = resp.Body.Close() }()
-
-				respBody, err := io.ReadAll(resp.Body)
-				if err != nil {
-					t.Logf("DynamicMockOpenFaaS: failed to read proxy response: %v", err)
-					w.WriteHeader(http.StatusBadGateway)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(resp.StatusCode)
-				_, _ = w.Write(respBody)
-				return
-			}
-			w.WriteHeader(http.StatusMethodNotAllowed)
-
-		default:
-			t.Logf("DynamicMockOpenFaaS: unhandled %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-}
-
 // newContractConfigBackend creates a mock config backend that serves
 // transformation code for both rudder-transformer and rudder-pytransformer.
 //
@@ -194,15 +101,14 @@ func newContractConfigBackend(t *testing.T, transformations map[string]string) *
 // newMockOpenFaaSGateway creates a mock OpenFaaS gateway that:
 // - Accepts function deployment requests (POST /system/functions)
 // - Reports functions as healthy (GET /function/*)
-// - Proxies function invocations (POST /function/*) to the openfaas-flask-base container
+// - Proxies function invocations (POST /function/*) to the URL returned by getTarget()
 //
+// getTarget is called on each invocation, allowing the target to change between subtests.
 // Returns the server and an atomic counter tracking POST /function/* invocations.
-func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) (*httptest.Server, *atomic.Int64) {
+func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
 	invocations := &atomic.Int64{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Logf("MockOpenFaaS: %s %s", r.Method, r.URL.Path)
-
 		switch {
 		// Deploy function
 		case r.Method == http.MethodPost && r.URL.Path == "/system/functions":
@@ -233,15 +139,19 @@ func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) (*httptest.Se
 		// Health check or invoke function
 		case strings.HasPrefix(r.URL.Path, "/function/"):
 			if r.Method == http.MethodGet {
-				// Health check (X-REQUEST-TYPE: HEALTH-CHECK)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(`{"service": "UP"}`))
 				return
 			}
 			if r.Method == http.MethodPost {
 				invocations.Add(1)
+				targetURL := getTarget()
+				if targetURL == "" {
+					t.Log("MockOpenFaaS: no target URL set")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
 
-				// Invoke: proxy to openfaas-flask-base
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
 					t.Logf("MockOpenFaaS: failed to read body: %v", err)
@@ -249,7 +159,7 @@ func newMockOpenFaaSGateway(t *testing.T, openfaasFlaskURL string) (*httptest.Se
 					return
 				}
 
-				proxyReq, err := http.NewRequest(http.MethodPost, openfaasFlaskURL+"/", bytes.NewReader(body))
+				proxyReq, err := http.NewRequest(http.MethodPost, targetURL+"/", bytes.NewReader(body))
 				if err != nil {
 					t.Logf("MockOpenFaaS: failed to create proxy request: %v", err)
 					w.WriteHeader(http.StatusBadGateway)

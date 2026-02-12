@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -24,7 +23,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/runner"
@@ -93,42 +91,13 @@ def transformEvent(event, metadata):
 	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
 
 	// 5. Start rudder-pytransformer container with host network (Linux)
-	pyTransformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:        "latest",
-		Auth:       registry.AuthConfiguration(),
-		Env: []string{
-			"CONFIG_BACKEND_URL=" + pyConfigBackend.URL,
-			"GUNICORN_WORKERS=1",
-			"GUNICORN_TIMEOUT=120",
-			fmt.Sprintf("GUNICORN_BIND=0.0.0.0:%d", pyTransformerPort),
-		},
-	}, func(hc *docker.HostConfig) {
-		hc.NetworkMode = "host"
-	})
-	require.NoError(t, err)
+	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, pyConfigBackend.URL)
 	defer func() {
-		if err := pyTransformerContainer.Close(); err != nil {
-			t.Logf("Failed to close pytransformer container: %v", err)
+		if err := pool.Purge(pyTransformerContainer); err != nil {
+			t.Logf("Failed to purge pytransformer container: %v", err)
 		}
 	}()
-
-	// Wait for pytransformer to be healthy
-	t.Logf("Waiting for pytransformer at %s to be healthy...", pyTransformerURL)
-	err = pool.Retry(func() error {
-		resp, err := http.Get(pyTransformerURL + "/health")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("health check failed: %d - %s", resp.StatusCode, string(body))
-		}
-		return nil
-	})
-	require.NoError(t, err, "pytransformer failed to become healthy")
-	t.Logf("PyTransformer is healthy at %s", pyTransformerURL)
+	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	// 6. Create mock transformer for features and destination transforms
 	// This handles everything except /customTransform (which goes to pytransformer)

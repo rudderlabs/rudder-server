@@ -198,7 +198,7 @@ def transformEvent(event, metadata):
 		defer gatewayMu.Unlock()
 		gatewayTargetURL = url
 	}
-	mockGateway := newDynamicMockOpenFaaSGateway(t, getGatewayTarget)
+	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
 	// Start shared rudder-transformer.
