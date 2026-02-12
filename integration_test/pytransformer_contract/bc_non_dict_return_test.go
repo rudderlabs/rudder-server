@@ -10,7 +10,7 @@ import (
 )
 
 func TestBC_TransformEventNonDictReturn(t *testing.T) {
-	const versionID = "bc1-non-dict-v1"
+	const versionID = "bc-non-dict-v1"
 
 	pythonCode := `
 def transformEvent(event, metadata):
