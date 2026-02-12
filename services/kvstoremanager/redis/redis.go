@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -188,7 +189,7 @@ func (m *RedisManager) setArgsForMergeStrategy(inputArgs setArguments) (*jsonSet
 		value: inputArgs.jsonVal.String(),
 	}
 	redisValueForKey, err := m.GetClient().JSONGet(context.Background(), inputArgs.key).Result()
-	if err != nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
 

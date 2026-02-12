@@ -75,6 +75,12 @@ func TestRedisDeletion(t *testing.T) {
 
 	manager := kvstoremanager.New(dest.Name, dest.Config)
 
+	// getting non-existing key
+
+	result, err := manager.HGetAll("user:nonExistingKey")
+	require.NoError(t, err, "error while getting data from redis using HGETALL")
+	require.Equal(t, 0, len(result), "expected no fields for non existing key")
+
 	// inserting test data in Redis
 	for _, test := range inputTestData {
 		err := manager.HMSet(test.key, test.fields)

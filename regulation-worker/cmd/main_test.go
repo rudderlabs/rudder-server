@@ -445,20 +445,21 @@ func insertRedisData(t *testing.T, address string) {
 	}
 	manager = kvstoremanager.New(destName, destConfig)
 
+	// getting non-existing key
+	result, err := manager.HGetAll("user:nonExistingKey")
+	require.NoError(t, err, "error while getting data from redis using HGETALL")
+	require.Equal(t, 0, len(result), "expected no fields for non existing key")
+
 	// inserting test data in Redis
 	for _, test := range redisInputTestData {
 		err := manager.HMSet(test.key, test.fields)
-		if err != nil {
-			t.Logf("Error while inserting into redis using HMSET: %v", err)
-		}
+		require.NoError(t, err, "error while inserting into redis using HMSET")
 	}
 
 	fieldCountBeforeDelete = make([]int, len(redisInputTestData))
 	for i, test := range redisInputTestData {
 		result, err := manager.HGetAll(test.key)
-		if err != nil {
-			t.Logf("Error while getting data from redis using HMGET: %v", err)
-		}
+		require.NoError(t, err)
 		fieldCountBeforeDelete[i] = len(result)
 	}
 }
