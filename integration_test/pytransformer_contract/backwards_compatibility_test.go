@@ -16,6 +16,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
+	utilstypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 // TestBackwardsCompatibility compares responses from the old architecture
@@ -47,8 +48,10 @@ def helper(event):
     raise ValueError("intentional error for testing")
 `,
 			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-error-format-v1"
+
 				events := []types.TransformerEvent{
-					makeEvent("msg-1", "bc-error-format-v1"),
+					makeEvent("msg-1", versionId),
 				}
 
 				t.Log("Sending request to old architecture...")
@@ -94,10 +97,12 @@ def transformBatch(events, metadata):
     raise ValueError("intentional batch error for testing")
 `,
 			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-batch-error-format-v1"
+
 				events := []types.TransformerEvent{
-					makeEvent("msg-1", "bc-batch-error-format-v1"),
-					makeEvent("msg-2", "bc-batch-error-format-v1"),
-					makeEvent("msg-3", "bc-batch-error-format-v1"),
+					makeEvent("msg-1", versionId),
+					makeEvent("msg-2", versionId),
+					makeEvent("msg-3", versionId),
 				}
 
 				t.Log("Sending 3 events to old architecture...")
@@ -138,8 +143,10 @@ def transformEvent(event, metadata):
     return "this is a string, not a dict"
 `,
 			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-non-dict-v1"
+
 				events := []types.TransformerEvent{
-					makeEvent("msg-1", "bc-non-dict-v1"),
+					makeEvent("msg-1", versionId),
 				}
 
 				t.Log("Sending request to old architecture (rudder-transformer + openfaas)...")
@@ -182,9 +189,11 @@ def transformEvent(event, metadata):
     return event
 `,
 			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-metadata-keys-v1"
+
 				// Send event with minimal metadata (no trackingPlanId)
 				events := []types.TransformerEvent{
-					makeEvent("msg-1", "bc-metadata-keys-v1"),
+					makeEvent("msg-1", versionId),
 				}
 
 				t.Log("Sending request to old architecture...")
@@ -289,8 +298,139 @@ def transformBatch(events, metadata):
 					t.Log("Responses are equal")
 					t.Log("This means the metadata difference is not observable after Go unmarshaling")
 				} else {
+					t.Errorf("Responses differ:\n%s", diff)
 					t.Logf("Old arch TraceParent=%q (expected empty), New arch TraceParent=%q (expected set)",
 						oldMeta.TraceParent, newMeta.TraceParent)
+				}
+			},
+		},
+		{
+			name:      "FilterWithNone",
+			versionID: "bc-filter-with-none",
+			pythonCode: `
+def transformEvent(event, metadata):
+    # Filter some events (return None) to trigger 298 filter detection.
+    if event["messageId"] != "body-msg-2":
+        return None
+    return event
+`,
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-filter-with-none"
+
+				events := []types.TransformerEvent{
+					makeEvent("body-msg-1", versionID),
+					makeEvent("body-msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				require.Len(t, oldResp.FailedEvents, 1, "old arch: 1 failed event expected")
+				require.Len(t, oldResp.Events, 1, "old arch: 1 event expected")
+				require.EqualValues(t, utilstypes.FilterEventCode, oldResp.FailedEvents[0].StatusCode, "old arch: 298 filter detected")
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Compare: responses may differ in the 298 response metadata
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Responses are equal")
+					t.Log("This means the messageId source difference doesn't affect the output")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+
+				// Send more, all should be filtered
+				events = []types.TransformerEvent{
+					makeEvent("body-msg-3", versionID),
+					makeEvent("body-msg-4", versionID),
+				}
+
+				oldResp = env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				require.Len(t, oldResp.FailedEvents, 2)
+				require.Len(t, oldResp.Events, 0)
+				require.EqualValues(t, utilstypes.FilterEventCode, oldResp.FailedEvents[0].StatusCode, "old arch: 298 filter detected")
+
+				newResp = env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Compare: responses may differ in the 298 response metadata
+				diff, equal = oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Responses are equal")
+					t.Log("This means the messageId source difference doesn't affect the output")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "FilterWithDifferentMessageIds",
+			versionID: "bc-filter-with-diff-msg-ids",
+			pythonCode: `
+def transformEvent(event, metadata):
+    # Filter all events (return None) to trigger 298 filter detection.
+    return None
+`,
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-filter-with-diff-msg-ids"
+
+				// Craft events where message.messageId and metadata.MessageID differ.
+				// This is not normal in production (rudder-server copies them), but
+				// exposes the difference in how input messageIds are tracked.
+				events := []types.TransformerEvent{
+					{
+						Message: types.SingularEventT{
+							"messageId": "body-msg-1", // message body messageId
+							"type":      "track",
+							"event":     "Test Event",
+						},
+						Metadata: types.Metadata{
+							SourceID:      "src-1",
+							DestinationID: "dest-1",
+							WorkspaceID:   "ws-1",
+							MessageID:     "meta-msg-1", // metadata messageId (different!)
+						},
+						Destination: backendconfig.DestinationT{
+							Transformations: []backendconfig.TransformationT{
+								{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
+							},
+						},
+					},
+					{
+						Message: types.SingularEventT{
+							"messageId": "body-msg-2",
+							"type":      "track",
+							"event":     "Test Event 2",
+						},
+						Metadata: types.Metadata{
+							SourceID:      "src-1",
+							DestinationID: "dest-1",
+							WorkspaceID:   "ws-1",
+							MessageID:     "meta-msg-2", // metadata messageId (different!)
+						},
+						Destination: backendconfig.DestinationT{
+							Transformations: []backendconfig.TransformationT{
+								{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
+							},
+						},
+					},
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// When all events are filtered, both architectures should produce 298 responses.
+				// The X-Feature-Filter-Code header is set by the usertransformer client.
+				// Status 298 goes to FailedEvents (not 200).
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Responses are equal")
+					t.Log("This means the messageId source difference doesn't affect the output")
+				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
