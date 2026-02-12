@@ -771,10 +771,12 @@ def transformEvent(event, metadata):
 	// Create shared clients.
 	oldArchConf := config.New()
 	oldArchConf.Set("Processor.UserTransformer.maxRetry", 1)
+	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
 
 	newArchConf := config.New()
 	newArchConf.Set("Processor.UserTransformer.maxRetry", 1)
+	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
 
 	var (

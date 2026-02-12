@@ -60,6 +60,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.UserTransformer.maxRetry", "Processor.maxRetry")
+	handle.config.cpDownEndlessRetries = conf.GetReloadableBoolVar(true, "Processor.UserTransformer.cpDownEndlessRetries")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.UserTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
@@ -88,6 +89,7 @@ type Client struct {
 		pythonTransformationVersionIDsEnabled bool
 		forMirroring                          bool
 		maxRetry                              config.ValueLoader[int]
+		cpDownEndlessRetries                  config.ValueLoader[bool]
 		failOnUserTransformTimeout            config.ValueLoader[bool]
 		failOnError                           config.ValueLoader[bool]
 		maxRetryBackoffInterval               config.ValueLoader[time.Duration]
@@ -231,20 +233,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	bo.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
 	// endless backoff loop, only nil error or panics inside
-	_ = backoffvoid.Retry(
-		context.Background(),
-		func() error {
-			respData, statusCode, err = u.doPost(ctx, rawJSON, url, labels)
-			if err != nil {
-				panic(err)
-			}
-			if statusCode == transformerutils.StatusCPDown {
-				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
-				return fmt.Errorf("control plane not reachable")
-			}
-			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
-			return nil
-		},
+	retryOptions := []backoff.RetryOption{
 		backoff.WithBackOff(bo),
 		backoff.WithMaxElapsedTime(0), // no max time -> ends only when no error
 		backoff.WithNotify(func(err error, t time.Duration) {
@@ -263,6 +252,25 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				logger.NewStringField("transformationVersionID", transformationVersionID),
 			)
 		}),
+	}
+	if !u.config.cpDownEndlessRetries.Load() {
+		retryOptions = append(retryOptions, backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)))
+	}
+	_ = backoffvoid.Retry(
+		context.Background(),
+		func() error {
+			respData, statusCode, err = u.doPost(ctx, rawJSON, url, labels)
+			if err != nil {
+				panic(err)
+			}
+			if statusCode == transformerutils.StatusCPDown {
+				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
+				return fmt.Errorf("control plane not reachable")
+			}
+			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
+			return nil
+		},
+		retryOptions...,
 	)
 	// control plane back up
 
