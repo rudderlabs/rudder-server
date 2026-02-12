@@ -86,7 +86,7 @@ def helper(event):
 			},
 		},
 		{
-			name:      "TransformBatchErrorFormat",
+			name:      "BatchErrorFormat",
 			versionID: "bc-batch-error-format-v1",
 			pythonCode: `
 def transformBatch(events, metadata):
@@ -164,6 +164,61 @@ def transformEvent(event, metadata):
 				if equal {
 					t.Log("Responses are equal")
 				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "MetadataMissingKeys",
+			versionID: "bc-metadata-keys-v1",
+			pythonCode: `
+def transformEvent(event, metadata):
+    m = metadata(event)
+    # trackingPlanId is NOT in the input metadata.
+    event["has_tracking_plan_id"] = "trackingPlanId" in m
+    event["has_source_id"] = "sourceId" in m  # control: sourceId IS in metadata
+    event["metadata_keys_count"] = len(m)
+    return event
+`,
+			run: func(t *testing.T, env *bcTestEnv) {
+				// Send event with minimal metadata (no trackingPlanId)
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", "bc-metadata-keys-v1"),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should succeed
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldOutput := oldResp.Events[0].Output
+				newOutput := newResp.Events[0].Output
+
+				t.Logf("Old arch: has_tracking_plan_id=%v, has_source_id=%v, metadata_keys_count=%v",
+					oldOutput["has_tracking_plan_id"], oldOutput["has_source_id"], oldOutput["metadata_keys_count"])
+				t.Logf("New arch: has_tracking_plan_id=%v, has_source_id=%v, metadata_keys_count=%v",
+					newOutput["has_tracking_plan_id"], newOutput["has_source_id"], newOutput["metadata_keys_count"])
+
+				// Control: both should have sourceId in metadata
+				require.Equal(t, true, oldOutput["has_source_id"], "old arch: sourceId should be in metadata")
+				require.Equal(t, true, newOutput["has_source_id"], "new arch: sourceId should be in metadata")
+
+				// Compare: responses should differ
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Responses are equal")
+				} else {
+					// OLD OUTPUT - map[event:Test Event has_source_id:true has_tracking_plan_id:true messageId:msg-1 metadata_keys_count:29 type:track]
+					// NEW OUTPUT - map[event:Test Event has_source_id:true has_tracking_plan_id:false messageId:msg-1 metadata_keys_count:11 type:track]
+					t.Logf("Old arch has_tracking_plan_id=%v (expected true), New arch has_tracking_plan_id=%v (expected false)",
+						oldOutput["has_tracking_plan_id"], newOutput["has_tracking_plan_id"])
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
