@@ -36,6 +36,82 @@ func TestBackwardsCompatibility(t *testing.T) {
 
 	subtests := []subtest{
 		{
+			name:      "TransformationCodeNotFound",
+			versionID: "bc-not-found-v1",
+			// pythonCode is empty — versionId is NOT registered in config backend.
+			// Config backend returns 404 for unknown versionIds.
+			// No openfaas container is needed (error happens before execution).
+			pythonCode: "",
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-not-found-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionId),
+					makeEvent("msg-2", versionId),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical error responses for unknown versionId")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "EventExpansion",
+			versionID: "bc-event-expansion-v1",
+			pythonCode: `
+def transformEvent(event, metadata):
+    # Return a list to expand one event into multiple events
+    return [
+        {"messageId": "exp-1", "type": "track", "event": "Click", "original": event.get("messageId")},
+        {"messageId": "exp-2", "type": "track", "event": "View", "original": event.get("messageId")},
+    ]
+`,
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-event-expansion-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionId),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should expand 1 input event into 2 output events
+				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 expanded events expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 2, len(newResp.Events), "new arch: 2 expanded events expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical expanded event responses")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
 			name:      "ErrorMessageFormat",
 			versionID: "bc-error-format-v1",
 			pythonCode: `
@@ -441,9 +517,13 @@ def transformEvent(event, metadata):
 	require.NoError(t, err)
 
 	// Collect all transformation codes for the shared config backend.
+	// Subtests with empty pythonCode are not registered — the config backend
+	// returns 404 for those versionIds, which tests error handling paths.
 	allTransformations := make(map[string]string, len(subtests))
 	for _, st := range subtests {
-		allTransformations[st.versionID] = st.pythonCode
+		if st.pythonCode != "" {
+			allTransformations[st.versionID] = st.pythonCode
+		}
 	}
 	configBackend := newContractConfigBackend(t, allTransformations)
 	t.Cleanup(configBackend.Close)
@@ -517,25 +597,30 @@ def transformEvent(event, metadata):
 		NewClient: usertransformer.New(newArchConf, newArchLogger, stats.NOP),
 	}
 
-	// Run subtests sequentially. Each subtest spins up its own
+	// Run subtests sequentially. Each subtest with pythonCode spins up its own
 	// openfaas-flask-base since openfaas loads code at startup.
+	// Subtests with empty pythonCode skip openfaas (error happens before execution).
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			openFaasPort, err := kithelper.GetFreePort()
-			require.NoError(t, err)
-			openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
+			if st.pythonCode != "" {
+				openFaasPort, err := kithelper.GetFreePort()
+				require.NoError(t, err)
+				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
 
-			t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-			container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL)
-			t.Cleanup(func() {
-				if err := pool.Purge(container); err != nil {
-					t.Logf("Failed to purge openfaas-flask-base: %v", err)
-				}
-			})
-			waitForOpenFaasFlask(t, pool, openFaasURL)
+				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
+				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL)
+				t.Cleanup(func() {
+					if err := pool.Purge(container); err != nil {
+						t.Logf("Failed to purge openfaas-flask-base: %v", err)
+					}
+				})
+				waitForOpenFaasFlask(t, pool, openFaasURL)
 
-			// Point the mock gateway to this subtest's openfaas container.
-			setGatewayTarget(openFaasURL)
+				// Point the mock gateway to this subtest's openfaas container.
+				setGatewayTarget(openFaasURL)
+			} else {
+				t.Logf("Skipping openfaas-flask-base for %s (error path test)", st.name)
+			}
 
 			st.run(t, env)
 		})
