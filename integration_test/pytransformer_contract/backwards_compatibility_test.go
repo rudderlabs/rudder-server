@@ -11,13 +11,9 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 	utilstypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -775,35 +771,15 @@ def transformEvent(event, metadata):
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
 	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
-	// Create shared clients.
-	oldArchConf := config.New()
-	oldArchConf.Set("Processor.UserTransformer.maxRetry", 1)
-	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
-	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
-
-	newArchConf := config.New()
-	newArchConf.Set("Processor.UserTransformer.maxRetry", 1)
-	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
-	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
-
-	var (
-		oldArchLogger = logger.NOP
-		newArchLogger = logger.NOP
-	)
-	if testing.Verbose() {
-		oldArchLogger = logger.NewLogger().Child("old-arch")
-		newArchLogger = logger.NewLogger().Child("new-arch")
-	}
-	env := &bcTestEnv{
-		OldClient: usertransformer.New(oldArchConf, oldArchLogger, stats.NOP),
-		NewClient: usertransformer.New(newArchConf, newArchLogger, stats.NOP),
-	}
-
 	// Run subtests sequentially. Each subtest with python code spins up its own
 	// openfaas-flask-base since openfaas loads code at startup.
 	// Subtests without python code skip openfaas (error happens before execution).
+	// Each subtest gets a fresh bcTestEnv with its own memstats stores so that
+	// retry counts are isolated per subtest.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+
 			if st.config.code != "" {
 				openFaasPort, err := kithelper.GetFreePort()
 				require.NoError(t, err)
@@ -825,6 +801,7 @@ def transformEvent(event, metadata):
 			}
 
 			st.run(t, env)
+			env.assertRetryCountsMatch(t)
 		})
 	}
 }

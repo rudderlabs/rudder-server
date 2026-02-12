@@ -242,6 +242,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 				transformationID = clientEvents[0].Destination.Transformations[0].ID
 				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
 			}
+			u.stat.NewStat("processor_user_transformer_cp_down_retries", stats.CountType).Increment()
 			u.log.Errorn("User transformation HTTP connection error",
 				obskit.Error(err),
 				obskit.SourceID(clientEvents[0].Metadata.SourceID),
@@ -373,6 +374,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)),
 		backoff.WithNotify(func(err error, t time.Duration) {
 			retryCount++
+			u.stat.NewStat("processor_user_transformer_http_retries", stats.CountType).Increment()
 			u.log.Warnn(
 				"JS HTTP connection error",
 				append(

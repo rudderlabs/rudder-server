@@ -10,13 +10,17 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -28,6 +32,72 @@ import (
 type bcTestEnv struct {
 	OldClient *usertransformer.Client // rudder-transformer + openfaas (old architecture)
 	NewClient *usertransformer.Client // rudder-pytransformer (new architecture)
+	OldStats  *memstats.Store         // stats store for old architecture client
+	NewStats  *memstats.Store         // stats store for new architecture client
+}
+
+// newBCTestEnv creates a bcTestEnv with fresh memstats stores per subtest.
+// Fresh stores are needed because memstats accumulates counts and cannot be reset.
+func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string) *bcTestEnv {
+	t.Helper()
+
+	oldStats, err := memstats.New()
+	require.NoError(t, err)
+	newStats, err := memstats.New()
+	require.NoError(t, err)
+
+	oldArchConf := config.New()
+	oldArchConf.Set("Processor.UserTransformer.maxRetry", 2)
+	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+	oldArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
+
+	newArchConf := config.New()
+	newArchConf.Set("Processor.UserTransformer.maxRetry", 2)
+	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
+	newArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
+
+	var (
+		oldArchLogger = logger.NOP
+		newArchLogger = logger.NOP
+	)
+	if testing.Verbose() {
+		oldArchLogger = logger.NewLogger().Child("old-arch")
+		newArchLogger = logger.NewLogger().Child("new-arch")
+	}
+
+	return &bcTestEnv{
+		OldClient: usertransformer.New(oldArchConf, oldArchLogger, oldStats),
+		NewClient: usertransformer.New(newArchConf, newArchLogger, newStats),
+		OldStats:  oldStats,
+		NewStats:  newStats,
+	}
+}
+
+// getRetryCount returns the total retry count for a stat name from a memstats store.
+// Returns 0 if the stat was never recorded.
+func getRetryCount(store *memstats.Store, name string) int {
+	m := store.Get(name, nil)
+	if m == nil {
+		return 0
+	}
+	return int(m.LastValue())
+}
+
+// assertRetryCountsMatch asserts that both architectures triggered the same number of retries.
+func (env *bcTestEnv) assertRetryCountsMatch(t *testing.T) {
+	t.Helper()
+
+	oldCPRetries := getRetryCount(env.OldStats, "processor_user_transformer_cp_down_retries")
+	newCPRetries := getRetryCount(env.NewStats, "processor_user_transformer_cp_down_retries")
+	t.Logf("CP down retries: old=%d, new=%d", oldCPRetries, newCPRetries)
+	require.Equal(t, oldCPRetries, newCPRetries, "CP down retry counts should match between old and new arch")
+
+	oldHTTPRetries := getRetryCount(env.OldStats, "processor_user_transformer_http_retries")
+	newHTTPRetries := getRetryCount(env.NewStats, "processor_user_transformer_http_retries")
+	t.Logf("HTTP retries: old=%d, new=%d", oldHTTPRetries, newHTTPRetries)
+	require.Equal(t, oldHTTPRetries, newHTTPRetries, "HTTP retry counts should match between old and new arch")
 }
 
 // makeEvent creates a TransformerEvent for backwards compatibility testing with minimal required fields.
