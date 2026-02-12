@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -280,8 +281,22 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
+	var isOAuthDest bool
+	if len(routerJobs) > 0 {
+		var err error
+		isOAuthDest, err = oauthv2.IsOAuthDestination(
+			oauthv2.NewDestinationInfo(&routerJobs[0].Destination, routerJobs[0].Destination.DeliveryAccount),
+			common.RudderFlowDelivery,
+		)
+		if err != nil {
+			w.rt.logger.Warnn("failed to check if destination is OAuth, falling back to non-OAuth path",
+				obskit.Error(err),
+				obskit.DestinationType(w.rt.destType),
+			)
+		}
+	}
 	var destinationJobs []types.DestinationJobT
-	if w.rt.isOAuthDestination {
+	if isOAuthDest {
 		destinationJobs = w.transformJobsPerDestination(routerJobs)
 	} else {
 		destinationJobs = w.transformJobs(routerJobs)
@@ -792,13 +807,7 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			Metadata:          m,
 			DestinationConfig: destinationJob.Destination.Config,
 		},
-		DestInfo: &oauthv2.DestinationInfo{
-			Config:           destinationJob.Destination.Config,
-			DefinitionConfig: destinationJob.Destination.DestinationDefinition.Config,
-			WorkspaceID:      destinationJob.Destination.WorkspaceID,
-			DestType:         destinationJob.Destination.DestinationDefinition.Name,
-			ID:               destinationJob.Destination.ID,
-		},
+		DestInfo:   oauthv2.NewDestinationInfo(&destinationJob.Destination, destinationJob.Destination.DeliveryAccount),
 		Connection: destinationJob.Connection,
 		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}

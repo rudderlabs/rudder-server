@@ -223,13 +223,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 
-		destinationInfo := &oauthv2.DestinationInfo{
-			Config:           transformMessageCopy.Data[0].Destination.Config,
-			DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
-			WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
-			DestType:         transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-			ID:               transformMessageCopy.Data[0].Destination.ID,
-		}
+		destinationInfo := oauthv2.NewDestinationInfo(&transformMessageCopy.Data[0].Destination, transformMessageCopy.Data[0].Destination.DeliveryAccount)
 		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
 		resp, err = trans.clientOAuthV2.Do(req)
 

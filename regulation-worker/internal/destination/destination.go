@@ -53,6 +53,7 @@ func (d *DestinationConfig) Start(ctx context.Context) {
 							Config:        dest.Config,
 							Name:          dest.DestinationDefinition.Name,
 							DestDefConfig: dest.DestinationDefinition.Config,
+							DeleteAccount: dest.DeleteAccount,
 						}
 					}
 				}
