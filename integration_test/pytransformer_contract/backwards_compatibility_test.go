@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
@@ -219,6 +220,77 @@ def transformEvent(event, metadata):
 					// NEW OUTPUT - map[event:Test Event has_source_id:true has_tracking_plan_id:false messageId:msg-1 metadata_keys_count:11 type:track]
 					t.Logf("Old arch has_tracking_plan_id=%v (expected true), New arch has_tracking_plan_id=%v (expected false)",
 						oldOutput["has_tracking_plan_id"], newOutput["has_tracking_plan_id"])
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "BatchMetadata",
+			versionID: "bc-batch-metadata-v1",
+			pythonCode: `
+def transformBatch(events, metadata):
+    # Pass through all events unchanged to check if there is difference in metadata with transformBatch
+    return events
+`,
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-batch-metadata-v1"
+
+				// Send events with non-curated metadata fields set
+				events := []types.TransformerEvent{
+					{
+						Message: types.SingularEventT{
+							"messageId": "msg-1",
+							"type":      "track",
+							"event":     "Test Event",
+						},
+						Metadata: types.Metadata{
+							SourceID:      "src-1",
+							DestinationID: "dest-1",
+							WorkspaceID:   "ws-1",
+							MessageID:     "msg-1",
+							// Non-curated fields that should be stripped by old arch but kept by new arch:
+							TraceParent: "00-trace-id-span-id-01",
+						},
+						Destination: backendconfig.DestinationT{
+							Transformations: []backendconfig.TransformationT{
+								{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
+							},
+						},
+					},
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should succeed
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldMeta := oldResp.Events[0].Metadata
+				newMeta := newResp.Events[0].Metadata
+
+				t.Logf("Old arch metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
+					oldMeta.TraceParent, oldMeta.SourceID, oldMeta.MessageID)
+				t.Logf("New arch metadata: TraceParent=%q, SourceID=%q, MessageID=%q",
+					newMeta.TraceParent, newMeta.SourceID, newMeta.MessageID)
+
+				// Control: both should have curated fields
+				require.Equal(t, "src-1", oldMeta.SourceID, "old arch: sourceId should be present")
+				require.Equal(t, "src-1", newMeta.SourceID, "new arch: sourceId should be present")
+
+				// Compare: responses should differ in non-curated metadata fields
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Responses are equal")
+					t.Log("This means the metadata difference is not observable after Go unmarshaling")
+				} else {
+					t.Logf("Old arch TraceParent=%q (expected empty), New arch TraceParent=%q (expected set)",
+						oldMeta.TraceParent, newMeta.TraceParent)
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
