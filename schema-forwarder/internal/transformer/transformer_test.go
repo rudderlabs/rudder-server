@@ -100,7 +100,7 @@ func Test_SchemaTransformer_NoDataRetention(t *testing.T) {
 
 	t.Run("Test Transform limits", func(t *testing.T) {
 		event1 := generateTestJob(t, time.Now())
-		event1.EventPayload = []byte(fmt.Sprintf(`{"type": "track", "event": %q}`, rand.String(schemaTransformer.identifierLimit+1)))
+		event1.EventPayload = fmt.Appendf(nil, `{"type": "track", "event": %q}`, rand.String(schemaTransformer.identifierLimit+1))
 
 		e, err := schemaTransformer.Transform(event1)
 		require.Nil(t, e)

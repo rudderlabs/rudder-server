@@ -214,7 +214,7 @@ func TestIntegration(t *testing.T) {
 					Type: client.SQLClient,
 				}
 
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
@@ -294,7 +294,7 @@ func TestIntegration(t *testing.T) {
 
 		dest := backendconfig.DestinationT{
 			ID: "test_destination_id",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"host":             host,
 				"database":         database,
 				"user":             user,
@@ -823,7 +823,7 @@ func TestProcessColumnValue(t *testing.T) {
 		data          string
 		dataType      string
 		varcharLength int
-		expectedValue interface{}
+		expectedValue any
 		wantError     bool
 	}{
 		{

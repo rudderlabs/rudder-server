@@ -42,14 +42,14 @@ func (w *Warehouse) GetStringDestinationConfig(conf *config.Config, key Destinat
 	return ""
 }
 
-func (w *Warehouse) GetMapDestinationConfig(key DestinationConfigSetting) map[string]interface{} {
+func (w *Warehouse) GetMapDestinationConfig(key DestinationConfigSetting) map[string]any {
 	destConfig := w.Destination.Config
 	if destConfig[key.String()] != nil {
-		if val, ok := destConfig[key.String()].(map[string]interface{}); ok {
+		if val, ok := destConfig[key.String()].(map[string]any); ok {
 			return val
 		}
 	}
-	return map[string]interface{}{}
+	return map[string]any{}
 }
 
 func (w *Warehouse) GetPreferAppendSetting() bool {

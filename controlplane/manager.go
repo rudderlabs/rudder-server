@@ -22,12 +22,12 @@ type ConnectionManager struct {
 }
 
 type LoggerI interface {
-	Warn(a ...interface{})
-	Warnf(format string, a ...interface{})
-	Info(a ...interface{})
-	Infof(format string, a ...interface{})
-	Error(a ...interface{})
-	Errorf(format string, a ...interface{})
+	Warn(a ...any)
+	Warnf(format string, a ...any)
+	Info(a ...any)
+	Infof(format string, a ...any)
+	Error(a ...any)
+	Errorf(format string, a ...any)
 }
 
 const defaultRetryInterval time.Duration = time.Second

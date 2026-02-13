@@ -28,7 +28,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
@@ -40,7 +40,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				},
 			},
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Added",
 					"productId": "67890",
@@ -57,7 +57,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"type":        "track",
 					"event":       "Product Viewed",
 					"productId":   "12345",
@@ -67,7 +67,7 @@ func TestSrcHydrationStage(t *testing.T) {
 			},
 			{
 				ID: "2",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"type":        "track",
 					"event":       "Product Added",
 					"productId":   "67890",
@@ -139,7 +139,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":  "track",
 					"event": "Simple Event",
 				},
@@ -200,7 +200,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":  "track",
 					"event": "Test Event",
 				},
@@ -256,7 +256,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
@@ -347,7 +347,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		receivedAt := time.Now().In(time.UTC)
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
@@ -359,7 +359,7 @@ func TestSrcHydrationStage(t *testing.T) {
 				},
 			},
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "identify",
 					"event":     "signup",
 					"productId": "12345",
@@ -476,11 +476,11 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events with non-marshallable data
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
-					"circular":  make(map[string]interface{}),
+					"circular":  make(map[string]any),
 				},
 				Metadata: types.Metadata{
 					MessageID: "message-1",
@@ -490,14 +490,14 @@ func TestSrcHydrationStage(t *testing.T) {
 		}
 
 		// Create circular reference
-		circular := events[0].Message["circular"].(map[string]interface{})
+		circular := events[0].Message["circular"].(map[string]any)
 		circular["self"] = circular
 
 		// Create expected hydrated events
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "message-1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"type":        "track",
 					"event":       "Product Viewed",
 					"productId":   "12345",
@@ -570,7 +570,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
@@ -587,7 +587,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"type":        "track",
 					"event":       "Product Viewed",
 					"productId":   "12345",
@@ -676,7 +676,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		// Create test events
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
@@ -693,7 +693,7 @@ func TestSrcHydrationStage(t *testing.T) {
 		hydratedEvents := []types.SrcHydrationEvent{
 			{
 				ID: "123",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"type":        "track",
 					"event":       "Product Viewed",
 					"productId":   "12345",
@@ -773,7 +773,7 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 	for i, sourceID := range sources {
 		events := []types.TransformerEvent{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Viewed",
 					"productId": "12345",
@@ -785,7 +785,7 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 				},
 			},
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"type":      "track",
 					"event":     "Product Added",
 					"productId": "67890",
@@ -822,7 +822,7 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 
 		// Add events to eventsByMessageID
 		eventsByMessageID["message-"+sourceID] = types.SingularEventWithReceivedAt{
-			SingularEvent: map[string]interface{}{
+			SingularEvent: map[string]any{
 				"type":      "track",
 				"event":     "Product Viewed",
 				"productId": "12345",
@@ -831,7 +831,7 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 		}
 
 		eventsByMessageID["message2-"+sourceID] = types.SingularEventWithReceivedAt{
-			SingularEvent: map[string]interface{}{
+			SingularEvent: map[string]any{
 				"type":      "track",
 				"event":     "Product Added",
 				"productId": "67890",
@@ -845,7 +845,7 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 	for i, sourceID := range sources {
 		hydratedEvents[sourceID] = append(hydratedEvents[sourceID], types.SrcHydrationEvent{
 			ID: strconv.FormatInt(int64(i*10+1), 10),
-			Event: map[string]interface{}{
+			Event: map[string]any{
 				"type":        "track",
 				"event":       "Product Viewed",
 				"productId":   "12345",
@@ -856,7 +856,7 @@ func TestSrcHydrationStageConcurrency(t *testing.T) {
 
 		hydratedEvents[sourceID] = append(hydratedEvents[sourceID], types.SrcHydrationEvent{
 			ID: strconv.FormatInt(int64(i*10+2), 10),
-			Event: map[string]interface{}{
+			Event: map[string]any{
 				"type":        "track",
 				"event":       "Product Added",
 				"productId":   "67890",
@@ -950,7 +950,7 @@ func TestSrcHydrationStageContextCancellation(t *testing.T) {
 	// Create test events
 	events := []types.TransformerEvent{
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"type":      "track",
 				"event":     "Product Viewed",
 				"productId": "12345",

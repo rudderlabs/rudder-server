@@ -647,7 +647,7 @@ func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 				job := jobs[i]
 
 				// Parse the job parameters to check event blocking properties
-				var eventParams map[string]interface{}
+				var eventParams map[string]any
 				err := jsonrs.Unmarshal(job.job.Parameters, &eventParams)
 				require.NoError(t, err, "Should be able to parse job parameters")
 

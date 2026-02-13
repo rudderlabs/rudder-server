@@ -282,7 +282,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 				)
 				return ids, err
 			}
-			var recordInterface [5]interface{}
+			var recordInterface [5]any
 			for idx, value := range record {
 				if strings.TrimSpace(value) != "" {
 					recordInterface[idx] = value

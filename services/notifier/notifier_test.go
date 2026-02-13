@@ -154,7 +154,7 @@ func TestNotifier(t *testing.T) {
 
 		collectResponses := make(chan *notifier.PublishResponse)
 
-		for i := 0; i < totalJobs; i++ {
+		for range totalJobs {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
@@ -172,13 +172,13 @@ func TestNotifier(t *testing.T) {
 				return nil
 			})
 		}
-		for i := 0; i < subscribers; i++ {
+		for range subscribers {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
 
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
 
-				for j := 0; j < subscriberWorkers; j++ {
+				for range subscriberWorkers {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
 							switch job.Job.ID % 4 {
@@ -208,7 +208,7 @@ func TestNotifier(t *testing.T) {
 		g.Go(func() error {
 			responses := make([]notifier.Job, 0, totalJobs*len(publishRequest.Payloads))
 
-			for i := 0; i < totalJobs; i++ {
+			for range totalJobs {
 				job := <-collectResponses
 				require.NoError(t, job.Err)
 				require.Len(t, job.Jobs, len(publishRequest.Payloads))
@@ -262,7 +262,7 @@ func TestNotifier(t *testing.T) {
 		)
 
 		var payloads []json.RawMessage
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
@@ -291,7 +291,7 @@ func TestNotifier(t *testing.T) {
 
 		publishResponses := make(chan *notifier.PublishResponse)
 
-		for i := 0; i < jobs; i++ {
+		for range jobs {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
@@ -300,11 +300,11 @@ func TestNotifier(t *testing.T) {
 			})
 		}
 
-		for i := 0; i < subscribers; i++ {
+		for range subscribers {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
-				for j := 0; j < subscriberWorkers; j++ {
+				for range subscriberWorkers {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
 							n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
@@ -318,7 +318,7 @@ func TestNotifier(t *testing.T) {
 			})
 		}
 		g.Go(func() error {
-			for i := 0; i < jobs; i++ {
+			for range jobs {
 				response := <-publishResponses
 				require.NoError(t, response.Err)
 				require.Len(t, response.Jobs, len(publishRequest.Payloads))
@@ -347,7 +347,7 @@ func TestNotifier(t *testing.T) {
 		)
 
 		var payloads []json.RawMessage
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
@@ -376,7 +376,7 @@ func TestNotifier(t *testing.T) {
 
 		publishResponses := make(chan *notifier.PublishResponse)
 
-		for i := 0; i < jobs; i++ {
+		for range jobs {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
@@ -384,11 +384,11 @@ func TestNotifier(t *testing.T) {
 				return nil
 			})
 		}
-		for i := 0; i < subscribers; i++ {
+		for range subscribers {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
-				for j := 0; j < subscriberWorkers; j++ {
+				for range subscriberWorkers {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
 							n.UpdateClaim(slaveCtx, job, &notifier.ClaimJobResponse{
@@ -402,7 +402,7 @@ func TestNotifier(t *testing.T) {
 			})
 		}
 		g.Go(func() error {
-			for i := 0; i < jobs; i++ {
+			for range jobs {
 				response := <-publishResponses
 				require.NoError(t, response.Err)
 				require.Len(t, response.Jobs, len(publishRequest.Payloads))
@@ -431,7 +431,7 @@ func TestNotifier(t *testing.T) {
 		)
 
 		var payloads []json.RawMessage
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			payloads = append(payloads, json.RawMessage(fmt.Sprintf(`{"id": "%d"}`, i)))
 		}
 
@@ -461,7 +461,7 @@ func TestNotifier(t *testing.T) {
 		publishResponses := make(chan *notifier.PublishResponse)
 		claimedWorkers := atomic.NewInt64(0)
 
-		for i := 0; i < jobs; i++ {
+		for range jobs {
 			g.Go(func() error {
 				publishCh, err := n.Publish(gCtx, publishRequest)
 				require.NoError(t, err)
@@ -470,13 +470,13 @@ func TestNotifier(t *testing.T) {
 			})
 		}
 
-		for i := 0; i < subscribers; i++ {
+		for range subscribers {
 			g.Go(func() error {
 				subscriberCh := n.Subscribe(gCtx, workerID, subscriberWorkers)
 				slaveGroup, slaveCtx := errgroup.WithContext(gCtx)
 				blockSub := make(chan struct{})
 				defer close(blockSub)
-				for i := 0; i < subscriberWorkers; i++ {
+				for range subscriberWorkers {
 					slaveGroup.Go(func() error {
 						for job := range subscriberCh {
 							claimedWorkers.Add(1)
@@ -498,7 +498,7 @@ func TestNotifier(t *testing.T) {
 			})
 		}
 		g.Go(func() error {
-			for i := 0; i < jobs; i++ {
+			for range jobs {
 				response := <-publishResponses
 				require.NoError(t, response.Err)
 				require.Len(t, response.Jobs, len(publishRequest.Payloads))

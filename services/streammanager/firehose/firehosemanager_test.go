@@ -26,7 +26,7 @@ var (
 )
 
 func TestNewProducer(t *testing.T) {
-	destinationConfig := map[string]interface{}{
+	destinationConfig := map[string]any{
 		"Region":     "us-east-1",
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
@@ -79,7 +79,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "[FireHose] error  :: Delivery Stream not found", respMsg)
 
 	// Payload with empty deliveryStreamMapTo
-	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]any{
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": "",
 	})
@@ -89,7 +89,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Equal(t, "[FireHose] error :: empty delivery stream", respMsg)
 
 	// Payload with invalid deliveryStreamMapTo
-	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]any{
 		"message":             sampleMessage,
 		"deliveryStreamMapTo": 1,
 	})

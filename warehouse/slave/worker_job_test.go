@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -119,7 +120,7 @@ func (m *mockLoadFileWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (m *mockLoadFileWriter) WriteRow([]interface{}) error {
+func (m *mockLoadFileWriter) WriteRow([]any) error {
 	return errors.New("not implemented")
 }
 
@@ -165,7 +166,7 @@ func TestSlaveJob(t *testing.T) {
 
 		ctx := context.Background()
 
-		conf := map[string]interface{}{
+		conf := map[string]any{
 			"bucketName":       minioResource.BucketName,
 			"accessKeyID":      minioResource.AccessKeyID,
 			"accessKey":        minioResource.AccessKeyID,
@@ -317,7 +318,7 @@ func TestSlaveJob(t *testing.T) {
 					DestinationID:                destinationID,
 					DestinationName:              destinationName,
 					DestinationType:              destType,
-					DestinationConfig:            map[string]interface{}{},
+					DestinationConfig:            map[string]any{},
 					StagingDestinationConfig:     conf,
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationRevisionID:        uuid.New().String(),
@@ -376,7 +377,7 @@ func TestSlaveJob(t *testing.T) {
 			}, "")
 			require.NoError(t, err)
 
-			for i := 0; i < lines; i++ {
+			for i := range lines {
 				_, err = fmt.Fprintf(writer, "test %d\n", i)
 				require.NoError(t, err)
 			}
@@ -434,7 +435,7 @@ func TestSlaveJob(t *testing.T) {
 
 		for _, column := range []string{"test_discard_column", "uuid_ts", "loaded_at"} {
 			err = jr.handleDiscardTypes("test_table", "loaded_at", column,
-				map[string]interface{}{
+				map[string]any{
 					"id":          "test_id",
 					"received_at": now,
 				},
@@ -446,7 +447,7 @@ func TestSlaveJob(t *testing.T) {
 		}
 
 		err = jr.handleDiscardTypes("test_table", "loaded_at", "test_constrains",
-			map[string]interface{}{},
+			map[string]any{},
 			&constraints.Violation{
 				IsViolated:         true,
 				ViolatedIdentifier: "test_violated_identifier",
@@ -532,9 +533,7 @@ func TestSlaveJob(t *testing.T) {
 					"bucketProvider":   provider,
 				}
 
-				for k, v := range tc.conf {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.conf)
 
 				f, err := os.CreateTemp(t.TempDir(), "load.dump")
 				require.NoError(t, err)

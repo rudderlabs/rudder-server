@@ -45,7 +45,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common
 }
 
 // Produce creates a producer and send data to Firehose.
-func (producer *FirehoseProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *FirehoseProducer) Produce(jsonData json.RawMessage, _ any) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	client := producer.client
 	if client == nil {

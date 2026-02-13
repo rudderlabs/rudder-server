@@ -74,7 +74,7 @@ func (ym yandexMetricaMessageBody) ID() (idStruct, error) {
 	}
 }
 
-func getID(id interface{}, headerName string) (idStruct, error) {
+func getID(id any, headerName string) (idStruct, error) {
 	idString, ok := id.(string)
 	if !ok {
 		return idStruct{}, fmt.Errorf("non-string data for %s is not supported", headerName)

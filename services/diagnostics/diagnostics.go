@@ -55,9 +55,9 @@ var (
 var Diagnostics DiagnosticsI
 
 type DiagnosticsI interface {
-	Track(event string, properties map[string]interface{})
+	Track(event string, properties map[string]any)
 	DisableMetrics(enableMetrics bool)
-	Identify(properties map[string]interface{})
+	Identify(properties map[string]any)
 }
 type diagnostics struct {
 	Client     analytics.Client
@@ -99,7 +99,7 @@ func newDiagnostics() *diagnostics {
 	}
 }
 
-func (d *diagnostics) Track(event string, properties map[string]interface{}) {
+func (d *diagnostics) Track(event string, properties map[string]any) {
 	if EnableDiagnostics {
 		properties[StartTime] = d.StartTime
 		properties[InstanceId] = d.InstanceId
@@ -126,7 +126,7 @@ func (*diagnostics) DisableMetrics(enableMetrics bool) {
 	}
 }
 
-func (d *diagnostics) Identify(properties map[string]interface{}) {
+func (d *diagnostics) Identify(properties map[string]any) {
 	if EnableDiagnostics {
 		// add in traits
 		if val, ok := properties[ConfigIdentify]; ok {

@@ -241,8 +241,8 @@ func sendEvents(
 	eventType, writeKey,
 	url string,
 ) error {
-	for i := 0; i < num; i++ {
-		payload := []byte(fmt.Sprintf(`
+	for range num {
+		payload := fmt.Appendf(nil, `
 			{
 			  "batch": [
 				{
@@ -263,7 +263,7 @@ func sendEvents(
 			}`,
 			rand.String(10),
 			eventType,
-		))
+		)
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
 			return err

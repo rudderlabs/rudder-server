@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"sort"
 	"strings"
@@ -198,9 +199,7 @@ func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertO
 
 	// default tags
 	tags := c.defaultTags(&opts)
-	for k, v := range opts.Tags {
-		tags[k] = v
-	}
+	maps.Copy(tags, opts.Tags)
 
 	var tagList []string
 	for k, v := range tags {

@@ -72,7 +72,7 @@ type destinationSchema struct {
 
 type stagingFileSchema struct {
 	WorkspaceID           string
-	Schema                map[string]map[string]interface{}
+	Schema                map[string]map[string]any
 	BatchDestination      destinationSchema
 	Location              string
 	FirstEventAt          time.Time

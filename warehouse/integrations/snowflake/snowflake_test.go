@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -547,7 +548,7 @@ func TestIntegration(t *testing.T) {
 					Type: client.SQLClient,
 				}
 
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"cloudProvider":      "AWS",
 					"bucketName":         tc.cred.BucketName,
 					"storageIntegration": "",
@@ -557,9 +558,7 @@ func TestIntegration(t *testing.T) {
 					"enableSSE":          false,
 					"useRudderStorage":   false,
 				}
-				for k, v := range tc.configOverride {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.configOverride)
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
@@ -647,7 +646,7 @@ func TestIntegration(t *testing.T) {
 
 		dest := backendconfig.DestinationT{
 			ID: "test_destination_id",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"account":              credentials.Account,
 				"database":             credentials.Database,
 				"warehouse":            credentials.Warehouse,

@@ -658,7 +658,7 @@ func (g *GRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*p
 	}, nil
 }
 
-func (g *GRPC) manageTunnellingSecrets(ctx context.Context, config map[string]interface{}) error {
+func (g *GRPC) manageTunnellingSecrets(ctx context.Context, config map[string]any) error {
 	if !warehouseutils.ReadAsBool("useSSH", config) {
 		return nil
 	}
@@ -679,8 +679,8 @@ func (g *GRPC) manageTunnellingSecrets(ctx context.Context, config map[string]in
 }
 
 type validateObjectStorageRequest struct {
-	Type   string                 `json:"type"`
-	Config map[string]interface{} `json:"config"`
+	Type   string         `json:"type"`
+	Config map[string]any `json:"config"`
 }
 
 type invalidDestinationCredErr struct {
@@ -743,7 +743,7 @@ func (g *GRPC) ValidateObjectStorageDestination(ctx context.Context, request *pr
 
 // checkMapForValidKey checks the presence of key in map
 // and if yes verifies that the key is string and non-empty.
-func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
+func checkMapForValidKey(configMap map[string]any, key string) bool {
 	if value, ok := configMap[key]; !ok {
 		return false
 	} else if valStr, ok := value.(string); ok {
@@ -848,7 +848,7 @@ func overrideWithEnv(ctx context.Context, settings *filemanager.Settings) {
 	}
 }
 
-func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
+func ifNotExistThenSet(keyToReplace string, replaceWith any, configMap map[string]any) {
 	if _, ok := configMap[keyToReplace]; !ok {
 		// In case we don't have the key, simply replace it with replaceWith
 		configMap[keyToReplace] = replaceWith

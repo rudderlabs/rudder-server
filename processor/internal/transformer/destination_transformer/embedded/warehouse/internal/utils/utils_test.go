@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -163,10 +162,10 @@ func BenchmarkValidTimestamp(b *testing.B) {
 		"2014-04-26 05:24:37 PM",
 		"2014-04-26",
 	}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		testDates = append(testDates, strings.Repeat("a", 1000))
 	}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		testDates = append(testDates, uuid.NewString())
 	}
 
@@ -332,26 +331,26 @@ func TestIsJSONCompatibleStructure(t *testing.T) {
 	}{
 		{nil, false},
 		{true, false},
-		{lo.ToPtr(true), true},
+		{new(true), true},
 		{123, false},
-		{lo.ToPtr(123), true},
+		{new(123), true},
 		{"hello", false},
-		{lo.ToPtr("hello"), true},
+		{new("hello"), true},
 		{[]any{"a", 1}, false},
-		{lo.ToPtr([]any{"a", 1}), true},
+		{new([]any{"a", 1}), true},
 		{map[string]any{"k": "v"}, false},
-		{lo.ToPtr(map[string]any{"k": "v"}), true},
+		{new(map[string]any{"k": "v"}), true},
 		{testStruct{}, true},
-		{lo.ToPtr(testStruct{}), true},
+		{new(testStruct{}), true},
 		{[]any{}, false},
-		{lo.ToPtr([]any{}), true},
+		{new([]any{}), true},
 		{[]any{1, 2, 3}, false},
-		{lo.ToPtr([]any{1, 2, 3}), true},
+		{new([]any{1, 2, 3}), true},
 		{[]testStruct{{}, {}}, true},
-		{[]*testStruct{lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}, true},
+		{[]*testStruct{new(testStruct{}), new(testStruct{})}, true},
 		{[][]testStruct{{{}, {}}, {{}, {}}}, true},
-		{[][]*testStruct{{lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}, {lo.ToPtr(testStruct{}), lo.ToPtr(testStruct{})}}, true},
-		{[]*[]testStruct{lo.ToPtr([]testStruct{{}, {}}), lo.ToPtr([]testStruct{{}, {}})}, true},
+		{[][]*testStruct{{new(testStruct{}), new(testStruct{})}, {new(testStruct{}), new(testStruct{})}}, true},
+		{[]*[]testStruct{new([]testStruct{{}, {}}), new([]testStruct{{}, {}})}, true},
 	}
 
 	for i, tc := range testCases {

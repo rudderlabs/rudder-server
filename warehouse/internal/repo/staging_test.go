@@ -586,13 +586,13 @@ func TestStagingFilesRepo(t *testing.T) {
 				err := (&migrator.Migrator{
 					Handle:          db.DB,
 					MigrationsTable: "warehouse_runalways_migrations",
-				}).MigrateFromTemplates("warehouse_always", map[string]interface{}{
+				}).MigrateFromTemplates("warehouse_always", map[string]any{
 					"config": conf,
 				})
 				require.NoError(t, err)
 
 				n := 10
-				for i := 0; i < n; i++ {
+				for i := range n {
 					file := model.StagingFile{
 						WorkspaceID:   "workspace_id",
 						Location:      fmt.Sprintf("s3://bucket/path/to/file-%d", i),
@@ -623,7 +623,6 @@ func TestStagingFilesRepo(t *testing.T) {
 					}
 
 					for _, status := range statuses {
-						status := status
 						t.Run(status, func(t *testing.T) {
 							now = now.Add(time.Second)
 
@@ -680,7 +679,7 @@ func setupDBWithConfig(t testing.TB, conf *config.Config) *sqlmiddleware.DB {
 	err := (&migrator.Migrator{
 		Handle:          db.DB,
 		MigrationsTable: "warehouse_runalways_migrations",
-	}).MigrateFromTemplates("warehouse_always", map[string]interface{}{
+	}).MigrateFromTemplates("warehouse_always", map[string]any{
 		"config": conf,
 	})
 	require.NoError(t, err)
@@ -737,7 +736,7 @@ func BenchmarkFiles(b *testing.B) {
 	size := 100000
 	pending := 2
 
-	for i := 0; i < size; i++ {
+	for i := range size {
 		file := model.StagingFile{
 			WorkspaceID:   "workspace_id",
 			Location:      fmt.Sprintf("s3://bucket/path/to/file-%d", i),

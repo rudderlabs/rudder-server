@@ -43,7 +43,7 @@ func TestDelete(t *testing.T) {
 	tests := []struct {
 		name                 string
 		job                  model.Job
-		destConfig           map[string]interface{}
+		destConfig           map[string]any
 		destName             string
 		respCode             int
 		respBodyErr          error
@@ -80,7 +80,7 @@ func TestDelete(t *testing.T) {
 					},
 				},
 			},
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"bucketName":  "regulation-test-data",
 				"accessKeyID": "abc",
 				"accessKey":   "xyz",
@@ -269,10 +269,10 @@ type oauthTestCases struct {
 	expectedPayload              string
 }
 
-var defaultDestDefConfig = map[string]interface{}{
-	"auth": map[string]interface{}{
+var defaultDestDefConfig = map[string]any{
+	"auth": map[string]any{
 		"type":         "OAuth",
-		"rudderScopes": []interface{}{"delete"},
+		"rudderScopes": []any{"delete"},
 	},
 }
 
@@ -325,7 +325,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
 				Name:          "GA",
@@ -373,7 +373,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
 				Name:          "GA",
@@ -429,7 +429,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
 				Name:          "GA",
@@ -472,7 +472,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
 				Name:          "GA",
@@ -524,7 +524,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "",
 				},
 				Name:          "GA",
@@ -569,7 +569,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config:        map[string]interface{}{},
+				Config:        map[string]any{},
 				Name:          "GA",
 				DestDefConfig: defaultDestDefConfig,
 			},
@@ -605,7 +605,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
 				Name:          "GA",
@@ -656,7 +656,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 					"authStatus":            "active",
 				},
@@ -699,7 +699,7 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				DestinationID: "1234",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 					"authStatus":            "active",
 				},

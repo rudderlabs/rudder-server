@@ -18,7 +18,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "acc-1",
 							},
 						},
@@ -28,15 +28,15 @@ func TestAccountAssociations(t *testing.T) {
 			Accounts: map[string]Account{
 				"acc-1": {
 					AccountDefinitionName: "oauth-def",
-					Options:               map[string]interface{}{"key1": "value1"},
-					Secret:                map[string]interface{}{"secret1": "secretValue1"},
+					Options:               map[string]any{"key1": "value1"},
+					Secret:                map[string]any{"secret1": "secretValue1"},
 				},
 			},
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name: "oauth-def",
-					Config: map[string]interface{}{
-						"OAuth": map[string]interface{}{
+					Config: map[string]any{
+						"OAuth": map[string]any{
 							"generateOAuthToken":      true,
 							"refreshTokenInDataplane": true,
 						},
@@ -49,10 +49,10 @@ func TestAccountAssociations(t *testing.T) {
 		c.processAccountAssociations()
 
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
-		require.Equal(t, map[string]interface{}{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
-		require.Equal(t, map[string]interface{}{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
-		require.Equal(t, map[string]interface{}{
-			"OAuth": map[string]interface{}{
+		require.Equal(t, map[string]any{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
+		require.Equal(t, map[string]any{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
+		require.Equal(t, map[string]any{
+			"OAuth": map[string]any{
 				"generateOAuthToken":      true,
 				"refreshTokenInDataplane": true,
 			},
@@ -69,14 +69,14 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "acc-1",
 							},
 						},
 						{
 							Enabled: true,
 							ID:      "dest-2",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "acc-1",
 							},
 						},
@@ -86,13 +86,13 @@ func TestAccountAssociations(t *testing.T) {
 			Accounts: map[string]Account{
 				"acc-1": {
 					AccountDefinitionName: "oauth-def",
-					Options:               map[string]interface{}{"key1": "value1"},
+					Options:               map[string]any{"key1": "value1"},
 				},
 			},
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:               "oauth-def",
-					Config:             map[string]interface{}{"oauth": true},
+					Config:             map[string]any{"oauth": true},
 					AuthenticationType: "OAuth",
 				},
 			},
@@ -104,7 +104,7 @@ func TestAccountAssociations(t *testing.T) {
 			require.Equal(t, "acc-1", dest.DeliveryAccount.ID)
 			require.Equal(t, AccountDefinition{
 				Name:               "oauth-def",
-				Config:             map[string]interface{}{"oauth": true},
+				Config:             map[string]any{"oauth": true},
 				AuthenticationType: "OAuth",
 			}, *dest.DeliveryAccount.AccountDefinition)
 		}
@@ -119,7 +119,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderDeleteAccountId": "acc-1",
 							},
 						},
@@ -129,13 +129,13 @@ func TestAccountAssociations(t *testing.T) {
 			Accounts: map[string]Account{
 				"acc-1": {
 					AccountDefinitionName: "oauth-def",
-					Options:               map[string]interface{}{"key1": "value1"},
+					Options:               map[string]any{"key1": "value1"},
 				},
 			},
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{"oauth": true},
+					Config: map[string]any{"oauth": true},
 				},
 			},
 		}
@@ -145,7 +145,7 @@ func TestAccountAssociations(t *testing.T) {
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeleteAccount.ID)
 		require.Equal(t, AccountDefinition{
 			Name:   "oauth-def",
-			Config: map[string]interface{}{"oauth": true},
+			Config: map[string]any{"oauth": true},
 		}, *c.Sources[0].Destinations[0].DeleteAccount.AccountDefinition)
 	})
 
@@ -158,7 +158,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config:  map[string]interface{}{},
+							Config:  map[string]any{},
 						},
 					},
 				},
@@ -171,7 +171,7 @@ func TestAccountAssociations(t *testing.T) {
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		}
@@ -191,7 +191,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "non-existent",
 							},
 						},
@@ -206,7 +206,7 @@ func TestAccountAssociations(t *testing.T) {
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		}
@@ -225,7 +225,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "acc-1",
 							},
 						},
@@ -240,7 +240,7 @@ func TestAccountAssociations(t *testing.T) {
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		}
@@ -261,7 +261,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "acc-1",
 							},
 						},
@@ -271,14 +271,14 @@ func TestAccountAssociations(t *testing.T) {
 			Accounts: map[string]Account{
 				"acc-1": {
 					AccountDefinitionName: "", // Blank account definition name
-					Options:               map[string]interface{}{"key1": "value1"},
-					Secret:                map[string]interface{}{"secret1": "secretValue1"},
+					Options:               map[string]any{"key1": "value1"},
+					Secret:                map[string]any{"secret1": "secretValue1"},
 				},
 			},
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		}
@@ -288,8 +288,8 @@ func TestAccountAssociations(t *testing.T) {
 		// Verify the account is populated but AccountDefinition is nil
 		require.Equal(t, "acc-1", c.Sources[0].Destinations[0].DeliveryAccount.ID)
 		require.Equal(t, "", c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinitionName)
-		require.Equal(t, map[string]interface{}{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
-		require.Equal(t, map[string]interface{}{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
+		require.Equal(t, map[string]any{"key1": "value1"}, c.Sources[0].Destinations[0].DeliveryAccount.Options)
+		require.Equal(t, map[string]any{"secret1": "secretValue1"}, c.Sources[0].Destinations[0].DeliveryAccount.Secret)
 		require.Nil(t, c.Sources[0].Destinations[0].DeliveryAccount.AccountDefinition)
 
 		// Note: We can't easily test that no warning was logged without mocking the logger,
@@ -303,22 +303,22 @@ func TestAccountAssociations(t *testing.T) {
 			DeliveryAccount: &Account{
 				ID:                    "acc-1",
 				AccountDefinitionName: "oauth-def",
-				Options:               map[string]interface{}{"key1": "value1"},
-				Secret:                map[string]interface{}{"secret1": "secretValue1"},
+				Options:               map[string]any{"key1": "value1"},
+				Secret:                map[string]any{"secret1": "secretValue1"},
 				AccountDefinition: &AccountDefinition{
 					Name:               "oauth-def",
-					Config:             map[string]interface{}{"oauth": true},
+					Config:             map[string]any{"oauth": true},
 					AuthenticationType: "OAuth",
 				},
 			},
 			DeleteAccount: &Account{
 				ID:                    "acc-2",
 				AccountDefinitionName: "oauth-def",
-				Options:               map[string]interface{}{"key2": "value2"},
-				Secret:                map[string]interface{}{"secret2": "secretValue2"},
+				Options:               map[string]any{"key2": "value2"},
+				Secret:                map[string]any{"secret2": "secretValue2"},
 				AccountDefinition: &AccountDefinition{
 					Name:               "oauth-def",
-					Config:             map[string]interface{}{"oauth": true},
+					Config:             map[string]any{"oauth": true},
 					AuthenticationType: "OAuth",
 				},
 			},
@@ -342,8 +342,8 @@ func TestAccountAssociations(t *testing.T) {
 		require.Equal(t, "dest-1", destFromJSON.ID)
 		require.Equal(t, "acc-1", destFromJSON.DeliveryAccount.ID)
 		require.Equal(t, "acc-2", destFromJSON.DeleteAccount.ID)
-		require.Equal(t, map[string]interface{}{"key1": "value1"}, destFromJSON.DeliveryAccount.Options)
-		require.Equal(t, map[string]interface{}{"key2": "value2"}, destFromJSON.DeleteAccount.Options)
+		require.Equal(t, map[string]any{"key1": "value1"}, destFromJSON.DeliveryAccount.Options)
+		require.Equal(t, map[string]any{"key2": "value2"}, destFromJSON.DeleteAccount.Options)
 		require.Equal(t, "OAuth", destFromJSON.DeliveryAccount.AccountDefinition.AuthenticationType)
 		require.Equal(t, "OAuth", destFromJSON.DeleteAccount.AccountDefinition.AuthenticationType)
 	})
@@ -357,7 +357,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							Enabled: true,
 							ID:      "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "",
 							},
 						},
@@ -372,7 +372,7 @@ func TestAccountAssociations(t *testing.T) {
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		}
@@ -390,7 +390,7 @@ func TestAccountAssociations(t *testing.T) {
 					Destinations: []DestinationT{
 						{
 							ID: "dest-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderDeleteAccountId": "",
 							},
 						},
@@ -405,7 +405,7 @@ func TestAccountAssociations(t *testing.T) {
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		}
@@ -423,7 +423,7 @@ func TestAccountAssociations(t *testing.T) {
 						{
 							ID:      "dest-1",
 							Enabled: false,
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"rudderAccountId": "acc-1",
 							},
 						},
@@ -433,13 +433,13 @@ func TestAccountAssociations(t *testing.T) {
 			Accounts: map[string]Account{
 				"acc-1": {
 					AccountDefinitionName: "oauth-def",
-					Options:               map[string]interface{}{"key1": "value1"},
+					Options:               map[string]any{"key1": "value1"},
 				},
 			},
 			AccountDefinitions: map[string]AccountDefinition{
 				"oauth-def": {
 					Name:   "oauth-def",
-					Config: map[string]interface{}{"oauth": true},
+					Config: map[string]any{"oauth": true},
 				},
 			},
 		}

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -231,15 +232,15 @@ func GetTmpDir() (string, error) {
 
 // Copy copies the exported fields from src to dest
 // Used for copying the default transport
-func Copy(dst, src interface{}) {
+func Copy(dst, src any) {
 	srcV := reflect.ValueOf(src)
 	dstV := reflect.ValueOf(dst)
 
 	// First src and dst must be pointers, so that dst can be assignable.
-	if srcV.Kind() != reflect.Ptr {
+	if srcV.Kind() != reflect.Pointer {
 		panic("Copy: src must be a pointer")
 	}
-	if dstV.Kind() != reflect.Ptr {
+	if dstV.Kind() != reflect.Pointer {
 		panic("Copy: dst must be a pointer")
 	}
 	srcV = srcV.Elem()
@@ -301,9 +302,9 @@ func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	return replacedStr, nil
 }
 
-func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
+func ConvertStringInterfaceToIntArray(interfaceT any) ([]int64, error) {
 	var intArr []int64
-	if interfaceT == nil || (reflect.ValueOf(interfaceT).Kind() == reflect.Ptr && reflect.ValueOf(interfaceT).IsNil()) {
+	if interfaceT == nil || (reflect.ValueOf(interfaceT).Kind() == reflect.Pointer && reflect.ValueOf(interfaceT).IsNil()) {
 		return intArr, nil
 	}
 	typeInterface := reflect.TypeOf(interfaceT).Kind()
@@ -311,7 +312,7 @@ func ConvertStringInterfaceToIntArray(interfaceT interface{}) ([]int64, error) {
 		return intArr, errors.New("didn't receive array from transformer")
 	}
 
-	interfaceArray := interfaceT.([]interface{})
+	interfaceArray := interfaceT.([]any)
 	for _, val := range interfaceArray {
 		strVal, _ := val.(string)
 		intVal, err := strconv.ParseInt(strVal, 10, 64)
@@ -348,7 +349,7 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 	return respBody, resp.StatusCode, nil
 }
 
-func ConvertInterfaceToStringArray(input []interface{}) []string {
+func ConvertInterfaceToStringArray(input []any) []string {
 	output := make([]string, len(input))
 	for i, val := range input {
 		valString, _ := val.(string)
@@ -400,15 +401,15 @@ func MakeJSONArray(bytesArray [][]byte) []byte {
 }
 
 func SingleQuoteLiteralJoin(slice []string) string {
-	var str string
+	var str strings.Builder
 	// TODO: use strings.Join() instead
 	for index, key := range slice {
 		if index > 0 {
-			str += `, `
+			str.WriteString(`, `)
 		}
-		str += QuoteLiteral(key)
+		str.WriteString(QuoteLiteral(key))
 	}
-	return str
+	return str.String()
 }
 
 type BufferedWriter struct {
@@ -490,7 +491,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 	return count, err
 }
 
-func (GZipWriter) WriteRow(_ []interface{}) error {
+func (GZipWriter) WriteRow(_ []any) error {
 	return errors.New("not implemented")
 }
 
@@ -600,7 +601,7 @@ func FastUUID() uuid.UUID {
 	return uuid.New()
 }
 
-func HasAWSRoleARNInConfig(configMap map[string]interface{}) bool {
+func HasAWSRoleARNInConfig(configMap map[string]any) bool {
 	if configMap["iamRoleARN"] == nil {
 		return false
 	}
@@ -614,8 +615,8 @@ func HasAWSRoleARNInConfig(configMap map[string]interface{}) bool {
 	return true
 }
 
-func HasAWSKeysInConfig(config interface{}) bool {
-	configMap := config.(map[string]interface{})
+func HasAWSKeysInConfig(config any) bool {
+	configMap := config.(map[string]any)
 	if configMap["useSTSTokens"] == false {
 		return false
 	}
@@ -628,8 +629,8 @@ func HasAWSKeysInConfig(config interface{}) bool {
 	return true
 }
 
-func HasAWSRegionInConfig(config interface{}) bool {
-	configMap := config.(map[string]interface{})
+func HasAWSRegionInConfig(config any) bool {
+	configMap := config.(map[string]any)
 	if configMap["region"] == nil || configMap["region"].(string) == "" {
 		return false
 	}
@@ -648,9 +649,9 @@ func GetRegionHint() string {
 	return config.GetString("AWS_S3_REGION_HINT", "us-east-1")
 }
 
-func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]interface{}) {
+func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]any) {
 	// TODO: add error log if s3 keys are not available
-	storageConfig = make(map[string]interface{})
+	storageConfig = make(map[string]any)
 	storageConfig["bucketName"] = config.GetString("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
 	storageConfig["accessKeyID"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
 	storageConfig["accessKey"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
@@ -664,7 +665,7 @@ func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[stri
 	return storageConfig
 }
 
-func IsConfiguredToUseRudderObjectStorage(storageConfig map[string]interface{}) bool {
+func IsConfiguredToUseRudderObjectStorage(storageConfig map[string]any) bool {
 	if boolInterface, ok := storageConfig["useRudderStorage"]; ok {
 		if b, ok := boolInterface.(bool); ok {
 			return b
@@ -675,22 +676,20 @@ func IsConfiguredToUseRudderObjectStorage(storageConfig map[string]interface{}) 
 
 type ObjectStorageOptsT struct {
 	Provider                    string
-	Config                      interface{}
+	Config                      any
 	UseRudderStorage            bool
 	RudderStoragePrefixOverride string
 	WorkspaceID                 string
 }
 
-func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
-	objectStorageConfigMap := opts.Config.(map[string]interface{})
+func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
+	objectStorageConfigMap := opts.Config.(map[string]any)
 	if opts.UseRudderStorage {
 		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
 	}
 	if opts.Provider == "S3" {
-		clonedObjectStorageConfig := make(map[string]interface{})
-		for k, v := range objectStorageConfigMap {
-			clonedObjectStorageConfig[k] = v
-		}
+		clonedObjectStorageConfig := make(map[string]any)
+		maps.Copy(clonedObjectStorageConfig, objectStorageConfigMap)
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
 		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
 			!HasAWSKeysInConfig(objectStorageConfigMap) {
@@ -703,7 +702,7 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 }
 
 // GetParsedTimestamp returns the parsed timestamp
-func GetParsedTimestamp(input interface{}) (time.Time, bool) {
+func GetParsedTimestamp(input any) (time.Time, bool) {
 	var parsedTimestamp time.Time
 	var valid bool
 	if timestampStr, typecasted := input.(string); typecasted {
@@ -718,16 +717,16 @@ func GetParsedTimestamp(input interface{}) (time.Time, bool) {
 
 // GetTagName gets the tag name using a uuid and name
 func GetTagName(id string, names ...string) string {
-	var truncatedNames string
+	var truncatedNames strings.Builder
 	for _, name := range names {
 		name = strings.ReplaceAll(name, ":", "-")
-		truncatedNames += TruncateStr(name, 15) + "_"
+		truncatedNames.WriteString(TruncateStr(name, 15) + "_")
 	}
-	return truncatedNames + TailTruncateStr(id, 6)
+	return truncatedNames.String() + TailTruncateStr(id, 6)
 }
 
 // UpdateJSONWithNewKeyVal enhances the json passed with key, val
-func UpdateJSONWithNewKeyVal(params []byte, key string, val interface{}) []byte {
+func UpdateJSONWithNewKeyVal(params []byte, key string, val any) []byte {
 	updatedParams, err := sjson.SetBytes(params, key, val)
 	if err != nil {
 		return params
@@ -783,10 +782,10 @@ func (e *MapLookupError) Error() string {
 // Returns: (Exactly one of these will be nil)
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
-func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapLookupError) {
-	var lookupWithLevel func(map[string]interface{}, int, ...string) (interface{}, *MapLookupError)
+func NestedMapLookup(m map[string]any, ks ...string) (any, *MapLookupError) {
+	var lookupWithLevel func(map[string]any, int, ...string) (any, *MapLookupError)
 
-	lookupWithLevel = func(searchMap map[string]interface{}, level int, keys ...string) (rval interface{}, err *MapLookupError) {
+	lookupWithLevel = func(searchMap map[string]any, level int, keys ...string) (rval any, err *MapLookupError) {
 		var ok bool
 		if len(keys) == 0 { // degenerate input
 			return nil, &MapLookupError{Err: fmt.Errorf("NestedMapLookup needs at least one key"), Level: level}
@@ -795,7 +794,7 @@ func NestedMapLookup(m map[string]interface{}, ks ...string) (interface{}, *MapL
 			return nil, &MapLookupError{Err: fmt.Errorf("key: %v not found", keys[0]), SearchKey: keys[0], Level: level}
 		} else if len(keys) == 1 { // we've reached the final key
 			return rval, nil
-		} else if searchMap, ok = rval.(map[string]interface{}); !ok {
+		} else if searchMap, ok = rval.(map[string]any); !ok {
 			return nil, &MapLookupError{Err: fmt.Errorf("malformed structure at %#v", rval), SearchKey: keys[0], Level: level}
 		}
 		// 1+ more keys
@@ -832,7 +831,7 @@ func Unique(stringSlice []string) []string {
 // MapLookup returns the value of the key in the map, or nil if the key is not present.
 //
 // If multiple keys are provided then it looks for nested maps recursively.
-func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
+func MapLookup(mapToLookup map[string]any, keys ...string) any {
 	if len(keys) == 0 {
 		return nil
 	}
@@ -840,7 +839,7 @@ func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
 		if len(keys) == 1 {
 			return val
 		}
-		nextMap, ok := val.(map[string]interface{})
+		nextMap, ok := val.(map[string]any)
 		if !ok {
 			return nil
 		}
@@ -851,9 +850,7 @@ func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
 
 func CopyStringMap(originalMap map[string]string) map[string]string {
 	newMap := make(map[string]string)
-	for key, value := range originalMap {
-		newMap[key] = value
-	}
+	maps.Copy(newMap, originalMap)
 	return newMap
 }
 

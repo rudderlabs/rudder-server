@@ -81,14 +81,14 @@ type AsyncPoll struct {
 }
 
 type AsyncJob struct {
-	Message  map[string]interface{} `json:"message"`
-	Metadata map[string]interface{} `json:"metadata"`
+	Message  map[string]any `json:"message"`
+	Metadata map[string]any `json:"metadata"`
 }
 
 type AsyncUploadT struct {
-	Config   map[string]interface{} `json:"config"`
-	Input    []AsyncJob             `json:"input"`
-	DestType string                 `json:"destType"`
+	Config   map[string]any `json:"config"`
+	Input    []AsyncJob     `json:"input"`
+	DestType string         `json:"destType"`
 }
 
 type MetaDataT struct {
@@ -153,7 +153,7 @@ func GetMarshalledData(payload string, jobID int64) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	asyncJob.Metadata = make(map[string]interface{})
+	asyncJob.Metadata = make(map[string]any)
 	asyncJob.Metadata["job_id"] = jobID
 	responsePayload, err := jsonrs.Marshal(asyncJob)
 	if err != nil {

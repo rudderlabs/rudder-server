@@ -646,7 +646,7 @@ func (sf *Snowflake) copyInto(
 	for rows.Next() {
 		resultSet := make([]any, len(columns))
 		resultSetPtrs := make([]any, len(columns))
-		for i := 0; i < len(columns); i++ {
+		for i := range columns {
 			resultSetPtrs[i] = &resultSet[i]
 		}
 
@@ -865,8 +865,8 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		userColNames        []string
 		firstValProps       []string
 		identifyColNames    []string
-		columnsWithValues   string
-		stagingColumnValues string
+		columnsWithValues   strings.Builder
+		stagingColumnValues strings.Builder
 		inserted            int64
 		updated             int64
 	)
@@ -1004,11 +1004,11 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 	)
 
 	for idx, colName := range columnNames {
-		columnsWithValues += fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName)
-		stagingColumnValues += fmt.Sprintf(`staging.%s`, colName)
+		columnsWithValues.WriteString(fmt.Sprintf(`original.%[1]s = staging.%[1]s`, colName))
+		stagingColumnValues.WriteString(fmt.Sprintf(`staging.%s`, colName))
 		if idx != len(columnNames)-1 {
-			columnsWithValues += `,`
-			stagingColumnValues += `,`
+			columnsWithValues.WriteString(`,`)
+			stagingColumnValues.WriteString(`,`)
 		}
 	}
 
@@ -1023,8 +1023,8 @@ func (sf *Snowflake) LoadUserTables(ctx context.Context) map[string]error {
 		stagingTableName,
 		columnNamesStr,
 		primaryKey,
-		columnsWithValues,
-		stagingColumnValues,
+		columnsWithValues.String(),
+		stagingColumnValues.String(),
 		schemaIdentifier,
 	)
 
@@ -1454,7 +1454,7 @@ func (sf *Snowflake) Connect(ctx context.Context, warehouse model.Warehouse) (cl
 }
 
 func (sf *Snowflake) TestLoadTable(
-	ctx context.Context, location, tableName string, _ map[string]interface{}, _ string,
+	ctx context.Context, location, tableName string, _ map[string]any, _ string,
 ) error {
 	authString, err := sf.authString()
 	if err != nil {

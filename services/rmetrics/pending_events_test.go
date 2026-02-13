@@ -30,13 +30,13 @@ func TestPendingEventsRegistry(t *testing.T) {
 		r.DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID, 1)
 		require.EqualValues(t, 1, r.PendingEvents(tablePrefix, workspaceID, destType, destinationID).IntValue())
 
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
 		r.Publish()
 		var metricsCount int
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			metricsCount++
 			return true
 		})
@@ -44,7 +44,7 @@ func TestPendingEventsRegistry(t *testing.T) {
 		r.Publish() // should be a no-op
 
 		r.Reset()
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
@@ -52,13 +52,13 @@ func TestPendingEventsRegistry(t *testing.T) {
 		r.IncreasePendingEvents(tablePrefix, workspaceID, destType, destinationID, 2)
 		r.IncreasePendingEvents(tablePrefix, workspaceID, destType, destinationID1, 1)
 		r.DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID, 1)
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
 		r.Publish()
 		metricsCount = 0
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			metricsCount++
 			return true
 		})
@@ -72,25 +72,25 @@ func TestPendingEventsRegistry(t *testing.T) {
 		r.DecreasePendingEvents(tablePrefix, workspaceID, destType, destinationID, 1)
 		require.EqualValues(t, 0, r.PendingEvents(tablePrefix, workspaceID, destType, destinationID).IntValue())
 		var metricsCount int
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			metricsCount++
 			return true
 		})
 		require.Equal(t, 5, metricsCount, "for each pending event, 3 gauges are created, plus 2 aggregate gauges")
 		r.Publish() // should be a no-op
 		r.Reset()
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
 		r.IncreasePendingEvents(tablePrefix, workspaceID, destType, destinationID, 1)
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			require.FailNow(t, "unexpected metric in published metrics")
 			return false
 		})
 		r.Publish()
 		metricsCount = 0
-		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
+		mi.GetRegistry(metric.PublishedMetrics).Range(func(key, value any) bool {
 			metricsCount++
 			return true
 		})

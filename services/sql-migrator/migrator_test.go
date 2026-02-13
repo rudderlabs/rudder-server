@@ -46,21 +46,21 @@ func TestMigrate(t *testing.T) {
 			}
 			var err error
 			if strings.HasPrefix(dir, "reports_always") {
-				err = m.MigrateFromTemplates("reports_always", map[string]interface{}{
+				err = m.MigrateFromTemplates("reports_always", map[string]any{
 					"config": config.Default,
 				})
 			} else if strings.HasPrefix(dir, "warehouse_always") {
 				conf := config.New()
 				conf.Set("PgNotifier.enableLz4Compression", true)
 				conf.Set("PgNotifier.enableJsonbToText", true)
-				err = m.MigrateFromTemplates("warehouse_always", map[string]interface{}{
+				err = m.MigrateFromTemplates("warehouse_always", map[string]any{
 					"config": conf,
 				})
 			} else if strings.HasPrefix(dir, "pg_notifier_queue_always") {
 				conf := config.New()
 				conf.Set("Warehouse.enableLz4Compression", true)
 				conf.Set("Warehouse.enableJsonbToText", true)
-				err = m.MigrateFromTemplates("pg_notifier_queue_always", map[string]interface{}{
+				err = m.MigrateFromTemplates("pg_notifier_queue_always", map[string]any{
 					"config": conf,
 				})
 			} else {
@@ -72,7 +72,7 @@ func TestMigrate(t *testing.T) {
 
 	t.Run("validate if autovacuum_vacuum_cost_limit is being set", func(t *testing.T) {
 		query := "select reloptions from pg_class where relname = 'reports';"
-		var value interface{}
+		var value any
 		require.NoError(t, postgre.DB.QueryRow(query).Scan(&value))
 		require.Nil(t, value) // value should be nil if config is not set
 		config.Set("Reporting.autoVacuumCostLimit", 300)
@@ -81,7 +81,7 @@ func TestMigrate(t *testing.T) {
 			Handle:          postgre.DB,
 			RunAlways:       true,
 		}
-		require.NoError(t, m.MigrateFromTemplates("reports_always", map[string]interface{}{
+		require.NoError(t, m.MigrateFromTemplates("reports_always", map[string]any{
 			"config": config.Default,
 		}))
 		var costLimit string

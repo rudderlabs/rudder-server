@@ -34,4 +34,4 @@ type Metadata struct {
 	MergePropTwo string            `json:"mergePropTwo"`
 }
 
-type Data map[string]interface{}
+type Data map[string]any

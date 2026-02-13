@@ -19,7 +19,7 @@ func TestDestination(t *testing.T) {
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
-	config := map[string]interface{}{
+	config := map[string]any{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
 		"accessKeyID": "xyz",
@@ -38,7 +38,7 @@ func TestDestination(t *testing.T) {
 						ID:     destinationID,
 						Config: config,
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"randomKey": "randomValue",
 							},
 							Name: "S3",
@@ -96,7 +96,7 @@ func TestDestination(t *testing.T) {
 
 	expectedDestinationDetail := model.Destination{
 		Config: config,
-		DestDefConfig: map[string]interface{}{
+		DestDefConfig: map[string]any{
 			"randomKey": "randomValue",
 		},
 		DestinationID: destinationID,

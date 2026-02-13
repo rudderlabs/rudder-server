@@ -12,7 +12,7 @@ import (
 func TestContainsPattern(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    map[string]interface{}
+		input    map[string]any
 		expected bool
 	}{
 		{
@@ -22,15 +22,15 @@ func TestContainsPattern(t *testing.T) {
 		},
 		{
 			name: "simple pattern",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"key": "{{ path.to.value || \"default\" }}",
 			},
 			expected: true,
 		},
 		{
 			name: "nested map with pattern",
-			input: map[string]interface{}{
-				"outer": map[string]interface{}{
+			input: map[string]any{
+				"outer": map[string]any{
 					"inner": "{{ path.to.value || \"default\" }}",
 				},
 			},
@@ -38,9 +38,9 @@ func TestContainsPattern(t *testing.T) {
 		},
 		{
 			name: "array of objects with pattern",
-			input: map[string]interface{}{
-				"items": []interface{}{
-					map[string]interface{}{
+			input: map[string]any{
+				"items": []any{
+					map[string]any{
 						"name": "{{ item.name || \"unnamed\" }}",
 					},
 				},
@@ -49,8 +49,8 @@ func TestContainsPattern(t *testing.T) {
 		},
 		{
 			name: "array with string element containing pattern",
-			input: map[string]interface{}{
-				"items": []interface{}{
+			input: map[string]any{
+				"items": []any{
 					"normal string",
 					"{{ item.value || \"default\" }}",
 				},
@@ -59,16 +59,16 @@ func TestContainsPattern(t *testing.T) {
 		},
 		{
 			name: "pattern with number as default value",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"timeout": "{{ message.traits.key || 1233 }}",
 			},
 			expected: true,
 		},
 		{
 			name: "no patterns",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"key": "normal string",
-				"nested": map[string]interface{}{
+				"nested": map[string]any{
 					"inner": 123,
 				},
 			},
@@ -86,7 +86,7 @@ func TestContainsPattern(t *testing.T) {
 
 // Benchmark checking if a map contains a pattern (optimized version)
 func BenchmarkContainsPattern_SinglePattern(b *testing.B) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"key": "{{ path.to.value || \"default\" }}",
 	}
 
@@ -98,18 +98,18 @@ func BenchmarkContainsPattern_SinglePattern(b *testing.B) {
 
 // Benchmark checking if a complex nested map contains a pattern
 func BenchmarkContainsPattern_ComplexMap(b *testing.B) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"key1": "{{ path1 || \"default1\" }}",
 		"key2": "normal string",
-		"nested": map[string]interface{}{
+		"nested": map[string]any{
 			"inner1": "{{ path2 || \"default2\" }}",
 			"inner2": 123,
-			"deepNested": map[string]interface{}{
+			"deepNested": map[string]any{
 				"deep": "{{ path3 || \"default3\" }}",
 			},
 		},
-		"array": []interface{}{
-			map[string]interface{}{
+		"array": []any{
+			map[string]any{
 				"item1": "{{ path4 || \"default4\" }}",
 			},
 			"{{ path5 || \"default5\" }}",
@@ -124,18 +124,18 @@ func BenchmarkContainsPattern_ComplexMap(b *testing.B) {
 
 // Benchmark checking if a map with no patterns contains a pattern
 func BenchmarkContainsPattern_NoPatterns(b *testing.B) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"key1": "normal string 1",
 		"key2": "normal string 2",
-		"nested": map[string]interface{}{
+		"nested": map[string]any{
 			"inner1": "normal string 3",
 			"inner2": 123,
-			"deepNested": map[string]interface{}{
+			"deepNested": map[string]any{
 				"deep": "normal string 4",
 			},
 		},
-		"array": []interface{}{
-			map[string]interface{}{
+		"array": []any{
+			map[string]any{
 				"item1": "normal string 5",
 			},
 			"normal string 6",

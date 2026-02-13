@@ -295,11 +295,11 @@ func TestCreateCSVFile(t *testing.T) {
 			},
 			input: []common.AsyncJob{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"email": "test@example.com",
 						"name":  "Test User",
 					},
-					Metadata: map[string]interface{}{
+					Metadata: map[string]any{
 						"job_id": float64(1),
 					},
 				},
@@ -416,13 +416,13 @@ func TestCreateCSVFile(t *testing.T) {
 // Helper function to create large input data for overflow testing
 func createLargeInputData(count int) []common.AsyncJob {
 	var result []common.AsyncJob
-	for i := 0; i < count; i++ {
+	for i := range count {
 		job := common.AsyncJob{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"email":    fmt.Sprintf("test%d@example.com", i),
 				"fullName": strings.Repeat("Very long name ", 1000), // Create large content
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(i + 1),
 			},
 		}
@@ -462,20 +462,20 @@ func TestReadJobsFromFile(t *testing.T) {
 
 	// Sample jobs for testing
 	job1 := common.AsyncJob{
-		Message: map[string]interface{}{
+		Message: map[string]any{
 			"email": "test1@example.com",
 			"name":  "Test User 1",
 		},
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"job_id": float64(1),
 		},
 	}
 	job2 := common.AsyncJob{
-		Message: map[string]interface{}{
+		Message: map[string]any{
 			"email": "test2@example.com",
 			"name":  "Test User 2",
 		},
-		Metadata: map[string]interface{}{
+		Metadata: map[string]any{
 			"job_id": float64(2),
 		},
 	}
@@ -619,13 +619,13 @@ func TestReadJobsFromFile(t *testing.T) {
 	// Test very large file simulation
 	t.Run("Large file with many jobs", func(t *testing.T) {
 		var lines []string
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			job := common.AsyncJob{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"email": fmt.Sprintf("test%d@example.com", i),
 					"name":  fmt.Sprintf("Test User %d", i),
 				},
-				Metadata: map[string]interface{}{
+				Metadata: map[string]any{
 					"job_id": float64(i),
 				},
 			}

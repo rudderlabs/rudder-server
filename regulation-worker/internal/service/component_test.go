@@ -105,13 +105,13 @@ func TestOAuthV2Integration(t *testing.T) {
 			destinationID: {
 				DestinationID: destinationID,
 				Name:          "GA",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderDeleteAccountId": accountID,
 				},
-				DestDefConfig: map[string]interface{}{
-					"auth": map[string]interface{}{
+				DestDefConfig: map[string]any{
+					"auth": map[string]any{
 						"type":         "OAuth",
-						"rudderScopes": []interface{}{"delete"},
+						"rudderScopes": []any{"delete"},
 					},
 				},
 			},
@@ -135,9 +135,9 @@ func TestNonOAuthIntegration(t *testing.T) {
 			destinationID: {
 				DestinationID: destinationID,
 				Name:          "GA",
-				Config:        map[string]interface{}{},
-				DestDefConfig: map[string]interface{}{
-					"auth": map[string]interface{}{
+				Config:        map[string]any{},
+				DestDefConfig: map[string]any{
+					"auth": map[string]any{
 						"type": "apiKey", // Not OAuth
 					},
 				},

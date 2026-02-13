@@ -168,7 +168,7 @@ func (producer *GooglePubSubProducer) publishWithRetry(ctx context.Context, topi
 	return serverID, err
 }
 
-func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ any) (statusCode int, respStatus, responseMessage string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	pbs := producer.client
 	if pbs == nil {
@@ -179,7 +179,7 @@ func (producer *GooglePubSubProducer) Produce(jsonData json.RawMessage, _ interf
 	ctx, cancel := context.WithTimeout(context.Background(), pbs.opts.Timeout)
 	defer cancel()
 
-	var data interface{}
+	var data any
 	if parsedJSON.Get("message").Value() != nil {
 		data = parsedJSON.Get("message").Value()
 	} else {

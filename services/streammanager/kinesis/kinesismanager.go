@@ -53,7 +53,7 @@ func parseKinesisError(err error) (int, string, string) {
 }
 
 // Produce creates a producer and send data to Kinesis.
-func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig any) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Could not create producer for Kinesis", "Could not create producer for Kinesis"

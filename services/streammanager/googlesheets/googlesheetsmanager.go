@@ -116,7 +116,7 @@ func (p *GoogleSheetsProducer) updateHeader() error {
 	return nil
 }
 
-func (p *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (p *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ any) (statusCode int, respStatus, responseMessage string) {
 	if p.client == nil {
 		respStatus = "Failure"
 		responseMessage = "[GoogleSheets] error  :: Failed to initialize google-sheets client"
@@ -156,7 +156,7 @@ func (p *GoogleSheetsProducer) Produce(jsonData json.RawMessage, _ interface{}) 
 
 // insertHeaderDataToSheet inserts header data.
 // Returns error for failure cases of API calls otherwise returns nil
-func (p *GoogleSheetsProducer) insertHeaderDataToSheet(data []interface{}) error {
+func (p *GoogleSheetsProducer) insertHeaderDataToSheet(data []any) error {
 	// Creating value range for inserting row into sheet
 	var vr sheets.ValueRange
 	vr.MajorDimension = "ROWS"
@@ -174,7 +174,7 @@ func (p *GoogleSheetsProducer) insertHeaderDataToSheet(data []interface{}) error
 
 // insertRowDataToSheet appends row data list.
 // Returns error for failure cases of API calls otherwise returns nil
-func (p *GoogleSheetsProducer) insertRowDataToSheet(dataList [][]interface{}) error {
+func (p *GoogleSheetsProducer) insertRowDataToSheet(dataList [][]any) error {
 	// Creating value range for inserting row into sheet
 	vr := sheets.ValueRange{
 		MajorDimension: "ROWS",
@@ -225,16 +225,16 @@ func (p *GoogleSheetsProducer) insertRowDataToSheet(dataList [][]interface{}) er
 //				}
 //			]
 //	}
-func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
+func parseTransformedData(source gjson.Result) ([][]any, error) {
 	batch := source.Get("batch")
 	messages := batch.Array()
 	if len(messages) == 0 {
 		messages = append(messages, source)
 	}
-	var valueList [][]interface{}
+	var valueList [][]any
 	for _, messageElement := range messages {
 		messagefields := messageElement.Get("message")
-		values := make([]interface{}, len(messagefields.Map()))
+		values := make([]any, len(messagefields.Map()))
 		var pos int
 		var err error
 		if messagefields.IsObject() {
@@ -262,8 +262,8 @@ func parseTransformedData(source gjson.Result) ([][]interface{}, error) {
 
 // getSheetsData is used to parse a string array to an interface array for compatibility
 // with sheets-api
-func getSheetsData(typedata []string) []interface{} {
-	data := make([]interface{}, len(typedata))
+func getSheetsData(typedata []string) []any {
+	data := make([]any, len(typedata))
 	for key, value := range typedata {
 		data[key] = value
 	}

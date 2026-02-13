@@ -5,7 +5,7 @@ type userAttributesSchema map[string]string
 type apiDeletionPayloadSchema struct {
 	JobID          string                 `json:"jobId"`
 	DestType       string                 `json:"destType"`
-	Config         map[string]interface{} `json:"config"`
+	Config         map[string]any         `json:"config"`
 	UserAttributes []userAttributesSchema `json:"userAttributes"`
 }
 

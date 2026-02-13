@@ -10,7 +10,7 @@ import (
 func TestCacheEntry(t *testing.T) {
 	t.Run("AddToken", func(t *testing.T) {
 		e := cacheEntry{}
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			e.AddToken(fmt.Sprintf("token-%d", i))
 			require.Len(t, e.tokens, i+1)
 		}
@@ -30,7 +30,7 @@ func TestCacheEntry(t *testing.T) {
 
 	t.Run("Tokens limit reached", func(t *testing.T) {
 		e := cacheEntry{}
-		for i := 0; i < 14; i++ { // add 14 tokens
+		for i := range 14 { // add 14 tokens
 			e.AddToken(fmt.Sprintf("token-%d", i))
 		}
 

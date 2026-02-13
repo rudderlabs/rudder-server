@@ -96,9 +96,7 @@ func main() {
 			case maxNoOfRoutines <- struct{}{}:
 			}
 
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				defer func() { <-maxNoOfRoutines }()
 				defer func() { atomic.AddInt32(&numberOfRequests, 1) }()
 				_, _, err := l.Allow(ctx, 1, rate, window, key)
@@ -108,7 +106,7 @@ func main() {
 					}
 					return
 				}
-			}()
+			})
 		}
 	}
 }

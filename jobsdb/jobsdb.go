@@ -191,7 +191,7 @@ func (h *HandleInspector) DSIndicesList() []string {
 }
 
 // MoreToken is a token that can be used to fetch more jobs
-type MoreToken interface{}
+type MoreToken any
 
 // MoreJobsResult is a JobsResult with a MoreToken
 type MoreJobsResult struct {
@@ -973,7 +973,7 @@ func (jd *Handle) init() {
 				if writer && jd.conf.clearAll {
 					jd.dropDatabaseTables(l)
 				}
-				templateData := func() map[string]interface{} {
+				templateData := func() map[string]any {
 					// Important: if jobsdb type is acting as a writer then refreshDSList
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
@@ -1531,7 +1531,7 @@ func (jd *Handle) doComputeNewIdxForAppend(dList []dataSetT) string {
 }
 
 type transactionHandler interface {
-	Exec(string, ...interface{}) (sql.Result, error)
+	Exec(string, ...any) (sql.Result, error)
 	Prepare(query string) (*sql.Stmt, error)
 	// If required, add other definitions that are common between *sql.DB and *sql.Tx
 	// Never include Commit and Rollback in this interface
@@ -2002,7 +2002,6 @@ FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 	}
 	g.SetLimit(conc)
 	for _, ds := range dsList {
-		ds := ds
 		g.Go(func() error {
 			rows, err := jd.getDB(ctx).QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
 				cutoffTime,
@@ -2127,10 +2126,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 
 		defer func() { _ = stmt.Close() }()
 		for _, job := range jobList {
-			eventCount := 1
-			if job.EventCount > 1 {
-				eventCount = job.EventCount
-			}
+			eventCount := max(job.EventCount, 1)
 			// Assign partition ID if not already assigned
 			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
 				job.PartitionID = jd.conf.partitionFunction(job)

@@ -63,8 +63,7 @@ func TestAdaptiveRateLimit(t *testing.T) {
 			return floatCheck(al.LimitFactor(), float64(0.7))
 		}, time.Second, 100*time.Millisecond) // reduces by 30% since there is an error in the last 1 second
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 		go func(context.Context) {
 			for {
 				select {

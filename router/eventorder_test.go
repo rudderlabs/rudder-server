@@ -312,9 +312,9 @@ func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
 	s.doneOrdered = map[string][]int{}
 
 	var idx int
-	for u := 0; u < users; u++ {
+	for range users {
 		userID := trand.String(27)
-		for i := 0; i < jobsPerUser; i++ {
+		for range jobsPerUser {
 			jobID := idx + 1
 
 			var statuses []int
@@ -423,7 +423,7 @@ func (eventOrderMethods) splitInBatches(jobs []*eventOrderJobSpec, batchSize int
 		userBatches = append(userBatches, userPayloads)
 		var userJsonBatches [][]byte
 		for _, batch := range userBatches {
-			userJsonBatches = append(userJsonBatches, []byte(fmt.Sprintf(`{"batch":[%s]}`, strings.Join(batch, ","))))
+			userJsonBatches = append(userJsonBatches, fmt.Appendf(nil, `{"batch":[%s]}`, strings.Join(batch, ",")))
 		}
 		batches[userID] = userJsonBatches
 	}

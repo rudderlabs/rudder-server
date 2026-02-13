@@ -267,7 +267,7 @@ func TestErrorIndexReporter(t *testing.T) {
 					require.Equal(t, eventPayload.FailedAt, tc.expectedPayload[i].FailedAt)
 					require.Equal(t, eventPayload.ReceivedAt, tc.expectedPayload[i].ReceivedAt)
 
-					var params map[string]interface{}
+					var params map[string]any
 					err = jsonrs.Unmarshal(job.Parameters, &params)
 					require.NoError(t, err)
 

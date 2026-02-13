@@ -46,7 +46,6 @@ func (jd *Handle) deleteJobStatus() {
 		dsList := jd.getDSList()
 
 		for _, ds := range dsList {
-			ds := ds
 			if err := jd.deleteJobStatusDSInTx(tx.SqlTx(), ds); err != nil {
 				return err
 			}
@@ -106,7 +105,6 @@ func (jd *Handle) failExecuting() {
 		dsList := jd.getDSList()
 
 		for _, ds := range dsList {
-			ds := ds
 			err := jd.failExecutingDSInTx(tx.SqlTx(), ds)
 			if err != nil {
 				return err

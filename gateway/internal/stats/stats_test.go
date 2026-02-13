@@ -16,18 +16,18 @@ import (
 func TestReport(t *testing.T) {
 	// populate some SourceStats
 	statMap := make(map[string]*SourceStat)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		getSourceStat(statMap, fmt.Sprint(i))
 	}
 
 	// populate some request, event counts
 	// keep track using some counters
 	counterMap := make(map[string]*counter)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		counterMap[fmt.Sprint(i)] = &counter{}
 	}
 	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		sourceTag := fmt.Sprint(i)
 		sourceStat := statMap[sourceTag]
 
@@ -86,7 +86,7 @@ func TestReport(t *testing.T) {
 	}
 
 	// check
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		sourceTag := fmt.Sprint(i)
 		tags := map[string]string{
 			"source":        statMap[sourceTag].Source,

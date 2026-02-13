@@ -9,7 +9,7 @@ import (
 
 type jsonLoader struct {
 	destType   string
-	columnData map[string]interface{}
+	columnData map[string]any
 	fileWriter LoadFileWriter
 }
 
@@ -17,7 +17,7 @@ type jsonLoader struct {
 // If more warehouses are added in the future, change this accordingly.
 func newJSONLoader(writer LoadFileWriter, destType string) *jsonLoader {
 	loader := &jsonLoader{destType: destType, fileWriter: writer}
-	loader.columnData = make(map[string]interface{})
+	loader.columnData = make(map[string]any)
 
 	return loader
 }
@@ -38,7 +38,7 @@ func (loader *jsonLoader) GetLoadTimeFormat(columnName string) string {
 	}
 }
 
-func (loader *jsonLoader) AddColumn(columnName, _ string, val interface{}) {
+func (loader *jsonLoader) AddColumn(columnName, _ string, val any) {
 	providerColumnName := warehouseutils.ToProviderCase(loader.destType, columnName)
 	loader.columnData[providerColumnName] = val
 }

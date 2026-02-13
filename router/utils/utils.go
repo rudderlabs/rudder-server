@@ -51,24 +51,24 @@ type SendPostResponse struct {
 }
 
 type JobParameters struct {
-	SourceID                string      `json:"source_id"`
-	DestinationID           string      `json:"destination_id"`
-	ReceivedAt              string      `json:"received_at"`
-	TransformAt             string      `json:"transform_at"`
-	SourceTaskRunID         string      `json:"source_task_run_id"`
-	SourceJobID             string      `json:"source_job_id"`
-	SourceJobRunID          string      `json:"source_job_run_id"`
-	SourceDefinitionID      string      `json:"source_definition_id"`
-	DestinationDefinitionID string      `json:"destination_definition_id"`
-	SourceCategory          string      `json:"source_category"`
-	RecordID                interface{} `json:"record_id"`
-	MessageID               string      `json:"message_id"`
-	EventName               string      `json:"event_name"`
-	EventType               string      `json:"event_type"`
-	WorkspaceID             string      `json:"workspaceId"`
-	RudderAccountID         string      `json:"rudderAccountId"`
-	DontBatch               bool        `json:"dontBatch"`
-	TraceParent             string      `json:"traceparent"`
+	SourceID                string `json:"source_id"`
+	DestinationID           string `json:"destination_id"`
+	ReceivedAt              string `json:"received_at"`
+	TransformAt             string `json:"transform_at"`
+	SourceTaskRunID         string `json:"source_task_run_id"`
+	SourceJobID             string `json:"source_job_id"`
+	SourceJobRunID          string `json:"source_job_run_id"`
+	SourceDefinitionID      string `json:"source_definition_id"`
+	DestinationDefinitionID string `json:"destination_definition_id"`
+	SourceCategory          string `json:"source_category"`
+	RecordID                any    `json:"record_id"`
+	MessageID               string `json:"message_id"`
+	EventName               string `json:"event_name"`
+	EventType               string `json:"event_type"`
+	WorkspaceID             string `json:"workspaceId"`
+	RudderAccountID         string `json:"rudderAccountId"`
+	DontBatch               bool   `json:"dontBatch"`
+	TraceParent             string `json:"traceparent"`
 }
 
 // ParseReceivedAtTime parses the [ReceivedAt] field and returns the parsed time or a zero value time if parsing fails

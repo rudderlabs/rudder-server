@@ -15,20 +15,20 @@ import (
 
 func TestRemoveIdentityRecordsByUserId(t *testing.T) {
 	handler := NewParquetLocalFileHandler()
-	handler.records = []interface{}{
+	handler.records = []any{
 		struct {
 			User_id          *string
 			Context_app_name *string
 		}{
-			User_id:          getStringPtr("my-user-id"),
-			Context_app_name: getStringPtr("my-app-name"),
+			User_id:          new("my-user-id"),
+			Context_app_name: new("my-app-name"),
 		},
 		struct {
 			User_id          *string
 			Context_app_name *string
 		}{
-			User_id:          getStringPtr("my-another-user-id"),
-			Context_app_name: getStringPtr("my-app-name"),
+			User_id:          new("my-another-user-id"),
+			Context_app_name: new("my-app-name"),
 		},
 	}
 
@@ -103,8 +103,4 @@ func sameFiles(file1, file2 string) (bool, error) {
 	}
 
 	return bytes.Equal(byt1, byt2), nil
-}
-
-func getStringPtr(val string) *string {
-	return &val
 }

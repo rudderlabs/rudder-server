@@ -200,7 +200,7 @@ func (pg *Postgres) loadDataIntoStagingTable(
 			)
 		}
 
-		recordInterface := make([]interface{}, 0, len(record))
+		recordInterface := make([]any, 0, len(record))
 		for _, value := range record {
 			if strings.TrimSpace(value) == "" {
 				recordInterface = append(recordInterface, nil)

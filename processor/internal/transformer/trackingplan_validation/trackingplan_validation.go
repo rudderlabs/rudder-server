@@ -305,7 +305,7 @@ func (t *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	)
 	if err != nil {
 		if t.config.failOnError.Load() {
-			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
+			return fmt.Appendf(nil, "transformer request failed: %s", err), transformerutils.TransformerRequestFailure, nil
 		} else {
 			return nil, 0, err
 		}

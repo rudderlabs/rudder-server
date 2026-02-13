@@ -107,7 +107,7 @@ var (
 				SourceID:         sourceIDEnabled,
 				DestinationID:    gaDestinationID,
 				ProcessorEnabled: true,
-				Config:           map[string]interface{}{"key": "value"},
+				Config:           map[string]any{"key": "value"},
 			},
 		},
 	}
@@ -625,7 +625,7 @@ var _ = Describe("router", func() {
 				close(done)
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", `{"content-type":"","response": "","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
@@ -709,7 +709,7 @@ var _ = Describe("router", func() {
 			}).Return(nil)
 
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Aborted.State, "400", `{"content-type":"","response":"","firstAttemptedAt":"2021-06-28T15:57:30.742+05:30"}`, 1)
 				})
 
@@ -910,15 +910,15 @@ var _ = Describe("router", func() {
 						AttemptNum:    router.reloadableConfig.maxFailedCountForJob.Load(),
 						JobState:      jobsdb.Failed.State,
 						ErrorCode:     "500",
-						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
+						ErrorResponse: fmt.Appendf(nil, `{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli)),
 					},
-					Parameters: []byte(fmt.Sprintf(`{
+					Parameters: fmt.Appendf(nil, `{
 						"source_id": "%s",
 						"destination_id": "%s",
 						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
 						"received_at": "%s",
 						"transform_at": "processor"
-					}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli)),
 					WorkspaceId: workspaceID,
 				},
 			}
@@ -1004,24 +1004,24 @@ var _ = Describe("router", func() {
 						AttemptNum:    router.reloadableConfig.maxFailedCountForSourcesJob.Load(),
 						JobState:      jobsdb.Failed.State,
 						ErrorCode:     "500",
-						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli))),
-						JobParameters: []byte(fmt.Sprintf(`{
+						ErrorResponse: fmt.Appendf(nil, `{"firstAttemptedAt": %q}`, firstAttemptedAt.Format(misc.RFC3339Milli)),
+						JobParameters: fmt.Appendf(nil, `{
 							"source_id": "%s",
 							"destination_id": "%s",
 							"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
 							"received_at": "%s",
 							"transform_at": "processor",
 							"source_job_run_id": "someJobRunId"
-						}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+						}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli)),
 					},
-					Parameters: []byte(fmt.Sprintf(`{
+					Parameters: fmt.Appendf(nil, `{
 						"source_id": "%s",
 						"destination_id": "%s",
 						"message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3",
 						"received_at": "%s",
 						"transform_at": "processor",
 						"source_job_run_id": "someJobRunId"
-					}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli))),
+					}`, sourceIDEnabled, gaDestinationID, firstAttemptedAt.Add(-time.Minute).Format(misc.RFC3339Milli)),
 					WorkspaceId: workspaceID,
 				},
 			}
@@ -1311,7 +1311,7 @@ var _ = Describe("router", func() {
 				close(done)
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertTransformJobStatuses(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "200", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[2], jobsdb.Succeeded.State, "200", 1)
@@ -1476,7 +1476,7 @@ var _ = Describe("router", func() {
 				close(done)
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertTransformJobStatuses(unprocessedJobsList[0], statuses[0], jobsdb.Failed.State, "500", 1)
 					assertTransformJobStatuses(unprocessedJobsList[1], statuses[1], jobsdb.Waiting.State, "", 0)
 					assertTransformJobStatuses(unprocessedJobsList[2], statuses[2], jobsdb.Waiting.State, "", 0)
@@ -2393,7 +2393,7 @@ var _ = Describe("router", func() {
 				close(done)
 			}).Return(nil)
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Failed.State, "500", `{"content-type":"application/json","response": "{\"message\": \"some message1\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Waiting.State, "", `{"content-type":"application/json","response": "{\"message\": \"some message2\"}","firstAttemptedAt": "2021-06-28T15:57:30.742+05:30"}`, 0)
 				})
@@ -2423,7 +2423,7 @@ func assertRouterJobs(routerJob *types.RouterJobT, job *jobsdb.JobT) {
 		SourceID:         sourceIDEnabled,
 		DestinationID:    gaDestinationID,
 		ProcessorEnabled: true,
-		Config:           map[string]interface{}{"key": "value"},
+		Config:           map[string]any{"key": "value"},
 	}))
 }
 

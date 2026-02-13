@@ -352,7 +352,7 @@ var _ = Describe("Gateway Enterprise", func() {
 				gomock.Any(),
 			).DoAndReturn(jobsToEmptyErrors).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
-			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
+			mockCall.Do(func(context.Context, any, any) { tFunc() })
 
 			// Why GET
 			expectHandlerResponse(
@@ -562,12 +562,12 @@ var _ = Describe("Gateway", func() {
 		assertJobMetadata := func(job *jobsdb.JobT) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
-			var paramsMap, expectedParamsMap map[string]interface{}
+			var paramsMap, expectedParamsMap map[string]any
 			_ = jsonrs.Unmarshal(job.Parameters, &paramsMap)
-			expectedStr := []byte(fmt.Sprintf(
+			expectedStr := fmt.Appendf(nil,
 				`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": "","source_category": "webhook", "traceparent": ""}`,
 				SourceIDEnabled,
-			))
+			)
 			_ = jsonrs.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 			Expect(equals).To(BeTrue())
@@ -699,7 +699,7 @@ var _ = Describe("Gateway", func() {
 		It("should accept valid replay request and store to jobsdb", func() {
 			handler := gateway.webReplayHandler()
 
-			validBody := []byte(fmt.Sprintf(`{"batch":[%s]}`, string(createValidBody("custom-property", "custom-value"))))
+			validBody := fmt.Appendf(nil, `{"batch":[%s]}`, string(createValidBody("custom-property", "custom-value")))
 
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(
 				gomock.Any(),
@@ -904,7 +904,7 @@ var _ = Describe("Gateway", func() {
 			}).Return(nil)
 
 			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
-			mockCall.Do(func(context.Context, interface{}, interface{}) {
+			mockCall.Do(func(context.Context, any, any) {
 				c.asyncHelper.ExpectAndNotifyCallbackWithName("")()
 			})
 
@@ -1014,7 +1014,7 @@ var _ = Describe("Gateway", func() {
 			}).Return(nil)
 			mockCall := c.mockJobsDB.EXPECT().StoreEachBatchRetryInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
+			mockCall.Do(func(context.Context, any, any) { tFunc() })
 
 			expectHandlerResponse(
 				gateway.webAliasHandler(),
@@ -1459,11 +1459,11 @@ var _ = Describe("Gateway", func() {
 
 		It("accepts events with non-string type anonymousId and/or userId", func() {
 			// map type usreId
-			payloadMap := map[string]interface{}{
-				"batch": []interface{}{
-					map[string]interface{}{
+			payloadMap := map[string]any{
+				"batch": []any{
+					map[string]any{
 						"type":   "track",
-						"userId": map[string]interface{}{"id": 456},
+						"userId": map[string]any{"id": 456},
 					},
 				},
 			}
@@ -1480,9 +1480,9 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 
 			// int type anonymousId
-			payloadMap = map[string]interface{}{
-				"batch": []interface{}{
-					map[string]interface{}{
+			payloadMap = map[string]any{
+				"batch": []any{
+					map[string]any{
 						"type":   "track",
 						"userId": 456,
 					},
@@ -1504,11 +1504,11 @@ var _ = Describe("Gateway", func() {
 
 		It("sanitizes messageID, trim space and replace with new uuid", func() {
 			// passing a messageID full of invisible characters
-			payloadMap := map[string]interface{}{
-				"batch": []interface{}{
-					map[string]interface{}{
+			payloadMap := map[string]any{
+				"batch": []any{
+					map[string]any{
 						"type":      "track",
-						"userId":    map[string]interface{}{"id": 456},
+						"userId":    map[string]any{"id": 456},
 						"messageId": " \u0000\u00A0\t\n\r\u034F ",
 					},
 				},
@@ -1541,11 +1541,11 @@ var _ = Describe("Gateway", func() {
 
 		It("sanitizes messageID, remove bad runes and trim space", func() {
 			// passing a messageID full of invisible characters
-			payloadMap := map[string]interface{}{
-				"batch": []interface{}{
-					map[string]interface{}{
+			payloadMap := map[string]any{
+				"batch": []any{
+					map[string]any{
 						"type":      "track",
-						"userId":    map[string]interface{}{"id": 456},
+						"userId":    map[string]any{"id": 456},
 						"messageId": "\u0000 -a-random-string \u00A0\t\n\r\u034F",
 					},
 				},
@@ -1701,7 +1701,7 @@ var _ = Describe("Gateway", func() {
 			"payload": %s
 			}`, workspaceID, userID, sourceID, validData)
 			}
-			return []byte(fmt.Sprintf(`[%s,%s]`, internalBatchPayload(), internalBatchPayload()))
+			return fmt.Appendf(nil, `[%s,%s]`, internalBatchPayload(), internalBatchPayload())
 		}
 
 		var statStore *memstats.Store
@@ -2300,7 +2300,7 @@ func unauthorizedRequest(body io.Reader) *http.Request {
 func authorizedRequest(username string, body io.Reader) *http.Request {
 	req := unauthorizedRequest(body)
 
-	basicAuth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:password-should-be-ignored", username)))
+	basicAuth := base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%s:password-should-be-ignored", username))
 
 	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", basicAuth))
 	// set anonymousId header to ensure everything goes into same batch

@@ -290,7 +290,7 @@ func TestHTTPApi(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	for pendingStagingFiles := 0; pendingStagingFiles < 5; pendingStagingFiles++ {
+	for range 5 {
 		_, err = stagingRepo.Insert(ctx, &stagingFile)
 		require.NoError(t, err)
 	}

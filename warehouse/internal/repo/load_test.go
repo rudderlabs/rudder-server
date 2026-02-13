@@ -54,7 +54,7 @@ func Test_LoadFiles(t *testing.T) {
 	t.Run("insert", func(t *testing.T) {
 		var loadFiles []model.LoadFile
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			loadFile := model.LoadFile{
 				TableName:             "table_name__" + strconv.Itoa(i%3),
 				Location:              "s3://bucket/path/to/file",
@@ -179,9 +179,9 @@ func TestLoadFiles_TotalExportedEvents(t *testing.T) {
 	var skipTables []string
 	skipTablesTotalEvents := 0
 
-	for i := 0; i < stagingFilesCount; i++ {
-		for j := 0; j < loadFilesCount; j++ {
-			for k := 0; k < retriesCount; k++ {
+	for i := range stagingFilesCount {
+		for j := range loadFilesCount {
+			for k := range retriesCount {
 				tableName := "table_name_" + strconv.Itoa(i+1) + "_" + strconv.Itoa(j+1)
 				rows := (i + 1) + (j + 1) + (k + 1)
 				loadFiles = append(loadFiles, model.LoadFile{
@@ -248,8 +248,8 @@ func TestLoadFiles_DistinctTableName(t *testing.T) {
 	loadFiles := make([]model.LoadFile, 0, stagingFilesCount*loadFilesCount)
 	uploadID := createUpload(t, ctx, db)
 
-	for i := 0; i < stagingFilesCount; i++ {
-		for j := 0; j < loadFilesCount; j++ {
+	for i := range stagingFilesCount {
+		for j := range loadFilesCount {
 			loadFiles = append(loadFiles, model.LoadFile{
 				TableName:             "table_name_" + strconv.Itoa(j+1),
 				Location:              "s3://bucket/path/to/file",

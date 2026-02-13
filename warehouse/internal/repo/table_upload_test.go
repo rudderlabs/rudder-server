@@ -321,7 +321,7 @@ func TestTableUploadRepo(t *testing.T) {
 			err := r.Insert(ctx, uploadId, tables2)
 			require.NoError(t, err)
 			var loadFiles []model.LoadFile
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				loadFiles = append(loadFiles, model.LoadFile{
 					TableName: tables2[i],
 					TotalRows: i + 1,

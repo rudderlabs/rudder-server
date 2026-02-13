@@ -18,7 +18,7 @@ var (
 	someRegion               string                     = "region"
 	someIAMRoleARN           string                     = "iamRoleArn"
 	destinationWithAccessKey backendconfig.DestinationT = backendconfig.DestinationT{
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"region":      someRegion,
 			"accessKeyID": someAccessKeyID,
 			"accessKey":   someAccessKey,
@@ -52,7 +52,7 @@ func TestNewSessionConfigWithAccessKey(t *testing.T) {
 func TestNewSessionConfigWithSecretAccessKey(t *testing.T) {
 	serviceName := "kinesis"
 	destinationWithSecretAccessKey := backendconfig.DestinationT{
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"region":          someRegion,
 			"accessKeyID":     someAccessKeyID,
 			"secretAccessKey": someSecretAccessKey,
@@ -76,7 +76,7 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 	serviceName := "s3"
 	t.Run("Without RoleBasedAuth", func(t *testing.T) {
 		destinationWithRole := backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":     someRegion,
 				"iamRoleARN": someIAMRoleARN,
 			},
@@ -97,7 +97,7 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 
 	t.Run("With RoleBasedAuth false", func(t *testing.T) {
 		destinationWithRole := backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":        someRegion,
 				"roleBasedAuth": false,
 				"iamRoleARN":    someIAMRoleARN,
@@ -122,7 +122,7 @@ func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
 	serviceName := "s3"
 	t.Run("invalid RoleBasedAuth flag", func(t *testing.T) {
 		destinationWithRole := backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":        someRegion,
 				"iamRoleARN":    someIAMRoleARN,
 				"roleBasedAuth": "no", // should be bool
@@ -135,7 +135,7 @@ func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
 	})
 	t.Run("With iamRoleARN", func(t *testing.T) {
 		destinationWithRole := backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":        someRegion,
 				"iamRoleARN":    someIAMRoleARN,
 				"roleBasedAuth": true,
@@ -157,7 +157,7 @@ func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
 
 	t.Run("Without iamRoleARN", func(t *testing.T) {
 		destinationWithRole := backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":        someRegion,
 				"roleBasedAuth": true,
 			},
@@ -171,7 +171,7 @@ func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
 func TestNewSimpleSessionConfigWithoutRegion(t *testing.T) {
 	serviceName := "s3"
 	destinationWithRole := backendconfig.DestinationT{
-		Config:      map[string]interface{}{},
+		Config:      map[string]any{},
 		WorkspaceID: someWorkspaceID,
 	}
 	sessionConfig, err := NewSimpleSessionConfigForDestination(&destinationWithRole, serviceName)
@@ -182,7 +182,7 @@ func TestNewSimpleSessionConfigWithoutRegion(t *testing.T) {
 func TestNewSessionConfigWithoutRegion(t *testing.T) {
 	serviceName := "s3"
 	destinationWithRole := backendconfig.DestinationT{
-		Config:      map[string]interface{}{},
+		Config:      map[string]any{},
 		WorkspaceID: someWorkspaceID,
 	}
 	sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)

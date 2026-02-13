@@ -2,6 +2,7 @@ package reporting
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -110,9 +111,9 @@ func NewErrorDetailExtractor(log logger.Logger, conf *config.Config) *ExtractorH
 }
 
 // Functions used for error message extraction -- STARTS
-func checkForGoMapOrList(value interface{}) bool {
+func checkForGoMapOrList(value any) bool {
 	switch value.(type) {
-	case map[string]interface{}, []interface{}:
+	case map[string]any, []any:
 		return true
 	}
 	return false
@@ -123,7 +124,7 @@ func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
 		return sampleResponse
 	}
 
-	var jsonMap map[string]interface{}
+	var jsonMap map[string]any
 	er := jsonrs.Unmarshal([]byte(sampleResponse), &jsonMap)
 	if er != nil {
 		ext.log.Debugn("sampleResponse is not a unmarshallable into interface{}", logger.NewStringField("sampleResponse", sampleResponse))
@@ -148,7 +149,7 @@ func (ext *ExtractorHandle) getSimpleMessage(sampleResponse string) string {
 	return ""
 }
 
-func (ext *ExtractorHandle) handleKey(key string, value interface{}) string {
+func (ext *ExtractorHandle) handleKey(key string, value any) string {
 	switch key {
 	case "reason", "Error", responseKey, errorKey:
 		valueStr, ok := value.(string)
@@ -187,7 +188,7 @@ func handleError(valueStr string) string {
 
 func (ext *ExtractorHandle) handleResponseOrErrorKey(valueStr string) string {
 	if IsJSON(valueStr) {
-		var unmarshalledJSON interface{}
+		var unmarshalledJSON any
 		if err := jsonrs.Unmarshal([]byte(valueStr), &unmarshalledJSON); err != nil {
 			return valueStr
 		}
@@ -212,8 +213,8 @@ func isHTMLString(s string) bool {
 		(strings.Contains(lowerStr, "<html") && (strings.Contains(lowerStr, "<title>") || strings.Contains(lowerStr, "<head>")))
 }
 
-func (ext *ExtractorHandle) handleWarehouseError(value interface{}, key string) string {
-	valAsMap, isMap := value.(map[string]interface{})
+func (ext *ExtractorHandle) handleWarehouseError(value any, key string) string {
+	valAsMap, isMap := value.(map[string]any)
 	if !isMap {
 		ext.log.Debugn("Failed type assertion to map[string]interface{} for warehouse error key",
 			logger.NewStringField("key", key),
@@ -247,14 +248,14 @@ func (ext *ExtractorHandle) GetErrorMessage(sampleResponse string) string {
 	return ext.truncateMessage(message)
 }
 
-func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
-	values := make(map[string]interface{})
+func findKeys(keys []string, jsonObj any) map[string]any {
+	values := make(map[string]any)
 	if len(keys) == 0 {
 		return values
 	}
 	// recursively search for keys in nested JSON objects
 	switch jsonObj := jsonObj.(type) {
-	case map[string]interface{}: // if jsonObj is a map
+	case map[string]any: // if jsonObj is a map
 		for _, key := range keys {
 			if value, ok := jsonObj[key]; ok && value != nil {
 				values[key] = value
@@ -262,23 +263,19 @@ func findKeys(keys []string, jsonObj interface{}) map[string]interface{} {
 		}
 		for _, value := range jsonObj {
 			subResults := findKeys(keys, value)
-			for k, v := range subResults {
-				values[k] = v
-			}
+			maps.Copy(values, subResults)
 		}
-	case []interface{}: // if jsonObj is a slice
+	case []any: // if jsonObj is a slice
 		for _, item := range jsonObj {
 			subResults := findKeys(keys, item)
-			for k, v := range subResults {
-				values[k] = v
-			}
+			maps.Copy(values, subResults)
 		}
 	}
 	return values // return the map of keys and values
 }
 
 // This function takes a list of keys and a JSON object as input, and returns the value of the first key that exists in the JSON object.
-func findFirstExistingKey(keys []string, jsonObj interface{}) interface{} {
+func findFirstExistingKey(keys []string, jsonObj any) any {
 	keyValues := findKeys(keys, jsonObj)
 	result := getFirstNonNilValue(keys, keyValues)
 	if checkForGoMapOrList(result) {
@@ -287,7 +284,7 @@ func findFirstExistingKey(keys []string, jsonObj interface{}) interface{} {
 	return result
 }
 
-func getFirstNonNilValue(keys []string, jsonObj map[string]interface{}) interface{} {
+func getFirstNonNilValue(keys []string, jsonObj map[string]any) any {
 	for _, key := range keys {
 		if value := jsonObj[key]; value != nil {
 			return value
@@ -296,7 +293,7 @@ func getFirstNonNilValue(keys []string, jsonObj map[string]interface{}) interfac
 	return nil
 }
 
-func convertInterfaceArrToStrArrWithDelimitter(arrI []interface{}, delimitter string) string {
+func convertInterfaceArrToStrArrWithDelimitter(arrI []any, delimitter string) string {
 	s := make([]string, len(arrI))
 	for i, v := range arrI {
 		s[i] = fmt.Sprint(v)
@@ -304,11 +301,11 @@ func convertInterfaceArrToStrArrWithDelimitter(arrI []interface{}, delimitter st
 	return strings.Join(s, delimitter)
 }
 
-func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string {
-	var respMap map[string]interface{}
-	respMap, isMap := resp.(map[string]interface{})
+func getErrorMessageFromResponse(resp any, messageKeys []string) string {
+	var respMap map[string]any
+	respMap, isMap := resp.(map[string]any)
 
-	getMessage := func(msgKeys []string, response interface{}) string {
+	getMessage := func(msgKeys []string, response any) string {
 		if result := findFirstExistingKey(msgKeys, response); result != nil {
 			if s, ok := result.(string); ok {
 				return s
@@ -326,7 +323,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 		return respMap["msg"].(string)
 	}
 
-	if destinationResponse, ok := respMap["destinationResponse"].(map[string]interface{}); ok {
+	if destinationResponse, ok := respMap["destinationResponse"].(map[string]any); ok {
 		msg = getMessage(messageKeys, destinationResponse)
 		if msg != "" {
 			return msg
@@ -338,7 +335,7 @@ func getErrorMessageFromResponse(resp interface{}, messageKeys []string) string 
 	}
 
 errorsBlock:
-	errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]interface{})
+	errors, ok := getFirstNonNilValue([]string{errorsKey}, findKeys([]string{errorsKey}, resp)).([]any)
 	if ok && len(errors) > 0 {
 		return convertInterfaceArrToStrArrWithDelimitter(errors, ".")
 	}
@@ -346,12 +343,12 @@ errorsBlock:
 	return ""
 }
 
-func getErrorFromWarehouse(resp map[string]interface{}) string {
+func getErrorFromWarehouse(resp map[string]any) string {
 	errorsI, ok := resp[errorsKey]
 	if !ok {
 		return ""
 	}
-	arrOfErrs, isIntfArr := errorsI.([]interface{})
+	arrOfErrs, isIntfArr := errorsI.([]any)
 	if !isIntfArr {
 		return ""
 	}

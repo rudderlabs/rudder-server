@@ -19,8 +19,8 @@ import (
 type Opt func(*DB)
 
 type logger interface {
-	Infow(msg string, keysAndValues ...interface{})
-	Warnw(msg string, keysAndValues ...interface{})
+	Infow(msg string, keysAndValues ...any)
+	Warnw(msg string, keysAndValues ...any)
 }
 
 type DB struct {
@@ -54,7 +54,7 @@ func (r *Rows) Next() bool {
 	return r.Rows.Next()
 }
 
-func (r *Rows) Scan(dest ...interface{}) error {
+func (r *Rows) Scan(dest ...any) error {
 	return r.Rows.Scan(dest...)
 }
 
@@ -69,7 +69,7 @@ type Row struct {
 	logQ
 }
 
-func (r *Row) Scan(dest ...interface{}) error {
+func (r *Row) Scan(dest ...any) error {
 	defer r.CancelFunc()
 	r.once.Do(r.logQ)
 	return r.Row.Scan(dest...)
@@ -147,11 +147,11 @@ func New(db *sql.DB, opts ...Opt) *DB {
 	return s
 }
 
-func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (db *DB) Exec(query string, args ...any) (sql.Result, error) {
 	return db.ExecContext(context.Background(), query, args...)
 }
 
-func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	startedAt := time.Now()
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	defer cancel()
@@ -160,11 +160,11 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...interface{}
 	return result, err
 }
 
-func (db *DB) Query(query string, args ...interface{}) (*Rows, error) {
+func (db *DB) Query(query string, args ...any) (*Rows, error) {
 	return db.QueryContext(context.Background(), query, args...)
 }
 
-func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*Rows, error) {
 	startedAt := time.Now()
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	rows, err := db.DB.QueryContext(ctx, query, args...)
@@ -186,11 +186,11 @@ func (db *DB) QueryContext(ctx context.Context, query string, args ...interface{
 	}, err
 }
 
-func (db *DB) QueryRow(query string, args ...interface{}) *Row {
+func (db *DB) QueryRow(query string, args ...any) *Row {
 	return db.QueryRowContext(context.Background(), query, args...)
 }
 
-func (db *DB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *Row {
+func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *Row {
 	startedAt := time.Now()
 	ctx, cancel := queryContextWithTimeout(ctx, db.queryTimeout)
 	return &Row{
@@ -288,11 +288,11 @@ func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
 	return &Tx{&tx.Tx{Tx: sqltx}, db, cancel}, nil
 }
 
-func (tx *Tx) Exec(query string, args ...interface{}) (sql.Result, error) {
+func (tx *Tx) Exec(query string, args ...any) (sql.Result, error) {
 	return tx.ExecContext(context.Background(), query, args...)
 }
 
-func (tx *Tx) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (tx *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	startedAt := time.Now()
 	ctx, cancel := queryContextWithTimeout(ctx, tx.db.queryTimeout)
 	defer cancel()
@@ -301,11 +301,11 @@ func (tx *Tx) ExecContext(ctx context.Context, query string, args ...interface{}
 	return result, err
 }
 
-func (tx *Tx) Query(query string, args ...interface{}) (*Rows, error) {
+func (tx *Tx) Query(query string, args ...any) (*Rows, error) {
 	return tx.QueryContext(context.Background(), query, args...)
 }
 
-func (tx *Tx) QueryContext(ctx context.Context, query string, args ...interface{}) (*Rows, error) {
+func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*Rows, error) {
 	startedAt := time.Now()
 	ctx, cancel := queryContextWithTimeout(ctx, tx.db.queryTimeout)
 	rows, err := tx.Tx.QueryContext(ctx, query, args...)
@@ -327,11 +327,11 @@ func (tx *Tx) QueryContext(ctx context.Context, query string, args ...interface{
 	}, err
 }
 
-func (tx *Tx) QueryRow(query string, args ...interface{}) *Row {
+func (tx *Tx) QueryRow(query string, args ...any) *Row {
 	return tx.QueryRowContext(context.Background(), query, args...)
 }
 
-func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...interface{}) *Row {
+func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *Row {
 	startedAt := time.Now()
 	ctx, cancel := queryContextWithTimeout(ctx, tx.db.queryTimeout)
 	return &Row{

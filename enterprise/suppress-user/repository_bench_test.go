@@ -24,7 +24,7 @@ func BenchmarkAddAndSuppress(b *testing.B) {
 		for i := 0; i < totalSuppressions/batchSize; i++ {
 			suppressions1 := generateSuppressions(i*batchSize/2, batchSize/2)
 			suppressions2 := generateSuppressions(i*batchSize/2, batchSize/2)
-			token := []byte(fmt.Sprintf("token%d", i))
+			token := fmt.Appendf(nil, "token%d", i)
 			start := time.Now()
 			require.NoError(b, repo.Add(suppressions1, token))
 			require.NoError(b, repo.Add(suppressions2, token))
@@ -36,7 +36,7 @@ func BenchmarkAddAndSuppress(b *testing.B) {
 
 	runSuppressBenchmark := func(b *testing.B, repo suppression.Repository, totalSuppressions, totalReads int) {
 		var totalTime time.Duration
-		for i := 0; i < totalReads; i++ {
+		for range totalReads {
 			start := time.Now()
 			idx := randomInt(totalSuppressions * 2) // multiply by 2 to include non-existing keys suppressions
 			_, err := repo.Suppressed(fmt.Sprintf("workspace%d", idx), fmt.Sprintf("user%d", idx), fmt.Sprintf("source%d", idx))

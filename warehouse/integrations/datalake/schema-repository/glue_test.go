@@ -59,12 +59,12 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 
 	testCases := []struct {
 		name         string
-		config       map[string]interface{}
+		config       map[string]any
 		windowLayout string
 	}{
 		{
 			name: "s3 datalake with glue",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"region":      credentials.Region,
 				"bucketName":  credentials.Bucket,
 				"accessKeyID": credentials.AccessKeyID,
@@ -75,7 +75,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 		},
 		{
 			name: "s3 datalake with glue and layout",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"region":           credentials.Region,
 				"bucketName":       credentials.Bucket,
 				"accessKeyID":      credentials.AccessKeyID,
@@ -87,7 +87,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 		},
 		{
 			name: "invalid window layout",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"region":           credentials.Region,
 				"bucketName":       credentials.Bucket,
 				"accessKeyID":      credentials.AccessKeyID,

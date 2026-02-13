@@ -60,12 +60,12 @@ type CustomManagerT struct {
 
 // clientHolder keeps the config of a destination and corresponding producer for a stream destination
 type clientHolder struct {
-	config map[string]interface{}
-	client interface{}
+	config map[string]any
+	client any
 }
 
 type breakerHolder struct {
-	config    map[string]interface{}
+	config    map[string]any
 	breaker   *gobreaker.CircuitBreaker
 	lastError error
 }
@@ -86,13 +86,13 @@ func loadConfig() {
 func (customManager *CustomManagerT) newClient(destID string) error {
 	destination := customManager.config[destID]
 	destConfig := destination.Config
-	_, err := customManager.breaker[destID].breaker.Execute(func() (interface{}, error) {
+	_, err := customManager.breaker[destID].breaker.Execute(func() (any, error) {
 		var customDestination *clientHolder
 		var err error
 
 		switch customManager.managerType {
 		case STREAM:
-			var producer interface{}
+			var producer any
 			producer, err = streammanager.NewProducer(&destination, common.Opts{
 				Timeout: customManager.timeout,
 			})
@@ -122,7 +122,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, client interface{}, config map[string]interface{}) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, client any, config map[string]any) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
@@ -223,7 +223,7 @@ func (customManager *CustomManagerT) onNewDestination(destination backendconfig.
 	return err
 }
 
-func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig map[string]interface{}) error {
+func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig map[string]any) error {
 	log := pkgLogger.Withn(
 		obskit.DestinationType(customManager.destType),
 		obskit.DestinationID(destID),

@@ -74,8 +74,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			ip := &types.GatewayBatchRequest{
 				RequestIP: ``,
 				Batch: []types.SingularEventT{
-					{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0"}},
-					{"userId": "2", "context": map[string]interface{}{"app_version": "0.1.0"}},
+					{"userId": "1", "context": map[string]any{"app_version": "0.1.0"}},
+					{"userId": "2", "context": map[string]any{"app_version": "0.1.0"}},
 				},
 			}
 			// Empty enrichment happens if the requestIP is empty / invalid
@@ -85,8 +85,8 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 					Build(), ip, nil)
 			require.Nil(t, err)
 			// require.Equal(t, nil, ip)
-			require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]interface{}{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[0])
-			require.Equal(t, types.SingularEventT{"userId": "2", "context": map[string]interface{}{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[1])
+			require.Equal(t, types.SingularEventT{"userId": "1", "context": map[string]any{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[0])
+			require.Equal(t, types.SingularEventT{"userId": "2", "context": map[string]any{"app_version": "0.1.0", "geo": Geolocation{}}}, ip.Batch[1])
 		})
 
 		t.Run("it adds empty geolocation if the ipaddress is not found in database", func(t *testing.T) {
@@ -96,7 +96,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			input := &types.GatewayBatchRequest{
 				RequestIP: inexistentIP,
 				Batch: []types.SingularEventT{
-					{"userId": "u1", "context": map[string]interface{}{"version": "0.1.0"}},
+					{"userId": "u1", "context": map[string]any{"version": "0.1.0"}},
 				},
 			}
 
@@ -109,7 +109,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			require.Equal(t,
 				types.SingularEventT{
 					"userId": "u1",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"version": "0.1.0",
 						"geo":     Geolocation{IP: inexistentIP},
 					},
@@ -122,7 +122,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			input := &types.GatewayBatchRequest{
 				RequestIP: `2.125.160.216`,
 				Batch: []types.SingularEventT{
-					{"userId": "u1", "context": map[string]interface{}{"version": "0.1.0"}},
+					{"userId": "u1", "context": map[string]any{"version": "0.1.0"}},
 				},
 			}
 
@@ -135,7 +135,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			require.Equal(t,
 				types.SingularEventT{ // expected type with context
 					"userId": "u1",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"version": "0.1.0",
 						"geo": Geolocation{
 							IP:       "2.125.160.216",
@@ -159,10 +159,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				Batch: []types.SingularEventT{
 					{
 						"anonymousId": "a1",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u1",
 						},
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"appVersion": "0.1.0",
 						},
 					},
@@ -181,10 +181,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			// no updates to the entity given we have disabled the flag
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a1",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u1",
 				},
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"appVersion": "0.1.0",
 				},
 			}, input.Batch[0])
@@ -198,7 +198,7 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				Batch: []types.SingularEventT{
 					{
 						"anonymousId": "a1",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u1",
 						},
 					},
@@ -215,10 +215,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			// being added or updated to with the geolocation information.
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a1",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u1",
 				},
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"geo": Geolocation{
 						IP:       "2.125.160.216",
 						City:     "Boxford",
@@ -240,16 +240,16 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				Batch: []types.SingularEventT{
 					{
 						"anonymousId": "a1",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u1",
 						},
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"geo": "some previous information", // geo key already present
 						},
 					},
 					{
 						"anonymousId": "a2",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u2",
 						},
 						"context": 1.23, // context section is integer and not a map
@@ -265,17 +265,17 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a1",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u1",
 				},
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"geo": "some previous information",
 				},
 			}, input.Batch[0])
 
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a2",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u2",
 				},
 				"context": 1.23,
@@ -290,28 +290,28 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 				Batch: []types.SingularEventT{
 					{
 						"anonymousId": "a2",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u2",
 						},
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"ip": "invalid",
 						},
 					},
 					{
 						"anonymousId": "a1",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u1",
 						},
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"ip": "81.2.69.142",
 						},
 					},
 					{
 						"anonymousId": "a3",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"userId": "u3",
 						},
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"ip": "",
 						},
 					},
@@ -328,10 +328,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			// lookup happens on this ip only as non-blank
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a2",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u2",
 				},
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"geo": Geolocation{IP: "invalid"},
 					"ip":  "invalid",
 				},
@@ -341,10 +341,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			// will happen on it.
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a1",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u1",
 				},
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"geo": Geolocation{
 						IP:       "81.2.69.142",
 						City:     "London",
@@ -362,10 +362,10 @@ func TestGeolocationEnrichment_Success(t *testing.T) {
 			// context.ip but blank.
 			require.Equal(t, types.SingularEventT{
 				"anonymousId": "a3",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"userId": "u3",
 				},
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"geo": Geolocation{
 						IP:       "2.125.160.216",
 						City:     "Boxford",
@@ -451,7 +451,7 @@ func TestDownloadMaxmindDB_success(t *testing.T) {
 	minioManager, err := filemanager.New(
 		&filemanager.Settings{
 			Provider: "MINIO",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"bucketName":      minio.BucketName,
 				"endPoint":        minio.Endpoint,
 				"accessKeyID":     minio.AccessKeyID,

@@ -309,7 +309,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		traceParent = req.traceParent
 	)
 
-	fillMessageID := func(event map[string]interface{}) {
+	fillMessageID := func(event map[string]any) {
 		messageID, _ := event["messageId"].(string)
 		messageID = strings.TrimSpace(sanitize.Unicode(messageID))
 		if messageID == "" {
@@ -340,7 +340,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	type jobObject struct {
 		userID string
-		events []map[string]interface{}
+		events []map[string]any
 	}
 
 	var (
@@ -355,7 +355,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	isUserSuppressed := gw.memoizedIsUserSuppressed()
 	for idx, v := range eventsBatch {
-		toSet, ok := v.Value().(map[string]interface{})
+		toSet, ok := v.Value().(map[string]any)
 		if !ok {
 			err = errors.New((response.NotRudderEvent))
 			return jobData, err
@@ -373,7 +373,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 			return jobData, err
 		}
 
-		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]interface{})
+		eventContext, ok := misc.MapLookup(toSet, "context").(map[string]any)
 		if ok {
 			if idx == 0 {
 				if v, _ := misc.MapLookup(eventContext, "sources", "job_run_id").(string); v != "" {
@@ -444,7 +444,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		userID := buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
 		out = append(out, jobObject{
 			userID: userID,
-			events: []map[string]interface{}{toSet},
+			events: []map[string]any{toSet},
 		})
 	}
 
@@ -503,10 +503,10 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		)
 		{
 			type SingularEventBatch struct {
-				Batch      []map[string]interface{} `json:"batch"`
-				RequestIP  string                   `json:"requestIP"`
-				WriteKey   string                   `json:"writeKey"`
-				ReceivedAt string                   `json:"receivedAt"`
+				Batch      []map[string]any `json:"batch"`
+				RequestIP  string           `json:"requestIP"`
+				WriteKey   string           `json:"writeKey"`
+				ReceivedAt string           `json:"receivedAt"`
 			}
 			receivedAt, ok := userEvent.events[0]["receivedAt"].(string)
 			if !ok || !arctx.ReplaySource {

@@ -120,7 +120,7 @@ var _ = Describe("Using sources handler", func() {
 			paging := PagingInfo{
 				Size: 2,
 			}
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, paging)
 				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
 				Expect(failedRecords.Paging).NotTo(BeNil(), "paging should not be nil")
@@ -134,8 +134,8 @@ var _ = Describe("Using sources handler", func() {
 							Destinations: []DestinationFailedRecords[FailedRecord]{{
 								ID: defaultJobTargetKey.DestinationID,
 								Records: []FailedRecord{
-									{Record: []byte(fmt.Sprintf(`"id-%d"`, (2*i)+1))},
-									{Record: []byte(fmt.Sprintf(`"id-%d"`, (2*i)+2))},
+									{Record: fmt.Appendf(nil, `"id-%d"`, (2*i)+1)},
+									{Record: fmt.Appendf(nil, `"id-%d"`, (2*i)+2)},
 								},
 							}},
 						}},
@@ -1514,16 +1514,16 @@ func mustMarshal[T any](v T) []byte {
 
 // mock Gauges
 type mockGauge struct {
-	gauge  interface{}
+	gauge  any
 	gauged bool
 }
 
-func (g *mockGauge) Gauge(value interface{}) {
+func (g *mockGauge) Gauge(value any) {
 	g.gauge = value
 	g.gauged = true
 }
 
-func (g *mockGauge) value() interface{} {
+func (g *mockGauge) value() any {
 	return g.gauge
 }
 

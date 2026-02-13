@@ -86,7 +86,7 @@ func TestDeliveryThrottler(t *testing.T) {
 					URL:           webhook.Server.URL,
 					EndpointPath:  endpointPath, // custom transformer adds the endpoint label for throttling
 					RequestMethod: http.MethodPost,
-					Body: map[string]interface{}{
+					Body: map[string]any{
 						"JSON": event.Message,
 					},
 				}
@@ -258,7 +258,7 @@ func (m deliveryThrottlerMethods) newTestSpec(jobsCount int) *deliveryThrottlerS
 	var s deliveryThrottlerSpec
 	s.jobsOrdered = make([]*deliveryThrottlerJobSpec, jobsCount)
 
-	for i := 0; i < jobsCount; i++ {
+	for i := range jobsCount {
 		js := deliveryThrottlerJobSpec{
 			userID:    uuid.New().String(),
 			eventType: "identify",
@@ -296,7 +296,7 @@ func (deliveryThrottlerMethods) splitInBatches(jobs []*deliveryThrottlerJobSpec,
 	payloads := lo.Map(jobs, func(job *deliveryThrottlerJobSpec, _ int) string { return job.payload() })
 	batches := lo.Chunk(payloads, batchSize)
 	jsonBatches := lo.Map(batches, func(batch []string, _ int) []byte {
-		return []byte(fmt.Sprintf(`{"batch":[%s]}`, strings.Join(batch, ",")))
+		return fmt.Appendf(nil, `{"batch":[%s]}`, strings.Join(batch, ","))
 	})
 	return jsonBatches
 }

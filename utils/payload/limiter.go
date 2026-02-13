@@ -116,9 +116,6 @@ func (r *adaptivePayloadLimitAlgorithm) stateChanged(newState LimiterState) {
 		r.thresholdFactor = 1
 	case LimiterStateCritical:
 		r.config.Log.Warnn("critical memory state", logger.NewFloatField("freeMem", r.freeMem))
-		r.thresholdFactor = r.thresholdFactor + 1
-		if r.thresholdFactor > r.config.MaxThresholdFactor {
-			r.thresholdFactor = r.config.MaxThresholdFactor
-		}
+		r.thresholdFactor = min(r.thresholdFactor+1, r.config.MaxThresholdFactor)
 	}
 }

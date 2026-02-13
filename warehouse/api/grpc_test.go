@@ -116,7 +116,7 @@ func TestGRPC(t *testing.T) {
 									{
 										ID:      destinationID,
 										Enabled: true,
-										Config: map[string]interface{}{
+										Config: map[string]any{
 											"syncFrequency": "30",
 										},
 										DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -137,7 +137,7 @@ func TestGRPC(t *testing.T) {
 									{
 										ID:      unusedDestinationID,
 										Enabled: true,
-										Config: map[string]interface{}{
+										Config: map[string]any{
 											"syncFrequency": "30",
 										},
 										DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -246,7 +246,7 @@ func TestGRPC(t *testing.T) {
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 			lastExecAt := now.Add(-1 * time.Minute)
 
-			for i := 0; i < totalUploads; i++ {
+			for i := range totalUploads {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
@@ -290,8 +290,8 @@ func TestGRPC(t *testing.T) {
 					for _, table := range tables {
 						err = repoTableUploads.Set(ctx, uploadID, table, repo.TableUploadSetOptions{
 							Status:       lo.ToPtr(model.TableUploadExported),
-							LastExecTime: lo.ToPtr(lastExecAt),
-							TotalEvents:  lo.ToPtr(int64(10)),
+							LastExecTime: new(lastExecAt),
+							TotalEvents:  new(int64(10)),
 						})
 						require.NoError(t, err)
 					}
@@ -544,7 +544,7 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			for i := 0; i < totalUploads; i++ {
+			for range totalUploads {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
@@ -719,7 +719,7 @@ func TestGRPC(t *testing.T) {
 			totalUploads := 100
 			firstEventAt, lastEventAt := now.Add(-2*time.Hour), now.Add(-1*time.Hour)
 
-			for i := 0; i < totalUploads; i++ {
+			for range totalUploads {
 				fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 				sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
@@ -921,12 +921,12 @@ func TestGRPC(t *testing.T) {
 					require.Empty(t, res)
 				})
 				t.Run("success", func(t *testing.T) {
-					destConfig, err := jsonrs.Marshal(map[string]interface{}{
-						"destination": map[string]interface{}{
-							"DestinationDefinition": map[string]interface{}{
+					destConfig, err := jsonrs.Marshal(map[string]any{
+						"destination": map[string]any{
+							"DestinationDefinition": map[string]any{
 								"Name": whutils.POSTGRES,
 							},
-							"Config": map[string]interface{}{
+							"Config": map[string]any{
 								"host":            pgResource.Host,
 								"port":            pgResource.Port,
 								"database":        pgResource.Database,
@@ -968,24 +968,24 @@ func TestGRPC(t *testing.T) {
 				t.Run("tunneling", func(t *testing.T) {
 					testCases := []struct {
 						name           string
-						inputConfig    map[string]interface{}
+						inputConfig    map[string]any
 						wantError      error
-						expectedConfig map[string]interface{}
+						expectedConfig map[string]any
 					}{
 						{
 							name: "no tunneling",
-							inputConfig: map[string]interface{}{
+							inputConfig: map[string]any{
 								"host":   "host",
 								"useSSH": false,
 							},
-							expectedConfig: map[string]interface{}{
+							expectedConfig: map[string]any{
 								"host":   "host",
 								"useSSH": false,
 							},
 						},
 						{
 							name: "no SSH key id",
-							inputConfig: map[string]interface{}{
+							inputConfig: map[string]any{
 								"host":   "host",
 								"useSSH": true,
 							},
@@ -993,12 +993,12 @@ func TestGRPC(t *testing.T) {
 						},
 						{
 							name: "with SSH key id",
-							inputConfig: map[string]interface{}{
+							inputConfig: map[string]any{
 								"host":     "host",
 								"useSSH":   true,
 								"sshKeyId": "sshKeyId",
 							},
-							expectedConfig: map[string]interface{}{
+							expectedConfig: map[string]any{
 								"host":          "host",
 								"useSSH":        true,
 								"sshKeyId":      "sshKeyId",
@@ -1153,37 +1153,37 @@ func TestGRPC(t *testing.T) {
 				t.Run("checkMapForValidKey", func(t *testing.T) {
 					testCases := []struct {
 						name     string
-						inputMap map[string]interface{}
+						inputMap map[string]any
 						key      string
 						want     bool
 					}{
 						{
 							name:     "empty map",
-							inputMap: map[string]interface{}{},
+							inputMap: map[string]any{},
 							key:      "key",
 							want:     false,
 						},
 						{
 							name:     "key not present",
-							inputMap: map[string]interface{}{"key1": "value1"},
+							inputMap: map[string]any{"key1": "value1"},
 							key:      "key",
 							want:     false,
 						},
 						{
 							name:     "key present",
-							inputMap: map[string]interface{}{"key": "value"},
+							inputMap: map[string]any{"key": "value"},
 							key:      "key",
 							want:     true,
 						},
 						{
 							name:     "key present with empty value",
-							inputMap: map[string]interface{}{"key": ""},
+							inputMap: map[string]any{"key": ""},
 							key:      "key",
 							want:     false,
 						},
 						{
 							name:     "key present with nil value",
-							inputMap: map[string]interface{}{"key": nil},
+							inputMap: map[string]any{"key": nil},
 							key:      "key",
 							want:     false,
 						},
@@ -1198,19 +1198,19 @@ func TestGRPC(t *testing.T) {
 					t.Run("should fallback to backup credentials when fields missing(as of now backup only supported for s3", func(t *testing.T) {
 						fm := &filemanager.Settings{
 							Provider: "AZURE_BLOB",
-							Config:   map[string]interface{}{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
+							Config:   map[string]any{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
 							Conf:     config.Default,
 						}
 						overrideWithEnv(ctx, fm)
 						require.Nil(t, fm.Config["accountName"])
 
 						fm.Provider = "S3"
-						fm.Config = map[string]interface{}{"bucketName": "bucket1", "prefix": "prefix1", "accessKeyID": "KeyID1"}
+						fm.Config = map[string]any{"bucketName": "bucket1", "prefix": "prefix1", "accessKeyID": "KeyID1"}
 						overrideWithEnv(ctx, fm)
 						require.NotNil(t, fm.Config["accessKey"])
 					})
 					t.Run("Should set value for key when key not present", func(t *testing.T) {
-						jsonMap := make(map[string]interface{})
+						jsonMap := make(map[string]any)
 						jsonMap["config"] = "{}"
 						typeValue := "GCS"
 						configValue := "{\"bucketName\":\"temp\"}"
@@ -1248,7 +1248,7 @@ func TestGRPC(t *testing.T) {
 				}))
 
 				var stagingFiles []*model.StagingFile
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					stagingFile := &model.StagingFile{
 						WorkspaceID:   workspaceID,
 						Location:      "s3://bucket/path/to/file",
@@ -2000,7 +2000,7 @@ func TestGRPC(t *testing.T) {
 						},
 						Destination: backendconfig.DestinationT{
 							ID: "did-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"syncFrequency": "60",
 							},
 						},
@@ -2018,7 +2018,7 @@ func TestGRPC(t *testing.T) {
 						},
 						Destination: backendconfig.DestinationT{
 							ID: "did-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"syncFrequency": "abc",
 							},
 						},
@@ -2036,7 +2036,7 @@ func TestGRPC(t *testing.T) {
 						},
 						Destination: backendconfig.DestinationT{
 							ID: "did-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"syncFrequency": "5",
 							},
 						},
@@ -2065,7 +2065,7 @@ func TestGRPC(t *testing.T) {
 						},
 						Destination: backendconfig.DestinationT{
 							ID: "did-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"syncFrequency": "60",
 							},
 						},
@@ -2077,7 +2077,7 @@ func TestGRPC(t *testing.T) {
 						},
 						Destination: backendconfig.DestinationT{
 							ID: "did-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"syncFrequency": "60",
 							},
 						},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"testing"
 
@@ -47,7 +48,7 @@ func TestDownloader(t *testing.T) {
 
 	testCases := []struct {
 		name         string
-		conf         map[string]interface{}
+		conf         map[string]any
 		numLoadFiles int
 		wantError    error
 		loadFiles    []warehouseutils.LoadFile
@@ -60,7 +61,7 @@ func TestDownloader(t *testing.T) {
 		{
 			name:         "invalid bucket provider",
 			numLoadFiles: 1,
-			conf: map[string]interface{}{
+			conf: map[string]any{
 				"bucketProvider": "INVALID",
 			},
 			wantError: errors.New("creating filemanager for destination: service provider not supported: INVALID"),
@@ -106,9 +107,7 @@ func TestDownloader(t *testing.T) {
 				"bucketProvider":   provider,
 			}
 
-			for k, v := range tc.conf {
-				conf[k] = v
-			}
+			maps.Copy(conf, tc.conf)
 
 			fm, err := filemanager.New(&filemanager.Settings{
 				Provider: provider,

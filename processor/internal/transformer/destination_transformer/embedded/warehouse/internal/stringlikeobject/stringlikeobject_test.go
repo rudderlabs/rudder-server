@@ -137,7 +137,7 @@ func TestStringLikeObjectToString(t *testing.T) {
 			name: "valid string-like object with big keys",
 			input: func() map[string]any {
 				m := make(map[string]any, 1040)
-				for i := 0; i < 1040; i++ {
+				for i := range 1040 {
 					m[strconv.Itoa(i)] = string('a' + rune(i%26))
 				}
 				return m

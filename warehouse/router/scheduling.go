@@ -79,7 +79,7 @@ func (r *Router) canCreateUpload(ctx context.Context, warehouse model.Warehouse)
 	return errBeforeScheduledTime
 }
 
-func excludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+func excludeWindowStartEndTimes(excludeWindow map[string]any) (string, string) {
 	var startTime, endTime string
 
 	if st, ok := excludeWindow[whutils.ExcludeWindowStartTime].(string); ok {

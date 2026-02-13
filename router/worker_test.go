@@ -212,8 +212,8 @@ var _ = Describe("Proxy Request", func() {
 					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
 					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
 					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
-					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]interface{}{
-						"x": map[string]interface{}{
+					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]any{
+						"x": map[string]any{
 							"y": "z",
 						},
 					}))
@@ -269,8 +269,8 @@ var _ = Describe("Proxy Request", func() {
 				},
 				Destination: backendconfig.DestinationT{
 					ID: gaDestinationID,
-					Config: map[string]interface{}{
-						"x": map[string]interface{}{
+					Config: map[string]any{
+						"x": map[string]any{
 							"y": "z",
 						},
 					},
@@ -314,8 +314,8 @@ var _ = Describe("Proxy Request", func() {
 					Expect(len(proxyReqParams.ResponseData.Metadata)).To(Equal(2))
 					Expect(proxyReqParams.ResponseData.Metadata[0].JobID).To(Equal(int64(1)))
 					Expect(proxyReqParams.ResponseData.Metadata[1].JobID).To(Equal(int64(2)))
-					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]interface{}{
-						"x": map[string]interface{}{
+					Expect(proxyReqParams.ResponseData.DestinationConfig).To(Equal(map[string]any{
+						"x": map[string]any{
 							"y": "z",
 						},
 					}))
@@ -371,14 +371,14 @@ var _ = Describe("Proxy Request", func() {
 				},
 				Destination: backendconfig.DestinationT{
 					ID: gaDestinationID,
-					Config: map[string]interface{}{
-						"x": map[string]interface{}{
+					Config: map[string]any{
+						"x": map[string]any{
 							"y": "z",
 						},
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Config: map[string]interface{}{
-							"auth": map[string]interface{}{
+						Config: map[string]any{
+							"auth": map[string]any{
 								"type": "basic",
 							},
 						},

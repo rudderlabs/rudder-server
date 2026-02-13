@@ -45,7 +45,7 @@ func TestValidationSteps(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3Datalake,
 				},
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 			},
 			steps: []string{model.VerifyingObjectStorage},
 		},
@@ -55,7 +55,7 @@ func TestValidationSteps(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3Datalake,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"region":  "us-east-1",
 					"useGlue": true,
 				},

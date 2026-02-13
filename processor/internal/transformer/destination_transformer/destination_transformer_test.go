@@ -235,7 +235,7 @@ func TestDestinationTransformer(t *testing.T) {
 
 						events[i] = types.TransformerEvent{
 							Metadata: Metadata,
-							Message: map[string]interface{}{
+							Message: map[string]any{
 								"src-key-1":       msgID,
 								"forceStatusCode": statusCode,
 							},
@@ -253,7 +253,7 @@ func TestDestinationTransformer(t *testing.T) {
 						tResp := types.TransformerResponse{
 							Metadata:   Metadata,
 							StatusCode: statusCode,
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1":  msgID,
 								"echo-key-1": msgID,
 							},
@@ -327,7 +327,7 @@ func TestDestinationTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Credentials: []types.Credential{
@@ -361,8 +361,6 @@ func TestDestinationTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
-
 					t.Run(tc.name, func(t *testing.T) {
 						ch := make(chan struct{})
 						srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -396,7 +394,7 @@ func TestDestinationTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -463,7 +461,6 @@ func TestDestinationTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount: tc.maxRetryCount,
@@ -506,7 +503,7 @@ func TestDestinationTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -546,7 +543,7 @@ func TestDestinationTransformer(t *testing.T) {
 										MessageID: msgID,
 									},
 									StatusCode: http.StatusOK,
-									Output: map[string]interface{}{
+									Output: map[string]any{
 										"src-key-1": msgID,
 									},
 								},
@@ -566,8 +563,6 @@ func TestDestinationTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount:  0,
@@ -602,7 +597,7 @@ func TestDestinationTransformer(t *testing.T) {
 				expectedResponse := types.Response{
 					Events: []types.TransformerResponse{
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1": msgID,
 							},
 							Metadata: types.Metadata{
@@ -616,7 +611,7 @@ func TestDestinationTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -678,8 +673,6 @@ func TestDestinationTransformer(t *testing.T) {
 					}
 
 					for _, tc := range testCases {
-						tc := tc
-
 						t.Run(tc.name, func(t *testing.T) {
 							et := &endpointTransformer{
 								supportedPaths: []string{`/v0/destinations/` + tc.name},
@@ -699,7 +692,7 @@ func TestDestinationTransformer(t *testing.T) {
 								Metadata: types.Metadata{
 									MessageID: msgID,
 								},
-								Message: map[string]interface{}{
+								Message: map[string]any{
 									"src-key-1": msgID,
 								},
 								Destination: backendconfig.DestinationT{
@@ -790,7 +783,7 @@ func TestEmbeddedWarehouseTransformer(t *testing.T) {
 
 	clientEvents := lo.RepeatBy(eventsCount, func(index int) types.TransformerEvent {
 		return types.TransformerEvent{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"src-key-1":         "test-value-1",
 				"messageId":         "messageId" + strconv.Itoa(index+1),
 				"event":             "event" + strconv.Itoa(index+1),

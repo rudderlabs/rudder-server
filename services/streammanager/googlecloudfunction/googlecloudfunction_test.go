@@ -22,7 +22,7 @@ import (
 var validData = "{\"type\": \"track\", \"event\": \"checkout started\"}"
 
 func TestNewProducer(t *testing.T) {
-	destinationConfig := map[string]interface{}{
+	destinationConfig := map[string]any{
 		"GoogleCloudFunctionUrl": "https://us-location-project-name.cloudfunctions.net/function-x",
 		"Credentials":            "crdentials",
 		"RequireAuthentication":  false,

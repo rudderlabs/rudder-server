@@ -59,18 +59,16 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewProducer(t *testing.T) {
-	requiredFields := map[string]interface{}{
+	requiredFields := map[string]any{
 		"hostname": "some-hostname",
 		"topic":    "some-topic",
 		"port":     "1234",
 	}
-	withRequired := func(m map[string]interface{}) map[string]interface{} {
-		for k, v := range requiredFields {
-			m[k] = v
-		}
+	withRequired := func(m map[string]any) map[string]any {
+		maps.Copy(m, requiredFields)
 		return m
 	}
-	buildTest := func(destConfig map[string]interface{}, expectedErr string) func(*testing.T) {
+	buildTest := func(destConfig map[string]any, expectedErr string) func(*testing.T) {
 		return func(t *testing.T) {
 			kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
@@ -82,24 +80,24 @@ func TestNewProducer(t *testing.T) {
 	}
 	t.Run("missing configuration data", func(t *testing.T) {
 		t.Run("missing topic", buildTest(
-			map[string]interface{}{},
+			map[string]any{},
 			"invalid configuration: topic cannot be empty"),
 		)
 		t.Run("missing hostname", buildTest(
-			map[string]interface{}{
+			map[string]any{
 				"topic": "some-topic",
 			},
 			"invalid configuration: hostname cannot be empty"),
 		)
 		t.Run("missing port", buildTest(
-			map[string]interface{}{
+			map[string]any{
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
 			},
 			"invalid configuration: invalid port"),
 		)
 		t.Run("invalid port", buildTest(
-			map[string]interface{}{
+			map[string]any{
 				"topic":    "some-topic",
 				"hostname": "some-hostname",
 				"port":     "0",
@@ -107,11 +105,11 @@ func TestNewProducer(t *testing.T) {
 			"invalid configuration: invalid port"),
 		)
 		t.Run("invalid schema", buildTest(
-			withRequired(map[string]interface{}{
+			withRequired(map[string]any{
 				"convertToAvro": true,
-				"avroSchemas": []interface{}{
+				"avroSchemas": []any{
 					map[string]string{"schemaId": "schema001"},
-					map[string]interface{}{
+					map[string]any{
 						"schema": map[string]string{"name": "MyClass"},
 					},
 				},
@@ -123,13 +121,13 @@ func TestNewProducer(t *testing.T) {
 		)
 		t.Run("invalid ssh config", func(t *testing.T) {
 			t.Run("missing ssh host", buildTest(
-				withRequired(map[string]interface{}{
+				withRequired(map[string]any{
 					"useSSH": true,
 				}),
 				"invalid configuration: ssh host cannot be empty",
 			))
 			t.Run("missing ssh port", buildTest(
-				withRequired(map[string]interface{}{
+				withRequired(map[string]any{
 					"useSSH":  true,
 					"sshHost": "random-host",
 					"sshUser": "johnDoe",
@@ -137,7 +135,7 @@ func TestNewProducer(t *testing.T) {
 				"invalid configuration: invalid ssh port",
 			))
 			t.Run("invalid ssh port", buildTest(
-				withRequired(map[string]interface{}{
+				withRequired(map[string]any{
 					"useSSH":  true,
 					"sshHost": "random-host",
 					"sshUser": "johnDoe",
@@ -146,7 +144,7 @@ func TestNewProducer(t *testing.T) {
 				"invalid configuration: invalid ssh port",
 			))
 			t.Run("missing ssh user", buildTest(
-				withRequired(map[string]interface{}{
+				withRequired(map[string]any{
 					"useSSH":  true,
 					"sshHost": "random-host",
 					"sshPort": "1234",
@@ -168,7 +166,7 @@ func TestNewProducer(t *testing.T) {
 		kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
 		require.NoError(t, err)
 
-		destConfig := map[string]interface{}{
+		destConfig := map[string]any{
 			"topic":    "some-topic",
 			"hostname": kafkaHost,
 			"port":     kafkaPort,
@@ -254,7 +252,7 @@ func TestNewProducer(t *testing.T) {
 		defer backendconfig.DefaultBackendConfig.Stop()
 
 		// Populate destConfig according to the above configuration
-		destConfig := map[string]interface{}{
+		destConfig := map[string]any{
 			"topic":    "some-topic",
 			"hostname": "kafka1",
 			"port":     "9092",
@@ -296,7 +294,7 @@ func TestIntegration(t *testing.T) {
 	require.NoError(t, err)
 	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
 	require.NoError(t, err)
-	destConfig := map[string]interface{}{
+	destConfig := map[string]any{
 		"topic":    "some-topic",
 		"hostname": kafkaHost,
 		"port":     kafkaPort,
@@ -374,7 +372,7 @@ func TestAIOKafka(t *testing.T) {
 	kafkaHost, kafkaPort, err := net.SplitHostPort(kafkaContainer.Brokers[0])
 	require.NoError(t, err)
 
-	destConfig := map[string]interface{}{
+	destConfig := map[string]any{
 		"topic":    kafkaTopic,
 		"hostname": kafkaHost,
 		"port":     kafkaPort,
@@ -442,7 +440,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 		t.Run("missing bootstrap server", func(t *testing.T) {
 			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
-			destConfig := map[string]interface{}{
+			destConfig := map[string]any{
 				"topic": "some-topic",
 			}
 			dest := backendconfig.DestinationT{Config: destConfig}
@@ -454,7 +452,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 		t.Run("missing connection string", func(t *testing.T) {
 			kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
-			destConfig := map[string]interface{}{
+			destConfig := map[string]any{
 				"topic":           "some-topic",
 				"bootstrapServer": "some-server",
 			}
@@ -477,7 +475,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 
 		kafkaStats.creationTimeAzureEventHubs = getMockedTimer(t, gomock.NewController(t), false)
 
-		destConfig := map[string]interface{}{
+		destConfig := map[string]any{
 			"topic":                     azureEventHubName,
 			"bootstrapServer":           "bad-host," + kafkaHost + "," + kafkaHost,
 			"eventHubsConnectionString": azureEventHubsConnString,
@@ -510,7 +508,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 		t.Run("missing bootstrap server", func(t *testing.T) {
 			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
-			destConfig := map[string]interface{}{
+			destConfig := map[string]any{
 				"topic": "some-topic",
 			}
 			dest := backendconfig.DestinationT{Config: destConfig}
@@ -522,7 +520,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 		t.Run("missing api key", func(t *testing.T) {
 			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
-			destConfig := map[string]interface{}{
+			destConfig := map[string]any{
 				"topic":           "some-topic",
 				"bootstrapServer": "some-server",
 			}
@@ -535,7 +533,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 		t.Run("missing api secret", func(t *testing.T) {
 			kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
-			destConfig := map[string]interface{}{
+			destConfig := map[string]any{
 				"topic":           "some-topic",
 				"bootstrapServer": "some-server",
 				"apiKey":          "secret-key",
@@ -559,7 +557,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 		kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t), false)
 
-		destConfig := map[string]interface{}{
+		destConfig := map[string]any{
 			"topic":           "TestProducerForConfluentCloud_OK",
 			"bootstrapServer": "bad-host," + kafkaHost + "," + kafkaHost,
 			"apiKey":          confluentCloudKey,
@@ -633,7 +631,7 @@ func TestProduce(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := map[string]interface{}{"foo": "bar"}
+		destConfig := map[string]any{"foo": "bar"}
 		sc, res, err := pm.Produce(json.RawMessage(""), destConfig)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
@@ -644,7 +642,7 @@ func TestProduce(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
 
 		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		destConfig := map[string]any{"topic": "foo-bar"}
 		sc, res, err := pm.Produce(json.RawMessage(""), destConfig)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -657,7 +655,7 @@ func TestProduce(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{error: fmt.Errorf("super bad")}}
-		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		destConfig := map[string]any{"topic": "foo-bar"}
 		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 400, sc)
 		require.Contains(t, res, "super bad error occurred.")
@@ -670,7 +668,7 @@ func TestProduce(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{error: kafka.LeaderNotAvailable}}
-		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		destConfig := map[string]any{"topic": "foo-bar"}
 		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 500, sc)
 		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
@@ -683,7 +681,7 @@ func TestProduce(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{}}
-		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		destConfig := map[string]any{"topic": "foo-bar"}
 		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
@@ -696,7 +694,7 @@ func TestProduce(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
 
 		pm := &ProducerManager{p: &pMockErr{}}
-		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		destConfig := map[string]any{"topic": "foo-bar"}
 		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
@@ -868,12 +866,12 @@ func TestAvroSchemaRegistry(t *testing.T) {
 	require.NoError(t, err)
 	var (
 		destinationID = "DEST1"
-		destConfig    = map[string]interface{}{
+		destConfig    = map[string]any{
 			"topic":         topicName,
 			"hostname":      kafkaHost,
 			"port":          kafkaPort,
 			"convertToAvro": true,
-			"avroSchemas": []map[string]interface{}{
+			"avroSchemas": []map[string]any{
 				{"schemaId": fmt.Sprintf("%d", schemaID2), "schema": schema2},
 			},
 		}
@@ -926,7 +924,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 					require.NoError(t, err)
 					native, _, err := codec.NativeFromBinary(e.Value)
 					require.NoError(t, err)
-					require.Equal(t, map[string]interface{}{
+					require.Equal(t, map[string]any{
 						"first_name": "John",
 						"last_name":  "Doe",
 					}, native)
@@ -981,7 +979,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
-		destConfigCopy := make(map[string]interface{})
+		destConfigCopy := make(map[string]any)
 		maps.Copy(destConfigCopy, destConfig)
 		destConfigCopy["embedAvroSchemaID"] = true
 		destCopy := dest
@@ -1092,9 +1090,9 @@ func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 
 type nopLogger struct{}
 
-func (*nopLogger) Error(...interface{})          {}
-func (*nopLogger) Infof(string, ...interface{})  {}
-func (*nopLogger) Errorf(string, ...interface{}) {}
+func (*nopLogger) Error(...any)          {}
+func (*nopLogger) Infof(string, ...any)  {}
+func (*nopLogger) Errorf(string, ...any) {}
 
 type testCleanup struct{ *testing.T }
 

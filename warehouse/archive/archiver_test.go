@@ -1,7 +1,6 @@
 package archive_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"regexp"
@@ -142,8 +141,7 @@ func TestArchiver(t *testing.T) {
 				tenantManager,
 			)
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx := t.Context()
 
 			err = archiver.Do(ctx)
 			require.NoError(t, err)
@@ -241,8 +239,7 @@ func TestArchiver_Delete(t *testing.T) {
 		tenantManager,
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	err = archiver.Delete(ctx)
 	require.NoError(t, err)

@@ -44,4 +44,4 @@ type Reporting interface {
 type ReportingSyncer func()
 
 // ConfigT simple map config structure
-type ConfigT map[string]interface{}
+type ConfigT map[string]any

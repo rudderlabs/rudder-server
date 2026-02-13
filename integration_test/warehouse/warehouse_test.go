@@ -2255,13 +2255,10 @@ func runWarehouseServer(
 			Topic: string(backendconfig.TopicBackendConfig),
 		}
 
-		bcConfigWg.Add(1)
-		go func() {
-			defer bcConfigWg.Done()
-
+		bcConfigWg.Go(func() {
 			<-ctx.Done()
 			close(ch)
-		}()
+		})
 
 		return ch
 	}).AnyTimes()
@@ -2649,7 +2646,7 @@ func sendEvents(
 	eventsCountInBatch int,
 	eventType, writeKey, url string,
 ) error {
-	for i := 0; i < batchCount; i++ {
+	for range batchCount {
 		trackPayloads := lo.RepeatBy(eventsCountInBatch, func(index int) string {
 			return fmt.Sprintf(`{
 				  "userId": %[1]q,
@@ -2669,9 +2666,9 @@ func sendEvents(
 				eventType,
 			)
 		})
-		batchPayload := []byte(fmt.Sprintf(`{"batch": [%s]}`,
+		batchPayload := fmt.Appendf(nil, `{"batch": [%s]}`,
 			strings.Join(trackPayloads, ",\n"),
-		))
+		)
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(batchPayload))
 		if err != nil {
 			return err

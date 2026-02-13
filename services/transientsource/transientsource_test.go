@@ -81,8 +81,7 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 
 		return configCh
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Given I have a service reading from the backend
 	service := NewService(ctx, config)
 	sourceIdsSupplier := service.SourceIdsSupplier()

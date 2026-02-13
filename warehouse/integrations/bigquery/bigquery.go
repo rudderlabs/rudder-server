@@ -1212,7 +1212,7 @@ func (bq *BigQuery) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 	return client.Client{Type: client.BQClient, BQ: dbClient.Client}, err
 }
 
-func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, _ string) error {
+func (bq *BigQuery) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]any, _ string) error {
 	gcsLocation := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptions{})
 
 	var gcsReference string

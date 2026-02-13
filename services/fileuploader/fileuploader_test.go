@@ -33,8 +33,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 
 		return configCh
 	})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Given I have a fileUploaderProvider reading from the backend
 	fileUploaderProvider := NewProvider(ctx, config)
 	var err error
@@ -76,7 +75,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 						UseSelfStorage: true,
 						StorageBucket: backendconfig.StorageBucket{
 							Type:   "",
-							Config: map[string]interface{}{},
+							Config: map[string]any{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
 							GatewayDumps: false,
@@ -91,7 +90,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 						UseSelfStorage: false,
 						StorageBucket: backendconfig.StorageBucket{
 							Type:   "S3",
-							Config: map[string]interface{}{},
+							Config: map[string]any{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
 							GatewayDumps: false,
@@ -175,7 +174,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 						UseSelfStorage: true,
 						StorageBucket: backendconfig.StorageBucket{
 							Type:   "S3",
-							Config: map[string]interface{}{},
+							Config: map[string]any{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
 							GatewayDumps: false,
@@ -227,7 +226,7 @@ func TestStaticProvider(t *testing.T) {
 		"testWorkspaceId-1": {
 			Bucket: backendconfig.StorageBucket{
 				Type:   "S3",
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 			},
 			Preferences: prefs,
 		},
@@ -258,27 +257,27 @@ func TestDefaultProvider(t *testing.T) {
 
 func TestOverride(t *testing.T) {
 	RegisterTestingT(t)
-	config := map[string]interface{}{
+	config := map[string]any{
 		"a": "1",
 		"b": "2",
 		"c": "3",
 	}
 	settings := backendconfig.StorageBucket{
 		Type: "S3",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"b": "4",
 			"d": "5",
 		},
 	}
 	bucket := overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]interface{}{
+	Expect(bucket.Config).To(Equal(map[string]any{
 		"a": "1",
 		"b": "4",
 		"c": "3",
 		"d": "5",
 	}))
 
-	config = map[string]interface{}{
+	config = map[string]any{
 		"a":          "1",
 		"b":          "2",
 		"c":          "3",
@@ -286,14 +285,14 @@ func TestOverride(t *testing.T) {
 	}
 	settings = backendconfig.StorageBucket{
 		Type: "S3",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"b": "4",
 			"d": "5",
 		},
 	}
 
 	bucket = overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]interface{}{
+	Expect(bucket.Config).To(Equal(map[string]any{
 		"a":          "1",
 		"b":          "4",
 		"c":          "3",
@@ -302,7 +301,7 @@ func TestOverride(t *testing.T) {
 		"externalID": "wrk-1",
 	}))
 
-	config = map[string]interface{}{
+	config = map[string]any{
 		"a":      "1",
 		"b":      "2",
 		"c":      "3",
@@ -312,13 +311,13 @@ func TestOverride(t *testing.T) {
 		Type: "S3",
 	}
 	bucket = overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]interface{}{
+	Expect(bucket.Config).To(Equal(map[string]any{
 		"a": "1",
 		"b": "2",
 		"c": "3",
 	}))
 
-	config = map[string]interface{}{
+	config = map[string]any{
 		"a":      "1",
 		"b":      "2",
 		"c":      "3",
@@ -328,7 +327,7 @@ func TestOverride(t *testing.T) {
 		Type: "MINIO",
 	}
 	bucket = overrideWithSettings(config, settings, "wrk-1")
-	Expect(bucket.Config).To(Equal(map[string]interface{}{
+	Expect(bucket.Config).To(Equal(map[string]any{
 		"a":      "1",
 		"b":      "2",
 		"c":      "3",

@@ -390,7 +390,7 @@ func TestFactory(t *testing.T) {
 
 			// Launch multiple goroutines to get the same throttler
 			done := make(chan struct{}, numGoroutines)
-			for i := 0; i < numGoroutines; i++ {
+			for i := range numGoroutines {
 				go func(index int) {
 					throttlers[index] = f.GetPickupThrottler("destName", "destID", "eventType")
 					done <- struct{}{}
@@ -398,7 +398,7 @@ func TestFactory(t *testing.T) {
 			}
 
 			// Wait for all goroutines
-			for i := 0; i < numGoroutines; i++ {
+			for range numGoroutines {
 				<-done
 			}
 
@@ -707,7 +707,7 @@ func TestFactoryWithRedis(t *testing.T) {
 
 		// Send multiple requests rapidly
 		const numRequests = 50
-		for i := 0; i < numRequests; i++ {
+		for i := range numRequests {
 			limited, err := ta.CheckLimitReached(context.Background(), 1)
 			require.NoError(t, err, "Request %d should not error", i)
 			// With a high limit, should not be limited

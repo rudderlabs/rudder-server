@@ -78,25 +78,25 @@ type LoadFileUpload struct {
 
 // baseWorkerJobRequest contains common fields for both v1 and v2 job requests
 type baseWorkerJobRequest struct {
-	BatchID                      string                 `json:"batch_id"`
-	UploadID                     int64                  `json:"upload_id"`
-	WorkspaceID                  string                 `json:"workspace_id"`
-	SourceID                     string                 `json:"source_id"`
-	SourceName                   string                 `json:"source_name"`
-	DestinationID                string                 `json:"destination_id"`
-	DestinationName              string                 `json:"destination_name"`
-	DestinationType              string                 `json:"destination_type"`
-	DestinationNamespace         string                 `json:"destination_namespace"`
-	DestinationRevisionID        string                 `json:"destination_revision_id"`
-	StagingDestinationRevisionID string                 `json:"staging_destination_revision_id"`
-	DestinationConfig            map[string]interface{} `json:"destination_config"`
-	StagingDestinationConfig     interface{}            `json:"staging_destination_config"`
-	UseRudderStorage             bool                   `json:"use_rudder_storage"`
-	StagingUseRudderStorage      bool                   `json:"staging_use_rudder_storage"`
-	UniqueLoadGenID              string                 `json:"unique_load_gen_id"`
-	RudderStoragePrefix          string                 `json:"rudder_storage_prefix"`
-	LoadFilePrefix               string                 `json:"load_file_prefix"` // prefix for the load file name
-	LoadFileType                 string                 `json:"load_file_type"`
+	BatchID                      string         `json:"batch_id"`
+	UploadID                     int64          `json:"upload_id"`
+	WorkspaceID                  string         `json:"workspace_id"`
+	SourceID                     string         `json:"source_id"`
+	SourceName                   string         `json:"source_name"`
+	DestinationID                string         `json:"destination_id"`
+	DestinationName              string         `json:"destination_name"`
+	DestinationType              string         `json:"destination_type"`
+	DestinationNamespace         string         `json:"destination_namespace"`
+	DestinationRevisionID        string         `json:"destination_revision_id"`
+	StagingDestinationRevisionID string         `json:"staging_destination_revision_id"`
+	DestinationConfig            map[string]any `json:"destination_config"`
+	StagingDestinationConfig     any            `json:"staging_destination_config"`
+	UseRudderStorage             bool           `json:"use_rudder_storage"`
+	StagingUseRudderStorage      bool           `json:"staging_use_rudder_storage"`
+	UniqueLoadGenID              string         `json:"unique_load_gen_id"`
+	RudderStoragePrefix          string         `json:"rudder_storage_prefix"`
+	LoadFilePrefix               string         `json:"load_file_prefix"` // prefix for the load file name
+	LoadFileType                 string         `json:"load_file_type"`
 }
 
 type StagingFileInfo struct {

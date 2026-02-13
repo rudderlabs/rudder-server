@@ -83,7 +83,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
 			}
@@ -147,7 +147,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
 			}
@@ -209,7 +209,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
 			}
@@ -280,7 +280,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
 			}
@@ -359,7 +359,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
 			}
@@ -444,9 +444,9 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
-					"auth": map[string]interface{}{
+					"auth": map[string]any{
 						"type": "OAuth",
 					},
 				},
@@ -531,7 +531,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
 				DestType:    "test-definition-name",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
 			}

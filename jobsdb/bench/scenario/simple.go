@@ -111,7 +111,7 @@ func (p *simple) Run(ctx context.Context) error {
 		read   atomic.Int64 // number of jobs read in the last second
 		update atomic.Int64 // number of jobs updated in the last second
 	)
-	for i := 0; i < noOfSources; i++ {
+	for i := range noOfSources {
 		sourceID := fmt.Sprintf("source-%d", i)
 		for range writerConcurrency {
 			g.Go(func() error {
@@ -128,9 +128,9 @@ func (p *simple) Run(ctx context.Context) error {
 								CreatedAt:   time.Now().UTC(),
 								EventCount:  1,
 								WorkspaceId: "workspace",
-								Parameters: []byte(fmt.Sprintf(`{
+								Parameters: fmt.Appendf(nil, `{
 									"source_id": %q
-									}`, sourceID)),
+									}`, sourceID),
 								CustomVal:    customVal,
 								EventPayload: eventPayload,
 							})
@@ -185,7 +185,6 @@ func (p *simple) Run(ctx context.Context) error {
 					}
 					chunks := lo.Chunk(jobs.Jobs, noOfChunks)
 					for _, chunk := range chunks {
-						chunk := chunk
 						g.Go(func() error {
 							var statusList []*jobsdb.JobStatusT
 							for _, job := range chunk {

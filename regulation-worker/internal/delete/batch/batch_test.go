@@ -68,7 +68,7 @@ func TestBatchDelete(t *testing.T) {
 				},
 			},
 			dest: model.Destination{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":  "regulation-test-data",
 					"accessKeyID": "abc",
 					"accessKey":   "xyz",

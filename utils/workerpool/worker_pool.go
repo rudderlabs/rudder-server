@@ -98,7 +98,6 @@ func (wp *workerPool) Shutdown() {
 	var wg sync.WaitGroup
 	wg.Add(len(wp.workers))
 	for _, w := range wp.workers {
-		w := w
 		go func() {
 			wstart := time.Now()
 			w.Stop()

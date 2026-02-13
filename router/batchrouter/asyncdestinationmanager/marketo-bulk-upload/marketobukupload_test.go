@@ -53,22 +53,22 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 
 	testData := []common.AsyncJob{
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"email":     "test1@example.com",
 				"firstName": "Test1",
 				"lastName":  "User1",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(1),
 			},
 		},
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"email":     "test2@example.com",
 				"firstName": "Test2",
 				"lastName":  "User2",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(2),
 			},
 		},
@@ -225,32 +225,32 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 	// Create test data that matches the field mapping
 	testData := []common.AsyncJob{
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"email":     "test1@example.com",
 				"firstName": "Test1",
 				"lastName":  "User1",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(1),
 			},
 		},
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"email":     "test2@example.com",
 				"firstName": "Test2",
 				"lastName":  "User2",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(2),
 			},
 		},
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"email":     "test3@example.com",
 				"firstName": "Test3",
 				"lastName":  "User3",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(3),
 			},
 		},

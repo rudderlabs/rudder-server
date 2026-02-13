@@ -39,7 +39,7 @@ func NewFactory(conf *config.Config) *Factory {
 type LoadFileWriter interface {
 	WriteGZ(s string) error
 	Write(p []byte) (int, error)
-	WriteRow(r []interface{}) error
+	WriteRow(r []any) error
 	Close() error
 	GetLoadFile() *os.File
 }
@@ -58,7 +58,7 @@ func (m *Factory) NewLoadFileWriter(loadFileType, outputFilePath string, schema 
 type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool
 	GetLoadTimeFormat(columnName string) string
-	AddColumn(columnName, columnType string, val interface{})
+	AddColumn(columnName, columnType string, val any)
 	AddRow(columnNames, values []string)
 	AddEmptyColumn(columnName string)
 	WriteToString() (string, error)

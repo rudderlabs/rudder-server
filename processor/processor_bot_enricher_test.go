@@ -252,7 +252,7 @@ func (s *botScenario) runRudderServer(ctx context.Context, cancel context.Cancel
 }
 
 func (s *botScenario) sendEvent(url, writeKey, workspaceID, sourceID string) error {
-	payload := []byte(fmt.Sprintf(`[
+	payload := fmt.Appendf(nil, `[
 		{
 			"properties": {
 				"isBot": %v,
@@ -278,7 +278,7 @@ func (s *botScenario) sendEvent(url, writeKey, workspaceID, sourceID string) err
 				"receivedAt": "2024-01-01T01:01:01.000000001Z"
 			}
 		}
-	]`, s.isBot, s.botAction, s.botName, s.botURL, s.isInvalidBrowser, workspaceID, sourceID))
+	]`, s.isBot, s.botAction, s.botName, s.botURL, s.isInvalidBrowser, workspaceID, sourceID)
 	req, err := http.NewRequest("POST", url+"/internal/v1/batch", bytes.NewReader(payload))
 	if err != nil {
 		return err
