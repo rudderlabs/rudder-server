@@ -160,7 +160,7 @@ type (
 	}
 )
 
-func (d *destConfig) Decode(m map[string]interface{}) error {
+func (d *destConfig) Decode(m map[string]any) error {
 	if err := mapstructure.Decode(m, d); err != nil {
 		return err
 	}

@@ -282,7 +282,6 @@ func (w *worker) processSingleStagingFile(
 	bufScanner.Buffer(make([]byte, maxCapacity), maxCapacity)
 
 	var lineBytesCounter int
-	var interfaceSliceSample []interface{}
 	columnCountLimitMap := integrationsconfig.ColumnCountLimitMap(jr.conf)
 	discardsTable := job.discardsTable()
 	sortedTableColumnMap := job.sortedColumnMapForAllTables()
@@ -382,8 +381,8 @@ func (w *worker) processSingleStagingFile(
 
 					columnVal = newColumnVal
 				case model.ArrayOfBooleanDataType:
-					if boolValue, ok := columnVal.([]interface{}); ok {
-						newColumnVal := make([]interface{}, len(boolValue))
+					if boolValue, ok := columnVal.([]any); ok {
+						newColumnVal := make([]any, len(boolValue))
 
 						for i, value := range boolValue {
 							if k, v := value.(bool); k && v {
@@ -455,7 +454,7 @@ func (w *worker) processSingleStagingFile(
 
 			// Special handling for JSON arrays
 			// TODO: Will this work for both BQ and RS?
-			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
+			if reflect.TypeOf(columnVal) == reflect.TypeFor[[]any]() {
 				marshalledVal, err := jsonrs.Marshal(columnVal)
 				if err != nil {
 					eventLoader.AddEmptyColumn(columnName)
@@ -687,10 +686,9 @@ func HandleSchemaChange(log logger.Logger, existingDataType, inferredDataType mo
 			newColumnVal = int(floatVal)
 		}
 	} else if existingDataType == model.JSONDataType {
-		var interfaceSliceSample []any
 		if inferredDataType == model.IntDataType || inferredDataType == model.FloatDataType || inferredDataType == model.BooleanDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
-		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+		} else if reflect.TypeOf(value) == reflect.TypeFor[[]any]() {
 			newColumnVal = value
 		} else {
 			newColumnVal = strconv.Quote(fmt.Sprintf("%v", value))

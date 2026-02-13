@@ -67,7 +67,7 @@ func TestSlaveWorker(t *testing.T) {
 
 	ctx := context.Background()
 
-	destConf := map[string]interface{}{
+	destConf := map[string]any{
 		"bucketName":       minioResource.BucketName,
 		"accessKeyID":      minioResource.AccessKeyID,
 		"accessKey":        minioResource.AccessKeyID,
@@ -122,7 +122,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConf,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -229,7 +229,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConf,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -365,7 +365,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConfTest,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -452,7 +452,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConf,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -555,7 +555,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConf,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -663,7 +663,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConf,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -801,7 +801,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConfTest,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -889,7 +889,7 @@ func TestSlaveWorker(t *testing.T) {
 					DestinationRevisionID:        uuid.New().String(),
 					StagingDestinationRevisionID: uuid.New().String(),
 					DestinationConfig:            destConf,
-					StagingDestinationConfig:     map[string]interface{}{},
+					StagingDestinationConfig:     map[string]any{},
 					UniqueLoadGenID:              uuid.New().String(),
 					RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 					LoadFileType:                 "csv",
@@ -969,7 +969,7 @@ func TestSlaveWorker(t *testing.T) {
 										DestinationDefinition: backendconfig.DestinationDefinitionT{
 											Name: warehouseutils.POSTGRES,
 										},
-										Config: map[string]interface{}{
+										Config: map[string]any{
 											"host":             pgResource.Host,
 											"database":         pgResource.Database,
 											"user":             pgResource.User,
@@ -1629,7 +1629,7 @@ func TestLoadFileDeterministicNaming(t *testing.T) {
 
 	ctx := context.Background()
 
-	destConf := map[string]interface{}{
+	destConf := map[string]any{
 		"bucketName":       minioResource.BucketName,
 		"accessKeyID":      minioResource.AccessKeyID,
 		"accessKey":        minioResource.AccessKeyID,
@@ -1683,7 +1683,7 @@ func TestLoadFileDeterministicNaming(t *testing.T) {
 				DestinationRevisionID:        uuid.New().String(),
 				StagingDestinationRevisionID: uuid.New().String(),
 				DestinationConfig:            destConf,
-				StagingDestinationConfig:     map[string]interface{}{},
+				StagingDestinationConfig:     map[string]any{},
 				UniqueLoadGenID:              uuid.New().String(),
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				LoadFileType:                 "csv",
@@ -1733,7 +1733,7 @@ func TestLoadFileDeterministicNaming(t *testing.T) {
 		gcsURL := fmt.Sprintf("%s/storage/v1/", server.URL())
 		t.Log("GCS URL:", gcsURL)
 
-		conf := map[string]interface{}{
+		conf := map[string]any{
 			"bucketName": "test-bucket",
 			"prefix":     "test-prefix",
 			"endPoint":   gcsURL,

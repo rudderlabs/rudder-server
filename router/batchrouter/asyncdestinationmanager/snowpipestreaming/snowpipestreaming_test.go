@@ -3,6 +3,7 @@ package snowpipestreaming
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"testing"
@@ -122,7 +123,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "SNOWPIPE_STREAMING",
 		},
-		Config: make(map[string]interface{}),
+		Config: make(map[string]any),
 	}
 	validations.Init()
 
@@ -186,7 +187,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = mockApi
 		dest := &backendconfig.DestinationT{
 			ID: destination.ID,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"enableIceberg": true,
 			},
 		}
@@ -2121,9 +2122,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 				// Pre-populate cache if needed
 				if tt.prePopulatedCache != nil {
-					for channelID, info := range tt.prePopulatedCache {
-						sm.polledImportInfoMap[channelID] = info
-					}
+					maps.Copy(sm.polledImportInfoMap, tt.prePopulatedCache)
 				}
 
 				// Set up mock API if needed
@@ -2274,13 +2273,13 @@ func TestFindNewColumns(t *testing.T) {
 func TestDestConfig_Decode(t *testing.T) {
 	tests := []struct {
 		name      string
-		input     map[string]interface{}
+		input     map[string]any
 		expected  destConfig
 		wantError bool
 	}{
 		{
 			name: "Valid Input",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"account":              "test-account",
 				"warehouse":            "test-warehouse",
 				"database":             "test-database",
@@ -2306,7 +2305,7 @@ func TestDestConfig_Decode(t *testing.T) {
 		},
 		{
 			name: "Invalid Input",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"account": 123, // Invalid type
 			},
 			expected:  destConfig{},
@@ -2314,7 +2313,7 @@ func TestDestConfig_Decode(t *testing.T) {
 		},
 		{
 			name:  "Empty Map",
-			input: map[string]interface{}{},
+			input: map[string]any{},
 			expected: destConfig{
 				Namespace: "STRINGEMPTY",
 			},

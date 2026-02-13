@@ -65,7 +65,7 @@ func TestSlave(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	destConf := map[string]interface{}{
+	destConf := map[string]any{
 		"bucketName":       minioResource.BucketName,
 		"accessKeyID":      minioResource.AccessKeyID,
 		"accessKey":        minioResource.AccessKeyID,
@@ -133,7 +133,7 @@ func TestSlave(t *testing.T) {
 			DestinationRevisionID:        uuid.New().String(),
 			StagingDestinationRevisionID: uuid.New().String(),
 			DestinationConfig:            destConf,
-			StagingDestinationConfig:     map[string]interface{}{},
+			StagingDestinationConfig:     map[string]any{},
 			UniqueLoadGenID:              uuid.New().String(),
 			RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 			LoadFileType:                 "csv",
@@ -162,13 +162,13 @@ func TestSlave(t *testing.T) {
 
 	g, _ := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		for i := 0; i < workerJobs; i++ {
+		for range workerJobs {
 			publishCh <- claim
 		}
 		return nil
 	})
 	g.Go(func() error {
-		for i := 0; i < workerJobs; i++ {
+		for range workerJobs {
 			response := <-subscriberCh
 
 			require.NoError(t, response.Err)
@@ -197,7 +197,7 @@ func TestSlave(t *testing.T) {
 	<-setupDone
 }
 
-func uploadFile(t testing.TB, ctx context.Context, destConf map[string]interface{}, filePath string) string {
+func uploadFile(t testing.TB, ctx context.Context, destConf map[string]any, filePath string) string {
 	t.Helper()
 
 	f, err := os.Open(filePath)
