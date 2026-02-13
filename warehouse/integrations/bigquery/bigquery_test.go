@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -777,7 +778,7 @@ func TestIntegration(t *testing.T) {
 					dropSchema(t, db, namespace)
 				})
 
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"project":       credentials.ProjectID,
 					"location":      credentials.Location,
 					"bucketName":    credentials.BucketName,
@@ -786,9 +787,7 @@ func TestIntegration(t *testing.T) {
 					"namespace":     namespace,
 					"syncFrequency": "30",
 				}
-				for k, v := range tc.configOverride {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.configOverride)
 
 				dest := backendconfig.DestinationT{
 					ID:     "test_destination_id",
@@ -1196,7 +1195,7 @@ func TestIntegration(t *testing.T) {
 						),
 					)
 					expectedRecords := make([][]string, 0, repeat)
-					for i := 0; i < repeat; i++ {
+					for range repeat {
 						expectedRecords = append(expectedRecords, whth.SampleTestRecords()...)
 					}
 					require.ElementsMatch(t, expectedRecords, records)

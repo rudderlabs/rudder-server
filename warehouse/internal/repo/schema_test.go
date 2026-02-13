@@ -67,7 +67,7 @@ func TestWHSchemasRepo(t *testing.T) {
 				err := (&migrator.Migrator{
 					Handle:          db.DB,
 					MigrationsTable: "warehouse_runalways_migrations",
-				}).MigrateFromTemplates("warehouse_always", map[string]interface{}{
+				}).MigrateFromTemplates("warehouse_always", map[string]any{
 					"config": conf,
 				})
 				require.NoError(t, err)
@@ -280,7 +280,7 @@ func TestWHSchemasRepo(t *testing.T) {
 				err := (&migrator.Migrator{
 					Handle:          db.DB,
 					MigrationsTable: "warehouse_runalways_migrations",
-				}).MigrateFromTemplates("warehouse_always", map[string]interface{}{
+				}).MigrateFromTemplates("warehouse_always", map[string]any{
 					"config": conf,
 				})
 				require.NoError(t, err)

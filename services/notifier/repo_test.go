@@ -77,7 +77,7 @@ func TestRepo(t *testing.T) {
 			err = (&migrator.Migrator{
 				Handle:          pgResource.DB,
 				MigrationsTable: "pg_notifier_queue_runalways_migrations",
-			}).MigrateFromTemplates("pg_notifier_queue_always", map[string]interface{}{
+			}).MigrateFromTemplates("pg_notifier_queue_always", map[string]any{
 				"config": conf,
 			})
 			require.NoError(t, err)
@@ -188,7 +188,7 @@ func TestRepo(t *testing.T) {
 					var workspaceIdentifiers []string
 					var batchIDs []string
 
-					for i := 0; i < 10; i++ {
+					for range 10 {
 						batchID := uuid.New().String()
 						workspaceIdentifier := workspaceIdentifier + "_" + uuid.New().String()
 						workspaceIdentifiers = append(workspaceIdentifiers, workspaceIdentifier)

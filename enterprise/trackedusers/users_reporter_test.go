@@ -37,8 +37,8 @@ var (
 
 	prepareJob = func(sourceID, userID, annID, workspaceID string) *jobsdb.JobT {
 		return &jobsdb.JobT{
-			Parameters:   []byte(fmt.Sprintf(`{"source_id":%q}`, sourceID)),
-			EventPayload: []byte(fmt.Sprintf(`{"batch": [{"anonymousId":%q,"userId":%q,"type":"track"}]}`, annID, userID)),
+			Parameters:   fmt.Appendf(nil, `{"source_id":%q}`, sourceID),
+			EventPayload: fmt.Appendf(nil, `{"batch": [{"anonymousId":%q,"userId":%q,"type":"track"}]}`, annID, userID),
 			UserID:       uuid.NewString(),
 			UUID:         uuid.New(),
 			CustomVal:    "GW",
@@ -47,8 +47,8 @@ var (
 	}
 	prepareAliasJob = func(sourceID, userID, previousID, workspaceID string) *jobsdb.JobT {
 		return &jobsdb.JobT{
-			Parameters:   []byte(fmt.Sprintf(`{"source_id":%q}`, sourceID)),
-			EventPayload: []byte(fmt.Sprintf(`{"batch": [{"previousId":%q,"userId":%q,"type":"alias"}]}`, previousID, userID)),
+			Parameters:   fmt.Appendf(nil, `{"source_id":%q}`, sourceID),
+			EventPayload: fmt.Appendf(nil, `{"batch": [{"previousId":%q,"userId":%q,"type":"alias"}]}`, previousID, userID),
 			UserID:       uuid.NewString(),
 			UUID:         uuid.New(),
 			CustomVal:    "GW",
@@ -59,13 +59,13 @@ var (
 		userIDHll, _ := hll.NewHll(hllSettings)
 		annIDHll, _ := hll.NewHll(hllSettings)
 		identifiedAnnIDHll, _ := hll.NewHll(hllSettings)
-		for i := 0; i < noOfUserIDs; i++ {
+		for range noOfUserIDs {
 			userIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
-		for i := 0; i < noOfAnnID; i++ {
+		for range noOfAnnID {
 			userIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
-		for i := 0; i < noOfIdentifiedAnnID; i++ {
+		for range noOfIdentifiedAnnID {
 			identifiedAnnIDHll.AddRaw(murmur3.Sum64WithSeed([]byte(uuid.NewString()), murmurSeed))
 		}
 		report := &UsersReport{

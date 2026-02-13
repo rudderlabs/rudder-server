@@ -65,7 +65,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	})
 
 	t.Run("Empty payload", func(t *testing.T) {
-		sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+		sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 			"payload": "",
 		})
 		statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
@@ -87,7 +87,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	producer := &Producer{conf: conf, client: mockClient, logger: mockLogger}
 
-	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 		"payload": sampleMessage,
 	})
 

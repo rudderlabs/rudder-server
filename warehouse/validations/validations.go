@@ -34,7 +34,7 @@ var (
 		"id":  "int",
 		"val": "string",
 	}
-	payloadMap = map[string]interface{}{
+	payloadMap = map[string]any{
 		"id":  1,
 		"val": "RudderStack",
 	}

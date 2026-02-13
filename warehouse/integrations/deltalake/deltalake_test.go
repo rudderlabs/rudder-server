@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -387,7 +388,7 @@ func TestIntegration(t *testing.T) {
 					Type: warehouseclient.SQLClient,
 				}
 
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"bucketProvider": "AZURE_BLOB",
 					"containerName":  credentials.ContainerName,
 					"prefix":         "",
@@ -396,9 +397,7 @@ func TestIntegration(t *testing.T) {
 					"accountName":    credentials.AccountName,
 					"accountKey":     credentials.AccountKey,
 				}
-				for k, v := range tc.configOverride {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.configOverride)
 				tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
 				t.Log("verifying test case 1")
@@ -480,7 +479,7 @@ func TestIntegration(t *testing.T) {
 
 		dest := backendconfig.DestinationT{
 			ID: "test_destination_id",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"host":            credentials.Host,
 				"port":            credentials.Port,
 				"path":            credentials.Path,
@@ -510,7 +509,7 @@ func TestIntegration(t *testing.T) {
 		testCases := []struct {
 			name                string
 			useParquetLoadFiles bool
-			conf                map[string]interface{}
+			conf                map[string]any
 		}{
 			{
 				name:                "Parquet load files",
@@ -523,7 +522,7 @@ func TestIntegration(t *testing.T) {
 			{
 				name:                "External location",
 				useParquetLoadFiles: true,
-				conf: map[string]interface{}{
+				conf: map[string]any{
 					"enableExternalLocation": true,
 					"externalLocation":       "/path/to/delta/table",
 				},
@@ -537,9 +536,7 @@ func TestIntegration(t *testing.T) {
 					strconv.FormatBool(tc.useParquetLoadFiles),
 				)
 
-				for k, v := range tc.conf {
-					dest.Config[k] = v
-				}
+				maps.Copy(dest.Config, tc.conf)
 
 				whth.VerifyConfigurationTest(t, dest)
 			})
@@ -1457,7 +1454,7 @@ func tableMetadata(t *testing.T, db *sql.DB, namespace, tableName string) map[st
 	require.NoError(t, err)
 
 	metadataMap := make(map[string]string)
-	for _, line := range strings.Split(information, "\n") {
+	for line := range strings.SplitSeq(information, "\n") {
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) >= 2 {
 			key := strings.TrimSpace(parts[0])

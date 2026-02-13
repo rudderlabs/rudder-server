@@ -38,7 +38,7 @@ func TestBigQuery_CheckValidPartitionColumn(t *testing.T) {
 			bq.conf = config.New()
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"partitionColumn": tc.key,
 					},
 				},
@@ -78,7 +78,7 @@ func TestBigQuery_BigqueryPartitionType(t *testing.T) {
 			bq.conf = config.New()
 			bq.warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"partitionType": tc.key,
 					},
 				},
@@ -98,18 +98,18 @@ func TestBigQuery_BigqueryPartitionType(t *testing.T) {
 func TestBigquery_PartitionDate(t *testing.T) {
 	testCases := []struct {
 		name              string
-		config            map[string]interface{}
+		config            map[string]any
 		expectedPartition string
 		expectedError     error
 	}{
 		{
 			name:              "ingestion partition",
-			config:            map[string]interface{}{},
+			config:            map[string]any{},
 			expectedPartition: "2023-04-05",
 		},
 		{
 			name: "hour partition type",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"partitionType": "hour",
 			},
 			expectedPartition: "2023-04-05T06",
@@ -117,7 +117,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		},
 		{
 			name: "day partition type",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"partitionType": "day",
 			},
 			expectedPartition: "2023-04-05",
@@ -125,7 +125,7 @@ func TestBigquery_PartitionDate(t *testing.T) {
 		},
 		{
 			name: "unsupported partition type",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"partitionType": "invalid",
 			},
 			expectedPartition: "",
@@ -158,76 +158,76 @@ func TestBigquery_PartitionDate(t *testing.T) {
 func TestBigQuery_AvoidPartitionDecorator(t *testing.T) {
 	testCases := []struct {
 		name                    string
-		destConfig              map[string]interface{}
-		configOverride          map[string]interface{}
+		destConfig              map[string]any
+		configOverride          map[string]any
 		avoidPartitionDecorator bool
 	}{
 		{
 			name:                    "partition not defined",
-			destConfig:              map[string]interface{}{},
+			destConfig:              map[string]any{},
 			avoidPartitionDecorator: false,
 		},
 		{
 			name: "loaded_at partition",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "loaded_at",
 			},
 			avoidPartitionDecorator: true,
 		},
 		{
 			name: "received_at partition",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "received_at",
 			},
 			avoidPartitionDecorator: true,
 		},
 		{
 			name: "sent_at partition",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "sent_at",
 			},
 			avoidPartitionDecorator: true,
 		},
 		{
 			name: "timestamp partition",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "timestamp",
 			},
 			avoidPartitionDecorator: true,
 		},
 		{
 			name: "original_timestamp partition",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "received_at",
 			},
 			avoidPartitionDecorator: true,
 		},
 		{
 			name: "ingestion partition",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "_PARTITIONTIME",
 			},
 			avoidPartitionDecorator: false,
 		},
 		{
 			name: "unsupported partition column",
-			destConfig: map[string]interface{}{
+			destConfig: map[string]any{
 				"partitionColumn": "invalid",
 			},
 			avoidPartitionDecorator: false,
 		},
 		{
 			name:       "custom`partition enabled",
-			destConfig: map[string]interface{}{},
-			configOverride: map[string]interface{}{
+			destConfig: map[string]any{},
+			configOverride: map[string]any{
 				"Warehouse.bigquery.customPartitionsEnabled": true,
 			},
 			avoidPartitionDecorator: true,
 		},
 		{
 			name:       "custom`partition enabled workspaceIDs",
-			destConfig: map[string]interface{}{},
-			configOverride: map[string]interface{}{
+			destConfig: map[string]any{},
+			configOverride: map[string]any{
 				"Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs": "workspaceID",
 			},
 			avoidPartitionDecorator: true,

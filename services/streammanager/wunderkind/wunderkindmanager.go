@@ -55,7 +55,7 @@ func NewProducer(conf *config.Config, destination *backendconfig.DestinationT, o
 }
 
 // Produce creates a producer and send data to Lambda.
-func (p *Producer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (p *Producer) Produce(jsonData json.RawMessage, destConfig any) (int, string, string) {
 	client := p.client
 	var input inputData
 	err := jsonrs.Unmarshal(jsonData, &input)

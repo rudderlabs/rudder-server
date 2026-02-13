@@ -39,7 +39,7 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 		case <-rt.telemetry.diagnosisTicker.C:
 		}
 		rt.telemetry.requestsMetricLock.RLock()
-		var diagnosisProperties map[string]interface{}
+		var diagnosisProperties map[string]any
 		retries := 0
 		aborted := 0
 		success := 0
@@ -51,8 +51,8 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 			compTime += reqMetric.RequestCompletedTime
 		}
 		if len(rt.telemetry.requestsMetric) > 0 {
-			diagnosisProperties = map[string]interface{}{
-				rt.destType: map[string]interface{}{
+			diagnosisProperties = map[string]any{
+				rt.destType: map[string]any{
 					diagnostics.RouterAborted:       aborted,
 					diagnostics.RouterRetries:       retries,
 					diagnostics.RouterSuccess:       success,
@@ -77,7 +77,7 @@ func (rt *Handle) collectMetrics(ctx context.Context) {
 				stringValueBytes = []byte{}
 			}
 			if diagnostics.Diagnostics != nil {
-				diagnostics.Diagnostics.Track(key, map[string]interface{}{
+				diagnostics.Diagnostics.Track(key, map[string]any{
 					diagnostics.RouterDestination: rt.destType,
 					diagnostics.Count:             len(value),
 					diagnostics.ErrorCountMap:     string(stringValueBytes),

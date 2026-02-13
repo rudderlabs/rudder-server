@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -45,7 +43,7 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 	case warehouseutils.GCSDatalake, warehouseutils.AzureDatalake:
 		// No additional steps
 	case warehouseutils.S3Datalake:
-		if schemarepository.UseGlue(lo.ToPtr(createDummyWarehouse(dest))) {
+		if schemarepository.UseGlue(new(createDummyWarehouse(dest))) {
 			appendSteps(
 				model.VerifyingCreateSchema,
 				model.VerifyingCreateAndAlterTable,

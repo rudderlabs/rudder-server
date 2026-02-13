@@ -343,7 +343,7 @@ func (bcm *BackendConfigManager) attachSSHTunnellingInfo(
 	return replica
 }
 
-func deepCopy(src, dest interface{}) error {
+func deepCopy(src, dest any) error {
 	buf, err := jsonrs.Marshal(src)
 	if err != nil {
 		return err

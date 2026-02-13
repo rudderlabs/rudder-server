@@ -30,7 +30,7 @@ func BenchmarkBackupRestore(b *testing.B) {
 
 	for i := 0; i < totalSuppressions/batchSize; i++ {
 		suppressions := generateSuppressions(i*batchSize, batchSize)
-		token := []byte(fmt.Sprintf("token%d", i))
+		token := fmt.Appendf(nil, "token%d", i)
 		require.NoError(b, repo1.Add(suppressions, token))
 	}
 

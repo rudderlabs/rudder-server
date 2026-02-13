@@ -54,7 +54,7 @@ func TestConcurrentGetDistinctValues(t *testing.T) {
 		perDSLookupCount: new(atomic.Int32),
 		info:             new(sync.Map),
 	}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		source.info.Store(strconv.Itoa(i), []string{"a-" + strconv.Itoa(i)})
 	}
 
@@ -74,7 +74,7 @@ func TestConcurrentGetDistinctValues(t *testing.T) {
 	}
 	wg := new(sync.WaitGroup)
 	wg.Add(1000)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			defer wg.Done()
 			_, err := c.GetDistinctValues("paramKey", []string{"1", "2"}, loadFunc)
@@ -94,7 +94,7 @@ func TestConcurrentGetDistinctValues(t *testing.T) {
 	c.RemoveDataset("2")
 
 	wg.Add(1000)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		go func() {
 			defer wg.Done()
 			_, err := c.GetDistinctValues("paramKey", []string{"1", "2", "3"}, loadFunc)

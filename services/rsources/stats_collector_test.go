@@ -470,11 +470,11 @@ var _ = Describe("Using StatsCollector", Serial, func() {
 })
 
 type jobParams struct {
-	JobRunID      string      `json:"source_job_run_id"`
-	TaskRunID     string      `json:"source_task_run_id"`
-	SourceID      string      `json:"source_id"`
-	DestinationID string      `json:"destination_id"`
-	RecordID      interface{} `json:"record_id"`
+	JobRunID      string `json:"source_job_run_id"`
+	TaskRunID     string `json:"source_task_run_id"`
+	SourceID      string `json:"source_id"`
+	DestinationID string `json:"destination_id"`
+	RecordID      any    `json:"record_id"`
 }
 
 type jobParamsNoRecordId struct {
@@ -486,7 +486,7 @@ type jobParamsNoRecordId struct {
 
 func generateJobs(num int, params jobParams) []*jobsdb.JobT { // skipcq: CRT-P0003
 	var jobs []*jobsdb.JobT
-	for i := 0; i < num; i++ {
+	for i := range num {
 		jobs = append(jobs, newJob(int64(i), params))
 	}
 	return jobs

@@ -236,10 +236,10 @@ func TestAsyncDestinationManager(t *testing.T) {
 			).AnyTimes()
 			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
 				gomock.Any(), gomock.Any(), gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+			).Times(1).Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 				require.Len(t, statuses, 4)
 
-				for i := 0; i < 4; i++ {
+				for i := range 4 {
 					require.Equal(t, int64(i+1), statuses[i].JobID)
 					require.Equal(t, jobsdb.Importing.State, statuses[i].JobState)
 					require.Equal(t, "200", statuses[i].ErrorCode)
@@ -395,7 +395,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 		).AnyTimes()
 		mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
 			gomock.Any(), gomock.Any(), gomock.Any(),
-		).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+		).Times(1).Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 			require.Len(t, statuses, 1)
 			require.Equal(t, int64(1), statuses[0].JobID)
 			require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
@@ -498,7 +498,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			).AnyTimes()
 			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
 				gomock.Any(), gomock.Any(), gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+			).Times(1).Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 				require.Len(t, statuses, 1)
 				require.Equal(t, int64(1), statuses[0].JobID)
 				require.Equal(t, jobsdb.Succeeded.State, statuses[0].JobState)
@@ -611,7 +611,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 			).AnyTimes()
 			mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
 				gomock.Any(), gomock.Any(), gomock.Any(),
-			).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+			).Times(1).Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 				require.Len(t, statuses, 4)
 				require.Equal(t, int64(1), statuses[0].JobID)
 				require.Equal(t, jobsdb.Succeeded.State, statuses[0].JobState)
@@ -762,7 +762,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 		).AnyTimes()
 		mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(
 			gomock.Any(), gomock.Any(), gomock.Any(),
-		).Times(1).Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+		).Times(1).Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 			require.Len(t, statuses, 1)
 			require.Equal(t, int64(1), statuses[0].JobID)
 			require.Equal(t, jobsdb.Failed.State, statuses[0].JobState)
@@ -848,7 +848,7 @@ func TestAsyncDestinationManager(t *testing.T) {
 					_ = f(jobsdb.EmptyUpdateSafeTx())
 				}).Return(nil)
 			mockJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					require.Len(t, statuses, 1)
 					require.Equal(t, job.JobID, statuses[0].JobID)
 					require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)

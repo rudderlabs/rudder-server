@@ -34,7 +34,7 @@ func (irh *ImportRequestHandler) ProcessRequest(w *http.ResponseWriter, r *http.
 	}
 
 	var interimMsgs []string
-	for index := 0; index < count; index++ {
+	for range count {
 		interimErrorMessage := <-done
 		interimMsgs = append(interimMsgs, interimErrorMessage)
 	}

@@ -129,7 +129,7 @@ func (*Datalake) Connect(context.Context, model.Warehouse) (client.Client, error
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (*Datalake) TestLoadTable(context.Context, string, string, map[string]interface{}, string) error {
+func (*Datalake) TestLoadTable(context.Context, string, string, map[string]any, string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 

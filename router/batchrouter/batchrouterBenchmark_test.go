@@ -48,7 +48,7 @@ func randomString() string {
 func Benchmark_JSONUnmarshal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		var jobs []*jobsdb.JobT
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			params := routerutils.JobParameters{
 				EventName:  "test",
 				EventType:  "track",

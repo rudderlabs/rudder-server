@@ -251,7 +251,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -263,7 +263,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
@@ -280,7 +280,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-c-definition-id",
 						Name:        "WEBHOOK",
 						DisplayName: "enabled-destination-c-definition-display-name",
-						Config:      map[string]interface{}{"transformAtV1": "none"},
+						Config:      map[string]any{"transformAtV1": "none"},
 					},
 				},
 				// This destination should receive no events
@@ -293,7 +293,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -316,7 +316,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				// This destination should receive no events
@@ -329,7 +329,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -349,7 +349,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
@@ -370,15 +370,15 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "A",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config: map[string]interface{}{
-							"supportedMessageTypes": []interface{}{"identify", "track"},
+						Config: map[string]any{
+							"supportedMessageTypes": []any{"identify", "track"},
 						},
 					},
 				},
@@ -392,7 +392,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -409,10 +409,10 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D1",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []interface{}{
-							map[string]interface{}{"oneTrustCookieCategory": "category1"},
-							map[string]interface{}{"oneTrustCookieCategory": "category2"},
+					Config: map[string]any{
+						"oneTrustCookieCategories": []any{
+							map[string]any{"oneTrustCookieCategory": "category1"},
+							map[string]any{"oneTrustCookieCategory": "category2"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -420,7 +420,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -428,9 +428,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D2",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []interface{}{
-							map[string]interface{}{"oneTrustCookieCategory": ""},
+					Config: map[string]any{
+						"oneTrustCookieCategories": []any{
+							map[string]any{"oneTrustCookieCategory": ""},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -438,7 +438,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -446,11 +446,11 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D3",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []interface{}{
-							map[string]interface{}{"oneTrustCookieCategory": "category1"},
-							map[string]interface{}{"oneTrustCookieCategory": "someOtherCategory"},
-							map[string]interface{}{"oneTrustCookieCategory": "someOtherCategory2"},
+					Config: map[string]any{
+						"oneTrustCookieCategories": []any{
+							map[string]any{"oneTrustCookieCategory": "category1"},
+							map[string]any{"oneTrustCookieCategory": "someOtherCategory"},
+							map[string]any{"oneTrustCookieCategory": "someOtherCategory2"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -458,7 +458,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -466,10 +466,10 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D4",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []interface{}{
-							map[string]interface{}{"oneTrustCookieCategory": "category2"},
-							map[string]interface{}{"oneTrustCookieCategory": ""},
+					Config: map[string]any{
+						"oneTrustCookieCategories": []any{
+							map[string]any{"oneTrustCookieCategory": "category2"},
+							map[string]any{"oneTrustCookieCategory": ""},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -477,7 +477,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -485,14 +485,14 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D5",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -509,26 +509,26 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D6",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider": "oneTrust",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "consent category 2"},
 									{"consent": "someOtherCategory"},
 								},
 							},
-							map[string]interface{}{
+							map[string]any{
 								"provider": "ketch",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "purpose 4"},
 									{"consent": "purpose 2"},
 								},
 							},
-							map[string]interface{}{
+							map[string]any{
 								"provider":           "custom",
 								"resolutionStrategy": "or",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "custom consent category 1"},
 									{"consent": "custom consent category 2"},
 								},
@@ -540,7 +540,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -548,21 +548,21 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D7",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"oneTrustCookieCategories": []interface{}{
-							map[string]interface{}{"oneTrustCookieCategory": "consent category 1"},
+					Config: map[string]any{
+						"oneTrustCookieCategories": []any{
+							map[string]any{"oneTrustCookieCategory": "consent category 1"},
 						},
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+						"consentManagement": []any{
+							map[string]any{
 								"provider": "oneTrust",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "consent category 1"},
 									{"consent": "consent category 2"},
 								},
 							},
-							map[string]interface{}{
+							map[string]any{
 								"provider": "ketch",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "purpose 1"},
 									{"consent": "purpose 3"},
 								},
@@ -574,7 +574,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -582,11 +582,11 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D8",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider": "oneTrust",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "consent category 3"},
 								},
 							},
@@ -597,7 +597,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -605,11 +605,11 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D9",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider": "oneTrust",
-								"consents": []map[string]interface{}{},
+								"consents": []map[string]any{},
 							},
 						},
 						"enableServerSideIdentify": false,
@@ -618,7 +618,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -626,14 +626,14 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D10",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -641,11 +641,11 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D11",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider": "ketch",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "purpose 1"},
 									{"consent": "purpose 2"},
 								},
@@ -657,7 +657,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -665,12 +665,12 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D12",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider":           "custom",
 								"resolutionStrategy": "or",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "consent category 2"},
 									{"consent": "someOtherCategory"},
 								},
@@ -682,7 +682,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -690,11 +690,11 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D13",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider": "custom",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "someOtherCategory"},
 									{"consent": "consent category 4"},
 								},
@@ -706,7 +706,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -714,12 +714,12 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D14",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"consentManagement": []interface{}{
-							map[string]interface{}{
+					Config: map[string]any{
+						"consentManagement": []any{
+							map[string]any{
 								"provider":           "custom",
 								"resolutionStrategy": "and",
-								"consents": []map[string]interface{}{
+								"consents": []map[string]any{
 									{"consent": "custom consent category 3"},
 									{"consent": "consent category 4"},
 								},
@@ -731,7 +731,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -748,10 +748,10 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D5",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"ketchConsentPurposes": []interface{}{
-							map[string]interface{}{"purpose": "purpose1"},
-							map[string]interface{}{"purpose": "purpose2"},
+					Config: map[string]any{
+						"ketchConsentPurposes": []any{
+							map[string]any{"purpose": "purpose1"},
+							map[string]any{"purpose": "purpose2"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -759,7 +759,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -767,9 +767,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D6",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"ketchConsentPurposes": []interface{}{
-							map[string]interface{}{"purpose": ""},
+					Config: map[string]any{
+						"ketchConsentPurposes": []any{
+							map[string]any{"purpose": ""},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -777,7 +777,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -785,14 +785,14 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D7",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"enableServerSideIdentify": false,
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -800,9 +800,9 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D8",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"ketchConsentPurposes": []interface{}{
-							map[string]interface{}{"purpose": "purpose3"},
+					Config: map[string]any{
+						"ketchConsentPurposes": []any{
+							map[string]any{"purpose": "purpose3"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -810,7 +810,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -818,10 +818,10 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Name:               "D9",
 					Enabled:            true,
 					IsProcessorEnabled: true,
-					Config: map[string]interface{}{
-						"ketchConsentPurposes": []interface{}{
-							map[string]interface{}{"purpose": "purpose1"},
-							map[string]interface{}{"purpose": "purpose3"},
+					Config: map[string]any{
+						"ketchConsentPurposes": []any{
+							map[string]any{"purpose": "purpose1"},
+							map[string]any{"purpose": "purpose3"},
 						},
 						"enableServerSideIdentify": false,
 					},
@@ -829,7 +829,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-enabled",
 						Name:        "destination-definition-name-enabled",
 						DisplayName: "destination-definition-display-name-enabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -850,7 +850,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -862,7 +862,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
@@ -879,7 +879,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-c-definition-id",
 						Name:        "WEBHOOK",
 						DisplayName: "enabled-destination-c-definition-display-name",
-						Config:      map[string]interface{}{"transformAtV1": "none"},
+						Config:      map[string]any{"transformAtV1": "none"},
 					},
 				},
 				// This destination should receive no events
@@ -892,7 +892,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -915,7 +915,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -1941,7 +1941,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 				types.Response{
 					Events: []types.TransformerResponse{
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"int-value":    0,
 								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
 							},
@@ -1952,7 +1952,7 @@ var _ = Describe("Processor with trackedUsers feature enabled", Ordered, func() 
 							},
 						},
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"int-value":    1,
 								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
 							},
@@ -2374,7 +2374,7 @@ var _ = Describe("Processor", Ordered, func() {
 				types.Response{
 					Events: []types.TransformerResponse{
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"int-value":    0,
 								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
 							},
@@ -2385,7 +2385,7 @@ var _ = Describe("Processor", Ordered, func() {
 							},
 						},
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"int-value":    1,
 								"string-value": fmt.Sprintf("value-%s", DestinationIDEnabledA),
 							},
@@ -3230,12 +3230,10 @@ var _ = Describe("Processor", Ordered, func() {
 			c.mockBatchRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				err := processor.Start(ctx)
 				Expect(err).To(BeNil())
-				wg.Done()
-			}()
+			})
 
 			Consistently(func() bool {
 				select {
@@ -3298,23 +3296,23 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"category1", "someOtherCategory"},
+				"context": map[string]any{
+					"consentManagement": map[string]any{
+						"deniedConsentIds": []any{"category1", "someOtherCategory"},
 					},
 				},
 				"type":      "track",
 				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3325,23 +3323,23 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{},
+				"context": map[string]any{
+					"consentManagement": map[string]any{
+						"deniedConsentIds": []any{},
 					},
 				},
 				"type":      "track",
 				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3352,19 +3350,19 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context":           map[string]interface{}{},
+				"context":           map[string]any{},
 				"type":              "track",
 				"channel":           "mobile",
 				"rudderId":          "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId":         "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3435,23 +3433,23 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
-						"deniedConsentIds": []interface{}{"purpose1", "purpose2", "someOtherCategory"},
+				"context": map[string]any{
+					"consentManagement": map[string]any{
+						"deniedConsentIds": []any{"purpose1", "purpose2", "someOtherCategory"},
 					},
 				},
 				"type":      "track",
 				"channel":   "android-srk",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"lbael":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3487,19 +3485,19 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context":           map[string]interface{}{},
+				"context":           map[string]any{},
 				"type":              "track",
 				"channel":           "mobile",
 				"rudderId":          "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId":         "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3510,26 +3508,26 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
+				"context": map[string]any{
+					"consentManagement": map[string]any{
 						"provider":           "oneTrust",
 						"resolutionStrategy": "and",
-						"allowedConsentIds":  []interface{}{"consent category 1"},
-						"deniedConsentIds":   []interface{}{"consent category 2", "someOtherCategory"},
+						"allowedConsentIds":  []any{"consent category 1"},
+						"deniedConsentIds":   []any{"consent category 2", "someOtherCategory"},
 					},
 				},
 				"type":      "track",
 				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3540,26 +3538,26 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
+				"context": map[string]any{
+					"consentManagement": map[string]any{
 						"provider":           "oneTrust",
 						"resolutionStrategy": "and",
-						"allowedConsentIds":  []interface{}{"consent category 1", "consent category 2", "someOtherCategory", "consent category 3"},
-						"deniedConsentIds":   []interface{}{},
+						"allowedConsentIds":  []any{"consent category 1", "consent category 2", "someOtherCategory", "consent category 3"},
+						"deniedConsentIds":   []any{},
 					},
 				},
 				"type":      "track",
 				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3570,25 +3568,25 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
+				"context": map[string]any{
+					"consentManagement": map[string]any{
 						"provider":          "custom",
-						"allowedConsentIds": []interface{}{"consent category 1", "consent category 2"},
-						"deniedConsentIds":  []interface{}{"someOtherCategory", "consent category 3"},
+						"allowedConsentIds": []any{"consent category 1", "consent category 2"},
+						"deniedConsentIds":  []any{"someOtherCategory", "consent category 3"},
 					},
 				},
 				"type":      "track",
 				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3599,26 +3597,26 @@ var _ = Describe("Processor", Ordered, func() {
 				"originalTimestamp": "2019-03-10T10:10:10.10Z",
 				"event":             "Demo Track",
 				"sentAt":            "2019-03-10T10:10:10.10Z",
-				"context": map[string]interface{}{
-					"consentManagement": map[string]interface{}{
+				"context": map[string]any{
+					"consentManagement": map[string]any{
 						"provider":           "ketch",
 						"resolutionStrategy": "or",
-						"allowedConsentIds":  []interface{}{"consent category 2"},
-						"deniedConsentIds":   []interface{}{"purpose 1", "purpose 3"},
+						"allowedConsentIds":  []any{"consent category 2"},
+						"deniedConsentIds":   []any{"purpose 1", "purpose 3"},
 					},
 				},
 				"type":      "track",
 				"channel":   "mobile",
 				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"label":    "",
 					"value":    float64(1),
 					"testMap":  nil,
 					"category": "",
 					"floatVal": 4.51,
 				},
-				"integrations": map[string]interface{}{
+				"integrations": map[string]any{
 					"All": true,
 				},
 			}
@@ -3815,7 +3813,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-1": "some-value-1",
 					},
 				},
@@ -3823,7 +3821,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 					},
 				},
@@ -3831,7 +3829,7 @@ var _ = Describe("Static Function Tests", func() {
 			expectedResponses := types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"some-key-1": "some-value-1",
 						},
 						StatusCode: 200,
@@ -3840,7 +3838,7 @@ var _ = Describe("Static Function Tests", func() {
 						},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"some-key-2": "some-value-2",
 						},
 						StatusCode: 200,
@@ -4087,8 +4085,8 @@ var _ = Describe("Static Function Tests", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"identify"},
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"identify"},
 					},
 				},
 			}
@@ -4098,7 +4096,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-1": "some-value-1",
 						"type":       "  IDENTIFY ",
 					},
@@ -4108,7 +4106,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       "track",
 					},
@@ -4118,7 +4116,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       123,
 					},
@@ -4155,13 +4153,13 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should filter out identify events when it is supported but serverSideIdentify is disabled", func() {
 			destinationConfig := backendconfig.DestinationT{
 				ID: "some-destination-id",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
 				},
 				IsProcessorEnabled: true, // assuming the mode is cloud/hybrid
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"identify", "track"},
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"identify", "track"},
 					},
 				},
 			}
@@ -4171,7 +4169,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-1": "some-value-1",
 						"type":       "  IDENTIFY ",
 					},
@@ -4181,7 +4179,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       "track",
 					},
@@ -4191,7 +4189,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       123,
 					},
@@ -4228,7 +4226,7 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should allow all events when no supportedMessageTypes key is present in config", func() {
 			destinationConfig := backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			}
 
@@ -4237,7 +4235,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-1": "some-value-1",
 						"type":       "  IDENTIFY ",
 					},
@@ -4247,7 +4245,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       "track",
 					},
@@ -4257,7 +4255,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       123,
 					},
@@ -4290,7 +4288,7 @@ var _ = Describe("Static Function Tests", func() {
 		It("Should allow all events when supportedMessageTypes is not an array", func() {
 			destinationConfig := backendconfig.DestinationT{
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"supportedMessageTypes": "identify",
 					},
 				},
@@ -4301,7 +4299,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-1": "some-value-1",
 						"type":       "  IDENTIFY ",
 					},
@@ -4311,7 +4309,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       "track",
 					},
@@ -4321,7 +4319,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"some-key-2": "some-value-2",
 						"type":       123,
 					},
@@ -4354,11 +4352,11 @@ var _ = Describe("Static Function Tests", func() {
 
 		It("Should filter out messages containing unsupported events", func() {
 			destinationConfig := backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": "Credit Card Removed"},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": "Credit Card Removed"},
 					},
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{},
@@ -4369,7 +4367,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Cart Cleared",
 					},
@@ -4379,7 +4377,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Credit Card Added",
 					},
@@ -4389,7 +4387,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": 2,
 					},
@@ -4425,15 +4423,15 @@ var _ = Describe("Static Function Tests", func() {
 
 		It("Shouldn;t filter out messages if listOfConversions config is corrupted", func() {
 			destinationConfig := backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			}
 
@@ -4442,7 +4440,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-1",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Cart Cleared",
 					},
@@ -4452,7 +4450,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Credit Card Added",
 					},
@@ -4462,7 +4460,7 @@ var _ = Describe("Static Function Tests", func() {
 					Metadata: types.Metadata{
 						MessageID: "message-2",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": 2,
 					},
@@ -4496,31 +4494,31 @@ var _ = Describe("Static Function Tests", func() {
 		It("When web sourceType is sending events to cloud-mode destination, should filter out any event types that are not track/group", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 					"connectionMode": "cloud",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "page"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"track", "group", "page"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "group"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "group"},
 							},
 						},
 					},
@@ -4533,7 +4531,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Cart Cleared",
 					},
@@ -4544,7 +4542,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "identify",
 						"event": "User Authenticated",
 					},
@@ -4555,7 +4553,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "screen",
 						"event": 2,
 					},
@@ -4592,31 +4590,31 @@ var _ = Describe("Static Function Tests", func() {
 		It("When web sourceType is sending events to device-mode destination, should filter out all the events to this destination", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: false,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 					"connectionMode": "device",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "group"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "group"},
 							},
 						},
 					},
@@ -4629,7 +4627,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Cart Cleared",
 					},
@@ -4640,7 +4638,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Credit Card Added",
 					},
@@ -4651,7 +4649,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "screen",
 						"event": 2,
 					},
@@ -4688,31 +4686,31 @@ var _ = Describe("Static Function Tests", func() {
 		It("When web sourceType is sending events to hybrid-mode destination, should filter out any event types that are not track/group", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 					"connectionMode": "hybrid",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "group"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "group"},
 							},
 						},
 					},
@@ -4725,7 +4723,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Cart Cleared",
 					},
@@ -4736,7 +4734,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Credit Card Added",
 					},
@@ -4747,7 +4745,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "screen",
 						"event": 2,
 					},
@@ -4783,23 +4781,23 @@ var _ = Describe("Static Function Tests", func() {
 		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter is not present, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 					"connectionMode": "hybrid",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
@@ -4815,7 +4813,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "group",
 						"event": "Cart Cleared",
 					},
@@ -4826,7 +4824,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Credit Card Added",
 					},
@@ -4837,7 +4835,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "screen",
 						"event": 2,
 					},
@@ -4873,29 +4871,29 @@ var _ = Describe("Static Function Tests", func() {
 		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web is a string, should filter out all the events with event.type not in supportedMessageTypes to this destination", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 					"connectionMode": "hybrid",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
+						"hybridModeCloudEventsFilter": map[string]any{
 							"web": "al",
 						},
 					},
@@ -4908,7 +4906,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-1",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "group",
 						"event": "Cart Cleared",
 					},
@@ -4919,7 +4917,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Credit Card Added",
 					},
@@ -4930,7 +4928,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "web",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "screen",
 						"event": 2,
 					},
@@ -4967,31 +4965,31 @@ var _ = Describe("Static Function Tests", func() {
 		It("When web sourceType is sending events to hybrid-mode destination & hybridModeCloudEventsFilter.web.messageType supports track only but sourceType is coming up as empty string, should filter out all the events with event.type not in supportedMessageTypes", func() {
 			destinationConfig := backendconfig.DestinationT{
 				IsProcessorEnabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"enableServerSideIdentify": false,
-					"listOfConversions": []interface{}{
-						map[string]interface{}{"conversions": "Credit Card Added"},
-						map[string]interface{}{"conversions": 1},
+					"listOfConversions": []any{
+						map[string]any{"conversions": "Credit Card Added"},
+						map[string]any{"conversions": 1},
 					},
 					"connectionMode": "hybrid",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "group", "alias"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					Config: map[string]any{
+						"supportedMessageTypes": []any{"track", "group", "alias"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track"},
 							},
 						},
 					},
@@ -5004,7 +5002,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-1",
 						SourceDefinitionType: "",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "Cart Cleared",
 					},
@@ -5015,7 +5013,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "group",
 						"event": "Credit Card Added",
 					},
@@ -5026,7 +5024,7 @@ var _ = Describe("Static Function Tests", func() {
 						MessageID:            "message-2",
 						SourceDefinitionType: "",
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "screen",
 						"event": 2,
 					},
@@ -5114,17 +5112,17 @@ func createBatchPayload(writeKey, receivedAt string, events []mockEventData, eve
 		payloads = append(payloads, eventCreator(event))
 	}
 	batch := strings.Join(payloads, ",")
-	return []byte(fmt.Sprintf(
+	return fmt.Appendf(nil,
 		`{"writeKey":%q,"batch":[%s],"requestIP":"1.2.3.4","receivedAt":%q}`, writeKey, batch, receivedAt,
-	))
+	)
 }
 
 func createBatchParameters(sourceId string) []byte {
-	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
+	return fmt.Appendf(nil, `{"source_id":%q}`, sourceId)
 }
 
 func createBatchParametersWithSources(sourceId string) []byte {
-	return []byte(fmt.Sprintf(`{"source_id":%q,"source_job_run_id":"job_run_id_1","source_task_run_id":"task_run_id_1"}`, sourceId))
+	return fmt.Appendf(nil, `{"source_id":%q,"source_job_run_id":"job_run_id_1","source_task_run_id":"task_run_id_1"}`, sourceId)
 }
 
 func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
@@ -5237,7 +5235,7 @@ func assertDestinationTransform(
 		return types.Response{
 			Events: []types.TransformerResponse{
 				{
-					Output: map[string]interface{}{
+					Output: map[string]any{
 						"int-value":    0,
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
@@ -5248,7 +5246,7 @@ func assertDestinationTransform(
 					},
 				},
 				{
-					Output: map[string]interface{}{
+					Output: map[string]any{
 						"int-value":    1,
 						"string-value": fmt.Sprintf("value-%s", destinationID),
 					},
@@ -5397,14 +5395,14 @@ var _ = Describe("TestConfigFilter", func() {
 			intgConfig := backendconfig.DestinationT{
 				ID:   "1",
 				Name: "test",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"config_key":   "config_value",
 					"long_config1": "long_config1_value..................................",
-					"long_config2": map[string]interface{}{"hello": "world"},
+					"long_config2": map[string]any{"hello": "world"},
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
-						"configFilters": []interface{}{"long_config1", "long_config2"},
+					Config: map[string]any{
+						"configFilters": []any{"long_config1", "long_config2"},
 					},
 				},
 				Enabled:            true,
@@ -5417,12 +5415,12 @@ var _ = Describe("TestConfigFilter", func() {
 				Destination: backendconfig.DestinationT{
 					ID:   "1",
 					Name: "test",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"config_key": "config_value",
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Config: map[string]interface{}{
-							"configFilters": []interface{}{"long_config1", "long_config2"},
+						Config: map[string]any{
+							"configFilters": []any{"long_config1", "long_config2"},
 						},
 					},
 					Enabled:            true,
@@ -5468,12 +5466,12 @@ var _ = Describe("TestConfigFilter", func() {
 				Destination: backendconfig.DestinationT{
 					ID:   "1",
 					Name: "test",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"config_key": "config_value",
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Config: map[string]interface{}{
-							"configFilters": []interface{}{"long_config1", "long_config2"},
+						Config: map[string]any{
+							"configFilters": []any{"long_config1", "long_config2"},
 						},
 					},
 					Enabled:            true,
@@ -5494,13 +5492,13 @@ var _ = Describe("TestConfigFilter", func() {
 			intgConfig := backendconfig.DestinationT{
 				ID:   "1",
 				Name: "test",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"config_key":   "config_value",
 					"long_config1": "long_config1_value..................................",
-					"long_config2": map[string]interface{}{"hello": "world"},
+					"long_config2": map[string]any{"hello": "world"},
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"configFilters": nil,
 					},
 				},
@@ -5514,13 +5512,13 @@ var _ = Describe("TestConfigFilter", func() {
 				Destination: backendconfig.DestinationT{
 					ID:   "1",
 					Name: "test",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"config_key":   "config_value",
 						"long_config1": "long_config1_value..................................",
-						"long_config2": map[string]interface{}{"hello": "world"},
+						"long_config2": map[string]any{"hello": "world"},
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"configFilters": nil,
 						},
 					},

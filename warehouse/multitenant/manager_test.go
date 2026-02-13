@@ -102,8 +102,7 @@ func TestDegradeWorkspace(t *testing.T) {
 				config: backendConfig,
 			})
 
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx := t.Context()
 
 			ch := m.WatchConfig(ctx)
 			config := <-ch

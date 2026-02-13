@@ -63,7 +63,7 @@ type TestConfig struct {
 	Tables                       []string
 	Client                       *warehouseclient.Client
 	TimestampBeforeSendingEvents time.Time
-	Config                       map[string]interface{}
+	Config                       map[string]any
 	StagingFilePath              string
 	EventsFilePath               string
 	StagingFilesEventsMap        EventsCountMap
@@ -166,7 +166,7 @@ func JobsDB(t testing.TB, port int) *sql.DB {
 
 func WithConstantRetries(operation func() error) error {
 	var err error
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		if err = operation(); err == nil {
 			return nil
 		}
@@ -281,7 +281,7 @@ func RetrieveRecordsFromWarehouse(
 	for rows.Next() {
 		resultSet := make([]any, len(columns))
 		resultSetPtrs := make([]any, len(columns))
-		for i := 0; i < len(columns); i++ {
+		for i := range columns {
 			resultSetPtrs[i] = &resultSet[i]
 		}
 

@@ -196,7 +196,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization",
 		fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", tc.WriteKey)),
+			fmt.Appendf(nil, "%s:", tc.WriteKey),
 		)),
 	)
 
@@ -230,7 +230,7 @@ func verifySourceJob(t testing.TB, tc *TestConfig) {
 
 		req.Header.Add("Content-Type", "application/json")
 		req.Header.Add("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", tc.WriteKey)),
+			fmt.Appendf(nil, "%s:", tc.WriteKey),
 		)))
 
 		if res, err = http.DefaultClient.Do(req); err != nil {

@@ -14,10 +14,10 @@ import (
 )
 
 type ConsentManagementInfo struct {
-	DeniedConsentIDs   []string    `json:"deniedConsentIds"`
-	AllowedConsentIDs  interface{} `json:"allowedConsentIds"` // Not used currently but added for future use
-	Provider           string      `json:"provider"`
-	ResolutionStrategy string      `json:"resolutionStrategy"`
+	DeniedConsentIDs   []string `json:"deniedConsentIds"`
+	AllowedConsentIDs  any      `json:"allowedConsentIds"` // Not used currently but added for future use
+	Provider           string   `json:"provider"`
+	ResolutionStrategy string   `json:"resolutionStrategy"`
 }
 
 type GenericConsentManagementProviderData struct {
@@ -125,7 +125,7 @@ func (proc *Handle) getGCMData(sourceID, destinationID, provider string) Generic
 }
 
 func getOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
-	cookieCategories, ok := misc.MapLookup(dest.Config, "oneTrustCookieCategories").([]interface{})
+	cookieCategories, ok := misc.MapLookup(dest.Config, "oneTrustCookieCategories").([]any)
 	if !ok {
 		// Handle the case where oneTrustCookieCategories is not a slice
 		return nil
@@ -133,9 +133,9 @@ func getOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
 	if len(cookieCategories) == 0 {
 		return nil
 	}
-	return lo.FilterMap(cookieCategories, func(cookieCategory interface{}, _ int) (string, bool) {
+	return lo.FilterMap(cookieCategories, func(cookieCategory any, _ int) (string, bool) {
 		switch category := cookieCategory.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			cCategory, ok := category["oneTrustCookieCategory"].(string)
 			return cCategory, ok && cCategory != ""
 		default:
@@ -145,7 +145,7 @@ func getOneTrustConsentCategories(dest *backendconfig.DestinationT) []string {
 }
 
 func getKetchConsentCategories(dest *backendconfig.DestinationT) []string {
-	consentPurposes, ok := misc.MapLookup(dest.Config, "ketchConsentPurposes").([]interface{})
+	consentPurposes, ok := misc.MapLookup(dest.Config, "ketchConsentPurposes").([]any)
 	if !ok {
 		// Handle the case where ketchConsentPurposes is not a slice
 		return nil
@@ -153,9 +153,9 @@ func getKetchConsentCategories(dest *backendconfig.DestinationT) []string {
 	if len(consentPurposes) == 0 {
 		return nil
 	}
-	return lo.FilterMap(consentPurposes, func(consentPurpose interface{}, _ int) (string, bool) {
+	return lo.FilterMap(consentPurposes, func(consentPurpose any, _ int) (string, bool) {
 		switch t := consentPurpose.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			purpose, ok := t["purpose"].(string)
 			return purpose, ok && purpose != ""
 		default:
@@ -208,7 +208,7 @@ func getGenericConsentManagementData(dest *backendconfig.DestinationT) (ConsentP
 
 func getConsentManagementInfo(event types.SingularEventT) (ConsentManagementInfo, error) {
 	consentManagementInfo := ConsentManagementInfo{}
-	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]interface{}); ok {
+	if consentManagement, ok := misc.MapLookup(event, "context", "consentManagement").(map[string]any); ok {
 		consentManagementObjBytes, mErr := jsonrs.Marshal(consentManagement)
 		if mErr != nil {
 			return consentManagementInfo, fmt.Errorf("error marshalling consentManagement: %v", mErr)

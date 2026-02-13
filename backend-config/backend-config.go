@@ -113,7 +113,7 @@ func trackConfig(preConfig, curConfig ConfigT) {
 	Diagnostics.DisableMetrics(curConfig.EnableMetrics)
 	if diagnostics.EnableConfigIdentifyMetric {
 		if len(preConfig.Sources) == 0 && len(curConfig.Sources) > 0 {
-			Diagnostics.Identify(map[string]interface{}{
+			Diagnostics.Identify(map[string]any{
 				diagnostics.ConfigIdentify: curConfig.Sources[0].WorkspaceID,
 			})
 		}
@@ -124,7 +124,7 @@ func trackConfig(preConfig, curConfig ConfigT) {
 		for _, source := range curConfig.Sources {
 			noOfDestinations += len(source.Destinations)
 		}
-		Diagnostics.Track(diagnostics.ConfigProcessed, map[string]interface{}{
+		Diagnostics.Track(diagnostics.ConfigProcessed, map[string]any{
 			diagnostics.SourcesCount:      noOfSources,
 			diagnostics.DesitanationCount: noOfDestinations,
 		})

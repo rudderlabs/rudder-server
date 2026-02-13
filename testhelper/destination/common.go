@@ -1,7 +1,7 @@
 package destination
 
 type Logger interface {
-	Log(...interface{})
+	Log(...any)
 }
 
 type Cleaner interface {
@@ -12,4 +12,4 @@ type Cleaner interface {
 type NOPLogger struct{}
 
 // Log for the NOP logger does nothing.
-func (*NOPLogger) Log(...interface{}) {}
+func (*NOPLogger) Log(...any) {}

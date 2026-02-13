@@ -7,8 +7,7 @@ import (
 
 func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 	const topic = "topic"
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	bus := PublishSubscriber{}
 
 	slow := bus.Subscribe(ctx, topic)
@@ -51,8 +50,7 @@ func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 
 func TestPubSub_late_subscription_gets_latest_value(t *testing.T) {
 	const topic = "topic"
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	bus := &PublishSubscriber{}
 
 	// Given I publish to a topic

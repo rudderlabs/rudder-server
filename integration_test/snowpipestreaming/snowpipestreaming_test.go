@@ -739,7 +739,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.NoError(t, sm.CreateSchema(ctx))
 		t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			eventFormat := func(int) string {
 				return fmt.Sprintf(`{"batch":[{"type":"track","userId":"%[1]s","event":"Product Reviewed %[1]s","properties":{"review_id":"86ac1cd43","product_id":"9578257311","rating":3,"review_body":"OK for the price. It works but the material feels flimsy."}, "timestamp":"2020-02-02T00:23:09.544Z","sentAt":"2020-02-02T00:23:09.544Z","originalTimestamp":"2020-02-02T00:23:09.544Z","receivedAt":"2020-02-02T00:23:09.544Z", "context":{"ip":"14.5.67.21"}}]}`,
 					strconv.Itoa(i+1),
@@ -766,7 +766,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		})
 		require.Equal(t, expectedSchema, convertRecordsToSchema(schema))
 
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			productIDIndex := i + 1
 			userID := strconv.Itoa(productIDIndex)
 			eventName := "Product Reviewed " + strconv.Itoa(productIDIndex)
@@ -1462,7 +1462,7 @@ func sendEvents(
 	eventFormat func(index int) string,
 	writeKey, url string,
 ) error {
-	for i := 0; i < num; i++ {
+	for i := range num {
 		payload := []byte(eventFormat(i))
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {

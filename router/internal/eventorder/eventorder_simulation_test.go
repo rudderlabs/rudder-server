@@ -32,8 +32,7 @@ func TestSimulateBarrier(t *testing.T) {
 		t.Logf("%+v", *job)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	var logger log = t
 	barrier := eventorder.NewBarrier()
@@ -298,7 +297,7 @@ func (cl *commitStatusLoop) commit() {
 
 func newRandomJobs(num int) []*job {
 	jobs := make([]*job, num)
-	for i := 0; i < num; i++ {
+	for i := range num {
 
 		var states []string
 		var terminal bool
@@ -329,5 +328,5 @@ func randomState() (state string, terminal bool) {
 }
 
 type log interface {
-	Logf(format string, args ...interface{})
+	Logf(format string, args ...any)
 }

@@ -133,17 +133,17 @@ func TestProxyRequest(t *testing.T) {
 					Type:          "REST",
 					URL:           "http://www.good_dest.domain.com",
 					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
+					QueryParams:   map[string]any{},
+					Body: map[string]any{
+						"JSON": map[string]any{
 							"key_1": "val_1",
 							"key_2": "val_2",
 						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
+						"FORM":       map[string]any{},
+						"JSON_ARRAY": map[string]any{},
+						"XML":        map[string]any{},
 					},
-					Files: map[string]interface{}{},
+					Files: map[string]any{},
 				},
 				Metadata: []ProxyRequestMetadata{
 					{
@@ -151,7 +151,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -179,17 +179,17 @@ func TestProxyRequest(t *testing.T) {
 					Type:          "REST",
 					URL:           "http://www.ctx_timeout_dest.domain.com",
 					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
+					QueryParams:   map[string]any{},
+					Body: map[string]any{
+						"JSON": map[string]any{
 							"key_1": "val_1",
 							"key_2": "val_2",
 						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
+						"FORM":       map[string]any{},
+						"JSON_ARRAY": map[string]any{},
+						"XML":        map[string]any{},
 					},
-					Files: map[string]interface{}{},
+					Files: map[string]any{},
 				},
 				Metadata: []ProxyRequestMetadata{
 					{
@@ -197,7 +197,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -224,17 +224,17 @@ func TestProxyRequest(t *testing.T) {
 					Type:          "REST",
 					URL:           "http://www.ctx_timeout_dest.domain.com",
 					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
+					QueryParams:   map[string]any{},
+					Body: map[string]any{
+						"JSON": map[string]any{
 							"key_1": "val_1",
 							"key_2": "val_2",
 						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
+						"FORM":       map[string]any{},
+						"JSON_ARRAY": map[string]any{},
+						"XML":        map[string]any{},
 					},
-					Files: map[string]interface{}{},
+					Files: map[string]any{},
 				},
 				Metadata: []ProxyRequestMetadata{
 					{
@@ -242,7 +242,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -267,17 +267,17 @@ func TestProxyRequest(t *testing.T) {
 					Type:          "REST",
 					URL:           "http://www.not_found_dest.domain.com",
 					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
+					QueryParams:   map[string]any{},
+					Body: map[string]any{
+						"JSON": map[string]any{
 							"key_1": "val_1",
 							"key_2": "val_2",
 						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
+						"FORM":       map[string]any{},
+						"JSON_ARRAY": map[string]any{},
+						"XML":        map[string]any{},
 					},
-					Files: map[string]interface{}{},
+					Files: map[string]any{},
 				},
 				Metadata: []ProxyRequestMetadata{
 					{
@@ -285,7 +285,7 @@ func TestProxyRequest(t *testing.T) {
 						DestinationID: "destination_id",
 					},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -310,19 +310,19 @@ func TestProxyRequest(t *testing.T) {
 					Type:          "REST",
 					URL:           "http://www.good_dest.domain.com",
 					RequestMethod: http.MethodPost,
-					QueryParams:   map[string]interface{}{},
-					Body: map[string]interface{}{
-						"JSON": map[string]interface{}{
+					QueryParams:   map[string]any{},
+					Body: map[string]any{
+						"JSON": map[string]any{
 							"key_1": "val_1",
 							"key_2": "val_2",
 						},
-						"FORM":       map[string]interface{}{},
-						"JSON_ARRAY": map[string]interface{}{},
-						"XML":        map[string]interface{}{},
+						"FORM":       map[string]any{},
+						"JSON_ARRAY": map[string]any{},
+						"XML":        map[string]any{},
 					},
-					Files: map[string]interface{}{},
+					Files: map[string]any{},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -456,15 +456,15 @@ var oauthDests = []backendconfig.DestinationT{
 	{
 		ID:          "d1",
 		WorkspaceID: "wsp",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"rudderAccountId": "actId",
 		},
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "SALESFORCE_OAUTH",
-			Config: map[string]interface{}{
-				"auth": map[string]interface{}{
+			Config: map[string]any{
+				"auth": map[string]any{
 					"type":         "OAuth",
-					"rudderScopes": []interface{}{"delivery"},
+					"rudderScopes": []any{"delivery"},
 				},
 			},
 		},
@@ -736,17 +736,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -822,17 +822,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -908,17 +908,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -994,17 +994,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1081,17 +1081,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1137,17 +1137,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1194,17 +1194,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1244,17 +1244,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1334,17 +1334,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1447,17 +1447,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{
@@ -1560,17 +1560,17 @@ var oauthv2ProxyTestCases = []oauthv2ProxyTcs{
 				Type:          "REST",
 				URL:           "http://www.ctx_timeout_dest.domain.com",
 				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
+				QueryParams:   map[string]any{},
+				Body: map[string]any{
+					"JSON": map[string]any{
 						"key_1": "val_1",
 						"key_2": "val_2",
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					"FORM":       map[string]any{},
+					"JSON_ARRAY": map[string]any{},
+					"XML":        map[string]any{},
 				},
-				Files: map[string]interface{}{},
+				Files: map[string]any{},
 			},
 			Metadata: []ProxyRequestMetadata{
 				{

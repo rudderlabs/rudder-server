@@ -53,7 +53,7 @@ func New(conf *config.Config, statsFactory stats.Stats, clientURL string, reques
 func mustRead(r io.Reader) []byte {
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return []byte(fmt.Sprintf("error reading response: %v", err))
+		return fmt.Appendf(nil, "error reading response: %v", err)
 	}
 	return data
 }

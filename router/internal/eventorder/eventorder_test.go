@@ -358,6 +358,6 @@ func TestOrderingDisable(t *testing.T) {
 	require.Equal(t, 2, barrier.Size(), "barrier should have size of 2")
 }
 
-func firstBool(v bool, _ ...interface{}) bool {
+func firstBool(v bool, _ ...any) bool {
 	return v
 }

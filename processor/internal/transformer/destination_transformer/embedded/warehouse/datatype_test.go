@@ -14,7 +14,7 @@ import (
 func TestDataType(t *testing.T) {
 	anySlice := make([]any, 600)
 	anyMap := make(map[string]any)
-	for i := 0; i < 600; i++ {
+	for i := range 600 {
 		anySlice[i] = i
 		anyMap[strconv.Itoa(i)] = i
 	}

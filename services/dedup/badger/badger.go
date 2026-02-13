@@ -214,6 +214,6 @@ type loggerForBadger struct {
 	logger.Logger
 }
 
-func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {
+func (l loggerForBadger) Warningf(fmt string, args ...any) {
 	l.Warnf(fmt, args...)
 }

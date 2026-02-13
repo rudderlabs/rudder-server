@@ -553,17 +553,17 @@ func TestShouldSample(t *testing.T) {
 		testCases         = []float64{10, 20, 30, 40, 50, 60, 70, 80, 90}
 	)
 
-	for k := 0; k < repeatEachTestFor; k++ {
-		for i := 0; i < timesPerTest; i++ { // no error margin for 0% and 100%
+	for range repeatEachTestFor {
+		for range timesPerTest { // no error margin for 0% and 100%
 			require.True(t, shouldSample(100))
 			require.False(t, shouldSample(0))
 		}
 	}
 
-	for k := 0; k < repeatEachTestFor; k++ {
+	for range repeatEachTestFor {
 		for _, testCase := range testCases {
 			var hits int64
-			for i := 0; i < timesPerTest; i++ {
+			for range timesPerTest {
 				if shouldSample(testCase) {
 					hits++
 				}

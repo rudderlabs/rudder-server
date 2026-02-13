@@ -33,13 +33,13 @@ var (
 		Name: "YANDEX_METRICA_OFFLINE_EVENTS",
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "YANDEX_METRICA_OFFLINE_EVENTS",
-			Config: map[string]interface{}{
-				"auth": map[string]interface{}{
+			Config: map[string]any{
+				"auth": map[string]any{
 					"type": "OAuth",
 				},
 			},
 		},
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"rudderAccountId": "1234",
 			"goalId":          "1234",
 		},

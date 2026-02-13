@@ -27,7 +27,7 @@ var (
 )
 
 func TestNewProducer(t *testing.T) {
-	destinationConfig := map[string]interface{}{
+	destinationConfig := map[string]any{
 		"Region":     "us-east-1",
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
@@ -42,7 +42,7 @@ func TestNewProducer(t *testing.T) {
 	assert.NotNil(t, producer)
 
 	// Invalid Region
-	destinationConfig = map[string]interface{}{
+	destinationConfig = map[string]any{
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
 	}
@@ -77,7 +77,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	assert.Contains(t, respMsg, "[Lambda] error while unmarshalling jsonData")
 
 	// Empty payload
-	sampleEventJson, _ = jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ = jsonrs.Marshal(map[string]any{
 		"payload": "",
 	})
 	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
@@ -93,7 +93,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
-	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 		"payload": sampleMessage,
 	})
 

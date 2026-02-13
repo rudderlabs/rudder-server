@@ -24,7 +24,7 @@ const (
 )
 
 type (
-	Config     map[string]interface{}
+	Config     map[string]any
 	TunnelInfo struct {
 		Config Config
 	}

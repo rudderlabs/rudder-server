@@ -1424,7 +1424,7 @@ func (rs *Redshift) Connect(ctx context.Context, warehouse model.Warehouse) (cli
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) (err error) {
+func (rs *Redshift) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]any, format string) (err error) {
 	var tempAccessKeyId, tempSecretAccessKey, token string
 	tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {

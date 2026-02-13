@@ -176,7 +176,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 			var wg sync.WaitGroup
 			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				idx := i
 				go func() {
 					require.NoError(t, jd.Start())
@@ -214,7 +214,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 
 			var wg sync.WaitGroup
 			wg.Add(10)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				go func() {
 					jd.Stop()
 					require.NoError(t, jd.backgroundGroup.Wait())
@@ -230,7 +230,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 			defer jd.TearDown()
 			var wg sync.WaitGroup
 			wg.Add(10)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				go func() {
 					require.NoError(t, jd.Start())
 					jd.Stop()
@@ -508,7 +508,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	generateJobs := func(numOfJob int) []*JobT {
 		customVal := "MOCKDS"
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
@@ -604,7 +604,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		generateJobs := func(numOfJob int) []*JobT {
 			customVal := "MOCKDS"
 			js := make([]*JobT, numOfJob)
-			for i := 0; i < numOfJob; i++ {
+			for i := range numOfJob {
 				js[i] = &JobT{
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
@@ -711,7 +711,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		generateJobs := func(numOfJob int) []*JobT {
 			customVal := "MOCKDS"
 			js := make([]*JobT, numOfJob)
-			for i := 0; i < numOfJob; i++ {
+			for i := range numOfJob {
 				js[i] = &JobT{
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
@@ -771,9 +771,9 @@ func TestCacheScenarios(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1036,9 +1036,9 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1114,9 +1114,9 @@ func TestDeleteExecuting(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1169,9 +1169,9 @@ func TestFailExecuting(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1231,12 +1231,12 @@ func TestMaxAgeCleanup(t *testing.T) {
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters: []byte(fmt.Sprintf(
+				Parameters: fmt.Appendf(nil,
 					`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`,
 					destinationID,
-				)),
+				),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1365,7 +1365,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	customVal := "MOCKDS"
 	generateJobs := func(workspaceID string, numOfJob int) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  workspaceID,
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
@@ -1490,7 +1490,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	generateJobs := func(paramValue string, numOfJob int) []*JobT {
 		customVal := "MOCKDS"
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  "workspace",
 				Parameters:   []byte(`{"batch_id":1,"source_job_run_id":"", "source_id":"` + paramValue + `"}`),
@@ -1584,12 +1584,12 @@ func TestPayloadSizeColumnQueries(t *testing.T) {
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters: []byte(fmt.Sprintf(
+				Parameters: fmt.Appendf(nil,
 					`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`,
 					destinationID,
-				)),
+				),
 				EventPayload: []byte(`{"keykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykey": "valuevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevalue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1665,7 +1665,7 @@ func TestUpdateJobStatus(t *testing.T) {
 	generateJobs := func(sourceID, destinationID string, numOfJob int) []*JobT {
 		customVal := "MOCKDS"
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  "workspace",
 				Parameters:   []byte(`{"source_id":"` + sourceID + `", "destination_id":"` + destinationID + `"}`),
@@ -1920,11 +1920,11 @@ func TestPartitionedJobsDB(t *testing.T) {
 }
 
 type testingT interface {
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 	FailNow()
 	Setenv(key, value string)
-	Log(...interface{})
-	Logf(format string, args ...interface{})
+	Log(...any)
+	Logf(format string, args ...any)
 	Cleanup(func())
 	Failed() bool
 }

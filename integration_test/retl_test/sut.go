@@ -37,7 +37,7 @@ type dst interface {
 	ID() string
 	Name() string
 	TypeName() string
-	Config() map[string]interface{}
+	Config() map[string]any
 
 	Start(t *testing.T)
 	Shutdown(t *testing.T)
@@ -135,7 +135,6 @@ func (s *SUT) Start(t *testing.T) {
 
 	for _, srcWithDst := range s.Sources {
 		for _, dst := range srcWithDst.destinations {
-			dst := dst
 			containersGroup.Go(func() (err error) {
 				dst.Start(t)
 				return nil

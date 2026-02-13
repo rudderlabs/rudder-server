@@ -65,13 +65,13 @@ func (m *mockStagingFileSchemaSnapshotGetter) GetOrCreate(ctx context.Context, s
 }
 
 func filterPayload(text, match string) string {
-	output := ""
-	for _, line := range strings.Split(text, "\n") {
+	var output strings.Builder
+	for line := range strings.SplitSeq(text, "\n") {
 		if !strings.Contains(line, match) {
-			output += line + "\n"
+			output.WriteString(line + "\n")
 		}
 	}
-	return output
+	return output.String()
 }
 
 func TestAPI_Process(t *testing.T) {

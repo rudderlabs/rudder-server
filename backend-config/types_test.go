@@ -46,7 +46,7 @@ func TestDestinationT_MarshalJSON_HasDynamicConfigAlwaysPresent(t *testing.T) {
 			require.NoError(t, err)
 
 			// Unmarshal to a map to check for key presence
-			var result map[string]interface{}
+			var result map[string]any
 			err = jsonrs.Unmarshal(jsonData, &result)
 			require.NoError(t, err)
 

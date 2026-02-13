@@ -52,13 +52,13 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
 			{
 				ID: "2",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event2",
 				},
 			},
@@ -124,10 +124,10 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 
 		// Create 5 events, expect them to be split into batches of 2
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})
@@ -182,7 +182,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 			events := []types.SrcHydrationEvent{
 				{
 					ID: "1",
-					Event: map[string]interface{}{
+					Event: map[string]any{
 						"test": "event1",
 					},
 				},
@@ -254,7 +254,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
@@ -308,7 +308,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
@@ -366,7 +366,7 @@ func TestSourceHydration_Hydrate(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
@@ -457,7 +457,7 @@ func TestSourceHydration_ErrorResponses(t *testing.T) {
 			events := []types.SrcHydrationEvent{
 				{
 					ID: "1",
-					Event: map[string]interface{}{
+					Event: map[string]any{
 						"test": "event1",
 					},
 				},
@@ -512,7 +512,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
@@ -557,7 +557,7 @@ func TestSourceHydration_MalformedResponse(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
@@ -617,7 +617,7 @@ func TestSourceHydration_Timeout(t *testing.T) {
 		events := []types.SrcHydrationEvent{
 			{
 				ID: "1",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "event1",
 				},
 			},
@@ -675,10 +675,10 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 
 		// Create 500 events to test large batch splitting
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 500; i++ {
+		for i := range 500 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})
@@ -738,10 +738,10 @@ func TestSourceHydration_BatchEdgeCases(t *testing.T) {
 
 		// Create exactly 10 events - exactly 2 batches
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})
@@ -819,7 +819,7 @@ func TestSourceHydration_SourceDefinitions(t *testing.T) {
 				events := []types.SrcHydrationEvent{
 					{
 						ID: "1",
-						Event: map[string]interface{}{
+						Event: map[string]any{
 							"test": "event1",
 						},
 					},
@@ -913,10 +913,10 @@ func TestSourceHydration_ConcurrentRequests(t *testing.T) {
 		var requests []types.SrcHydrationRequest
 		for i, source := range sources {
 			var events []types.SrcHydrationEvent
-			for j := 0; j < 3; j++ {
+			for j := range 3 {
 				events = append(events, types.SrcHydrationEvent{
 					ID: fmt.Sprintf("%d-%d", i, j),
-					Event: map[string]interface{}{
+					Event: map[string]any{
 						"source": source.ID,
 						"event":  fmt.Sprintf("event%d-%d", i, j),
 					},
@@ -990,11 +990,11 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 			},
 			{
 				ID:    "2",
-				Event: map[string]interface{}{}, // Empty event
+				Event: map[string]any{}, // Empty event
 			},
 			{
 				ID: "3",
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": "valid-event",
 				},
 			},
@@ -1023,7 +1023,7 @@ func TestSourceHydration_EmptyNilEvents(t *testing.T) {
 		require.Equal(t, "2", resp.Batch[1].ID)
 		require.Empty(t, resp.Batch[1].Event)
 		require.Equal(t, "3", resp.Batch[2].ID)
-		require.Equal(t, map[string]interface{}{"test": "valid-event"}, resp.Batch[2].Event)
+		require.Equal(t, map[string]any{"test": "valid-event"}, resp.Batch[2].Event)
 	})
 }
 
@@ -1083,10 +1083,10 @@ func TestSourceHydration_MetricsTracking(t *testing.T) {
 
 		// Create 5 events, expect them to be split into batches of 2
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})
@@ -1190,10 +1190,10 @@ func TestSourceHydration_PartialBatchFailures(t *testing.T) {
 
 		// Create 5 events, split into 3 batches: [0,1], [2,3], [4]
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})
@@ -1248,10 +1248,10 @@ func TestSourceHydration_TransformerAbort(t *testing.T) {
 
 		// Create 5 events
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})
@@ -1313,10 +1313,10 @@ func TestSourceHydration_TransformerAbort(t *testing.T) {
 
 		// Create 5 events, split into 3 batches: [0,1], [2,3], [4]
 		var events []types.SrcHydrationEvent
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			events = append(events, types.SrcHydrationEvent{
 				ID: fmt.Sprintf("%d", i),
-				Event: map[string]interface{}{
+				Event: map[string]any{
 					"test": fmt.Sprintf("event%d", i),
 				},
 			})

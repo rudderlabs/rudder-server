@@ -310,8 +310,8 @@ func runAllInit() {
 	alert.Init()
 }
 
-func (r *Runner) versionInfo() map[string]interface{} {
-	return map[string]interface{}{
+func (r *Runner) versionInfo() map[string]any {
+	return map[string]any{
 		"Version":   r.releaseInfo.Version,
 		"Commit":    r.releaseInfo.Commit,
 		"BuildDate": r.releaseInfo.BuildDate,

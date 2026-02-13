@@ -84,7 +84,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 // MigrateFromTemplates migrates database with migration scripts provided by golang templates.
 // Migration templates are read from all files in templatesDir and converted using provided context as template data.
 // Directories inside templates directory are ignored.
-func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}) error {
+func (m *Migrator) MigrateFromTemplates(templatesDir string, context any) error {
 	// look in templatesDir for migration template files
 	fileInfos, err := migrations.FS.ReadDir(templatesDir)
 	if err != nil {

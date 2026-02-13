@@ -6,7 +6,7 @@ import (
 )
 
 type DataEvent struct {
-	Data  interface{}
+	Data  any
 	Topic string
 }
 
@@ -28,7 +28,7 @@ func New() *PublishSubscriber {
 	return &PublishSubscriber{}
 }
 
-func (eb *PublishSubscriber) Publish(topic string, data interface{}) {
+func (eb *PublishSubscriber) Publish(topic string, data any) {
 	eb.subscriptionsMutex.RLock()
 	defer eb.subscriptionsMutex.RUnlock()
 	eb.lastEventMutex.Lock()

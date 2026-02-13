@@ -40,51 +40,51 @@ func TestEventStats(t *testing.T) {
 		es.ObserveSourceEvents(source, fromSDK(sdkLibrary, sdkVersion, []types.TransformerEvent{
 			// missing originalTimestamp
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"sentAt": "2020-01-01T00:00:00.000Z",
 				},
 			},
 			// missing sentAt
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"originalTimestamp": "2020-01-01T00:00:00.000Z",
 				},
 			},
 			// missing both counts as missing_original_timestamp
 			{
-				Message: map[string]interface{}{},
+				Message: map[string]any{},
 			},
 			// on-time, 10 minutes late
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"originalTimestamp": "2020-01-01T00:00:00.000Z",
 					"sentAt":            "2020-01-01T00:10:00.000Z",
 				},
 			},
 			// late, 1 month late
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"originalTimestamp": "2020-01-01T00:00:00.000Z",
 					"sentAt":            "2020-02-01T00:00:00.000Z",
 				},
 			},
 			// late, 1 day late
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"originalTimestamp": "2020-01-01T00:00:00.000Z",
 					"sentAt":            "2020-01-02T00:00:00.000Z",
 				},
 			},
 			// late, 1 hour and 10 seconds late
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"originalTimestamp": "2020-01-01T00:00:00.000Z",
 					"sentAt":            "2020-01-01T01:00:10.000Z",
 				},
 			},
 			// on-time
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"originalTimestamp": "2020-01-01T00:00:00.000Z",
 					"sentAt":            "2020-01-01T00:00:00.000Z",
 				},
@@ -147,30 +147,30 @@ func TestEventStats(t *testing.T) {
 		}{
 			{
 				name:               "missing context",
-				message:            map[string]interface{}{},
+				message:            map[string]any{},
 				expectedSDKVersion: "unknown",
 			},
 			{
 				name: "missing context.library",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{},
+				message: map[string]any{
+					"context": map[string]any{},
 				},
 				expectedSDKVersion: "unknown",
 			},
 			{
 				name: "missing context.library contents",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{},
+				message: map[string]any{
+					"context": map[string]any{
+						"library": map[string]any{},
 					},
 				},
 				expectedSDKVersion: "unknown",
 			},
 			{
 				name: "missing context.library.name",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{
+				message: map[string]any{
+					"context": map[string]any{
+						"library": map[string]any{
 							"version": "1.0.0",
 						},
 					},
@@ -179,9 +179,9 @@ func TestEventStats(t *testing.T) {
 			},
 			{
 				name: "missing context.library.version",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{
+				message: map[string]any{
+					"context": map[string]any{
+						"library": map[string]any{
 							"name": "rudder-go",
 						},
 					},
@@ -190,9 +190,9 @@ func TestEventStats(t *testing.T) {
 			},
 			{
 				name: " context.library.version not a string",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{
+				message: map[string]any{
+					"context": map[string]any{
+						"library": map[string]any{
 							"name":    "rudder-go",
 							"version": 2,
 						},
@@ -202,9 +202,9 @@ func TestEventStats(t *testing.T) {
 			},
 			{
 				name: "context.library.name not a string",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{
+				message: map[string]any{
+					"context": map[string]any{
+						"library": map[string]any{
 							"name": []string{"rudder-go"},
 						},
 					},
@@ -213,9 +213,9 @@ func TestEventStats(t *testing.T) {
 			},
 			{
 				name: "parse context.library name and version",
-				message: map[string]interface{}{
-					"context": map[string]interface{}{
-						"library": map[string]interface{}{
+				message: map[string]any{
+					"context": map[string]any{
+						"library": map[string]any{
 							"name":    "rudder-go",
 							"version": "1.0.0",
 						},
@@ -262,8 +262,8 @@ func TestEventStats(t *testing.T) {
 
 func fromSDK(lib, version string, events []types.TransformerEvent) []types.TransformerEvent {
 	for i := range events {
-		events[i].Message["context"] = map[string]interface{}{
-			"library": map[string]interface{}{
+		events[i].Message["context"] = map[string]any{
+			"library": map[string]any{
 				"name":    lib,
 				"version": version,
 			},

@@ -137,7 +137,7 @@ func prepareStagingFilePathUsingEventsFile(t testing.TB, testConfig *TestConfig)
 	tr := transformer.NewClients(c, logger.NOP, stats.Default)
 	response := tr.Destination().Transform(context.Background(), transformerEvents)
 	require.Zero(t, len(response.FailedEvents))
-	responseOutputs := lo.Map(response.Events, func(r types.TransformerResponse, index int) map[string]interface{} {
+	responseOutputs := lo.Map(response.Events, func(r types.TransformerResponse, index int) map[string]any {
 		return r.Output
 	})
 
@@ -207,7 +207,7 @@ func prepareStagingPayload(t testing.TB, testConfig *TestConfig, stagingFile str
 			Table   string            `json:"table"`
 			Columns map[string]string `json:"columns"`
 		}
-		Data map[string]interface{} `json:"data"`
+		Data map[string]any `json:"data"`
 	}
 
 	f, err := os.Open(stagingFile)

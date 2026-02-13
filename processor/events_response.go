@@ -38,11 +38,11 @@ func (proc *Handle) getDroppedJobs(response types.Response, eventsToTransform []
 	for _, e := range eventsToTransform {
 		if _, ok := droppedMessageIDKeys[e.Metadata.MessageID]; ok {
 			params := struct {
-				SourceJobRunID  string      `json:"source_job_run_id"`
-				SourceTaskRunID string      `json:"source_task_run_id"`
-				SourceID        string      `json:"source_id"`
-				DestinationID   string      `json:"destination_id"`
-				RecordID        interface{} `json:"record_id"`
+				SourceJobRunID  string `json:"source_job_run_id"`
+				SourceTaskRunID string `json:"source_task_run_id"`
+				SourceID        string `json:"source_id"`
+				DestinationID   string `json:"destination_id"`
+				RecordID        any    `json:"record_id"`
 			}{
 				SourceJobRunID:  e.Metadata.SourceJobRunID,
 				SourceTaskRunID: e.Metadata.SourceTaskRunID,

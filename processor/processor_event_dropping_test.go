@@ -402,7 +402,7 @@ func (s *eventDropScenario) sendEvents(url, writeKey, workspaceID, sourceID stri
 	}
 
 	// Build the final payload as an array of wrapped events
-	payload := []byte(fmt.Sprintf("[%s]", strings.Join(wrappedEvents, ",\n")))
+	payload := fmt.Appendf(nil, "[%s]", strings.Join(wrappedEvents, ",\n"))
 
 	return s.sendHTTPRequest(url, writeKey, payload)
 }

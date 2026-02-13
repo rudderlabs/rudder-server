@@ -136,12 +136,10 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	trackWg.Add(1)
-	go func() {
+	trackWg.Go(func() {
 		l := u.log.Withn(labels.ToLoggerFields()...)
 		transformerutils.TrackLongRunningTransformation(ctx, "user_transformer", u.config.timeoutDuration, l)
-		trackWg.Done()
-	}()
+	})
 
 	batches := lo.Chunk(clientEvents, batchSize)
 
@@ -379,9 +377,9 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		u.log.Errorn("User transformation post error",
 			append(labels.ToLoggerFields(), obskit.Error(err))...)
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
-			return []byte(fmt.Sprintf("transformer request timed out: %s", err)), transformerutils.TransformerRequestTimeout, nil
+			return fmt.Appendf(nil, "transformer request timed out: %s", err), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
-			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
+			return fmt.Appendf(nil, "transformer request failed: %s", err), transformerutils.TransformerRequestFailure, nil
 		}
 		return nil, 0, err
 	}

@@ -66,7 +66,7 @@ var clickhouseSpecificColumnNameMappings = map[string]string{
 	"event_text": "LowCardinality(String)",
 }
 
-var datatypeDefaultValuesMap = map[string]interface{}{
+var datatypeDefaultValuesMap = map[string]any{
 	"int":      0,
 	"float":    0.0,
 	"boolean":  0,
@@ -398,13 +398,13 @@ func (*Clickhouse) DeleteBy(context.Context, []string, warehouseutils.DeleteByPa
 
 func generateArgumentString(length int) string {
 	var args []string
-	for i := 0; i < length; i++ {
+	for range length {
 		args = append(args, "?")
 	}
 	return strings.Join(args, ",")
 }
 
-func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
+func (ch *Clickhouse) castStringToArray(data, dataType string) any {
 	switch dataType {
 	case "array(int)":
 		dataInt := make([]int64, 0)
@@ -421,7 +421,7 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 		}
 		return dataFloat
 	case "array(string)":
-		dataInterface := make([]interface{}, 0)
+		dataInterface := make([]any, 0)
 		err := jsonrs.Unmarshal([]byte(data), &dataInterface)
 		if err != nil {
 			ch.logger.Errorn("Error while unmarshalling data into array of interface", obskit.Error(err))
@@ -468,8 +468,8 @@ func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 }
 
 // typecastDataFromType typeCasts string data to the mentioned data type
-func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
-	var dataI interface{}
+func (ch *Clickhouse) typecastDataFromType(data, dataType string) any {
+	var dataI any
 	var err error
 	switch dataType {
 	case "int":
@@ -750,7 +750,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(ctx context.Context, tab
 				onError(err)
 				return terr
 			}
-			var recordInterface []interface{}
+			var recordInterface []any
 			for index, value := range record {
 				columnName := sortedColumnKeys[index]
 				columnDataType := tableSchemaInUpload[columnName]
@@ -866,16 +866,17 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 }
 
 func getSortKeyTuple(sortKeyFields []string) string {
-	tuple := "("
+	var tuple strings.Builder
+	tuple.WriteString("(")
 	for index, field := range sortKeyFields {
 		if index == len(sortKeyFields)-1 {
-			tuple += fmt.Sprintf(`%q`, field)
+			tuple.WriteString(fmt.Sprintf(`%q`, field))
 		} else {
-			tuple += fmt.Sprintf(`%q,`, field)
+			tuple.WriteString(fmt.Sprintf(`%q,`, field))
 		}
 	}
-	tuple += ")"
-	return tuple
+	tuple.WriteString(")")
+	return tuple.String()
 }
 
 // CreateTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will the latest data if duplicate data found. This logic is handled by clickhouse
@@ -1197,9 +1198,9 @@ func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) error {
+func (ch *Clickhouse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) error {
 	var columns []string
-	var recordInterface []interface{}
+	var recordInterface []any
 
 	for key, value := range payloadMap {
 		recordInterface = append(recordInterface, value)

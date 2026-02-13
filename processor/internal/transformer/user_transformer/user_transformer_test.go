@@ -218,7 +218,7 @@ func TestUserTransformer(t *testing.T) {
 
 						events[i] = types.TransformerEvent{
 							Metadata: Metadata,
-							Message: map[string]interface{}{
+							Message: map[string]any{
 								"src-key-1":       msgID,
 								"forceStatusCode": statusCode,
 							},
@@ -236,7 +236,7 @@ func TestUserTransformer(t *testing.T) {
 						tResp := types.TransformerResponse{
 							Metadata:   Metadata,
 							StatusCode: statusCode,
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1":  msgID,
 								"echo-key-1": msgID,
 							},
@@ -310,7 +310,7 @@ func TestUserTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Credentials: []types.Credential{
@@ -342,7 +342,7 @@ func TestUserTransformer(t *testing.T) {
 									MessageID: msgID,
 								},
 								StatusCode: transformerutils.TransformerRequestTimeout,
-								Output: map[string]interface{}{
+								Output: map[string]any{
 									"src-key-1": msgID,
 								},
 							},
@@ -352,7 +352,6 @@ func TestUserTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
 
 					t.Run(tc.name, func(t *testing.T) {
 						conf := config.New()
@@ -391,7 +390,7 @@ func TestUserTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Credentials: []types.Credential{
@@ -432,7 +431,7 @@ func TestUserTransformer(t *testing.T) {
 								MessageID: msgID,
 							},
 							StatusCode: http.StatusOK,
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1": msgID,
 							},
 						},
@@ -447,7 +446,7 @@ func TestUserTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -517,7 +516,7 @@ func TestUserTransformer(t *testing.T) {
 										MessageID: msgID,
 									},
 									StatusCode: http.StatusOK,
-									Output: map[string]interface{}{
+									Output: map[string]any{
 										"src-key-1": msgID,
 									},
 								},
@@ -528,7 +527,6 @@ func TestUserTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
 					conf := config.New()
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
@@ -561,7 +559,7 @@ func TestUserTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -600,7 +598,7 @@ func TestUserTransformer(t *testing.T) {
 										MessageID: msgID,
 									},
 									StatusCode: http.StatusOK,
-									Output: map[string]interface{}{
+									Output: map[string]any{
 										"src-key-1": msgID,
 									},
 								},
@@ -611,7 +609,6 @@ func TestUserTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
 					conf := config.New()
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
@@ -639,7 +636,7 @@ func TestUserTransformer(t *testing.T) {
 				expectedResponse := types.Response{
 					Events: []types.TransformerResponse{
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1": msgID,
 							},
 							Metadata: types.Metadata{
@@ -653,7 +650,7 @@ func TestUserTransformer(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -1300,7 +1297,7 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 			name: "remove connections",
 			event: &types.TransformerEvent{
 				Metadata: types.Metadata{},
-				Message:  map[string]interface{}{},
+				Message:  map[string]any{},
 				Connection: backendconfig.Connection{
 					SourceID:      "source-id",
 					DestinationID: "destination-id",
@@ -1311,14 +1308,14 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 			},
 			expected: &types.UserTransformerEvent{
 				Metadata: types.Metadata{},
-				Message:  map[string]interface{}{},
+				Message:  map[string]any{},
 			},
 		},
 		{
 			name: "remove everything except transformations in destination",
 			event: &types.TransformerEvent{
 				Metadata: types.Metadata{},
-				Message:  map[string]interface{}{},
+				Message:  map[string]any{},
 				Connection: backendconfig.Connection{
 					SourceID:      "source-id",
 					DestinationID: "destination-id",
@@ -1327,29 +1324,29 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 					ID:              "destination-id",
 					Transformations: make([]backendconfig.TransformationT, 0),
 					Name:            "destination-name",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"key": "value",
-						"key2": map[string]interface{}{
+						"key2": map[string]any{
 							"key": "value",
 						},
-						"key3": []interface{}{"value"},
+						"key3": []any{"value"},
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name:   "destination-definition-name",
-						Config: map[string]interface{}{},
+						Config: map[string]any{},
 					},
 				},
 			},
 			expected: &types.UserTransformerEvent{
 				Metadata: types.Metadata{},
-				Message:  map[string]interface{}{},
+				Message:  map[string]any{},
 			},
 		},
 		{
 			name: "remove everything except transformations in destination with multiple transformer versions",
 			event: &types.TransformerEvent{
 				Metadata: types.Metadata{},
-				Message:  map[string]interface{}{},
+				Message:  map[string]any{},
 				Connection: backendconfig.Connection{
 					SourceID:      "source-id",
 					DestinationID: "destination-id",
@@ -1360,31 +1357,31 @@ func TestTransformerEvent_ToUserTransformerEvent(t *testing.T) {
 						{
 							ID:        "transformation-id",
 							VersionID: "version-id",
-							Config:    map[string]interface{}{},
+							Config:    map[string]any{},
 						},
 						{
 							ID:        "transformation-id-2",
 							VersionID: "version-id-2",
-							Config:    map[string]interface{}{},
+							Config:    map[string]any{},
 						},
 					},
 					Name: "destination-name",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"key": "value",
-						"key2": map[string]interface{}{
+						"key2": map[string]any{
 							"key": "value",
 						},
-						"key3": []interface{}{"value"},
+						"key3": []any{"value"},
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name:   "destination-definition-name",
-						Config: map[string]interface{}{},
+						Config: map[string]any{},
 					},
 				},
 			},
 			expected: &types.UserTransformerEvent{
 				Metadata: types.Metadata{},
-				Message:  map[string]interface{}{},
+				Message:  map[string]any{},
 				Destination: struct {
 					Transformations []struct{ VersionID string }
 				}{

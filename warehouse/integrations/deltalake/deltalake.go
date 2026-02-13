@@ -1342,7 +1342,7 @@ func (d *Deltalake) Connect(_ context.Context, warehouse model.Warehouse) (wareh
 }
 
 // LoadTestTable loads the test table
-func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]interface{}, format string) error {
+func (d *Deltalake) TestLoadTable(ctx context.Context, location, tableName string, _ map[string]any, format string) error {
 	auth, err := d.authQuery()
 	if err != nil {
 		return fmt.Errorf("auth query: %w", err)

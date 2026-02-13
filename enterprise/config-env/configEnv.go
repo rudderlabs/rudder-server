@@ -26,7 +26,7 @@ func loadConfig() {
 
 // ReplaceConfigWithEnvVariables : Replaces all env variables in the config
 func (h *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte) {
-	configMap := make(map[string]interface{}, 0)
+	configMap := make(map[string]any, 0)
 
 	err := jsonrs.Unmarshal(workspaceConfig, &configMap)
 	if err != nil {

@@ -36,7 +36,7 @@ func (*csvLoader) GetLoadTimeFormat(string) string {
 	return misc.RFC3339Milli
 }
 
-func (loader *csvLoader) AddColumn(_, _ string, val interface{}) {
+func (loader *csvLoader) AddColumn(_, _ string, val any) {
 	valString := fmt.Sprintf("%v", val)
 	loader.csvRow = append(loader.csvRow, valString)
 }

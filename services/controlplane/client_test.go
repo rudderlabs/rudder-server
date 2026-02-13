@@ -53,7 +53,6 @@ func TestSendFeatures(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				u, _, _ := r.BasicAuth()
@@ -93,13 +92,13 @@ func TestDestinationHistory(t *testing.T) {
 			ID:          "1aIXpUrvpGno4gEuF2GvI3O9dOe",
 			Name:        "WEBHOOK",
 			DisplayName: "Webhook",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"transformAt":             "processor",
 				"transformAtV1":           "processor",
 				"saveDestinationResponse": false,
 			},
 		},
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"webhookMethod": "POST",
 			"webhookUrl":    "https://webhook.site/4e257da5-000e-4390-9ad2-d28d37fa934e",
 		},
@@ -209,7 +208,6 @@ func TestDestinationHistory(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
-		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.responseStatus == 0 {
@@ -270,7 +268,6 @@ func TestRetriesTimeout(t *testing.T) {
 	}
 
 	for _, m := range methods {
-		m := m
 		t.Run(m.name, func(t *testing.T) {
 			t.Parallel()
 			t.Run("unexpected retriable status", func(t *testing.T) {

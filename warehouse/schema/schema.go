@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"regexp"
@@ -229,9 +230,7 @@ func (sh *schema) IsSchemaOutdated(ctx context.Context) (bool, error) {
 	original := make(model.Schema, len(sh.cachedSchema))
 	for k, v := range sh.cachedSchema {
 		cols := make(model.TableSchema, len(v))
-		for col, typ := range v {
-			cols[col] = typ
-		}
+		maps.Copy(cols, v)
 		original[k] = cols
 	}
 	sh.cachedSchemaMu.RUnlock()
@@ -361,9 +360,7 @@ func overrideUsersWithIdentifiesSchema(consolidatedSchema model.Schema, warehous
 		return consolidatedSchema
 	}
 
-	for k, v := range consolidatedSchema[identifiesTable] {
-		consolidatedSchema[usersTable][k] = v
-	}
+	maps.Copy(consolidatedSchema[usersTable], consolidatedSchema[identifiesTable])
 	for k, v := range warehouseSchema[usersTable] {
 		if _, ok := warehouseSchema[identifiesTable][k]; !ok {
 			consolidatedSchema[usersTable][k] = v
@@ -457,9 +454,7 @@ func tableSchemaDiff(tableName string, schemaMap model.Schema, tableSchema model
 		return diff
 	}
 
-	for columnName, columnType := range currentTableSchema {
-		diff.UpdatedSchema[columnName] = columnType
-	}
+	maps.Copy(diff.UpdatedSchema, currentTableSchema)
 
 	diff.ColumnMap = make(model.TableSchema)
 	for columnName, columnType := range tableSchema {

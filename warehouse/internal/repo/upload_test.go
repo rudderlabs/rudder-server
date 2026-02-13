@@ -1116,7 +1116,7 @@ func TestUploadsRepo(t *testing.T) {
 				}))
 
 				t.Run("many uploads", func(t *testing.T) {
-					for i := 0; i < 5; i++ {
+					for i := range 5 {
 						repoStaging := repo.NewStagingFiles(db, conf, repo.WithNow(func() time.Time {
 							return now
 						}))
@@ -1367,7 +1367,7 @@ func TestUploadsRepo(t *testing.T) {
 				lastExecAt := time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC)
 
 				var uploadIDs []int64
-				for i := 0; i < totalUploads; i++ {
+				for range totalUploads {
 					fid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 					require.NoError(t, err)
 					sid, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
@@ -1680,7 +1680,7 @@ func TestUploadsRepo(t *testing.T) {
 				}))
 
 				var uploadIDs []int64
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 					require.NoError(t, err)
 
@@ -1753,7 +1753,7 @@ func TestUploadsRepo(t *testing.T) {
 					}))
 
 					var stagingFiles []*model.StagingFile
-					for i := 0; i < 10; i++ {
+					for range 10 {
 						stagingFile := &model.StagingFile{
 							WorkspaceID:   workspaceID,
 							Location:      "s3://bucket/path/to/file",
@@ -2664,7 +2664,7 @@ func TestUploadsRepo(t *testing.T) {
 				}
 
 				latencies := make([]time.Duration, 2000)
-				for i := 0; i < 2000; i++ {
+				for i := range 2000 {
 					createdAt := now.Add(time.Duration(i*30) * time.Minute)
 					lastExecAt := createdAt.Add(time.Duration(i%10) * time.Minute)
 					exportedUpdatedAt := lastExecAt.Add(time.Duration(i%5) * time.Minute)
@@ -2681,7 +2681,7 @@ func TestUploadsRepo(t *testing.T) {
 						DestinationType: "RS",
 						WorkspaceID:     workspaceID,
 						Status:          model.Waiting,
-					}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+					}, []*model.StagingFile{new(stagingFile)})
 					require.NoError(t, err)
 					abortedUploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 						SourceID:        sourceID,
@@ -2689,7 +2689,7 @@ func TestUploadsRepo(t *testing.T) {
 						DestinationType: "RS",
 						WorkspaceID:     workspaceID,
 						Status:          model.Waiting,
-					}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+					}, []*model.StagingFile{new(stagingFile)})
 					require.NoError(t, err)
 					inProgressUploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 						SourceID:        sourceID,
@@ -2697,7 +2697,7 @@ func TestUploadsRepo(t *testing.T) {
 						DestinationType: "RS",
 						WorkspaceID:     workspaceID,
 						Status:          model.Waiting,
-					}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+					}, []*model.StagingFile{new(stagingFile)})
 					require.NoError(t, err)
 					_, err = repoUpload.CreateWithStagingFiles(ctx, model.Upload{
 						SourceID:        sourceID,
@@ -2705,7 +2705,7 @@ func TestUploadsRepo(t *testing.T) {
 						DestinationType: "RS",
 						WorkspaceID:     workspaceID,
 						Status:          model.Waiting,
-					}, []*model.StagingFile{lo.ToPtr(stagingFile)})
+					}, []*model.StagingFile{new(stagingFile)})
 					require.NoError(t, err)
 
 					require.NoError(t, repoUpload.Update(ctx, exportedUploadID, []repo.UpdateKeyValue{

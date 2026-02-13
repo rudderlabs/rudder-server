@@ -18,7 +18,7 @@ type isOAuthResult struct {
 type destInfoTestCase struct {
 	description    string
 	flow           common.RudderFlow
-	inputDefConfig map[string]interface{}
+	inputDefConfig map[string]any
 	expected       isOAuthResult
 }
 
@@ -26,10 +26,10 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description: "should pass for a destination which contains OAuth and rudderScopes",
 		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
+		inputDefConfig: map[string]any{
+			"auth": map[string]any{
 				"type":         "OAuth",
-				"rudderScopes": []interface{}{"delivery"},
+				"rudderScopes": []any{"delivery"},
 			},
 		},
 		expected: isOAuthResult{
@@ -39,8 +39,8 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description: "should pass for a destination which contains OAuth but not rudderScopes",
 		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
+		inputDefConfig: map[string]any{
+			"auth": map[string]any{
 				"type": "OAuth",
 			},
 		},
@@ -51,10 +51,10 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description: "should return 'false' without error for a destination which contains OAuth with delete rudderScopes when flow is delivery",
 		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
+		inputDefConfig: map[string]any{
+			"auth": map[string]any{
 				"type":         "OAuth",
-				"rudderScopes": []interface{}{"delete"},
+				"rudderScopes": []any{"delete"},
 			},
 		},
 		expected: isOAuthResult{
@@ -64,8 +64,8 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description: "should return 'true' without error for a destination which contains OAuth withoutrudderScopes when flow is delivery",
 		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
+		inputDefConfig: map[string]any{
+			"auth": map[string]any{
 				"type": "OAuth",
 			},
 		},
@@ -76,10 +76,10 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description: "should return 'false' with error for a destination which contains OAuth with one of invalid rudderScopes when flow is delivery",
 		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
+		inputDefConfig: map[string]any{
+			"auth": map[string]any{
 				"type":         "OAuth",
-				"rudderScopes": []interface{}{"delivery", 1},
+				"rudderScopes": []any{"delivery", 1},
 			},
 		},
 		expected: isOAuthResult{
@@ -90,10 +90,10 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description: "should return 'false' with error for a destination which contains OAuth with invalid rudderScopes type when flow is delivery",
 		flow:        common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{
-			"auth": map[string]interface{}{
+		inputDefConfig: map[string]any{
+			"auth": map[string]any{
 				"type":         "OAuth",
-				"rudderScopes": []interface{}{"a"}[0],
+				"rudderScopes": []any{"a"}[0],
 			},
 		},
 		expected: isOAuthResult{
@@ -104,7 +104,7 @@ var isOAuthDestTestCases = []destInfoTestCase{
 	{
 		description:    "should return 'false' without error for a non-OAuth destination when flow is delivery",
 		flow:           common.RudderFlowDelivery,
-		inputDefConfig: map[string]interface{}{},
+		inputDefConfig: map[string]any{},
 		expected: isOAuthResult{
 			isOAuth: false,
 		},

@@ -132,7 +132,7 @@ func TestExtractorHandle_HandleKey(t *testing.T) {
 	testCases := []struct {
 		name     string
 		key      string
-		value    interface{}
+		value    any
 		expected string
 	}{
 		{
@@ -174,7 +174,7 @@ func TestExtractorHandle_HandleKey(t *testing.T) {
 		{
 			name:     "internal_processing_failed with map",
 			key:      "internal_processing_failed",
-			value:    map[string]interface{}{"errors": []interface{}{"Processing error"}},
+			value:    map[string]any{"errors": []any{"Processing error"}},
 			expected: "Processing error",
 		},
 		{
@@ -316,25 +316,25 @@ func TestExtractorHandle_HandleWarehouseError(t *testing.T) {
 
 	testCases := []struct {
 		name     string
-		value    interface{}
+		value    any
 		key      string
 		expected string
 	}{
 		{
 			name:     "valid warehouse error map",
-			value:    map[string]interface{}{"errors": []interface{}{"Warehouse error 1", "Warehouse error 2"}},
+			value:    map[string]any{"errors": []any{"Warehouse error 1", "Warehouse error 2"}},
 			key:      "internal_processing_failed",
 			expected: "Warehouse error 1.Warehouse error 2",
 		},
 		{
 			name:     "warehouse error with non-array errors",
-			value:    map[string]interface{}{"errors": "not an array"},
+			value:    map[string]any{"errors": "not an array"},
 			key:      "internal_processing_failed",
 			expected: "",
 		},
 		{
 			name:     "warehouse error without errors key",
-			value:    map[string]interface{}{"other": "value"},
+			value:    map[string]any{"other": "value"},
 			key:      "internal_processing_failed",
 			expected: "",
 		},
@@ -750,50 +750,50 @@ func TestFindKeys(t *testing.T) {
 	testCases := []struct {
 		name     string
 		keys     []string
-		jsonObj  interface{}
-		expected map[string]interface{}
+		jsonObj  any
+		expected map[string]any
 	}{
 		{
 			name:     "simple map with matching keys",
 			keys:     []string{"message", "error"},
-			jsonObj:  map[string]interface{}{"message": "test", "error": "err", "other": "value"},
-			expected: map[string]interface{}{"message": "test", "error": "err"},
+			jsonObj:  map[string]any{"message": "test", "error": "err", "other": "value"},
+			expected: map[string]any{"message": "test", "error": "err"},
 		},
 		{
 			name: "nested map with matching keys",
 			keys: []string{"message"},
-			jsonObj: map[string]interface{}{
-				"response": map[string]interface{}{"message": "nested"},
+			jsonObj: map[string]any{
+				"response": map[string]any{"message": "nested"},
 				"other":    "value",
 			},
-			expected: map[string]interface{}{"message": "nested"},
+			expected: map[string]any{"message": "nested"},
 		},
 		{
 			name: "array with matching keys",
 			keys: []string{"message"},
-			jsonObj: []interface{}{
-				map[string]interface{}{"message": "first"},
-				map[string]interface{}{"message": "second"},
+			jsonObj: []any{
+				map[string]any{"message": "first"},
+				map[string]any{"message": "second"},
 			},
-			expected: map[string]interface{}{"message": "second"}, // Last one wins
+			expected: map[string]any{"message": "second"}, // Last one wins
 		},
 		{
 			name:     "no matching keys",
 			keys:     []string{"message"},
-			jsonObj:  map[string]interface{}{"other": "value"},
-			expected: map[string]interface{}{},
+			jsonObj:  map[string]any{"other": "value"},
+			expected: map[string]any{},
 		},
 		{
 			name:     "empty keys",
 			keys:     []string{},
-			jsonObj:  map[string]interface{}{"message": "test"},
-			expected: map[string]interface{}{},
+			jsonObj:  map[string]any{"message": "test"},
+			expected: map[string]any{},
 		},
 		{
 			name:     "nil jsonObj",
 			keys:     []string{"message"},
 			jsonObj:  nil,
-			expected: map[string]interface{}{},
+			expected: map[string]any{},
 		},
 	}
 
@@ -810,31 +810,31 @@ func TestFindFirstExistingKey(t *testing.T) {
 	testCases := []struct {
 		name     string
 		keys     []string
-		jsonObj  map[string]interface{}
-		expected interface{}
+		jsonObj  map[string]any
+		expected any
 	}{
 		{
 			name:     "first key exists",
 			keys:     []string{"message", "error"},
-			jsonObj:  map[string]interface{}{"message": "test", "error": "err"},
+			jsonObj:  map[string]any{"message": "test", "error": "err"},
 			expected: "test",
 		},
 		{
 			name:     "first key missing, second exists",
 			keys:     []string{"message", "error"},
-			jsonObj:  map[string]interface{}{"error": "err"},
+			jsonObj:  map[string]any{"error": "err"},
 			expected: "err",
 		},
 		{
 			name:     "no keys exist",
 			keys:     []string{"message", "error"},
-			jsonObj:  map[string]interface{}{"other": "value"},
+			jsonObj:  map[string]any{"other": "value"},
 			expected: nil,
 		},
 		{
 			name:     "empty keys",
 			keys:     []string{},
-			jsonObj:  map[string]interface{}{"message": "test"},
+			jsonObj:  map[string]any{"message": "test"},
 			expected: nil,
 		},
 		{
@@ -857,31 +857,31 @@ func TestFindFirstExistingKey(t *testing.T) {
 func TestConvertInterfaceArrToStrArrWithDelimitter(t *testing.T) {
 	testCases := []struct {
 		name       string
-		arr        []interface{}
+		arr        []any
 		delimitter string
 		expected   string
 	}{
 		{
 			name:       "string array",
-			arr:        []interface{}{"error1", "error2", "error3"},
+			arr:        []any{"error1", "error2", "error3"},
 			delimitter: ".",
 			expected:   "error1.error2.error3",
 		},
 		{
 			name:       "mixed types",
-			arr:        []interface{}{"error1", 123, true},
+			arr:        []any{"error1", 123, true},
 			delimitter: "|",
 			expected:   "error1|123|true",
 		},
 		{
 			name:       "empty array",
-			arr:        []interface{}{},
+			arr:        []any{},
 			delimitter: ".",
 			expected:   "",
 		},
 		{
 			name:       "single element",
-			arr:        []interface{}{"error"},
+			arr:        []any{"error"},
 			delimitter: ".",
 			expected:   "error",
 		},
@@ -899,47 +899,47 @@ func TestConvertInterfaceArrToStrArrWithDelimitter(t *testing.T) {
 func TestGetErrorMessageFromResponse(t *testing.T) {
 	testCases := []struct {
 		name        string
-		resp        interface{}
+		resp        any
 		messageKeys []string
 		expected    string
 	}{
 		{
 			name:        "direct msg key",
-			resp:        map[string]interface{}{"msg": "Direct message"},
+			resp:        map[string]any{"msg": "Direct message"},
 			messageKeys: []string{"message", "error"},
 			expected:    "Direct message",
 		},
 		{
 			name: "destinationResponse with message",
-			resp: map[string]interface{}{
-				"destinationResponse": map[string]interface{}{"message": "Dest message"},
+			resp: map[string]any{
+				"destinationResponse": map[string]any{"message": "Dest message"},
 			},
 			messageKeys: []string{"message", "error"},
 			expected:    "Dest message",
 		},
 		{
 			name:        "direct message key",
-			resp:        map[string]interface{}{"message": "Test message"},
+			resp:        map[string]any{"message": "Test message"},
 			messageKeys: []string{"message", "error"},
 			expected:    "Test message",
 		},
 		{
 			name:        "errors array",
-			resp:        map[string]interface{}{"errors": []interface{}{"Error 1", "Error 2"}},
+			resp:        map[string]any{"errors": []any{"Error 1", "Error 2"}},
 			messageKeys: []string{"message", "error"},
 			expected:    "Error 1.Error 2",
 		},
 		{
 			name: "nested errors",
-			resp: map[string]interface{}{
-				"response": map[string]interface{}{"errors": []interface{}{"Nested error"}},
+			resp: map[string]any{
+				"response": map[string]any{"errors": []any{"Nested error"}},
 			},
 			messageKeys: []string{"message", "error"},
 			expected:    "Nested error",
 		},
 		{
 			name:        "no message found",
-			resp:        map[string]interface{}{"other": "value"},
+			resp:        map[string]any{"other": "value"},
 			messageKeys: []string{"message", "error"},
 			expected:    "",
 		},
@@ -963,32 +963,32 @@ func TestGetErrorMessageFromResponse(t *testing.T) {
 func TestGetErrorFromWarehouse(t *testing.T) {
 	testCases := []struct {
 		name     string
-		resp     map[string]interface{}
+		resp     map[string]any
 		expected string
 	}{
 		{
 			name:     "valid errors array",
-			resp:     map[string]interface{}{"errors": []interface{}{"Error 1", "Error 2"}},
+			resp:     map[string]any{"errors": []any{"Error 1", "Error 2"}},
 			expected: "Error 1.Error 2",
 		},
 		{
 			name:     "duplicate errors",
-			resp:     map[string]interface{}{"errors": []interface{}{"Error 1", "Error 1", "Error 2"}},
+			resp:     map[string]any{"errors": []any{"Error 1", "Error 1", "Error 2"}},
 			expected: "Error 1.Error 2",
 		},
 		{
 			name:     "no errors key",
-			resp:     map[string]interface{}{"other": "value"},
+			resp:     map[string]any{"other": "value"},
 			expected: "",
 		},
 		{
 			name:     "errors not an array",
-			resp:     map[string]interface{}{"errors": "not an array"},
+			resp:     map[string]any{"errors": "not an array"},
 			expected: "",
 		},
 		{
 			name:     "empty errors array",
-			resp:     map[string]interface{}{"errors": []interface{}{}},
+			resp:     map[string]any{"errors": []any{}},
 			expected: "",
 		},
 	}
@@ -1057,17 +1057,17 @@ func TestIsJSON(t *testing.T) {
 func TestCheckForGoMapOrList(t *testing.T) {
 	testCases := []struct {
 		name     string
-		value    interface{}
+		value    any
 		expected bool
 	}{
 		{
 			name:     "map[string]interface{}",
-			value:    map[string]interface{}{"key": "value"},
+			value:    map[string]any{"key": "value"},
 			expected: true,
 		},
 		{
 			name:     "[]interface{}",
-			value:    []interface{}{"item1", "item2"},
+			value:    []any{"item1", "item2"},
 			expected: true,
 		},
 		{

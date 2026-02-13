@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"maps"
 	"strings"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -23,13 +24,13 @@ func GetTopicMap(destination backendconfig.DestinationT, key string, convertKeyT
 		return topicMap
 	}
 
-	eventToTopicMapList, ok := eventToTopicMap.([]interface{})
+	eventToTopicMapList, ok := eventToTopicMap.([]any)
 	if !ok {
 		return topicMap
 	}
 
 	for _, mapping := range eventToTopicMapList {
-		if m, ok := mapping.(map[string]interface{}); ok {
+		if m, ok := mapping.(map[string]any); ok {
 			from, fromOk := m["from"].(string)
 			to, toOk := m["to"].(string)
 
@@ -65,7 +66,7 @@ func GetValidationErrorStatTags(destination backendconfig.DestinationT) map[stri
  * we need this because response from legacy is a map[string]interface{} and not a types.SingularEventT
  * and we need to convert it to types.SingularEventT to compare with response from embedded
  */
-func GetMessageAsMap(message types.SingularEventT) map[string]interface{} {
+func GetMessageAsMap(message types.SingularEventT) map[string]any {
 	return message
 }
 
@@ -84,9 +85,7 @@ func UpdateTimestampFieldForRETLEvent(eventMessage types.SingularEventT) types.S
 	}
 
 	newEventMessage := types.SingularEventT{}
-	for k, v := range eventMessage {
-		newEventMessage[k] = v
-	}
+	maps.Copy(newEventMessage, eventMessage)
 
 	for _, timestampVal := range timestampValsMap[eventType] {
 		timestampValParts := strings.Split(timestampVal, ".")

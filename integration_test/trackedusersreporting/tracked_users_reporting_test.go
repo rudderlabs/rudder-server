@@ -380,7 +380,7 @@ func runRudderServer(
 func sendAliasEvent(userID, previousID, writeKey,
 	url string,
 ) error {
-	payload := []byte(fmt.Sprintf(`
+	payload := fmt.Appendf(nil, `
 			{
 			  "batch": [
 				{
@@ -403,7 +403,7 @@ func sendAliasEvent(userID, previousID, writeKey,
 			}`,
 		userID,
 		previousID,
-	))
+	)
 	req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 	if err != nil {
 		return err
@@ -433,9 +433,9 @@ func sendEvents(
 	for _, identifier := range identifiers {
 		// generate 1 or more events
 		num := 1 + rand.Intn(100)
-		for i := 0; i < num; i++ {
+		for range num {
 			count++
-			payload := []byte(fmt.Sprintf(`
+			payload := fmt.Appendf(nil, `
 			{
 			  "batch": [
 				{
@@ -458,7 +458,7 @@ func sendEvents(
 				identifier.userID,
 				eventType,
 				identifier.anonymousID,
-			))
+			)
 			req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 			if err != nil {
 				return 0, err

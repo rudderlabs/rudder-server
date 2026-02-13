@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/samber/lo"
@@ -26,14 +26,14 @@ type transformerProxyAdapter interface {
 
 type ProxyRequestPayloadV0 struct {
 	integrations.PostParametersT
-	Metadata          ProxyRequestMetadata   `json:"metadata"`
-	DestinationConfig map[string]interface{} `json:"destinationConfig"`
+	Metadata          ProxyRequestMetadata `json:"metadata"`
+	DestinationConfig map[string]any       `json:"destinationConfig"`
 }
 
 type ProxyResponseV0 struct {
-	Message             string      `json:"message"`
-	DestinationResponse interface{} `json:"destinationResponse"`
-	AuthErrorCategory   string      `json:"authErrorCategory"`
+	Message             string `json:"message"`
+	DestinationResponse any    `json:"destinationResponse"`
+	AuthErrorCategory   string `json:"authErrorCategory"`
 }
 
 type ProxyResponseV1 struct {
@@ -147,15 +147,11 @@ func (v1 *v1Adapter) getResponse(respData []byte, respCode int, metadata []Proxy
 	jobIDsInMetadata := lo.Map(metadata, func(m ProxyRequestMetadata, _ int) int64 {
 		return m.JobID
 	})
-	sort.Slice(jobIDsInMetadata, func(i, j int) bool {
-		return jobIDsInMetadata[i] < jobIDsInMetadata[j]
-	})
+	slices.Sort(jobIDsInMetadata)
 	jobIDsInResponse := lo.Map(transformerResponse.Response, func(resp TPDestResponse, _ int) int64 {
 		return resp.Metadata.JobID
 	})
-	sort.Slice(jobIDsInResponse, func(i, j int) bool {
-		return jobIDsInResponse[i] < jobIDsInResponse[j]
-	})
+	slices.Sort(jobIDsInResponse)
 
 	if !reflect.DeepEqual(jobIDsInMetadata, jobIDsInResponse) {
 		stats.Default.NewTaggedStat(`router.transformerproxy.invalid.response`, stats.CountType, stats.Tags{

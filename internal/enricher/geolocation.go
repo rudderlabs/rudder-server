@@ -85,11 +85,11 @@ func (e *geoEnricher) Enrich(source *backendconfig.SourceT, request *types.Gatew
 		// if the context section is missing on the event
 		// set it with default as map[string]interface{}
 		if _, ok := event["context"]; !ok {
-			event["context"] = map[string]interface{}{}
+			event["context"] = map[string]any{}
 		}
 
 		// if the context is other than map[string]interface{}, add error and continue
-		context, ok := event["context"].(map[string]interface{})
+		context, ok := event["context"].(map[string]any)
 		if !ok {
 			enrichErrs = append(enrichErrs, fmt.Errorf("event on source: %s doesn't have a valid context section", source.ID))
 			continue
@@ -190,7 +190,7 @@ func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logg
 
 	manager, err := filemanager.New(&filemanager.Settings{
 		Provider: "S3",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"bucketName":       bucket,
 			"region":           region,
 			"endpoint":         endpoint,

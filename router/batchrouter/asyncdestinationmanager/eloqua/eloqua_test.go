@@ -32,7 +32,7 @@ var (
 	once        sync.Once
 	destination = backendconfig.DestinationT{
 		Name: "eloqua",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"companyName":     "company_name",
 			"password":        "password",
 			"userName":        "user_name",

@@ -26,9 +26,9 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 		}
 
 		event.Message = utils.UpdateTimestampFieldForRETLEvent(event.Message)
-		var integrationsObj map[string]interface{}
+		var integrationsObj map[string]any
 		for _, canonicalName := range canonicalNames {
-			if inObj, ok := misc.MapLookup(event.Message, "integrations", canonicalName).(map[string]interface{}); ok {
+			if inObj, ok := misc.MapLookup(event.Message, "integrations", canonicalName).(map[string]any); ok {
 				integrationsObj = inObj
 				break
 			}
@@ -52,7 +52,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 			continue
 		}
 
-		outputEvent := map[string]interface{}{
+		outputEvent := map[string]any{
 			"message": utils.GetMessageAsMap(event.Message),
 			"userId":  userId,
 			"topic":   topic,
@@ -74,7 +74,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 	return response
 }
 
-func getTopic(event types.TransformerEvent, integrationsObj map[string]interface{}, eventTypeToTopicMap, eventToTopicMap map[string]string) (string, error) {
+func getTopic(event types.TransformerEvent, integrationsObj map[string]any, eventTypeToTopicMap, eventToTopicMap map[string]string) (string, error) {
 	if topic, ok := integrationsObj["topic"].(string); ok && topic != "" {
 		return topic, nil
 	}

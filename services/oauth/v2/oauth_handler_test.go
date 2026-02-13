@@ -34,8 +34,8 @@ var Destination = &v2.DestinationInfo{
 	DestType:         "testDest",
 	ID:               "Destination123",
 	WorkspaceID:      "456",
-	DefinitionConfig: map[string]interface{}{},
-	Config:           map[string]interface{}{},
+	DefinitionConfig: map[string]any{},
+	Config:           map[string]any{},
 }
 
 var _ = Describe("Oauth", func() {
@@ -751,9 +751,7 @@ var _ = Describe("Oauth", func() {
 			cache.Store(fetchTokenParams.AccountID, storedAuthToken)
 			wg := sync.WaitGroup{}
 			for range 20 {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
 					response, err := oauthHandler.FetchToken(fetchTokenParams)
 					// Assertions
@@ -761,7 +759,7 @@ var _ = Describe("Oauth", func() {
 					Expect(response).To(MatchJSON(expectedResponse))
 					token, _ := cache.Load(fetchTokenParams.AccountID)
 					Expect(token.Secret).To(MatchJSON(expectedResponse))
-				}()
+				})
 			}
 			wg.Wait()
 
@@ -840,10 +838,8 @@ var _ = Describe("Oauth", func() {
 			}
 			cache.Store(refreshTokenParams.AccountID, storedAuthToken)
 			wg := sync.WaitGroup{}
-			for i := 0; i < 20; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+			for range 20 {
+				wg.Go(func() {
 					response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 					// Assertions
 					Expect(err).To(BeNil())
@@ -851,7 +847,7 @@ var _ = Describe("Oauth", func() {
 					token, _ := cache.Load(refreshTokenParams.AccountID)
 					Expect(token.Secret).To(MatchJSON(expectedResponse))
 					Expect(token.ExpirationDate).To(BeZero())
-				}()
+				})
 			}
 			wg.Wait()
 		})
@@ -886,7 +882,7 @@ var _ = Describe("Oauth", func() {
 			cache.Store(refreshTokenParams.AccountID, storedAuthToken)
 			wg := sync.WaitGroup{}
 
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 				// Assertions
 				Expect(err).To(BeNil())
@@ -896,10 +892,8 @@ var _ = Describe("Oauth", func() {
 				Expect(token.ExpirationDate).To(BeZero())
 			}
 
-			for i := 0; i < 20; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+			for range 20 {
+				wg.Go(func() {
 					response, err := oauthHandler.RefreshToken(refreshTokenParams, previousSecret)
 					// Assertions
 					Expect(err).To(BeNil())
@@ -907,7 +901,7 @@ var _ = Describe("Oauth", func() {
 					token, _ := cache.Load(refreshTokenParams.AccountID)
 					Expect(token.Secret).To(MatchJSON(expectedResponse))
 					Expect(token.ExpirationDate).To(BeZero())
-				}()
+				})
 			}
 			wg.Wait()
 		})

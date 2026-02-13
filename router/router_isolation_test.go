@@ -141,10 +141,10 @@ func NewRouterIsolationScenarioSpec(isolationMode isolation.Mode, workspaces, ev
 	s.jobs = make([]*rtIsolationJobSpec, workspaces*eventsPerWorkspace)
 
 	var idx int
-	for u := 0; u < workspaces; u++ {
+	for u := range workspaces {
 		workspaceID := "workspace-" + strconv.Itoa(u)
 		s.workspaces = append(s.workspaces, workspaceID)
-		for i := 0; i < eventsPerWorkspace; i++ {
+		for range eventsPerWorkspace {
 			s.jobs[idx] = &rtIsolationJobSpec{
 				id:          int64(idx + 1),
 				workspaceID: workspaceID,
@@ -366,13 +366,13 @@ func (rtIsolationMethods) generateJobs(jobs []*rtIsolationJobSpec, batchSize int
 			JobID:       job.id,
 			UserID:      job.userID,
 			WorkspaceId: job.workspaceID,
-			Parameters: []byte(fmt.Sprintf(`{
+			Parameters: fmt.Appendf(nil, `{
 				"source_id": %[1]q,
 				"destination_id": %[1]q,
 				"receivedAt": %[2]q,
 				"workspaceId": %[3]q,
 				"transform_at": "router"
-			}`, job.workspaceID, time.Now().Format(misc.RFC3339Milli), job.workspaceID)),
+			}`, job.workspaceID, time.Now().Format(misc.RFC3339Milli), job.workspaceID),
 			CustomVal:    "WEBHOOK",
 			EventPayload: payload,
 			CreatedAt:    time.Now(),

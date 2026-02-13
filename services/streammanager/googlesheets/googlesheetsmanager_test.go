@@ -32,7 +32,7 @@ const (
 
 type cleaner interface {
 	Cleanup(func())
-	Log(...interface{})
+	Log(...any)
 }
 
 func SetupTestGoogleSheets(pool *dockertest.Pool, cln cleaner) (*TestConfig, error) {
@@ -144,7 +144,7 @@ func testNewClientWithConfig(t *testing.T, testConfig *TestConfig) {
 }
 
 func testNewProducerWithConfig(t *testing.T, testConfig *TestConfig) {
-	config := map[string]interface{}{
+	config := map[string]any{
 		"SheetId":     sheetId,
 		"SheetName":   sheetName,
 		"DestID":      destinationId,
@@ -168,7 +168,7 @@ func testNewProducerWithConfig(t *testing.T, testConfig *TestConfig) {
 }
 
 func testProduceWithConfig(t *testing.T, testConfig *TestConfig) {
-	config := map[string]interface{}{
+	config := map[string]any{
 		"SheetId":     sheetId,
 		"SheetName":   sheetName,
 		"DestID":      destinationId,
@@ -203,7 +203,7 @@ func testProduceWithConfig(t *testing.T, testConfig *TestConfig) {
 }
 
 func testProduceBatchWithConfig(t *testing.T, testConfig *TestConfig) {
-	config := map[string]interface{}{
+	config := map[string]any{
 		"SheetId":     sheetId,
 		"SheetName":   sheetName,
 		"DestID":      destinationId,
@@ -248,7 +248,7 @@ func testProduceBatchWithConfig(t *testing.T, testConfig *TestConfig) {
 }
 
 func testProduceNumericWithConfig(t *testing.T, testConfig *TestConfig) {
-	config := map[string]interface{}{
+	config := map[string]any{
 		"SheetId":     sheetId,
 		"SheetName":   sheetName,
 		"DestID":      destinationId,
@@ -337,7 +337,7 @@ func testTimeoutWithConfig(t *testing.T, testConfig *TestConfig) {
 	mockLogger.EXPECT().Errorn(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
-	config := map[string]interface{}{
+	config := map[string]any{
 		"SheetId":     sheetId,
 		"SheetName":   sheetName,
 		"DestID":      destinationId,

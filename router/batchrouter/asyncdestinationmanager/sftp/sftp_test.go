@@ -24,7 +24,7 @@ var destinations = []backendconfig.DestinationT{
 	{
 		ID:   "destination_id_1",
 		Name: "SFTP",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":       "host",
 			"port":       "22",
 			"authMethod": "passwordAuth",
@@ -38,7 +38,7 @@ var destinations = []backendconfig.DestinationT{
 	{
 		ID:   "destination_id_2",
 		Name: "SFTP",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":       "host",
 			"port":       "22",
 			"authMethod": "passwordAuth",
@@ -52,7 +52,7 @@ var destinations = []backendconfig.DestinationT{
 	{
 		ID:   "destination_id_3",
 		Name: "SFTP",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":       "host",
 			"port":       "22",
 			"authMethod": "passwordAuth",
@@ -66,7 +66,7 @@ var destinations = []backendconfig.DestinationT{
 	{
 		ID:   "destination_id_4",
 		Name: "SFTP",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":       "host",
 			"port":       "",
 			"authMethod": "passwordAuth",
@@ -80,7 +80,7 @@ var destinations = []backendconfig.DestinationT{
 	{
 		ID:   "destination_id_5",
 		Name: "SFTP",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":       "host",
 			"port":       "0",
 			"authMethod": "passwordAuth",
@@ -94,7 +94,7 @@ var destinations = []backendconfig.DestinationT{
 	{
 		ID:   "destination_id_6",
 		Name: "SFTP",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":       "host",
 			"port":       "22",
 			"authMethod": "keyAuth",
@@ -164,7 +164,7 @@ func TestSFTP(t *testing.T) {
 			manager := common.SimpleAsyncDestinationManager{UploaderAndTransformer: defaultManager}
 			payload := make(map[int64]stdjson.RawMessage)
 			id := int64(1014)
-			sampleData := map[string]interface{}{
+			sampleData := map[string]any{
 				"source_job_run_id": "someJobRunId_1",
 			}
 			rawMessage, _ := jsonrs.Marshal(sampleData)

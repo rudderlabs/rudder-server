@@ -194,25 +194,21 @@ func TestLocalSchemaRepository(t *testing.T) {
 		ctx := context.Background()
 		wg := sync.WaitGroup{}
 
-		for i := 0; i < 1000; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for i := range 1000 {
+			wg.Go(func() {
 				require.NoError(t, s.CreateTable(ctx, fmt.Sprintf("test_table_%d", i+1), model.TableSchema{
 					"test_column_1": "test_type_1",
 					"test_column_2": "test_type_2",
 					"test_column_3": "test_type_3",
 					"test_column_4": "test_type_4",
 				}))
-			}()
+			})
 		}
 		wg.Wait()
 
-		for i := 0; i < 1000; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 5; j++ {
+		for i := range 1000 {
+			wg.Go(func() {
+				for j := range 5 {
 					require.NoError(t, s.AddColumns(ctx, fmt.Sprintf("test_table_%d", i+1), []warehouseutils.ColumnInfo{
 						{
 							Name: "test_column_" + strconv.Itoa(j+5),
@@ -220,29 +216,27 @@ func TestLocalSchemaRepository(t *testing.T) {
 						},
 					}))
 				}
-			}()
+			})
 		}
 		wg.Wait()
 
-		for i := 0; i < 1000; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 5; j++ {
+		for i := range 1000 {
+			wg.Go(func() {
+				for j := range 5 {
 					_, err := s.AlterColumn(ctx, fmt.Sprintf("test_table_%d", i+1), "test_column_"+strconv.Itoa(j+5), "new_test_type_"+strconv.Itoa(j+5))
 					require.NoError(t, err)
 				}
-			}()
+			})
 		}
 		wg.Wait()
 
 		schema, err := s.FetchSchema(ctx, warehouse)
 		require.NoError(t, err)
 		require.Equal(t, 1000, len(schema))
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			require.Equal(t, 9, len(schema[fmt.Sprintf("test_table_%d", i+1)]))
 		}
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			for j := 1; j < 5; j++ {
 				require.Equal(t, "test_type_"+strconv.Itoa(j), schema[fmt.Sprintf("test_table_%d", i+1)]["test_column_"+strconv.Itoa(j)])
 			}

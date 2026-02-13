@@ -159,7 +159,7 @@ func TestErrorDetailsReport(t *testing.T) {
 		name            string
 		metrics         []*types.PUReportedMetric
 		expectExecution bool
-		rateLimitConfig map[string]interface{}
+		rateLimitConfig map[string]any
 	}{
 		{
 			name:            "PII Reporting Enabled, should report it to error_detail_reports table",

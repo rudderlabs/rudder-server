@@ -109,7 +109,7 @@ var _ = Describe("cache", func() {
 		It("should only keep the last x values for the same key", func() {
 			var values [][]byte
 			for i := 0; i <= e.limiter.Load(); i++ {
-				value := []byte(fmt.Sprintf("test_value_%d", i))
+				value := fmt.Appendf(nil, "test_value_%d", i)
 				Expect(e.Update(testKey, value)).To(BeNil())
 				values = append(values, value)
 			}

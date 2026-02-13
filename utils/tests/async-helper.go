@@ -33,16 +33,16 @@ type AsyncTestHelper struct {
 
 // ExpectAndNotifyCallback Adds one to this helper's WaitGroup, and provides a callback that calls Done on it.
 // Should be used for gomock Do calls that trigger via mocked functions executed in a goroutine.
-func (helper *AsyncTestHelper) ExpectAndNotifyCallback() func(...interface{}) {
+func (helper *AsyncTestHelper) ExpectAndNotifyCallback() func(...any) {
 	helper.wg.Add(1)
-	return func(...interface{}) {
+	return func(...any) {
 		helper.wg.Done()
 	}
 }
 
 // ExpectAndNotifyCallback Adds one to this helper's WaitGroup, and provides a callback that calls Done on it.
 // Should be used for gomock Do calls that trigger via mocked functions executed in a goroutine.
-func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func(...interface{}) {
+func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func(...any) {
 	helper.waitingMapLock.Lock()
 	defer helper.waitingMapLock.Unlock()
 
@@ -52,7 +52,7 @@ func (helper *AsyncTestHelper) ExpectAndNotifyCallbackWithName(name string) func
 	helper.waitingMap[name]++
 
 	helper.wg.Add(1)
-	return func(...interface{}) {
+	return func(...any) {
 		helper.waitingMapLock.Lock()
 		defer helper.waitingMapLock.Unlock()
 

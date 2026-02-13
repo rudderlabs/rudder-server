@@ -12,7 +12,7 @@ import (
 )
 
 func TestJobSvc(t *testing.T) {
-	config := map[string]interface{}{
+	config := map[string]any{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
 		"accessKeyID": "xyz",

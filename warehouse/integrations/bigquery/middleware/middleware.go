@@ -12,7 +12,7 @@ import (
 type Opt func(*Client)
 
 type loggerMW interface {
-	Infow(msg string, keysAndValues ...interface{})
+	Infow(msg string, keysAndValues ...any)
 }
 
 type Client struct {

@@ -82,7 +82,7 @@ func (ob OutputBuilder) RemoveColumnFields(fields ...string) OutputBuilder {
 }
 
 func (ob OutputBuilder) AddRandomEntries(count int, predicate func(index int) (dataKey, dataValue, columnKey, columnValue string)) OutputBuilder {
-	for i := 0; i < count; i++ {
+	for i := range count {
 		dataKey, dataValue, columnKey, columnValue := predicate(i)
 		ob.SetDataField(dataKey, dataValue)
 		ob.SetColumnField(columnKey, columnValue)

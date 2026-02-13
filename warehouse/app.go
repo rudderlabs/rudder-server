@@ -323,7 +323,7 @@ func (a *App) migrateAlways() error {
 	}
 
 	operation := func() error {
-		return m.MigrateFromTemplates("warehouse_always", map[string]interface{}{
+		return m.MigrateFromTemplates("warehouse_always", map[string]any{
 			"config": a.conf,
 		})
 	}

@@ -1312,7 +1312,7 @@ func TestSchema(t *testing.T) {
 		wg.Add(numGoroutines)
 
 		// Launch multiple goroutines to update different tables concurrently
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			go func(id int) {
 				defer wg.Done()
 
@@ -1338,7 +1338,7 @@ func TestSchema(t *testing.T) {
 			t.Fatalf("Concurrent update error: %v", err)
 		}
 
-		for i := 0; i < numGoroutines; i++ {
+		for i := range numGoroutines {
 			tableName := fmt.Sprintf("concurrent_table_%d", i)
 			table := sch.GetTableSchema(ctx, tableName)
 
@@ -1365,7 +1365,7 @@ func TestSchema(t *testing.T) {
 		wg.Add(2)
 
 		go func() {
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				tableName := fmt.Sprintf("concurrent_table_%d", i)
 				tableSchema := model.TableSchema{
 					fmt.Sprintf("column_%d", i): "string",
@@ -1381,7 +1381,7 @@ func TestSchema(t *testing.T) {
 		}()
 
 		go func() {
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				tableName := fmt.Sprintf("concurrent_table_%d", i)
 				_ = sch.GetTableSchema(ctx, tableName)
 			}
