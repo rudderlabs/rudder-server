@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -51,6 +52,7 @@ func New(
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
+			logger.NewStringField("id", uuid.New().String()),
 		),
 		statsFactory:        statsFactory,
 		destination:         destination,
@@ -251,20 +253,26 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false
 			case errors.Is(err, errAbort):
-				m.logger.Warnn("Aborting jobs for table",
+				fields := []logger.Field{
 					logger.NewStringField("table", info.tableName),
-					obskit.Error(err),
-				)
+					logger.NewStringField("offset", strconv.FormatInt(info.latestJobID, 10)),
+				}
+				fields = append(fields, jobIDRangeFields(info.jobIDs)...)
+				fields = append(fields, obskit.Error(err))
+				m.logger.Warnn("Aborting jobs for table", fields...)
 				abortedJobIDs = append(abortedJobIDs, info.jobIDs...)
 				if abortReason == "" {
 					abortReason = err.Error()
 				}
 				continue
 			}
-			m.logger.Warnn("Failed to send events to Snowpipe",
+			fields := []logger.Field{
 				logger.NewStringField("table", info.tableName),
-				obskit.Error(err),
-			)
+				logger.NewStringField("offset", strconv.FormatInt(info.latestJobID, 10)),
+			}
+			fields = append(fields, jobIDRangeFields(info.jobIDs)...)
+			fields = append(fields, obskit.Error(err))
+			m.logger.Warnn("Failed to send events to Snowpipe", fields...)
 			if failedReason == "" {
 				failedReason = err.Error()
 			}
@@ -362,11 +370,13 @@ func (m *Manager) sendEventsToSnowpipe(
 ) (*importInfo, *importInfo, error) {
 	offset := strconv.FormatInt(info.latestJobID, 10)
 
-	log := m.logger.Withn(
+	fields := []logger.Field{
 		logger.NewStringField("table", info.tableName),
 		logger.NewIntField("events", int64(len(info.events))),
 		logger.NewStringField("offset", offset),
-	)
+	}
+	fields = append(fields, jobIDRangeFields(info.jobIDs)...)
+	log := m.logger.Withn(fields...)
 	log.Infon("Sending events to Snowpipe")
 
 	channelResponse, err := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
@@ -422,7 +432,12 @@ func (m *Manager) sendEventsToSnowpipe(
 func (m *Manager) insert(ctx context.Context, destinationID string, destConf *destConfig, info *uploadInfo, insertReq *model.InsertRequest, channelID string) (string, error) {
 	deleteChannel := func(tableName, chID string) {
 		if err := m.deleteChannel(ctx, tableName, chID); err != nil {
-			m.logger.Warnn("Failed to delete channel", obskit.Error(err))
+			m.logger.Warnn("Failed to delete channel",
+				logger.NewStringField("table", tableName),
+				logger.NewStringField("channelID", chID),
+				logger.NewStringField("offset", insertReq.Offset),
+				obskit.Error(err),
+			)
 		}
 	}
 	extractError := func(res *model.InsertResponse, tableName string) error {
@@ -448,7 +463,11 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 	*/
 	if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
 		deleteChannel(info.tableName, channelID)
-		m.logger.Infon("Channel not found, recreating channel", logger.NewStringField("channelID", channelID))
+		m.logger.Infon("Channel not found, recreating channel",
+			logger.NewStringField("channelID", channelID),
+			logger.NewStringField("table", info.tableName),
+			logger.NewStringField("offset", insertReq.Offset),
+		)
 		var insertRes2 *model.InsertResponse
 		recreatedChannel, err2 := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
 		defer func() {
@@ -459,7 +478,11 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 		if err2 != nil {
 			return "", fmt.Errorf("creating channel %s: %w", info.tableName, err2)
 		}
-		m.logger.Infon("Recreated channel", logger.NewStringField("channelID", recreatedChannel.ChannelID))
+		m.logger.Infon("Recreated channel",
+			logger.NewStringField("channelID", recreatedChannel.ChannelID),
+			logger.NewStringField("table", info.tableName),
+			logger.NewStringField("offset", insertReq.Offset),
+		)
 
 		insertRes2, err2 = m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
 		if err2 != nil {
@@ -468,7 +491,11 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 		if !insertRes2.Success {
 			return "", extractError(insertRes2, info.tableName)
 		}
-		m.logger.Infon("Inserted data into recreated channel")
+		m.logger.Infon("Inserted data into recreated channel",
+			logger.NewStringField("channelID", recreatedChannel.ChannelID),
+			logger.NewStringField("table", info.tableName),
+			logger.NewStringField("offset", insertReq.Offset),
+		)
 		return recreatedChannel.ChannelID, nil
 	}
 	// For all other errors, clean up and return
@@ -718,6 +745,26 @@ func convertToInt(a string) (int64, error) {
 	return ai, nil
 }
 
+func jobIDRangeFields(jobIDs []int64) []logger.Field {
+	if len(jobIDs) == 0 {
+		return nil
+	}
+	minJobID := jobIDs[0]
+	maxJobID := jobIDs[0]
+	for _, jobID := range jobIDs[1:] {
+		if jobID < minJobID {
+			minJobID = jobID
+		}
+		if jobID > maxJobID {
+			maxJobID = jobID
+		}
+	}
+	return []logger.Field{
+		logger.NewIntField("minJobID", minJobID),
+		logger.NewIntField("maxJobID", maxJobID),
+	}
+}
+
 func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
 	for _, info := range failedInfos {
 		m.logger.Warnn("Failed to poll channel offset",
@@ -730,6 +777,7 @@ func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*impor
 		if err := m.deleteChannel(ctx, info.Table, info.ChannelID); err != nil {
 			m.logger.Warnn("Failed to delete channel",
 				logger.NewStringField("channelId", info.ChannelID),
+				logger.NewStringField("offset", info.Offset),
 				logger.NewStringField("table", info.Table),
 				obskit.Error(err),
 			)
