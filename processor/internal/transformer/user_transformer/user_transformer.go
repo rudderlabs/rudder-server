@@ -60,6 +60,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.UserTransformer.maxRetry", "Processor.maxRetry")
+	handle.config.cpDownEndlessRetries = conf.GetReloadableBoolVar(true, "Processor.UserTransformer.cpDownEndlessRetries")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.UserTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
@@ -88,6 +89,7 @@ type Client struct {
 		pythonTransformationVersionIDsEnabled bool
 		forMirroring                          bool
 		maxRetry                              config.ValueLoader[int]
+		cpDownEndlessRetries                  config.ValueLoader[bool]
 		failOnUserTransformTimeout            config.ValueLoader[bool]
 		failOnError                           config.ValueLoader[bool]
 		maxRetryBackoffInterval               config.ValueLoader[time.Duration]
@@ -231,6 +233,30 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	bo.MaxInterval = u.config.maxRetryBackoffInterval.Load()
 
 	// endless backoff loop, only nil error or panics inside
+	retryOptions := []backoff.RetryOption{
+		backoff.WithBackOff(bo),
+		backoff.WithMaxElapsedTime(0), // no max time -> ends only when no error
+		backoff.WithNotify(func(err error, t time.Duration) {
+			var transformationID, transformationVersionID string
+			if len(clientEvents[0].Destination.Transformations) > 0 {
+				transformationID = clientEvents[0].Destination.Transformations[0].ID
+				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
+			}
+			u.stat.NewStat("processor_user_transformer_cp_down_retries", stats.CountType).Increment()
+			u.log.Errorn("User transformation HTTP connection error",
+				obskit.Error(err),
+				obskit.SourceID(clientEvents[0].Metadata.SourceID),
+				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
+				obskit.DestinationID(clientEvents[0].Metadata.DestinationID),
+				logger.NewStringField("url", url),
+				obskit.TransformationID(transformationID),
+				logger.NewStringField("transformationVersionID", transformationVersionID),
+			)
+		}),
+	}
+	if !u.config.cpDownEndlessRetries.Load() {
+		retryOptions = append(retryOptions, backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)))
+	}
 	_ = backoffvoid.Retry(
 		context.Background(),
 		func() error {
@@ -245,24 +271,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
-		backoff.WithBackOff(bo),
-		backoff.WithMaxElapsedTime(0), // no max time -> ends only when no error
-		backoff.WithNotify(func(err error, t time.Duration) {
-			var transformationID, transformationVersionID string
-			if len(clientEvents[0].Destination.Transformations) > 0 {
-				transformationID = clientEvents[0].Destination.Transformations[0].ID
-				transformationVersionID = clientEvents[0].Destination.Transformations[0].VersionID
-			}
-			u.log.Errorn("User transformation HTTP connection error",
-				obskit.Error(err),
-				obskit.SourceID(clientEvents[0].Metadata.SourceID),
-				obskit.WorkspaceID(clientEvents[0].Metadata.WorkspaceID),
-				obskit.DestinationID(clientEvents[0].Metadata.DestinationID),
-				logger.NewStringField("url", url),
-				obskit.TransformationID(transformationID),
-				logger.NewStringField("transformationVersionID", transformationVersionID),
-			)
-		}),
+		retryOptions...,
 	)
 	// control plane back up
 
@@ -365,6 +374,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)),
 		backoff.WithNotify(func(err error, t time.Duration) {
 			retryCount++
+			u.stat.NewStat("processor_user_transformer_http_retries", stats.CountType).Increment()
 			u.log.Warnn(
 				"JS HTTP connection error",
 				append(

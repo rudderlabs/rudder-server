@@ -20,8 +20,8 @@ jobs:
     name: Integration
     runs-on: ubuntu-latest
     permissions:
-      id-token: write 
-      contents: read 
+      id-token: write
+      contents: read
     strategy:
       matrix:
         FEATURES: [ oss ,enterprise ]
@@ -78,8 +78,8 @@ jobs:
     name: Warehouse Integration
     runs-on: ubuntu-latest
     permissions:
-      id-token: write 
-      contents: read 
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -176,8 +176,8 @@ jobs:
     name: Unit
     runs-on: ubuntu-latest
     permissions:
-      id-token: write 
-      contents: read 
+      id-token: write
+      contents: read
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@f4a75cfd619ee5ce8d5b864b0d183aff3c69b55a # v2.13.1
@@ -226,8 +226,8 @@ jobs:
     name: Package Unit
     runs-on: ubuntu-latest
     permissions:
-      id-token: write 
-      contents: read 
+      id-token: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -246,6 +246,7 @@ jobs:
           - integration_test/srchydration
           - integration_test/tracing
           - integration_test/trackedusersreporting
+          - integration_test/pytransformer_contract
           - integration_test/transformer_contract
           - processor
           - regulation-worker
