@@ -104,8 +104,3 @@ func sameFiles(file1, file2 string) (bool, error) {
 
 	return bytes.Equal(byt1, byt2), nil
 }
-
-//go:fix inline
-func getStringPtr(val string) *string {
-	return new(val)
-}

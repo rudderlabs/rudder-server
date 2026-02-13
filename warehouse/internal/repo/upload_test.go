@@ -2656,7 +2656,7 @@ func TestUploadsRepo(t *testing.T) {
 				stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
 				require.NoError(t, err)
 
-				stagingFile := model.StagingFile{
+				stagingFile := model.StagingFile{ // nolint: staticcheck
 					ID:            stagingID,
 					SourceID:      sourceID,
 					DestinationID: destID,
