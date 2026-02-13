@@ -1,8 +1,10 @@
 package user_transformer_test
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -35,19 +37,32 @@ import (
 	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
+// requestBodyReader returns a reader that decompresses gzip if Content-Encoding is set.
+func requestBodyReader(r *http.Request) io.Reader {
+	if r.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			panic(err)
+		}
+		return gr
+	}
+	return r.Body
+}
+
 type fakeTransformer struct {
 	requests [][]types.TransformerEvent
 	t        testing.TB
 }
 
 func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body := requestBodyReader(r)
 	var reqBody []types.TransformerEvent
 	if r.Header.Get("X-Content-Format") == "json+compactedv1" {
 		var ctr types.CompactedTransformRequest
-		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&ctr))
+		require.NoError(t.t, jsonrs.NewDecoder(body).Decode(&ctr))
 		reqBody = ctr.ToTransformerEvents()
 	} else {
-		require.NoError(t.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+		require.NoError(t.t, jsonrs.NewDecoder(body).Decode(&reqBody))
 	}
 
 	t.requests = append(t.requests, reqBody)
@@ -90,8 +105,9 @@ type endlessLoopTransformer struct {
 func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	elt.retryCount++
 
+	body := requestBodyReader(r)
 	var reqBody []types.TransformerEvent
-	require.NoError(elt.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	require.NoError(elt.t, jsonrs.NewDecoder(body).Decode(&reqBody))
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 
@@ -127,8 +143,9 @@ func (et *endpointTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	body := requestBodyReader(r)
 	var reqBody []types.TransformerEvent
-	require.NoError(et.t, jsonrs.NewDecoder(r.Body).Decode(&reqBody))
+	require.NoError(et.t, jsonrs.NewDecoder(body).Decode(&reqBody))
 
 	responses := make([]types.TransformerResponse, len(reqBody))
 

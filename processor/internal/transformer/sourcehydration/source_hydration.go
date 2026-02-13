@@ -2,6 +2,7 @@ package sourcehydration
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -51,6 +52,7 @@ type Client struct {
 		maxEscapedTimeIncludingRetries config.ValueLoader[time.Duration]
 		logLongRunningTransformAfter   time.Duration
 		batchSize                      config.ValueLoader[int]
+		gzipCompress                   config.ValueLoader[bool]
 	}
 	conf   *config.Config
 	log    logger.Logger
@@ -72,6 +74,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(1, time.Minute, "Processor.SourceHydration.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.maxEscapedTimeIncludingRetries = conf.GetReloadableDurationVar(1, time.Hour, "Processor.SourceHydration.maxEscapedTimeIncludingRetries", "Processor.maxEscapedTimeIncludingRetries")
 	handle.config.batchSize = conf.GetReloadableIntVar(100, 1, "Processor.SourceHydration.batchSize", "Processor.transformBatchSize")
+	handle.config.gzipCompress = conf.GetReloadableBoolVar(false, "Processor.SourceHydration.gzipCompress", "Processor.Transformer.gzipCompress", "Transformer.gzipCompress")
 
 	for _, opt := range opts {
 		opt(handle)
@@ -219,13 +222,34 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			var err error
 			requestStartTime := time.Now()
 
+			var reqBody io.Reader
+			var reqBytesLen int
+			if c.config.gzipCompress.Load() {
+				var buf bytes.Buffer
+				gzWriter := gzip.NewWriter(&buf)
+				if _, err = gzWriter.Write(rawJSON); err != nil {
+					return err
+				}
+				if err = gzWriter.Close(); err != nil {
+					return err
+				}
+				reqBody = &buf
+				reqBytesLen = buf.Len()
+			} else {
+				reqBody = bytes.NewReader(rawJSON)
+				reqBytesLen = len(rawJSON)
+			}
+
 			var req *http.Request
-			req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(rawJSON))
+			req, err = http.NewRequestWithContext(ctx, "POST", url, reqBody)
 			if err != nil {
 				return err
 			}
 
 			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+			if c.config.gzipCompress.Load() {
+				req.Header.Set("Content-Encoding", "gzip")
+			}
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 
 			resp, err = c.client.Do(req)
@@ -239,7 +263,7 @@ func (c *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			// Record metrics with labels
 			tags := labels.ToStatsTag()
 			duration := time.Since(requestStartTime)
-			c.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(len(rawJSON))
+			c.stat.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, tags).Count(reqBytesLen)
 			c.stat.NewTaggedStat("transformer_client_total_durations_seconds", stats.CountType, tags).Count(int(duration.Seconds()))
 
 			respData, err = io.ReadAll(resp.Body)

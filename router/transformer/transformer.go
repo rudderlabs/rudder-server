@@ -4,6 +4,7 @@ package transformer
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -71,6 +72,7 @@ type handle struct {
 	expirationTimeDiff config.ValueLoader[time.Duration]
 
 	compactionSupported bool
+	gzipCompress        config.ValueLoader[bool]
 }
 
 type ProxyRequestMetadata struct {
@@ -198,24 +200,50 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		DestinationID:   transformMessage.Data[0].Destination.ID,
 	}
 
-	// Record request metrics
-	trans.stats.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, labels.ToStatsTag()).Count(len(rawJSON))
-
 	retryCount := 0
 	var resp *http.Response
 	var respData []byte
 	// We should rarely have error communicating with our JS
 	reqFailed := false
 
+	var compressedJSON []byte
+	if trans.gzipCompress.Load() {
+		var buf bytes.Buffer
+		gzWriter := gzip.NewWriter(&buf)
+		if _, err = gzWriter.Write(rawJSON); err != nil {
+			panic(fmt.Errorf("gzip compression error: %+v", err))
+		}
+		if err = gzWriter.Close(); err != nil {
+			panic(fmt.Errorf("gzip close error: %+v", err))
+		}
+		compressedJSON = buf.Bytes()
+	}
+
+	// Record request metrics
+	reqBytesLen := len(rawJSON)
+	if compressedJSON != nil {
+		reqBytesLen = len(compressedJSON)
+	}
+	trans.stats.NewTaggedStat("transformer_client_request_total_bytes", stats.CountType, labels.ToStatsTag()).Count(reqBytesLen)
+
 	for {
 		s := time.Now()
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
+		var reqBody io.Reader
+		if compressedJSON != nil {
+			reqBody = bytes.NewReader(compressedJSON)
+		} else {
+			reqBody = bytes.NewReader(rawJSON)
+		}
+		req, err := http.NewRequest("POST", url, reqBody)
 		if err != nil {
 			// No point in retrying if we can't even create a request. Panicking as per convention.
 			panic(fmt.Errorf("JS HTTP request creation error: URL: %v Error: %+v", url, err))
 		}
 
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		if compressedJSON != nil {
+			req.Header.Set("Content-Encoding", "gzip")
+		}
 		if compactRequestPayloads {
 			req.Header.Set("X-Content-Format", "json+compactedv1")
 		}
@@ -602,6 +630,7 @@ func (trans *handle) setup(destType string, destinationTimeout, transformTimeout
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default
 	trans.transformRequestTimerStat = trans.stats.NewStat("router_transformer_request_time", stats.TimerType)
+	trans.gzipCompress = conf.GetReloadableBoolVar(false, "Router.Transformer.gzipCompress", "Transformer.gzipCompress")
 	if featuresService != nil {
 		go func() {
 			<-featuresService.Wait()
