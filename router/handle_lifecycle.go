@@ -30,8 +30,6 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
-	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	transformerFeaturesService "github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -149,10 +147,6 @@ func (rt *Handle) Setup(
 	)
 
 	var err error
-	rt.isOAuthDestination, err = oauthv2.IsOAuthDestination(destinationDefinition.Config, common.RudderFlowDelivery)
-	if err != nil {
-		panic(fmt.Errorf("checking if destination is OAuth destination: %w", err))
-	}
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)

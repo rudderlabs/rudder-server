@@ -34,13 +34,6 @@ func NewManager(
 	destination *backendconfig.DestinationT,
 	backendConfig backendconfig.BackendConfig,
 ) (common.AsyncDestinationManager, error) {
-	destinationInfo := &oauthv2.DestinationInfo{
-		Config:           destination.Config,
-		DefinitionConfig: destination.DestinationDefinition.Config,
-		WorkspaceID:      destination.WorkspaceID,
-		DestType:         destination.DestinationDefinition.Name,
-		ID:               destination.ID,
-	}
 	httpClientTimeout := conf.GetDurationVar(30, time.Second, "SalesforceBulkUpload.httpClientTimeout")
 	cache := oauthv2.NewOauthTokenCache()
 	childLogger := logger.Child("salesforcebulkupload").Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID))
@@ -54,8 +47,8 @@ func NewManager(
 	client := oauthv2httpclient.NewOAuthHttpClient(originalHttpClient, oauthv2common.RudderFlowDelivery, &cache, backendConfig, func(responseBody []byte) (string, error) {
 		return augmenter.GetAuthErrorCategoryForSalesforce(responseBody), nil
 	}, optionalArgs)
-	apiService := newAPIService(childLogger, destinationInfo, client)
-	u := NewUploader(conf, childLogger, statsFactory, apiService, destinationInfo)
+	apiService := newAPIService(childLogger, destination, client)
+	u := NewUploader(conf, childLogger, statsFactory, apiService, destination)
 	return u, nil
 }
 
@@ -64,13 +57,13 @@ func NewUploader(
 	logger logger.Logger,
 	statsFactory stats.Stats,
 	apiService APIServiceInterface,
-	destinationInfo *oauthv2.DestinationInfo,
+	destination *backendconfig.DestinationT,
 ) *Uploader {
 	u := &Uploader{
 		logger:          logger,
 		apiService:      apiService,
 		dataHashToJobID: make(map[string][]int64),
-		destinationInfo: destinationInfo,
+		destination:     destination,
 		statsFactory:    statsFactory,
 		destName:        destName,
 	}

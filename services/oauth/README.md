@@ -28,16 +28,14 @@ Primary consumers: Router Transformer and the Regulation Service.
   - `OAuthHandler`: orchestration for token fetch/refresh, CP calls, cache, locking, and metrics.
 - `v2/controlplane/cp_connector.go`:
   - `Connector`: thin client to Control Plane; adds basic auth, handles timeouts/retries metadata, normalizes responses.
-- `v2/destination_info.go`:
-  - `DestinationInfo`: utility to determine OAuth applicability per flow and extract the appropriate account ID.
 - `v2/context/context.go`:
-  - Helpers to embed and retrieve `DestinationInfo` and token `secret` on `context.Context`.
+  - Helpers to embed and retrieve `backendconfig.DestinationT` and token `secret` on `context.Context`.
 - `v2/utils.go`, `v2/types.go`, `v2/common/constants.go`, `v2/cache.go`, `v2/stats.go`:
   - Shared types, constants, cache interface, and small utilities.
 
 ### Request Lifecycle
 
-1. Caller constructs an `*http.Request` and attaches `DestinationInfo` to the context.
+1. Caller constructs an `*http.Request` and attaches `backendconfig.DestinationT` to the context.
 2. The shared client’s `OAuthTransport` inspects whether the destination is OAuth for the given flow.
 3. If non‑OAuth: the request is passed through unchanged.
 4. If OAuth:
@@ -83,7 +81,7 @@ client := v2http.NewOAuthHttpClient(
 )
 
 // Attach destination info to context
-ctx := oauthctx.CtxWithDestInfo(context.Background(), &v2.DestinationInfo{ /* ... */ })
+ctx := oauthctx.CtxWithDestInfo(context.Background(), &backendconfig.DestinationT{ /* ... */ })
 req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 
 // Perform request; transport transparently handles OAuth
@@ -97,7 +95,7 @@ resp, err := client.Do(req)
 ### Troubleshooting
 
 - Non‑OAuth destination: ensure `definition.auth.type` is absent or not `OAuth` for pass‑through.
-- Missing account ID: `DestinationInfo.GetAccountID` validates expected keys per flow.
+- Missing account ID: `GetAccountID` validates expected keys per flow.
 - Token refresh loops: verify `expirationDate` and augmentation; check Control Plane response and interceptor payload.
 
 ### Maintenance
