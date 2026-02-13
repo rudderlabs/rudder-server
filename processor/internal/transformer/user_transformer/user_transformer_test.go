@@ -352,7 +352,6 @@ func TestUserTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-
 					t.Run(tc.name, func(t *testing.T) {
 						conf := config.New()
 						ch := make(chan struct{})

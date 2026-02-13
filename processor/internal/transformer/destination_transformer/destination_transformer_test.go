@@ -361,7 +361,6 @@ func TestDestinationTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-
 					t.Run(tc.name, func(t *testing.T) {
 						ch := make(chan struct{})
 						srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -564,7 +563,6 @@ func TestDestinationTransformer(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount:  0,
@@ -675,7 +673,6 @@ func TestDestinationTransformer(t *testing.T) {
 					}
 
 					for _, tc := range testCases {
-
 						t.Run(tc.name, func(t *testing.T) {
 							et := &endpointTransformer{
 								supportedPaths: []string{`/v0/destinations/` + tc.name},

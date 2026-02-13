@@ -445,7 +445,6 @@ func TestTrackingPlanValidator(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount: tc.maxRetryCount,
@@ -537,7 +536,6 @@ func TestTrackingPlanValidator(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount:  0,

@@ -182,7 +182,6 @@ func TestQueryWrapper(t *testing.T) {
 				}
 
 				for _, stc := range subTestCases {
-
 					t.Run(stc.name, func(t *testing.T) {
 						user := fmt.Sprintf("test_user_%d", uuid.New().ID())
 

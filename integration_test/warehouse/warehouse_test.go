@@ -2256,7 +2256,6 @@ func runWarehouseServer(
 		}
 
 		bcConfigWg.Go(func() {
-
 			<-ctx.Done()
 			close(ch)
 		})
