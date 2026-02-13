@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
@@ -51,6 +52,7 @@ func New(
 			obskit.WorkspaceID(destination.WorkspaceID),
 			obskit.DestinationID(destination.ID),
 			obskit.DestinationType(destination.DestinationDefinition.Name),
+			logger.NewStringField("id", uuid.New().String()),
 		),
 		statsFactory:        statsFactory,
 		destination:         destination,
@@ -183,6 +185,12 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
+		fields := []logger.Field{
+			logger.NewStringField("table", discardsTable()),
+		}
+		log := m.logger.Withn(fields...)
+		log.Warnn("Failed to prepare discards channel", obskit.Error(err))
+
 		switch {
 		case errors.Is(err, errAuthz):
 			m.setBackOff(err)
@@ -235,8 +243,17 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
 	isBackoffSet := false      // should not be set again if already set
 	for _, info := range uploadInfos {
+		fields := []logger.Field{
+			logger.NewStringField("table", info.tableName),
+			logger.NewStringField("offset", strconv.FormatInt(info.latestJobID, 10)),
+		}
+		fields = append(fields, jobIDRangeFields(info.jobIDs)...)
+		log := m.logger.Withn(fields...)
+
 		imInfo, discardImInfo, err := m.sendEventsToSnowpipe(ctx, asyncDest.Destination.ID, &destConf, info)
 		if err != nil {
+			log.Warnn("Failed to send events to Snowpipe", obskit.Error(err))
+
 			switch {
 			case errors.Is(err, errAuthz):
 				shouldResetBackoff = false
@@ -251,20 +268,13 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 			case errors.Is(err, errBackoff):
 				shouldResetBackoff = false
 			case errors.Is(err, errAbort):
-				m.logger.Warnn("Aborting jobs for table",
-					logger.NewStringField("table", info.tableName),
-					obskit.Error(err),
-				)
+				log.Warnn("Aborting jobs for table")
 				abortedJobIDs = append(abortedJobIDs, info.jobIDs...)
 				if abortReason == "" {
 					abortReason = err.Error()
 				}
 				continue
 			}
-			m.logger.Warnn("Failed to send events to Snowpipe",
-				logger.NewStringField("table", info.tableName),
-				obskit.Error(err),
-			)
 			if failedReason == "" {
 				failedReason = err.Error()
 			}
@@ -420,9 +430,14 @@ func (m *Manager) sendEventsToSnowpipe(
 }
 
 func (m *Manager) insert(ctx context.Context, destinationID string, destConf *destConfig, info *uploadInfo, insertReq *model.InsertRequest, channelID string) (string, error) {
+	log := m.logger.Withn(
+		logger.NewStringField("table", info.tableName),
+		logger.NewStringField("offset", insertReq.Offset),
+		logger.NewStringField("channelID", channelID),
+	)
 	deleteChannel := func(tableName, chID string) {
 		if err := m.deleteChannel(ctx, tableName, chID); err != nil {
-			m.logger.Warnn("Failed to delete channel", obskit.Error(err))
+			log.Warnn("Failed to delete channel", obskit.Error(err))
 		}
 	}
 	extractError := func(res *model.InsertResponse, tableName string) error {
@@ -447,8 +462,9 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 		because such 404 errors are expected to be rare.
 	*/
 	if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
+		log.Infon("Channel not found, recreating channel")
+
 		deleteChannel(info.tableName, channelID)
-		m.logger.Infon("Channel not found, recreating channel", logger.NewStringField("channelID", channelID))
 		var insertRes2 *model.InsertResponse
 		recreatedChannel, err2 := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
 		defer func() {
@@ -459,7 +475,7 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 		if err2 != nil {
 			return "", fmt.Errorf("creating channel %s: %w", info.tableName, err2)
 		}
-		m.logger.Infon("Recreated channel", logger.NewStringField("channelID", recreatedChannel.ChannelID))
+		log.Infon("Recreated channel", logger.NewStringField("channelID", recreatedChannel.ChannelID))
 
 		insertRes2, err2 = m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
 		if err2 != nil {
@@ -468,7 +484,7 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 		if !insertRes2.Success {
 			return "", extractError(insertRes2, info.tableName)
 		}
-		m.logger.Infon("Inserted data into recreated channel")
+		log.Infon("Inserted data into recreated channel")
 		return recreatedChannel.ChannelID, nil
 	}
 	// For all other errors, clean up and return
@@ -520,6 +536,10 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 	var importInfos []*importInfo
 	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &importInfos)
 	if err != nil {
+		m.logger.Errorn("Failed to unmarshal Snowpipe streaming import ID",
+			logger.NewStringField("importID", pollInput.ImportId),
+			obskit.Error(err),
+		)
 		return common.PollStatusResponse{
 			InProgress: false,
 			StatusCode: http.StatusBadRequest,
@@ -581,6 +601,12 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 
 		inProgress, err := m.getImportStatus(ctx, info)
 		if err != nil {
+			m.logger.Warnn("Failed to get import status", obskit.Error(err),
+				logger.NewStringField("channelId", info.ChannelID),
+				logger.NewStringField("expectedOffset", info.Offset),
+				logger.NewStringField("table", info.Table),
+			)
+
 			info.Failed = true
 			info.Reason = err.Error()
 			m.polledImportInfoMap[info.ChannelID] = info
@@ -718,21 +744,41 @@ func convertToInt(a string) (int64, error) {
 	return ai, nil
 }
 
+func jobIDRangeFields(jobIDs []int64) []logger.Field {
+	if len(jobIDs) == 0 {
+		return nil
+	}
+	type minMax struct {
+		min int64
+		max int64
+	}
+	mm := lo.Reduce(jobIDs[1:], func(acc minMax, jobID int64, _ int) minMax {
+		if jobID < acc.min {
+			acc.min = jobID
+		}
+		if jobID > acc.max {
+			acc.max = jobID
+		}
+		return acc
+	}, minMax{min: jobIDs[0], max: jobIDs[0]})
+	return []logger.Field{
+		logger.NewIntField("minJobID", mm.min),
+		logger.NewIntField("maxJobID", mm.max),
+	}
+}
+
 func (m *Manager) cleanupFailedImports(ctx context.Context, failedInfos []*importInfo) {
 	for _, info := range failedInfos {
-		m.logger.Warnn("Failed to poll channel offset",
+		log := m.logger.Withn(
 			logger.NewStringField("channelId", info.ChannelID),
 			logger.NewStringField("offset", info.Offset),
 			logger.NewStringField("table", info.Table),
 			logger.NewStringField("reason", info.Reason),
 		)
+		log.Warnn("Failed to poll channel offset")
 
 		if err := m.deleteChannel(ctx, info.Table, info.ChannelID); err != nil {
-			m.logger.Warnn("Failed to delete channel",
-				logger.NewStringField("channelId", info.ChannelID),
-				logger.NewStringField("table", info.Table),
-				obskit.Error(err),
-			)
+			log.Warnn("Failed to delete channel", obskit.Error(err))
 		}
 	}
 }
