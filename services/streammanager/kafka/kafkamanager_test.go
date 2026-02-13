@@ -22,6 +22,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/avro"
 	"github.com/linkedin/goavro/v2"
 	"github.com/ory/dockertest/v3"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -394,6 +395,15 @@ func TestAIOKafka(t *testing.T) {
 		require.Equal(t, "Message delivered to topic: foo-bar", returnMessage)
 		require.Equal(t, "Message delivered to topic: foo-bar", errMessage)
 	}
+
+	// TODO: Remove this workaround once dockertest releases a version that includes
+	// https://github.com/ory/dockertest/pull/623 (merged but unreleased as of v3.12.0).
+	// Without this, BuildImage sends requests with API version 1.25 (from struct field
+	// tags), which Docker daemons 27+ reject (minimum supported API version is 1.44).
+	serverVersion, err := pool.Client.Version()
+	require.NoError(t, err)
+	pool.Client, err = dc.NewVersionedClient(pool.Client.Endpoint(), serverVersion.Get("ApiVersion"))
+	require.NoError(t, err)
 
 	consumerContainer, err := pool.BuildAndRunWithOptions("./testdata/aiokafka/Dockerfile", &dockertest.RunOptions{
 		Name:      fmt.Sprintf("aiokafka-%s", misc.FastUUID().String()),
