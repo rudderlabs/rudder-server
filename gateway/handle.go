@@ -648,9 +648,20 @@ func (gw *Handle) getPayloadFromRequest(r *http.Request) ([]byte, error) {
 	start := time.Now()
 	defer gw.bodyReadTimeStat.Since(start)
 
+    //This line limits the reader to maxReqSize + 1 before reading the whole content.
+    r.Body = http.MaxBytesReader(nil,
+		                         r.Body,int64(gw.conf.maxReqSize.Load())+1
+								)
+
 	payload, err := io.ReadAll(r.Body)
 	_ = r.Body.Close()
 	if err != nil {
+
+        //This snippet of code returns the specific error from MaxBytesReader
+		if err.Error() == "http: request body too large" {
+            return nil,errors.New(response.RequestBodyTooLarge)
+		}
+		
 		gw.logger.Errorn(
 			"Error reading request body",
 			logger.NewStringField("Content-Length", r.Header.Get("Content-Length")),
