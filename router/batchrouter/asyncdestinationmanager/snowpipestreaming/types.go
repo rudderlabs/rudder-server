@@ -73,6 +73,7 @@ type (
 			}
 			discards          stats.Counter
 			pollingInProgress stats.Counter
+			duplicateEvents   stats.Counter
 		}
 
 		// Track batch polling start time for stuck pipeline detection
