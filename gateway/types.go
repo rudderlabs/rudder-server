@@ -28,6 +28,7 @@ type webRequestT struct {
 	ipAddr         string
 	userIDHeader   string
 	errors         []string
+	ctx            context.Context
 }
 
 type batchWebRequestT struct {
