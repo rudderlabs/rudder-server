@@ -703,6 +703,151 @@ def transformEvent(event, metadata):
 				}
 			},
 		},
+		{
+			name:      "PartialErrors",
+			versionID: "bc-partial-errors-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    msg_id = event.get("messageId", "")
+    if msg_id in ("msg-3", "msg-8"):
+        return "this is a string, not a dict"
+    event["processed"] = True
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-partial-errors-v1"
+
+				// 10 events: msg-3 and msg-8 will return strings (errors),
+				// the other 8 will succeed with processed=True.
+				events := make([]types.TransformerEvent, 10)
+				for i := range events {
+					events[i] = makeEvent(fmt.Sprintf("msg-%d", i+1), versionId)
+				}
+
+				t.Log("Sending 10 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 10 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// 8 events should succeed, 2 should fail
+				require.Equal(t, 8, len(oldResp.Events), "old arch: 8 success events expected")
+				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
+				require.Equal(t, 8, len(newResp.Events), "new arch: 8 success events expected")
+				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
+
+				// Log error details
+				for i, fe := range oldResp.FailedEvents {
+					t.Logf("Old arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				}
+				for i, fe := range newResp.FailedEvents {
+					t.Logf("New arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for partial errors")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "MessageIdTampering",
+			versionID: "bc-msgid-tamper-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event["originalMessageId"] = event.get("messageId", "")
+    event["messageId"] = "tampered-" + event.get("messageId", "")
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-msgid-tamper-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionId),
+					makeEvent("msg-2", versionId),
+					makeEvent("msg-3", versionId),
+				}
+
+				t.Log("Sending 3 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 3 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// All 3 should succeed
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				// Verify tampering was applied
+				for i, ev := range oldResp.Events {
+					output := ev.Output
+					t.Logf("Old arch Event[%d]: messageId=%v, originalMessageId=%v, metadata.messageId=%v",
+						i, output["messageId"], output["originalMessageId"], ev.Metadata.MessageID)
+				}
+				for i, ev := range newResp.Events {
+					output := ev.Output
+					t.Logf("New arch Event[%d]: messageId=%v, originalMessageId=%v, metadata.messageId=%v",
+						i, output["messageId"], output["originalMessageId"], ev.Metadata.MessageID)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for messageId tampering")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "MixedIndentation",
+			versionID: "bc-mixed-indent-v1",
+			config:    configBackendEntry{code: "def transformEvent(event, metadata):\n    event[\"processed\"] = True\n\treturn event\n"},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionId = "bc-mixed-indent-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionId),
+					makeEvent("msg-2", versionId),
+				}
+
+				t.Log("Sending 2 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 2 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should fail (compilation error)
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				// Log error details for debugging
+				for i, fe := range oldResp.FailedEvents {
+					t.Logf("Old arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				}
+				for i, fe := range newResp.FailedEvents {
+					t.Logf("New arch FailedEvent[%d]: statusCode=%d, error=%q", i, fe.StatusCode, fe.Error)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for mixed indentation")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
 	}
 
 	pool, err := dockertest.NewPool("")
