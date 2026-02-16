@@ -73,6 +73,7 @@ type (
 			}
 			discards          stats.Counter
 			pollingInProgress stats.Counter
+			duplicateEvents   stats.Counter
 		}
 
 		// Track batch polling start time for stuck pipeline detection
@@ -160,7 +161,7 @@ type (
 	}
 )
 
-func (d *destConfig) Decode(m map[string]interface{}) error {
+func (d *destConfig) Decode(m map[string]any) error {
 	if err := mapstructure.Decode(m, d); err != nil {
 		return err
 	}

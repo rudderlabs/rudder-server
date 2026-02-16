@@ -23,10 +23,10 @@ import (
 	httpClient "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
 )
 
-var oauthDefinitionConfig = map[string]interface{}{
-	"auth": map[string]interface{}{
+var oauthDefinitionConfig = map[string]any{
+	"auth": map[string]any{
 		"type":         "OAuth",
-		"rudderScopes": []interface{}{"delivery"},
+		"rudderScopes": []any{"delivery"},
 	},
 }
 
@@ -59,13 +59,13 @@ var _ = Describe("Http/Client", func() {
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
 			destination := &v2.DestinationInfo{
 				DestType: "CLEVERTAP",
-				DefinitionConfig: map[string]interface{}{
-					"auth": map[string]interface{}{
+				DefinitionConfig: map[string]any{
+					"auth": map[string]any{
 						"type": "API_KEY",
 					},
 				},
 				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 			}
 			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
 			res, err := httpClient.Do(req)
@@ -112,7 +112,7 @@ var _ = Describe("Http/Client", func() {
 				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: oauthDefinitionConfig,
 				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
 				WorkspaceID: "1234",
@@ -173,7 +173,7 @@ var _ = Describe("Http/Client", func() {
 				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: oauthDefinitionConfig,
 				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
 			}
@@ -219,7 +219,7 @@ var _ = Describe("Http/Client", func() {
 				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: oauthDefinitionConfig,
 				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
 			}
@@ -273,7 +273,7 @@ var _ = Describe("Http/Client", func() {
 				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
 				DefinitionConfig: oauthDefinitionConfig,
 				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
 				WorkspaceID: "1234",

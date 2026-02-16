@@ -14,8 +14,8 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 		id                 string
 		isProcessorEnabled bool
 		definitionID       string
-		definitionConfig   map[string]interface{}
-		config             map[string]interface{}
+		definitionConfig   map[string]any
+		config             map[string]any
 	}
 
 	type testSourceT struct {
@@ -44,28 +44,28 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "page"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "page"},
 							},
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "hybrid",
 					},
 					isProcessorEnabled: true,
@@ -87,28 +87,28 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "page"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "page"},
 							},
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "hybrid",
 					},
 					isProcessorEnabled: true,
@@ -130,28 +130,28 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "page"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "page"},
 							},
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "cloud",
 					},
 					isProcessorEnabled: true,
@@ -173,28 +173,28 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "page"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "page"},
 							},
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "device",
 					},
 					isProcessorEnabled: false,
@@ -216,28 +216,28 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web", "android"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web", "android"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{"track", "page"},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{"track", "page"},
 							},
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "hybrid",
 					},
 					isProcessorEnabled: true,
@@ -259,24 +259,24 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web", "android"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web", "android"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{},
+						"hybridModeCloudEventsFilter": map[string]any{},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "hybrid",
 					},
 					isProcessorEnabled: true,
@@ -298,15 +298,15 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web", "android"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web", "android"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
@@ -314,7 +314,7 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "hybrid",
 					},
 					isProcessorEnabled: true,
@@ -336,28 +336,28 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 				isSupportedMsgType: true,
 				destination: testDestinationT{
 					id: "1",
-					definitionConfig: map[string]interface{}{
-						"supportedMessageTypes": []interface{}{"track", "page", "group"},
-						"supportedSourceTypes":  []interface{}{"web", "android"},
-						"supportedConnectionModes": map[string]interface{}{
-							"android": []interface{}{
+					definitionConfig: map[string]any{
+						"supportedMessageTypes": []any{"track", "page", "group"},
+						"supportedSourceTypes":  []any{"web", "android"},
+						"supportedConnectionModes": map[string]any{
+							"android": []any{
 								"cloud",
 								"device",
 							},
-							"web": []interface{}{
+							"web": []any{
 								"cloud",
 								"device",
 								"hybrid",
 							},
 						},
-						"hybridModeCloudEventsFilter": map[string]interface{}{
-							"web": map[string]interface{}{
-								"messageType": []interface{}{},
+						"hybridModeCloudEventsFilter": map[string]any{
+							"web": map[string]any{
+								"messageType": []any{},
 							},
 						},
 					},
 					definitionID: "1DefId",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"connectionMode": "hybrid",
 					},
 					isProcessorEnabled: true,
@@ -381,9 +381,9 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			ID:     "acpo9i",
 			Name:   "GA4",
-			Config: map[string]interface{}{},
+			Config: map[string]any{},
 		},
-		Config: map[string]interface{}{},
+		Config: map[string]any{},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.caseName, func(t *testing.T) {
@@ -420,24 +420,24 @@ func TestFilterEventsForHybridMode(t *testing.T) {
 func TestConvertToArrayOfType(t *testing.T) {
 	type convertTestCases[T EventPropsTypes] struct {
 		caseName string
-		input    interface{}
+		input    any
 		expected []T
 	}
 
 	strTestCases := []convertTestCases[string]{
 		{
 			caseName: "when proper input array of strings(internally) is sent, return proper []string",
-			input:    []interface{}{"1", "2", "3"},
+			input:    []any{"1", "2", "3"},
 			expected: []string{"1", "2", "3"},
 		},
 		{
 			caseName: "when empty array of strings(internally) is sent, return empty string array",
-			input:    []interface{}{},
+			input:    []any{},
 			expected: []string{},
 		},
 		{
 			caseName: "when empty array of different types is sent, return empty string array",
-			input:    []interface{}{"1", 2, "omgo"},
+			input:    []any{"1", 2, "omgo"},
 			expected: []string{},
 		},
 		{
@@ -467,40 +467,40 @@ func TestAllowEventToDestTransformation(t *testing.T) {
 	testCases := []testCaseT{
 		{
 			caseName:          "if message type is invalid, return false with statusCode 400",
-			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": ""}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]any{"type": ""}},
 			expected:          false,
 			supportedMsgTypes: []string{"track"},
 			expectedResp: &types.TransformerResponse{
-				Output:     map[string]interface{}{"type": ""},
+				Output:     map[string]any{"type": ""},
 				StatusCode: 400,
 				Error:      "Invalid message type. Type assertion failed",
 			},
 		},
 		{
 			caseName:          "if message type is unsupported, return false with statusCode 298",
-			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": "identify"}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]any{"type": "identify"}},
 			expected:          false,
 			supportedMsgTypes: []string{"track"},
 			expectedResp: &types.TransformerResponse{
-				Output:     map[string]interface{}{"type": "identify"},
+				Output:     map[string]any{"type": "identify"},
 				StatusCode: 298,
 				Error:      "Message type not supported",
 			},
 		},
 		{
 			caseName:          "if event is filtered due to FilterEventsForHybridMode, return statusCode 298",
-			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Metadata: types.Metadata{}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]any{"type": "track"}, Metadata: types.Metadata{}},
 			expected:          false,
 			supportedMsgTypes: []string{"track"},
 			expectedResp: &types.TransformerResponse{
-				Output:     map[string]interface{}{"type": "track"},
+				Output:     map[string]any{"type": "track"},
 				StatusCode: 298,
 				Error:      "Filtering event based on hybridModeFilter",
 			},
 		},
 		{
 			caseName:          "if event is legit, return true with nil response",
-			transformerEvent:  &types.TransformerEvent{Message: map[string]interface{}{"type": "track"}, Destination: backendconfig.DestinationT{IsProcessorEnabled: true}},
+			transformerEvent:  &types.TransformerEvent{Message: map[string]any{"type": "track"}, Destination: backendconfig.DestinationT{IsProcessorEnabled: true}},
 			expected:          true,
 			supportedMsgTypes: []string{"track"},
 			expectedResp:      nil,

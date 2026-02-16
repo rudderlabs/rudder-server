@@ -86,7 +86,7 @@ func TestIntegration(t *testing.T) {
 			name               string
 			tables             []string
 			destType           string
-			conf               map[string]interface{}
+			conf               map[string]any
 			schemaTTLInMinutes int
 			prerequisite       func(t testing.TB, ctx context.Context)
 			configOverride     map[string]any
@@ -97,7 +97,7 @@ func TestIntegration(t *testing.T) {
 				name:     "S3Datalake",
 				tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				destType: whutils.S3Datalake,
-				conf: map[string]interface{}{
+				conf: map[string]any{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
 					"accessKeyID":      s3AccessKeyID,
@@ -180,7 +180,7 @@ func TestIntegration(t *testing.T) {
 				tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases"},
 				destType:           whutils.GCSDatalake,
 				schemaTTLInMinutes: 100,
-				conf: map[string]interface{}{
+				conf: map[string]any{
 					"bucketName":    gcsBucketName,
 					"prefix":        "",
 					"endPoint":      gcsEndPoint,
@@ -254,7 +254,7 @@ func TestIntegration(t *testing.T) {
 				tables:             []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				destType:           whutils.AzureDatalake,
 				schemaTTLInMinutes: 100,
-				conf: map[string]interface{}{
+				conf: map[string]any{
 					"containerName":  azContainerName,
 					"prefix":         "",
 					"accountName":    azAccountName,
@@ -447,7 +447,7 @@ func TestIntegration(t *testing.T) {
 
 			dest := backendconfig.DestinationT{
 				ID: "test_destination_id",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"region":           s3Region,
 					"bucketName":       s3BucketName,
 					"accessKeyID":      s3AccessKeyID,
@@ -488,7 +488,7 @@ func TestIntegration(t *testing.T) {
 
 			dest := backendconfig.DestinationT{
 				ID: "test_destination_id",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":    gcsBucketName,
 					"prefix":        "",
 					"endPoint":      gcsEndPoint,
@@ -519,7 +519,7 @@ func TestIntegration(t *testing.T) {
 
 			dest := backendconfig.DestinationT{
 				ID: "test_destination_id",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"containerName":  azContainerName,
 					"prefix":         "",
 					"accountName":    azAccountName,
@@ -607,7 +607,7 @@ func TestIntegration(t *testing.T) {
 			SourceID:        sourceID,
 			DestinationID:   destinationID,
 			DestinationType: destType,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
 				"accessKeyID":      s3AccessKeyID,
@@ -893,7 +893,7 @@ func TestIntegration(t *testing.T) {
 			SourceID:        sourceID,
 			DestinationID:   destinationID,
 			DestinationType: destType,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region":           s3Region,
 				"bucketName":       s3BucketName,
 				"accessKeyID":      s3AccessKeyID,

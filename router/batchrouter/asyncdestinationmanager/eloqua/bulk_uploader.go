@@ -112,7 +112,7 @@ func (b *EloquaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStru
 	if err != nil {
 		return b.createAsyncUploadErrorOutput("unable to upload the data. ", err, destination.ID, asyncDestStruct)
 	}
-	runSyncBody := map[string]interface{}{
+	runSyncBody := map[string]any{
 		"syncedInstanceUri": importDefinition.URI,
 	}
 	marshalledData, err = jsonrs.Marshal(runSyncBody)

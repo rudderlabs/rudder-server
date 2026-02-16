@@ -14,12 +14,12 @@ import (
 
 type Producer interface {
 	io.Closer
-	Produce(jsonData json.RawMessage, _ interface{}) (int, string, string)
+	Produce(jsonData json.RawMessage, _ any) (int, string, string)
 }
 
 type StreamProducer interface {
 	io.Closer
-	Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string)
+	Produce(jsonData json.RawMessage, destConfig any) (int, string, string)
 }
 
 type Opts struct {

@@ -3,6 +3,7 @@ package snowpipestreaming
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"testing"
@@ -122,7 +123,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "SNOWPIPE_STREAMING",
 		},
-		Config: make(map[string]interface{}),
+		Config: make(map[string]any),
 	}
 	validations.Init()
 
@@ -186,7 +187,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.api = mockApi
 		dest := &backendconfig.DestinationT{
 			ID: destination.ID,
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"enableIceberg": true,
 			},
 		}
@@ -1094,6 +1095,60 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
 			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Upload with duplicate ids", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+		}
+		output := sm.Upload(&common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_duplicate_records.txt",
+		})
+		require.Equal(t, []int64{1001, 1003, 1005, 1007, 1002, 1004, 1006, 1008}, output.ImportingJobIDs)
+		require.Equal(t, 8, output.ImportingCount)
+		require.JSONEq(t, `{"importId":[{"channelId":"test-users-channel","offset":"1007","table":"USERS","failed":false,"reason":"","count":4},{"channelId":"test-products-channel","offset":"1008","table":"PRODUCTS","failed":false,"reason":"","count":4}],"importCount":8}`, string(output.ImportingParameters))
+		require.Nil(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 8, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 2, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
 		}).LastValue())
 	})
 
@@ -2121,9 +2176,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 				// Pre-populate cache if needed
 				if tt.prePopulatedCache != nil {
-					for channelID, info := range tt.prePopulatedCache {
-						sm.polledImportInfoMap[channelID] = info
-					}
+					maps.Copy(sm.polledImportInfoMap, tt.prePopulatedCache)
 				}
 
 				// Set up mock API if needed
@@ -2274,13 +2327,13 @@ func TestFindNewColumns(t *testing.T) {
 func TestDestConfig_Decode(t *testing.T) {
 	tests := []struct {
 		name      string
-		input     map[string]interface{}
+		input     map[string]any
 		expected  destConfig
 		wantError bool
 	}{
 		{
 			name: "Valid Input",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"account":              "test-account",
 				"warehouse":            "test-warehouse",
 				"database":             "test-database",
@@ -2306,7 +2359,7 @@ func TestDestConfig_Decode(t *testing.T) {
 		},
 		{
 			name: "Invalid Input",
-			input: map[string]interface{}{
+			input: map[string]any{
 				"account": 123, // Invalid type
 			},
 			expected:  destConfig{},
@@ -2314,7 +2367,7 @@ func TestDestConfig_Decode(t *testing.T) {
 		},
 		{
 			name:  "Empty Map",
-			input: map[string]interface{}{},
+			input: map[string]any{},
 			expected: destConfig{
 				Namespace: "STRINGEMPTY",
 			},

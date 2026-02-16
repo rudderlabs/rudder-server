@@ -109,12 +109,10 @@ func (c *Client) Hydrate(ctx context.Context, hydrationReq types.SrcHydrationReq
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	trackWg.Add(1)
-	go func() {
+	trackWg.Go(func() {
 		l := c.log.Withn(labels.ToLoggerFields()...)
 		transformerutils.TrackLongRunningTransformation(ctx, srcHydrationStage, c.config.logLongRunningTransformAfter, l)
-		trackWg.Done()
-	}()
+	})
 
 	batches := lo.Chunk(clientEvents, batchSize)
 

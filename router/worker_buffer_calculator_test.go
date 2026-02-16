@@ -264,7 +264,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 
 			// Call calculator multiple times to ensure stats are captured
 			expectedSize := 24
-			for i := 0; i < 5; i++ {
+			for range 5 {
 				result := calculator()
 				require.Equal(t, expectedSize, result)
 			}
@@ -301,7 +301,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 			results := make([]int, 100)
 
 			// Run calculator concurrently
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				wg.Add(1)
 				go func(idx int) {
 					defer wg.Done()
@@ -372,7 +372,7 @@ func TestExperimentalBufferSizeCalculator(t *testing.T) {
 				workLoopThroughput := metric.NewSimpleMovingAverage(5)
 
 				// Simulate low throughput
-				for i := 0; i < 5; i++ {
+				for range 5 {
 					workLoopThroughput.Observe(2.0) // Steady low throughput
 				}
 

@@ -657,17 +657,17 @@ func TestToProviderCase(t *testing.T) {
 
 func TestSnowflakeCloudProvider(t *testing.T) {
 	inputs := []struct {
-		config   interface{}
+		config   any
 		provider string
 	}{
 		{
-			config: map[string]interface{}{
+			config: map[string]any{
 				"cloudProvider": "GCP",
 			},
 			provider: "GCP",
 		},
 		{
-			config:   map[string]interface{}{},
+			config:   map[string]any{},
 			provider: "AWS",
 		},
 	}
@@ -680,69 +680,69 @@ func TestSnowflakeCloudProvider(t *testing.T) {
 func TestObjectStorageType(t *testing.T) {
 	inputs := []struct {
 		destType         string
-		config           interface{}
+		config           any
 		useRudderStorage bool
 		storageType      string
 	}{
 		{
-			config:           map[string]interface{}{},
+			config:           map[string]any{},
 			useRudderStorage: true,
 			storageType:      "S3",
 		},
 		{
 			destType:    "RS",
-			config:      map[string]interface{}{},
+			config:      map[string]any{},
 			storageType: "S3",
 		},
 		{
 			destType:    "S3_DATALAKE",
-			config:      map[string]interface{}{},
+			config:      map[string]any{},
 			storageType: "S3",
 		},
 		{
 			destType:    "BQ",
-			config:      map[string]interface{}{},
+			config:      map[string]any{},
 			storageType: "GCS",
 		},
 		{
 			destType:    "GCS_DATALAKE",
-			config:      map[string]interface{}{},
+			config:      map[string]any{},
 			storageType: "GCS",
 		},
 		{
 			destType:    "AZURE_DATALAKE",
-			config:      map[string]interface{}{},
+			config:      map[string]any{},
 			storageType: "AZURE_BLOB",
 		},
 		{
 			destType:    "SNOWFLAKE",
-			config:      map[string]interface{}{},
+			config:      map[string]any{},
 			storageType: "S3",
 		},
 		{
 			destType: "SNOWFLAKE",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"cloudProvider": "AZURE",
 			},
 			storageType: "AZURE_BLOB",
 		},
 		{
 			destType: "SNOWFLAKE",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"cloudProvider": "GCP",
 			},
 			storageType: "GCS",
 		},
 		{
 			destType: "POSTGRES",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"bucketProvider": "GCP",
 			},
 			storageType: "GCP",
 		},
 		{
 			destType: "POSTGRES",
-			config:   map[string]interface{}{},
+			config:   map[string]any{},
 		},
 	}
 	for _, input := range inputs {
@@ -840,7 +840,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		{
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 			expected: false,
@@ -848,7 +848,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		{
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"useRudderStorage": "true",
 					},
 				},
@@ -858,7 +858,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		{
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"useRudderStorage": false,
 					},
 				},
@@ -868,7 +868,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 		{
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"useRudderStorage": true,
 					},
 				},
@@ -1056,7 +1056,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 		{
 			name: "with useRudderStorage true",
 			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"useRudderStorage": true,
 				},
 			},
@@ -1071,7 +1071,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 		{
 			name: "with accessKeyID and accessKey",
 			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"accessKeyID": someAccessKeyID,
 					"accessKey":   someAccessKey,
 				},
@@ -1086,7 +1086,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 		{
 			name: "with iamRoleARN",
 			destination: &backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"iamRoleARN": someIAMRoleARN,
 				},
 				WorkspaceID: someWorkspaceID,
@@ -1102,7 +1102,7 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 		{
 			name: "with no config",
 			destination: &backendconfig.DestinationT{
-				Config:      map[string]interface{}{},
+				Config:      map[string]any{},
 				WorkspaceID: someWorkspaceID,
 			},
 			service: "redshift",
@@ -1230,20 +1230,20 @@ var _ = Describe("Utils", func() {
 		Entry(nil, AzureDatalake),
 	)
 
-	DescribeTable("Get object name", func(location string, config interface{}, objectProvider, objectName string) {
+	DescribeTable("Get object name", func(location string, config any, objectProvider, objectName string) {
 		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
 	},
-		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
-		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]interface{}{"bucketName": "bucket-name"}, S3, "key"),
-		Entry(AzureBlob, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AzureBlob, "key"),
-		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
+		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]any{"bucketName": "bucket-name"}, GCS, "key"),
+		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]any{"bucketName": "bucket-name"}, S3, "key"),
+		Entry(AzureBlob, "https://account-name.blob.core.windows.net/container-name/key", map[string]any{"containerName": "container-name"}, AzureBlob, "key"),
+		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]any{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
 	)
 
 	It("SSL keys", func() {
 		destinationID := "destID"
 		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
 
-		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
+		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]any{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
 		Expect(err).To(Equal(WriteSSLKeyError{}))
 
 		path := GetSSLKeyDirPath(destinationID)

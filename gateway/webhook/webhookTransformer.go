@@ -191,10 +191,10 @@ type outputToSource struct {
 // transformerResponse will be populated using JSON unmarshall
 // so we need to make fields public
 type transformerResponse struct {
-	Output         map[string]interface{} `json:"output"`
-	Err            string                 `json:"error"`
-	StatusCode     int                    `json:"statusCode"`
-	OutputToSource *outputToSource        `json:"outputToSource"`
+	Output         map[string]any  `json:"output"`
+	Err            string          `json:"error"`
+	StatusCode     int             `json:"statusCode"`
+	OutputToSource *outputToSource `json:"outputToSource"`
 }
 
 type transformerBatchResponseT struct {

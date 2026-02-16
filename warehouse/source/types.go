@@ -47,7 +47,7 @@ func (ct CustomTime) MarshalJSON() ([]byte, error) {
 	if ct.IsZero() {
 		return []byte("null"), nil
 	}
-	return []byte(fmt.Sprintf("\"%s\"", ct.Format(CustomTimeLayout))), nil
+	return fmt.Appendf(nil, "\"%s\"", ct.Format(CustomTimeLayout)), nil
 }
 
 type insertJobResponse struct {

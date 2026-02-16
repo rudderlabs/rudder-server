@@ -140,7 +140,6 @@ func (jf *JobsForwarder) Start() error {
 					}
 					toForward := append([]*batcher.EventSchemaMessageBatch{}, messageBatches...)
 					for _, batch := range toForward {
-						batch := batch // can be used in a goroutine
 						msg := batch.Message
 						orderKey := msg.Key.WriteKey
 						jf.pulsarProducer.SendMessageAsync(ctx, orderKey, orderKey, msg.MustMarshal(),

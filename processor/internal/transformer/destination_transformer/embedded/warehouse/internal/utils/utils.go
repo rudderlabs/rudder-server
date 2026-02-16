@@ -111,7 +111,7 @@ func IsJSONCompatibleStructure(val any) bool {
 	}
 	v := reflect.ValueOf(val)
 	switch v.Kind() {
-	case reflect.Struct, reflect.Ptr:
+	case reflect.Struct, reflect.Pointer:
 		return true
 	case reflect.Slice, reflect.Array:
 		if v.Len() > 0 {

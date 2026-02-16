@@ -83,7 +83,7 @@ func Start(ctx context.Context, secret [32]byte, key string, channelProvider fun
 }
 
 // Encrypt and store the config to the database
-func (db *cacheStore) set(ctx context.Context, config interface{}) error {
+func (db *cacheStore) set(ctx context.Context, config any) error {
 	configBytes, err := jsonrs.Marshal(config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)

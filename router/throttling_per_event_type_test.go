@@ -285,7 +285,7 @@ func (m throttlingPerEventTypeMethods) newTestSpec(jobsPerEventType int) *thrott
 
 	var idx int
 	for _, eventType := range []string{"identify", "track"} {
-		for i := 0; i < jobsPerEventType; i++ {
+		for range jobsPerEventType {
 			js := throttlingPerEventTypeJobSpec{
 				userID:    uuid.New().String(),
 				eventType: eventType,
@@ -329,7 +329,7 @@ func (throttlingPerEventTypeMethods) splitInBatches(jobs []*throttlingPerEventTy
 	payloads := lo.Map(jobs, func(job *throttlingPerEventTypeJobSpec, _ int) string { return job.payload() })
 	batches := lo.Chunk(payloads, batchSize)
 	jsonBatches := lo.Map(batches, func(batch []string, _ int) []byte {
-		return []byte(fmt.Sprintf(`{"batch":[%s]}`, strings.Join(batch, ",")))
+		return fmt.Appendf(nil, `{"batch":[%s]}`, strings.Join(batch, ","))
 	})
 	return jsonBatches
 }

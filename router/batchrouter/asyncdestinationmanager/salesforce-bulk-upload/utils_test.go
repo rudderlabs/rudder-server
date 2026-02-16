@@ -22,13 +22,13 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			name: "valid externalId with Contact object",
 			jobs: []common.AsyncJob{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"Email": "test@example.com",
 					},
-					Metadata: map[string]interface{}{
+					Metadata: map[string]any{
 						"job_id": float64(1),
-						"externalId": []interface{}{
-							map[string]interface{}{
+						"externalId": []any{
+							map[string]any{
 								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
 								"id":             "test@example.com",
 								"identifierType": "Email",
@@ -47,13 +47,13 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			name: "valid externalId with Lead object",
 			jobs: []common.AsyncJob{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"Email": "lead@example.com",
 					},
-					Metadata: map[string]interface{}{
+					Metadata: map[string]any{
 						"job_id": float64(2),
-						"externalId": []interface{}{
-							map[string]interface{}{
+						"externalId": []any{
+							map[string]any{
 								"type":           "SALESFORCE_BULK_UPLOAD-Lead",
 								"id":             "lead@example.com",
 								"identifierType": "Email",
@@ -78,10 +78,10 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			name: "missing externalId - falls back to config",
 			jobs: []common.AsyncJob{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"Email": "test@example.com",
 					},
-					Metadata: map[string]interface{}{
+					Metadata: map[string]any{
 						"job_id": float64(3),
 					},
 				},
@@ -93,9 +93,9 @@ func TestSalesforceBulk_extractObjectInfo(t *testing.T) {
 			name: "empty externalId array",
 			jobs: []common.AsyncJob{
 				{
-					Message: map[string]interface{}{},
-					Metadata: map[string]interface{}{
-						"externalId": []interface{}{},
+					Message: map[string]any{},
+					Metadata: map[string]any{
+						"externalId": []any{},
 					},
 				},
 			},
@@ -137,15 +137,15 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 			name: "create CSV with valid jobs",
 			jobs: []common.AsyncJob{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"Email":     "test1@example.com",
 						"FirstName": "John",
 						"LastName":  "Doe",
 					},
-					Metadata: map[string]interface{}{
+					Metadata: map[string]any{
 						"job_id": float64(1),
-						"externalId": []interface{}{
-							map[string]interface{}{
+						"externalId": []any{
+							map[string]any{
 								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
 								"id":             "test1@example.com",
 								"identifierType": "Email",
@@ -154,15 +154,15 @@ func TestSalesforceBulk_createCSVFile(t *testing.T) {
 					},
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"Email":     "test2@example.com",
 						"FirstName": "Jane",
 						"LastName":  "Smith",
 					},
-					Metadata: map[string]interface{}{
+					Metadata: map[string]any{
 						"job_id": float64(2),
-						"externalId": []interface{}{
-							map[string]interface{}{
+						"externalId": []any{
+							map[string]any{
 								"type":           "SALESFORCE_BULK_UPLOAD-Contact",
 								"id":             "test2@example.com",
 								"identifierType": "Email",
@@ -369,28 +369,28 @@ func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 	t.Run("jobs with different fields get union of all fields in CSV", func(t *testing.T) {
 		jobs := []common.AsyncJob{
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"Email":     "user1@example.com",
 					"FirstName": "John",
 				},
-				Metadata: map[string]interface{}{"job_id": float64(1)},
+				Metadata: map[string]any{"job_id": float64(1)},
 			},
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"Email":    "user2@example.com",
 					"LastName": "Smith",
 					"Phone":    "555-1234",
 				},
-				Metadata: map[string]interface{}{"job_id": float64(2)},
+				Metadata: map[string]any{"job_id": float64(2)},
 			},
 			{
-				Message: map[string]interface{}{
+				Message: map[string]any{
 					"Email":     "user3@example.com",
 					"FirstName": "Jane",
 					"LastName":  "Doe",
 					"Company":   "Acme Inc",
 				},
-				Metadata: map[string]interface{}{"job_id": float64(3)},
+				Metadata: map[string]any{"job_id": float64(3)},
 			},
 		}
 

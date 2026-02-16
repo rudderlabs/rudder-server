@@ -468,7 +468,7 @@ func (rt *Handle) backendConfigSubscriber() {
 						// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
 						// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 						// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-						if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
+						if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]any); ok {
 							m := types.NewEventTypeThrottlingCost(value)
 							rt.throttlingCosts.Store(&m)
 						}

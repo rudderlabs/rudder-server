@@ -264,7 +264,7 @@ func (s *geolocationScenario) runRudderServer(ctx context.Context, cancel contex
 }
 
 func (s *geolocationScenario) sendEvent(url, writeKey string) error {
-	payload := []byte(fmt.Sprintf(`{"batch": [{
+	payload := fmt.Appendf(nil, `{"batch": [{
 			"userId": %[1]q,
 			"type": "identify",
 			"context":
@@ -281,7 +281,7 @@ func (s *geolocationScenario) sendEvent(url, writeKey string) error {
 			},
 			"timestamp": "2020-02-02T00:23:09.544Z"
 			}]}`,
-		rand.String(10), s.contextIP))
+		rand.String(10), s.contextIP)
 	req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
 	if err != nil {
 		return err

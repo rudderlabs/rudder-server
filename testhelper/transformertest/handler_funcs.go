@@ -92,7 +92,7 @@ func DestTransformerHandler(f func(event proctypes.TransformerEvent) integration
 		for _, req := range request {
 			postParameters := f(req)
 			jsonString, _ := jsonrs.Marshal(postParameters)
-			var output map[string]interface{}
+			var output map[string]any
 			_ = jsonrs.Unmarshal(jsonString, &output)
 			res = append(res, proctypes.TransformerResponse{
 				Metadata:   req.Metadata,
@@ -111,7 +111,7 @@ func RESTJSONDestTransformerHandler(method, url string) func(request []proctypes
 			Type:          "REST",
 			URL:           url,
 			RequestMethod: method,
-			Body: map[string]interface{}{
+			Body: map[string]any{
 				"JSON": event.Message,
 			},
 		}
@@ -125,12 +125,12 @@ func WarehouseTransformerHandler(tableName string, code int, err string) Transfo
 			req := request[i]
 			response = append(response, proctypes.TransformerResponse{
 				Metadata: req.Metadata,
-				Output: map[string]interface{}{
+				Output: map[string]any{
 					"table": tableName,
 					"data":  req.Message,
-					"metadata": map[string]interface{}{
+					"metadata": map[string]any{
 						"table":   tableName,
-						"columns": map[string]interface{}{},
+						"columns": map[string]any{},
 					},
 				},
 				StatusCode: code,

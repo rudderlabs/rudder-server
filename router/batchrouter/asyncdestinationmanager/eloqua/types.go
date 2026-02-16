@@ -78,13 +78,13 @@ struct to unmarshal response of loginDetails
 	}
 */
 type LoginDetailsResponse struct {
-	Site map[string]interface{} `json:"site"`
-	User map[string]interface{} `json:"user"`
-	Urls URL                    `json:"urls"`
+	Site map[string]any `json:"site"`
+	User map[string]any `json:"user"`
+	Urls URL            `json:"urls"`
 }
 type URL struct {
-	Base string                 `json:"base"`
-	Apis map[string]interface{} `json:"apis"`
+	Base string         `json:"base"`
+	Apis map[string]any `json:"apis"`
 }
 
 /*
@@ -266,10 +266,10 @@ type TransformedData struct {
 	Metadata Metadata `json:"metadata"`
 }
 type Message struct {
-	Data                map[string]interface{} `json:"data"`
-	IdentifierFieldName string                 `json:"identifierFieldName"`
-	CustomObjectId      string                 `json:"customObjectId"`
-	Type                string                 `json:"type"`
+	Data                map[string]any `json:"data"`
+	IdentifierFieldName string         `json:"identifierFieldName"`
+	CustomObjectId      string         `json:"customObjectId"`
+	Type                string         `json:"type"`
 }
 type Metadata struct {
 	JobID int64 `json:"job_id"`

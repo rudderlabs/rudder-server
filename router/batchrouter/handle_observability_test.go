@@ -59,7 +59,7 @@ func TestEmitAsyncEventDeliveryTimeMetrics(t *testing.T) {
 	receivedAtStr := receivedAt.Format(misc.RFC3339Milli)
 
 	// Create job parameters with receivedAt
-	jobParams := map[string]interface{}{
+	jobParams := map[string]any{
 		"source_id":       sourceID,
 		"destination_id":  destinationID,
 		"received_at":     receivedAtStr,
@@ -164,7 +164,7 @@ func TestEmitAsyncEventDeliveryTimeMetrics_MissingReceivedAt(t *testing.T) {
 	jobID := int64(12345)
 
 	// Create job parameters WITHOUT receivedAt
-	jobParams := map[string]interface{}{
+	jobParams := map[string]any{
 		"source_id":      sourceID,
 		"destination_id": destinationID,
 		// "received_at" is missing
@@ -218,7 +218,7 @@ func TestEmitAsyncEventDeliveryTimeMetrics_InvalidReceivedAt(t *testing.T) {
 	jobID := int64(12345)
 
 	// Create job parameters with invalid receivedAt format
-	jobParams := map[string]interface{}{
+	jobParams := map[string]any{
 		"source_id":       sourceID,
 		"destination_id":  destinationID,
 		"received_at":     "invalid-time-format",

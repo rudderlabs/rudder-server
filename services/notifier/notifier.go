@@ -339,7 +339,7 @@ func (n *Notifier) migrateAlways() error {
 	}
 
 	operation := func() error {
-		return m.MigrateFromTemplates("pg_notifier_queue_always", map[string]interface{}{
+		return m.MigrateFromTemplates("pg_notifier_queue_always", map[string]any{
 			"config": n.conf,
 		})
 	}

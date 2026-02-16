@@ -84,21 +84,17 @@ func (proc *LifecycleManager) Start() error {
 	var wg sync.WaitGroup
 	proc.waitGroup = &wg
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := proc.Handle.countPendingEvents(currentCtx); err != nil {
 			proc.Handle.logger.Errorn("Error counting pending events", obskit.Error(err))
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := proc.Handle.Start(currentCtx); err != nil {
 			proc.Handle.logger.Errorn("Error starting processor", obskit.Error(err))
 		}
-	}()
+	})
 	return nil
 }
 

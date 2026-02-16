@@ -42,31 +42,31 @@ func TestRedisDeletion(t *testing.T) {
 
 	inputTestData := []struct {
 		key    string
-		fields map[string]interface{}
+		fields map[string]any
 	}{
 		{
 			key: "user:Jermaine1473336609491897794707338",
-			fields: map[string]interface{}{
+			fields: map[string]any{
 				"Phone": "6463633841",
 				"Email": "dorowane8n285680461479465450293436@gmail.com",
 			},
 		},
 		{
 			key: "user:Mercie8221821544021583104106123",
-			fields: map[string]interface{}{
+			fields: map[string]any{
 				"Email": "dshirilad8536019424659691213279980@gmail.com",
 			},
 		},
 		{
 			key: "user:Claiborn443446989226249191822329",
-			fields: map[string]interface{}{
+			fields: map[string]any{
 				"Phone": "8782905113",
 			},
 		},
 	}
 
 	dest := model.Destination{
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"clusterMode": false,
 			"address":     resource.Addr,
 		},

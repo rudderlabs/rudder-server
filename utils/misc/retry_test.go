@@ -149,7 +149,7 @@ func TestQueryWithRetriesNotify(t *testing.T) {
 	})
 }
 
-func (o *operation) doAndReturn(ctx context.Context) (interface{}, error) {
+func (o *operation) doAndReturn(ctx context.Context) (any, error) {
 	o.attempts++
 	var err error
 	if ctx.Err() != nil {

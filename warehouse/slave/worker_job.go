@@ -35,27 +35,27 @@ import (
 )
 
 type basePayload struct {
-	BatchID                      string                 `json:"batch_id"`
-	UploadID                     int64                  `json:"upload_id"`
-	UploadSchema                 model.Schema           `json:"upload_schema"`
-	WorkspaceID                  string                 `json:"workspace_id"`
-	SourceID                     string                 `json:"source_id"`
-	SourceName                   string                 `json:"source_name"`
-	DestinationID                string                 `json:"destination_id"`
-	DestinationName              string                 `json:"destination_name"`
-	DestinationType              string                 `json:"destination_type"`
-	DestinationNamespace         string                 `json:"destination_namespace"`
-	DestinationRevisionID        string                 `json:"destination_revision_id"`
-	StagingDestinationRevisionID string                 `json:"staging_destination_revision_id"`
-	DestinationConfig            map[string]interface{} `json:"destination_config"`
-	StagingDestinationConfig     interface{}            `json:"staging_destination_config"`
-	UseRudderStorage             bool                   `json:"use_rudder_storage"`
-	StagingUseRudderStorage      bool                   `json:"staging_use_rudder_storage"`
-	UniqueLoadGenID              string                 `json:"unique_load_gen_id"`
-	RudderStoragePrefix          string                 `json:"rudder_storage_prefix"`
-	Output                       []uploadResult         `json:"output"`
-	LoadFilePrefix               string                 `json:"load_file_prefix"`
-	LoadFileType                 string                 `json:"load_file_type"`
+	BatchID                      string         `json:"batch_id"`
+	UploadID                     int64          `json:"upload_id"`
+	UploadSchema                 model.Schema   `json:"upload_schema"`
+	WorkspaceID                  string         `json:"workspace_id"`
+	SourceID                     string         `json:"source_id"`
+	SourceName                   string         `json:"source_name"`
+	DestinationID                string         `json:"destination_id"`
+	DestinationName              string         `json:"destination_name"`
+	DestinationType              string         `json:"destination_type"`
+	DestinationNamespace         string         `json:"destination_namespace"`
+	DestinationRevisionID        string         `json:"destination_revision_id"`
+	StagingDestinationRevisionID string         `json:"staging_destination_revision_id"`
+	DestinationConfig            map[string]any `json:"destination_config"`
+	StagingDestinationConfig     any            `json:"staging_destination_config"`
+	UseRudderStorage             bool           `json:"use_rudder_storage"`
+	StagingUseRudderStorage      bool           `json:"staging_use_rudder_storage"`
+	UniqueLoadGenID              string         `json:"unique_load_gen_id"`
+	RudderStoragePrefix          string         `json:"rudder_storage_prefix"`
+	Output                       []uploadResult `json:"output"`
+	LoadFilePrefix               string         `json:"load_file_prefix"`
+	LoadFileType                 string         `json:"load_file_type"`
 }
 
 // payloadV2 represents the job payload for upload_v2 type jobs
@@ -87,10 +87,10 @@ func (p *basePayload) sortedColumnMapForAllTables() map[string][]string {
 	})
 }
 
-func (p *basePayload) fileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
-	configMap, ok := config.(map[string]interface{})
+func (p *basePayload) fileManager(config any, useRudderStorage bool) (filemanager.FileManager, error) {
+	configMap, ok := config.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("config is not a map[string]interface{}: %T", config)
+		return nil, fmt.Errorf("config is not a map[string]any: %T", config)
 	}
 
 	clonedConfig := maps.Clone(configMap)
@@ -187,7 +187,7 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 	}
 
 	jr.downloadStagingFile = func(ctx context.Context, stagingFileInfo stagingFileInfo) error {
-		doTask := func(config interface{}, useRudderStorage bool) error {
+		doTask := func(config any, useRudderStorage bool) error {
 			var file *os.File
 			var err error
 
@@ -420,9 +420,6 @@ func (jr *jobRun) uploadLoadFiles(ctx context.Context, modifier func(result uplo
 			defer close(processStream)
 
 			for tableName, uploadFile := range jr.outputFileWritersMap {
-				tableName := tableName
-				uploadFile := uploadFile
-
 				g.Go(func() error {
 					select {
 					case <-ctx.Done():
@@ -576,7 +573,7 @@ func (jr *jobRun) closeLoadFiles() {
 	}
 }
 
-func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal interface{}, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter, reason string) error {
+func (jr *jobRun) handleDiscardTypes(tableName, columnName string, columnVal any, columnData types.Data, violatedConstraints *constraints.Violation, discardWriter encoding.LoadFileWriter, reason string) error {
 	rowID, hasID := columnData[jr.job.columnName("id")]
 	receivedAt, hasReceivedAt := columnData[jr.job.columnName("received_at")]
 

@@ -53,8 +53,8 @@ func Test_Pulsar(t *testing.T) {
 	require.Equal(t, msg.Payload(), payload)
 	require.Equal(t, msg.Key(), key)
 
-	for i := 0; i < 10; i++ {
-		producer.SendMessageAsync(context.Background(), key, "", []byte(fmt.Sprintf("test-message-%d", i)), func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
+	for i := range 10 {
+		producer.SendMessageAsync(context.Background(), key, "", fmt.Appendf(nil, "test-message-%d", i), func(id pulsar.MessageID, message *pulsar.ProducerMessage, err error) {
 			require.NoError(t, err)
 			atomic.AddUint32(&counter, 1)
 		})
@@ -62,10 +62,10 @@ func Test_Pulsar(t *testing.T) {
 	err = producer.Flush()
 	require.NoError(t, err)
 	require.Equal(t, atomic.LoadUint32(&counter), uint32(10))
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		msg, err := consumer.Receive(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, msg.Payload(), []byte(fmt.Sprintf("test-message-%d", i)))
+		require.Equal(t, msg.Payload(), fmt.Appendf(nil, "test-message-%d", i))
 		require.Equal(t, msg.Key(), key)
 	}
 }

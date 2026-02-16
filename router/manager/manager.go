@@ -133,7 +133,6 @@ loop:
 
 	g, _ := errgroup.WithContext(context.Background())
 	for _, f := range cleanup {
-		f := f
 		g.Go(func() error {
 			f()
 			return nil

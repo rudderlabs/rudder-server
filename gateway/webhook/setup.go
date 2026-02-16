@@ -129,7 +129,7 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 	webhook.statReporterCreator = statReporterCreator
 
 	g, _ := errgroup.WithContext(ctx)
-	for i := 0; i < maxTransformerProcess; i++ {
+	for range maxTransformerProcess {
 		g.Go(crash.Wrapper(func() error {
 			bt := batchWebhookTransformerT{
 				webhook:      webhook,

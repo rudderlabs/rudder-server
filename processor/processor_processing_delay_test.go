@@ -328,7 +328,7 @@ func (procProcessingDelayMethods) splitInBatches(jobs []*procProcessingDelayJobS
 	for _, payload := range payloads {
 		chunks := lo.Chunk(payload, batchSize)
 		batches = append(batches, lo.Map(chunks, func(chunk []string, _ int) []byte {
-			return []byte(fmt.Sprintf(`{"batch":[%s]}`, strings.Join(chunk, ",")))
+			return fmt.Appendf(nil, `{"batch":[%s]}`, strings.Join(chunk, ","))
 		})...)
 	}
 	mutable.Shuffle(batches)

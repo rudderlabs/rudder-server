@@ -24,7 +24,7 @@ func TestUseGlue(t *testing.T) {
 			name: "use glue with region",
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"useGlue": true,
 						"region":  "test_region",
 					},
@@ -36,7 +36,7 @@ func TestUseGlue(t *testing.T) {
 			name: "use glue without region",
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"useGlue": true,
 					},
 				},
@@ -46,7 +46,7 @@ func TestUseGlue(t *testing.T) {
 			name: "without glue",
 			warehouse: model.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			},
 		},

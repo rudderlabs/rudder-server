@@ -109,7 +109,7 @@ func (m *RedisManager) Close() error {
 	return m.client.Close()
 }
 
-func (m *RedisManager) HMSet(key string, fields map[string]interface{}) (err error) {
+func (m *RedisManager) HMSet(key string, fields map[string]any) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.HMSet(ctx, key, fields).Result()
@@ -144,7 +144,7 @@ func (m *RedisManager) DeleteKey(key string) (err error) {
 	return err
 }
 
-func (m *RedisManager) HMGet(key string, fields ...string) (result []interface{}, err error) {
+func (m *RedisManager) HMGet(key string, fields ...string) (result []any, err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		result, err = m.clusterClient.HMGet(ctx, key, fields...).Result()
@@ -164,7 +164,7 @@ func (m *RedisManager) HGetAll(key string) (result map[string]string, err error)
 	return result, err
 }
 
-func (m *RedisManager) HSet(hash, key string, value interface{}) (err error) {
+func (m *RedisManager) HSet(hash, key string, value any) (err error) {
 	ctx := context.Background()
 	if m.clusterMode {
 		_, err = m.clusterClient.HSet(ctx, hash, key, value).Result()
@@ -221,7 +221,7 @@ type setArguments struct {
 }
 
 // nolint:unparam
-func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, config map[string]interface{}) (*jsonSetCmdArgs, error) {
+func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, config map[string]any) (*jsonSetCmdArgs, error) {
 	key := gjson.GetBytes(transformedData, "message.key").String()
 	path := gjson.GetBytes(transformedData, "message.path").String()
 	jsonVal := gjson.GetBytes(transformedData, "message.value")
@@ -233,7 +233,7 @@ func (m *RedisManager) extractJSONSetArgs(transformedData json.RawMessage, confi
 	})
 }
 
-func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error) {
+func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[string]any) (any, error) {
 	nmSetArgs, err := m.extractJSONSetArgs(jsonData, config)
 	if err != nil {
 		return nil, err
@@ -248,7 +248,7 @@ func (m *RedisManager) SendDataAsJSON(jsonData json.RawMessage, config map[strin
 	return val, err
 }
 
-func (*RedisManager) ShouldSendDataAsJSON(config map[string]interface{}) bool {
+func (*RedisManager) ShouldSendDataAsJSON(config map[string]any) bool {
 	var dataAsJSON bool
 	if dataAsJSONI, ok := config["useJSONModule"]; ok {
 		if dataAsJSON, ok = dataAsJSONI.(bool); ok {

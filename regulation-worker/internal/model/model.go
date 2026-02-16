@@ -50,8 +50,8 @@ type User struct {
 }
 
 type Destination struct {
-	Config        map[string]interface{}
-	DestDefConfig map[string]interface{}
+	Config        map[string]any
+	DestDefConfig map[string]any
 	DestinationID string
 	Name          string
 }

@@ -1,7 +1,6 @@
 package misc_test
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -144,8 +143,7 @@ func TestCommonPool(t *testing.T) {
 	conf.Set("DB.port", postgresContainer.Port)
 	conf.Set("DB.password", postgresContainer.Password)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	db, err := misc.NewDatabaseConnectionPool(ctx, "test", misc.DatabaseConnectionPoolConfig{
 		MaxOpenConns:    conf.GetReloadableIntVar(80, 1, "db.test.pool.maxOpenConnections"),
 		MaxIdleConns:    config.SingleValueLoader(10),

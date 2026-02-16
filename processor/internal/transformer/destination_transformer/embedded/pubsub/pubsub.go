@@ -48,7 +48,7 @@ func Transform(_ context.Context, events []types.TransformerEvent) types.Respons
 		}
 
 		response.Events = append(response.Events, types.TransformerResponse{
-			Output: map[string]interface{}{
+			Output: map[string]any{
 				"userId":     userID,
 				"message":    utils.GetMessageAsMap(event.Message),
 				"topicId":    topic,
@@ -69,13 +69,13 @@ func getAttributesMap(destination backendconfig.DestinationT) map[string][]strin
 	if !ok {
 		return attributesMap
 	}
-	eventToAttributesMapList, ok := eventToAttributesMap.([]interface{})
+	eventToAttributesMapList, ok := eventToAttributesMap.([]any)
 	if !ok || len(eventToAttributesMapList) == 0 {
 		return attributesMap
 	}
 
 	for _, mapping := range eventToAttributesMapList {
-		if m, ok := mapping.(map[string]interface{}); ok {
+		if m, ok := mapping.(map[string]any); ok {
 			from, fromOk := m["from"].(string)
 			to, toOk := m["to"].(string)
 
@@ -131,9 +131,9 @@ func getAttributeKeysFromEvent(event types.TransformerEvent, attributesMap map[s
 	return attributesMap["*"]
 }
 
-func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]interface{} {
+func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[string][]string) map[string]any {
 	attributes := getAttributeKeysFromEvent(event, attributesMap)
-	attributeMetadata := make(map[string]interface{})
+	attributeMetadata := make(map[string]any)
 	for _, attribute := range attributes {
 		if value, found := getAttributeValue(event.Message, attribute); found {
 			parts := strings.Split(attribute, ".")
@@ -146,7 +146,7 @@ func getAttributesMapFromEvent(event types.TransformerEvent, attributesMap map[s
 }
 
 // getAttributeValue searches for an attribute in the message and its nested structures
-func getAttributeValue(message map[string]interface{}, attribute string) (string, bool) {
+func getAttributeValue(message map[string]any, attribute string) (string, bool) {
 	attributeKeys := strings.Split(attribute, ".")
 	if v := misc.MapLookup(message, attributeKeys...); v != nil {
 		return stringify.Any(v), true

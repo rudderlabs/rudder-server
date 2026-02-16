@@ -51,8 +51,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.Type = "REST"
 		structData.URL = testServer.URL
 		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
+		structData.Body = map[string]any{
+			"GZIP": map[string]any{
 				"payload": eventData,
 			},
 		}
@@ -74,8 +74,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
+		structData.Body = map[string]any{
+			"GZIP": map[string]any{
 				"abc": eventData,
 			},
 		}
@@ -95,7 +95,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
+		structData.Body = map[string]any{
 			"key": "value",
 		}
 
@@ -114,8 +114,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"INVALID": map[string]interface{}{
+		structData.Body = map[string]any{
+			"INVALID": map[string]any{
 				"key": "value",
 			},
 		}
@@ -135,8 +135,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.UserID = "anon_id"
-		structData.Body = map[string]interface{}{
-			"JSON": map[string]interface{}{
+		structData.Body = map[string]any{
+			"JSON": map[string]any{
 				"key": "value",
 			},
 		}
@@ -160,8 +160,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.URL = "https://example.com"
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
+		structData.Body = map[string]any{
+			"GZIP": map[string]any{
 				"payload": make(chan int), // Invalid type that can't be compressed
 			},
 		}
@@ -199,8 +199,8 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.Type = "REST"
 		structData.URL = testServer.URL
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
+		structData.Body = map[string]any{
+			"GZIP": map[string]any{
 				"payload": "",
 			},
 		}
@@ -244,11 +244,11 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.Type = "REST"
 		structData.URL = testServer.URL
 		structData.UserID = "anon_id"
-		structData.Headers = map[string]interface{}{
+		structData.Headers = map[string]any{
 			"X-Custom-Header": "test",
 		}
-		structData.Body = map[string]interface{}{
-			"GZIP": map[string]interface{}{
+		structData.Body = map[string]any{
+			"GZIP": map[string]any{
 				"payload": eventData,
 			},
 		}
@@ -276,8 +276,8 @@ func TestSendPost(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.URL = "https://www.google-analytics.com/collect"
 		structData.UserID = "anon_id"
-		structData.Headers = map[string]interface{}{}
-		structData.QueryParams = map[string]interface{}{
+		structData.Headers = map[string]any{}
+		structData.QueryParams = map[string]any{
 			"aiid": "com.rudderlabs.android.sdk",
 			"an":   "RudderAndroidClient",
 			"av":   "1.0",
@@ -294,12 +294,12 @@ func TestSendPost(t *testing.T) {
 			"ul":   "en-US",
 			"v":    1,
 		}
-		structData.Body = map[string]interface{}{
-			"FORM": map[string]interface{}{},
-			"JSON": map[string]interface{}{},
-			"XML":  map[string]interface{}{},
+		structData.Body = map[string]any{
+			"FORM": map[string]any{},
+			"JSON": map[string]any{},
+			"XML":  map[string]any{},
 		}
-		structData.Files = map[string]interface{}{}
+		structData.Files = map[string]any{}
 
 		// Response JSON
 		jsonResponse := `[{
@@ -415,8 +415,8 @@ func TestSendPost(t *testing.T) {
 			Type:          "REST",
 			RequestMethod: "POST",
 			URL:           "https://example.com",
-			Body: map[string]interface{}{
-				"JSON": map[string]interface{}{
+			Body: map[string]any{
+				"JSON": map[string]any{
 					"key": "value",
 				},
 			},
@@ -451,8 +451,8 @@ func TestSendPost(t *testing.T) {
 			Type:          "REST",
 			RequestMethod: "POST",
 			URL:           "https://example.com",
-			Body: map[string]interface{}{
-				"FORM": map[string]interface{}{
+			Body: map[string]any{
+				"FORM": map[string]any{
 					"key": "value",
 				},
 			},
@@ -520,11 +520,11 @@ func TestResponseContentType(t *testing.T) {
 			requestParams := integrations.PostParametersT{
 				Type: "REST",
 				URL:  "https://www.google-analytics.com/collect",
-				Body: map[string]interface{}{
-					"FORM": map[string]interface{}{},
-					"JSON": map[string]interface{}{},
-					"XML":  map[string]interface{}{},
-					"GZIP": map[string]interface{}{},
+				Body: map[string]any{
+					"FORM": map[string]any{},
+					"JSON": map[string]any{},
+					"XML":  map[string]any{},
+					"GZIP": map[string]any{},
 				},
 			}
 

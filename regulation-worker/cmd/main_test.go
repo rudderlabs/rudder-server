@@ -42,7 +42,7 @@ var (
 	fieldCountAfterDelete  []int
 	redisInputTestData     []struct {
 		key    string
-		fields map[string]interface{}
+		fields map[string]any
 	}
 	uploadOutputs []filemanager.UploadedFile
 
@@ -71,7 +71,7 @@ func TestRegulationWorkerFlow(t *testing.T) {
 	// starting minio server for batch-destination
 	minioResource, err := minio.Setup(pool, t)
 	require.NoError(t, err)
-	minioConfig := map[string]interface{}{
+	minioConfig := map[string]any{
 		"bucketName":       minioResource.BucketName,
 		"accessKeyID":      minioResource.AccessKeyID,
 		"accessKey":        minioResource.AccessKeySecret,
@@ -273,7 +273,7 @@ func updateMultiTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func getSingleTenantWorkspaceConfig(minioConfig map[string]interface{}, redisAddress string) func(http.ResponseWriter, *http.Request) {
+func getSingleTenantWorkspaceConfig(minioConfig map[string]any, redisAddress string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		config := backendconfig.ConfigT{
@@ -290,7 +290,7 @@ func getSingleTenantWorkspaceConfig(minioConfig map[string]interface{}, redisAdd
 						},
 						{
 							ID: "destId-redis-test",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"address":     redisAddress,
 								"clusterMode": false,
 								"secure":      false,
@@ -313,7 +313,7 @@ func getSingleTenantWorkspaceConfig(minioConfig map[string]interface{}, redisAdd
 	}
 }
 
-func getMultiTenantNamespaceConfig(minioConfig map[string]interface{}, redisAddress string) func(http.ResponseWriter, *http.Request) {
+func getMultiTenantNamespaceConfig(minioConfig map[string]any, redisAddress string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		config := map[string]backendconfig.ConfigT{namespaceID: {
@@ -330,7 +330,7 @@ func getMultiTenantNamespaceConfig(minioConfig map[string]interface{}, redisAddr
 						},
 						{
 							ID: "destId-redis-test",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"address":     redisAddress,
 								"clusterMode": false,
 								"secure":      false,
@@ -354,7 +354,7 @@ func getMultiTenantNamespaceConfig(minioConfig map[string]interface{}, redisAddr
 	}
 }
 
-func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
+func verifyBatchDeletion(t *testing.T, minioConfig map[string]any) {
 	t.Helper()
 	var goldenFileList []string
 	err := filepath.Walk(goldenDir, func(path string, f os.FileInfo, err error) error {
@@ -403,7 +403,7 @@ func verifyBatchDeletion(t *testing.T, minioConfig map[string]interface{}) {
 	require.Equal(t, string(goldenFile), string(downloadedFile), "downloaded file different than golden file")
 }
 
-func handler(t *testing.T, minioConfig map[string]interface{}, redisAddress string) http.Handler {
+func handler(t *testing.T, minioConfig map[string]any, redisAddress string) http.Handler {
 	t.Helper()
 	srvMux := chi.NewRouter()
 
@@ -427,11 +427,11 @@ func handler(t *testing.T, minioConfig map[string]interface{}, redisAddress stri
 func insertRedisData(t *testing.T, address string) {
 	redisInputTestData = []struct {
 		key    string
-		fields map[string]interface{}
+		fields map[string]any
 	}{
 		{
 			key: "Jermaine1473336609491897794707338",
-			fields: map[string]interface{}{
+			fields: map[string]any{
 				"Phone": "6463633841",
 				"Email": "dorowane8n285680461479465450293436@gmail.com",
 			},
@@ -439,7 +439,7 @@ func insertRedisData(t *testing.T, address string) {
 	}
 
 	destName := "REDIS"
-	destConfig := map[string]interface{}{
+	destConfig := map[string]any{
 		"clusterMode": false,
 		"address":     address,
 	}
@@ -463,7 +463,7 @@ func insertRedisData(t *testing.T, address string) {
 	}
 }
 
-func insertMinioData(t *testing.T, minioConfig map[string]interface{}) {
+func insertMinioData(t *testing.T, minioConfig map[string]any) {
 	// getting list of files in `testData` directory which will be used to test filemanager.
 	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.MatchString(path) {

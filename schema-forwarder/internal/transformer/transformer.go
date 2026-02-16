@@ -67,7 +67,7 @@ func (st *transformer) Stop() {
 
 // Transform transforms the job into a schema message and returns the schema message along with write key
 func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, error) {
-	var eventPayload map[string]interface{}
+	var eventPayload map[string]any
 	if err := jsonrs.Unmarshal(job.EventPayload, &eventPayload); err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (st *transformer) Transform(job *jobsdb.JobT) (*proto.EventSchemaMessage, e
 }
 
 // getSchemaKeyFromJob returns the schema key from the job based on the event type and event identifier
-func (st *transformer) getSchemaKeyFromJob(eventPayload map[string]interface{}, writeKey string) *proto.EventSchemaKey {
+func (st *transformer) getSchemaKeyFromJob(eventPayload map[string]any, writeKey string) *proto.EventSchemaKey {
 	eventType := st.getEventType(eventPayload)
 	return &proto.EventSchemaKey{
 		WriteKey:        writeKey,
@@ -119,7 +119,7 @@ func (st *transformer) backendConfigSubscriber(ctx context.Context, loopFn func(
 }
 
 // getEventType returns the event type from the event
-func (st *transformer) getEventType(event map[string]interface{}) string {
+func (st *transformer) getEventType(event map[string]any) string {
 	eventType, ok := event["type"].(string)
 	if !ok {
 		return ""
@@ -128,7 +128,7 @@ func (st *transformer) getEventType(event map[string]interface{}) string {
 }
 
 // getEventIdentifier returns the event identifier from the event
-func (st *transformer) getEventIdentifier(event map[string]interface{}, eventType string) string {
+func (st *transformer) getEventIdentifier(event map[string]any, eventType string) string {
 	eventIdentifier := ""
 	if eventType == "track" {
 		eventIdentifier, ok := event["event"].(string)
@@ -141,7 +141,7 @@ func (st *transformer) getEventIdentifier(event map[string]interface{}, eventTyp
 }
 
 // getSchemaMessage returns the schema message from the event by flattening the event and getting the schema
-func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]interface{}, sample json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
+func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[string]any, sample json.RawMessage, workspaceId string, observedAt time.Time) (*proto.EventSchemaMessage, error) {
 	flattenedEvent, err := st.flattenEvent(event)
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (st *transformer) getSchemaMessage(key *proto.EventSchemaKey, event map[str
 }
 
 // getSchema returns the schema from the flattened event
-func (st *transformer) getSchema(flattenedEvent map[string]interface{}) map[string]string {
+func (st *transformer) getSchema(flattenedEvent map[string]any) map[string]string {
 	schema := make(map[string]string)
 	for k, v := range flattenedEvent {
 		reflectType := reflect.TypeOf(v)
@@ -178,7 +178,7 @@ func (st *transformer) getSchema(flattenedEvent map[string]interface{}) map[stri
 }
 
 // flattenEvent flattens the event
-func (st *transformer) flattenEvent(event map[string]interface{}) (map[string]interface{}, error) {
+func (st *transformer) flattenEvent(event map[string]any) (map[string]any, error) {
 	flattenedEvent, err := flatten.Flatten(event, "", flatten.DotStyle)
 	if err != nil {
 		return nil, err

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -48,7 +49,7 @@ func getEventDetails(file *os.File) (*EventDetails, error) {
 	return &eventDetails, fmt.Errorf("unable to scan data from the file")
 }
 
-func getKeys(m map[string]interface{}) []string {
+func getKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -120,7 +121,7 @@ func createCSVFile(fields []string, file *os.File, uploadJobInfo *JobInfo, jobId
 	return csvFilePath, fileInfo.Size(), nil
 }
 
-func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fields) (map[string]interface{}, error) {
+func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fields) (map[string]any, error) {
 	fieldStatement := make(map[string]string)
 	for _, val := range eventDetails.Fields {
 		for _, val1 := range eloquaFields.Items {
@@ -131,14 +132,14 @@ func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fie
 	}
 	switch eventDetails.Type {
 	case "identify":
-		return map[string]interface{}{
+		return map[string]any{
 			"name":                    "Rudderstack-Contact-Import",
 			"fields":                  fieldStatement,
 			"identifierFieldName":     eventDetails.IdentifierFieldName,
 			"isSyncTriggeredOnImport": false,
 		}, nil
 	case "track":
-		return map[string]interface{}{
+		return map[string]any{
 			"name":                    "Rudderstack-CustomObject-Import",
 			"updateRule":              "always",
 			"fields":                  fieldStatement,
@@ -151,15 +152,15 @@ func createBodyForImportDefinition(eventDetails *EventDetails, eloquaFields *Fie
 }
 
 func generateErrorString(item RejectedItem) string {
-	var invalidItems string
+	var invalidItems strings.Builder
 	len := len(item.InvalidFields)
 	for index, invalidField := range item.InvalidFields {
-		invalidItems += invalidField + " : " + item.FieldValues[invalidField]
+		invalidItems.WriteString(invalidField + " : " + item.FieldValues[invalidField])
 		if index != len-1 {
-			invalidItems += ", "
+			invalidItems.WriteString(", ")
 		}
 	}
-	return item.StatusCode + " : " + item.Message + " " + invalidItems
+	return item.StatusCode + " : " + item.Message + " " + invalidItems.String()
 }
 
 func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloqua *EloquaBulkUploader) (*common.EventStatMeta, error) {
@@ -179,7 +180,7 @@ func parseRejectedData(data *HttpRequestData, importingList []*jobsdb.JobT, eloq
 	if rejectResponse.Count > 0 {
 		iterations := int(math.Ceil(float64(rejectResponse.TotalResults) / float64(1000)))
 		var offset int
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			offset = i * 1000
 			data.Offset = offset
 			if offset != 0 {

@@ -411,7 +411,7 @@ func (mpe *migrationJobExecutor) updateJobStatus(ctx context.Context, jobs []*jo
 	case jobsdb.Failed.State:
 		errorCode = "500"
 		if err != nil {
-			errorResponse = []byte(fmt.Sprintf(`{"error": %q}`, err.Error()))
+			errorResponse = fmt.Appendf(nil, `{"error": %q}`, err.Error())
 		}
 	default:
 	}

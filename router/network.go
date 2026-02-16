@@ -53,11 +53,11 @@ type NetHandle interface {
 }
 
 // temp solution for handling complex query params
-func handleQueryParam(param interface{}) string {
+func handleQueryParam(param any) string {
 	switch p := param.(type) {
 	case string:
 		return p
-	case map[string]interface{}:
+	case map[string]any:
 		temp, err := jsonrs.Marshal(p)
 		if err != nil {
 			return fmt.Sprint(p)
@@ -96,10 +96,10 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		requestBody := postInfo.Body
 		requestQueryParams := postInfo.QueryParams
 		var bodyFormat string
-		var bodyValue map[string]interface{}
+		var bodyValue map[string]any
 
 		for format, value := range requestBody {
-			bodyData, ok := value.(map[string]interface{})
+			bodyData, ok := value.(map[string]any)
 			if !ok {
 				stats.Default.NewTaggedStat("router_invalid_payload", stats.CountType, stats.Tags{
 					"destType": network.destType,
@@ -192,7 +192,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 				})
 				return &utils.SendPostResponse{
 					StatusCode:   500,
-					ResponseBody: []byte(fmt.Sprintf("500 Invalid Router Payload: body format must be a map found format %s", bodyFormat)),
+					ResponseBody: fmt.Appendf(nil, "500 Invalid Router Payload: body format must be a map found format %s", bodyFormat),
 				}
 			}
 		}
@@ -206,7 +206,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			)
 			return &utils.SendPostResponse{
 				StatusCode:   400,
-				ResponseBody: []byte(fmt.Sprintf(`400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL)),
+				ResponseBody: fmt.Appendf(nil, `400 Unable to construct %q request for URL : %q`, requestMethod, postInfo.URL),
 			}
 		}
 
@@ -240,7 +240,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   http.StatusGatewayTimeout,
-				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make %q request for URL : %q. Error: %v`, requestMethod, postInfo.URL, err)),
+				ResponseBody: fmt.Appendf(nil, `504 Unable to make %q request for URL : %q. Error: %v`, requestMethod, postInfo.URL, err),
 			}
 		}
 
@@ -250,7 +250,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   resp.StatusCode,
-				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : %q. Error: %v`, postInfo.URL, err)),
+				ResponseBody: fmt.Appendf(nil, `Failed to read response body for request for URL : %q. Error: %v`, postInfo.URL, err),
 			}
 		}
 		network.logger.Debugn("SendPost",

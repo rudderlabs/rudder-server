@@ -31,11 +31,9 @@ func TestMustStop(t *testing.T) {
 		wg := sync.WaitGroup{}
 
 		Go := func(fn func()) {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				require.Panics(t, fn)
-			}()
+			})
 		}
 
 		g := &safeguard.Guard{

@@ -160,14 +160,14 @@ func (tm *TransformMessageT) JobIDs() map[int64]struct{} {
 	return jobIDs
 }
 
-func NewEventTypeThrottlingCost(m map[string]interface{}) (v EventTypeThrottlingCost) {
-	if et, ok := m["eventType"].(map[string]interface{}); ok {
+func NewEventTypeThrottlingCost(m map[string]any) (v EventTypeThrottlingCost) {
+	if et, ok := m["eventType"].(map[string]any); ok {
 		v = et
 	}
 	return v
 }
 
-type EventTypeThrottlingCost map[string]interface{}
+type EventTypeThrottlingCost map[string]any
 
 func (e *EventTypeThrottlingCost) Cost(eventType string) (cost int64) {
 	if v, ok := (*e)[eventType].(float64); ok && v > 0 {

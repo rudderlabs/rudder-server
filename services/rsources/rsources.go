@@ -242,7 +242,7 @@ type JobService interface {
 }
 
 type Gauger interface {
-	Gauge(interface{})
+	Gauge(any)
 }
 
 func NewJobService(config JobServiceConfig, stats stats.Stats) (JobService, error) {

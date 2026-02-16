@@ -32,7 +32,7 @@ func Test_Timeout(t *testing.T) {
 	testConfig, err := SetupTestGooglePubSub(pool, t)
 	require.NoError(t, err)
 
-	config := map[string]interface{}{
+	config := map[string]any{
 		"ProjectId": projectId,
 		"EventToTopicMap": []map[string]string{
 			{"to": topic},
@@ -65,7 +65,7 @@ func Test_Timeout(t *testing.T) {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-	config := map[string]interface{}{
+	config := map[string]any{
 		"ProjectId": projectId,
 		"EventToTopicMap": []map[string]string{
 			{"to": topic},
@@ -86,14 +86,14 @@ func TestNewProducer_ConfigurationValidation(t *testing.T) {
 
 	testCases := []struct {
 		name        string
-		config      map[string]interface{}
+		config      map[string]any
 		opts        common.Opts
 		wantErr     bool
 		errorSubstr string
 	}{
 		{
 			name: "valid configuration with test endpoint",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"ProjectId": projectId,
 				"EventToTopicMap": []map[string]string{
 					{"to": topic},
@@ -105,7 +105,7 @@ func TestNewProducer_ConfigurationValidation(t *testing.T) {
 		},
 		{
 			name: "missing project ID should fail",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"EventToTopicMap": []map[string]string{
 					{"to": topic},
 				},
@@ -116,7 +116,7 @@ func TestNewProducer_ConfigurationValidation(t *testing.T) {
 		},
 		{
 			name: "empty project ID should fail",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"ProjectId": "",
 				"EventToTopicMap": []map[string]string{
 					{"to": topic},
@@ -128,7 +128,7 @@ func TestNewProducer_ConfigurationValidation(t *testing.T) {
 		},
 		{
 			name: "invalid JSON config should fail marshalling",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"ProjectId": make(chan int), // This will cause JSON marshaling to fail
 			},
 			opts:        common.Opts{Timeout: 10 * time.Second},
@@ -169,7 +169,7 @@ func TestProduce_MessageValidation(t *testing.T) {
 	testConfig, err := SetupTestGooglePubSub(pool, t)
 	require.NoError(t, err)
 
-	baseConfig := map[string]interface{}{
+	baseConfig := map[string]any{
 		"ProjectId": projectId,
 		"EventToTopicMap": []map[string]string{
 			{"to": topic},
@@ -263,12 +263,12 @@ func TestRetryConfiguration_Initialization(t *testing.T) {
 
 	testCases := []struct {
 		name                string
-		config              map[string]interface{}
+		config              map[string]any
 		expectedRetryFields int
 	}{
 		{
 			name: "producer should initialize all retry configuration fields",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"ProjectId": projectId,
 				"EventToTopicMap": []map[string]string{
 					{"to": topic},
@@ -314,11 +314,11 @@ func TestClose_ProducerCleanup(t *testing.T) {
 
 	testCases := []struct {
 		name   string
-		config map[string]interface{}
+		config map[string]any
 	}{
 		{
 			name: "close should not panic and handle cleanup properly",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"ProjectId": projectId,
 				"EventToTopicMap": []map[string]string{
 					{"to": topic},
@@ -438,7 +438,7 @@ func TestProducerWithTimeout_Behavior(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			config := map[string]interface{}{
+			config := map[string]any{
 				"ProjectId": projectId,
 				"EventToTopicMap": []map[string]string{
 					{"to": topic},
@@ -459,7 +459,7 @@ func TestProducerWithTimeout_Behavior(t *testing.T) {
 
 type cleaner interface {
 	Cleanup(func())
-	Log(...interface{})
+	Log(...any)
 }
 
 func SetupTestGooglePubSub(pool *dockertest.Pool, cln cleaner) (*TestConfig, error) {

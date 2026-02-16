@@ -31,7 +31,7 @@ var destination = &backendconfig.DestinationT{
 	DestinationDefinition: backendconfig.DestinationDefinitionT{
 		Name: "KLAVIYO_BULK_UPLOAD",
 	},
-	Config: map[string]interface{}{
+	Config: map[string]any{
 		"privateApiKey": "1223",
 	},
 	Enabled:     true,

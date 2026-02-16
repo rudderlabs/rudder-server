@@ -23,7 +23,7 @@ func TestWarehouse_GetBoolDestinationConfig(t *testing.T) {
 			name: "key exists and is true",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": true,
 					},
 				},
@@ -35,7 +35,7 @@ func TestWarehouse_GetBoolDestinationConfig(t *testing.T) {
 			name: "key exists and is false",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": false,
 					},
 				},
@@ -47,7 +47,7 @@ func TestWarehouse_GetBoolDestinationConfig(t *testing.T) {
 			name: "key exists and is true as string",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": "true",
 					},
 				},
@@ -59,7 +59,7 @@ func TestWarehouse_GetBoolDestinationConfig(t *testing.T) {
 			name: "key does not exist",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"otherTestKey": true,
 					},
 				},
@@ -81,21 +81,21 @@ func TestWarehouse_GetMapDestinationConfig(t *testing.T) {
 		name      string
 		warehouse Warehouse
 		key       DestinationConfigSetting
-		expected  map[string]interface{}
+		expected  map[string]any
 	}{
 		{
 			name: "key exists and is map",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"testKey": map[string]interface{}{
+					Config: map[string]any{
+						"testKey": map[string]any{
 							"key": "value",
 						},
 					},
 				},
 			},
 			key: testKey,
-			expected: map[string]interface{}{
+			expected: map[string]any{
 				"key": "value",
 			},
 		},
@@ -103,27 +103,27 @@ func TestWarehouse_GetMapDestinationConfig(t *testing.T) {
 			name: "key exists and is not map",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": "value",
 					},
 				},
 			},
 			key:      testKey,
-			expected: map[string]interface{}{},
+			expected: map[string]any{},
 		},
 		{
 			name: "key does not exist",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"otherTestKey": map[string]interface{}{
+					Config: map[string]any{
+						"otherTestKey": map[string]any{
 							"key": "value",
 						},
 					},
 				},
 			},
 			key:      testKey,
-			expected: map[string]interface{}{},
+			expected: map[string]any{},
 		},
 	}
 
@@ -149,7 +149,7 @@ func TestWarehouse_GetStringDestinationConfig(t *testing.T) {
 			name: "key exists and is string",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": "value",
 					},
 				},
@@ -166,7 +166,7 @@ func TestWarehouse_GetStringDestinationConfig(t *testing.T) {
 				},
 				Destination: backendconfig.DestinationT{
 					ID: "destination",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": "value",
 					},
 				},
@@ -179,7 +179,7 @@ func TestWarehouse_GetStringDestinationConfig(t *testing.T) {
 			name: "key exists and is not string",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"testKey": true,
 					},
 				},
@@ -192,7 +192,7 @@ func TestWarehouse_GetStringDestinationConfig(t *testing.T) {
 			name: "key does not exist",
 			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"otherTestKey": "value",
 					},
 				},

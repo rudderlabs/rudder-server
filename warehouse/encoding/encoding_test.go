@@ -66,7 +66,7 @@ func TestReaderLoader(t *testing.T) {
 			require.NoError(t, os.Remove(writer.GetLoadFile().Name()))
 		})
 
-		for i := 0; i < lines; i++ {
+		for range lines {
 			c := ef.NewEventLoader(writer, loadFileType, destinationType)
 
 			c.AddColumn("column1", "bigint", 1234567890)
@@ -148,7 +148,7 @@ func TestReaderLoader(t *testing.T) {
 			pr.ReadStop()
 		})
 
-		for i := 0; i < lines; i++ {
+		for i := range lines {
 			require.EqualValues(t, data[i].Column9, (*string)(nil))
 			require.EqualValues(t, data[i].Column10, (*string)(nil))
 
@@ -213,7 +213,7 @@ func TestReaderLoader(t *testing.T) {
 			require.NoError(t, os.Remove(writer.GetLoadFile().Name()))
 		})
 
-		for i := 0; i < lines; i++ {
+		for range lines {
 			c := ef.NewEventLoader(writer, loadFileType, destinationType)
 			c.AddColumn("column1", "bigint", 1234567890)
 			c.AddColumn("column2", "int", 2)
@@ -252,7 +252,7 @@ func TestReaderLoader(t *testing.T) {
 		})
 
 		r := ef.NewEventReader(gzipReader, destinationType)
-		for i := 0; i < lines; i++ {
+		for range lines {
 			output, err := r.Read([]string{"column1", "column2", "column3", "column4", "column5", "column6", "column7", "column8", "column9", "column10", "colum11", "column12"})
 			require.NoError(t, err)
 			require.Equal(t, output, []string{"1234567890", "2", "1.11", "RudderStack", "RudderStack", "true", "false", "2022-01-20T13:39:21.033Z", "", "", "RudderStack-row", "RudderStack-row"})
@@ -275,7 +275,7 @@ func TestReaderLoader(t *testing.T) {
 			require.NoError(t, os.Remove(writer.GetLoadFile().Name()))
 		})
 
-		for i := 0; i < lines; i++ {
+		for range lines {
 			c := ef.NewEventLoader(writer, loadFileType, destinationType)
 			c.AddColumn("column1", "bigint", 1234567890)
 			c.AddColumn("column2", "int", 2)
@@ -312,7 +312,7 @@ func TestReaderLoader(t *testing.T) {
 		})
 
 		r := ef.NewEventReader(gzipReader, destinationType)
-		for i := 0; i < lines; i++ {
+		for range lines {
 			output, err := r.Read([]string{"column1", "column2", "column3", "column4", "column5", "column6", "column7", "column8", "column9", "column10", "colum11", "column12"})
 			require.NoError(t, err)
 			require.Equal(t, output, []string{"1234567890", "2", "1.11", "RudderStack", "RudderStack", "true", "false", "2022-01-20T13:39:21.033Z", "", "", "RudderStack-row", "RudderStack-row"})

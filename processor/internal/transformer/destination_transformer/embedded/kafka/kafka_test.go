@@ -37,7 +37,7 @@ func TestTransform(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "destination-type-456",
 		},
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"topic": "default-topic",
 		},
 	}
@@ -48,41 +48,41 @@ func TestTransform(t *testing.T) {
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "destination-type-789",
 		},
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"topic":            "default-topic",
 			"enableMultiTopic": true,
-			"eventTypeToTopicMap": []interface{}{
-				map[string]interface{}{
+			"eventTypeToTopicMap": []any{
+				map[string]any{
 					"from": "identify",
 					"to":   "identify-topic",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "group",
 					"to":   "group-topic",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "",
 					"to":   "empty-topic",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "alias",
 					"to":   "",
 				},
 			},
-			"eventToTopicMap": []interface{}{
-				map[string]interface{}{
+			"eventToTopicMap": []any{
+				map[string]any{
 					"from": "",
 					"to":   "empty-event-topic",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-A",
 					"to":   "event-A-topic",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-B",
 					"to":   "event-B-topic",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-C",
 					"to":   "",
 				},
@@ -107,21 +107,21 @@ func TestTransform(t *testing.T) {
 			name: "should set correct userId for each event",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 					},
 					Destination: destinationWithConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"anonymousId": "anonymous-123",
 					},
 					Destination: destinationWithConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":      "",
 						"anonymousId": "anonymous-123",
 					},
@@ -129,7 +129,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":      "user-123",
 						"anonymousId": "",
 					},
@@ -140,8 +140,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 							},
 							"topic":  "default-topic",
@@ -151,8 +151,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"anonymousId": "anonymous-123",
 							},
 							"topic":  "default-topic",
@@ -162,8 +162,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId":      "",
 								"anonymousId": "anonymous-123",
 							},
@@ -174,8 +174,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId":      "user-123",
 								"anonymousId": "",
 							},
@@ -192,10 +192,10 @@ func TestTransform(t *testing.T) {
 			name: "should set schemaId when present and not empty in integrationsObj",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
-						"integrations": map[string]interface{}{
-							"kafka": map[string]interface{}{
+						"integrations": map[string]any{
+							"kafka": map[string]any{
 								"schemaId": "schema-id-123",
 							},
 						},
@@ -204,10 +204,10 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
-						"integrations": map[string]interface{}{
-							"KAFKA": map[string]interface{}{
+						"integrations": map[string]any{
+							"KAFKA": map[string]any{
 								"schemaId": "",
 							},
 						},
@@ -219,11 +219,11 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
-								"integrations": map[string]interface{}{
-									"kafka": map[string]interface{}{
+								"integrations": map[string]any{
+									"kafka": map[string]any{
 										"schemaId": "schema-id-123",
 									},
 								},
@@ -236,11 +236,11 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
-								"integrations": map[string]interface{}{
-									"KAFKA": map[string]interface{}{
+								"integrations": map[string]any{
+									"KAFKA": map[string]any{
 										"schemaId": "",
 									},
 								},
@@ -258,10 +258,10 @@ func TestTransform(t *testing.T) {
 			name: "should set correct topic from integration config",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
-						"integrations": map[string]interface{}{
-							"kafka": map[string]interface{}{
+						"integrations": map[string]any{
+							"kafka": map[string]any{
 								"topic": "integrations-topic-kafka",
 							},
 						},
@@ -270,10 +270,10 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
-						"integrations": map[string]interface{}{
-							"Kafka": map[string]interface{}{
+						"integrations": map[string]any{
+							"Kafka": map[string]any{
 								"topic": "integrations-topic-Kafka",
 							},
 						},
@@ -282,10 +282,10 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
-						"integrations": map[string]interface{}{
-							"KAFKA": map[string]interface{}{
+						"integrations": map[string]any{
+							"KAFKA": map[string]any{
 								"topic": "integrations-topic-KAFKA",
 							},
 						},
@@ -294,16 +294,16 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
-						"integrations": map[string]interface{}{
-							"KAFKA": map[string]interface{}{
+						"integrations": map[string]any{
+							"KAFKA": map[string]any{
 								"topic": "integrations-topic-KAFKA",
 							},
-							"kafka": map[string]interface{}{
+							"kafka": map[string]any{
 								"topic": "integrations-topic-kafka",
 							},
-							"Kafka": map[string]interface{}{
+							"Kafka": map[string]any{
 								"topic": "integrations-topic-Kafka",
 							},
 						},
@@ -315,11 +315,11 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
-								"integrations": map[string]interface{}{
-									"kafka": map[string]interface{}{
+								"integrations": map[string]any{
+									"kafka": map[string]any{
 										"topic": "integrations-topic-kafka",
 									},
 								},
@@ -333,11 +333,11 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
-								"integrations": map[string]interface{}{
-									"Kafka": map[string]interface{}{
+								"integrations": map[string]any{
+									"Kafka": map[string]any{
 										"topic": "integrations-topic-Kafka",
 									},
 								},
@@ -351,11 +351,11 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
-								"integrations": map[string]interface{}{
-									"KAFKA": map[string]interface{}{
+								"integrations": map[string]any{
+									"KAFKA": map[string]any{
 										"topic": "integrations-topic-KAFKA",
 									},
 								},
@@ -369,17 +369,17 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
-								"integrations": map[string]interface{}{
-									"KAFKA": map[string]interface{}{
+								"integrations": map[string]any{
+									"KAFKA": map[string]any{
 										"topic": "integrations-topic-KAFKA",
 									},
-									"kafka": map[string]interface{}{
+									"kafka": map[string]any{
 										"topic": "integrations-topic-kafka",
 									},
-									"Kafka": map[string]interface{}{
+									"Kafka": map[string]any{
 										"topic": "integrations-topic-Kafka",
 									},
 								},
@@ -399,17 +399,17 @@ func TestTransform(t *testing.T) {
 			name: "should set correct topic from destination config",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "123",
 					},
 					Destination: destinationWithConfigTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "456",
-						"integrations": map[string]interface{}{
-							"unknown": map[string]interface{}{
+						"integrations": map[string]any{
+							"unknown": map[string]any{
 								"topic": "integrations-topic",
 							},
 						},
@@ -418,10 +418,10 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "456",
-						"integrations": map[string]interface{}{
-							"kafka": map[string]interface{}{
+						"integrations": map[string]any{
+							"kafka": map[string]any{
 								"topic": "",
 							},
 						},
@@ -433,8 +433,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "123",
 							},
 							"topic":  "default-topic",
@@ -444,11 +444,11 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "456",
-								"integrations": map[string]interface{}{
-									"unknown": map[string]interface{}{
+								"integrations": map[string]any{
+									"unknown": map[string]any{
 										"topic": "integrations-topic",
 									},
 								},
@@ -460,11 +460,11 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "456",
-								"integrations": map[string]interface{}{
-									"kafka": map[string]interface{}{
+								"integrations": map[string]any{
+									"kafka": map[string]any{
 										"topic": "",
 									},
 								},
@@ -482,7 +482,7 @@ func TestTransform(t *testing.T) {
 			name: "should set correct topic from event type mapping if mapping is present",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"type":   "identify",
 					},
@@ -491,7 +491,7 @@ func TestTransform(t *testing.T) {
 				},
 
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"type":   "group",
 					},
@@ -499,7 +499,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"type":   "",
 					},
@@ -507,7 +507,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"type":   "alias",
 					},
@@ -515,14 +515,14 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 					},
 					Destination: destinationWithEventMappingTopic,
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"type":   "unknown-event-type",
 					},
@@ -533,8 +533,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"type":   "identify",
 							},
@@ -547,8 +547,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"type":   "group",
 							},
@@ -561,8 +561,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"type":   "",
 							},
@@ -573,8 +573,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"type":   "alias",
 							},
@@ -585,8 +585,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 							},
 							"topic":  "default-topic",
@@ -596,8 +596,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"type":   "unknown-event-type",
 							},
@@ -614,7 +614,7 @@ func TestTransform(t *testing.T) {
 			name: "should set correct topic from event mapping if mapping is present",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"event":  "unknown-event",
 						"type":   "track",
@@ -623,7 +623,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"event":  "event-A",
 						"type":   "track",
@@ -632,7 +632,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"event":  "",
 						"type":   "track",
@@ -641,7 +641,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"type":   "track",
 					},
@@ -649,7 +649,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"event":  "event-B",
 						"type":   "track",
@@ -658,7 +658,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId": "user-123",
 						"event":  "event-C",
 						"type":   "track",
@@ -670,8 +670,8 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"event":  "unknown-event",
 								"type":   "track",
@@ -684,8 +684,8 @@ func TestTransform(t *testing.T) {
 					},
 
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"event":  "event-A",
 								"type":   "track",
@@ -699,8 +699,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"event":  "",
 								"type":   "track",
@@ -712,8 +712,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"type":   "track",
 							},
@@ -724,8 +724,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"event":  "event-B",
 								"type":   "track",
@@ -739,8 +739,8 @@ func TestTransform(t *testing.T) {
 						StatusCode: http.StatusOK,
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId": "user-123",
 								"event":  "event-C",
 								"type":   "track",
@@ -758,7 +758,7 @@ func TestTransform(t *testing.T) {
 			name: "should should throw error if topic is not present",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":    "user-123",
 						"messageId": "message-id-1",
 					},
@@ -766,7 +766,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":    "user-123",
 						"messageId": "message-id-2",
 					},
@@ -775,11 +775,11 @@ func TestTransform(t *testing.T) {
 				},
 				// this event should be transformed
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":    "user-123",
 						"messageId": "message-id-3",
-						"integrations": map[string]interface{}{
-							"kafka": map[string]interface{}{
+						"integrations": map[string]any{
+							"kafka": map[string]any{
 								"topic": "default-topic",
 							},
 						},
@@ -788,7 +788,7 @@ func TestTransform(t *testing.T) {
 					Metadata:    metadataWithRudderID,
 				},
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":    "user-123",
 						"messageId": "message-id-4",
 					},
@@ -796,7 +796,7 @@ func TestTransform(t *testing.T) {
 						ID:                    destinationWithNoConfigTopic.ID,
 						DestinationDefinition: destinationWithNoConfigTopic.DestinationDefinition,
 						WorkspaceID:           destinationWithNoConfigTopic.WorkspaceID,
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"topic": "",
 						},
 					},
@@ -826,12 +826,12 @@ func TestTransform(t *testing.T) {
 				},
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId":    "user-123",
 								"messageId": "message-id-3",
-								"integrations": map[string]interface{}{
-									"kafka": map[string]interface{}{
+								"integrations": map[string]any{
+									"kafka": map[string]any{
 										"topic": "default-topic",
 									},
 								},
@@ -849,11 +849,11 @@ func TestTransform(t *testing.T) {
 			name: "should set correct timestamp for retl event",
 			events: []types.TransformerEvent{
 				{
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"userId":  "user-123",
 						"type":    "identify",
 						"channel": "sources",
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"timestamp": "2021-01-01T00:00:00Z",
 						},
 					},
@@ -864,13 +864,13 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"userId":    "user-123",
 								"type":      "identify",
 								"channel":   "sources",
 								"timestamp": "2021-01-01T00:00:00Z",
-								"context": map[string]interface{}{
+								"context": map[string]any{
 									"timestamp": "2021-01-01T00:00:00Z",
 								},
 							},

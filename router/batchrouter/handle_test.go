@@ -37,14 +37,14 @@ func TestGenerateSchemaMap(t *testing.T) {
 			name: "Jobs With No Table Name",
 			setupJobs: func() []*jobsdb.JobT {
 				jobs := make([]*jobsdb.JobT, 3)
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					// Create metadata without table name
-					metadata := map[string]interface{}{
+					metadata := map[string]any{
 						"columns": map[string]string{
 							"column_1": "string",
 						},
 					}
-					eventPayload := map[string]interface{}{
+					eventPayload := map[string]any{
 						"metadata": metadata,
 					}
 					payload, _ := jsonrs.Marshal(eventPayload)
@@ -61,12 +61,12 @@ func TestGenerateSchemaMap(t *testing.T) {
 			name: "Jobs With Empty Columns",
 			setupJobs: func() []*jobsdb.JobT {
 				jobs := make([]*jobsdb.JobT, 3)
-				for i := 0; i < 3; i++ {
-					metadata := map[string]interface{}{
+				for i := range 3 {
+					metadata := map[string]any{
 						"table":   "table_1",
 						"columns": map[string]string{},
 					}
-					eventPayload := map[string]interface{}{
+					eventPayload := map[string]any{
 						"metadata": metadata,
 					}
 					payload, _ := jsonrs.Marshal(eventPayload)
@@ -87,13 +87,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 2)
 
 				// First job with string type
-				metadata1 := map[string]interface{}{
+				metadata1 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "string",
 					},
 				}
-				eventPayload1 := map[string]interface{}{
+				eventPayload1 := map[string]any{
 					"metadata": metadata1,
 				}
 				payload1, _ := jsonrs.Marshal(eventPayload1)
@@ -103,13 +103,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				}
 
 				// Second job with text type for same column
-				metadata2 := map[string]interface{}{
+				metadata2 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "text",
 					},
 				}
-				eventPayload2 := map[string]interface{}{
+				eventPayload2 := map[string]any{
 					"metadata": metadata2,
 				}
 				payload2, _ := jsonrs.Marshal(eventPayload2)
@@ -132,13 +132,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 2)
 
 				// First job with text type
-				metadata1 := map[string]interface{}{
+				metadata1 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "text",
 					},
 				}
-				eventPayload1 := map[string]interface{}{
+				eventPayload1 := map[string]any{
 					"metadata": metadata1,
 				}
 				payload1, _ := jsonrs.Marshal(eventPayload1)
@@ -148,13 +148,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				}
 
 				// Second job with string type for same column
-				metadata2 := map[string]interface{}{
+				metadata2 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "string",
 					},
 				}
-				eventPayload2 := map[string]interface{}{
+				eventPayload2 := map[string]any{
 					"metadata": metadata2,
 				}
 				payload2, _ := jsonrs.Marshal(eventPayload2)
@@ -177,14 +177,14 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 2)
 
 				// Job for table_1
-				metadata1 := map[string]interface{}{
+				metadata1 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "string",
 						"column_2": "int",
 					},
 				}
-				eventPayload1 := map[string]interface{}{
+				eventPayload1 := map[string]any{
 					"metadata": metadata1,
 				}
 				payload1, _ := jsonrs.Marshal(eventPayload1)
@@ -194,14 +194,14 @@ func TestGenerateSchemaMap(t *testing.T) {
 				}
 
 				// Job for table_2 with some overlapping column names
-				metadata2 := map[string]interface{}{
+				metadata2 := map[string]any{
 					"table": "table_2",
 					"columns": map[string]string{
 						"column_1": "text",  // Same name but different type
 						"column_3": "float", // Unique to table_2
 					},
 				}
-				eventPayload2 := map[string]interface{}{
+				eventPayload2 := map[string]any{
 					"metadata": metadata2,
 				}
 				payload2, _ := jsonrs.Marshal(eventPayload2)
@@ -229,13 +229,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 4)
 
 				// Valid job 1
-				metadata1 := map[string]interface{}{
+				metadata1 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "string",
 					},
 				}
-				eventPayload1 := map[string]interface{}{
+				eventPayload1 := map[string]any{
 					"metadata": metadata1,
 				}
 				payload1, _ := jsonrs.Marshal(eventPayload1)
@@ -245,12 +245,12 @@ func TestGenerateSchemaMap(t *testing.T) {
 				}
 
 				// Invalid job - no table name
-				metadata2 := map[string]interface{}{
+				metadata2 := map[string]any{
 					"columns": map[string]string{
 						"column_1": "int",
 					},
 				}
-				eventPayload2 := map[string]interface{}{
+				eventPayload2 := map[string]any{
 					"metadata": metadata2,
 				}
 				payload2, _ := jsonrs.Marshal(eventPayload2)
@@ -260,13 +260,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				}
 
 				// Valid job 2 - same table as job 1
-				metadata3 := map[string]interface{}{
+				metadata3 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_2": "float",
 					},
 				}
-				eventPayload3 := map[string]interface{}{
+				eventPayload3 := map[string]any{
 					"metadata": metadata3,
 				}
 				payload3, _ := jsonrs.Marshal(eventPayload3)
@@ -296,16 +296,16 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 10)
 
 				// Create 10 jobs with 10 different tables
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					tableName := fmt.Sprintf("table_%d", i)
-					metadata := map[string]interface{}{
+					metadata := map[string]any{
 						"table": tableName,
 						"columns": map[string]string{
 							"column_1": "string",
 							"column_2": "int",
 						},
 					}
-					eventPayload := map[string]interface{}{
+					eventPayload := map[string]any{
 						"metadata": metadata,
 					}
 					payload, _ := jsonrs.Marshal(eventPayload)
@@ -319,7 +319,7 @@ func TestGenerateSchemaMap(t *testing.T) {
 			},
 			expected: func() map[string]map[string]string {
 				result := make(map[string]map[string]string)
-				for i := 0; i < 10; i++ {
+				for i := range 10 {
 					tableName := fmt.Sprintf("table_%d", i)
 					result[tableName] = map[string]string{
 						"column_1": "string",
@@ -335,7 +335,7 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 20)
 
 				// Create 20 jobs with only 2 different tables
-				for i := 0; i < 20; i++ {
+				for i := range 20 {
 					tableIndex := i % 2
 					tableName := fmt.Sprintf("table_%d", tableIndex)
 
@@ -350,11 +350,11 @@ func TestGenerateSchemaMap(t *testing.T) {
 						columns[fmt.Sprintf("extra_column_%d", i)] = "float"
 					}
 
-					metadata := map[string]interface{}{
+					metadata := map[string]any{
 						"table":   tableName,
 						"columns": columns,
 					}
-					eventPayload := map[string]interface{}{
+					eventPayload := map[string]any{
 						"metadata": metadata,
 					}
 					payload, _ := jsonrs.Marshal(eventPayload)
@@ -390,13 +390,13 @@ func TestGenerateSchemaMap(t *testing.T) {
 				jobs := make([]*jobsdb.JobT, 2)
 
 				// Valid job
-				metadata1 := map[string]interface{}{
+				metadata1 := map[string]any{
 					"table": "table_1",
 					"columns": map[string]string{
 						"column_1": "string",
 					},
 				}
-				eventPayload1 := map[string]interface{}{
+				eventPayload1 := map[string]any{
 					"metadata": metadata1,
 				}
 				payload1, _ := jsonrs.Marshal(eventPayload1)

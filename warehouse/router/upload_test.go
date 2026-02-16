@@ -93,8 +93,8 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		switch stateErrors["errors"].(type) {
 		case []string:
 			errorLength = len(stateErrors["errors"].([]string))
-		case []interface{}:
-			errorLength = len(stateErrors["errors"].([]interface{}))
+		case []any:
+			errorLength = len(stateErrors["errors"].([]any))
 		}
 
 		if errorLength != ip.ErrorCount {
@@ -548,7 +548,7 @@ func TestUploadJobT_TablesToSkip(t *testing.T) {
 			ctx:                     context.Background(),
 		}
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			_, _, _ = job.TablesToSkip()
 			require.Equal(t, 1, ptRepo.called)
 		}
@@ -851,7 +851,7 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			Location: fmt.Sprintf("test-load-location-%d", i+1),
 		}
 	})
-	createUploadJob := func(destConfig map[string]interface{}, destName string, mockFileManager filemanager.FileManager, mockLoadFilesRepo loadFilesRepo, stagingFiles []*model.StagingFile) *UploadJob {
+	createUploadJob := func(destConfig map[string]any, destName string, mockFileManager filemanager.FileManager, mockLoadFilesRepo loadFilesRepo, stagingFiles []*model.StagingFile) *UploadJob {
 		job := &UploadJob{
 			ctx: context.Background(),
 			upload: model.Upload{
@@ -888,8 +888,8 @@ func TestCleanupObjectStorageFiles(t *testing.T) {
 			mockFileManager.EXPECT().GetDownloadKeyFromFileLocation(file.Location).Return(file.Location).Times(1)
 		}
 	}
-	createDestConfig := func(cleanupEnabled bool, bucketProvider string) map[string]interface{} {
-		return map[string]interface{}{
+	createDestConfig := func(cleanupEnabled bool, bucketProvider string) map[string]any {
+		return map[string]any{
 			model.CleanupObjectStorageFilesSetting.String(): cleanupEnabled,
 			"bucketProvider": bucketProvider,
 		}

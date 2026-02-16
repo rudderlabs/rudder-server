@@ -30,7 +30,7 @@ func (u *LyticsBulkUploader) PopulateCsvFile(actionFile *ActionFileInfo, streamT
 		}
 
 		// Unmarshal Properties into a map of json.RawMessage
-		var fields map[string]interface{}
+		var fields map[string]any
 		if err := jsonrs.Unmarshal(data.Message.Properties, &fields); err != nil {
 			return err
 		}

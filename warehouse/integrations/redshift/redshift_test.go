@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -695,9 +696,7 @@ func TestIntegration(t *testing.T) {
 					"enableSSE":        false,
 					"useRudderStorage": false,
 				}
-				for k, v := range tc.configOverride {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.configOverride)
 
 				t.Log("verifying test case 1")
 				ts1 := whth.TestConfig{
@@ -778,7 +777,7 @@ func TestIntegration(t *testing.T) {
 				name: "With password",
 				destination: backendconfig.DestinationT{
 					ID: "test_destination_id",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"host":             credentials.Host,
 						"port":             credentials.Port,
 						"user":             credentials.UserName,
@@ -807,7 +806,7 @@ func TestIntegration(t *testing.T) {
 				name: "with IAM Role",
 				destination: backendconfig.DestinationT{
 					ID: "test_destination_id",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"user":              iamCredentials.UserName,
 						"database":          iamCredentials.Database,
 						"bucketName":        iamCredentials.BucketName,
@@ -863,7 +862,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Destination: backendconfig.DestinationT{
 				ID: "test_destination_id",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"host":             credentials.Host,
 					"port":             credentials.Port,
 					"user":             credentials.UserName,
@@ -1471,7 +1470,7 @@ func TestIntegration(t *testing.T) {
 						),
 					)
 					expectedRecords := make([][]string, 0, repeat)
-					for i := 0; i < repeat; i++ {
+					for i := range repeat {
 						expectedRecords = append(expectedRecords, whth.SampleTestRecordsTemplate(i+1)...)
 					}
 					require.ElementsMatch(t, expectedRecords, records)
@@ -1489,7 +1488,7 @@ func TestIntegration(t *testing.T) {
 			},
 			Destination: backendconfig.DestinationT{
 				ID: "test_destination_id",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"host":             credentials.Host,
 					"port":             credentials.Port,
 					"user":             credentials.UserName,

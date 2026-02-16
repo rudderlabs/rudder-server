@@ -440,7 +440,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 			)
 		}
 
-		recordInterface := make([]interface{}, 0, len(record))
+		recordInterface := make([]any, 0, len(record))
 		for _, value := range record {
 			if strings.TrimSpace(value) == "" {
 				recordInterface = append(recordInterface, nil)
@@ -449,7 +449,7 @@ func (as *AzureSynapse) loadDataIntoStagingTable(
 			}
 		}
 
-		finalColumnValues := make([]interface{}, 0, len(record))
+		finalColumnValues := make([]any, 0, len(record))
 		for index, value := range recordInterface {
 			valueType := tableSchemaInUpload[sortedColumnKeys[index]]
 			if value == nil {
@@ -510,7 +510,7 @@ func ProcessColumnValue(
 	value string,
 	valueType string,
 	varcharLength int,
-) (interface{}, error) {
+) (any, error) {
 	switch valueType {
 	case model.IntDataType:
 		return strconv.Atoi(value)
@@ -640,7 +640,7 @@ func (as *AzureSynapse) insertIntoLoadTable(
 func str2ucs2(s string) []byte {
 	res := utf16.Encode([]rune(s))
 	ucs2 := make([]byte, 2*len(res))
-	for i := 0; i < len(res); i++ {
+	for i := range res {
 		ucs2[2*i] = byte(res[i])
 		ucs2[2*i+1] = byte(res[i] >> 8)
 	}
@@ -1079,7 +1079,7 @@ func (as *AzureSynapse) Connect(_ context.Context, warehouse model.Warehouse) (c
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (as *AzureSynapse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (as *AzureSynapse) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		as.namespace,
 		tableName,

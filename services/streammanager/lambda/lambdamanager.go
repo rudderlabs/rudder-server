@@ -42,7 +42,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common
 }
 
 // Produce creates a producer and send data to Lambda.
-func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig any) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Failure", "[Lambda] error :: Could not create client"

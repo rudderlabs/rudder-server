@@ -285,10 +285,7 @@ func (f *Flusher) send(ctx context.Context, aggReports []json.RawMessage) error 
 	f.concurrentRequests.Gauge(float64(concurrency))
 
 	for i := 0; i < len(aggReports); i += batchSize {
-		end := i + batchSize
-		if end > len(aggReports) {
-			end = len(aggReports)
-		}
+		end := min(i+batchSize, len(aggReports))
 		batch := aggReports[i:end]
 
 		g.Go(func() error {

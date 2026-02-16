@@ -18,14 +18,14 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "destinations",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
 			expected: types.SingularEventT{
 				"type":    "identify",
 				"channel": "destinations",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -34,13 +34,13 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			name: "should not update the timestamp field if channel is not present",
 			eventMessage: types.SingularEventT{
 				"type": "track",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
 			expected: types.SingularEventT{
 				"type": "track",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -50,7 +50,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"mappedToDestination": "sources",
 					"timestamp":           "2021-01-01T00:00:00Z",
 				},
@@ -58,7 +58,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			expected: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"mappedToDestination": "sources",
 					"timestamp":           "2021-01-01T00:00:00Z",
 				},
@@ -68,13 +68,13 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			name: "should not update the timestamp field if event type is not present",
 			eventMessage: types.SingularEventT{
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
 			expected: types.SingularEventT{
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -84,14 +84,14 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "page",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
 			expected: types.SingularEventT{
 				"type":    "page",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -101,9 +101,9 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
-					"traits": map[string]interface{}{
+					"traits": map[string]any{
 						"timestamp": "2022-01-01T00:00:00Z",
 					},
 				},
@@ -112,9 +112,9 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"type":      "identify",
 				"channel":   "sources",
 				"timestamp": "2021-01-01T00:00:00Z",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
-					"traits": map[string]interface{}{
+					"traits": map[string]any{
 						"timestamp": "2022-01-01T00:00:00Z",
 					},
 				},
@@ -125,8 +125,8 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
-				"context": map[string]interface{}{
-					"traits": map[string]interface{}{
+				"context": map[string]any{
+					"traits": map[string]any{
 						"timestamp": "2022-01-01T00:00:00Z",
 					},
 				},
@@ -135,8 +135,8 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"type":      "identify",
 				"channel":   "sources",
 				"timestamp": "2022-01-01T00:00:00Z",
-				"context": map[string]interface{}{
-					"traits": map[string]interface{}{
+				"context": map[string]any{
+					"traits": map[string]any{
 						"timestamp": "2022-01-01T00:00:00Z",
 					},
 				},
@@ -149,7 +149,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"channel":           "sources",
 				"timestamp":         "2020-01-01T00:00:00Z",
 				"originalTimestamp": "2021-01-01T00:00:00Z",
-				"traits": map[string]interface{}{
+				"traits": map[string]any{
 					"timestamp": "2022-01-01T00:00:00Z",
 				},
 			},
@@ -158,7 +158,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"channel":           "sources",
 				"timestamp":         "2022-01-01T00:00:00Z",
 				"originalTimestamp": "2021-01-01T00:00:00Z",
-				"traits": map[string]interface{}{
+				"traits": map[string]any{
 					"timestamp": "2022-01-01T00:00:00Z",
 				},
 			},
@@ -198,7 +198,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"type":              "track",
 				"channel":           "sources",
 				"originalTimestamp": "2020-01-01T00:00:00Z",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -207,7 +207,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"channel":           "sources",
 				"timestamp":         "2021-01-01T00:00:00Z",
 				"originalTimestamp": "2020-01-01T00:00:00Z",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -219,7 +219,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"channel":           "sources",
 				"timestamp":         "2021-01-01T00:00:00Z",
 				"originalTimestamp": "2020-01-01T00:00:00Z",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -228,7 +228,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"channel":           "sources",
 				"timestamp":         "2021-01-01T00:00:00Z",
 				"originalTimestamp": "2020-01-01T00:00:00Z",
-				"properties": map[string]interface{}{
+				"properties": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -252,7 +252,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"mappedToDestination": "",
 					"timestamp":           "2021-01-01T00:00:00Z",
 				},
@@ -261,7 +261,7 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"type":      "identify",
 				"channel":   "sources",
 				"timestamp": "2021-01-01T00:00:00Z",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"mappedToDestination": "",
 					"timestamp":           "2021-01-01T00:00:00Z",
 				},
@@ -272,13 +272,13 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 			eventMessage: types.SingularEventT{
 				"type":    "identify",
 				"channel": "sources",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "",
-					"traits": map[string]interface{}{
+					"traits": map[string]any{
 						"timestamp": "",
 					},
 				},
-				"traits": map[string]interface{}{
+				"traits": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},
@@ -286,13 +286,13 @@ func TestUpdateTimestampFieldForRETLEvent(t *testing.T) {
 				"type":      "identify",
 				"channel":   "sources",
 				"timestamp": "2021-01-01T00:00:00Z",
-				"context": map[string]interface{}{
+				"context": map[string]any{
 					"timestamp": "",
-					"traits": map[string]interface{}{
+					"traits": map[string]any{
 						"timestamp": "",
 					},
 				},
-				"traits": map[string]interface{}{
+				"traits": map[string]any{
 					"timestamp": "2021-01-01T00:00:00Z",
 				},
 			},

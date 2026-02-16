@@ -57,7 +57,7 @@ func hllSettings() hll.Settings {
 }
 
 func addDataToHLL(hllData *hll.Hll, min, max, count int) {
-	for i := 0; i < count; i++ {
+	for range count {
 		userId := fmt.Sprintf("user_%d", rand.Intn(max-min+1)+min)
 		hllData.AddRaw(murmur3.Sum64WithSeed([]byte(userId), 123))
 	}
@@ -199,7 +199,7 @@ func TestTrackedUsersFlush(t *testing.T) {
 	// validate the payloads sent to Reporting Service
 	reqBodies := testWebhook.Requests()
 	for _, req := range reqBodies {
-		var items []map[string]interface{}
+		var items []map[string]any
 
 		body, _ := io.ReadAll(req.Body)
 		err := jsonrs.Unmarshal(body, &items)
@@ -211,7 +211,7 @@ func TestTrackedUsersFlush(t *testing.T) {
 		reports[0].AnonymousIDHLL.Union(*reports[1].AnonymousIDHLL)
 		reports[0].IdentifiedAnonymousIDHLL.Union(*reports[1].IdentifiedAnonymousIDHLL)
 
-		expectedPayloads := map[string]map[string]interface{}{
+		expectedPayloads := map[string]map[string]any{
 			"workspace1-source1-instance1": {
 				"reportedAt":               tenMinAgo,
 				"workspaceId":              "workspace1",

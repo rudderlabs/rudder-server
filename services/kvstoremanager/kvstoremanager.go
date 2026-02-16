@@ -13,20 +13,20 @@ import (
 type KVStoreManager interface {
 	CreateClient()
 	Close() error
-	HMSet(key string, fields map[string]interface{}) error
-	HSet(key, field string, value interface{}) error
+	HMSet(key string, fields map[string]any) error
+	HSet(key, field string, value any) error
 	StatusCode(err error) int
 	DeleteKey(key string) (err error)
-	HMGet(key string, fields ...string) (result []interface{}, err error)
+	HMGet(key string, fields ...string) (result []any, err error)
 	HGetAll(key string) (result map[string]string, err error)
 
-	SendDataAsJSON(jsonData json.RawMessage, config map[string]interface{}) (interface{}, error)
-	ShouldSendDataAsJSON(config map[string]interface{}) bool
+	SendDataAsJSON(jsonData json.RawMessage, config map[string]any) (any, error)
+	ShouldSendDataAsJSON(config map[string]any) bool
 }
 
 type SettingsT struct {
 	Provider string
-	Config   map[string]interface{}
+	Config   map[string]any
 }
 
 const (
@@ -35,7 +35,7 @@ const (
 	valuePath = "message.value"
 )
 
-func New(provider string, config map[string]interface{}) (m KVStoreManager) {
+func New(provider string, config map[string]any) (m KVStoreManager) {
 	return newManager(SettingsT{
 		Provider: provider,
 		Config:   config,
@@ -50,10 +50,10 @@ func newManager(settings SettingsT) (m KVStoreManager) {
 	return m
 }
 
-func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) {
+func EventToKeyValue(jsonData json.RawMessage) (string, map[string]any) {
 	key := gjson.GetBytes(jsonData, "message.key").String()
 	result := gjson.GetBytes(jsonData, "message.fields").Map()
-	fields := make(map[string]interface{})
+	fields := make(map[string]any)
 	for k, v := range result {
 		fields[k] = v.Str
 	}

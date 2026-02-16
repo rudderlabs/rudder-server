@@ -54,7 +54,7 @@ func TestRouter(t *testing.T) {
 
 	createStagingFiles := func(t *testing.T, ctx context.Context, repoStaging *repo.StagingFiles, workspaceID, sourceID, destinationID string) []*model.StagingFileWithSchema {
 		var stagingFiles []*model.StagingFileWithSchema
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			stagingFile := &model.StagingFileWithSchema{
 				StagingFile: model.StagingFile{
 					WorkspaceID:   workspaceID,
@@ -163,7 +163,7 @@ func TestRouter(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destinationType,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -323,7 +323,7 @@ func TestRouter(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destinationType,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -444,8 +444,7 @@ func TestRouter(t *testing.T) {
 			return now
 		}))
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		warehouse := model.Warehouse{
 			WorkspaceID: workspaceID,
@@ -457,7 +456,7 @@ func TestRouter(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destinationType,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -565,7 +564,7 @@ func TestRouter(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destinationType,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -700,7 +699,7 @@ func TestRouter(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: destinationType,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -851,7 +850,7 @@ func TestRouter(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: destinationType,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"namespace": namespace,
 					},
 				},
@@ -1122,7 +1121,7 @@ func TestRouter(t *testing.T) {
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
 							Name: warehouseutils.RS,
 						},
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"namespace": namespace,
 						},
 					},
@@ -1134,7 +1133,7 @@ func TestRouter(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.RS,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -1162,7 +1161,7 @@ func TestRouter(t *testing.T) {
 										DestinationDefinition: backendconfig.DestinationDefinitionT{
 											Name: warehouseutils.RS,
 										},
-										Config: map[string]interface{}{
+										Config: map[string]any{
 											"namespace": namespace,
 										},
 									},

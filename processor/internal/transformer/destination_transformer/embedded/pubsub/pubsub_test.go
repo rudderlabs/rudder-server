@@ -14,29 +14,29 @@ import (
 func TestTransform(t *testing.T) {
 	destinationWithConfigTopic := backendconfig.DestinationT{
 		ID: "destination-id-123",
-		Config: map[string]interface{}{
-			"eventToTopicMap": []interface{}{
-				map[string]interface{}{
+		Config: map[string]any{
+			"eventToTopicMap": []any{
+				map[string]any{
 					"from": "event-A",
 					"to":   "topic-A",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "",
 					"to":   "topic-empty-event-name",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-with-empty-topic",
 					"to":   "",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "page",
 					"to":   "",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "group",
 					"to":   "topic-group",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "*",
 					"to":   "topic-default",
 				},
@@ -46,62 +46,62 @@ func TestTransform(t *testing.T) {
 
 	destinationWithConfigAttributes := backendconfig.DestinationT{
 		ID: "destination-id-123",
-		Config: map[string]interface{}{
-			"eventToAttributesMap": []interface{}{
-				map[string]interface{}{
+		Config: map[string]any{
+			"eventToAttributesMap": []any{
+				map[string]any{
 					"from": "event-A",
 					"to":   "attr-key-1",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-A",
 					"to":   "attr-key-2",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-A",
 					"to":   "attr-key-3",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-A",
 					"to":   "A.B.attr-key-4",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-A",
 					"to":   "A.B.C.attr-key-5",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-A",
 					"to":   "A.B.attr-key-6",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-B",
 					"to":   "attr-key-1",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-B",
 					"to":   "",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "event-C",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "identify",
 					"to":   "attr-key-1",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "identify",
 					"to":   "attr-key-2",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "identify",
 					"to":   "attr-key-3",
 				},
-				map[string]interface{}{
+				map[string]any{
 					"from": "*",
 					"to":   "attr-key-default",
 				},
 			},
-			"eventToTopicMap": []interface{}{
-				map[string]interface{}{
+			"eventToTopicMap": []any{
+				map[string]any{
 					"from": "*",
 					"to":   "topic-default",
 				},
@@ -129,7 +129,7 @@ func TestTransform(t *testing.T) {
 			events: []types.TransformerEvent{
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":        "identify",
 						"userId":      "user-id-123",
 						"anonymousId": "anonymous-id-123",
@@ -137,28 +137,28 @@ func TestTransform(t *testing.T) {
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":   "identify",
 						"userId": "user-id-456",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":        "identify",
 						"anonymousId": "anonymous-id-789",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":   "identify",
 						"userId": "",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":        "identify",
 						"anonymousId": "",
 					},
@@ -167,67 +167,67 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"userId":  "user-id-123",
 							"topicId": "topic-default",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":        "identify",
 								"userId":      "user-id-123",
 								"anonymousId": "anonymous-id-123",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"userId":  "user-id-456",
 							"topicId": "topic-default",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":   "identify",
 								"userId": "user-id-456",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"userId":  "anonymous-id-789",
 							"topicId": "topic-default",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":        "identify",
 								"anonymousId": "anonymous-id-789",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"userId":  "",
 							"topicId": "topic-default",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":   "identify",
 								"userId": "",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"userId":  "",
 							"topicId": "topic-default",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":        "identify",
 								"anonymousId": "",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
@@ -240,34 +240,34 @@ func TestTransform(t *testing.T) {
 			events: []types.TransformerEvent{
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "event-A",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "event-with-empty-topic",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type": "group",
 					},
 				},
 				{
 					Destination: destinationWithConfigTopic,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type": "page",
 					},
 				},
@@ -275,64 +275,64 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"topicId": "topic-A",
 							"userId":  "",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":  "track",
 								"event": "event-A",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"topicId": "topic-default",
 							"userId":  "",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":  "track",
 								"event": "event-with-empty-topic",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"topicId": "topic-default",
 							"userId":  "",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":  "track",
 								"event": "",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"topicId": "topic-group",
 							"userId":  "",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type": "group",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"topicId": "topic-default",
 							"userId":  "",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type": "page",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
@@ -345,23 +345,23 @@ func TestTransform(t *testing.T) {
 			events: []types.TransformerEvent{
 				{
 					Destination: backendconfig.DestinationT{
-						Config: map[string]interface{}{
-							"eventToTopicMap": []interface{}{
-								map[string]interface{}{
+						Config: map[string]any{
+							"eventToTopicMap": []any{
+								map[string]any{
 									"from": "event-A",
 									"to":   "topic-A",
 								},
 							},
 						},
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type": "identify",
 					},
 				},
 				// this event should be transformed to topic-default
 				{
 					Destination: backendconfig.DestinationT{},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "event-A",
 					},
@@ -378,14 +378,14 @@ func TestTransform(t *testing.T) {
 				},
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
+						Output: map[string]any{
 							"topicId": "topic-A",
 							"userId":  "",
-							"message": map[string]interface{}{
+							"message": map[string]any{
 								"type":  "track",
 								"event": "event-A",
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 						},
 						StatusCode: http.StatusOK,
 						Metadata:   types.Metadata{},
@@ -398,16 +398,16 @@ func TestTransform(t *testing.T) {
 			events: []types.TransformerEvent{
 				{
 					Destination: backendconfig.DestinationT{
-						Config: map[string]interface{}{
-							"eventToTopicMap": []interface{}{
-								map[string]interface{}{
+						Config: map[string]any{
+							"eventToTopicMap": []any{
+								map[string]any{
 									"from": "*",
 									"to":   "",
 								},
 							},
 						},
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":  "track",
 						"event": "event-A",
 					},
@@ -429,15 +429,15 @@ func TestTransform(t *testing.T) {
 			events: []types.TransformerEvent{
 				{
 					Destination: destinationWithConfigAttributes,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":       "track",
 						"event":      "event-B",
 						"attr-key-1": "value-1",
 						"":           "empty-attr-key-value",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"attr-key-2": "value-2",
-							"A": map[string]interface{}{
-								"B": map[string]interface{}{
+							"A": map[string]any{
+								"B": map[string]any{
 									"attr-key-6": "value-6",
 								},
 							},
@@ -446,15 +446,15 @@ func TestTransform(t *testing.T) {
 				},
 				{
 					Destination: destinationWithConfigAttributes,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":             "track",
 						"event":            "event-unknown",
 						"attr-key-1":       "value-1",
 						"attr-key-default": "value-default",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"attr-key-2": "value-2",
-							"A": map[string]interface{}{
-								"B": map[string]interface{}{
+							"A": map[string]any{
+								"B": map[string]any{
 									"attr-key-6": "value-6",
 								},
 							},
@@ -463,7 +463,7 @@ func TestTransform(t *testing.T) {
 				},
 				{
 					Destination: destinationWithConfigAttributes,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":       "identify",
 						"attr-key-1": "value-1",
 						"attr-key-3": "value-3",
@@ -471,25 +471,25 @@ func TestTransform(t *testing.T) {
 				},
 				{
 					Destination: destinationWithConfigAttributes,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":       "track",
 						"event":      "event-A",
 						"attr-key-1": "value-1",
-						"properties": map[string]interface{}{
+						"properties": map[string]any{
 							"attr-key-2": "value-2",
-							"A": map[string]interface{}{
-								"B": map[string]interface{}{
+							"A": map[string]any{
+								"B": map[string]any{
 									"attr-key-6": "value-6",
 								},
 							},
 						},
-						"context": map[string]interface{}{
-							"traits": map[string]interface{}{
+						"context": map[string]any{
+							"traits": map[string]any{
 								"attr-key-3": "value-3",
-								"A": map[string]interface{}{
-									"B": map[string]interface{}{
+								"A": map[string]any{
+									"B": map[string]any{
 										"attr-key-4": "value-4",
-										"C": map[string]interface{}{
+										"C": map[string]any{
 											"attr-key-5": "",
 										},
 									},
@@ -502,22 +502,22 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"type":       "track",
 								"event":      "event-B",
 								"attr-key-1": "value-1",
 								"":           "empty-attr-key-value",
-								"properties": map[string]interface{}{
+								"properties": map[string]any{
 									"attr-key-2": "value-2",
-									"A": map[string]interface{}{
-										"B": map[string]interface{}{
+									"A": map[string]any{
+										"B": map[string]any{
 											"attr-key-6": "value-6",
 										},
 									},
 								},
 							},
-							"attributes": map[string]interface{}{
+							"attributes": map[string]any{
 								"attr-key-1": "value-1",
 								"":           "empty-attr-key-value",
 							},
@@ -528,22 +528,22 @@ func TestTransform(t *testing.T) {
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"type":             "track",
 								"event":            "event-unknown",
 								"attr-key-1":       "value-1",
 								"attr-key-default": "value-default",
-								"properties": map[string]interface{}{
+								"properties": map[string]any{
 									"attr-key-2": "value-2",
-									"A": map[string]interface{}{
-										"B": map[string]interface{}{
+									"A": map[string]any{
+										"B": map[string]any{
 											"attr-key-6": "value-6",
 										},
 									},
 								},
 							},
-							"attributes": map[string]interface{}{
+							"attributes": map[string]any{
 								"attr-key-default": "value-default",
 							},
 							"topicId": "topic-default",
@@ -553,13 +553,13 @@ func TestTransform(t *testing.T) {
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"type":       "identify",
 								"attr-key-1": "value-1",
 								"attr-key-3": "value-3",
 							},
-							"attributes": map[string]interface{}{
+							"attributes": map[string]any{
 								"attr-key-1": "value-1",
 								"attr-key-3": "value-3",
 							},
@@ -570,26 +570,26 @@ func TestTransform(t *testing.T) {
 						Metadata:   types.Metadata{},
 					},
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"type":       "track",
 								"event":      "event-A",
 								"attr-key-1": "value-1",
-								"properties": map[string]interface{}{
+								"properties": map[string]any{
 									"attr-key-2": "value-2",
-									"A": map[string]interface{}{
-										"B": map[string]interface{}{
+									"A": map[string]any{
+										"B": map[string]any{
 											"attr-key-6": "value-6",
 										},
 									},
 								},
-								"context": map[string]interface{}{
-									"traits": map[string]interface{}{
+								"context": map[string]any{
+									"traits": map[string]any{
 										"attr-key-3": "value-3",
-										"A": map[string]interface{}{
-											"B": map[string]interface{}{
+										"A": map[string]any{
+											"B": map[string]any{
 												"attr-key-4": "value-4",
-												"C": map[string]interface{}{
+												"C": map[string]any{
 													"attr-key-5": "",
 												},
 											},
@@ -597,7 +597,7 @@ func TestTransform(t *testing.T) {
 									},
 								},
 							},
-							"attributes": map[string]interface{}{
+							"attributes": map[string]any{
 								"attr-key-1": "value-1",
 								"attr-key-2": "value-2",
 								"attr-key-3": "value-3",
@@ -619,10 +619,10 @@ func TestTransform(t *testing.T) {
 			events: []types.TransformerEvent{
 				{
 					Destination: destinationWithConfigAttributes,
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"type":    "identify",
 						"channel": "sources",
-						"traits": map[string]interface{}{
+						"traits": map[string]any{
 							"timestamp": "2020-01-01T00:00:00Z",
 						},
 					},
@@ -631,16 +631,16 @@ func TestTransform(t *testing.T) {
 			want: types.Response{
 				Events: []types.TransformerResponse{
 					{
-						Output: map[string]interface{}{
-							"message": map[string]interface{}{
+						Output: map[string]any{
+							"message": map[string]any{
 								"type":      "identify",
 								"channel":   "sources",
 								"timestamp": "2020-01-01T00:00:00Z",
-								"traits": map[string]interface{}{
+								"traits": map[string]any{
 									"timestamp": "2020-01-01T00:00:00Z",
 								},
 							},
-							"attributes": map[string]interface{}{},
+							"attributes": map[string]any{},
 							"topicId":    "topic-default",
 							"userId":     "",
 						},

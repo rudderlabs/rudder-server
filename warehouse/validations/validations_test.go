@@ -143,7 +143,7 @@ func TestValidate(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.POSTGRES,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"host":            pgResource.Host,
 						"port":            pgResource.Port,
 						"database":        pgResource.Database,
@@ -212,7 +212,7 @@ func TestValidate(t *testing.T) {
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
 							Name: warehouseutils.POSTGRES,
 						},
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"host":            pgResource.Host,
 							"port":            pgResource.Port,
 							"database":        pgResource.Database,

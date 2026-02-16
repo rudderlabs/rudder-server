@@ -96,7 +96,7 @@ func TestDynamicConfigInSingleWorkspace(t *testing.T) {
 							ID:         "dest-1",
 							Name:       "Destination with dynamic config",
 							RevisionID: "rev-1",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 							},
 						},
@@ -104,7 +104,7 @@ func TestDynamicConfigInSingleWorkspace(t *testing.T) {
 							ID:         "dest-2",
 							Name:       "Destination without dynamic config",
 							RevisionID: "rev-2",
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"apiKey": "static-api-key",
 							},
 						},
