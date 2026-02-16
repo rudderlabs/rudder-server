@@ -12,19 +12,19 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 		name          string
 		original      string
 		modified      string
-		expectedPatch []map[string]interface{}
+		expectedPatch []map[string]any
 	}{
 		{
 			name:          "no changes",
 			original:      `{"a":1}`,
 			modified:      `{"a":1}`,
-			expectedPatch: []map[string]interface{}{},
+			expectedPatch: []map[string]any{},
 		},
 		{
 			name:     "simple add",
 			original: `{"a":1}`,
 			modified: `{"a":1,"b":2}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "add", "path": "/b", "value": float64(2)},
 			},
 		},
@@ -32,7 +32,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "simple remove",
 			original: `{"a":1,"b":2}`,
 			modified: `{"a":1}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "remove", "path": "/b"},
 			},
 		},
@@ -40,7 +40,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "simple replace",
 			original: `{"a":1}`,
 			modified: `{"a":2}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/a", "value": float64(2)},
 			},
 		},
@@ -48,7 +48,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "complex nested",
 			original: `{"a":{"b":1,"c":[1,2,3]},"d":4}`,
 			modified: `{"a":{"b":2,"c":[1,2]},"d":4,"e":5}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/a/b", "value": float64(2)},
 				{"op": "remove", "path": "/a/c/2"},
 				{"op": "add", "path": "/e", "value": float64(5)},
@@ -58,7 +58,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "array add element",
 			original: `{"arr":[1,2,3]}`,
 			modified: `{"arr":[1,2,3,4]}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "add", "path": "/arr/3", "value": float64(4)},
 			},
 		},
@@ -66,7 +66,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "array remove element",
 			original: `{"arr":[1,2,3]}`,
 			modified: `{"arr":[1,3]}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "remove", "path": "/arr/1"},
 			},
 		},
@@ -74,7 +74,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "array replace element",
 			original: `{"arr":[1,2,3]}`,
 			modified: `{"arr":[1,4,3]}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/arr/1", "value": float64(4)},
 			},
 		},
@@ -82,7 +82,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "deeply nested object",
 			original: `{"a":{"b":{"c":{"d":1}}}}`,
 			modified: `{"a":{"b":{"c":{"d":2}}}}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/a/b/c/d", "value": float64(2)},
 			},
 		},
@@ -90,7 +90,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "multiple simultaneous changes",
 			original: `{"a":1,"b":2,"c":3}`,
 			modified: `{"a":10,"d":4}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/a", "value": float64(10)},
 				{"op": "remove", "path": "/b"},
 				{"op": "remove", "path": "/c"},
@@ -101,23 +101,23 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "change type object to array",
 			original: `{"a":{}}`,
 			modified: `{"a":[1,2,3]}`,
-			expectedPatch: []map[string]interface{}{
-				{"op": "replace", "path": "/a", "value": []interface{}{float64(1), float64(2), float64(3)}},
+			expectedPatch: []map[string]any{
+				{"op": "replace", "path": "/a", "value": []any{float64(1), float64(2), float64(3)}},
 			},
 		},
 		{
 			name:     "change type array to object",
 			original: `{"a":[1,2,3]}`,
 			modified: `{"a":{"b":1}}`,
-			expectedPatch: []map[string]interface{}{
-				{"op": "replace", "path": "/a", "value": map[string]interface{}{"b": float64(1)}},
+			expectedPatch: []map[string]any{
+				{"op": "replace", "path": "/a", "value": map[string]any{"b": float64(1)}},
 			},
 		},
 		{
 			name:     "reorder array elements (should not patch)",
 			original: `{"arr":[1,2,3]}`,
 			modified: `{"arr":[3,2,1]}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/arr/0", "value": float64(3)},
 				{"op": "replace", "path": "/arr/2", "value": float64(1)},
 			},
@@ -126,7 +126,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "add null value",
 			original: `{"a":1}`,
 			modified: `{"a":1,"b":null}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "add", "path": "/b", "value": nil},
 			},
 		},
@@ -134,7 +134,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "replace with null value",
 			original: `{"a":1}`,
 			modified: `{"a":null}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "replace", "path": "/a", "value": nil},
 			},
 		},
@@ -142,7 +142,7 @@ func TestGenerateAndApplyJSONPatch(t *testing.T) {
 			name:     "remove nested property",
 			original: `{"a":{"b":1,"c":2}}`,
 			modified: `{"a":{"b":1}}`,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "remove", "path": "/a/c"},
 			},
 		},

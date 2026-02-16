@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -84,7 +83,7 @@ func TestStatsEmission(t *testing.T) {
 			"workspaceId": "workspace_id",
 		}).LastDuration(), time.Duration(0))
 
-		_, err = repoStagingFiles.Insert(ctx, lo.ToPtr((model.StagingFile{
+		_, err = repoStagingFiles.Insert(ctx, new((model.StagingFile{
 			SourceID:      "source_id",
 			DestinationID: "destination_id",
 			WorkspaceID:   "workspace_id",

@@ -39,8 +39,8 @@ func connectionIdentifier(batchDestination Connection) string {
 	return fmt.Sprintf(`source:%s::destination:%s`, batchDestination.Source.ID, batchDestination.Destination.ID)
 }
 
-func getNamespace(config interface{}, source backendconfig.SourceT, destType string) string {
-	configMap := config.(map[string]interface{})
+func getNamespace(config any, source backendconfig.SourceT, destType string) string {
+	configMap := config.(map[string]any)
 	var namespace string
 	if destType == "CLICKHOUSE" {
 		// TODO: Handle if configMap["database"] is nil

@@ -583,8 +583,8 @@ func runRudderServer(ctx context.Context, cancel context.CancelFunc, port int, p
 }
 
 func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unparam
-	for i := 0; i < num; i++ {
-		payload := []byte(fmt.Sprintf(`{"batch": [{
+	for range num {
+		payload := fmt.Appendf(nil, `{"batch": [{
 			"userId": %[1]q,
 			"type": %[2]q,
 			"context":
@@ -602,7 +602,7 @@ func sendEvents(num int, eventType, writeKey, url string) error { // nolint:unpa
 			"timestamp": "2020-02-02T00:23:09.544Z"
 			}]}`,
 			rand.String(10),
-			eventType))
+			eventType)
 		req, err := http.NewRequest("POST", url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
 			return err

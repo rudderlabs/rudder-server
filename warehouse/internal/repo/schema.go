@@ -524,7 +524,7 @@ func (sh *WHSchema) GetTablesForConnection(ctx context.Context, connections []wa
 		return nil, fmt.Errorf("no source id and destination id pairs provided")
 	}
 
-	var parameters []interface{}
+	var parameters []any
 	sourceIDDestinationIDPairs := make([]string, len(connections))
 	for idx, connection := range connections {
 		sourceIDDestinationIDPairs[idx] = fmt.Sprintf("($%d,$%d)", 2*idx+1, 2*idx+2)

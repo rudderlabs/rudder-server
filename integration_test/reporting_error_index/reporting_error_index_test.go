@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
@@ -844,8 +844,8 @@ func sendEvents(
 	eventType, writeKey,
 	url string,
 ) error {
-	for i := 0; i < num; i++ {
-		payload := []byte(fmt.Sprintf(`
+	for range num {
+		payload := fmt.Appendf(nil, `
 			{
 			  "batch": [
 				{
@@ -866,7 +866,7 @@ func sendEvents(
 			}`,
 			rand.String(10),
 			eventType,
-		))
+		)
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
 			return err

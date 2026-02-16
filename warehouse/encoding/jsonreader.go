@@ -24,7 +24,7 @@ func (js *jsonReader) Read(columnNames []string) ([]string, error) {
 	}
 
 	lineBytes := js.scanner.Bytes()
-	jsonData := make(map[string]interface{})
+	jsonData := make(map[string]any)
 
 	err := jsonrs.Unmarshal(lineBytes, &jsonData)
 	if err != nil {

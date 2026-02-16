@@ -16,7 +16,7 @@ import (
 )
 
 func (ops *VictorOps) Alert(message string) {
-	event := map[string]interface{}{
+	event := map[string]any{
 		"message_type":  "CRITICAL",
 		"entity_id":     ops.instanceName,
 		"state_message": message,

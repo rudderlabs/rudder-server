@@ -108,18 +108,14 @@ func (pw *PartitionWorker) Start() {
 			})
 			var wg sync.WaitGroup
 			for connection, jobs := range jobsPerConnection {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					pw.processAndUploadBatch(connection.A, connection.B, lo.Map(jobs, func(job *JobEntry, _ int) *jobsdb.JobT { return job.job }))
-				}()
+				})
 			}
 			wg.Wait()
 		}()
 	}
-	pw.wg.Add(1)
-	go func() {
-		defer pw.wg.Done()
+	pw.wg.Go(func() {
 		for {
 			jobs, jobsLength, _, ok := lo.BufferWithTimeout(pw.channel, pw.brt.maxEventsInABatch, uploadFreq.Load())
 			if jobsLength > 0 {
@@ -129,7 +125,7 @@ func (pw *PartitionWorker) Start() {
 				return
 			}
 		}
-	}()
+	})
 }
 
 func (pw *PartitionWorker) processAndUploadBatch(sourceID, destID string, jobs []*jobsdb.JobT) {

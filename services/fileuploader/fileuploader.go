@@ -3,6 +3,7 @@ package fileuploader
 import (
 	"context"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 	"time"
@@ -245,14 +246,10 @@ func getDefaultBucket(ctx context.Context, provider string) backendconfig.Storag
 	}
 }
 
-func overrideWithSettings(defaultConfig map[string]interface{}, settings backendconfig.StorageBucket, workspaceID string) backendconfig.StorageBucket {
-	config := make(map[string]interface{})
-	for k, v := range defaultConfig {
-		config[k] = v
-	}
-	for k, v := range settings.Config {
-		config[k] = v
-	}
+func overrideWithSettings(defaultConfig map[string]any, settings backendconfig.StorageBucket, workspaceID string) backendconfig.StorageBucket {
+	config := make(map[string]any)
+	maps.Copy(config, defaultConfig)
+	maps.Copy(config, settings.Config)
 	if settings.Type == "S3" && config["iamRoleArn"] != nil {
 		config["externalID"] = workspaceID
 	}

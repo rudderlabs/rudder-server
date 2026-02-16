@@ -103,6 +103,7 @@ func (s *partitionMigrationServer) StreamJobs(stream proto.PartitionMigration_St
 		// merge the stream context with the server lifecycle context
 		ctx, cancel := kitctx.MergedContext(stream.Context(), s.lifecycleCtx)
 		defer cancel()
+		ctx = jobsdb.WithPriorityPool(ctx) // use priority pool for migration job handling (values from lifecycleCtx are not copied to the merged context)
 
 		// receive the first message containing metadata
 		r, err := s.receiveWithTimeout(ctx, stream)
@@ -161,7 +162,7 @@ func (s *partitionMigrationServer) StreamJobs(stream proto.PartitionMigration_St
 		var lastJobID int64
 		if s.dedupEnabled {
 			// Load lastJobID from persistent storage to resume interrupted migrations
-			if err := db.WithTx(func(tx *tx.Tx) error {
+			if err := db.WithTx(ctx, func(tx *tx.Tx) error {
 				return tx.QueryRowContext(ctx, "SELECT COALESCE((SELECT last_job_id FROM partition_migration_dedup WHERE key = $1), -1)", migrationKey).Scan(&lastJobID)
 			}); err != nil {
 				log.Errorn("Failed to load lastJobID for migration", obskit.Error(err))
@@ -232,7 +233,7 @@ func (s *partitionMigrationServer) StreamJobs(stream proto.PartitionMigration_St
 			// if context is not cancelled (i.e. successful completion), cleanup dedup state
 			if ctx.Err() == nil && s.dedupEnabled {
 				log.Infon("Deleting deduplication state for completed migration")
-				if err := db.WithTx(func(tx *tx.Tx) error {
+				if err := db.WithTx(ctx, func(tx *tx.Tx) error {
 					if _, err := tx.ExecContext(ctx, "DELETE FROM partition_migration_dedup WHERE key = $1", migrationKey); err != nil {
 						return fmt.Errorf("deleting deduplication state for migration %s: %w", migrationKey, err)
 					}

@@ -30,14 +30,14 @@ type MarketoBulkUploader struct {
 }
 
 type MarketoAsyncFailedInput struct {
-	Message  map[string]interface{}
+	Message  map[string]any
 	Metadata struct {
 		JobID int64
 	}
 }
 
 type MarketoAsyncFailedPayload struct {
-	Config   map[string]interface{}
+	Config   map[string]any
 	Input    []MarketoAsyncFailedInput
 	DestType string
 	ImportId string

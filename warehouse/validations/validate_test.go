@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 
 	miniogo "github.com/minio/minio-go/v7"
@@ -70,7 +71,7 @@ func TestValidator(t *testing.T) {
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
 							Name: warehouseutils.POSTGRES,
 						},
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"host":            pgResource.Host,
 							"port":            pgResource.Port,
 							"database":        pgResource.Database,
@@ -96,7 +97,7 @@ func TestValidator(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.S3Datalake,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"region":           region,
 					"bucketName":       bucket,
 					"accessKeyID":      minioResource.AccessKeyID,
@@ -117,15 +118,15 @@ func TestValidator(t *testing.T) {
 	t.Run("Connections", func(t *testing.T) {
 		testCases := []struct {
 			name      string
-			config    map[string]interface{}
+			config    map[string]any
 			wantError error
 		}{
 			{
 				name: "invalid credentials",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"database": "invalid_database",
 				},
-				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist"),
+				wantError: errors.New("pinging: pq: database \"invalid_database\" does not exist (3D000)"),
 			},
 			{
 				name: "valid credentials",
@@ -134,7 +135,7 @@ func TestValidator(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"host":            pgResource.Host,
 					"port":            pgResource.Port,
 					"database":        pgResource.Database,
@@ -148,9 +149,7 @@ func TestValidator(t *testing.T) {
 					"endPoint":        minioResource.Endpoint,
 				}
 
-				for k, v := range tc.config {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.config)
 
 				v, err := validations.NewValidator(ctx, model.VerifyingConnections, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -184,17 +183,17 @@ func TestValidator(t *testing.T) {
 
 		testCases := []struct {
 			name      string
-			config    map[string]interface{}
+			config    map[string]any
 			wantError error
 		}{
 			{
 				name: "with no privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":      userWithNoPrivilege,
 					"password":  password,
 					"namespace": "test_namespace_with_no_privilege",
 				},
-				wantError: errors.New("pq: permission denied for database jobsdb"),
+				wantError: errors.New("pq: permission denied for database jobsdb (42501)"),
 			},
 			{
 				name: "with privilege",
@@ -203,7 +202,7 @@ func TestValidator(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"host":            pgResource.Host,
 					"port":            pgResource.Port,
 					"database":        pgResource.Database,
@@ -218,9 +217,7 @@ func TestValidator(t *testing.T) {
 					"endPoint":        minioResource.Endpoint,
 				}
 
-				for k, v := range tc.config {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.config)
 
 				v, err := validations.NewValidator(ctx, model.VerifyingCreateSchema, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -271,28 +268,28 @@ func TestValidator(t *testing.T) {
 
 		testCases := []struct {
 			name      string
-			config    map[string]interface{}
+			config    map[string]any
 			wantError error
 		}{
 			{
 				name: "no privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":     userWithNoPrivilege,
 					"password": password,
 				},
-				wantError: errors.New("create table: pq: permission denied for schema cat_test_namespace"),
+				wantError: errors.New("create table: pq: permission denied for schema cat_test_namespace at column 28 (42501)"),
 			},
 			{
 				name: "create table privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":     userWithCreateTablePrivilege,
 					"password": password,
 				},
-				wantError: errors.New("alter table: pq: permission denied for schema cat_test_namespace"),
+				wantError: errors.New("alter table: pq: permission denied for schema cat_test_namespace (42501)"),
 			},
 			{
 				name: "alter privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":     userWithAlterPrivilege,
 					"password": password,
 				},
@@ -304,7 +301,7 @@ func TestValidator(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"host":            pgResource.Host,
 					"port":            pgResource.Port,
 					"database":        pgResource.Database,
@@ -319,9 +316,7 @@ func TestValidator(t *testing.T) {
 					"endPoint":        minioResource.Endpoint,
 				}
 
-				for k, v := range tc.config {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.config)
 
 				v, err := validations.NewValidator(ctx, model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -356,7 +351,7 @@ func TestValidator(t *testing.T) {
 			DestinationDefinition: backendconfig.DestinationDefinitionT{
 				Name: warehouseutils.POSTGRES,
 			},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"host":            pgResource.Host,
 				"port":            pgResource.Port,
 				"database":        pgResource.Database,
@@ -410,12 +405,12 @@ func TestValidator(t *testing.T) {
 
 		testCases := []struct {
 			name      string
-			config    map[string]interface{}
+			config    map[string]any
 			wantError error
 		}{
 			{
 				name: "invalid object storage",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"bucketName":      "temp-bucket",
 					"accessKeyID":     "temp-access-key",
 					"secretAccessKey": "test-secret-key",
@@ -424,23 +419,23 @@ func TestValidator(t *testing.T) {
 			},
 			{
 				name: "no privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":     userWithNoPrivilege,
 					"password": password,
 				},
-				wantError: errors.New("create table: pq: permission denied for schema lt_test_namespace"),
+				wantError: errors.New("create table: pq: permission denied for schema lt_test_namespace at column 28 (42501)"),
 			},
 			{
 				name: "create table privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":     userWithCreateTablePrivilege,
 					"password": password,
 				},
-				wantError: errors.New("load test table: pq: permission denied for schema lt_test_namespace"),
+				wantError: errors.New("load test table: pq: permission denied for schema lt_test_namespace at column 13 (42501)"),
 			},
 			{
 				name: "insert privilege",
-				config: map[string]interface{}{
+				config: map[string]any{
 					"user":     userWithInsertPrivilege,
 					"password": password,
 				},
@@ -452,7 +447,7 @@ func TestValidator(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"host":            pgResource.Host,
 					"port":            pgResource.Port,
 					"database":        pgResource.Database,
@@ -467,9 +462,7 @@ func TestValidator(t *testing.T) {
 					"endPoint":        minioResource.Endpoint,
 				}
 
-				for k, v := range tc.config {
-					conf[k] = v
-				}
+				maps.Copy(conf, tc.config)
 
 				v, err := validations.NewValidator(ctx, model.VerifyingLoadTable, &backendconfig.DestinationT{
 					DestinationDefinition: backendconfig.DestinationDefinitionT{

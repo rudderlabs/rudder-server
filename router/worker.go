@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"slices"
 	"sort"
@@ -518,9 +519,7 @@ func (w *worker) process(destinationJobs []types.DestinationJobT) {
 								// Record the new transformer_outgoing_request metrics
 								w.recordTransformerOutgoingRequestMetrics(val, destinationJob, resp.ProxyRequestStatusCode, time.Since(rdlTime))
 
-								for k, v := range resp.DontBatchDirectives {
-									dontBatchDirectives[k] = v
-								}
+								maps.Copy(dontBatchDirectives, resp.DontBatchDirectives)
 								respStatusCodes, respBodyTemps, respContentType = resp.RespStatusCodes, resp.RespBodys, resp.RespContentType
 								// If this is the last iteration, use respStatusCodes & respBodyTemps as is
 								// If this is not the last iteration, mark all the jobs as failed.

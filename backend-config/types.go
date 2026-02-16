@@ -40,7 +40,7 @@ type DestinationDefinitionT struct {
 	ID          string
 	Name        string
 	DisplayName string
-	Config      map[string]interface{}
+	Config      map[string]any
 }
 
 type SourceDefinitionT struct {
@@ -61,7 +61,7 @@ type DestinationT struct {
 	ID                    string
 	Name                  string
 	DestinationDefinition DestinationDefinitionT
-	Config                map[string]interface{}
+	Config                map[string]any
 	Enabled               bool
 	WorkspaceID           string
 	Transformations       []TransformationT
@@ -137,17 +137,17 @@ func (s *SourceT) IsSourceHydrationSupported() bool {
 }
 
 type Account struct {
-	ID                    string                 `json:"id"`
-	AccountDefinitionName string                 `json:"accountDefinitionName"`
-	Options               map[string]interface{} `json:"options"`
-	Secret                map[string]interface{} `json:"secret"`
-	AccountDefinition     *AccountDefinition     `json:"accountDefinition"`
+	ID                    string             `json:"id"`
+	AccountDefinitionName string             `json:"accountDefinitionName"`
+	Options               map[string]any     `json:"options"`
+	Secret                map[string]any     `json:"secret"`
+	AccountDefinition     *AccountDefinition `json:"accountDefinition"`
 }
 
 type AccountDefinition struct {
-	Name               string                 `json:"name"`
-	Config             map[string]interface{} `json:"config"`
-	AuthenticationType string                 `json:"authenticationType"`
+	Name               string         `json:"name"`
+	Config             map[string]any `json:"config"`
+	AuthenticationType string         `json:"authenticationType"`
 }
 type ConfigT struct {
 	EnableMetrics      bool                         `json:"enableMetrics"`
@@ -165,11 +165,11 @@ type ConfigT struct {
 }
 
 type Connection struct {
-	SourceID         string                 `json:"sourceId"`
-	DestinationID    string                 `json:"destinationId"`
-	Enabled          bool                   `json:"enabled"`
-	Config           map[string]interface{} `json:"config"`
-	ProcessorEnabled bool                   `json:"processorEnabled"`
+	SourceID         string         `json:"sourceId"`
+	DestinationID    string         `json:"destinationId"`
+	Enabled          bool           `json:"enabled"`
+	Config           map[string]any `json:"config"`
+	ProcessorEnabled bool           `json:"processorEnabled"`
 }
 
 func (c *ConfigT) SourcesMap() map[string]*SourceT {
@@ -209,7 +209,7 @@ type DataRetention struct {
 
 type StorageBucket struct {
 	Type   string `json:"type"`
-	Config map[string]interface{}
+	Config map[string]any
 }
 
 type StoragePreferences struct {
@@ -233,7 +233,7 @@ type ConnectionFlags struct {
 type TransformationT struct {
 	VersionID string
 	ID        string
-	Config    map[string]interface{}
+	Config    map[string]any
 	Language  string
 }
 
@@ -244,15 +244,15 @@ type LibraryT struct {
 type LibrariesT []LibraryT
 
 type DgSourceTrackingPlanConfigT struct {
-	SourceId            string                            `json:"sourceId"`
-	SourceConfigVersion int                               `json:"version"`
-	Config              map[string]map[string]interface{} `json:"config"`
-	MergedConfig        map[string]interface{}            `json:"mergedConfig"`
-	Deleted             bool                              `json:"deleted"`
-	TrackingPlan        TrackingPlanT                     `json:"trackingPlan"`
+	SourceId            string                    `json:"sourceId"`
+	SourceConfigVersion int                       `json:"version"`
+	Config              map[string]map[string]any `json:"config"`
+	MergedConfig        map[string]any            `json:"mergedConfig"`
+	Deleted             bool                      `json:"deleted"`
+	TrackingPlan        TrackingPlanT             `json:"trackingPlan"`
 }
 
-func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]interface{} {
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType string) map[string]any {
 	if dgSourceTPConfigT.MergedConfig == nil {
 		globalConfig := dgSourceTPConfigT.fetchEventConfig(GlobalEventType)
 		eventSpecificConfig := dgSourceTPConfigT.fetchEventConfig(eventType)
@@ -262,8 +262,8 @@ func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) GetMergedConfig(eventType 
 	return dgSourceTPConfigT.MergedConfig
 }
 
-func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType string) map[string]interface{} {
-	emptyMap := map[string]interface{}{}
+func (dgSourceTPConfigT *DgSourceTrackingPlanConfigT) fetchEventConfig(eventType string) map[string]any {
+	emptyMap := map[string]any{}
 	_, eventSpecificConfigPresent := dgSourceTPConfigT.Config[eventType]
 	if !eventSpecificConfigPresent {
 		return emptyMap

@@ -163,6 +163,7 @@ func testMultiTenantByAppType(t *testing.T, appType, rsBinaryPath string) {
 			"APP_TYPE="+appType,
 			"INSTANCE_ID=rudderstackmt-v0-rudderstack-1",
 			"PROCESSOR_INDEX=1",
+			"GATEWAY_INDEX=1",
 			"HOSTNAME=rudderstackmt-v0-rudderstack-1",
 			"PROCESSOR_NODE_HOST_PATTERN=rudderstackmt-v0-rudderstack-{index}",
 			"RSERVER_PARTITION_MIGRATION_GRPC_SERVER_PORT="+strconv.Itoa(grpcPort),
@@ -228,7 +229,7 @@ func testMultiTenantByAppType(t *testing.T, appType, rsBinaryPath string) {
 
 		var (
 			eventPayload string
-			message      map[string]interface{}
+			message      map[string]any
 		)
 		require.Eventually(t, func() bool {
 			return postgresContainer.DB.QueryRowContext(ctx,
@@ -237,12 +238,12 @@ func testMultiTenantByAppType(t *testing.T, appType, rsBinaryPath string) {
 		}, time.Minute, 50*time.Millisecond)
 		require.NoError(t, jsonrs.Unmarshal([]byte(eventPayload), &message))
 
-		batch, ok := message["batch"].([]interface{})
+		batch, ok := message["batch"].([]any)
 		require.True(t, ok)
 		require.Len(t, batch, 1)
 		require.Equal(t, message["writeKey"], writeKey)
 		for _, msg := range batch {
-			m, ok := msg.(map[string]interface{})
+			m, ok := msg.(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, "anonymousId_1", m["anonymousId"])
 			require.Equal(t, "identified_user_id", m["userId"])
@@ -353,7 +354,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-		[]byte(fmt.Sprintf("%s:", writeKey)),
+		fmt.Appendf(nil, "%s:", writeKey),
 	)))
 	req.Header.Add("AnonymousId", "anonymousId_header")
 

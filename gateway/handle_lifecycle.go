@@ -651,7 +651,7 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		MaxAge:           900, // 15 mins
 	})
 	if diagnostics.EnableServerStartedMetric {
-		diagnostics.Diagnostics.Track(diagnostics.ServerStarted, map[string]interface{}{
+		diagnostics.Diagnostics.Track(diagnostics.ServerStarted, map[string]any{
 			diagnostics.ServerStarted: time.Now(),
 		})
 	}

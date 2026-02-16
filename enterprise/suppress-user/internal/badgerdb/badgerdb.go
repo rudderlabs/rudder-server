@@ -340,7 +340,7 @@ type blogger struct {
 	logger.Logger
 }
 
-func (l blogger) Warningf(fmt string, args ...interface{}) {
+func (l blogger) Warningf(fmt string, args ...any) {
 	l.Warnf(fmt, args...)
 }
 

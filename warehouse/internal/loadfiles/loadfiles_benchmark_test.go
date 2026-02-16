@@ -24,7 +24,7 @@ func BenchmarkGroupBySize(b *testing.B) {
 	// Helper function to create staging files with specified table sizes
 	createStagingFiles := func(count int, tableSizes map[string]int64) []*model.StagingFile {
 		files := make([]*model.StagingFile, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			files[i] = &model.StagingFile{
 				ID:            int64(i),
 				BytesPerTable: tableSizes,

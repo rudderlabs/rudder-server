@@ -112,6 +112,11 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 	defer mpe.stats.NewTaggedStat("partition_mig_jobexec_run", stats.TimerType, mpe.statsTags()).RecordDuration()()
 	mpe.logger.Infon("Starting partition migration")
 
+	// refresh the DS list to ensure that we'll move partition data from all datasets
+	if err := mpe.sourceDB.RefreshDSList(ctx); err != nil {
+		return fmt.Errorf("refreshing DS list: %w", err)
+	}
+
 	// mark any executing jobs as failed to handle previous interrupted migrations
 	if err := mpe.markExecutingJobsAsFailed(ctx); err != nil {
 		return fmt.Errorf("marking executing jobs as failed: %w", err)
@@ -406,7 +411,7 @@ func (mpe *migrationJobExecutor) updateJobStatus(ctx context.Context, jobs []*jo
 	case jobsdb.Failed.State:
 		errorCode = "500"
 		if err != nil {
-			errorResponse = []byte(fmt.Sprintf(`{"error": %q}`, err.Error()))
+			errorResponse = fmt.Appendf(nil, `{"error": %q}`, err.Error())
 		}
 	default:
 	}

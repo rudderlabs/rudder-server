@@ -79,11 +79,9 @@ func TestBadgerRepository(t *testing.T) {
 			return 0, ctx.Err()
 		}
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			require.Error(t, repo.Restore(reader))
-			wg.Done()
-		}()
+		})
 
 		time.Sleep(1 * time.Millisecond)
 		err := repo.Add([]model.Suppression{

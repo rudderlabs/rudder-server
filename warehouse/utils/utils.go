@@ -216,7 +216,7 @@ func (d DeleteByParams) String() string {
 
 type ColumnInfo struct {
 	Name  string
-	Value interface{}
+	Value any
 	Type  string
 }
 
@@ -311,7 +311,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 func GetColumnsFromTableSchema(schema model.TableSchema) []string {
 	keys := reflect.ValueOf(schema).MapKeys()
 	strKeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
+	for i := range keys {
 		strKeys[i] = keys[i].String()
 	}
 	return strKeys
@@ -333,10 +333,10 @@ func GetObjectLocation(provider, location string) (objectLocation string) {
 
 // GetObjectName extracts object/key objectName from different buckets locations
 // ex: https://bucket-endpoint/bucket-name/object -> object
-func GetObjectName(location string, providerConfig interface{}, objectProvider string) (objectName string, err error) {
-	var destConfig map[string]interface{}
+func GetObjectName(location string, providerConfig any, objectProvider string) (objectName string, err error) {
+	var destConfig map[string]any
 	var ok bool
-	if destConfig, ok = providerConfig.(map[string]interface{}); !ok {
+	if destConfig, ok = providerConfig.(map[string]any); !ok {
 		return "", errors.New("failed to cast destination config interface{} to map[string]interface{}")
 	}
 	fm, err := filemanager.New(&filemanager.Settings{
@@ -524,8 +524,8 @@ func ToProviderCase(provider, str string) string {
 	return str
 }
 
-func SnowflakeCloudProvider(config interface{}) string {
-	c := config.(map[string]interface{})
+func SnowflakeCloudProvider(config any) string {
+	c := config.(map[string]any)
 	provider, ok := c["cloudProvider"].(string)
 	if provider == "" || !ok {
 		provider = AWS
@@ -533,8 +533,8 @@ func SnowflakeCloudProvider(config interface{}) string {
 	return provider
 }
 
-func ObjectStorageType(destType string, config interface{}, useRudderStorage bool) string {
-	c := config.(map[string]interface{})
+func ObjectStorageType(destType string, config any, useRudderStorage bool) string {
+	c := config.(map[string]any)
 	if useRudderStorage {
 		return S3
 	}
@@ -854,7 +854,7 @@ func RandHex() string {
 	return string(buf[:])
 }
 
-func ReadAsBool(key string, config map[string]interface{}) bool {
+func ReadAsBool(key string, config map[string]any) bool {
 	if _, ok := config[key]; ok {
 		if val, ok := config[key].(bool); ok {
 			return val

@@ -67,7 +67,7 @@ func dummyConfig(
 	minio *minio.Resource,
 ) map[string]backendconfig.ConfigT {
 	configMap := map[string]backendconfig.ConfigT{}
-	for i := 0; i < numWorkspace; i++ {
+	for range numWorkspace {
 		workspaceID := trand.String(10)
 		wConfig := backendconfig.ConfigT{
 			EnableMetrics: false,
@@ -78,7 +78,7 @@ func dummyConfig(
 					UseSelfStorage: true,
 					StorageBucket: backendconfig.StorageBucket{
 						Type: "MINIO",
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"bucketName":      minio.BucketName,
 							"prefix":          "rudder-archives",
 							"endPoint":        minio.Endpoint,
@@ -92,7 +92,7 @@ func dummyConfig(
 				},
 			},
 		}
-		for j := 0; j < numSourcesPerWorkspace; j++ { // rand.Intn(n) = [0, n)
+		for range numSourcesPerWorkspace { // rand.Intn(n) = [0, n)
 			wConfig.Sources = append(wConfig.Sources, backendconfig.SourceT{
 				ID:   trand.String(10),
 				Name: trand.String(10),
@@ -235,7 +235,7 @@ func ArchivalScenario(
 			Provider: "MINIO",
 			Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 				Provider: "MINIO",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":      minioResource.BucketName,
 					"prefix":          "",
 					"endPoint":        minioResource.Endpoint,
@@ -325,8 +325,8 @@ func insertJobs(
 	require.NoError(t, gwJobsDB.Start(), "it should be able to start the jobsdb")
 	defer gwJobsDB.Stop()
 
-	payload := map[string]interface{}{
-		"batch": []map[string]interface{}{
+	payload := map[string]any{
+		"batch": []map[string]any{
 			{
 				"a": 123,
 				"b": "abc",
@@ -343,14 +343,14 @@ func insertJobs(
 			payload["writeKey"] = writeKey
 			receivedAt := time.Now()
 			payload["receivedAt"] = receivedAt
-			params := map[string]interface{}{
+			params := map[string]any{
 				"source_id":  sourceID,
 				"receivedAt": receivedAt,
 			}
 			parameters, err := jsonrs.Marshal(params)
 			require.NoError(t, err, "should be able to marshal the params")
 			jobs[sourceID] = []*jobsdb.JobT{}
-			for j := 0; j < numJobsPerSource; j++ {
+			for range numJobsPerSource {
 				payload["messageId"] = trand.String(10)
 				eventPayload, err := jsonrs.Marshal(payload)
 				require.NoError(t, err, "should be able to marshal the event payload")

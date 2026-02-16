@@ -43,7 +43,7 @@ func Test_RouterThrottling(t *testing.T) {
 
 	generatePayloads := func(t *testing.T, count int) [][]byte {
 		payloads := make([][]byte, count)
-		for i := 0; i < count; i++ {
+		for i := range count {
 			testBody, err := os.ReadFile("./../scripts/batch.json")
 			require.NoError(t, err)
 			payloads[i] = testBody
@@ -239,7 +239,7 @@ func Test_RouterThrottling(t *testing.T) {
 	verifyBucket(webhook2.buckets, noOfEvents, 50, 1)
 }
 
-func requireLengthInRange(t *testing.T, x interface{}, min, max int) {
+func requireLengthInRange(t *testing.T, x any, min, max int) {
 	t.Helper()
 	v := reflect.ValueOf(x)
 	require.True(

@@ -805,7 +805,7 @@ func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string)
 
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-		[]byte(fmt.Sprintf("%s:", writeKey)),
+		fmt.Appendf(nil, "%s:", writeKey),
 	)))
 
 	res, err := httpClient.Do(req)

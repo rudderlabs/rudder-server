@@ -578,11 +578,11 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		case errors.Is(errOccurred, rterror.ErrDisabledEgress):
 			brt.logger.Debugn("BRT: Outgoing traffic disabled", obskit.SourceID(batchJobs.Connection.Source.ID), logger.NewStringField("date", time.Now().Format("01-02-2006")))
 			batchJobState = jobsdb.Succeeded.State
-			errorResp = []byte(fmt.Sprintf(`{"success":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
+			errorResp = fmt.Appendf(nil, `{"success":"%s"}`, errOccurred.Error()) // skipcq: GO-R4002
 		case errors.Is(errOccurred, filemanager.ErrInvalidServiceProvider):
 			brt.logger.Warnn("BRT: Destination error", logger.NewStringField("destinationDisplayName", batchJobs.Connection.Destination.DestinationDefinition.DisplayName), obskit.Error(errOccurred), obskit.DestinationID(batchJobs.Connection.Destination.ID), logger.NewStringField("date", time.Now().Format("01-02-2006")))
 			batchJobState = jobsdb.Aborted.State
-			errorResp = []byte(fmt.Sprintf(`{"reason":"%s"}`, errOccurred.Error())) // skipcq: GO-R4002
+			errorResp = fmt.Appendf(nil, `{"reason":"%s"}`, errOccurred.Error()) // skipcq: GO-R4002
 		default:
 			brt.logger.Errorn("BRT: Error uploading to object storage", obskit.Error(errOccurred), obskit.SourceID(batchJobs.Connection.Source.ID))
 			if batchJobs.JobState != "" {
@@ -739,7 +739,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
 		if batchJobState == jobsdb.Failed.State {
-			brt.Diagnostics.Track(diagnostics.BatchRouterFailed, map[string]interface{}{
+			brt.Diagnostics.Track(diagnostics.BatchRouterFailed, map[string]any{
 				diagnostics.BatchRouterDestination: brt.destType,
 				diagnostics.ErrorResponse:          string(errorResp),
 			})
@@ -803,7 +803,7 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 }
 
 // uploadInterval calculates the upload interval for the destination
-func (brt *Handle) uploadInterval(destinationConfig map[string]interface{}) time.Duration {
+func (brt *Handle) uploadInterval(destinationConfig map[string]any) time.Duration {
 	uploadInterval, ok := destinationConfig["uploadInterval"]
 	if !ok {
 		brt.logger.Debugn("BRT: uploadInterval not found in destination config, falling back to default", logger.NewDurationField("asyncUploadTimeout", brt.asyncUploadTimeout.Load()))

@@ -70,13 +70,19 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	}
 	defer sourceHandle.Stop()
 
-	var dbPool *sql.DB
-	if config.GetBoolVar(true, "db.gateway.pool.shared", "db.pool.shared") {
-		dbPool, err = misc.NewDatabaseConnectionPool(ctx, config, statsFactory, "gateway-app")
+	var jobsdbPool *sql.DB
+	if config.GetBoolVar(true, "DB.gateway.Pool.enabled", "DB.Pool.enabled") {
+		jobsdbPool, err = misc.NewDatabaseConnectionPool(ctx, "gateway", misc.DatabaseConnectionPoolConfig{
+			MaxOpenConns:    config.GetReloadableIntVar(20, 1, "DB.gateway.Pool.maxOpenConnections", "DB.Pool.maxOpenConnections"),
+			MaxIdleConns:    config.GetReloadableIntVar(5, 1, "DB.gateway.Pool.maxIdleConnections", "DB.Pool.maxIdleConnections"),
+			ConnMaxIdleTime: config.GetReloadableDurationVar(15, time.Minute, "DB.gateway.Pool.maxIdleTime", "DB.Pool.maxIdleTime"),
+			ConnMaxLifetime: config.GetReloadableDurationVar(0, time.Second, "DB.gateway.Pool.maxConnLifetime", "DB.Pool.maxConnLifetime"),
+			UpdateInterval:  config.GetDurationVar(60, time.Second, "DB.gateway.Pool.updateInterval", "DB.Pool.updateInterval"),
+		}, config, statsFactory)
 		if err != nil {
 			return err
 		}
-		defer dbPool.Close()
+		defer jobsdbPool.Close()
 	}
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")
 
@@ -85,7 +91,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
 		jobsdb.WithStats(statsFactory),
-		jobsdb.WithDBHandle(dbPool),
+		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithNumPartitions(partitionCount),
 	)
 	defer gwWOHandle.Close()
@@ -94,7 +100,12 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	if err := gwWODB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
 	}
-	defer gwWODB.Stop()
+	defer func() {
+		// wrapping Stop call in an anonymous function
+		// so that we can decorate gwWODB later for partition migrations
+		// and call Stop on the decorated instance
+		gwWODB.Stop()
+	}()
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -102,10 +113,11 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	if err != nil {
 		return fmt.Errorf("resolving mode provider: %w", err)
 	}
-	partitionMigrator, gwWODB, err := setupGatewayPartitionMigrator(ctx, config, gwWODB)
+	partitionMigrator, gwDB, err := setupGatewayPartitionMigrator(ctx, jobsdbPool, config, statsFactory, gwWODB, modeProvider.EtcdClient)
 	if err != nil {
 		return fmt.Errorf("setting up partition migrator: %w", err)
 	}
+	gwWODB = gwDB
 	if err := partitionMigrator.Start(); err != nil {
 		return fmt.Errorf("starting partition migrator: %w", err)
 	}

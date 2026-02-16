@@ -99,7 +99,7 @@ func pendingTask(status rsources.JobStatus, found bool) bool {
 // manyRecords helper function to generate a batch of records for rETL endpoint.
 func manyRecords(sources rudderSource, eventType string, num int) batch {
 	rr := make([]record, num)
-	for i := 0; i < num; i++ {
+	for i := range num {
 		rr[i] = record{
 			Context: recordContext{
 				Sources: sources,

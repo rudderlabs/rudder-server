@@ -24,10 +24,10 @@ var (
 )
 
 // SingularEventT single event structure
-type SingularEventT map[string]interface{}
+type SingularEventT map[string]any
 
 // GetRudderEventVal returns the value corresponding to the key in the message structure
-func GetRudderEventVal(key string, rudderEvent SingularEventT) (interface{}, bool) {
+func GetRudderEventVal(key string, rudderEvent SingularEventT) (any, bool) {
 	rudderVal, ok := rudderEvent[key]
 	if !ok {
 		return nil, false
@@ -181,10 +181,10 @@ type Metadata struct {
 	TraceParent string `json:"traceparent,omitempty"`
 
 	// tracking plan metadata (available only during tracking plan transformations)
-	TrackingPlanID      string                            `json:"trackingPlanId,omitempty"`
-	TrackingPlanVersion int                               `json:"trackingPlanVersion,omitempty"`
-	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig,omitempty"`
-	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig,omitempty"`
+	TrackingPlanID      string                    `json:"trackingPlanId,omitempty"`
+	TrackingPlanVersion int                       `json:"trackingPlanVersion,omitempty"`
+	SourceTpConfig      map[string]map[string]any `json:"sourceTpConfig,omitempty"`
+	MergedTpConfig      map[string]any            `json:"mergedTpConfig,omitempty"`
 
 	// destination metadata (available after tracking plan)
 	DestinationID           string `json:"destinationId"`
@@ -239,12 +239,12 @@ func (m Metadata) CommonMetadata() *Metadata {
 
 type TransformerResponse struct {
 	// Not marking this Singular Event, since this not a RudderEvent
-	Output           map[string]interface{} `json:"output"`
-	Metadata         Metadata               `json:"metadata"`
-	StatusCode       int                    `json:"statusCode"`
-	Error            string                 `json:"error"`
-	ValidationErrors []ValidationError      `json:"validationErrors"`
-	StatTags         map[string]string      `json:"statTags"`
+	Output           map[string]any    `json:"output"`
+	Metadata         Metadata          `json:"metadata"`
+	StatusCode       int               `json:"statusCode"`
+	Error            string            `json:"error"`
+	ValidationErrors []ValidationError `json:"validationErrors"`
+	StatTags         map[string]string `json:"statTags"`
 }
 
 type ValidationError struct {
@@ -353,8 +353,8 @@ func (t TransformerMetricLabels) ToLoggerFields() []logger.Field {
 
 // SrcHydrationEvent represents a single event in the hydration request/response
 type SrcHydrationEvent struct {
-	ID    string                 `json:"id" required:"true"` // JobID of the event we are hydrating
-	Event map[string]interface{} `json:"event" required:"true"`
+	ID    string         `json:"id" required:"true"` // JobID of the event we are hydrating
+	Event map[string]any `json:"event" required:"true"`
 }
 
 // SrcHydrationRequest represents the request format for source hydration API
@@ -377,7 +377,7 @@ type SrcHydrationResponse struct {
 	Batch []SrcHydrationEvent `json:"batch" required:"true"`
 }
 
-func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
+func diffLists(listA, listB any) (extraA, extraB []any) {
 	aValue := reflect.ValueOf(listA)
 	bValue := reflect.ValueOf(listB)
 
@@ -386,10 +386,10 @@ func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
 
 	// Mark indexes in bValue that we already used
 	visited := make([]bool, bLen)
-	for i := 0; i < aLen; i++ {
+	for i := range aLen {
 		element := aValue.Index(i).Interface()
 		found := false
-		for j := 0; j < bLen; j++ {
+		for j := range bLen {
 			if visited[j] {
 				continue
 			}
@@ -404,7 +404,7 @@ func diffLists(listA, listB interface{}) (extraA, extraB []interface{}) {
 		}
 	}
 
-	for j := 0; j < bLen; j++ {
+	for j := range bLen {
 		if visited[j] {
 			continue
 		}
@@ -423,7 +423,7 @@ var spewConfig = spew.ConfigState{
 	MaxDepth:                10,
 }
 
-func formatListDiff(listA, listB interface{}, extraA, extraB []interface{}) string {
+func formatListDiff(listA, listB any, extraA, extraB []any) string {
 	var msg bytes.Buffer
 
 	msg.WriteString("elements differ")

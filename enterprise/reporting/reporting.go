@@ -176,7 +176,7 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 		MigrationsTable: "reports_runalways_migrations",
 		RunAlways:       true,
 	}
-	templateData := map[string]interface{}{
+	templateData := map[string]any{
 		"config": config.Default,
 	}
 	if err := m.MigrateFromTemplates("reports_always", templateData); err != nil {

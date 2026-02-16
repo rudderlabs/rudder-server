@@ -176,7 +176,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 			var wg sync.WaitGroup
 			bgGroups := make([]*errgroup.Group, 10)
 			wg.Add(10)
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				idx := i
 				go func() {
 					require.NoError(t, jd.Start())
@@ -214,7 +214,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 
 			var wg sync.WaitGroup
 			wg.Add(10)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				go func() {
 					jd.Stop()
 					require.NoError(t, jd.backgroundGroup.Wait())
@@ -230,7 +230,7 @@ func TestJobsdbLifecycle(t *testing.T) {
 			defer jd.TearDown()
 			var wg sync.WaitGroup
 			wg.Add(10)
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				go func() {
 					require.NoError(t, jd.Start())
 					jd.Stop()
@@ -372,7 +372,7 @@ func TestRefreshDSList(t *testing.T) {
 	defer jobsDB.TearDown()
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	require.NoError(t, jobsDB.WithTx(func(tx *Tx) error {
+	require.NoError(t, jobsDB.WithTx(context.Background(), func(tx *Tx) error {
 		return jobsDB.createDSInTx(context.Background(), tx, newDataSet(prefix, "2"))
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
@@ -508,7 +508,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	generateJobs := func(numOfJob int) []*JobT {
 		customVal := "MOCKDS"
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
@@ -604,7 +604,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		generateJobs := func(numOfJob int) []*JobT {
 			customVal := "MOCKDS"
 			js := make([]*JobT, numOfJob)
-			for i := 0; i < numOfJob; i++ {
+			for i := range numOfJob {
 				js[i] = &JobT{
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
@@ -641,7 +641,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		defer stmt.Close()
 		_, err = stmt.Exec(jobs[0].UUID, jobs[0].UserID, jobs[0].CustomVal, string(jobs[0].Parameters), string(jobs[0].EventPayload), jobs[0].WorkspaceId)
 		require.Error(t, err, "expected error as trigger is set on DS")
-		require.Equal(t, "pq: table is readonly", err.Error())
+		require.Equal(t, "pq: table is readonly (RS001)", err.Error())
 		var e *pq.Error
 		errors.As(err, &e)
 		require.EqualValues(t, e.Code, pgErrorCodeTableReadonly)
@@ -711,7 +711,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		generateJobs := func(numOfJob int) []*JobT {
 			customVal := "MOCKDS"
 			js := make([]*JobT, numOfJob)
-			for i := 0; i < numOfJob; i++ {
+			for i := range numOfJob {
 				js[i] = &JobT{
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
@@ -771,9 +771,9 @@ func TestCacheScenarios(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1036,9 +1036,9 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1114,9 +1114,9 @@ func TestDeleteExecuting(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1169,9 +1169,9 @@ func TestFailExecuting(t *testing.T) {
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID)),
+				Parameters:   fmt.Appendf(nil, `{"batch_id":1,"source_id":"sourceID","destination_id":%q}`, destinationID),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1231,12 +1231,12 @@ func TestMaxAgeCleanup(t *testing.T) {
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters: []byte(fmt.Sprintf(
+				Parameters: fmt.Appendf(nil,
 					`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`,
 					destinationID,
-				)),
+				),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1365,7 +1365,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	customVal := "MOCKDS"
 	generateJobs := func(workspaceID string, numOfJob int) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  workspaceID,
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
@@ -1490,7 +1490,7 @@ func TestGetDistinctParameterValues(t *testing.T) {
 	generateJobs := func(paramValue string, numOfJob int) []*JobT {
 		customVal := "MOCKDS"
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  "workspace",
 				Parameters:   []byte(`{"batch_id":1,"source_job_run_id":"", "source_id":"` + paramValue + `"}`),
@@ -1584,12 +1584,12 @@ func TestPayloadSizeColumnQueries(t *testing.T) {
 	workspaceID := "workspaceID"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
-				Parameters: []byte(fmt.Sprintf(
+				Parameters: fmt.Appendf(nil,
 					`{"batch_id":1,"source_id":"sourceID","destination_id":%q}`,
 					destinationID,
-				)),
+				),
 				EventPayload: []byte(`{"keykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykeykey": "valuevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevaluevalue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
 				UUID:         uuid.New(),
@@ -1665,7 +1665,7 @@ func TestUpdateJobStatus(t *testing.T) {
 	generateJobs := func(sourceID, destinationID string, numOfJob int) []*JobT {
 		customVal := "MOCKDS"
 		js := make([]*JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &JobT{
 				WorkspaceId:  "workspace",
 				Parameters:   []byte(`{"source_id":"` + sourceID + `", "destination_id":"` + destinationID + `"}`),
@@ -1792,6 +1792,84 @@ func TestUpdateJobStatus(t *testing.T) {
 	})
 }
 
+func TestPriorityPoolOperations(t *testing.T) {
+	postgresResource := startPostgres(t)
+
+	// Create a separate priority pool from the same postgres resource
+	priorityPool, err := sql.Open("postgres", postgresResource.DBDsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = priorityPool.Close() })
+
+	db := NewForReadWrite(
+		"prioritypool",
+		WithDBHandle(postgresResource.DB),
+		WithPriorityPoolDB(priorityPool),
+		WithSkipMaintenanceErr(true), // Skip maintenance errors when main pool is closed
+	)
+	require.NoError(t, db.Start(), "it should be able to start the jobs db handle")
+	defer db.TearDown()
+
+	// Close the main pool to ensure operations don't use it
+	require.NoError(t, postgresResource.DB.Close(), "it should be able to close the main pool")
+
+	// Create context with priority pool
+	ctx := WithPriorityPool(context.Background())
+
+	t.Run("Store with priority pool", func(t *testing.T) {
+		err := db.Store(ctx, []*JobT{
+			{
+				UUID:         uuid.New(),
+				WorkspaceId:  "workspace-1",
+				UserID:       "user-1",
+				CustomVal:    "custom-val-1",
+				Parameters:   []byte(`{}`),
+				EventPayload: []byte(`{"key":"value"}`),
+				EventCount:   1,
+			},
+		})
+		require.NoError(t, err, "Store should work with priority pool even when main pool is closed")
+	})
+
+	t.Run("GetUnprocessed with priority pool", func(t *testing.T) {
+		result, err := db.GetUnprocessed(ctx, GetQueryParams{JobsLimit: 10})
+		require.NoError(t, err, "GetUnprocessed should work with priority pool even when main pool is closed")
+		require.Len(t, result.Jobs, 1, "should return the stored job")
+	})
+
+	t.Run("UpdateJobStatus with priority pool", func(t *testing.T) {
+		result, err := db.GetUnprocessed(ctx, GetQueryParams{JobsLimit: 10})
+		require.NoError(t, err)
+		require.Len(t, result.Jobs, 1)
+
+		statuses := []*JobStatusT{
+			{
+				JobID:       result.Jobs[0].JobID,
+				JobState:    Succeeded.State,
+				AttemptNum:  1,
+				WorkspaceId: "workspace-1",
+			},
+		}
+		err = db.UpdateJobStatus(ctx, statuses)
+		require.NoError(t, err, "UpdateJobStatus should work with priority pool even when main pool is closed")
+	})
+
+	t.Run("operations without priority context should fail", func(t *testing.T) {
+		// Without priority pool context, operations should fail since main pool is closed
+		err := db.Store(context.Background(), []*JobT{
+			{
+				UUID:         uuid.New(),
+				WorkspaceId:  "workspace-2",
+				UserID:       "user-2",
+				CustomVal:    "custom-val-2",
+				Parameters:   []byte(`{}`),
+				EventPayload: []byte(`{"key":"value2"}`),
+				EventCount:   1,
+			},
+		})
+		require.Error(t, err, "Store without priority context should fail when main pool is closed")
+	})
+}
+
 func TestPartitionedJobsDB(t *testing.T) {
 	t.Run("without partitioning", func(t *testing.T) {
 		postgres := startPostgres(t)
@@ -1842,11 +1920,11 @@ func TestPartitionedJobsDB(t *testing.T) {
 }
 
 type testingT interface {
-	Errorf(format string, args ...interface{})
+	Errorf(format string, args ...any)
 	FailNow()
 	Setenv(key, value string)
-	Log(...interface{})
-	Logf(format string, args ...interface{})
+	Log(...any)
+	Logf(format string, args ...any)
 	Cleanup(func())
 	Failed() bool
 }

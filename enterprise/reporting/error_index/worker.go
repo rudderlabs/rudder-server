@@ -202,7 +202,7 @@ func (w *worker) uploadJobs(ctx context.Context, jobs []*jobsdb.JobT) ([]*jobsdb
 				ExecTime:      w.now(),
 				RetryTime:     w.now(),
 				ErrorCode:     "200",
-				ErrorResponse: []byte(fmt.Sprintf(`{"location": "%s"}`, uploadFile.Location)),
+				ErrorResponse: fmt.Appendf(nil, `{"location": "%s"}`, uploadFile.Location),
 				Parameters:    []byte(`{}`),
 				JobParameters: item.Parameters,
 				WorkspaceId:   item.WorkspaceId,

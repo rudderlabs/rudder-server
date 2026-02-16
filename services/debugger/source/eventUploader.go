@@ -30,7 +30,7 @@ type GatewayEventBatchT struct {
 }
 
 // EventUploadT is a structure to hold actual event data
-type EventUploadT map[string]interface{}
+type EventUploadT map[string]any
 
 // EventUploadBatchT is a structure to hold batch of events
 type EventUploadBatchT struct {
@@ -188,7 +188,7 @@ func NewEventUploader(log logger.Logger) *EventUploader {
 }
 
 func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, error) {
-	res := make(map[string]interface{})
+	res := make(map[string]any)
 	res["version"] = "v2"
 	for _, event := range eventBuffer {
 		var batchedEvent EventUploadBatchT
@@ -211,12 +211,12 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 
 		for _, ev := range batchedEvent.Batch {
 			// add the receivedAt time to each event
-			event := map[string]interface{}{
+			event := map[string]any{
 				"payload":       ev,
 				"receivedAt":    receivedAtStr,
 				"eventName":     stringify.Any(ev["event"]),
 				"eventType":     stringify.Any(ev["type"]),
-				"errorResponse": make(map[string]interface{}),
+				"errorResponse": make(map[string]any),
 				"errorCode":     200,
 			}
 			arr = append(arr, event)

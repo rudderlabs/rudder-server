@@ -45,7 +45,7 @@ const (
 
 var (
 	once            sync.Once
-	outputToGateway = map[string]interface{}{"hello": "world"}
+	outputToGateway = map[string]any{"hello": "world"}
 	outputToWebhook = &outputToSource{
 		Body:        []byte(sampleJson),
 		ContentType: "application/json",
@@ -168,7 +168,7 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
+			var requests []any
 			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			// return payload of length = len(requests) + 1
@@ -210,7 +210,7 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
+			var requests []any
 			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
@@ -251,7 +251,7 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
+			var requests []any
 			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
@@ -287,12 +287,12 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	initWebhook()
 	ctrl := gomock.NewController(t)
 	mockGW := mockWebhook.NewMockGateway(ctrl)
-	outputToGateway := map[string]interface{}{"text": "hello world"}
+	outputToGateway := map[string]any{"text": "hello world"}
 	transformerServer := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
+			var requests []any
 			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
@@ -337,7 +337,7 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
-			var requests []interface{}
+			var requests []any
 			_ = jsonrs.Unmarshal(body, &requests)
 			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
@@ -659,7 +659,7 @@ func TestWebhookRequestHandlerWithRetries(t *testing.T) {
 		initWebhook()
 		var responses []transformerResponse
 		responses = append(responses, transformerResponse{
-			Output: map[string]interface{}{
+			Output: map[string]any{
 				"hello": "world",
 			},
 			StatusCode: http.StatusOK,

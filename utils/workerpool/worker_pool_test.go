@@ -17,8 +17,7 @@ func TestWorkerPool(t *testing.T) {
 	var workers []*mockWorker
 
 	ctx, cancel := context.WithCancel(context.Background())
-	poolCtx, poolCancel := context.WithCancel(context.Background())
-	defer poolCancel()
+	poolCtx := t.Context()
 
 	// create a worker pool
 	wp := New(poolCtx,
@@ -36,11 +35,9 @@ func TestWorkerPool(t *testing.T) {
 
 	// start pinging for work for 100 partitions
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		partition := "p-" + strconv.Itoa(i)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				select {
 				case <-ctx.Done():
@@ -49,7 +46,7 @@ func TestWorkerPool(t *testing.T) {
 					wp.PingWorker(partition)
 				}
 			}
-		}()
+		})
 	}
 
 	// stop pinging after 5 seconds
@@ -66,8 +63,7 @@ func TestWorkerPool(t *testing.T) {
 }
 
 func TestWorkerPoolIdle(t *testing.T) {
-	poolCtx, poolCancel := context.WithCancel(context.Background())
-	defer poolCancel()
+	poolCtx := t.Context()
 
 	// create a worker pool
 	wp := New(poolCtx,

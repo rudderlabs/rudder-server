@@ -214,10 +214,10 @@ type badgerLogger struct {
 	logger.Logger
 }
 
-func (badgerLogger) Errorf(format string, a ...interface{}) {
+func (badgerLogger) Errorf(format string, a ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, a...)
 }
 
-func (badgerLogger) Warningf(format string, a ...interface{}) {
+func (badgerLogger) Warningf(format string, a ...any) {
 	_, _ = fmt.Fprintf(os.Stderr, format, a...)
 }

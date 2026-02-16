@@ -41,7 +41,7 @@ func TestCircuitBreaker_ResetAfterSuccessInHalfOpen(t *testing.T) {
 	)
 
 	// Trip the breaker
-	for i := 0; i < consecutiveFailures; i++ {
+	for range consecutiveFailures {
 		cb.Failure()
 	}
 	assert.True(t, cb.IsOpen(), "Should be open after failures")
@@ -66,7 +66,7 @@ func TestCircuitBreaker_ReTripAfterFailureInHalfOpen(t *testing.T) {
 	)
 
 	// Trip the breaker
-	for i := 0; i < consecutiveFailures; i++ {
+	for range consecutiveFailures {
 		cb.Failure()
 	}
 	assert.True(t, cb.IsOpen(), "Should be open after failures")

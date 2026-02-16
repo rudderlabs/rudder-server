@@ -115,7 +115,7 @@ type UploadJob struct {
 		minUploadBackoff                    time.Duration
 		maxUploadBackoff                    time.Duration
 		reportingEnabled                    bool
-		maxParallelLoadsWorkspaceIDs        map[string]interface{}
+		maxParallelLoadsWorkspaceIDs        map[string]any
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
 		skipPreviouslyFailedTables          bool
@@ -698,19 +698,19 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 // extractAndUpdateUploadErrorsByState extracts and augment errors in format
 // { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
 // from a particular upload.
-func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
-	var uploadErrors map[string]map[string]interface{}
+func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]any, error) {
+	var uploadErrors map[string]map[string]any
 	err := jsonrs.Unmarshal(message, &uploadErrors)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
 	}
 
 	if uploadErrors == nil {
-		uploadErrors = make(map[string]map[string]interface{})
+		uploadErrors = make(map[string]map[string]any)
 	}
 
 	if _, ok := uploadErrors[state]; !ok {
-		uploadErrors[state] = make(map[string]interface{})
+		uploadErrors[state] = make(map[string]any)
 	}
 	errorByState := uploadErrors[state]
 
@@ -723,7 +723,7 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
-		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
+		errorByState["errors"] = append(errList.([]any), statusError.Error())
 	} else {
 		errorByState["errors"] = []string{statusError.Error()}
 	}

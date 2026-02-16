@@ -149,7 +149,7 @@ func NewBatchrouterIsolationScenarioSpec(isolationMode isolation.Mode, workspace
 	s.jobs = make([]*brtIsolationJobSpec, workspaces*eventsPerWorkspace)
 
 	var idx int
-	for u := 0; u < workspaces; u++ {
+	for u := range workspaces {
 		workspaceID := "workspace-" + strconv.Itoa(u)
 		s.workspaces = append(s.workspaces, workspaceID)
 		for i := 0; i < eventsPerWorkspace; i = i + 2 { // send 50% of events to postgres and 50% to minio
@@ -309,7 +309,7 @@ func BatchrouterIsolationScenario(t testing.TB, spec *BrtIsolationScenarioSpec) 
 				Provider: "MINIO",
 				Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
 					Provider: "MINIO",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"bucketName":      minioDestination.BucketName,
 						"prefix":          "",
 						"endPoint":        minioDestination.Endpoint,
@@ -405,7 +405,7 @@ func (jobSpec *brtIsolationJobSpec) payload() []byte {
 	} else {
 		template = `{"data": {"userId": %[1]q,"anonymousId": %[2]q,"testJobId": %[3]d,"workspaceID": %[4]q,"destType": %[6]q,"type": "identify","context_traits_trait1": "new-val","context_ip": "14.5.67.21","context_library_name": "http","timestamp": "2020-02-02T00:23:09.544Z"},"userId": %[1]q,"metadata": {"table": "pages","columns": {"userId": "string","anonymousId": "string","testJobId": "int","workspaceID": "string","destType": "string","type": "string","context_traits_trait1": "string","context_ip": "string","context_library_name": "string","timestamp": "string"},"receivedAt": %[5]q}}`
 	}
-	return []byte(fmt.Sprintf(template, jobSpec.userID, jobSpec.userID, jobSpec.id, jobSpec.workspaceID, time.Now().Format(misc.RFC3339Milli), jobSpec.destType))
+	return fmt.Appendf(nil, template, jobSpec.userID, jobSpec.userID, jobSpec.id, jobSpec.workspaceID, time.Now().Format(misc.RFC3339Milli), jobSpec.destType)
 }
 
 // Using a struct to keep batchrouter_test package clean and
@@ -459,11 +459,11 @@ func (brtIsolationMethods) generateJobs(jobs []*brtIsolationJobSpec, batchSize i
 			JobID:       job.id,
 			UserID:      job.userID,
 			WorkspaceId: job.workspaceID,
-			Parameters: []byte(fmt.Sprintf(`{
+			Parameters: fmt.Appendf(nil, `{
 				"source_id": %[1]q,
 				"destination_id": "%[1]s-%[2]s",
 				"receivedAt": %[3]q
-			}`, job.workspaceID, job.destType, time.Now().Format(misc.RFC3339Milli))),
+			}`, job.workspaceID, job.destType, time.Now().Format(misc.RFC3339Milli)),
 			CustomVal:    job.destType,
 			EventPayload: payload,
 			CreatedAt:    time.Now(),

@@ -95,6 +95,10 @@ func (m *mockEtcdClient) Delete(ctx context.Context, key string, opts ...clientv
 	return &clientv3.DeleteResponse{}, nil
 }
 
+func (m *mockEtcdClient) Txn(ctx context.Context) clientv3.Txn {
+	return nil
+}
+
 type mockPartitionRefresher struct{}
 
 func (m *mockPartitionRefresher) RefreshBufferedPartitions(ctx context.Context) error {

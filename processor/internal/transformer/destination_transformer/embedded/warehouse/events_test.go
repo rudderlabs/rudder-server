@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -3161,39 +3160,39 @@ func TestEvents(t *testing.T) {
 			message := map[string]any{
 				"context": map[string]any{
 					"boolVal": true,
-					"boolPtr": lo.ToPtr(true),
+					"boolPtr": new(true),
 
 					"intVal":   int(1),
-					"intPtr":   lo.ToPtr(int(1)),
+					"intPtr":   new(int(1)),
 					"int8Val":  int8(2),
-					"int8Ptr":  lo.ToPtr(int8(2)),
+					"int8Ptr":  new(int8(2)),
 					"int16Val": int16(3),
-					"int16Ptr": lo.ToPtr(int16(3)),
+					"int16Ptr": new(int16(3)),
 					"int32Val": int32(4),
-					"int32Ptr": lo.ToPtr(int32(4)),
+					"int32Ptr": new(int32(4)),
 					"int64Val": int64(5),
-					"int64Ptr": lo.ToPtr(int64(5)),
+					"int64Ptr": new(int64(5)),
 
 					"uintVal":    uint(6),
-					"uintPtr":    lo.ToPtr(uint(6)),
+					"uintPtr":    new(uint(6)),
 					"uint8Val":   uint8(7),
-					"uint8Ptr":   lo.ToPtr(uint8(7)),
+					"uint8Ptr":   new(uint8(7)),
 					"uint16Val":  uint16(8),
-					"uint16Ptr":  lo.ToPtr(uint16(8)),
+					"uint16Ptr":  new(uint16(8)),
 					"uint32Val":  uint32(9),
-					"uint32Ptr":  lo.ToPtr(uint32(9)),
+					"uint32Ptr":  new(uint32(9)),
 					"uint64Val":  uint64(10),
-					"uint64Ptr":  lo.ToPtr(uint64(10)),
+					"uint64Ptr":  new(uint64(10)),
 					"uintptrVal": uintptr(12345),
-					"uintptrPtr": lo.ToPtr(uintptr(12345)),
+					"uintptrPtr": new(uintptr(12345)),
 
 					"float32Val": float32(1.23),
-					"float32Ptr": lo.ToPtr(float32(1.23)),
+					"float32Ptr": new(float32(1.23)),
 					"float64Val": float64(4.56),
-					"float64Ptr": lo.ToPtr(float64(4.56)),
+					"float64Ptr": new(float64(4.56)),
 
 					"stringVal": "Hello",
-					"stringPtr": lo.ToPtr("Hello"),
+					"stringPtr": new("Hello"),
 
 					"sliceVal": []any{1, 2, 3},
 					"slicePtr": &[]any{1, 2, 3},

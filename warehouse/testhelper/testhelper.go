@@ -2,7 +2,7 @@ package testhelper
 
 import (
 	"math"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/samber/lo"
@@ -35,9 +35,7 @@ func PercentileDurationInWindow(durations []time.Duration, windowSize int, perce
 		end := min(i+windowSize, len(durations))
 		window := append([]time.Duration{}, durations[i:end]...)
 
-		sort.Slice(window, func(a, b int) bool {
-			return window[a] < window[b]
-		})
+		slices.Sort(window)
 
 		if len(window) > 0 {
 			idx := percentile * float64(len(window)-1)

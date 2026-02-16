@@ -208,21 +208,21 @@ func TestSource(t *testing.T) {
 		response <- &notifier.PublishResponse{
 			Jobs: []notifier.Job{
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs1[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs1[0]),
 					Status:  notifier.Succeeded,
 				},
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs2[0]),
 					Status:  notifier.Failed,
 					Error:   errors.New("test error"),
 				},
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs3[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs3[0]),
 					Status:  notifier.Failed,
 					Error:   errors.New("test error"),
 				},
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs4[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs4[0]),
 					Status:  notifier.Succeeded,
 				},
 			},
@@ -305,16 +305,16 @@ func TestSource(t *testing.T) {
 		sourceJobs2 := createSourceJob(sr, sourceJobRunID+"-2", sourceTaskRunID+"-2", "test_table-2")
 
 		publishResponse := make(chan chan *notifier.PublishResponse, 10)
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			response := make(chan *notifier.PublishResponse, 1)
 			response <- &notifier.PublishResponse{
 				Jobs: []notifier.Job{
 					{
-						Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs1[0])),
+						Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs1[0]),
 						Status:  notifier.Succeeded,
 					},
 					{
-						Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
+						Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs2[0]),
 						Status:  notifier.Failed,
 						Error:   errors.New("test error"),
 					},
@@ -387,12 +387,12 @@ func TestSource(t *testing.T) {
 		failedResponse := &notifier.PublishResponse{
 			Jobs: []notifier.Job{
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs1[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs1[0]),
 					Status:  notifier.Failed,
 					Error:   errors.New("test error"),
 				},
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs2[0]),
 					Status:  notifier.Failed,
 					Error:   errors.New("test error"),
 				},
@@ -402,18 +402,18 @@ func TestSource(t *testing.T) {
 		succeededResponse := &notifier.PublishResponse{
 			Jobs: []notifier.Job{
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs1[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs1[0]),
 					Status:  notifier.Succeeded,
 				},
 				{
-					Payload: []byte(fmt.Sprintf(`{"id": %d}`, sourceJobs2[0])),
+					Payload: fmt.Appendf(nil, `{"id": %d}`, sourceJobs2[0]),
 					Status:  notifier.Succeeded,
 				},
 			},
 			Err: nil,
 		}
 		publishResponse := make(chan chan *notifier.PublishResponse, 10)
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			response := make(chan *notifier.PublishResponse, 1)
 			if i < 5 {
 				response <- failedResponse

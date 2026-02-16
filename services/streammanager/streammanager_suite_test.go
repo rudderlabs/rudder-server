@@ -72,7 +72,7 @@ func TestNewProducerWithAzureEventHubsDestination(t *testing.T) {
 	_, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "AZURE_EVENT_HUB"},
-			Config:                map[string]interface{}{},
+			Config:                map[string]any{},
 		},
 		common.Opts{})
 	assert.Error(t, err)
@@ -85,7 +85,7 @@ func TestNewProducerWithConfluentCloudDestination(t *testing.T) {
 	_, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "CONFLUENT_CLOUD"},
-			Config:                map[string]interface{}{},
+			Config:                map[string]any{},
 		},
 		common.Opts{})
 	assert.Error(t, err)
@@ -98,7 +98,7 @@ func TestNewProducerWithKafkaDestination(t *testing.T) {
 	_, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "KAFKA"},
-			Config:                map[string]interface{}{},
+			Config:                map[string]any{},
 		},
 		common.Opts{})
 	assert.Error(t, err)
@@ -111,7 +111,7 @@ func TestNewProducerWithEventBridgeDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "EVENTBRIDGE"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region": "someRegion",
 			},
 		},
@@ -125,7 +125,7 @@ func TestNewProducerWithFirehoseDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "FIREHOSE"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region": "someRegion",
 			},
 		},
@@ -139,7 +139,7 @@ func TestNewProducerWithKinesisDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "KINESIS"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region": "someRegion",
 			},
 		},
@@ -153,7 +153,7 @@ func TestNewProducerWithLambdaDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "LAMBDA"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region": "someRegion",
 			},
 		},
@@ -167,7 +167,7 @@ func TestNewProducerWithPersonalizeDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "PERSONALIZE"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"region": "someRegion",
 			},
 		},
@@ -181,7 +181,7 @@ func TestNewProducerWithBQStreamDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQSTREAM"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"ProjectId": "someProjectID",
 				"Credentials": `
 					{
@@ -223,7 +223,7 @@ func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "GOOGLEPUBSUB"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"ProjectId": "someProjectID",
 				"Credentials": `
 					{
@@ -252,7 +252,7 @@ func TestNewProducerWithGoogleSheetsDestination(t *testing.T) {
 	_, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "GOOGLESHEETS"},
-			Config:                map[string]interface{}{},
+			Config:                map[string]any{},
 		},
 		common.Opts{})
 	assert.Error(t, err)
@@ -265,7 +265,7 @@ func TestNewProducerWithGoogleCloudFunctionDestination(t *testing.T) {
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "GOOGLE_CLOUD_FUNCTION"},
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"ProjectId": "someProjectID",
 				"Credentials": `
 				{

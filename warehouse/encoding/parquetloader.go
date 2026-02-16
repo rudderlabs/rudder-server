@@ -14,7 +14,7 @@ import (
 // parquetLoader is used for generating parquet load files.
 type parquetLoader struct {
 	destType string
-	Values   []interface{}
+	Values   []any
 	writer   LoadFileWriter
 }
 
@@ -33,7 +33,7 @@ func (*parquetLoader) GetLoadTimeFormat(_ string) string {
 	return time.RFC3339
 }
 
-func (loader *parquetLoader) AddColumn(columnName, colType string, val interface{}) {
+func (loader *parquetLoader) AddColumn(columnName, colType string, val any) {
 	var err error
 
 	if val != nil {
@@ -61,7 +61,7 @@ func (loader *parquetLoader) Write() error {
 	return loader.writer.WriteRow(loader.Values)
 }
 
-func parquetValue(val interface{}, colType string) (interface{}, error) {
+func parquetValue(val any, colType string) (any, error) {
 	switch colType {
 	case model.BigIntDataType, model.IntDataType:
 		return getInt64(val)
@@ -77,7 +77,7 @@ func parquetValue(val interface{}, colType string) (interface{}, error) {
 	return nil, fmt.Errorf("unsupported type for parquet: %s", colType)
 }
 
-func getInt64(val interface{}) (int64, error) {
+func getInt64(val any) (int64, error) {
 	if intVal, ok := val.(int); !ok {
 		return 0, errors.New("failed to convert to int64")
 	} else {
@@ -85,7 +85,7 @@ func getInt64(val interface{}) (int64, error) {
 	}
 }
 
-func getBool(val interface{}) (bool, error) {
+func getBool(val any) (bool, error) {
 	if boolVal, ok := val.(bool); !ok {
 		return false, errors.New("failed to convert to bool")
 	} else {
@@ -93,7 +93,7 @@ func getBool(val interface{}) (bool, error) {
 	}
 }
 
-func getFloat64(val interface{}) (float64, error) {
+func getFloat64(val any) (float64, error) {
 	if float64Val, ok := val.(float64); !ok {
 		return 0, errors.New("failed to convert to float64")
 	} else {
@@ -101,7 +101,7 @@ func getFloat64(val interface{}) (float64, error) {
 	}
 }
 
-func getUnixTimestamp(val interface{}) (int64, error) {
+func getUnixTimestamp(val any) (int64, error) {
 	tsString, ok := val.(string)
 	if !ok {
 		return 0, errors.New("not a valid timestamp string")
@@ -115,7 +115,7 @@ func getUnixTimestamp(val interface{}) (int64, error) {
 	return types.TimeToTIMESTAMP_MICROS(parsedTS, false), nil
 }
 
-func getString(val interface{}) (string, error) {
+func getString(val any) (string, error) {
 	if stringVal, ok := val.(string); !ok {
 		return "", errors.New("failed to convert to string")
 	} else {

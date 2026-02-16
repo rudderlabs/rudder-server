@@ -134,7 +134,7 @@ func (p *twoStage) Run(ctx context.Context) error {
 	for i := range noOfSources {
 		sourceID := fmt.Sprintf("source-%d", i)
 
-		for j := 0; j < writerConcurrency; j++ {
+		for range writerConcurrency {
 			g.Go(func() error { // write jobs in benchone
 				for {
 					select {
@@ -149,9 +149,9 @@ func (p *twoStage) Run(ctx context.Context) error {
 								CreatedAt:   time.Now().UTC(),
 								EventCount:  1,
 								WorkspaceId: "workspace",
-								Parameters: []byte(fmt.Sprintf(`{
+								Parameters: fmt.Appendf(nil, `{
 									"source_id": %q
-									}`, sourceID)),
+									}`, sourceID),
 								CustomVal:    customVal,
 								EventPayload: eventPayload,
 							})
@@ -206,7 +206,6 @@ func (p *twoStage) Run(ctx context.Context) error {
 					}
 					chunks := lo.Chunk(jobs.Jobs, noOfChunks)
 					for _, chunk := range chunks {
-						chunk := chunk
 						g.Go(func() error {
 							// store jobs in benchtwo
 							if err := db2.Store(ctx, chunk); err != nil {
@@ -280,7 +279,6 @@ func (p *twoStage) Run(ctx context.Context) error {
 					}
 					chunks := lo.Chunk(jobs.Jobs, noOfChunks)
 					for _, chunk := range chunks {
-						chunk := chunk
 						g.Go(func() error {
 							var statusList []*jobsdb.JobStatusT
 							var failedCount int

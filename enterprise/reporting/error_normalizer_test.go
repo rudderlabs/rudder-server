@@ -60,7 +60,7 @@ func TestErrorNormalizer_Disabled(t *testing.T) {
 		PU:            "test-pu",
 		EventType:     "test-event",
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		result := ern.NormalizeError(context.Background(), testKey, "test error")
 		require.Equal(t, "test error", result)
 	}
@@ -124,8 +124,7 @@ func TestErrorNormalizer_Cleanup_DropStaleMessages(t *testing.T) {
 	require.Equal(t, "error2", result)
 
 	// Start cleanup in background
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		err := ern.StartCleanup(ctx)
@@ -170,8 +169,7 @@ func TestErrorNormalizer_Cleanup_ShouldDropCounter(t *testing.T) {
 	require.Equal(t, RedactedError, result)
 
 	// Start cleanup in background
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		err := ern.StartCleanup(ctx)
@@ -211,8 +209,7 @@ func TestErrorNormalizer_Cleanup_EmptyGroupRemoval(t *testing.T) {
 	require.Equal(t, "error1", result)
 
 	// Start cleanup in background
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		err := ern.StartCleanup(ctx)
@@ -356,8 +353,7 @@ func TestErrorNormalizer_ShouldDropCounter_MaxCapacityAndBlocked(t *testing.T) {
 	require.Equal(t, RedactedError, result)
 
 	// Start cleanup in background
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		err := ern.StartCleanup(ctx)
@@ -413,8 +409,7 @@ func TestErrorNormalizer_ComprehensiveCleanupCoverage(t *testing.T) {
 	require.Equal(t, RedactedError, result)
 
 	// Start cleanup in background
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go func() {
 		err := ern.StartCleanup(ctx)

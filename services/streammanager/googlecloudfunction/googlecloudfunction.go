@@ -46,7 +46,8 @@ func (config *Config) shouldGenerateToken() bool {
 }
 
 func (config *Config) generateToken(ctx context.Context, client GoogleCloudFunctionClient) error {
-	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials)))
+	// TODO: switching to WithAuthCredentialsJSON requires auth type handling
+	token, err := client.GetToken(ctx, config.FunctionUrl, option.WithCredentialsJSON([]byte(config.Credentials))) // nolint: staticcheck
 	if err != nil {
 		return err
 	}
@@ -115,7 +116,7 @@ func NewProducer(destination *backendconfig.DestinationT, _ common.Opts) (*Googl
 	}, err
 }
 
-func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ interface{}) (statusCode int, respStatus, responseMessage string) {
+func (producer *GoogleCloudFunctionProducer) Produce(jsonData json.RawMessage, _ any) (statusCode int, respStatus, responseMessage string) {
 	// Create a POST request
 	req, err := http.NewRequest(http.MethodPost, producer.config.FunctionUrl, bytes.NewReader(jsonData))
 	if err != nil {

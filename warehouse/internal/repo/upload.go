@@ -233,22 +233,23 @@ type FilterBy struct {
 func (u *Uploads) Count(ctx context.Context, filters ...FilterBy) (int64, error) {
 	defer (*repo)(u).TimerStat("count", nil)()
 
-	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName)
+	var query strings.Builder
+	query.WriteString(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE 1=1", uploadsTableName))
 
 	args := make([]any, 0)
 	for i, filter := range filters {
 
 		if filter.NotEquals {
-			query += fmt.Sprintf(" AND %s!=$%d", filter.Key, i+1)
+			query.WriteString(fmt.Sprintf(" AND %s!=$%d", filter.Key, i+1))
 		} else {
-			query += fmt.Sprintf(" AND %s=$%d", filter.Key, i+1)
+			query.WriteString(fmt.Sprintf(" AND %s=$%d", filter.Key, i+1))
 		}
 
 		args = append(args, filter.Value)
 	}
 
 	var count int64
-	if err := u.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+	if err := u.db.QueryRowContext(ctx, query.String(), args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("scanning count into local variable: %w", err)
 	}
 

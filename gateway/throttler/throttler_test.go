@@ -33,7 +33,7 @@ func TestGateway_Throttler(t *testing.T) {
 		limiter: l,
 	}
 
-	for i := 0; i < eventLimit; i++ {
+	for range eventLimit {
 		_, err := testThrottler.checkLimitReached(context.TODO(), workspaceId, 1)
 		require.NoError(t, err)
 	}
@@ -68,7 +68,7 @@ func TestGateway_Factory(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rateLimiter)
 
-	for i := 0; i < eventLimit; i++ {
+	for range eventLimit {
 		_, err := rateLimiter.CheckLimitReached(context.TODO(), workspaceId, 1)
 		require.NoError(t, err)
 	}

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -101,16 +102,14 @@ func (ppm *processorPartitionMigrator) watchNewMigrations(ctx context.Context) {
 					if !slices.Contains(pm.SourceNodes(), ppm.nodeIndex) && !slices.Contains(pm.TargetNodes(), ppm.nodeIndex) {
 						return false
 					}
-
-					// skip if migration is already being processed,
-					// otherwise add it to pending migrations
-					ppm.pendingMigrationsMu.Lock()
-					_, exists := ppm.pendingMigrations[event.Value.ID]
-					if !exists {
-						ppm.pendingMigrations[event.Value.ID] = struct{}{}
+					return true
+				}).
+				WithTxnGate(func(pm *etcdtypes.PartitionMigration) []clientv3.Cmp {
+					// if ack key already exists, skip processing this migration
+					ackKey := pm.AckKey(ppm.nodeName)
+					return []clientv3.Cmp{
+						clientv3.Compare(clientv3.Version(ackKey), "=", 0),
 					}
-					ppm.pendingMigrationsMu.Unlock()
-					return !exists
 				}).
 				Build()
 			if err != nil {
@@ -123,6 +122,20 @@ func (ppm *processorPartitionMigrator) watchNewMigrations(ctx context.Context) {
 			for value := range values {
 				if value.Error != nil {
 					return fmt.Errorf("watching partition migration events: %w", value.Error)
+				}
+				// skip if migration is already being processed,
+				// otherwise add it to pending migrations
+				ppm.pendingMigrationsMu.Lock()
+				_, exists := ppm.pendingMigrations[value.Event.Value.ID]
+				if !exists {
+					ppm.pendingMigrations[value.Event.Value.ID] = struct{}{}
+				}
+				ppm.pendingMigrationsMu.Unlock()
+				if exists {
+					ppm.logger.Warnn("Received partition migration event for a migration that is already being processed, skipping",
+						logger.NewStringField("migrationId", value.Event.Value.ID),
+					)
+					continue
 				}
 				// handle new migration event asynchronously
 				ppm.wg.Go(func() error {

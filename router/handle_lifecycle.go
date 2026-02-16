@@ -75,6 +75,7 @@ func (rt *Handle) Setup(
 			dest, destFound := rt.destinationsMap[destinationID]
 			return dest, destFound
 		})
+	rt.drainingPartitions = make(map[string]struct{})
 	rt.reloadableConfig = &reloadableConfig{}
 	rt.setupReloadableVars()
 	rt.crashRecover()
@@ -329,6 +330,7 @@ func (rt *Handle) setupReloadableVars() {
 	rt.reloadableConfig.maxJobQueryBatchSize = config.GetReloadableIntVar(10000, 1, getRouterConfigKeys("maxJobQueryBatchSize", rt.destType)...)
 	rt.reloadableConfig.updateStatusBatchSize = config.GetReloadableIntVar(1000, 1, getRouterConfigKeys("updateStatusBatchSize", rt.destType)...)
 	rt.reloadableConfig.readSleep = config.GetReloadableDurationVar(1000, time.Millisecond, getRouterConfigKeys("readSleep", rt.destType)...)
+	rt.reloadableConfig.maxReadSleep = config.GetReloadableDurationVar(0, time.Second, getRouterConfigKeys("maxReadSleep", rt.destType)...)
 	rt.reloadableConfig.jobsBatchTimeout = config.GetReloadableDurationVar(5, time.Second, getRouterConfigKeys("jobsBatchTimeout", rt.destType)...)
 	rt.reloadableConfig.maxStatusUpdateWait = config.GetReloadableDurationVar(5, time.Second, getRouterConfigKeys("maxStatusUpdateWait", rt.destType)...)
 	rt.reloadableConfig.minRetryBackoff = config.GetReloadableDurationVar(10, time.Second, getRouterConfigKeys("minRetryBackoff", rt.destType)...)
@@ -466,7 +468,7 @@ func (rt *Handle) backendConfigSubscriber() {
 						// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
 						// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 						// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-						if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
+						if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]any); ok {
 							m := types.NewEventTypeThrottlingCost(value)
 							rt.throttlingCosts.Store(&m)
 						}

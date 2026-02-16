@@ -5,6 +5,7 @@ linters:
     - decorder
     - depguard
     - forbidigo
+    - gosec
     - makezero
     - misspell
     - nilerr
@@ -80,6 +81,26 @@ linters:
           pkg: ^github.com/cenkalti/backoff/v[1-4]$
           msg: use github.com/cenkalti/backoff/v5
       analyze-types: true
+    gosec:
+      excludes:
+        - G101  # Hardcoded credentials (6 findings)
+        - G104  # Errors unhandled (6 findings)
+        - G107  # HTTP request with variable URL (4 findings)
+        - G110  # Decompression bomb (2 findings)
+        - G115  # Integer overflow conversion (35 findings)
+        - G201  # SQL string formatting (13 findings)
+        - G202  # SQL string concatenation (3 findings)
+        - G204  # Subprocess with variable (3 findings)
+        - G301  # Directory permissions >0750 (21 findings)
+        - G302  # File permissions >0600 (10 findings)
+        - G304  # File inclusion via variable (68 findings)
+        - G305  # Zip traversal (1 finding)
+        - G306  # WriteFile permissions >0600 (1 finding)
+        - G401  # Weak crypto primitive (2 findings)
+        - G402  # TLS InsecureSkipVerify (2 findings)
+        - G404  # Weak PRNG math/rand (8 findings)
+        - G501  # Blocklisted import crypto/md5 (2 findings)
+        - G602  # Slice index out of range (2 findings)
   exclusions:
     generated: lax
     presets:

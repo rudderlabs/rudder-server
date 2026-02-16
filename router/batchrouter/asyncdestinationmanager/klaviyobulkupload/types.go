@@ -18,12 +18,15 @@ type KlaviyoAPIService interface {
 }
 
 type KlaviyoBulkUploader struct {
-	DestName             string
-	DestinationConfig    map[string]interface{}
-	Logger               logger.Logger
-	StatsFactory         stats.Stats
-	KlaviyoAPIService    KlaviyoAPIService
-	JobIdToIdentifierMap map[string]int64
+	DestName              string
+	DestinationConfig     map[string]any
+	Logger                logger.Logger
+	StatsFactory          stats.Stats
+	KlaviyoAPIService     KlaviyoAPIService
+	JobIdToIdentifierMap  map[string]int64
+	BatchSize             int // Override BATCHSIZE for testing (0 = use default)
+	MaxPayloadSize        int // Override MAXPAYLOADSIZE for testing (0 = use default)
+	MaxAllowedProfileSize int // Override MAXALLOWEDPROFILESIZE for testing (0 = use default)
 }
 
 type ErrorDetail struct {
@@ -135,8 +138,8 @@ type ProfileAttributes struct {
 		Zip       string `json:"zip,omitempty"`
 		Timezone  string `json:"timezone,omitempty"`
 		IP        string `json:"ip,omitempty"`
-	} `json:"location,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	} `json:"location"`
+	Properties map[string]any `json:"properties,omitempty"`
 }
 
 type Profiles struct {
@@ -160,7 +163,7 @@ type Metadata struct {
 }
 
 type Profile struct {
-	Attributes ProfileAttributes `json:"attributes,omitempty"`
+	Attributes ProfileAttributes `json:"attributes"`
 	ID         string            `json:"id,omitempty"`
 	Type       string            `json:"type,omitempty"`
 }

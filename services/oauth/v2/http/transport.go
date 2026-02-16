@@ -134,7 +134,7 @@ func (t *OAuthTransport) postRoundTrip(rts *roundTripState) *http.Response {
 			obskit.Error(err),
 		)
 		// Create a new response with a 500 status code
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[postRoundTrip]Error reading response body: %v", err)))
+		return httpResponseCreator(http.StatusInternalServerError, fmt.Appendf(nil, "[postRoundTrip]Error reading response body: %v", err))
 	}
 	interceptorResp := v2.OAuthInterceptorResponse{}
 	// internal function
@@ -242,7 +242,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err),
 		)
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("[OAuthPlatformError]checking if destination is oauth destination: %v", err.Error()))), nil
+		return httpResponseCreator(http.StatusInternalServerError, fmt.Appendf(nil, "[OAuthPlatformError]checking if destination is oauth destination: %v", err.Error())), nil
 	}
 	if !isOauthDestination {
 		return t.Transport.RoundTrip(req)
@@ -283,7 +283,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			logger.NewStringField("flow", string(t.flow)),
 			obskit.Error(err))
 		// Return a 500 error response instead of propagating the error
-		return httpResponseCreator(http.StatusInternalServerError, []byte(fmt.Sprintf("Transport round trip error: %v", err))), nil
+		return httpResponseCreator(http.StatusInternalServerError, fmt.Appendf(nil, "Transport round trip error: %v", err)), nil
 	}
 	t.fireTimerStats("oauth_v2_http_roundtrip_latency", tags, roundTripStartTime)
 	rts.res = res

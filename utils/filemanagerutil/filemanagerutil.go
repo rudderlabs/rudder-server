@@ -8,7 +8,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
-func GetProviderConfigForBackupsFromEnv(ctx context.Context, config *config.Config) map[string]interface{} {
+func GetProviderConfigForBackupsFromEnv(ctx context.Context, config *config.Config) map[string]any {
 	return filemanager.GetProviderConfigFromEnv(ProviderConfigOpts(ctx,
 		config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		config,

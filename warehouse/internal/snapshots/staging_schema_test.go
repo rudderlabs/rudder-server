@@ -240,13 +240,11 @@ func TestStagingFileSchema_ConcurrentAccess(t *testing.T) {
 	schemaCache := NewStagingFileSchema(config.New(), db, &fixedExpiryStrategy{expired: false})
 
 	var wg sync.WaitGroup
-	for i := 0; i < 1000; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 1000 {
+		wg.Go(func() {
 			_, err := schemaCache.GetOrCreate(context.Background(), "279L3gEKqwruBoKGsXZtSVX7vIy", "27CHciD6leAhurSyFAeN4dp14qZ", "279L3V7FSpx43LaNJ0nIs9KRaNC", json.RawMessage(`{"foo":"bar"}`))
 			require.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 }

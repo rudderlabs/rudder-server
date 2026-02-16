@@ -104,7 +104,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 	t.Run("excludeWindowStartEndTimes", func(t *testing.T) {
 		testCases := []struct {
 			name          string
-			excludeWindow map[string]interface{}
+			excludeWindow map[string]any
 			expectedStart string
 			expectedEnd   string
 		}{
@@ -113,7 +113,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			},
 			{
 				name: "excludeWindowStartTime and excludeWindowEndTime",
-				excludeWindow: map[string]interface{}{
+				excludeWindow: map[string]any{
 					"excludeWindowStartTime": "2006-01-02 15:04:05.999999 Z",
 					"excludeWindowEndTime":   "2006-01-02 15:05:05.999999 Z",
 				},
@@ -217,13 +217,13 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			identifier := "warehouse_identifier"
 			testCases := []struct {
 				name          string
-				config        map[string]interface{}
+				config        map[string]any
 				setupRouter   func(*Router)
 				expectedError error
 			}{
 				{
 					name: "blocks automatic uploads when enabled",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"manualSync": true,
 					},
 					setupRouter:   func(r *Router) {},
@@ -231,7 +231,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 				{
 					name: "allows manual triggers when enabled",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"manualSync": true,
 					},
 					setupRouter: func(r *Router) {
@@ -241,7 +241,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 				{
 					name: "allows forced uploads when enabled",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"manualSync": true,
 					},
 					setupRouter: func(r *Router) {
@@ -253,7 +253,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 				{
 					name: "allows normal operation when disabled",
-					config: map[string]interface{}{
+					config: map[string]any{
 						"manualSync": false,
 					},
 					setupRouter: func(r *Router) {
@@ -264,7 +264,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 				},
 				{
 					name:   "defaults to false when not set",
-					config: map[string]interface{}{},
+					config: map[string]any{},
 					setupRouter: func(r *Router) {
 						r.config.warehouseSyncFreqIgnore = config.SingleValueLoader(true)
 						r.config.uploadFreqInS = config.SingleValueLoader(int64(0))
@@ -371,8 +371,8 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			w := model.Warehouse{
 				Identifier: "test_identifier_check_current_window",
 				Destination: backendConfig.DestinationT{
-					Config: map[string]interface{}{
-						"excludeWindow": map[string]interface{}{
+					Config: map[string]any{
+						"excludeWindow": map[string]any{
 							"excludeWindowStartTime": "05:00",
 							"excludeWindowEndTime":   "06:00",
 						},
@@ -398,7 +398,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			w := model.Warehouse{
 				Identifier: "test_identifier_no_sync_start_at_frequency_not_exceeded",
 				Destination: backendConfig.DestinationT{
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			}
 
@@ -426,7 +426,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 			w := model.Warehouse{
 				Identifier: "test_identifier_no_sync_start_at_frequency_exceeded",
 				Destination: backendConfig.DestinationT{
-					Config: map[string]interface{}{},
+					Config: map[string]any{},
 				},
 			}
 
@@ -517,7 +517,7 @@ func TestRouter_CanCreateUpload(t *testing.T) {
 						},
 						Destination: backendConfig.DestinationT{
 							ID: destinationID,
-							Config: map[string]interface{}{
+							Config: map[string]any{
 								"syncFrequency": "30",
 								"syncStartAt":   "00:00",
 							},

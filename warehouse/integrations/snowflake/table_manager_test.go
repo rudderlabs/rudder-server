@@ -24,14 +24,14 @@ func TestTableManager(t *testing.T) {
 	}
 	standardWarehouse := model.Warehouse{
 		Destination: backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"enableIceberg": false,
 			},
 		},
 	}
 	icebergWarehouse := model.Warehouse{
 		Destination: backendconfig.DestinationT{
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"enableIceberg":  true,
 				"externalVolume": "myvolume",
 			},

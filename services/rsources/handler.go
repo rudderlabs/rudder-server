@@ -185,7 +185,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 	}
 
 	filters := "WHERE r.id = ANY($1)"
-	params := []interface{}{pq.Array(ids)}
+	params := []any{pq.Array(ids)}
 	var limit string
 	if paging.Size > 0 {
 		filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
@@ -281,7 +281,7 @@ func (sh *sourcesHandler) GetFailedRecordsV1(ctx context.Context, jobRunId strin
 	}
 
 	filters := "WHERE r.id = ANY($1)"
-	params := []interface{}{pq.Array(ids)}
+	params := []any{pq.Array(ids)}
 	var limit string
 	if paging.Size > 0 {
 		filters = filters + fmt.Sprintf(` AND r.id >= $%[1]d AND r.record_id > $%[2]d`, len(params)+1, len(params)+2)
@@ -758,8 +758,8 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	return nil
 }
 
-func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []interface{}) {
-	var filterParams []interface{}
+func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []any) {
+	var filterParams []any
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
 

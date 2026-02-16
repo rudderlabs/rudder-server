@@ -34,7 +34,7 @@ func (brt *Handle) collectMetrics(ctx context.Context) {
 
 		case <-brt.diagnosisTicker.C:
 			brt.batchRequestsMetricMu.RLock()
-			var diagnosisProperties map[string]interface{}
+			var diagnosisProperties map[string]any
 			success := 0
 			failed := 0
 			for _, batchReqMetric := range brt.batchRequestsMetric {
@@ -42,8 +42,8 @@ func (brt *Handle) collectMetrics(ctx context.Context) {
 				failed = failed + batchReqMetric.batchRequestFailed
 			}
 			if len(brt.batchRequestsMetric) > 0 {
-				diagnosisProperties = map[string]interface{}{
-					brt.destType: map[string]interface{}{
+				diagnosisProperties = map[string]any{
+					brt.destType: map[string]any{
 						diagnostics.BatchRouterSuccess: success,
 						diagnostics.BatchRouterFailed:  failed,
 					},

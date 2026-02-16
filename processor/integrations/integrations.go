@@ -14,11 +14,11 @@ type PostParametersT struct {
 	EndpointPath  string `json:"endpointPath,omitempty"`
 	RequestMethod string `json:"method"`
 	// Invalid tag used in struct. skipcq: SCC-SA5008
-	UserID      string                 `json:"userId"`
-	Headers     map[string]interface{} `json:"headers"`
-	QueryParams map[string]interface{} `json:"params"`
-	Body        map[string]interface{} `json:"body"`
-	Files       map[string]interface{} `json:"files"`
+	UserID      string         `json:"userId"`
+	Headers     map[string]any `json:"headers"`
+	QueryParams map[string]any `json:"params"`
+	Body        map[string]any `json:"body"`
+	Files       map[string]any `json:"files"`
 }
 
 type TransStatsT struct {
@@ -52,9 +52,9 @@ func CollectIntgTransformErrorStats(input []byte) {
 func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap map[string]backendconfig.DestinationDefinitionT) (retVal []string) {
 	clientIntgs, ok := types.GetRudderEventVal("integrations", clientEvent)
 	if !ok {
-		clientIntgs = make(map[string]interface{})
+		clientIntgs = make(map[string]any)
 	}
-	clientIntgsList, ok := clientIntgs.(map[string]interface{})
+	clientIntgsList, ok := clientIntgs.(map[string]any)
 	if !ok {
 		return retVal
 	}
@@ -78,7 +78,7 @@ func FilterClientIntegrations(clientEvent types.SingularEventT, destNameIDMap ma
 			continue
 		}
 		// Always add for syntax dest:{...}
-		_, isMap := clientIntgsList[dest].(map[string]interface{})
+		_, isMap := clientIntgsList[dest].(map[string]any)
 		if isMap {
 			outVal = append(outVal, destNameIDMap[dest].Name)
 			continue

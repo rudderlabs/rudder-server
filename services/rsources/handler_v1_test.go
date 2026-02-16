@@ -97,7 +97,7 @@ var _ = Describe("Using sources handler v1", func() {
 			paging := PagingInfo{
 				Size: 2,
 			}
-			for i := 0; i < 2; i++ {
+			for i := range 2 {
 				failedRecords, err := sh.GetFailedRecordsV1(context.Background(), jobRunId, jobFilters, paging)
 				Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
 				Expect(failedRecords.Paging).NotTo(BeNil(), "paging should not be nil")
@@ -111,8 +111,8 @@ var _ = Describe("Using sources handler v1", func() {
 							Destinations: []DestinationFailedRecords[json.RawMessage]{{
 								ID: defaultJobTargetKey.DestinationID,
 								Records: []json.RawMessage{
-									[]byte(fmt.Sprintf(`"id-%d"`, (2*i)+1)),
-									[]byte(fmt.Sprintf(`"id-%d"`, (2*i)+2)),
+									fmt.Appendf(nil, `"id-%d"`, (2*i)+1),
+									fmt.Appendf(nil, `"id-%d"`, (2*i)+2),
 								},
 							}},
 						}},

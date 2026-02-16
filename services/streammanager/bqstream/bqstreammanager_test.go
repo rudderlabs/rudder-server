@@ -23,8 +23,8 @@ import (
 )
 
 type BigQueryCredentials struct {
-	ProjectID   string                 `json:"projectID"`
-	Credentials map[string]interface{} `json:"credentials"`
+	ProjectID   string         `json:"projectID"`
+	Credentials map[string]any `json:"credentials"`
 }
 
 var once sync.Once
@@ -50,7 +50,7 @@ func TestTimeout(t *testing.T) {
 		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
 	}
 	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
-	config := map[string]interface{}{
+	config := map[string]any{
 		"Credentials": string(credentials),
 		"ProjectId":   bqCredentials.ProjectID,
 	}
@@ -115,7 +115,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 		}`), &bqCredentials)
 	assert.NoError(t, err)
 	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
-	config := map[string]interface{}{
+	config := map[string]any{
 		"Credentials": string(credentials),
 		"ProjectId":   bqCredentials.ProjectID,
 	}
@@ -140,7 +140,7 @@ func TestInvalidCredentials(t *testing.T) {
 		}`), &bqCredentials)
 	assert.NoError(t, err)
 	credentials, _ := jsonrs.Marshal(bqCredentials.Credentials)
-	config := map[string]interface{}{
+	config := map[string]any{
 		"Credentials": string(credentials),
 		"ProjectId":   bqCredentials.ProjectID,
 	}
@@ -154,8 +154,8 @@ func TestInvalidCredentials(t *testing.T) {
 func TestProduceWithInvalidClient(t *testing.T) {
 	initBQTest()
 	invalidProducer := bqstream.BQStreamProducer{}
-	invalidProducer.Produce([]byte("{}"), map[string]interface{}{})
-	statusCode, statusMsg, respMsg := invalidProducer.Produce([]byte("{}"), map[string]interface{}{})
+	invalidProducer.Produce([]byte("{}"), map[string]any{})
+	statusCode, statusMsg, respMsg := invalidProducer.Produce([]byte("{}"), map[string]any{})
 	assert.Equal(t, 400, statusCode)
 	assert.Equal(t, "Failure", statusMsg)
 	assert.Contains(t, respMsg, "invalid client")
@@ -188,7 +188,7 @@ func TestProduceWithMissingTableId(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> array of objects
-	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 		"datasetId":  "bigquery_batching",
 		"properties": json.RawMessage(`[{"id":"25","name":"rudder"}, {"id":"50","name":"ruddertest"}]`),
 	})
@@ -212,7 +212,7 @@ func TestProduceWithArrayOfRecords(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> array of objects
-	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 		"datasetId":  "bigquery_batching",
 		"tableId":    "Streaming",
 		"properties": json.RawMessage(`[{"id":"25","name":"rudder"}, {"id":"50","name":"ruddertest"}]`),
@@ -237,7 +237,7 @@ func TestProduceWithWithSingleRecord(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> json objects
-	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 		"datasetId":  "bigquery_batching",
 		"tableId":    "Streaming",
 		"properties": json.RawMessage(`{"id":"25","name":"rudder"}`),
@@ -264,7 +264,7 @@ func TestProduceFailedCase(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{Client: mockClient}
 
 	// properties -> string
-	sampleEventJson, _ := jsonrs.Marshal(map[string]interface{}{
+	sampleEventJson, _ := jsonrs.Marshal(map[string]any{
 		"datasetId":  "bigquery_batching",
 		"tableId":    "Streaming",
 		"properties": json.RawMessage(`"id"`),

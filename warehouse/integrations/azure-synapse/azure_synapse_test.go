@@ -785,7 +785,7 @@ func TestProcessColumnValue(t *testing.T) {
 		data          string
 		dataType      string
 		varcharLength int
-		expectedValue interface{}
+		expectedValue any
 		wantError     bool
 	}{
 		{

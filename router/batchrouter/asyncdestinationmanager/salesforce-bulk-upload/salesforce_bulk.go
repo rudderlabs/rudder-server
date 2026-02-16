@@ -84,14 +84,14 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	externalID := gjson.GetBytes(job.EventPayload, "context.externalId")
 
 	// Build the metadata object
-	metadata := make(map[string]interface{})
+	metadata := make(map[string]any)
 	metadata["job_id"] = float64(job.JobID)
 
 	// We are supporting only upsert operation
 	metadata["rudderOperation"] = "upsert"
 
 	// Add externalId to metadata if it exists
-	var externalIdArray []interface{}
+	var externalIdArray []any
 	if externalID.Exists() {
 		if err := jsonrs.Unmarshal([]byte(externalID.Raw), &externalIdArray); err == nil {
 			metadata["externalId"] = externalIdArray
@@ -99,7 +99,7 @@ func (s *Uploader) Transform(job *jobsdb.JobT) (string, error) {
 	}
 
 	// Build the message object
-	message := make(map[string]interface{})
+	message := make(map[string]any)
 
 	// Add all traits to message
 	if traits.Exists() && traits.IsObject() {

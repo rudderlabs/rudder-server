@@ -187,6 +187,7 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 // Run watches for new migration jobs assigned to this source node and handles them asynchronously.
 // All go routines are added to the provided errgroup.Group. It returns an error if the watcher cannot be created.
 func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
+	ctx = jobsdb.WithPriorityPool(ctx)                 // use priority pool for migration job handling
 	m.pendingMigrationJobs = make(map[string]struct{}) // reset pending migration jobs map
 
 	// create a watcher for partition migration jobs
@@ -201,19 +202,7 @@ func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
 				return false
 			}
 			// where this node is a source node
-			pmj := event.Value
-			if pmj.SourceNode != m.nodeIndex {
-				return false
-			}
-			// skip if migration job is already being processed,
-			// otherwise add it to pending migration jobs
-			m.pendingMigrationJobsMu.Lock()
-			_, exists := m.pendingMigrationJobs[event.Value.JobID]
-			if !exists {
-				m.pendingMigrationJobs[event.Value.JobID] = struct{}{}
-			}
-			m.pendingMigrationJobsMu.Unlock()
-			return !exists
+			return event.Value.SourceNode == m.nodeIndex
 		}).
 		Build()
 	if err != nil {
@@ -230,6 +219,20 @@ func (m *migrator) Run(ctx context.Context, wg *errgroup.Group) error {
 				for value := range values {
 					if value.Error != nil {
 						return fmt.Errorf("watching partition migration job events: %w", value.Error)
+					}
+					// skip if migration job is already being processed,
+					// otherwise add it to pending migration jobs
+					m.pendingMigrationJobsMu.Lock()
+					_, exists := m.pendingMigrationJobs[value.Event.Value.JobID]
+					if !exists {
+						m.pendingMigrationJobs[value.Event.Value.JobID] = struct{}{}
+					}
+					m.pendingMigrationJobsMu.Unlock()
+					if exists {
+						m.logger.Warnn("Received partition migration job event for a job that is already being processed, skipping",
+							logger.NewStringField("jobId", value.Event.Value.JobID),
+						)
+						continue
 					}
 					// handle new migration event asynchronously
 					wg.Go(func() error {

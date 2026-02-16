@@ -3,7 +3,6 @@ package model
 import (
 	"testing"
 
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -19,14 +18,14 @@ func TestChannelResponse_GenerateSnowpipeSchema(t *testing.T) {
 		{
 			name: "Valid types with scale",
 			tableSchema: map[string]ColumnInfo{
-				"column1": {Type: lo.ToPtr("VARCHAR(16777216)")},
-				"column2": {Type: lo.ToPtr("NUMBER(2,0)"), Scale: lo.ToPtr(2.0)},
-				"column3": {Type: lo.ToPtr("NUMBER(2,0)"), Scale: lo.ToPtr(0.0)},
-				"column4": {Type: lo.ToPtr("NUMBER(2,0)")},
-				"column5": {Type: lo.ToPtr("BOOLEAN")},
-				"column6": {Type: lo.ToPtr("TIMESTAMP_TZ(9)"), Scale: lo.ToPtr(9.0)},
-				"column7": {Type: lo.ToPtr("TIMESTAMP_TZ(9)"), Scale: lo.ToPtr(9.5)},
-				"column8": {Type: lo.ToPtr("VARCHAR")},
+				"column1": {Type: new("VARCHAR(16777216)")},
+				"column2": {Type: new("NUMBER(2,0)"), Scale: new(2.0)},
+				"column3": {Type: new("NUMBER(2,0)"), Scale: new(0.0)},
+				"column4": {Type: new("NUMBER(2,0)")},
+				"column5": {Type: new("BOOLEAN")},
+				"column6": {Type: new("TIMESTAMP_TZ(9)"), Scale: new(9.0)},
+				"column7": {Type: new("TIMESTAMP_TZ(9)"), Scale: new(9.5)},
+				"column8": {Type: new("VARCHAR")},
 			},
 			expected: whutils.ModelTableSchema{
 				"column1": "string",
@@ -42,8 +41,8 @@ func TestChannelResponse_GenerateSnowpipeSchema(t *testing.T) {
 		{
 			name: "Unknown type",
 			tableSchema: map[string]ColumnInfo{
-				"column1": {Type: lo.ToPtr("VARCHAR(16777216)")},
-				"column2": {Type: lo.ToPtr("UNKNOWN")},
+				"column1": {Type: new("VARCHAR(16777216)")},
+				"column2": {Type: new("UNKNOWN")},
 			},
 			expected: whutils.ModelTableSchema{
 				"column1": "string",
@@ -52,7 +51,7 @@ func TestChannelResponse_GenerateSnowpipeSchema(t *testing.T) {
 		{
 			name: "Missing scale for number",
 			tableSchema: map[string]ColumnInfo{
-				"column1": {Type: lo.ToPtr("NUMBER(2,0)")},
+				"column1": {Type: new("NUMBER(2,0)")},
 			},
 			expected: whutils.ModelTableSchema{
 				"column1": "int",
@@ -61,7 +60,7 @@ func TestChannelResponse_GenerateSnowpipeSchema(t *testing.T) {
 		{
 			name: "Missing type",
 			tableSchema: map[string]ColumnInfo{
-				"column1": {Scale: lo.ToPtr(2.0)},
+				"column1": {Scale: new(2.0)},
 			},
 			expected: whutils.ModelTableSchema{},
 		},
