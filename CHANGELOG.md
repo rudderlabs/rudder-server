@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.67.1](https://github.com/rudderlabs/rudder-server/compare/v1.67.0...v1.67.1) (2026-02-16)
+
+
+### Bug Fixes
+
+* snowpipe streaming logs ([#6683](https://github.com/rudderlabs/rudder-server/issues/6683)) ([f433d82](https://github.com/rudderlabs/rudder-server/commit/f433d82b3c9dc5a3394642da4068ffede39007cd))
+
 ## [1.67.0](https://github.com/rudderlabs/rudder-server/compare/v1.66.0...v1.67.0) (2026-02-02)
 
 
