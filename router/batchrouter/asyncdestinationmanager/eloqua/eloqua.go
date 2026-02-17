@@ -124,7 +124,7 @@ func (e *EloquaServiceImpl) UploadData(data *HttpRequestData, filePath string) e
 	return nil
 }
 
-func (e *EloquaServiceImpl) UploadDataWithoutCSV(data *HttpRequestData, uploadData []map[string]interface{}) error {
+func (e *EloquaServiceImpl) UploadDataWithoutCSV(data *HttpRequestData, uploadData []map[string]any) error {
 	data.Endpoint = data.BaseEndpoint + e.bulkApi + data.DynamicPart + "/data"
 	data.Method = http.MethodPost
 	data.ContentType = "application/json"

@@ -22,7 +22,7 @@ func canConnect(host, port, protocol string) bool {
 
 	if conn != nil {
 		if protocol == "udp" {
-			for i := 0; i < 2; i++ {
+			for range 2 {
 				_, err = conn.Write(nil)
 				time.Sleep(1 * time.Second)
 				fmt.Println("UDP error:", err)

@@ -270,7 +270,7 @@ func getQueryParams(r *http.Request) (jobRunID string, taskRunID, sourceID []str
 	return jobRunID, taskRunID, sourceID
 }
 
-func marshalAndWriteResponse(w http.ResponseWriter, response interface{}) (err error) {
+func marshalAndWriteResponse(w http.ResponseWriter, response any) (err error) {
 	body, err := jsonrs.Marshal(response)
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)

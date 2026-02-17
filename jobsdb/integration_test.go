@@ -139,7 +139,7 @@ func TestJobsDB(t *testing.T) {
 		jobCount := dsCount * jobCountPerDS
 
 		t.Logf("spread %d jobs into %d data sets", jobCount, dsCount)
-		for i := 0; i < dsCount; i++ {
+		for range dsCount {
 			require.NoError(t, jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, customVal, jobCountPerDS, eventsPerJob)))
 			triggerAddNewDS <- time.Now()
 			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
@@ -1469,7 +1469,7 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *Handle, totalJobs, pageSi
 	workerJobs := totalJobs / concurrency
 	end.Add(concurrency)
 
-	for i := 0; i < concurrency; i++ {
+	for i := range concurrency {
 		num := i
 		go func() {
 			customVal := fmt.Sprintf("MOCKDS%d", num)
@@ -1564,10 +1564,7 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *Handle, totalJobs, pageSi
 func chunkJobs(slice []JobT, chunkSize int) [][]*JobT {
 	var chunks [][]*JobT
 	for i := 0; i < len(slice); i += chunkSize {
-		end := i + chunkSize
-		if end > len(slice) {
-			end = len(slice)
-		}
+		end := min(i+chunkSize, len(slice))
 		jslice := slice[i:end]
 		var chunk []*JobT
 		for i := range jslice {
@@ -1605,7 +1602,7 @@ func BenchmarkLifecycle(b *testing.B) {
 			b.StopTimer()
 			wg := sync.WaitGroup{}
 			wg.Add(writeConcurrency)
-			for j := 0; j < writeConcurrency; j++ {
+			for range writeConcurrency {
 				go func() {
 					err = jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, "", newJobs, 10))
 					wg.Done()

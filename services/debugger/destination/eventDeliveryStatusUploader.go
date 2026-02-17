@@ -141,7 +141,7 @@ func (h *Handle) HasUploadEnabled(destID string) bool {
 }
 
 func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*DeliveryStatusT) ([]byte, error) {
-	res := make(map[string]interface{})
+	res := make(map[string]any)
 	res["version"] = "v2"
 	for _, job := range deliveryStatusesBuffer {
 		var arr []*DeliveryStatusT

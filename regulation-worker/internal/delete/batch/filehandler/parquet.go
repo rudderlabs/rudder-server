@@ -17,7 +17,7 @@ import (
 )
 
 type ParquetLocalFileHandler struct {
-	records []interface{}
+	records []any
 	schema  []*parquet.SchemaElement
 }
 
@@ -79,7 +79,7 @@ func (h *ParquetLocalFileHandler) Write(_ context.Context, path string) error {
 }
 
 func (h *ParquetLocalFileHandler) RemoveIdentity(_ context.Context, attributes []model.User) error {
-	unfiltered := make([]interface{}, 0)
+	unfiltered := make([]any, 0)
 
 	for _, record := range h.records {
 		toFilterOut := false
@@ -117,7 +117,7 @@ func (*ParquetLocalFileHandler) identityMatched(recordValue reflect.Value, attri
 
 		// Only *string and string types are expected for the userId field
 		// In case anything else is found, return with an error to be used for warnings.
-		case reflect.Ptr:
+		case reflect.Pointer:
 
 			if userIdField.Elem().Type().Kind() == reflect.String {
 				return userIdField.Elem().String() == attribute.ID
@@ -138,7 +138,7 @@ func (*ParquetLocalFileHandler) identityMatched(recordValue reflect.Value, attri
 	return false
 }
 
-func NewParquetReader(pFile source.ParquetFile, obj interface{}, np int64) (*reader.ParquetReader, error) {
+func NewParquetReader(pFile source.ParquetFile, obj any, np int64) (*reader.ParquetReader, error) {
 	var err error
 
 	res := new(reader.ParquetReader)

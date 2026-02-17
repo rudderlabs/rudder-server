@@ -44,7 +44,7 @@ func TestTransformer_CompareResponsesAndUpload(t *testing.T) {
 	trans := New(c, logger.NOP, statsStore)
 
 	eventsByMessageID := make(map[string]types.SingularEventWithReceivedAt, 50)
-	for index := 0; index < 50; index++ {
+	for index := range 50 {
 		eventsByMessageID[strconv.Itoa(index)] = types.SingularEventWithReceivedAt{
 			SingularEvent: map[string]any{
 				"event": "track" + strconv.Itoa(index),
@@ -62,7 +62,7 @@ func TestTransformer_CompareResponsesAndUpload(t *testing.T) {
 		},
 	}
 
-	for i := 0; i < maxLoggedEvents; i++ {
+	for range maxLoggedEvents {
 		legacyResponse := types.Response{
 			Events: []types.TransformerResponse{
 				{
@@ -94,7 +94,7 @@ func TestTransformer_CompareResponsesAndUpload(t *testing.T) {
 	})
 	require.Len(t, differingEvents, maxLoggedEvents)
 
-	for i := 0; i < maxLoggedEvents; i++ {
+	for i := range maxLoggedEvents {
 		require.Contains(t, differingEvents[i], "track")
 	}
 	require.EqualValues(t, []float64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}, statsStore.Get("warehouse_dest_transform_mismatched_events", stats.Tags{}).Values())

@@ -36,12 +36,12 @@ func Benchmark_singularEventMetadata(b *testing.B) {
 	}
 }
 
-var dummySingularEvent = map[string]interface{}{
+var dummySingularEvent = map[string]any{
 	"type":      "track",
 	"channel":   "android-srk",
 	"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
 	"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
-	"properties": map[string]interface{}{
+	"properties": map[string]any{
 		"lbael":    "",
 		"value":    float64(1),
 		"testMap":  nil,
@@ -51,18 +51,18 @@ var dummySingularEvent = map[string]interface{}{
 	"originalTimestamp": "2019-03-10T10:10:10.10Z",
 	"event":             "Demo Track",
 	"sentAt":            "2019-03-10T10:10:10.10Z",
-	"context": map[string]interface{}{
+	"context": map[string]any{
 		"app":        nil,
-		"device":     map[string]interface{}{},
+		"device":     map[string]any{},
 		"locale":     "",
-		"screen":     map[string]interface{}{},
-		"traits":     map[string]interface{}{},
-		"library":    map[string]interface{}{},
-		"network":    map[string]interface{}{},
+		"screen":     map[string]any{},
+		"traits":     map[string]any{},
+		"library":    map[string]any{},
+		"network":    map[string]any{},
 		"user_agent": "",
 	},
 	"anonymousId": "anon_id",
-	"integrations": map[string]interface{}{
+	"integrations": map[string]any{
 		"All": true,
 	},
 }

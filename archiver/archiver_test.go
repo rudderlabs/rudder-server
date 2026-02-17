@@ -61,7 +61,7 @@ func TestJobsArchival(t *testing.T) {
 	require.NoError(t, jd.Start())
 
 	minioResource = make([]*minio.Resource, uniqueWorkspaces)
-	for i := 0; i < uniqueWorkspaces; i++ {
+	for i := range uniqueWorkspaces {
 		minioResource[i], err = minio.Setup(pool, t)
 		require.NoError(t, err, "failed to setup minio resource")
 	}
@@ -75,7 +75,7 @@ func TestJobsArchival(t *testing.T) {
 		"defaultWorkspaceID-1": {
 			Bucket: backendconfig.StorageBucket{
 				Type: "MINIO",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":      minioResource[0].BucketName,
 					"prefix":          prefixByWorkspace[0],
 					"endPoint":        minioResource[0].Endpoint,
@@ -90,7 +90,7 @@ func TestJobsArchival(t *testing.T) {
 		"defaultWorkspaceID-2": {
 			Bucket: backendconfig.StorageBucket{
 				Type: "MINIO",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":      minioResource[1].BucketName,
 					"prefix":          prefixByWorkspace[1],
 					"endPoint":        minioResource[1].Endpoint,
@@ -105,7 +105,7 @@ func TestJobsArchival(t *testing.T) {
 		"defaultWorkspaceID-3": {
 			Bucket: backendconfig.StorageBucket{
 				Type: "MINIO",
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":      minioResource[2].BucketName,
 					"prefix":          prefixByWorkspace[2],
 					"endPoint":        minioResource[2].Endpoint,
@@ -156,7 +156,7 @@ func TestJobsArchival(t *testing.T) {
 	)
 
 	downloadedJobs := make([]*jobsdb.JobT, 0)
-	for i := 0; i < uniqueWorkspaces; i++ {
+	for i := range uniqueWorkspaces {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
 		fm, err := fileUploaderProvider.GetFileManager(ctx, workspace)
 		require.NoError(t, err)

@@ -82,8 +82,8 @@ var _ = Describe("Uploader", func() {
 			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
 						Expect(e).To(Equal(recordingEvent))
 					}
@@ -111,8 +111,8 @@ var _ = Describe("Uploader", func() {
 			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
 						Expect(e).To(Equal(recordingEvent))
 					}
@@ -141,8 +141,8 @@ var _ = Describe("Uploader", func() {
 			uploader.RecordEvent(recordingEvent)
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
 						Expect(e).To(Equal(recordingEvent))
 					}
@@ -157,8 +157,8 @@ var _ = Describe("Uploader", func() {
 			uploader.RecordEvent(recordingEvent)
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
 						Expect(e).To(Equal(recordingEvent))
 					}
@@ -174,8 +174,8 @@ var _ = Describe("Uploader", func() {
 		It("should not send the live events request if client do fails. Retry 3 times.", func() {
 			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					for _, e := range eventBuffer {
 						Expect(e).To(Equal(recordingEvent))
 					}
@@ -214,8 +214,8 @@ var _ = Describe("Uploader", func() {
 			uploader.(*uploaderImpl[any]).maxESQueueSize = config.SingleValueLoader(1)
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					Expect(len(eventBuffer)).To(Equal(1))
 					for _, e := range eventBuffer {
 						Expect(e).To(Equal(recordingEvent))
@@ -253,8 +253,8 @@ var _ = Describe("Uploader", func() {
 
 			i := 0
 			mockTransformer.EXPECT().Transform(gomock.Any()).
-				DoAndReturn(func(data interface{}) ([]byte, error) {
-					eventBuffer := data.([]interface{})
+				DoAndReturn(func(data any) ([]byte, error) {
+					eventBuffer := data.([]any)
 					Expect(len(eventBuffer)).To(Equal(1))
 					for _, e := range eventBuffer {
 						var re []byte

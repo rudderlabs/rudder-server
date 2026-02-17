@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"strconv"
 	"strings"
@@ -257,7 +258,7 @@ func TestIntegration(t *testing.T) {
 					Type: client.SQLClient,
 				}
 
-				conf := map[string]interface{}{
+				conf := map[string]any{
 					"bucketProvider":   whutils.MINIO,
 					"bucketName":       bucketName,
 					"accessKeyID":      accessKeyID,
@@ -935,12 +936,8 @@ func TestIntegration(t *testing.T) {
 				}
 
 				payload := make(map[string]any)
-				for k, v := range tc.payload {
-					payload[k] = v
-				}
-				for k, v := range testPayload {
-					payload[k] = v
-				}
+				maps.Copy(payload, tc.payload)
+				maps.Copy(payload, testPayload)
 
 				err := ch.Setup(ctx, warehouse, newMockUploader(t, "", nil, nil))
 				require.NoError(t, err)

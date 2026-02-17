@@ -19,13 +19,13 @@ var (
 )
 
 func (ops *PagerDuty) Alert(message string) {
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"summary":  message,
 		"severity": "critical",
 		"source":   ops.instanceName,
 	}
 
-	event := map[string]interface{}{
+	event := map[string]any{
 		"payload":      payload,
 		"event_action": "trigger",
 		"routing_key":  ops.routingKey,

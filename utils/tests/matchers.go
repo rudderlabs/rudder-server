@@ -11,7 +11,7 @@ import (
 
 type beValidUUIDMatcher struct{}
 
-func (*beValidUUIDMatcher) Match(actual interface{}) (success bool, err error) {
+func (*beValidUUIDMatcher) Match(actual any) (success bool, err error) {
 	s, ok := actual.(string)
 
 	if !ok {
@@ -21,11 +21,11 @@ func (*beValidUUIDMatcher) Match(actual interface{}) (success bool, err error) {
 	return misc.IsValidUUID(s), nil
 }
 
-func (*beValidUUIDMatcher) FailureMessage(actual interface{}) (message string) {
+func (*beValidUUIDMatcher) FailureMessage(actual any) (message string) {
 	return format.Message(actual, "to be a valid uuid")
 }
 
-func (*beValidUUIDMatcher) NegatedFailureMessage(actual interface{}) (message string) {
+func (*beValidUUIDMatcher) NegatedFailureMessage(actual any) (message string) {
 	return format.Message(actual, "not to be a valid uuid")
 }
 

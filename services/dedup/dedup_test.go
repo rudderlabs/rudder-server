@@ -245,7 +245,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 
 	size := 105_000
 	messages := make([]string, size)
-	for i := 0; i < size; i++ {
+	for i := range size {
 		key := uuid.New().String()
 		messages[i] = key
 		_, _ = d.Allowed(dedup.SingleKey(key))

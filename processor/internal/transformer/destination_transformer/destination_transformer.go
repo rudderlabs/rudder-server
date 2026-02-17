@@ -162,12 +162,10 @@ func (d *Client) transform(ctx context.Context, clientEvents []types.Transformer
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	trackWg.Add(1)
-	go func() {
+	trackWg.Go(func() {
 		l := d.log.Withn(labels.ToLoggerFields()...)
 		transformerutils.TrackLongRunningTransformation(ctx, labels.Stage, d.config.timeoutDuration, l)
-		trackWg.Done()
-	}()
+	})
 
 	batches := lo.Chunk(clientEvents, batchSize)
 
@@ -343,7 +341,7 @@ func (d *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	)
 	if err != nil {
 		if d.config.failOnError.Load() {
-			return []byte(fmt.Sprintf("transformer request failed: %s", err)), transformerutils.TransformerRequestFailure, nil
+			return fmt.Appendf(nil, "transformer request failed: %s", err), transformerutils.TransformerRequestFailure, nil
 		} else {
 			return nil, 0, err
 		}

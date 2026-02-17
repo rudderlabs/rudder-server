@@ -230,17 +230,17 @@ func Test_Namespace_IncrementalUpdates(t *testing.T) {
 		case 0: // 1st request, return file content as is
 			responseBody = responseBodyFromFile
 		case 1: // 2nd request, return new workspace, no updates for the other 2
-			responseBody = []byte(fmt.Sprintf(`{
+			responseBody = fmt.Appendf(nil, `{
 				"dummy":{"updatedAt":%q,"libraries":[{"versionId":"foo"},{"versionId":"bar"}]},
 				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
 				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
-			}`, updatedAfterTime.Add(time.Minute).Format(updatedAfterTimeFormat)))
+			}`, updatedAfterTime.Add(time.Minute).Format(updatedAfterTimeFormat))
 		case 2: // 3rd request, return updated dummy workspace, no updates for the other 2
-			responseBody = []byte(fmt.Sprintf(`{
+			responseBody = fmt.Appendf(nil, `{
 				"dummy":{"updatedAt":%q,"libraries":[{"versionId":"baz"}]},
 				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,
 				"2CChLejq5aIWi3qsKVm1PjHkyTj":null
-			}`, updatedAfterTime.Add(time.Minute).Format(updatedAfterTimeFormat)))
+			}`, updatedAfterTime.Add(time.Minute).Format(updatedAfterTimeFormat))
 		case 3, 4: // 4th and 5th request, delete the dummy workspace
 			responseBody = []byte(`{
 				"2CCgbmvBSa8Mv81YaIgtR36M7aW":null,

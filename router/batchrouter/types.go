@@ -21,7 +21,7 @@ type DestinationJobs struct {
 }
 
 type ObjectStorageDefinition struct {
-	Config          map[string]interface{}
+	Config          map[string]any
 	Key             string
 	Provider        string
 	DestinationID   string
@@ -34,7 +34,7 @@ type batchRequestMetric struct {
 }
 
 type UploadResult struct {
-	Config           map[string]interface{}
+	Config           map[string]any
 	Key              string
 	FileLocation     string
 	LocalFilePaths   []string

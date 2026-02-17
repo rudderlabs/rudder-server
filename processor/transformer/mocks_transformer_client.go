@@ -209,7 +209,7 @@ func EmptySuccessResponse() types.Response {
 }
 
 // SuccessResponse creates a response with successfully processed events
-func SuccessResponse(outputs []map[string]interface{}, metadatas []types.Metadata) types.Response {
+func SuccessResponse(outputs []map[string]any, metadatas []types.Metadata) types.Response {
 	responses := make([]types.TransformerResponse, len(outputs))
 	for i, output := range outputs {
 		metadata := types.Metadata{}

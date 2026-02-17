@@ -77,7 +77,7 @@ func getDiscardedRecordsFromEvent(
 	tableName string,
 	formattedTS string,
 ) (discardedRecords []discardInfo) {
-	sliceType := reflect.TypeOf([]interface{}{})
+	sliceType := reflect.TypeFor[[]any]()
 	for columnName, actualType := range event.Message.Metadata.Columns {
 		if expectedType, exists := snowpipeSchema[columnName]; exists && actualType != expectedType {
 			currentValue := event.Message.Data[columnName]

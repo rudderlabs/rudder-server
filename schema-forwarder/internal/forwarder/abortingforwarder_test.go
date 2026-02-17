@@ -44,7 +44,7 @@ func Test_AbortingForwarder(t *testing.T) {
 	generateJobs := func(numOfJob int) []*jobsdb.JobT {
 		customVal := "MOCKDS"
 		js := make([]*jobsdb.JobT, numOfJob)
-		for i := 0; i < numOfJob; i++ {
+		for i := range numOfJob {
 			js[i] = &jobsdb.JobT{
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 				EventPayload: []byte(`{"testKey":"testValue"}`),

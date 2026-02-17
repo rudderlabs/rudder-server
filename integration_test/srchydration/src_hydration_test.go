@@ -590,8 +590,8 @@ func configKeyToEnv(key string) string {
 
 // nolint: unparam, bodyclose
 func sendEvents(num int, eventType, writeKey, url, anonID string) error {
-	for i := 0; i < num; i++ {
-		payload := []byte(fmt.Sprintf(`
+	for range num {
+		payload := fmt.Appendf(nil, `
 			{
 			  "batch": [
 				{
@@ -611,7 +611,7 @@ func sendEvents(num int, eventType, writeKey, url, anonID string) error {
 			  ]
 			}`,
 			eventType, anonID,
-		))
+		)
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
 			return err

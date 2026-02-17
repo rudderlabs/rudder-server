@@ -38,7 +38,7 @@ var (
 	once        sync.Once
 	destination = backendconfig.DestinationT{
 		Name: "BingAds",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"customerAccountId": "customer_account_id",
 			"customerId":        "customer_id",
 			"rudderAccountId":   "rudder_account_id",

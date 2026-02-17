@@ -61,7 +61,7 @@ func TestWorkerWriter(t *testing.T) {
 		factor := 10
 		payloads := make([]payload, 0, count)
 
-		for i := 0; i < count; i++ {
+		for i := range count {
 			p := payload{
 				MessageID:        "messageId" + strconv.Itoa(i),
 				SourceID:         "sourceId" + strconv.Itoa(i%5),
@@ -144,7 +144,7 @@ func TestWorkerWriter(t *testing.T) {
 				require.EqualValues(t, 10, count)
 			})
 			t.Run("select all", func(t *testing.T) {
-				failedMessages := failedMessagesUsingDuckDB(t, ctx, nil, "SELECT * FROM read_parquet($1) ORDER BY failed_at ASC;", []interface{}{filePath})
+				failedMessages := failedMessagesUsingDuckDB(t, ctx, nil, "SELECT * FROM read_parquet($1) ORDER BY failed_at ASC;", []any{filePath})
 
 				for i, failedMessage := range failedMessages {
 					require.Equal(t, payloads[i].MessageID, failedMessage.MessageID)
@@ -183,7 +183,7 @@ func TestWorkerWriter(t *testing.T) {
 			payloads := make([]payload, 0, count)
 			jobs := make([]*jobsdb.JobT, 0, count)
 
-			for i := 0; i < count; i++ {
+			for i := range count {
 				p := payload{
 					MessageID:        "message-id-" + strconv.Itoa(i),
 					SourceID:         sourceID,
@@ -264,7 +264,7 @@ func TestWorkerWriter(t *testing.T) {
 				lastFailedAt.Unix(),
 				instanceID,
 			)
-			failedMessages := failedMessagesUsingDuckDB(t, ctx, minioResource, "SELECT * FROM read_parquet($1) WHERE failed_at >= $2 AND failed_at <= $3 ORDER BY failed_at ASC;", []interface{}{filePath, failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro()})
+			failedMessages := failedMessagesUsingDuckDB(t, ctx, minioResource, "SELECT * FROM read_parquet($1) WHERE failed_at >= $2 AND failed_at <= $3 ORDER BY failed_at ASC;", []any{filePath, failedAt.UTC().UnixMicro(), lastFailedAt.UTC().UnixMicro()})
 			require.Len(t, failedMessages, len(jobs))
 			require.EqualValues(t, payloads, failedMessages)
 
@@ -332,7 +332,7 @@ func TestWorkerWriter(t *testing.T) {
 			payloads := make([]payload, 0, count)
 			jobs := make([]*jobsdb.JobT, 0, count)
 
-			for i := 0; i < count; i++ {
+			for i := range count {
 				p := payload{
 					MessageID:        "message-id-" + strconv.Itoa(i),
 					SourceID:         sourceID,
@@ -390,7 +390,7 @@ func TestWorkerWriter(t *testing.T) {
 			defer w.Stop()
 			w.Work()
 
-			for i := 0; i < count; i++ {
+			for i := range count {
 				failedAt := failedAt.Add(time.Duration(i) * time.Hour)
 				filePath := fmt.Sprintf("s3://%s/%s/%s/%s/%d_%d_%s**.parquet",
 					minioResource.BucketName,
@@ -401,7 +401,7 @@ func TestWorkerWriter(t *testing.T) {
 					failedAt.Unix(),
 					instanceID,
 				)
-				failedMessages := failedMessagesUsingDuckDB(t, ctx, minioResource, "SELECT * FROM read_parquet($1) WHERE failed_at >= $2 AND failed_at <= $3 ORDER BY failed_at ASC;", []interface{}{filePath, failedAt.UTC().UnixMicro(), failedAt.UTC().UnixMicro()})
+				failedMessages := failedMessagesUsingDuckDB(t, ctx, minioResource, "SELECT * FROM read_parquet($1) WHERE failed_at >= $2 AND failed_at <= $3 ORDER BY failed_at ASC;", []any{filePath, failedAt.UTC().UnixMicro(), failedAt.UTC().UnixMicro()})
 				require.EqualValues(t, []payload{payloads[i]}, failedMessages)
 			}
 
@@ -455,7 +455,7 @@ func TestWorkerWriter(t *testing.T) {
 			count := 100
 			jobs := make([]*jobsdb.JobT, 0, count)
 
-			for i := 0; i < count; i++ {
+			for i := range count {
 				p := payload{
 					MessageID:        "message-id-" + strconv.Itoa(i),
 					SourceID:         sourceID,
@@ -592,7 +592,7 @@ func failedMessagesUsingMinioS3Select(t testing.TB, ctx context.Context, mr *min
 	return payloads
 }
 
-func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *minio.Resource, query string, queryArgs []interface{}) []payload {
+func failedMessagesUsingDuckDB(t testing.TB, ctx context.Context, mr *minio.Resource, query string, queryArgs []any) []payload {
 	t.Helper()
 
 	db := duckDB(t)
@@ -646,7 +646,7 @@ func BenchmarkFileFormat(b *testing.B) {
 	b.Run("csv", func(b *testing.B) {
 		var records [][]string
 
-		for i := 0; i < entries; i++ {
+		for i := range entries {
 			record := make([]string, 0, 10)
 			record = append(record, "messageId"+strconv.Itoa(i))
 			record = append(record, "sourceId")
@@ -673,7 +673,7 @@ func BenchmarkFileFormat(b *testing.B) {
 	b.Run("json", func(b *testing.B) {
 		var records []payload
 
-		for i := 0; i < entries; i++ {
+		for i := range entries {
 			records = append(records, payload{
 				MessageID:        "messageId" + strconv.Itoa(i),
 				SourceID:         "sourceId",
@@ -700,7 +700,7 @@ func BenchmarkFileFormat(b *testing.B) {
 	b.Run("parquet", func(b *testing.B) {
 		var records []payload
 
-		for i := 0; i < entries; i++ {
+		for i := range entries {
 			records = append(records, payload{
 				MessageID:        "messageId" + strconv.Itoa(i),
 				SourceID:         "sourceId",

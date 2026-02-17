@@ -455,7 +455,7 @@ func getSuccessJobIDs(failedEventList, initialEventList []int64) []int64 {
 /*
 This function validates if a `field` is present, not null and have a valid value or not in the `fields" object
 */
-func validateField(fields map[string]interface{}, field string) error {
+func validateField(fields map[string]any, field string) error {
 	val, ok := fields[field]
 	if !ok {
 		return fmt.Errorf(" %v field not defined", field) // Field not defined
@@ -464,7 +464,7 @@ func validateField(fields map[string]interface{}, field string) error {
 		return fmt.Errorf("%v field is null", field) // Field is null
 	}
 	// Check if the field value is empty for strings
-	if reflect.TypeOf(val) != reflect.TypeOf("") || val == "" {
+	if reflect.TypeOf(val) != reflect.TypeFor[string]() || val == "" {
 		return fmt.Errorf("%v field is either not string or an empty string", field)
 	}
 	return nil
@@ -480,9 +480,9 @@ func calculateHashCode(data string) string {
 	return hashCode
 }
 
-func hashFields(input map[string]interface{}) (json.RawMessage, error) {
+func hashFields(input map[string]any) (json.RawMessage, error) {
 	// Create a new map to hold the hashed fields
-	hashedMap := make(map[string]interface{})
+	hashedMap := make(map[string]any)
 
 	// Iterate over the input map
 	for key, value := range input {
@@ -510,7 +510,7 @@ func hashFields(input map[string]interface{}) (json.RawMessage, error) {
 	return json.RawMessage(result), nil
 }
 
-func validateAndTransformTimeFields(fields map[string]interface{}) error {
+func validateAndTransformTimeFields(fields map[string]any) error {
 	timeFields := []string{"conversionTime", "adjustedConversionTime"}
 
 	for _, field := range timeFields {

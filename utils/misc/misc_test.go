@@ -508,21 +508,21 @@ var _ = Describe("Misc", func() {
 
 func TestHasAWSRoleARNInConfig(t *testing.T) {
 	t.Run("Config has valid IAM Role ARN", func(t *testing.T) {
-		configMap := map[string]interface{}{
+		configMap := map[string]any{
 			"iamRoleARN": "someRole",
 		}
 		require.True(t, HasAWSRoleARNInConfig(configMap))
 	})
 
 	t.Run("Config has empty IAM Role ARN", func(t *testing.T) {
-		configMap := map[string]interface{}{
+		configMap := map[string]any{
 			"iamRoleARN": "",
 		}
 		require.False(t, HasAWSRoleARNInConfig(configMap))
 	})
 
 	t.Run("Config has no IAM Role ARN", func(t *testing.T) {
-		configMap := map[string]interface{}{}
+		configMap := map[string]any{}
 		require.False(t, HasAWSRoleARNInConfig(configMap))
 	})
 }
@@ -584,7 +584,7 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	t.Run("S3 without AccessKeys", func(t *testing.T) {
 		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider:    "S3",
-			Config:      map[string]interface{}{},
+			Config:      map[string]any{},
 			WorkspaceID: sampleWorkspaceID,
 		})
 		require.NotNil(t, config)
@@ -596,7 +596,7 @@ func TestGetObjectStorageConfig(t *testing.T) {
 	t.Run("S3 with AccessKeys", func(t *testing.T) {
 		config := GetObjectStorageConfig(ObjectStorageOptsT{
 			Provider: "S3",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"accessKeyID": "someOtherAccessKeyID",
 				"accessKey":   "someOtherAccessKey",
 			},
@@ -636,21 +636,21 @@ func FileExists(path string) (bool, error) {
 }
 
 func TestMapLookup(t *testing.T) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"foo": "bar",
 		"baz": "qux",
 	}
 	require.Nil(t, MapLookup(m, "foo", "baz"))
 
-	m = map[string]interface{}{
-		"foo": map[string]interface{}{
+	m = map[string]any{
+		"foo": map[string]any{
 			"baz": "qux",
 		},
 	}
 	require.Equal(t, "qux", MapLookup(m, "foo", "baz"))
 
-	m = map[string]interface{}{
-		"hello": map[string]interface{}{
+	m = map[string]any{
+		"hello": map[string]any{
 			"foo": "bar",
 		},
 	}
@@ -658,21 +658,21 @@ func TestMapLookup(t *testing.T) {
 }
 
 func TestNestedMapLookup(t *testing.T) {
-	m1 := map[string]interface{}{
-		"nestedKey1": map[string]interface{}{
-			"nestedKey2": map[string]interface{}{
+	m1 := map[string]any{
+		"nestedKey1": map[string]any{
+			"nestedKey2": map[string]any{
 				"nestedKey3": "nestedValue2",
 			},
 			"nestedKey4": "nestedValue4",
 		},
 		"key5":      "value5",
-		"arrayKey6": []interface{}{1, "sow"},
+		"arrayKey6": []any{1, "sow"},
 	}
 
 	type testCaseT struct {
 		caseName      string
 		inputKeys     []string
-		expectedValue interface{}
+		expectedValue any
 		expectedError error
 	}
 
@@ -680,7 +680,7 @@ func TestNestedMapLookup(t *testing.T) {
 		{
 			caseName:  "nested-keys are found",
 			inputKeys: []string{"nestedKey1", "nestedKey2"},
-			expectedValue: map[string]interface{}{
+			expectedValue: map[string]any{
 				"nestedKey3": "nestedValue2",
 			},
 		},
@@ -697,7 +697,7 @@ func TestNestedMapLookup(t *testing.T) {
 		{
 			caseName:      "arrayKey nested lookup not valid",
 			inputKeys:     []string{"arrayKey6", "someInternalKey"},
-			expectedError: fmt.Errorf("malformed structure at %#v", []interface{}{1, "sow"}),
+			expectedError: fmt.Errorf("malformed structure at %#v", []any{1, "sow"}),
 		},
 		{
 			caseName:      "one of the nestedKeys are not found",
@@ -717,7 +717,7 @@ func TestNestedMapLookup(t *testing.T) {
 		})
 	}
 	t.Run("key not present at all(at level-0)", func(t *testing.T) {
-		searchMap1 := map[string]interface{}{}
+		searchMap1 := map[string]any{}
 		v, searchErr := NestedMapLookup(searchMap1, "key", "key")
 		require.Equal(t, v, nil)
 		require.Error(t, searchErr.Err)
@@ -726,8 +726,8 @@ func TestNestedMapLookup(t *testing.T) {
 	})
 
 	t.Run("key not found at level-1", func(t *testing.T) {
-		searchMap1 := map[string]interface{}{
-			"key": map[string]interface{}{},
+		searchMap1 := map[string]any{
+			"key": map[string]any{},
 		}
 		_, searchErr := NestedMapLookup(searchMap1, "key", "key")
 		require.Error(t, searchErr.Err)
@@ -735,7 +735,7 @@ func TestNestedMapLookup(t *testing.T) {
 		require.Equal(t, searchErr.Level, 1)
 	})
 	t.Run("key not found at level-0", func(t *testing.T) {
-		searchMap1 := map[string]interface{}{}
+		searchMap1 := map[string]any{}
 		_, searchErr := NestedMapLookup(searchMap1, "key", "key")
 		require.Error(t, searchErr.Err)
 		require.EqualError(t, searchErr.Err, "key: key not found")
@@ -869,7 +869,6 @@ func TestSanitizeString(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

@@ -19,20 +19,20 @@ import (
 func TestUpdateDynamicConfig(t *testing.T) {
 	tests := []struct {
 		name        string
-		config      map[string]interface{}
+		config      map[string]any
 		expectValue bool
 	}{
 		{
 			name: "with dynamic config pattern",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 			},
 			expectValue: true,
 		},
 		{
 			name: "with dynamic config pattern in nested map",
-			config: map[string]interface{}{
-				"credentials": map[string]interface{}{
+			config: map[string]any{
+				"credentials": map[string]any{
 					"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 				},
 			},
@@ -40,7 +40,7 @@ func TestUpdateDynamicConfig(t *testing.T) {
 		},
 		{
 			name: "without dynamic config pattern",
-			config: map[string]interface{}{
+			config: map[string]any{
 				"apiKey": "static-api-key",
 			},
 			expectValue: false,
@@ -87,14 +87,14 @@ func TestProcessDynamicConfigWithCache(t *testing.T) {
 					{
 						ID:         "dest-1",
 						RevisionID: "rev-1",
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 						},
 					},
 					{
 						ID:         "dest-2",
 						RevisionID: "rev-2",
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"apiKey": "static-api-key",
 						},
 					},
@@ -160,7 +160,7 @@ func TestUpdateDynamicConfigWithMockCache(t *testing.T) {
 	dest1 := &backendconfig.DestinationT{
 		ID:         "dest-1",
 		RevisionID: "rev-1",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 		},
 	}
@@ -183,7 +183,7 @@ func TestUpdateDynamicConfigWithMockCache(t *testing.T) {
 	dest2 := &backendconfig.DestinationT{
 		ID:         "dest-2",
 		RevisionID: "rev-2",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 		},
 	}
@@ -207,7 +207,7 @@ func TestUpdateDynamicConfigWithMockCache(t *testing.T) {
 	dest3 := &backendconfig.DestinationT{
 		ID:         "dest-3",
 		RevisionID: "rev-3-new",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"apiKey": "static-api-key", // No dynamic config
 		},
 	}
@@ -248,14 +248,14 @@ func TestProcessDestinationsInSources(t *testing.T) {
 				{
 					ID:         "dest-1",
 					RevisionID: "rev-1",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 					},
 				},
 				{
 					ID:         "dest-2",
 					RevisionID: "rev-2",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"apiKey": "static-api-key",
 					},
 				},
@@ -267,7 +267,7 @@ func TestProcessDestinationsInSources(t *testing.T) {
 				{
 					ID:         "dest-3",
 					RevisionID: "rev-3",
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 					},
 				},
@@ -346,13 +346,13 @@ func TestProcessDestinationsInSources(t *testing.T) {
 func createTestConfig(numSources, numDestPerSource int, withDynamicConfig bool) *backendconfig.ConfigT {
 	config := &backendconfig.ConfigT{}
 
-	for i := 0; i < numSources; i++ {
+	for i := range numSources {
 		source := backendconfig.SourceT{
 			ID:   string(rune('A' + i)),
 			Name: "Source " + string(rune('A'+i)),
 		}
 
-		for j := 0; j < numDestPerSource; j++ {
+		for j := range numDestPerSource {
 			dest := backendconfig.DestinationT{
 				ID:   string(rune('A'+i)) + string(rune('0'+j)),
 				Name: "Destination " + string(rune('A'+i)) + string(rune('0'+j)),
@@ -360,11 +360,11 @@ func createTestConfig(numSources, numDestPerSource int, withDynamicConfig bool) 
 
 			// Add dynamic config pattern to some destinations if requested
 			if withDynamicConfig && (i+j)%3 == 0 {
-				dest.Config = map[string]interface{}{
+				dest.Config = map[string]any{
 					"apiKey": "{{ message.context.apiKey || \"default-api-key\" }}",
 				}
 			} else {
-				dest.Config = map[string]interface{}{
+				dest.Config = map[string]any{
 					"apiKey": "static-api-key",
 				}
 			}

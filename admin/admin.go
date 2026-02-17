@@ -50,7 +50,7 @@ import (
 
 // RegisterAdminHandler is used by other packages to
 // expose admin functions over the unix socket based rpc interface
-func RegisterAdminHandler(name string, handler interface{}) {
+func RegisterAdminHandler(name string, handler any) {
 	_ = instance.rpcServer.RegisterName(name, handler) // @TODO fix ignored error
 }
 

@@ -42,7 +42,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (common
 }
 
 // Produce creates a producer and send data to EventBridge.
-func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ any) (int, string, string) {
 	// get producer
 	client := producer.client
 	if client == nil {

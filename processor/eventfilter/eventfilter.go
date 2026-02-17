@@ -24,7 +24,7 @@ var pkgLogger = logger.NewLogger().Child("eventfilter")
 func GetSupportedMessageTypes(destination *backendconfig.DestinationT) ([]string, bool) {
 	var supportedMessageTypes []string
 	if supportedTypes, ok := destination.DestinationDefinition.Config["supportedMessageTypes"]; ok {
-		if supportedTypeInterface, ok := supportedTypes.([]interface{}); ok {
+		if supportedTypeInterface, ok := supportedTypes.([]any); ok {
 			supportedTypesArr := misc.ConvertInterfaceToStringArray(supportedTypeInterface)
 			for _, supportedType := range supportedTypesArr {
 				var skip bool
@@ -64,10 +64,10 @@ func GetSupportedMessageEvents(destination *backendconfig.DestinationT) ([]strin
 	//	    }
 	// ]
 	if supportedEventsI, ok := destination.Config["listOfConversions"]; ok {
-		if supportedEvents, ok := supportedEventsI.([]interface{}); ok {
+		if supportedEvents, ok := supportedEventsI.([]any); ok {
 			var supportedMessageEvents []string
 			for _, supportedEvent := range supportedEvents {
-				if supportedEventMap, ok := supportedEvent.(map[string]interface{}); ok {
+				if supportedEventMap, ok := supportedEvent.(map[string]any); ok {
 					if conversions, ok := supportedEventMap["conversions"]; ok {
 						if supportedMessageEvent, ok := conversions.(string); ok {
 							supportedMessageEvents = append(supportedMessageEvents, supportedMessageEvent)
@@ -233,7 +233,7 @@ func FilterEventsForHybridMode(connectionModeFilterParams ConnectionModeFilterPa
 			logger.NewStringField("srcType", srcType))
 		return evaluatedDefaultBehaviour
 	}
-	eventProperties, isOk := sourceEventPropertiesI.(map[string]interface{})
+	eventProperties, isOk := sourceEventPropertiesI.(map[string]any)
 
 	if !isOk || len(eventProperties) == 0 {
 		pkgLogger.Debugn("hybridModeEventsFilterKey.srcType is not correctly defined", logger.NewStringField("hybridModeEventsFilterKey", hybridModeEventsFilterKey), logger.NewStringField("srcType", srcType))
@@ -275,11 +275,11 @@ type EventPropsTypes interface {
 /*
 * Converts interface{} to []T if the go type-assertion allows it
  */
-func ConvertToArrayOfType[T EventPropsTypes](data interface{}) []T {
+func ConvertToArrayOfType[T EventPropsTypes](data any) []T {
 	switch value := data.(type) {
 	case []T:
 		return value
-	case []interface{}:
+	case []any:
 		result := make([]T, len(value))
 		for i, v := range value {
 			var ok bool

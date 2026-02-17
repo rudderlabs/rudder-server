@@ -29,7 +29,7 @@ var (
 	once        sync.Once
 	destination = backendconfig.DestinationT{
 		Name: "LYTICS_BULK_UPLOAD",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"lyticsAccountId":  "1234",
 			"lyticsApiKey":     "1234567",
 			"lyticsStreamName": "test",

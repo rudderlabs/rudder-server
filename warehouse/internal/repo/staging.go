@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
@@ -121,7 +120,7 @@ func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
 func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error) {
 	var (
 		id                        int64
-		firstEventAt, lastEventAt interface{}
+		firstEventAt, lastEventAt any
 	)
 
 	firstEventAt = stagingFile.FirstEventAt.UTC()
@@ -136,8 +135,8 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 
 	m := metadataFromStagingFile(&stagingFile.StagingFile)
 	if len(stagingFile.SnapshotPatch) > 0 {
-		m.SnapshotPatchSize = lo.ToPtr[int](len(stagingFile.SnapshotPatch))
-		m.SnapshotPatchCompressionRatio = lo.ToPtr[float64](float64(len(stagingFile.SnapshotPatch)) / float64(len(stagingFile.Schema)))
+		m.SnapshotPatchSize = new(len(stagingFile.SnapshotPatch))
+		m.SnapshotPatchCompressionRatio = new(float64(len(stagingFile.SnapshotPatch)) / float64(len(stagingFile.Schema)))
 	}
 	rawMetadata, err := jsonrs.Marshal(&m)
 	if err != nil {
@@ -145,7 +144,7 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 	}
 	now := sf.now()
 
-	var bytesPerTablePayload interface{}
+	var bytesPerTablePayload any
 	if stagingFile.BytesPerTable != nil {
 		marshalled, err := jsonrs.Marshal(stagingFile.BytesPerTable)
 		if err != nil {
@@ -161,11 +160,11 @@ func (sf *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFi
 		"workspaceId": stagingFile.WorkspaceID,
 	})()
 
-	var schemaSnapshotID interface{}
+	var schemaSnapshotID any
 	if stagingFile.SnapshotID != uuid.Nil {
 		schemaSnapshotID = stagingFile.SnapshotID.String()
 	}
-	var schemaPatchPayload interface{}
+	var schemaPatchPayload any
 	if len(stagingFile.SnapshotPatch) > 0 {
 		schemaPatchPayload = stagingFile.SnapshotPatch
 	}
@@ -448,7 +447,7 @@ func (sf *StagingFiles) CountPendingForDestination(ctx context.Context, destinat
 	return sf.countPending(ctx, `destination_id = $1`, destinationID)
 }
 
-func (sf *StagingFiles) countPending(ctx context.Context, query string, value interface{}) (int64, error) {
+func (sf *StagingFiles) countPending(ctx context.Context, query string, value any) (int64, error) {
 	var count int64
 	err := sf.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM `+stagingTableName+` WHERE `+query+` AND id > (SELECT COALESCE(MAX(end_staging_file_id), 0) FROM `+uploadsTableName+` WHERE `+query+`)`,

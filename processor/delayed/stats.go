@@ -39,7 +39,7 @@ func (s *eventStats) ObserveSourceEvents(source *backendconfig.SourceT, events [
 
 		sdkContext, err := misc.NestedMapLookup(event.Message, "context", "library")
 		if err == nil {
-			m, ok := sdkContext.(map[string]interface{})
+			m, ok := sdkContext.(map[string]any)
 			if ok {
 				sdkLibVersion, _ := m["version"].(string)
 				sdkLibName, _ := m["name"].(string)

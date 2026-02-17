@@ -147,7 +147,7 @@ func TestClientSendMetric(t *testing.T) {
 	require.NoError(t, err, "failed to read golden file")
 
 	// Compare JSON payloads
-	var expectedJSON, actualJSON interface{}
+	var expectedJSON, actualJSON any
 	err = jsonrs.Unmarshal(expected, &expectedJSON)
 	require.NoError(t, err, "failed to unmarshal expected JSON")
 	err = jsonrs.Unmarshal(receivedPayload, &actualJSON)
@@ -281,7 +281,7 @@ func TestClientSendErrorMetric(t *testing.T) {
 	require.NoError(t, err, "failed to read golden file")
 
 	// Compare JSON payloads
-	var expectedJSON, actualJSON interface{}
+	var expectedJSON, actualJSON any
 	err = jsonrs.Unmarshal(expected, &expectedJSON)
 	require.NoError(t, err, "failed to unmarshal expected JSON")
 	err = jsonrs.Unmarshal(receivedPayload, &actualJSON)

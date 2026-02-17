@@ -130,7 +130,7 @@ func TestGetFailedRecordsIntegration(t *testing.T) {
 		})
 		pageSize := 2
 		pageToken := ""
-		for i := 0; i < 2; i++ { // 2 pages are retrieved with 2 records each and where paging is present
+		for range 2 { // 2 pages are retrieved with 2 records each and where paging is present
 			failedRecords := getFailedRecords(t, handler, pageSize, pageToken)
 			require.NotNil(t, failedRecords)
 			require.Len(t, failedRecords.Tasks, 1)

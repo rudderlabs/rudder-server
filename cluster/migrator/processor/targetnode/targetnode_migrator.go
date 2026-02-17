@@ -201,7 +201,6 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 					logger.NewStringField("groupMembers", strings.Join(groupIdentifiers, ",")),
 				)
 				for _, pb := range pbGroup {
-					pb := pb
 					g.Go(func() error {
 						if err := pb.FlushBufferedPartitions(jobCtx, job.Partitions); err != nil {
 							return fmt.Errorf("flushing buffered partitions of %q: %w", pb.Identifier(), err)

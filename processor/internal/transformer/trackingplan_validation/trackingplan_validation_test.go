@@ -214,7 +214,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 
 						events[i] = types.TransformerEvent{
 							Metadata: Metadata,
-							Message: map[string]interface{}{
+							Message: map[string]any{
 								"src-key-1":       msgID,
 								"forceStatusCode": statusCode,
 							},
@@ -232,7 +232,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 						tResp := types.TransformerResponse{
 							Metadata:   Metadata,
 							StatusCode: statusCode,
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1":  msgID,
 								"echo-key-1": msgID,
 							},
@@ -306,7 +306,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Credentials: []types.Credential{
@@ -345,7 +345,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 								MessageID: msgID,
 							},
 							StatusCode: http.StatusOK,
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1": msgID,
 							},
 						},
@@ -360,7 +360,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -404,7 +404,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 							Events: nil,
 							FailedEvents: []types.TransformerResponse{
 								{
-									Output: map[string]interface{}{
+									Output: map[string]any{
 										"src-key-1": msgID,
 									},
 									Metadata: types.Metadata{
@@ -433,7 +433,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 										MessageID: msgID,
 									},
 									StatusCode: http.StatusOK,
-									Output: map[string]interface{}{
+									Output: map[string]any{
 										"src-key-1": msgID,
 									},
 								},
@@ -445,8 +445,6 @@ func TestTrackingPlanValidator(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount: tc.maxRetryCount,
@@ -488,7 +486,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{
@@ -528,7 +526,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 										MessageID: msgID,
 									},
 									StatusCode: http.StatusOK,
-									Output: map[string]interface{}{
+									Output: map[string]any{
 										"src-key-1": msgID,
 									},
 								},
@@ -538,8 +536,6 @@ func TestTrackingPlanValidator(t *testing.T) {
 				}
 
 				for _, tc := range testCases {
-					tc := tc
-
 					t.Run(tc.name, func(t *testing.T) {
 						elt := &endlessLoopTransformer{
 							maxRetryCount:  0,
@@ -575,7 +571,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 				expectedResponse := types.Response{
 					Events: []types.TransformerResponse{
 						{
-							Output: map[string]interface{}{
+							Output: map[string]any{
 								"src-key-1": msgID,
 							},
 							Metadata: types.Metadata{
@@ -589,7 +585,7 @@ func TestTrackingPlanValidator(t *testing.T) {
 					Metadata: types.Metadata{
 						MessageID: msgID,
 					},
-					Message: map[string]interface{}{
+					Message: map[string]any{
 						"src-key-1": msgID,
 					},
 					Destination: backendconfig.DestinationT{

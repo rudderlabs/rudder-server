@@ -120,8 +120,8 @@ func generateSnowpipeSchema(tableSchema map[string]ColumnInfo) whutils.ModelTabl
 
 func cleanDataType(input string) string {
 	// Extract the portion before the first '('
-	if idx := strings.Index(input, "("); idx != -1 {
-		return input[:idx]
+	if before, _, ok := strings.Cut(input, "("); ok {
+		return before
 	}
 	return input // Return as-is if no '(' is found
 }

@@ -117,7 +117,7 @@ func TestBotEnricher(t *testing.T) {
 			expectedEvents: []types.SingularEventT{
 				{
 					"event": "test-event",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"isBot": true,
 						"bot": botDetails{
 							Name:             "test-bot",
@@ -148,7 +148,7 @@ func TestBotEnricher(t *testing.T) {
 			expectedEvents: []types.SingularEventT{
 				{
 					"event": "test-event",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"isBot": true,
 						"bot": botDetails{
 							Name:             "test-bot",
@@ -177,7 +177,7 @@ func TestBotEnricher(t *testing.T) {
 			expectedEvents: []types.SingularEventT{
 				{
 					"event": "test-event",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"isBot": true,
 						"bot": botDetails{
 							IsInvalidBrowser: true,
@@ -193,7 +193,7 @@ func TestBotEnricher(t *testing.T) {
 				Batch: []types.SingularEventT{
 					{
 						"event": "test-event",
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"existing": "value",
 						},
 					},
@@ -208,7 +208,7 @@ func TestBotEnricher(t *testing.T) {
 			expectedEvents: []types.SingularEventT{
 				{
 					"event": "test-event",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"existing": "value",
 						"isBot":    true,
 						"bot": botDetails{
@@ -227,7 +227,7 @@ func TestBotEnricher(t *testing.T) {
 				Batch: []types.SingularEventT{
 					{
 						"event": "test-event",
-						"context": map[string]interface{}{
+						"context": map[string]any{
 							"isBot": false,
 							"bot": botDetails{
 								Name:             "old-bot",
@@ -248,7 +248,7 @@ func TestBotEnricher(t *testing.T) {
 			expectedEvents: []types.SingularEventT{
 				{
 					"event": "test-event",
-					"context": map[string]interface{}{
+					"context": map[string]any{
 						"isBot": true,
 						"bot": botDetails{
 							Name:             "new-bot",

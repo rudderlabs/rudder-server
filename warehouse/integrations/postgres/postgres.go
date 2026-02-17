@@ -535,7 +535,7 @@ func (pg *Postgres) Connect(_ context.Context, warehouse model.Warehouse) (clien
 	return client.Client{Type: client.SQLClient, SQL: db.DB}, err
 }
 
-func (pg *Postgres) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (pg *Postgres) TestLoadTable(ctx context.Context, _, tableName string, payloadMap map[string]any, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,

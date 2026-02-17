@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand"
 	"path/filepath"
 	"runtime/trace"
@@ -227,25 +228,25 @@ type DestStatT struct {
 }
 
 type ParametersT struct {
-	SourceID                string      `json:"source_id"`
-	SourceName              string      `json:"source_name"`
-	DestinationID           string      `json:"destination_id"`
-	ReceivedAt              string      `json:"received_at"`
-	TransformAt             string      `json:"transform_at"`
-	MessageID               string      `json:"message_id"`
-	GatewayJobID            int64       `json:"gateway_job_id"`
-	SourceTaskRunID         string      `json:"source_task_run_id"`
-	SourceJobID             string      `json:"source_job_id"`
-	SourceJobRunID          string      `json:"source_job_run_id"`
-	EventName               string      `json:"event_name"`
-	EventType               string      `json:"event_type"`
-	SourceDefinitionID      string      `json:"source_definition_id"`
-	DestinationDefinitionID string      `json:"destination_definition_id"`
-	SourceCategory          string      `json:"source_category"`
-	RecordID                interface{} `json:"record_id"`
-	WorkspaceId             string      `json:"workspaceId"`
-	TraceParent             string      `json:"traceparent"`
-	ConnectionID            string      `json:"connection_id"`
+	SourceID                string `json:"source_id"`
+	SourceName              string `json:"source_name"`
+	DestinationID           string `json:"destination_id"`
+	ReceivedAt              string `json:"received_at"`
+	TransformAt             string `json:"transform_at"`
+	MessageID               string `json:"message_id"`
+	GatewayJobID            int64  `json:"gateway_job_id"`
+	SourceTaskRunID         string `json:"source_task_run_id"`
+	SourceJobID             string `json:"source_job_id"`
+	SourceJobRunID          string `json:"source_job_run_id"`
+	EventName               string `json:"event_name"`
+	EventType               string `json:"event_type"`
+	SourceDefinitionID      string `json:"source_definition_id"`
+	DestinationDefinitionID string `json:"destination_definition_id"`
+	SourceCategory          string `json:"source_category"`
+	RecordID                any    `json:"record_id"`
+	WorkspaceId             string `json:"workspaceId"`
+	TraceParent             string `json:"traceparent"`
+	ConnectionID            string `json:"connection_id"`
 }
 
 type MetricMetadata struct {
@@ -980,7 +981,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			continue
 		}
 		for _, job := range jobs {
-			var params map[string]interface{}
+			var params map[string]any
 			err := jsonrs.Unmarshal(job.Parameters, &params)
 			if err != nil {
 				proc.logger.Errorn("Error while UnMarshaling live event parameters", obskit.Error(err))
@@ -993,7 +994,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			procErr = strconv.Quote(procErr)
 			statusCode := fmt.Sprint(params["status_code"])
 			sentAt := time.Now().Format(misc.RFC3339Milli)
-			events := make([]map[string]interface{}, 0)
+			events := make([]map[string]any, 0)
 			err = jsonrs.Unmarshal(job.EventPayload, &events)
 			if err != nil {
 				proc.logger.Errorn("Error while UnMarshaling live event payload", obskit.Error(err))
@@ -1019,7 +1020,7 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 					AttemptNum:    1,
 					JobState:      jobsdb.Aborted.State,
 					ErrorCode:     statusCode,
-					ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
+					ErrorResponse: fmt.Appendf(nil, `{"error": %s}`, procErr),
 				}
 				proc.destDebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
 			}
@@ -1433,7 +1434,7 @@ func (proc *Handle) getTransformationMetrics(
 		)
 
 		id := misc.FastUUID()
-		params := map[string]interface{}{
+		params := map[string]any{
 			"source_id":          commonMetaData.SourceID,
 			"destination_id":     commonMetaData.DestinationID,
 			"source_job_run_id":  failedEvent.Metadata.SourceJobRunID,
@@ -1444,7 +1445,7 @@ func (proc *Handle) getTransformationMetrics(
 			"source_task_run_id": failedEvent.Metadata.SourceTaskRunID,
 			"connection_id":      generateConnectionID(commonMetaData.SourceID, commonMetaData.DestinationID),
 		}
-		if eventContext, castOk := failedEvent.Output["context"].(map[string]interface{}); castOk {
+		if eventContext, castOk := failedEvent.Output["context"].(map[string]any); castOk {
 			params["violationErrors"] = eventContext["violationErrors"]
 		}
 		marshalledParams, err := jsonrs.Marshal(params)
@@ -2470,7 +2471,6 @@ func (proc *Handle) userTransformStage(partition string, in *transformationMessa
 	}
 
 	for srcAndDestKey, eventList := range in.groupedEvents {
-		srcAndDestKey, eventList := srcAndDestKey, eventList
 		rruntime.Go(func() {
 			defer wg.Done()
 			chOut <- proc.userTransformAndFilter(
@@ -2546,7 +2546,6 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 
 	// Start worker goroutines
 	for _, userTransformAndFilterOutput := range in.userTransformAndFilterOutputs {
-		userTransformAndFilterOutput := userTransformAndFilterOutput
 		rruntime.Go(func() {
 			defer wg.Done()
 			chOut <- proc.destTransform(ctx, userTransformAndFilterOutput)
@@ -2631,9 +2630,7 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	for dupStatKey, count := range subJob.sourceDupStats {
 		sm.sourceDupStats[dupStatKey] += count
 	}
-	for id, v := range subJob.dedupKeys {
-		sm.dedupKeys[id] = v
-	}
+	maps.Copy(sm.dedupKeys, subJob.dedupKeys)
 	sm.totalEvents += subJob.totalEvents
 
 	sm.trackedUsersReports = append(sm.trackedUsersReports, subJob.trackedUsersReports...)
@@ -3790,8 +3787,8 @@ func (proc *Handle) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Stor
 
 func filterConfig(eventCopy *types.TransformerEvent) {
 	if configsToFilterI, ok := eventCopy.Destination.DestinationDefinition.Config["configFilters"]; ok {
-		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
-			omitKeys := lo.FilterMap(configsToFilter, func(configKey interface{}, _ int) (string, bool) {
+		if configsToFilter, ok := configsToFilterI.([]any); ok {
+			omitKeys := lo.FilterMap(configsToFilter, func(configKey any, _ int) (string, bool) {
 				configKeyStr, ok := configKey.(string)
 				return configKeyStr, ok
 			})

@@ -34,13 +34,13 @@ func extractObjectInfo(jobs []common.AsyncJob) (*ObjectInfo, error) {
 	return objectInfo, nil
 }
 
-func extractFromVDM(externalIDRaw interface{}) (*ObjectInfo, error) {
-	externalIDArray, ok := externalIDRaw.([]interface{})
+func extractFromVDM(externalIDRaw any) (*ObjectInfo, error) {
+	externalIDArray, ok := externalIDRaw.([]any)
 	if !ok || len(externalIDArray) == 0 {
 		return nil, fmt.Errorf("externalId must be an array with at least one element")
 	}
 
-	externalIDMap, ok := externalIDArray[0].(map[string]interface{})
+	externalIDMap, ok := externalIDArray[0].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("externalId[0] must be an object")
 	}

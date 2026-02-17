@@ -33,7 +33,7 @@ func TestV0Adapter(t *testing.T) {
 				PostParametersT: integrations.PostParametersT{
 					Type: "a",
 					URL:  "a.com",
-					Body: map[string]interface{}{
+					Body: map[string]any{
 						"jobId": 1,
 					},
 				},
@@ -46,7 +46,7 @@ func TestV0Adapter(t *testing.T) {
 						JobID: 2,
 					},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},
@@ -147,7 +147,7 @@ func TestV1Adapter(t *testing.T) {
 				PostParametersT: integrations.PostParametersT{
 					Type: "a",
 					URL:  "a.com",
-					Body: map[string]interface{}{
+					Body: map[string]any{
 						"jobId": 1,
 					},
 				},
@@ -161,7 +161,7 @@ func TestV1Adapter(t *testing.T) {
 						DontBatch: false,
 					},
 				},
-				DestinationConfig: map[string]interface{}{
+				DestinationConfig: map[string]any{
 					"key_1": "val_1",
 					"key_2": "val_2",
 				},

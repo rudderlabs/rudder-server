@@ -114,7 +114,7 @@ func (pl *pulsarLogAdapter) WithFields(fields pulsarLog.Fields) pulsarLog.Entry 
 	return pl.SubLogger(fields)
 }
 
-func (pl *pulsarLogAdapter) WithField(name string, value interface{}) pulsarLog.Entry {
+func (pl *pulsarLogAdapter) WithField(name string, value any) pulsarLog.Entry {
 	return &pulsarLogAdapter{logger.Logger(pl).Withn(logger.NewField(name, value))} // nolint:forbidigo
 }
 

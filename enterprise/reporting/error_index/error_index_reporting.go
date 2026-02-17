@@ -240,7 +240,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 		enableSSE        = eir.conf.GetBoolVar(false, "ErrorIndex.storage.EnableSSE", "AWS_ENABLE_SSE")
 	)
 
-	s3Config := map[string]interface{}{
+	s3Config := map[string]any{
 		"bucketName":       bucket,
 		"regionHint":       regionHint,
 		"endpoint":         endpoint,

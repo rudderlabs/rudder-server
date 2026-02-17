@@ -93,7 +93,7 @@ func run(ctx context.Context) error {
 		return profiler.StartServer(gCtx, config.GetInt("Profiler.Port", 7777))
 	})
 	g.Go(func() error {
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			l.Infon("Running iteration", logger.NewIntField("iteration", int64(i+1)))
 			t.Transform(gCtx, clientEvents)
 		}

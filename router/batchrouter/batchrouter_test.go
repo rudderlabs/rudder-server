@@ -286,7 +286,7 @@ var _ = Describe("BatchRouter", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
 					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
@@ -299,11 +299,9 @@ var _ = Describe("BatchRouter", func() {
 			batchrouter.pingFrequency = config.SingleValueLoader(time.Microsecond)
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				batchrouter.mainLoop(ctx)
-				wg.Done()
-			}()
+			})
 			time.Sleep(1 * time.Second)
 			cancel()
 			wg.Wait()
@@ -357,7 +355,7 @@ var _ = Describe("BatchRouter", func() {
 					EventPayload: []byte(s3Payload),
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum:    129,
-						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": "%s"}`, attempt1.Format(misc.RFC3339Milli))),
+						ErrorResponse: fmt.Appendf(nil, `{"firstAttemptedAt": "%s"}`, attempt1.Format(misc.RFC3339Milli)),
 						JobParameters: []byte(parameters),
 					},
 					Parameters: []byte(parameters),
@@ -372,7 +370,7 @@ var _ = Describe("BatchRouter", func() {
 					EventPayload: []byte(s3Payload),
 					LastJobStatus: jobsdb.JobStatusT{
 						AttemptNum:    3,
-						ErrorResponse: []byte(fmt.Sprintf(`{"firstAttemptedAt": "%s"}`, attempt2.Format(misc.RFC3339Milli))),
+						ErrorResponse: fmt.Appendf(nil, `{"firstAttemptedAt": "%s"}`, attempt2.Format(misc.RFC3339Milli)),
 						JobParameters: []byte(rSourcesParameters),
 					},
 					Parameters: []byte(rSourcesParameters),
@@ -404,7 +402,7 @@ var _ = Describe("BatchRouter", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
-				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT) {
+				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
 					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
 					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
 					cancel()
@@ -597,11 +595,11 @@ func TestBatchRouter(t *testing.T) {
 					"table": "tracks"
 				}
 			}`),
-			Parameters: []byte(fmt.Sprintf(`{
+			Parameters: fmt.Appendf(nil, `{
 				"source_id": %[1]q,
 				"destination_id": %[2]q,
 				"receivedAt": %[3]q
-			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339))),
+			}`, bc.Sources[0].ID, s3Dest.ID, time.Now().Format(time.RFC3339)),
 			CustomVal: s3Dest.DestinationDefinition.Name,
 			CreatedAt: time.Now(),
 		})

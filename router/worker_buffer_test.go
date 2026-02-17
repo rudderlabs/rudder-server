@@ -124,7 +124,7 @@ func TestWorkerBuffer(t *testing.T) {
 			var wg sync.WaitGroup
 
 			// Launch multiple goroutines changing target size
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				wg.Add(1)
 				go func(size int) {
 					defer wg.Done()
@@ -254,16 +254,14 @@ func TestWorkerBuffer(t *testing.T) {
 			var successfulReservations int
 
 			// Try to reserve from multiple goroutines
-			for i := 0; i < 15; i++ { // More attempts than slots
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+			for range 15 { // More attempts than slots
+				wg.Go(func() {
 					if slot := wb.ReserveSlot(); slot != nil {
 						mu.Lock()
 						successfulReservations++
 						mu.Unlock()
 					}
-				}()
+				})
 			}
 
 			wg.Wait()
@@ -332,7 +330,7 @@ func TestWorkerBuffer(t *testing.T) {
 			var wg sync.WaitGroup
 
 			// Reserve multiple slots concurrently and then use/release them
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				wg.Add(1)
 				go func(id int) {
 					defer wg.Done()
@@ -403,7 +401,7 @@ func TestWorkerBuffer(t *testing.T) {
 			var wg sync.WaitGroup
 
 			// Simulate realistic workload
-			for i := 0; i < 50; i++ {
+			for i := range 50 {
 				wg.Add(1)
 				go func(id int) {
 					defer wg.Done()
@@ -620,7 +618,7 @@ func TestWorkerBuffer(t *testing.T) {
 			var wg sync.WaitGroup
 
 			// Launch multiple goroutines that access currentCapacity concurrently
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				wg.Add(1)
 				go func(id int) {
 					defer wg.Done()

@@ -223,7 +223,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				{
@@ -235,7 +235,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{
@@ -253,7 +253,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -272,7 +272,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-a-definition-id",
 						Name:        "enabled-destination-a-definition-name",
 						DisplayName: "enabled-destination-a-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 				// This destination should receive no events
@@ -285,7 +285,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 				},
 			},
@@ -304,7 +304,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "enabled-destination-b-definition-id",
 						Name:        "MINIO",
 						DisplayName: "enabled-destination-b-definition-display-name",
-						Config:      map[string]interface{}{},
+						Config:      map[string]any{},
 					},
 					Transformations: []backendconfig.TransformationT{
 						{

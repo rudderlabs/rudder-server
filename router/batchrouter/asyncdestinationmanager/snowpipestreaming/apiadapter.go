@@ -25,7 +25,7 @@ func newApiAdapter(
 	destination *backendconfig.DestinationT,
 ) api {
 	return &apiAdapter{
-		logger:       logger,
+		logger:       logger.Child("ApiAdapter"),
 		statsFactory: statsFactory,
 		api:          api,
 		destination:  destination,

@@ -20,7 +20,7 @@ import (
 )
 
 func TestNewProducer(t *testing.T) {
-	destinationConfig := map[string]interface{}{
+	destinationConfig := map[string]any{
 		"Region":     "us-east-1",
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",

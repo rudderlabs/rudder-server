@@ -39,16 +39,16 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 	}
 
 	colCount := len(result.Columns)
-	values := make([]interface{}, colCount)
-	valuePtrs := make([]interface{}, colCount)
+	values := make([]any, colCount)
+	valuePtrs := make([]any, colCount)
 
 	for rows.Next() {
-		for i := 0; i < colCount; i++ {
+		for i := range colCount {
 			valuePtrs[i] = &values[i]
 		}
 
 		err = rows.Scan(valuePtrs...)
-		for i := 0; i < colCount; i++ {
+		for i := range colCount {
 			switch t := values[i].(type) {
 			case []uint8:
 				values[i] = string(t)
@@ -58,7 +58,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 			return result, err
 		}
 		var stringRow []string
-		for i := 0; i < colCount; i++ {
+		for i := range colCount {
 			stringRow = append(stringRow, fmt.Sprintf("%+v", values[i]))
 		}
 		result.Values = append(result.Values, stringRow)

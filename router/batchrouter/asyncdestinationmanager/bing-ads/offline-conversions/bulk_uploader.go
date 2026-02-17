@@ -50,7 +50,7 @@ func (b *BingAdsBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	// Unmarshal the JSON raw message into the record struct
 	payload := string(job.EventPayload)
 	var event Record
-	var fields map[string]interface{}
+	var fields map[string]any
 	err := jsonrs.Unmarshal(job.EventPayload, &event)
 	if err != nil {
 		return payload, fmt.Errorf("unmarshalling event %w", err)

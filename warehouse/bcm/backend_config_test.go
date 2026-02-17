@@ -62,7 +62,7 @@ func TestBackendConfigManager(t *testing.T) {
 									DestinationDefinition: backendconfig.DestinationDefinitionT{
 										Name: warehouseutils.RS,
 									},
-									Config: map[string]interface{}{
+									Config: map[string]any{
 										"namespace": namespace,
 									},
 								},
@@ -78,7 +78,7 @@ func TestBackendConfigManager(t *testing.T) {
 									DestinationDefinition: backendconfig.DestinationDefinitionT{
 										Name: unknownDestinationName,
 									},
-									Config: map[string]interface{}{},
+									Config: map[string]any{},
 								},
 							},
 						},
@@ -107,8 +107,7 @@ func TestBackendConfigManager(t *testing.T) {
 		sqlquerywrapper.WithLogger(logger.NOP),
 	)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	tenantManager := multitenant.New(config.New(), mockBackendConfig)
 
@@ -144,7 +143,7 @@ func TestBackendConfigManager(t *testing.T) {
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
 							Name: warehouseutils.RS,
 						},
-						Config: map[string]interface{}{
+						Config: map[string]any{
 							"namespace": namespace,
 						},
 					},
@@ -156,7 +155,7 @@ func TestBackendConfigManager(t *testing.T) {
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.RS,
 				},
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": namespace,
 				},
 			},
@@ -204,7 +203,7 @@ func TestBackendConfigManager(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.RS,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"namespace": namespace,
 					},
 				},
@@ -214,7 +213,7 @@ func TestBackendConfigManager(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.RS,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"namespace": namespace,
 					},
 				},
@@ -227,7 +226,7 @@ func TestBackendConfigManager(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.RS,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"namespace": namespace,
 						"useSSH":    true,
 					},
@@ -238,7 +237,7 @@ func TestBackendConfigManager(t *testing.T) {
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Name: warehouseutils.RS,
 					},
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"namespace":     namespace,
 						"useSSH":        true,
 						"sshPrivateKey": "private_key",
@@ -261,7 +260,7 @@ func TestBackendConfigManager(t *testing.T) {
 		bcm := New(c, db, tenantManager, logger.NOP, stats.NOP)
 		subscriptionsChs := make([]<-chan []model.Warehouse, numSubscribers)
 
-		for i := 0; i < numSubscribers; i++ {
+		for i := range numSubscribers {
 			subscriptionsChs[i] = bcm.Subscribe(ctx)
 		}
 
@@ -269,13 +268,13 @@ func TestBackendConfigManager(t *testing.T) {
 			bcm.Start(ctx)
 		}()
 
-		for i := 0; i < numSubscribers; i++ {
+		for i := range numSubscribers {
 			require.Len(t, <-subscriptionsChs[i], 1)
 		}
 
 		cancel()
 
-		for i := 0; i < numSubscribers; i++ {
+		for i := range numSubscribers {
 			w, ok := <-subscriptionsChs[i]
 			require.Nil(t, w)
 			require.False(t, ok)
@@ -286,7 +285,7 @@ func TestBackendConfigManager(t *testing.T) {
 func TestBackendConfigManager_Namespace(t *testing.T) {
 	testcases := []struct {
 		name              string
-		config            map[string]interface{}
+		config            map[string]any
 		source            backendconfig.SourceT
 		destination       backendconfig.DestinationT
 		expectedNamespace string
@@ -296,7 +295,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name:   "clickhouse with database configured in config",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"database": "test_db",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -310,7 +309,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name:   "clickhouse without database configured in config",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: warehouseutils.CLICKHOUSE,
 				},
@@ -322,7 +321,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name:   "namespace only contains letters",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": "      test_namespace        ",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -336,7 +335,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name:   "namespace only contains special characters",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": "##",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -350,7 +349,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name:   "namespace contains special characters and letters",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"namespace": "##evrnvrv$vtr&^",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -364,7 +363,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 			name:   "empty namespace but config is set",
 			source: backendconfig.SourceT{},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: "test-destinationType-1",
 				},
@@ -379,7 +378,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 				ID:   "test-sourceID",
 			},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 				ID:     "test-destinationID",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: "test-destinationType-1",
@@ -395,7 +394,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 				ID:   "random-sourceID",
 			},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 				ID:     "random-destinationID",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: "test-destinationType-1",
@@ -411,7 +410,7 @@ func TestBackendConfigManager_Namespace(t *testing.T) {
 				ID:   "test-sourceID",
 			},
 			destination: backendconfig.DestinationT{
-				Config: map[string]interface{}{},
+				Config: map[string]any{},
 				ID:     "test-destinationID",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name: "test-destinationType-1",

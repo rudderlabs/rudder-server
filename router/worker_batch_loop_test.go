@@ -284,7 +284,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		}()
 
 		// Send jobs to reach the batch size
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			job := &jobsdb.JobT{
 				JobID:  int64(i + 1),
 				UserID: "user1",
@@ -485,7 +485,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		}()
 
 		// Send exactly batch size jobs
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			job := &jobsdb.JobT{
 				JobID:  int64(i + 1),
 				UserID: "user1",
@@ -500,7 +500,7 @@ func TestWorkerBatchLoop(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 
 		// Send one more batch
-		for i := 0; i < batchSize; i++ {
+		for i := range batchSize {
 			job := &jobsdb.JobT{
 				JobID:  int64(batchSize + i + 1),
 				UserID: "user1",

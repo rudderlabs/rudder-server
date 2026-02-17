@@ -95,7 +95,7 @@ func createParquetWriter(outputFilePath string, schema model.TableSchema, destTy
 	}, nil
 }
 
-func (p *parquetWriter) WriteRow(row []interface{}) error {
+func (p *parquetWriter) WriteRow(row []any) error {
 	return p.writer.Write(row)
 }
 

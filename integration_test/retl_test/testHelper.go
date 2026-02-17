@@ -32,8 +32,8 @@ func (w *webhook) TypeName() string {
 	return "WEBHOOK"
 }
 
-func (w *webhook) Config() map[string]interface{} {
-	return map[string]interface{}{
+func (w *webhook) Config() map[string]any {
+	return map[string]any{
 		"webhookUrl":    w.Recorder.Server.URL,
 		"webhookMethod": "POST",
 	}

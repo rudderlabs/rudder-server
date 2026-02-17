@@ -29,7 +29,7 @@ func (gw *Handle) collectMetrics(ctx context.Context) {
 			case <-gw.diagnosisTicker.C:
 				gw.trackCounterMu.Lock()
 				if gw.trackSuccessCount > 0 || gw.trackFailureCount > 0 {
-					diagnostics.Diagnostics.Track(diagnostics.GatewayEvents, map[string]interface{}{
+					diagnostics.Diagnostics.Track(diagnostics.GatewayEvents, map[string]any{
 						diagnostics.GatewaySuccess: gw.trackSuccessCount,
 						diagnostics.GatewayFailure: gw.trackFailureCount,
 					})

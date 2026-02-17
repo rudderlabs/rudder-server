@@ -104,14 +104,14 @@ var sampleConfigWithConnection = ConfigT{
 			SourceID:         "2",
 			DestinationID:    "d1",
 			Enabled:          true,
-			Config:           map[string]interface{}{"key": "value"},
+			Config:           map[string]any{"key": "value"},
 			ProcessorEnabled: false,
 		},
 		"2": {
 			SourceID:         "2",
 			DestinationID:    "d2",
 			Enabled:          true,
-			Config:           map[string]interface{}{"key2": "value2"},
+			Config:           map[string]any{"key2": "value2"},
 			ProcessorEnabled: true,
 		},
 	},
@@ -376,8 +376,7 @@ func TestSubscribe(t *testing.T) {
 	initBackendConfig()
 
 	t.Run("processConfig topic", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		bc := &backendConfigImpl{
 			eb:            &pubsub.PublishSubscriber{},
@@ -393,8 +392,7 @@ func TestSubscribe(t *testing.T) {
 	})
 
 	t.Run("backendConfig topic", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		bc := &backendConfigImpl{
 			eb:            &pubsub.PublishSubscriber{},
@@ -439,7 +437,7 @@ func TestWaitForConfig(t *testing.T) {
 		}()
 
 		require.False(t, bc.initialized)
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			require.EqualValues(t, atomic.LoadInt32(&done), 0)
 			time.Sleep(10 * time.Millisecond)
 		}

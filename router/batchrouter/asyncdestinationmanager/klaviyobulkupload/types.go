@@ -19,7 +19,7 @@ type KlaviyoAPIService interface {
 
 type KlaviyoBulkUploader struct {
 	DestName              string
-	DestinationConfig     map[string]interface{}
+	DestinationConfig     map[string]any
 	Logger                logger.Logger
 	StatsFactory          stats.Stats
 	KlaviyoAPIService     KlaviyoAPIService
@@ -138,8 +138,8 @@ type ProfileAttributes struct {
 		Zip       string `json:"zip,omitempty"`
 		Timezone  string `json:"timezone,omitempty"`
 		IP        string `json:"ip,omitempty"`
-	} `json:"location,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
+	} `json:"location"`
+	Properties map[string]any `json:"properties,omitempty"`
 }
 
 type Profiles struct {
@@ -163,7 +163,7 @@ type Metadata struct {
 }
 
 type Profile struct {
-	Attributes ProfileAttributes `json:"attributes,omitempty"`
+	Attributes ProfileAttributes `json:"attributes"`
 	ID         string            `json:"id,omitempty"`
 	Type       string            `json:"type,omitempty"`
 }

@@ -149,7 +149,7 @@ func TestRouterManager(t *testing.T) {
 	}
 	r := New(rtFactory, brtFactory, mockBackendConfig, logger.NewLogger())
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		require.NoError(t, rtDB.Start())
 		require.NoError(t, brtDB.Start())
 		require.NoError(t, r.Start())

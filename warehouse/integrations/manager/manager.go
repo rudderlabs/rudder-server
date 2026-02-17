@@ -46,7 +46,7 @@ type Manager interface {
 
 	TestConnection(ctx context.Context, warehouse model.Warehouse) error
 	TestFetchSchema(ctx context.Context) error
-	TestLoadTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
+	TestLoadTable(ctx context.Context, location, stagingTableName string, payloadMap map[string]any, loadFileFormat string) error
 }
 
 type WarehouseDelete interface {

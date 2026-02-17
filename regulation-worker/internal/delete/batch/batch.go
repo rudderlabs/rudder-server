@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -66,9 +67,7 @@ func removeCleanedFiles(files []*filemanager.FileInfo, cleanedFiles []string) []
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].Key < files[j].Key
 	})
-	sort.Slice(cleanedFiles, func(i, j int) bool {
-		return cleanedFiles[i] < cleanedFiles[j]
-	})
+	slices.Sort(cleanedFiles)
 
 	i := 0
 	j := 0
@@ -89,7 +88,7 @@ func removeCleanedFiles(files []*filemanager.FileInfo, cleanedFiles []string) []
 	j = 0
 	finalFiles := make([]*filemanager.FileInfo, len(files)-presentCount)
 
-	for i := 0; i < len(files); i++ {
+	for i := range files {
 		if !present[i] {
 			finalFiles[j] = files[i]
 			j++

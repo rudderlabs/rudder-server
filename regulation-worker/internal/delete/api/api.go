@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"strings"
@@ -186,14 +187,12 @@ func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
 	}
 }
 
-func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
+func mapJobToPayload(job model.Job, destName string, destConfig map[string]any) []apiDeletionPayloadSchema {
 	uas := make([]userAttributesSchema, len(job.Users))
 	for i, ua := range job.Users {
 		uas[i] = make(map[string]string)
 		uas[i]["userId"] = ua.ID
-		for k, v := range ua.Attributes {
-			uas[i][k] = v
-		}
+		maps.Copy(uas[i], ua.Attributes)
 	}
 
 	return []apiDeletionPayloadSchema{

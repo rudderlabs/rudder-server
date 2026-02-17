@@ -329,7 +329,7 @@ func TestTracing(t *testing.T) {
 
 		eventsCount := 12
 
-		for i := 0; i < eventsCount; i++ {
+		for range eventsCount {
 			err := sendEvents(1, "identify", "writekey-1", url)
 			require.Error(t, err)
 		}
@@ -596,8 +596,8 @@ func sendEvents(
 	eventType, writeKey,
 	url string,
 ) error {
-	for i := 0; i < num; i++ {
-		payload := []byte(fmt.Sprintf(`
+	for range num {
+		payload := fmt.Appendf(nil, `
 			{
 			  "batch": [
 				{
@@ -618,7 +618,7 @@ func sendEvents(
 			}`,
 			rand.String(10),
 			eventType,
-		))
+		)
 		req, err := http.NewRequest(http.MethodPost, url+"/v1/batch", bytes.NewReader(payload))
 		if err != nil {
 			return err

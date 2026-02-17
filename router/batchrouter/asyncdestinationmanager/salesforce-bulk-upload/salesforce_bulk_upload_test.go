@@ -117,14 +117,14 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 	testData := []common.AsyncJob{
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"Email":     "test1@example.com",
 				"FirstName": "John",
 				"LastName":  "Doe",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(1),
-				"externalId": []map[string]interface{}{
+				"externalId": []map[string]any{
 					{
 						"id":             "test1@example.com",
 						"identifierType": "Email",
@@ -134,14 +134,14 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 			},
 		},
 		{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"Email":     "test2@example.com",
 				"FirstName": "Jane",
 				"LastName":  "Smith",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(2),
-				"externalId": []map[string]interface{}{
+				"externalId": []map[string]any{
 					{
 						"id":             "test2@example.com",
 						"identifierType": "Email",
@@ -332,12 +332,12 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		defer os.Remove(tempFile.Name())
 		testData := make([]common.AsyncJob, 0)
 		testData = append(testData, common.AsyncJob{
-			Message: map[string]interface{}{
+			Message: map[string]any{
 				"Email":     "test1@example.com",
 				"FirstName": "John",
 				"LastName":  "Doe",
 			},
-			Metadata: map[string]interface{}{
+			Metadata: map[string]any{
 				"job_id": float64(1),
 			},
 		})
@@ -409,7 +409,7 @@ func TestSalesforceBulk_NewManager(t *testing.T) {
 		destination := &backendconfig.DestinationT{
 			ID:          "test-dest-123",
 			WorkspaceID: "test-workspace-456",
-			Config: map[string]interface{}{
+			Config: map[string]any{
 				"rudderAccountId": "test-account-789",
 			},
 		}

@@ -48,10 +48,8 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 			var wg sync.WaitGroup
 			var resp200, resp503, randomResp int32
 
-			for i := 0; i < 10; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+			for range 10 {
+				wg.Go(func() {
 					respRecorder := httptest.NewRecorder()
 					req := httptest.NewRequest("GET", "http://testing", nil)
 
@@ -64,7 +62,7 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 					default:
 						atomic.AddInt32(&randomResp, 1)
 					}
-				}()
+				})
 			}
 
 			wg.Wait()
