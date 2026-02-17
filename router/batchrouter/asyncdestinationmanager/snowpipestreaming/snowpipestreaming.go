@@ -501,7 +501,8 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 	if errors.Is(err, snowpipeapi.ErrChannelNotFound) {
 		log.Infon("Channel not found, recreating channel")
 
-		deleteChannel(info.tableName, channelID)
+		m.deleteChannelFromCache(info.tableName)
+
 		var insertRes2 *model.InsertResponse
 		recreatedChannel, err2 := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
 		defer func() {
