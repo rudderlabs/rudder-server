@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.68.0](https://github.com/rudderlabs/rudder-server/compare/v1.67.0...v1.68.0) (2026-02-16)
+
+
+### Features
+
+* integrate gateway partition migrator in gw app ([#6636](https://github.com/rudderlabs/rudder-server/issues/6636)) ([64bfec4](https://github.com/rudderlabs/rudder-server/commit/64bfec41ef94319504f0c2733ffc9fd9f09f5c51))
+* **jobsdb:** introduce priority pool ([#6645](https://github.com/rudderlabs/rudder-server/issues/6645)) ([035c34a](https://github.com/rudderlabs/rudder-server/commit/035c34a84d6eafa785f1a90232f50302bb7ce62e))
+* partition buffer watchdog ([#6656](https://github.com/rudderlabs/rudder-server/issues/6656)) ([fc763d6](https://github.com/rudderlabs/rudder-server/commit/fc763d60747f5ee565317dc33b57e723dca9c90d))
+* pickupQueryThrottlingEnabled shouldn't hinder the pipeline's throughput while draining ([#6644](https://github.com/rudderlabs/rudder-server/issues/6644)) ([4a730cb](https://github.com/rudderlabs/rudder-server/commit/4a730cb60906e1bc4596e37955cd30eb043afcdf))
+* use database priority pool for partition migrations ([#6666](https://github.com/rudderlabs/rudder-server/issues/6666)) ([240d46d](https://github.com/rudderlabs/rudder-server/commit/240d46ddbbbe1d47e522ca33c75ce9a3906318a9))
+
+
+### Bug Fixes
+
+* add repositories param for cross-repo dispatch [SEC-58] ([#6665](https://github.com/rudderlabs/rudder-server/issues/6665)) ([d7484dc](https://github.com/rudderlabs/rudder-server/commit/d7484dc862bdaf717fa52bcaf44415dabdf750de))
+* kafka test container failing to start with error ([#6684](https://github.com/rudderlabs/rudder-server/issues/6684)) ([17ab3fc](https://github.com/rudderlabs/rudder-server/commit/17ab3fc309dc2dc07bb1dc274af55c06abe4f33e))
+* klaviyo failed jobs logic ([#6646](https://github.com/rudderlabs/rudder-server/issues/6646)) ([2ff1091](https://github.com/rudderlabs/rudder-server/commit/2ff109136ac90718043afe06b57a393b10b7829d))
+* snowpipe streaming logs ([#6683](https://github.com/rudderlabs/rudder-server/issues/6683)) ([717af74](https://github.com/rudderlabs/rudder-server/commit/717af74e8944bc218361a597f89ea7c9884515ae))
+* webhook integration test failing with appsflyer error ([#6678](https://github.com/rudderlabs/rudder-server/issues/6678)) ([4b0f544](https://github.com/rudderlabs/rudder-server/commit/4b0f544ca6b3d704649744908185a9d73d5df1f5))
+
+
+### Miscellaneous
+
+* add validation on uploadResp before accessing it ([#6667](https://github.com/rudderlabs/rudder-server/issues/6667)) ([42ea88c](https://github.com/rudderlabs/rudder-server/commit/42ea88c8480b477c64fbc7ec4e201ba21e3bc20a))
+* bump rudder-go-kit to v0.72.0 ([#6671](https://github.com/rudderlabs/rudder-server/issues/6671)) ([777abdc](https://github.com/rudderlabs/rudder-server/commit/777abdc5f5e2a02079624473947ae025d5d57deb))
+* enable gosec security linter ([#6679](https://github.com/rudderlabs/rudder-server/issues/6679)) ([df5e06f](https://github.com/rudderlabs/rudder-server/commit/df5e06f9c997a30e9967adb1fd6e5a0be51b1f6f))
+* partition migrators should skip processing already acknowledged requests ([#6670](https://github.com/rudderlabs/rudder-server/issues/6670)) ([3f18a73](https://github.com/rudderlabs/rudder-server/commit/3f18a73a00df10cbddeaad89f91d4fa228bc101e))
+* run src hydration test with environment secrets ([#6664](https://github.com/rudderlabs/rudder-server/issues/6664)) ([31bdb37](https://github.com/rudderlabs/rudder-server/commit/31bdb379537a2bb02ddfd107aeb3889428c1a8bb))
+* upgrade to duckdb/duckdb-go/v2 v2.5.0 ([#6659](https://github.com/rudderlabs/rudder-server/issues/6659)) ([dd9d17b](https://github.com/rudderlabs/rudder-server/commit/dd9d17b48d3f0cbc04851c18823e166141f51aef))
+* upgrade to go 1.26 and include go fix in fmt makefile target ([#6685](https://github.com/rudderlabs/rudder-server/issues/6685)) ([e6f31c6](https://github.com/rudderlabs/rudder-server/commit/e6f31c6609af839962d3c01e26bb1012093f96f6))
+* use ecr registry as registry mirror ([#6675](https://github.com/rudderlabs/rudder-server/issues/6675)) ([8262504](https://github.com/rudderlabs/rudder-server/commit/8262504e6dc1804f0add78ce4a50026a3aed481f))
+
 ## [1.67.1](https://github.com/rudderlabs/rudder-server/compare/v1.67.0...v1.67.1) (2026-02-16)
 
 
