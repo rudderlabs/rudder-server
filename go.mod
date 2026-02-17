@@ -18,8 +18,8 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.72.0
-	cloud.google.com/go/pubsub/v2 v2.3.0
+	cloud.google.com/go/bigquery v1.73.1
+	cloud.google.com/go/pubsub/v2 v2.4.0
 	cloud.google.com/go/storage v1.60.0
 	github.com/Azure/azure-storage-blob-go v0.15.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
