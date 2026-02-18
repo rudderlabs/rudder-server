@@ -348,7 +348,7 @@ func startRudderPytransformer(
 	t.Helper()
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:        "pr-27", // TODO: change to latest
+		Tag:        "latest",
 		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + configBackendURL,
