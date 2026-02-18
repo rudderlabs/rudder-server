@@ -1034,11 +1034,11 @@ def transformBatch(events, metadata):
 				require.True(t, len(oldResp.FailedEvents) == 2, "old arch: expected 2 failed events")
 				require.True(t, len(newResp.FailedEvents) == 2, "new arch: expected 2 failed events")
 
-				// Only compare status codes — error messages may differ between architectures
-				require.Equal(t, len(oldResp.FailedEvents), len(newResp.FailedEvents), "failed event count mismatch")
-				for i := range oldResp.FailedEvents {
-					require.Equal(t, oldResp.FailedEvents[i].StatusCode, newResp.FailedEvents[i].StatusCode,
-						"status code mismatch for failed event %d", i)
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for mixed indentation")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
 		},
