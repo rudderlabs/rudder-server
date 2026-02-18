@@ -293,7 +293,7 @@ def transformEvent(event, metadata):
 				require.Equal(t, true, oldOutput["has_source_id"], "old arch: sourceId should be in metadata")
 				require.Equal(t, true, newOutput["has_source_id"], "new arch: sourceId should be in metadata")
 
-				// Compare: responses should differ
+				// Compare: responses should be equal after Go unmarshaling
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Responses are equal")
@@ -365,7 +365,7 @@ def transformBatch(events, metadata):
 				require.Equal(t, "src-1", oldMeta.SourceID, "old arch: sourceId should be present")
 				require.Equal(t, "src-1", newMeta.SourceID, "new arch: sourceId should be present")
 
-				// Compare: responses should differ in non-curated metadata fields
+				// Compare: responses should be equal after Go unmarshaling (non-curated metadata differences are not observable)
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Responses are equal")
@@ -801,6 +801,194 @@ def transformEvent(event, metadata):
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Both architectures produce identical responses for messageId tampering")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "ConfigBackendHTTP200With5xxBody",
+			versionID: "bc-cb-200-body-500-v1",
+			config:    configBackendEntry{statusCode: http.StatusOK, body: `{"statusCode":500,"error":"Internal Server Error"}`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-200-body-500-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				normalizeResponseErrors(&oldResp)
+				normalizeResponseErrors(&newResp)
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for HTTP 200 with 500 body")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "ConfigBackendHTTP200With4xxBody",
+			versionID: "bc-cb-200-body-400-v1",
+			config:    configBackendEntry{statusCode: http.StatusOK, body: `{"statusCode":400,"error":"Bad Request"}`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cb-200-body-400-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
+
+				normalizeResponseErrors(&oldResp)
+				normalizeResponseErrors(&newResp)
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for HTTP 200 with 400 body")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "BatchEventExpansion",
+			versionID: "bc-batch-expansion-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    # Expand each input event into three output events
+    result = []
+    for event in events:
+        msg_id = event.get("messageId", "")
+        result.append({"messageId": "exp-1-" + msg_id, "type": "track", "event": "Click", "original": msg_id})
+        result.append({"messageId": "exp-2-" + msg_id, "type": "track", "event": "View", "original": msg_id})
+        result.append({"type": "track", "event": "NoId", "original": msg_id})
+    return result
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-batch-expansion-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				t.Log("Sending 2 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 2 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should expand 2 input events into 6 output events (3 per input, one without messageId)
+				require.Equal(t, 6, len(oldResp.Events), "old arch: 6 expanded events expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 6, len(newResp.Events), "new arch: 6 expanded events expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical expanded batch event responses")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "BatchPartialDrop",
+			versionID: "bc-batch-partial-drop-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    # Drop events where messageId is "msg-2", keep the rest
+    return [e for e in events if e.get("messageId") != "msg-2"]
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-batch-partial-drop-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+					makeEvent("msg-3", versionID),
+				}
+
+				t.Log("Sending 3 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 3 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// msg-2 should be dropped, msg-1 and msg-3 should pass through
+				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
+				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
+
+				for i, ev := range oldResp.Events {
+					t.Logf("Old arch Event[%d]: messageId=%v", i, ev.Output["messageId"])
+				}
+				for i, ev := range newResp.Events {
+					t.Logf("New arch Event[%d]: messageId=%v", i, ev.Output["messageId"])
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch partial drop")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "BatchReturnNone",
+			versionID: "bc-batch-return-none-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    return None
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-batch-return-none-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				t.Log("Sending 2 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 2 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.True(t, len(oldResp.Events) > 0 || len(oldResp.FailedEvents) > 0,
+					"old arch: expected at least some response for batch returning None")
+				require.True(t, len(newResp.Events) > 0 || len(newResp.FailedEvents) > 0,
+					"new arch: expected at least some response for batch returning None")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch returning None")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
