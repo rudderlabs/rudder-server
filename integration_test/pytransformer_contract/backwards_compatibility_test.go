@@ -77,6 +77,7 @@ def transformEvent(event, metadata):
     return [
         {"messageId": "exp-1", "type": "track", "event": "Click", "original": event.get("messageId")},
         {"messageId": "exp-2", "type": "track", "event": "View", "original": event.get("messageId")},
+        {"type": "track", "event": "NoMessageId", "original": event.get("messageId")},
     ]
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
@@ -94,10 +95,10 @@ def transformEvent(event, metadata):
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-				// Both should expand 1 input event into 2 output events
-				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 expanded events expected")
+				// Both should expand 1 input event into 3 output events (including one without messageId)
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 expanded events expected")
 				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 2, len(newResp.Events), "new arch: 2 expanded events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 expanded events expected")
 				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
 				diff, equal := oldResp.Equal(&newResp)
