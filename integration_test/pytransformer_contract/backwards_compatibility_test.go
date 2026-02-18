@@ -914,6 +914,55 @@ def transformBatch(events, metadata):
 			},
 		},
 		{
+			name:      "BatchEventExpansionNewMessageId",
+			versionID: "bc-batch-expansion-new-msgid-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+	result = []
+	for event in events:
+		click_event = event.copy()
+		click_event["event"] = "Click"
+		click_event["messageId"] = "new-click-msg-id"
+
+		view_event = event.copy()
+		view_event["event"] = "View"
+		view_event["messageId"] = "new-view-msg-id"
+
+		result.extend([click_event, view_event])
+
+	return result
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-batch-expansion-new-msgid-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				t.Log("Sending 2 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 2 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
+
+				require.Equal(t, 0, len(newResp.Events), "new arch: 0 success events expected (KeyError)")
+				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical expanded batch event responses")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
 			name:      "BatchPartialDrop",
 			versionID: "bc-batch-partial-drop-v1",
 			config: configBackendEntry{code: `
