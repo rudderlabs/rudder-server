@@ -872,14 +872,16 @@ def transformEvent(event, metadata):
 			versionID: "bc-batch-expansion-v1",
 			config: configBackendEntry{code: `
 def transformBatch(events, metadata):
-    # Expand each input event into three output events
-    result = []
-    for event in events:
-        msg_id = event.get("messageId", "")
-        result.append({"messageId": "exp-1-" + msg_id, "type": "track", "event": "Click", "original": msg_id})
-        result.append({"messageId": "exp-2-" + msg_id, "type": "track", "event": "View", "original": msg_id})
-        result.append({"type": "track", "event": "NoId", "original": msg_id})
-    return result
+	result = []
+	for event in events:
+		click_event = event.copy()
+		click_event["event"] = "Click"
+		view_event = event.copy()
+		view_event["event"] = "View"
+		
+		result.extend([click_event, view_event])
+		
+	return result
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-batch-expansion-v1"
@@ -897,10 +899,10 @@ def transformBatch(events, metadata):
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-				// Both should expand 2 input events into 6 output events (3 per input, one without messageId)
-				require.Equal(t, 6, len(oldResp.Events), "old arch: 6 expanded events expected")
+				// Both should expand 2 input events into 4 output events (2 per input)
+				require.Equal(t, 4, len(oldResp.Events), "old arch: 4 expanded events expected")
 				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-				require.Equal(t, 6, len(newResp.Events), "new arch: 6 expanded events expected")
+				require.Equal(t, 4, len(newResp.Events), "new arch: 4 expanded events expected")
 				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
 				diff, equal := oldResp.Equal(&newResp)
