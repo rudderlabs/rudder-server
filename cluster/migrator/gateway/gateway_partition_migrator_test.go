@@ -45,7 +45,7 @@ func TestGatewayPartitionMigrator(t *testing.T) {
 		// Setup unique namespace for this test
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-gw-node-0"
@@ -141,7 +141,7 @@ func TestGatewayPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-gw-node-0"
@@ -195,7 +195,7 @@ func TestGatewayPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 1
 		nodeName := "test-gw-node-1"
@@ -258,7 +258,7 @@ func TestGatewayPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-gw-node-0"
@@ -350,7 +350,7 @@ func TestGatewayPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 		conf.Set("Migrator.retryInitialInterval", "100ms")
 		conf.Set("Migrator.retryMaxInterval", "500ms")
 
@@ -426,7 +426,7 @@ func TestGatewayPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 		conf.Set("Migrator.retryInitialInterval", "100ms")
 		conf.Set("Migrator.retryMaxInterval", "500ms")
 

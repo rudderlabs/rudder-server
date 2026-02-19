@@ -34,7 +34,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		// Setup unique namespace for this test
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-node-0"
@@ -121,7 +121,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		t.Run("source migrator failing", func(t *testing.T) {
 			namespace := rand.String(10)
 			conf := config.New()
-			conf.Set("WORKSPACE_NAMESPACE", namespace)
+			conf.Set("RELEASE_NAME", namespace)
 
 			nodeIndex := 0
 			nodeName := "test-node-0"
@@ -155,7 +155,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 		t.Run("target migrator failing", func(t *testing.T) {
 			namespace := rand.String(10)
 			conf := config.New()
-			conf.Set("WORKSPACE_NAMESPACE", namespace)
+			conf.Set("RELEASE_NAME", namespace)
 
 			nodeIndex := 0
 			nodeName := "test-node-0"
@@ -193,7 +193,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-node-0"
@@ -319,7 +319,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-node-0"
@@ -412,7 +412,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		nodeIndex := 0
 		nodeName := "test-node-0"
@@ -505,7 +505,7 @@ func TestProcessorPartitionMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 		conf.Set("Migrator.retryInitialInterval", "100ms")
 		conf.Set("Migrator.retryMaxInterval", "500ms")
 
