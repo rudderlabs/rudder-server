@@ -166,16 +166,28 @@ func (gpm *gatewayPartitionMigrator) onReloadRequest(ctx context.Context, cmd *e
 			if err != nil {
 				return fmt.Errorf("marshalling ack value: %w", err)
 			}
-			resp, err := gpm.etcdClient.Put(ctx, ackKey, string(v))
+			resp, err := gpm.etcdClient.Txn(ctx).
+				If(clientv3.Compare(clientv3.CreateRevision(ackKey), "=", 0)).
+				Then(clientv3.OpPut(ackKey, string(v))).
+				Commit()
 			if err != nil {
 				return fmt.Errorf("putting ack key in etcd: %w", err)
 			}
-			gpm.logger.Infon("Acknowledged gateway reload request",
-				logger.NewStringField("ackKeyPrefix", cmd.AckKeyPrefix),
-				logger.NewStringField("ackKey", ackKey),
-				logger.NewIntField("revision", resp.Header.Revision),
-				logger.NewDurationField("duration", time.Since(start)),
-			)
+			if !resp.Succeeded {
+				gpm.logger.Infon("Gateway reload request acknowledgment already exists",
+					logger.NewStringField("ackKeyPrefix", cmd.AckKeyPrefix),
+					logger.NewStringField("ackKey", ackKey),
+					logger.NewDurationField("duration", time.Since(start)),
+				)
+			} else {
+				gpm.logger.Infon("Acknowledged gateway reload request",
+					logger.NewStringField("ackKeyPrefix", cmd.AckKeyPrefix),
+					logger.NewStringField("ackKey", ackKey),
+					logger.NewIntField("revision", resp.Header.Revision),
+					logger.NewDurationField("duration", time.Since(start)),
+				)
+			}
+
 			// remove from pending reloads
 			gpm.pendingReloadsMu.Lock()
 			delete(gpm.pendingReloads, cmd.AckKeyPrefix)

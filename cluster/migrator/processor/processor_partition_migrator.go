@@ -192,16 +192,28 @@ func (ppm *processorPartitionMigrator) onNewMigration(ctx context.Context, pm *e
 			if err != nil {
 				return fmt.Errorf("marshalling ack value: %w", err)
 			}
-			resp, err := ppm.etcdClient.Put(ctx, ackKey, string(v))
+			resp, err := ppm.etcdClient.Txn(ctx).
+				If(clientv3.Compare(clientv3.CreateRevision(ackKey), "=", 0)).
+				Then(clientv3.OpPut(ackKey, string(v))).
+				Commit()
 			if err != nil {
 				return fmt.Errorf("putting ack key in etcd: %w", err)
 			}
-			ppm.logger.Infon("Acknowledged partition migration start event",
-				logger.NewStringField("migrationId", pm.ID),
-				logger.NewStringField("ackKey", ackKey),
-				logger.NewIntField("revision", resp.Header.Revision),
-				logger.NewDurationField("duration", time.Since(start)),
-			)
+			if !resp.Succeeded {
+				ppm.logger.Infon("Partition migration start event acknowledgment already exists",
+					logger.NewStringField("migrationId", pm.ID),
+					logger.NewStringField("ackKey", ackKey),
+					logger.NewDurationField("duration", time.Since(start)),
+				)
+			} else {
+				ppm.logger.Infon("Acknowledged partition migration start event",
+					logger.NewStringField("migrationId", pm.ID),
+					logger.NewStringField("ackKey", ackKey),
+					logger.NewIntField("revision", resp.Header.Revision),
+					logger.NewDurationField("duration", time.Since(start)),
+				)
+			}
+
 			// remove from pending migrations
 			ppm.pendingMigrationsMu.Lock()
 			delete(ppm.pendingMigrations, pm.ID)
