@@ -8,18 +8,18 @@ import (
 )
 
 type (
-	destIDContextKey struct{}
+	destContextKey   struct{}
 	secretContextKey struct{}
 )
 
-// CtxWithDestInfo returns a new context with the given destination.
-func CtxWithDestInfo(ctx context.Context, dest *backendconfig.DestinationT) context.Context {
-	return context.WithValue(ctx, destIDContextKey{}, dest)
+// CtxWithDestination returns a new context with the given destination.
+func CtxWithDestination(ctx context.Context, dest *backendconfig.DestinationT) context.Context {
+	return context.WithValue(ctx, destContextKey{}, dest)
 }
 
-// DestInfoFromCtx returns the destination from the context, if present.
-func DestInfoFromCtx(ctx context.Context) (*backendconfig.DestinationT, bool) {
-	dest, ok := ctx.Value(destIDContextKey{}).(*backendconfig.DestinationT)
+// DestinationFromCtx returns the destination from the context, if present.
+func DestinationFromCtx(ctx context.Context) (*backendconfig.DestinationT, bool) {
+	dest, ok := ctx.Value(destContextKey{}).(*backendconfig.DestinationT)
 	return dest, ok
 }
 

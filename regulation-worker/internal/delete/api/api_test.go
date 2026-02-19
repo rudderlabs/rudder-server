@@ -150,9 +150,11 @@ func TestDelete(t *testing.T) {
 				DestTransformURL:           svr.URL,
 				TransformerFeaturesService: transformer.NewNoOpService(),
 			}
-			dest := model.Destination{
+			dest := &backendconfig.DestinationT{
 				Config: tt.destConfig,
-				Name:   tt.destName,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: tt.destName,
+				},
 			}
 			status := api.Delete(ctx, tt.job, dest)
 			fmt.Println("status", status)
@@ -260,7 +262,7 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 type oauthTestCases struct {
 	name                         string
 	job                          model.Job
-	dest                         model.Destination
+	dest                         *backendconfig.DestinationT
 	cpResponses                  []testutils.CpResponseParams
 	deleteResponses              []deleteResponseParams
 	oauthHttpClientTimeout       time.Duration
@@ -323,13 +325,15 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			deleteResponses: []deleteResponseParams{
 				{
@@ -371,13 +375,15 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			deleteResponses: []deleteResponseParams{
 				{
@@ -427,13 +433,15 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			cpResponses: []testutils.CpResponseParams{
 				{
@@ -470,13 +478,15 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			cpResponses: []testutils.CpResponseParams{
 				{
@@ -522,13 +532,15 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			cpResponses:                  []testutils.CpResponseParams{},
 			deleteResponses:              []deleteResponseParams{{}},
@@ -567,11 +579,13 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
-				Config:        map[string]any{},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+			dest: &backendconfig.DestinationT{
+				ID:     "1234",
+				Config: map[string]any{},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			cpResponses:                  []testutils.CpResponseParams{},
 			deleteResponses:              []deleteResponseParams{{}},
@@ -603,13 +617,15 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 
 			oauthHttpClientTimeout: 1 * time.Second,
@@ -654,14 +670,16 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 					"authStatus":            "active",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			deleteResponses: []deleteResponseParams{
 				{
@@ -697,14 +715,16 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
-				DestinationID: "1234",
+			dest: &backendconfig.DestinationT{
+				ID: "1234",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 					"authStatus":            "active",
 				},
-				Name:          "GA",
-				DestDefConfig: defaultDestDefConfig,
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name:   "GA",
+					Config: defaultDestDefConfig,
+				},
 			},
 			deleteResponses: []deleteResponseParams{
 				// first attempt

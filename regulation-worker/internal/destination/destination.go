@@ -21,17 +21,17 @@ type destMiddleware interface {
 
 type DestinationConfig struct {
 	mu           sync.RWMutex
-	destinations map[string]model.Destination
+	destinations map[string]*backendconfig.DestinationT
 	Dest         destMiddleware
 }
 
-func (d *DestinationConfig) GetDestDetails(destID string) (model.Destination, error) {
+func (d *DestinationConfig) GetDestDetails(destID string) (*backendconfig.DestinationT, error) {
 	pkgLogger.Debugn("getting destination details", obskit.DestinationID(destID))
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	destination, ok := d.destinations[destID]
 	if !ok {
-		return model.Destination{}, model.ErrInvalidDestination
+		return nil, model.ErrInvalidDestination
 	}
 	return destination, nil
 }
@@ -43,17 +43,12 @@ func (d *DestinationConfig) Start(ctx context.Context) {
 	ch := d.Dest.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	rruntime.Go(func() {
 		for data := range ch {
-			destinations := make(map[string]model.Destination)
+			destinations := make(map[string]*backendconfig.DestinationT)
 			configs := data.Data.(map[string]backendconfig.ConfigT)
 			for _, config := range configs {
 				for _, source := range config.Sources {
 					for _, dest := range source.Destinations {
-						destinations[dest.ID] = model.Destination{
-							DestinationID: dest.ID,
-							Config:        dest.Config,
-							Name:          dest.DestinationDefinition.Name,
-							DestDefConfig: dest.DestinationDefinition.Config,
-						}
+						destinations[dest.ID] = &dest
 					}
 				}
 			}

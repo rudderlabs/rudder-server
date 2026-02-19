@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	gomock "go.uber.org/mock/gomock"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -16,15 +17,17 @@ func TestDelete(t *testing.T) {
 	testData := []struct {
 		name                              string
 		job                               model.Job
-		destDetail                        model.Destination
+		destDetail                        *backendconfig.DestinationT
 		expectedStatus                    model.JobStatus
 		md1CallCount                      int
 		getSupportedDestinationsCallCount int
 	}{
 		{
 			name: "destination exists",
-			destDetail: model.Destination{
-				Name: "d1",
+			destDetail: &backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "d1",
+				},
 			},
 			expectedStatus:                    model.JobStatus{Status: model.JobStatusComplete},
 			md1CallCount:                      1,
@@ -32,8 +35,10 @@ func TestDelete(t *testing.T) {
 		},
 		{
 			name: "destination doesn't exists",
-			destDetail: model.Destination{
-				Name: "d5",
+			destDetail: &backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "d5",
+				},
 			},
 			expectedStatus: model.JobStatus{Status: model.JobStatusAborted, Error: model.ErrDestNotSupported},
 		},

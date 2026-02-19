@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	model "github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -42,7 +43,7 @@ func (m *MockdeleteManager) EXPECT() *MockdeleteManagerMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *MockdeleteManager) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+func (m *MockdeleteManager) Delete(ctx context.Context, job model.Job, destDetail *backendconfig.DestinationT) model.JobStatus {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Delete", ctx, job, destDetail)
 	ret0, _ := ret[0].(model.JobStatus)

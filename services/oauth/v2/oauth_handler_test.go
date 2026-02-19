@@ -31,12 +31,14 @@ import (
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
 
-var Destination = &v2.DestinationInfo{
-	DestType:         "testDest",
-	ID:               "Destination123",
-	WorkspaceID:      "456",
-	DefinitionConfig: map[string]any{},
-	Config:           map[string]any{},
+var Destination = &backendconfig.DestinationT{
+	ID:          "Destination123",
+	WorkspaceID: "456",
+	Config:      map[string]any{},
+	DestinationDefinition: backendconfig.DestinationDefinitionT{
+		Name:   "testDest",
+		Config: map[string]any{},
+	},
 }
 
 var _ = Describe("Oauth", func() {

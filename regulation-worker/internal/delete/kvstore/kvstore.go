@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 )
@@ -22,9 +23,9 @@ func (*KVDeleteManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail *backendconfig.DestinationT) model.JobStatus {
 	destConfig := destDetail.Config
-	destName := destDetail.Name
+	destName := destDetail.DestinationDefinition.Name
 
 	pkgLogger.Debugn("deleting from kvstore",
 		logger.NewIntField("jobID", int64(job.ID)),

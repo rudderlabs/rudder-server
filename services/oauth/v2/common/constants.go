@@ -9,17 +9,13 @@ const (
 	// RefTokenInvalidGrant Identifier for invalid_grant or access_denied errors(during refreshing the token)
 	RefTokenInvalidGrant = "ref_token_invalid_grant"
 
-	RefTokenInvalidResponse = "INVALID_REFRESH_RESPONSE"
-	TimeOutError            = "timeout"
-	NetworkError            = "network_error"
-	None                    = "none"
-
-	DestKey            ContextKey = "destination"
-	SecretKey          ContextKey = "secret"
-	RudderFlowDelivery RudderFlow = "delivery"
-	RudderFlowDelete   RudderFlow = "delete"
-
-	AuthStatusInactive = "inactive"
+	RefTokenInvalidResponse            = "INVALID_REFRESH_RESPONSE"
+	TimeOutError                       = "timeout"
+	NetworkError                       = "network_error"
+	None                               = "none"
+	SecretKey               ContextKey = "secret"
+	RudderFlowDelivery      RudderFlow = "delivery"
+	RudderFlowDelete        RudderFlow = "delete"
 
 	ErrorType = "errorType"
 )

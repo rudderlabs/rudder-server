@@ -57,17 +57,19 @@ var _ = Describe("Http/Client", func() {
 			}
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"anonymousId":"anon_id","type":"identify","traits":{"email":"jamesDoe@gmail.com","name":"James Doe","phone":"92374162212","gender":"M","address":{"city":"kolkata","country":"India","postalCode":789223,"state":"WB","street":""}}},"metadata":{"jobId":1},"destination":{"config":{},"name":"CleverTap","destinationDefinition":{"config":{},"category":null}}}],"destType":"clevertap"}`)))
-			destination := &v2.DestinationInfo{
-				DestType: "CLEVERTAP",
-				DefinitionConfig: map[string]any{
-					"auth": map[string]any{
-						"type": "API_KEY",
-					},
-				},
+			destination := &backendconfig.DestinationT{
 				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]any{},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "CLEVERTAP",
+					Config: map[string]any{
+						"auth": map[string]any{
+							"type": "API_KEY",
+						},
+					},
+				},
 			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(200))
 			Expect(err).To(BeNil())
@@ -108,20 +110,18 @@ var _ = Describe("Http/Client", func() {
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &v2.DestinationInfo{
-				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: oauthDefinitionConfig,
-				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
+			destination := &backendconfig.DestinationT{
+				ID:          "25beoSzcLFmimO8FgiVqTNwBG12",
+				WorkspaceID: "1234",
 				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
-				WorkspaceID: "1234",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
 					Config: oauthDefinitionConfig,
 				},
 			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(200))
 			Expect(err).To(BeNil())
@@ -173,10 +173,8 @@ var _ = Describe("Http/Client", func() {
 			}
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &v2.DestinationInfo{
-				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: oauthDefinitionConfig,
-				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
+			destination := &backendconfig.DestinationT{
+				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
@@ -185,7 +183,7 @@ var _ = Describe("Http/Client", func() {
 					Config: oauthDefinitionConfig,
 				},
 			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())
@@ -223,10 +221,8 @@ var _ = Describe("Http/Client", func() {
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &v2.DestinationInfo{
-				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: oauthDefinitionConfig,
-				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
+			destination := &backendconfig.DestinationT{
+				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
 				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
@@ -235,7 +231,7 @@ var _ = Describe("Http/Client", func() {
 					Config: oauthDefinitionConfig,
 				},
 			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
 			Expect(res.StatusCode).To(Equal(http.StatusOK))
 			Expect(err).To(BeNil())
@@ -281,20 +277,18 @@ var _ = Describe("Http/Client", func() {
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
-			destination := &v2.DestinationInfo{
-				DestType:         "GOOGLE_ADWORDS_REMARKETING_LISTS",
-				DefinitionConfig: oauthDefinitionConfig,
-				ID:               "25beoSzcLFmimO8FgiVqTNwBG12",
+			destination := &backendconfig.DestinationT{
+				ID:          "25beoSzcLFmimO8FgiVqTNwBG12",
+				WorkspaceID: "1234",
 				Config: map[string]any{
 					"rudderAccountId": "7693729833",
 				},
-				WorkspaceID: "1234",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
 					Config: oauthDefinitionConfig,
 				},
 			}
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 			res, err := httpClient.Do(req)
 
 			Expect(res.StatusCode).To(Equal(200))

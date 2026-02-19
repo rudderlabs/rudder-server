@@ -343,7 +343,7 @@ func TestProxyRequest(t *testing.T) {
 					ResponseData: tc.postParameters,
 					DestName:     "not_found_dest",
 					Adapter:      &mockAdapter{url: srv.URL},
-					DestInfo: &backendconfig.DestinationT{
+					Destination: &backendconfig.DestinationT{
 						Config: tc.postParameters.DestinationConfig,
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
 							Config: tc.postParameters.DestinationConfig,
@@ -388,7 +388,7 @@ func TestProxyRequest(t *testing.T) {
 				ResponseData: tc.postParameters,
 				DestName:     tc.destName,
 				Adapter:      &mockAdapter{url: srv.URL},
-				DestInfo: &backendconfig.DestinationT{
+				Destination: &backendconfig.DestinationT{
 					Config: tc.postParameters.DestinationConfig,
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Config: tc.postParameters.DestinationConfig,
@@ -1704,7 +1704,7 @@ func TestProxyRequestWithOAuthV2(t *testing.T) {
 				ResponseData: tc.reqPayload,
 				DestName:     tc.destType,
 				Adapter:      adapter,
-				DestInfo:     &dest,
+				Destination:  &dest,
 			}
 
 			proxyResp := tr.ProxyRequest(context.Background(), reqParams)

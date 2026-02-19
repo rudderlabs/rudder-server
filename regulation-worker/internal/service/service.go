@@ -10,6 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 )
@@ -21,10 +22,10 @@ type APIClient interface {
 }
 
 type destDetail interface {
-	GetDestDetails(destID string) (model.Destination, error)
+	GetDestDetails(destID string) (*backendconfig.DestinationT, error)
 }
 type deleter interface {
-	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
+	Delete(ctx context.Context, job model.Job, destDetail *backendconfig.DestinationT) model.JobStatus
 }
 
 type JobSvc struct {
@@ -70,13 +71,13 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		jobStatus.Status = model.JobStatusAborted
 	}
 
-	stats.Default.NewTaggedStat("regulation_worker_attempted_user_deletions_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Count(len(job.Users))
+	stats.Default.NewTaggedStat("regulation_worker_attempted_user_deletions_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Count(len(job.Users))
 
-	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Since(deletionStart)
+	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Since(deletionStart)
 	if jobStatus.Status == model.JobStatusComplete {
-		stats.Default.NewTaggedStat("regulation_worker_deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name}).Count(len(job.Users))
+		stats.Default.NewTaggedStat("regulation_worker_deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name}).Count(len(job.Users))
 	}
-	stats.Default.NewTaggedStat("regulation_worker_loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(jobStatus.Status)}).Since(loopStart)
+	stats.Default.NewTaggedStat("regulation_worker_loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Since(loopStart)
 
 	return js.updateStatus(ctx, jobStatus, job.ID)
 }

@@ -13,17 +13,17 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 	tests := []struct {
 		name           string
 		flow           common.RudderFlow
-		inputDefConfig map[string]interface{}
+		inputDefConfig map[string]any
 		expectedOAuth  bool
 		expectedErr    error
 	}{
 		{
 			name: "should pass for a destination which contains OAuth and rudderScopes",
 			flow: common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
 					"type":         "OAuth",
-					"rudderScopes": []interface{}{"delivery"},
+					"rudderScopes": []any{"delivery"},
 				},
 			},
 			expectedOAuth: true,
@@ -32,8 +32,8 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		{
 			name: "should pass for a destination which contains OAuth but not rudderScopes",
 			flow: common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
 					"type": "OAuth",
 				},
 			},
@@ -43,10 +43,10 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		{
 			name: "should return 'false' without error for a destination which contains OAuth with delete rudderScopes when flow is delivery",
 			flow: common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
 					"type":         "OAuth",
-					"rudderScopes": []interface{}{"delete"},
+					"rudderScopes": []any{"delete"},
 				},
 			},
 			expectedOAuth: false,
@@ -55,8 +55,8 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		{
 			name: "should return 'true' without error for a destination which contains OAuth without rudderScopes when flow is delivery",
 			flow: common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
 					"type": "OAuth",
 				},
 			},
@@ -66,10 +66,10 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		{
 			name: "should return 'false' with error for a destination which contains OAuth with one of invalid rudderScopes when flow is delivery",
 			flow: common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
 					"type":         "OAuth",
-					"rudderScopes": []interface{}{"delivery", 1},
+					"rudderScopes": []any{"delivery", 1},
 				},
 			},
 			expectedOAuth: false,
@@ -78,10 +78,10 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		{
 			name: "should return 'false' with error for a destination which contains OAuth with invalid rudderScopes type when flow is delivery",
 			flow: common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{
-				"auth": map[string]interface{}{
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
 					"type":         "OAuth",
-					"rudderScopes": []interface{}{"a"}[0],
+					"rudderScopes": []any{"a"}[0],
 				},
 			},
 			expectedOAuth: false,
@@ -90,7 +90,7 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 		{
 			name:           "should return 'false' without error for a non-OAuth destination when flow is delivery",
 			flow:           common.RudderFlowDelivery,
-			inputDefConfig: map[string]interface{}{},
+			inputDefConfig: map[string]any{},
 			expectedOAuth:  false,
 			expectedErr:    nil,
 		},

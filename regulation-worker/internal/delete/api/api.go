@@ -67,15 +67,15 @@ func (m *APIManager) GetSupportedDestinations() []string {
 	return destinations
 }
 
-func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {
+func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination *backendconfig.DestinationT, currentOauthRetryAttempt int) model.JobStatus {
 	pkgLogger.Debugn("Deleting job from API destination",
 		logger.NewIntField("jobID", int64(job.ID)),
-		obskit.DestinationType(destination.Name))
+		obskit.DestinationType(destination.DestinationDefinition.Name))
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
 	url := fmt.Sprint(m.DestTransformURL, endpoint)
 
-	bodySchema := mapJobToPayload(job, strings.ToLower(destination.Name), destination.Config)
+	bodySchema := mapJobToPayload(job, strings.ToLower(destination.DestinationDefinition.Name), destination.Config)
 	if pkgLogger.IsDebugLevel() { // reflection might be an expensive operation, checking if we need to print it
 		pkgLogger.Debugn("Payload", logger.NewStringField("payload", fmt.Sprintf("%#v", bodySchema))) // nolint:forbidigo
 	}
@@ -92,22 +92,15 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	dest := &backendconfig.DestinationT{
-		ID:          destination.DestinationID,
-		Config:      destination.Config,
-		WorkspaceID: job.WorkspaceID,
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name:   destination.Name,
-			Config: destination.DestDefConfig,
-		},
-	}
+	dest := destination
+	dest.WorkspaceID = job.WorkspaceID
 	isOAuth, err := dest.IsOAuthDestination(common.RudderFlowDelete)
 	if err != nil {
 		pkgLogger.Errorn("deleteWithRetry IsOAuthDestination error", obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), dest))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), dest))
 
 	defer stats.Default.NewTaggedStat(
 		"regulation_worker_cleaning_time",
@@ -128,7 +121,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 				stats.Tags{
 					"destinationId":   job.DestinationID,
 					"workspaceId":     job.WorkspaceID,
-					"destinationType": destination.Name,
+					"destinationType": destination.DestinationDefinition.Name,
 					"jobType":         "api",
 				}).Count(1)
 		}
@@ -175,7 +168,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 
 // prepares payload based on (job,destDetail) & make an API call to transformer.
 // gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (m *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+func (m *APIManager) Delete(ctx context.Context, job model.Job, destination *backendconfig.DestinationT) model.JobStatus {
 	return m.deleteWithRetry(ctx, job, destination, 0)
 }
 
@@ -215,7 +208,7 @@ func getOAuthErrorJob(jobResponses []JobRespSchema) (JobRespSchema, bool) {
 }
 
 type PostResponseParams struct {
-	destination              model.Destination
+	destination              *backendconfig.DestinationT
 	isOAuthEnabled           bool
 	currentOAuthRetryAttempt int
 	job                      model.Job
@@ -233,7 +226,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 
 	jobStatus := getJobStatus(params.responseStatusCode, jobResp)
 	pkgLogger.Debugn("Job and JobStatus",
-		obskit.DestinationType(params.destination.Name),
+		obskit.DestinationType(params.destination.DestinationDefinition.Name),
 		logger.NewIntField("jobId", int64(params.job.ID)),
 		logger.NewStringField("jobStatus", jobStatus.String()))
 
@@ -247,7 +240,7 @@ func (m *APIManager) PostResponse(ctx context.Context, params PostResponseParams
 			// All the handling related to OAuth has been done(inside api.Client.Do() itself)!
 			// retry the request
 			pkgLogger.Infon("Retrying deleteRequest for the whole batch",
-				logger.NewStringField("destinationName", params.destination.Name),
+				logger.NewStringField("destinationName", params.destination.DestinationDefinition.Name),
 				logger.NewIntField("jobId", int64(params.job.ID)),
 				logger.NewIntField("retryAttempt", int64(params.currentOAuthRetryAttempt+1)))
 			return m.deleteWithRetry(ctx, params.job, params.destination, params.currentOAuthRetryAttempt+1)

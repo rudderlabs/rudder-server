@@ -101,18 +101,24 @@ func TestOAuthV2Integration(t *testing.T) {
 	destinationID := "dest-123"
 	accountID := "account-123"
 	destConfig := &mockDestinationConfig{
-		destinations: map[string]model.Destination{
+		destinations: map[string]*backendconfig.DestinationT{
 			destinationID: {
-				DestinationID: destinationID,
-				Name:          "GA",
+				ID:          destinationID,
+				WorkspaceID: workspaceID,
 				Config: map[string]any{
 					"rudderDeleteAccountId": accountID,
 				},
-				DestDefConfig: map[string]any{
-					"auth": map[string]any{
-						"type":         "OAuth",
-						"rudderScopes": []any{"delete"},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "GA",
+					Config: map[string]any{
+						"auth": map[string]any{
+							"type":         "OAuth",
+							"rudderScopes": []any{"delete"},
+						},
 					},
+				},
+				DeleteAccount: &backendconfig.Account{
+					ID: accountID,
 				},
 			},
 		},
@@ -131,14 +137,17 @@ func TestNonOAuthIntegration(t *testing.T) {
 	jobID := "2"
 	destinationID := "dest-456"
 	destConfig := &mockDestinationConfig{
-		destinations: map[string]model.Destination{
+		destinations: map[string]*backendconfig.DestinationT{
 			destinationID: {
-				DestinationID: destinationID,
-				Name:          "GA",
-				Config:        map[string]any{},
-				DestDefConfig: map[string]any{
-					"auth": map[string]any{
-						"type": "apiKey", // Not OAuth
+				ID:          destinationID,
+				WorkspaceID: workspaceID,
+				Config:      map[string]any{},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "GA",
+					Config: map[string]any{
+						"auth": map[string]any{
+							"type": "apiKey", // Not OAuth
+						},
 					},
 				},
 			},
@@ -278,13 +287,13 @@ func (m *mockIdentifier) Type() deployment.Type       { return deployment.Dedica
 
 // Mock destination config for testing
 type mockDestinationConfig struct {
-	destinations map[string]model.Destination
+	destinations map[string]*backendconfig.DestinationT
 }
 
-func (m *mockDestinationConfig) GetDestDetails(destID string) (model.Destination, error) {
+func (m *mockDestinationConfig) GetDestDetails(destID string) (*backendconfig.DestinationT, error) {
 	destination, ok := m.destinations[destID]
 	if !ok {
-		return model.Destination{}, model.ErrInvalidDestination
+		return nil, model.ErrInvalidDestination
 	}
 	return destination, nil
 }

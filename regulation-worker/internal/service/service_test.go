@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	gomock "go.uber.org/mock/gomock"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 )
@@ -25,7 +26,7 @@ func TestJobSvc(t *testing.T) {
 		getErr                      error
 		expectedStatus              model.JobStatus
 		updateStatusErrBefore       error
-		dest                        model.Destination
+		dest                        *backendconfig.DestinationT
 		deleteJobStatusByDeleter    model.JobStatus
 		finalDeleteJobStatus        model.JobStatus
 		deleteJobErr                error
@@ -46,10 +47,10 @@ func TestJobSvc(t *testing.T) {
 			expectedStatus:           model.JobStatus{Status: model.JobStatusRunning},
 			deleteJobStatusByDeleter: model.JobStatus{Status: model.JobStatusComplete},
 			finalDeleteJobStatus:     model.JobStatus{Status: model.JobStatusComplete},
-			dest: model.Destination{
-				Config:        config,
-				DestinationID: "1111",
-				Name:          "S3",
+			dest: &backendconfig.DestinationT{
+				Config: config,
+				ID:     "1111",
+				Name:   "S3",
 			},
 			getJobCallCount:             1,
 			updateStatusBeforeCallCount: 1,
@@ -73,6 +74,11 @@ func TestJobSvc(t *testing.T) {
 				ID:             1,
 				WorkspaceID:    "1234",
 				FailedAttempts: 4,
+			},
+			dest: &backendconfig.DestinationT{
+				Config: map[string]any{},
+				ID:     "",
+				Name:   "",
 			},
 			getJobCallCount:             1,
 			updateStatusBeforeCallCount: 1,

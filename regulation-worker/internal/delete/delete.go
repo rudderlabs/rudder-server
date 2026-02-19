@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
@@ -13,7 +14,7 @@ var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=delete.go -destination=mock_delete_test.go -package=delete github.com/rudderlabs/rudder-server/regulation-worker/internal/delete
 type deleteManager interface {
-	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
+	Delete(ctx context.Context, job model.Job, destDetail *backendconfig.DestinationT) model.JobStatus
 	GetSupportedDestinations() []string
 }
 
@@ -29,10 +30,10 @@ func NewRouter(managers ...deleteManager) *Router {
 	}
 }
 
-func (r *Router) Delete(ctx context.Context, job model.Job, dest model.Destination) model.JobStatus {
+func (r *Router) Delete(ctx context.Context, job model.Job, dest *backendconfig.DestinationT) model.JobStatus {
 	pkgLogger.Debugn("deleting job from destination",
 		logger.NewIntField("jobId", int64(job.ID)),
-		logger.NewStringField("destination", dest.DestinationID),
+		logger.NewStringField("destination", dest.ID),
 	)
 	r.once.Do(func() {
 		pkgLogger.Infon("getting all the supported destination")
@@ -48,15 +49,15 @@ func (r *Router) Delete(ctx context.Context, job model.Job, dest model.Destinati
 			}
 		}
 	})
-	if _, ok := r.router[dest.Name]; ok {
+	if _, ok := r.router[dest.DestinationDefinition.Name]; ok {
 		pkgLogger.Debugn("calling deletion manager",
-			logger.NewStringField("destinationName", dest.Name),
+			logger.NewStringField("destinationName", dest.DestinationDefinition.Name),
 		)
-		return r.router[dest.Name].Delete(ctx, job, dest)
+		return r.router[dest.DestinationDefinition.Name].Delete(ctx, job, dest)
 	}
 
 	pkgLogger.Errorn("no deletion manager support deletion from destination",
-		logger.NewStringField("destinationName", dest.Name),
+		logger.NewStringField("destinationName", dest.DestinationDefinition.Name),
 	)
 	return model.JobStatus{Status: model.JobStatusAborted, Error: model.ErrDestNotSupported}
 }

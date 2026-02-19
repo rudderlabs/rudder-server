@@ -82,7 +82,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
@@ -124,7 +123,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test
 			res, err := client.Do(req)
@@ -149,7 +148,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
@@ -188,7 +186,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test the RoundTrip method directly
 			res, err := transport.RoundTrip(req)
@@ -214,7 +212,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
@@ -253,7 +250,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test the RoundTrip method directly
 			res, err := transport.RoundTrip(req)
@@ -288,7 +285,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
@@ -332,7 +328,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test the RoundTrip method directly
 			res, err := transport.RoundTrip(req)
@@ -370,7 +366,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
@@ -417,7 +412,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test
 			res, err := client.Do(req)
@@ -458,7 +453,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 					"auth": map[string]any{
@@ -505,7 +499,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test the RoundTrip method directly
 			res, err := transport.RoundTrip(req)
@@ -548,7 +542,6 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "test-destination-id",
 				WorkspaceID: "test-workspace-id",
-				DestType:    "test-definition-name",
 				Config: map[string]any{
 					"rudderAccountId": "test-account-id",
 				},
@@ -590,7 +583,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destination))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 			// Test
 			res, err := client.Do(req)
@@ -706,7 +699,7 @@ var _ = Describe("OAuthTransport Error Handling", func() {
 
 			// Create a request with nil destination info in context
 			req, _ := http.NewRequest("GET", "http://example.com", nil)
-			req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), nil))
+			req = req.WithContext(cntx.CtxWithDestination(req.Context(), nil))
 
 			// Test the RoundTrip method directly
 			res, err := transport.RoundTrip(req)

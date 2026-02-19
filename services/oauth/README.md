@@ -81,7 +81,7 @@ client := v2http.NewOAuthHttpClient(
 )
 
 // Attach destination info to context
-ctx := oauthctx.CtxWithDestInfo(context.Background(), &backendconfig.DestinationT{ /* ... */ })
+ctx := oauthctx.CtxWithDestination(context.Background(), &backendconfig.DestinationT{ /* ... */ })
 req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 
 // Perform request; transport transparently handles OAuth

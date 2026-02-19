@@ -218,7 +218,7 @@ func (t *OAuthTransport) fireTimerStats(statName string, tags stats.Tags, startT
 }
 
 func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	destination, ok := cntx.DestInfoFromCtx(req.Context())
+	destination, ok := cntx.DestinationFromCtx(req.Context())
 	if !ok || destination == nil {
 		t.log.Errorn("[OAuthPlatformError]destinationInfo is not present in request context", logger.NewStringField("flow", string(t.flow)))
 		return httpResponseCreator(http.StatusInternalServerError, []byte("[OAuthPlatformError]request context data is not of destinationInfo type")), nil

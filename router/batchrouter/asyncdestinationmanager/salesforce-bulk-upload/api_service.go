@@ -218,7 +218,7 @@ func (s *apiService) makeRequest(
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), s.destination))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), s.destination))
 
 	resp, err := s.client.Do(req)
 	if err != nil {

@@ -234,7 +234,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %v", err)
 	}
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), ym.destination))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), ym.destination))
 
 	clientType, ok := idClientMap[userIdType]
 	if !ok {

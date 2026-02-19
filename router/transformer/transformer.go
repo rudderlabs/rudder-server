@@ -95,7 +95,7 @@ type ProxyRequestParams struct {
 	ResponseData ProxyRequestPayload
 	DestName     string
 	Adapter      transformerProxyAdapter
-	DestInfo     *backendconfig.DestinationT
+	Destination  *backendconfig.DestinationT
 	Connection   backendconfig.Connection `json:"connection"`
 }
 
@@ -224,7 +224,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 
 		dest := &transformMessageCopy.Data[0].Destination
-		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), dest))
+		req = req.WithContext(cntx.CtxWithDestination(req.Context(), dest))
 		resp, err = trans.clientOAuthV2.Do(req)
 
 		duration := time.Since(s)
@@ -656,7 +656,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 	httpReqStTime := time.Now()
 	var resp *http.Response
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), proxyReqParams.Destination))
 	req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 	resp, err = trans.proxyClientOAuthV2.Do(req)
 
