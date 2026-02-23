@@ -99,7 +99,12 @@ func New(
 
 	m.stats.discards = statsFactory.NewTaggedStat("snowpipe_streaming_discards", stats.CountType, tags)
 	m.stats.pollingInProgress = statsFactory.NewTaggedStat("snowpipe_streaming_polling_in_progress", stats.CountType, tags)
-	m.stats.duplicateEvents = statsFactory.NewTaggedStat("snowpipe_streaming_duplicate_events", stats.CountType, tags)
+	m.stats.duplicateEventsInBatch = statsFactory.NewTaggedStat("snowpipe_streaming_duplicate_events", stats.CountType, lo.Assign(tags, stats.Tags{
+		"reason": "batch",
+	}))
+	m.stats.duplicateEventsDueToOffset = statsFactory.NewTaggedStat("snowpipe_streaming_duplicate_events", stats.CountType, lo.Assign(tags, stats.Tags{
+		"reason": "offset",
+	}))
 
 	if m.requestDoer == nil {
 		m.requestDoer = m.retryableClient().StandardClient()
@@ -426,10 +431,16 @@ func (m *Manager) sendEventsToSnowpipe(
 	log.Infon("Sent events to Snowpipe")
 
 	if info.tableName != whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
-		duplicateCount := checkForDuplicateIDs(info.events)
-		if duplicateCount > 0 {
-			log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateCount)))
-			m.stats.duplicateEvents.Count(duplicateCount)
+		duplicateIDsInBatch := checkForDuplicateIDsInBatch(info.events)
+		if duplicateIDsInBatch > 0 {
+			log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateIDsInBatch)), logger.NewStringField("reason", "batch"))
+			m.stats.duplicateEventsInBatch.Count(duplicateIDsInBatch)
+		}
+
+		duplicateCountDueToOffset := m.checkForDuplicatesDueToOffset(ctx, channelResponse.ChannelID, info.events)
+		if duplicateCountDueToOffset > 0 {
+			log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateCountDueToOffset)), logger.NewStringField("reason", "offset"))
+			m.stats.duplicateEventsDueToOffset.Count(duplicateCountDueToOffset)
 		}
 	}
 
@@ -442,7 +453,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	return imInfo, discardImInfo, nil
 }
 
-func checkForDuplicateIDs(events []*event) (duplicateCount int) {
+func checkForDuplicateIDsInBatch(events []*event) (duplicateCount int) {
 	idColumn := whutils.ToProviderCase(whutils.SnowpipeStreaming, "id")
 	ids := lo.FilterMap(events, func(event *event, _ int) (any, bool) {
 		id, ok := event.Message.Data[idColumn]
@@ -459,6 +470,36 @@ func checkForDuplicateIDs(events []*event) (duplicateCount int) {
 			continue
 		}
 		duplicates[id] = struct{}{}
+	}
+	return duplicateCount
+}
+
+// checkForDuplicatesDueToOffset checks for duplicate ids due to offset.
+func (m *Manager) checkForDuplicatesDueToOffset(ctx context.Context, channelID string, events []*event) (duplicateCount int) {
+	statusRes, err := m.api.GetStatus(ctx, channelID)
+	if err != nil {
+		m.logger.Warnn("Failed to get status", obskit.Error(err))
+		return
+	}
+	if !statusRes.Valid || !statusRes.Success {
+		m.logger.Warnn("Invalid status response", logger.NewBoolField("valid", statusRes.Valid), logger.NewBoolField("success", statusRes.Success))
+		return
+	}
+
+	latestCommittedOffset, err := convertToInt(statusRes.Offset)
+	if err != nil {
+		m.logger.Warnn("Failed to convert latest committed offset to int", obskit.Error(err))
+		return
+	}
+
+	for _, event := range events {
+		if event.Metadata.JobID < 0 {
+			continue // Ignoring negative job ids due to migration
+		}
+
+		if event.Metadata.JobID <= latestCommittedOffset {
+			duplicateCount++
+		}
 	}
 	return duplicateCount
 }
