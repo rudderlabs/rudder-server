@@ -25,7 +25,7 @@ type DestinationConfig struct {
 	Dest         destMiddleware
 }
 
-func (d *DestinationConfig) GetDestDetails(destID string) (*backendconfig.DestinationT, error) {
+func (d *DestinationConfig) GetDestination(destID string) (*backendconfig.DestinationT, error) {
 	pkgLogger.Debugn("getting destination details", obskit.DestinationID(destID))
 	d.mu.RLock()
 	defer d.mu.RUnlock()

@@ -80,8 +80,8 @@ type ProxyRequestMetadata struct {
 	SourceID      string          `json:"sourceId"`
 	DestinationID string          `json:"destinationId"`
 	WorkspaceID   string          `json:"workspaceId"`
-	Secret        json.RawMessage `json:"secret"`
-	DestInfo      json.RawMessage `json:"destInfo,omitempty"`
+	Secret        json.RawMessage `json:"secret"`             // Receives OAuth destination secrets in the transformer and holds the current token during refresh token flows
+	DestInfo      json.RawMessage `json:"destInfo,omitempty"` // Used by the transformer; potentially removable
 	DontBatch     bool            `json:"dontBatch"`
 }
 

@@ -21,17 +21,17 @@ type APIClient interface {
 	UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error
 }
 
-type destDetail interface {
-	GetDestDetails(destID string) (*backendconfig.DestinationT, error)
+type dest interface {
+	GetDestination(destID string) (*backendconfig.DestinationT, error)
 }
 type deleter interface {
-	Delete(ctx context.Context, job model.Job, destDetail *backendconfig.DestinationT) model.JobStatus
+	Delete(ctx context.Context, job model.Job, dest *backendconfig.DestinationT) model.JobStatus
 }
 
 type JobSvc struct {
 	API               APIClient
 	Deleter           deleter
-	DestDetail        destDetail
+	Destination       dest
 	MaxFailedAttempts int
 }
 
@@ -55,7 +55,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		return err
 	}
 	// executing deletion
-	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
+	dest, err := js.Destination.GetDestination(job.DestinationID)
 	if err != nil {
 		pkgLogger.Errorn("error while getting destination details", obskit.Error(err))
 		if errors.Is(err, model.ErrInvalidDestination) {
@@ -66,18 +66,18 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 
 	deletionStart := time.Now()
 
-	jobStatus = js.Deleter.Delete(ctx, job, destDetail)
+	jobStatus = js.Deleter.Delete(ctx, job, dest)
 	if jobStatus.Status == model.JobStatusFailed && job.FailedAttempts >= js.MaxFailedAttempts {
 		jobStatus.Status = model.JobStatusAborted
 	}
 
-	stats.Default.NewTaggedStat("regulation_worker_attempted_user_deletions_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Count(len(job.Users))
+	stats.Default.NewTaggedStat("regulation_worker_attempted_user_deletions_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": dest.ID, "destinationType": dest.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Count(len(job.Users))
 
-	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Since(deletionStart)
+	stats.Default.NewTaggedStat("regulation_worker_deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": dest.ID, "destinationType": dest.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Since(deletionStart)
 	if jobStatus.Status == model.JobStatusComplete {
-		stats.Default.NewTaggedStat("regulation_worker_deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name}).Count(len(job.Users))
+		stats.Default.NewTaggedStat("regulation_worker_deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": dest.ID, "destinationType": dest.DestinationDefinition.Name}).Count(len(job.Users))
 	}
-	stats.Default.NewTaggedStat("regulation_worker_loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.ID, "destinationType": destDetail.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Since(loopStart)
+	stats.Default.NewTaggedStat("regulation_worker_loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": dest.ID, "destinationType": dest.DestinationDefinition.Name, "status": string(jobStatus.Status)}).Since(loopStart)
 
 	return js.updateStatus(ctx, jobStatus, job.ID)
 }

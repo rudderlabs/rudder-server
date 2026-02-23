@@ -90,17 +90,13 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	// check if OAuth destination
-	dest := destination
-	dest.WorkspaceID = job.WorkspaceID
-	isOAuth, err := dest.IsOAuthDestination(common.RudderFlowDelete)
+	isOAuth, err := destination.IsOAuthDestination(common.RudderFlowDelete)
 	if err != nil {
 		pkgLogger.Errorn("deleteWithRetry IsOAuthDestination error", obskit.Error(err))
 		return model.JobStatus{Status: model.JobStatusFailed, Error: err}
 	}
 
-	req = req.WithContext(cntx.CtxWithDestination(req.Context(), dest))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), destination))
 
 	defer stats.Default.NewTaggedStat(
 		"regulation_worker_cleaning_time",
@@ -166,7 +162,7 @@ func (m *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destina
 	})
 }
 
-// prepares payload based on (job,destDetail) & make an API call to transformer.
+// prepares payload based on (job,destination) & make an API call to transformer.
 // gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (m *APIManager) Delete(ctx context.Context, job model.Job, destination *backendconfig.DestinationT) model.JobStatus {
 	return m.deleteWithRetry(ctx, job, destination, 0)

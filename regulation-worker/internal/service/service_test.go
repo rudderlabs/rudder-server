@@ -107,12 +107,12 @@ func TestJobSvc(t *testing.T) {
 			mockDeleter := service.NewMockdeleter(mockCtrl)
 			mockDeleter.EXPECT().Delete(ctx, tt.job, tt.dest).Return(tt.deleteJobStatusByDeleter).Times(tt.deleteJobCallCount)
 
-			mockDestDetail := service.NewMockdestDetail(mockCtrl)
-			mockDestDetail.EXPECT().GetDestDetails(tt.job.DestinationID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
+			mockDestDetail := service.NewMockdest(mockCtrl)
+			mockDestDetail.EXPECT().GetDestination(tt.job.DestinationID).Return(tt.dest, nil).Times(tt.getDestDetailsCount)
 			svc := service.JobSvc{
-				API:        mockAPIClient,
-				Deleter:    mockDeleter,
-				DestDetail: mockDestDetail,
+				API:         mockAPIClient,
+				Deleter:     mockDeleter,
+				Destination: mockDestDetail,
 			}
 			err := svc.JobSvc(ctx)
 			require.Equal(t, tt.expectedFinalErr, err, "actual error different than expected")

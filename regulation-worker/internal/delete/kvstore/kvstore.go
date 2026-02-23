@@ -23,9 +23,9 @@ func (*KVDeleteManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail *backendconfig.DestinationT) model.JobStatus {
-	destConfig := destDetail.Config
-	destName := destDetail.DestinationDefinition.Name
+func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destination *backendconfig.DestinationT) model.JobStatus {
+	destConfig := destination.Config
+	destName := destination.DestinationDefinition.Name
 
 	pkgLogger.Debugn("deleting from kvstore",
 		logger.NewIntField("jobID", int64(job.ID)),

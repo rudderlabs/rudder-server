@@ -85,7 +85,7 @@ func runIntegrationTest(
 			Identity:  &mockIdentifier{workspaceID: workspaceID},
 		},
 		Deleter:           router,
-		DestDetail:        destConfig,
+		Destination:       destConfig,
 		MaxFailedAttempts: 3,
 	}
 
@@ -290,7 +290,7 @@ type mockDestinationConfig struct {
 	destinations map[string]*backendconfig.DestinationT
 }
 
-func (m *mockDestinationConfig) GetDestDetails(destID string) (*backendconfig.DestinationT, error) {
+func (m *mockDestinationConfig) GetDestination(destID string) (*backendconfig.DestinationT, error) {
 	destination, ok := m.destinations[destID]
 	if !ok {
 		return nil, model.ErrInvalidDestination

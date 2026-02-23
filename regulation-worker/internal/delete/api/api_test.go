@@ -326,7 +326,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -376,7 +377,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -434,7 +436,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -479,7 +482,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -533,7 +537,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "",
 				},
@@ -580,8 +585,9 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID:     "1234",
-				Config: map[string]any{},
+				ID:          "1234",
+				WorkspaceID: "1001",
+				Config:      map[string]any{},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GA",
 					Config: defaultDestDefConfig,
@@ -618,7 +624,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -671,7 +678,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 					"authStatus":            "active",
@@ -716,7 +724,8 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: &backendconfig.DestinationT{
-				ID: "1234",
+				ID:          "1234",
+				WorkspaceID: "1001",
 				Config: map[string]any{
 					"rudderDeleteAccountId": "xyz",
 					"authStatus":            "active",

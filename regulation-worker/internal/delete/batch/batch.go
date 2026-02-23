@@ -327,10 +327,10 @@ func (*BatchManager) GetSupportedDestinations() []string {
 func (bm *BatchManager) Delete(
 	ctx context.Context,
 	job model.Job,
-	destDetail *backendconfig.DestinationT,
+	destination *backendconfig.DestinationT,
 ) model.JobStatus {
-	destConfig := destDetail.Config
-	destName := destDetail.DestinationDefinition.Name
+	destConfig := destination.Config
+	destName := destination.DestinationDefinition.Name
 
 	pkgLogger.Debugn("deleting from batch destination",
 		logger.NewIntField("jobID", int64(job.ID)),
