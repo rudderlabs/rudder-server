@@ -177,6 +177,8 @@ type Handle struct {
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
+		pythonTransformVersionIDsEnabled          bool
+		pythonTransformVersionIDs                 map[string]struct{}
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		archiveInPreProcess                       bool
 	}
@@ -746,6 +748,16 @@ func (proc *Handle) loadConfig() {
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
+	proc.config.pythonTransformVersionIDsEnabled = proc.conf.GetBool("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", false)
+	if proc.config.pythonTransformVersionIDsEnabled {
+		if versionIDsStr := proc.conf.GetString("PYTHON_TRANSFORM_VERSION_IDS", ""); versionIDsStr != "" {
+			allowedVersionIDs := strings.Split(versionIDsStr, ",")
+			proc.config.pythonTransformVersionIDs = make(map[string]struct{}, len(allowedVersionIDs))
+			for _, versionID := range allowedVersionIDs {
+				proc.config.pythonTransformVersionIDs[versionID] = struct{}{}
+			}
+		}
+	}
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -3004,7 +3016,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
 		noOfEvents := len(eventList)
-		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled()
+		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled(eventList)
 		proc.logger.Debugn("UT mirroring setting", logger.NewBoolField("enabled", utMirroringEnabled))
 		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
 		var userTransformationMirroringStat *DestStatT
@@ -3469,7 +3481,7 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 	return nil
 }
 
-func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response) {
+func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.TransformerEvent) (bool, chan types.Response) {
 	mirroringSanityChecksSampling := proc.config.userTransformationMirroringSanitySampling.Load()
 	mirroringFireAndForget := proc.config.userTransformationMirroringFireAndForget.Load()
 
@@ -3481,6 +3493,17 @@ func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response
 			"UT mirroring sanity checks and fire&forget are enabled (they are mutually exclusive). Disabling UT mirroring.",
 		)
 		return false, nil
+	}
+
+	// Check if this is a Python transformation and apply version-based filtering
+	if len(eventList) > 0 && len(eventList[0].Destination.Transformations) > 0 {
+		transformation := eventList[0].Destination.Transformations[0]
+		isPython := strings.HasPrefix(transformation.Language, "python")
+		if isPython && proc.config.pythonTransformVersionIDsEnabled {
+			if _, ok := proc.config.pythonTransformVersionIDs[transformation.VersionID]; !ok {
+				return false, nil
+			}
+		}
 	}
 
 	if mirroringFireAndForget { // Mirroring is enabled in fire&forget mode and no sanity checks
