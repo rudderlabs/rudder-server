@@ -53,7 +53,7 @@ func TestMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 		conf.Set("PartitionMigration.Processor.SourceNode.readExcludeSleep", "10ms")
 		conf.Set("PartitionMigration.Processor.SourceNode.waitForInProgressTimeout", "10s")
 
@@ -499,7 +499,7 @@ func TestMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 		conf.Set("PartitionMigration.Processor.SourceNode.readExcludeSleep", "10ms")
 		conf.Set("PartitionMigration.Processor.SourceNode.waitForInProgressTimeout", "10s")
 		conf.Set("LOG_LEVEL", "DEBUG")
