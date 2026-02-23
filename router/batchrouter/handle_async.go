@@ -313,6 +313,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			brt.logger.Infon("pollAsyncStatus stopped", obskit.DestinationType(brt.destType))
 			return
 		case <-time.After(brt.pollStatusLoopSleep.Load()):
 			brt.configSubscriberMu.RLock()
@@ -390,6 +391,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			brt.logger.Infon("asyncUploadWorker stopped", obskit.DestinationType(brt.destType))
 			return
 		case <-time.After(brt.asyncUploadWorkerTimeout.Load()):
 			brt.configSubscriberMu.RLock()
