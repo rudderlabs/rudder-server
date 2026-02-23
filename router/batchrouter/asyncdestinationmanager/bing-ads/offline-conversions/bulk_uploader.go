@@ -1,6 +1,7 @@
 package offline_conversions
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -150,7 +151,7 @@ This function create at most 3 zip files from the text file created by the batch
 It takes the text file path as input and returns the zip file path
 The maximum size of the zip file is 100MB, if the size of the zip file exceeds 100MB then the job is marked as failed
 */
-func (b *BingAdsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (b *BingAdsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	var failedJobs []int64
 	var successJobs []int64
@@ -276,7 +277,7 @@ func (b *BingAdsBulkUploader) pollSingleImport(requestId string) common.PollStat
 	}
 }
 
-func (b *BingAdsBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+func (b *BingAdsBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	var cumulativeResp common.PollStatusResponse
 	var completionStatus []bool
 	var failedJobURLs []string

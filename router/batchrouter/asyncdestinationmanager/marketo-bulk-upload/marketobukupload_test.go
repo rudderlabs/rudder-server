@@ -1,6 +1,7 @@
 package marketobulkupload_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -90,7 +91,7 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 			ImportLeads(gomock.Any(), "email").
 			Return("test-import-123", nil)
 
-		result := uploader.Upload(&common.AsyncDestinationStruct{
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -116,7 +117,7 @@ func TestMarketoBulkUploader_Upload(t *testing.T) {
 				Message:    "Internal Server Error",
 			})
 
-		result := uploader.Upload(&common.AsyncDestinationStruct{
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -170,7 +171,7 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 			PollImportStatus("test-import-123").
 			Return(marketoResponse, nil)
 
-		result := uploader.Poll(common.AsyncPoll{
+		result := uploader.Poll(context.Background(), common.AsyncPoll{
 			ImportId: "test-import-123",
 		})
 
@@ -197,7 +198,7 @@ func TestMarketoBulkUploader_Poll(t *testing.T) {
 			PollImportStatus("test-import-123").
 			Return(marketoResponse, nil)
 
-		result := uploader.Poll(common.AsyncPoll{
+		result := uploader.Poll(context.Background(), common.AsyncPoll{
 			ImportId: "test-import-123",
 		})
 
@@ -310,7 +311,7 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			AnyTimes()
 
 		// Do an initial upload to set up the internal state (csvHeaders and dataHashToJobId)
-		uploader.Upload(&common.AsyncDestinationStruct{
+		uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
@@ -323,7 +324,7 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 		})
 
 		// Do a poll to set up the internal state (importId)
-		uploader.Poll(common.AsyncPoll{
+		uploader.Poll(context.Background(), common.AsyncPoll{
 			ImportId: "test-import-123",
 		})
 
@@ -405,7 +406,7 @@ func TestMarketoBulkUploader_GetUploadStats(t *testing.T) {
 			AnyTimes()
 
 		// Do a poll to set up the internal state (importId)
-		uploader.Poll(common.AsyncPoll{
+		uploader.Poll(context.Background(), common.AsyncPoll{
 			ImportId: "test-import-123",
 		})
 

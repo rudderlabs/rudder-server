@@ -1,6 +1,7 @@
 package eloqua_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -92,7 +93,7 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 		It("TestEloquaErrorWhileFetchingFields", func() {
@@ -117,7 +118,7 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -160,7 +161,7 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -207,7 +208,7 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -255,7 +256,7 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      0,
 				FailedCount:         10,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 		It("TestEloquaSuccessfulIdentify", func() {
@@ -310,7 +311,7 @@ var _ = Describe("Eloqua test", func() {
 				ImportingCount:      9,
 				FailedCount:         1,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 	})
@@ -338,7 +339,7 @@ var _ = Describe("Eloqua test", func() {
 				HasFailed:  false,
 				HasWarning: false,
 			}
-			received := bulkUploader.Poll(pollInput)
+			received := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(received).To(Equal(expected))
 		})
 		It("TestEloquaReceivedSuccess", func() {
@@ -357,7 +358,7 @@ var _ = Describe("Eloqua test", func() {
 				HasFailed:  false,
 				HasWarning: false,
 			}
-			received := bulkUploader.Poll(pollInput)
+			received := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(received).To(Equal(expected))
 		})
 		It("TestEloquaReceivedPending", func() {
@@ -371,7 +372,7 @@ var _ = Describe("Eloqua test", func() {
 			expected := common.PollStatusResponse{
 				InProgress: true,
 			}
-			received := bulkUploader.Poll(pollInput)
+			received := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(received).To(Equal(expected))
 		})
 	})
@@ -507,7 +508,7 @@ var _ = Describe("Eloqua test", func() {
 				}, nil)
 			eloquaService.EXPECT().UploadData(gomock.Any(), gomock.Any()).Return(nil)
 			eloquaService.EXPECT().RunSync(gomock.Any()).Return("/syncs/384", nil)
-			bulkUploader.Upload(&common.AsyncDestinationStruct{
+			bulkUploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 				ImportingJobIDs: []int64{1014, 1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023},
 				FailedJobIDs:    []int64{},
 				FileName:        filepath.Join(currentDir, "testdata/uploadDataIdentify.txt"),

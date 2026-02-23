@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	stdjson "encoding/json"
 	"net/http"
 	"sync"
@@ -14,13 +15,13 @@ import (
 )
 
 type AsyncUploadAndTransformManager interface {
-	Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
+	Upload(ctx context.Context, asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput
 	Transform(job *jobsdb.JobT) (string, error)
 }
 
 type AsyncDestinationManager interface {
 	AsyncUploadAndTransformManager
-	Poll(pollInput AsyncPoll) PollStatusResponse
+	Poll(ctx context.Context, pollInput AsyncPoll) PollStatusResponse
 	GetUploadStats(UploadStatsInput GetUploadStatsInput) GetUploadStatsResponse
 }
 
@@ -28,11 +29,11 @@ type SimpleAsyncDestinationManager struct {
 	UploaderAndTransformer AsyncUploadAndTransformManager
 }
 
-func (m SimpleAsyncDestinationManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
-	return m.UploaderAndTransformer.Upload(asyncDestStruct)
+func (m SimpleAsyncDestinationManager) Upload(ctx context.Context, asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
+	return m.UploaderAndTransformer.Upload(ctx, asyncDestStruct)
 }
 
-func (m SimpleAsyncDestinationManager) Poll(AsyncPoll) PollStatusResponse {
+func (m SimpleAsyncDestinationManager) Poll(_ context.Context, _ AsyncPoll) PollStatusResponse {
 	return PollStatusResponse{
 		StatusCode: http.StatusOK,
 		Complete:   true,

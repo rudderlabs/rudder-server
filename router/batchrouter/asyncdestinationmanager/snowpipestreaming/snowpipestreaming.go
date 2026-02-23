@@ -163,7 +163,7 @@ func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
 // It reads events from the file, groups them by table, and sends them to Snowpipe.
 // It returns the IDs of the importing and failed jobs.
 // In case of failure, it aborts the jobs and returns the aborted job IDs.
-func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	m.logger.Infon("Uploading data to snowpipe streaming destination")
 
 	var destConf destConfig
@@ -186,9 +186,6 @@ func (m *Manager) Upload(asyncDest *common.AsyncDestinationStruct) common.AsyncU
 		logger.NewIntField("events", int64(len(events))),
 		logger.NewIntField("size", int64(asyncDest.Size)),
 	)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	discardsChannel, err := m.initializeChannelWithSchema(ctx, asyncDest.Destination.ID, &destConf, discardsTable(), discardsSchema())
 	if err != nil {
@@ -568,7 +565,7 @@ func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedRea
 // For the once which have reached the terminal state (success or failure), it caches the import infos in polledImportInfoMap. Later if Poll is called again, it does not need to do the status check again.
 // Once all the imports have reached the terminal state, if any imports have failed, it deletes the channels for those imports.
 // It returns a PollStatusResponse indicating if any imports are still in progress or if any have failed or succeeded
-func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+func (m *Manager) Poll(ctx context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
 	var importInfos []*importInfo
@@ -586,9 +583,6 @@ func (m *Manager) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
 			Error:      fmt.Errorf("failed to unmarshal import id: %w", err).Error(),
 		}
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	if anyInProgress := m.processPollImportInfos(ctx, importInfos); anyInProgress {
 		m.stats.pollingInProgress.Increment()

@@ -1,6 +1,7 @@
 package lyticsBulkUpload_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,7 +87,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 				ImportingCount:      0,
 				FailedCount:         4,
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			Expect(received).To(Equal(expected))
 		})
 
@@ -140,7 +141,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 			}
 
 			// Call the Upload method and capture the result
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 
 			// Assert that the received output matches the expected output
 			Expect(received).To(Equal(expected))
@@ -195,7 +196,7 @@ var _ = Describe("LYTICS_BULK_UPLOAD test", func() {
 			}
 
 			// Call the Upload method and capture the result
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 
 			// Assert that the received output matches the expected output
 			Expect(received).To(Equal(expected))
