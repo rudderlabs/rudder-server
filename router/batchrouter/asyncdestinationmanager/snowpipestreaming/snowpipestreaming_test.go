@@ -1257,7 +1257,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.True(t, output.InProgress)
 	})
 
-	t.Run("Poll status failed", func(t *testing.T) {
+	t.Run("Poll status invalid, recreated channel but still status is invalid", func(t *testing.T) {
 		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
@@ -1271,6 +1271,12 @@ func TestSnowpipeStreaming(t *testing.T) {
 				"test-users-channel": func() (*model.StatusResponse, error) {
 					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
 				},
+				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
 				"test-users-channel": func() error {
@@ -1278,6 +1284,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-products-channel": func() error {
 					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
 				},
 			},
 		}
@@ -1288,8 +1302,181 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response with valid: false, success: false","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status invalid, recreated channel failed", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+			},
+		}
+		output := sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2}]`, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status invalid, recreated channel but getting status failed", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
+					return nil, fmt.Errorf("failed to get status")
+				},
+				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
+					return nil, fmt.Errorf("failed to get status")
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+			},
+		}
+		output := sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2}]`, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status invalid, recreated channel and status is successful", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "1003"}, nil
+				},
+				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "1004"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
+				},
+			},
+		}
+		output := sm.Poll(common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.False(t, output.HasFailed)
+		require.False(t, output.HasWarning)
+		require.Empty(t, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "succeeded",
+		}).LastValue())
+		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
@@ -1311,6 +1498,12 @@ func TestSnowpipeStreaming(t *testing.T) {
 				"test-users-channel": func() (*model.StatusResponse, error) {
 					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
 				},
+				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
+				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
+				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
 				"test-users-channel": func() error {
@@ -1318,6 +1511,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-products-channel": func() error {
 					return assert.AnError
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
 				},
 			},
 		}
@@ -1328,7 +1529,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response with valid: false, success: false","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -1510,6 +1711,20 @@ func TestSnowpipeStreaming(t *testing.T) {
 					statusCalls += 1
 					return &model.StatusResponse{Valid: true, Success: true, Offset: "4", LatestInsertedOffset: "4"}, nil
 				},
+				"test-recreated-channel-1": func() (*model.StatusResponse, error) {
+					statusCalls += 1
+					return &model.StatusResponse{Valid: false, Success: true, Offset: "1"}, nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"1": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-channel-1"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-channel-1": func() error {
+					return nil
+				},
 			},
 		}
 		output := sm.Poll(common.AsyncPoll{
@@ -1541,7 +1756,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.Equal(t, `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":true,"reason":"invalid status response with valid: false, success: true","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":true,"reason":"invalid status response with valid: true, success: false","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`, output.FailedJobParameters)
+		require.Equal(t, `[{"channelId":"test-channel-1","offset":"1","table":"1","failed":true,"reason":"invalid status response after recreation with valid: false, success: true","count":1},{"channelId":"test-channel-2","offset":"2","table":"2","failed":true,"reason":"invalid status response with valid: true, success: false","count":2},{"channelId":"test-channel-3","offset":"3","table":"3","failed":false,"reason":"","count":3},{"channelId":"test-channel-4","offset":"4","table":"4","failed":false,"reason":"","count":4}]`, output.FailedJobParameters)
 		require.EqualValues(t, 3, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -1562,7 +1777,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
 		}).LastValue())
-		require.Equal(t, 5, statusCalls) // 4 channels + 1 for polling in progress
+		require.Equal(t, 6, statusCalls) // 4 channels + 1 for polling in progress + 1 for recreation
 	})
 
 	t.Run("GetUploadStats", func(t *testing.T) {
@@ -1736,15 +1951,17 @@ func TestSnowpipeStreaming(t *testing.T) {
 
 	t.Run("processPollImportInfos", func(t *testing.T) {
 		tests := []struct {
-			name                   string
-			infos                  []*importInfo
-			prePopulatedCache      map[string]*importInfo
-			mockGetStatusResponses map[string]func() (*model.StatusResponse, error)
-			expectedInProgress     bool
-			expectedCacheSize      int
-			expectedFailedChannels []string
-			expectedResetInfos     []string                 // ChannelIDs that should have Failed=false and FailedJobIds=nil
-			expectedFailedJobIds   map[string]*failedJobIds // ChannelID -> expected FailedJobIds for failed channels
+			name                       string
+			infos                      []*importInfo
+			prePopulatedCache          map[string]*importInfo
+			mockGetStatusResponses     map[string]func() (*model.StatusResponse, error)
+			mockDeleteChannelResponses map[string]func() error
+			mockCreateChannelResponses map[string]func() (*model.ChannelResponse, error)
+			expectedInProgress         bool
+			expectedCacheSize          int
+			expectedFailedChannels     []string
+			expectedResetInfos         []string                 // ChannelIDs that should have Failed=false and FailedJobIds=nil
+			expectedFailedJobIds       map[string]*failedJobIds // ChannelID -> expected FailedJobIds for failed channels
 		}{
 			{
 				name:               "empty infos slice",
@@ -2054,6 +2271,23 @@ func TestSnowpipeStreaming(t *testing.T) {
 							Offset:  "100",
 						}, nil
 					},
+					"test-recreated-channel-1": func() (*model.StatusResponse, error) {
+						return &model.StatusResponse{
+							Valid:   false,
+							Success: true,
+							Offset:  "100",
+						}, nil
+					},
+				},
+				mockDeleteChannelResponses: map[string]func() error{
+					"test-channel-1": func() error {
+						return nil
+					},
+				},
+				mockCreateChannelResponses: map[string]func() (*model.ChannelResponse, error){
+					"USERS": func() (*model.ChannelResponse, error) {
+						return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-channel-1"}, nil
+					},
 				},
 				expectedInProgress:     false,
 				expectedCacheSize:      1,
@@ -2180,10 +2414,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 				}
 
 				// Set up mock API if needed
-				if tt.mockGetStatusResponses != nil {
-					sm.api = &mockAPI{
-						getStatusOutputMap: tt.mockGetStatusResponses,
-					}
+				sm.api = &mockAPI{
+					getStatusOutputMap:     tt.mockGetStatusResponses,
+					deleteChannelOutputMap: tt.mockDeleteChannelResponses,
+					createChannelOutputMap: tt.mockCreateChannelResponses,
 				}
 
 				anyInProgress := sm.processPollImportInfos(context.Background(), tt.infos)
