@@ -97,7 +97,7 @@ func Run(ctx context.Context) error {
 			URLPrefix: config.MustGetString("CONFIG_BACKEND_URL"),
 			Identity:  identity,
 		},
-		DestDetail: dest,
+		Destination: dest,
 		Deleter: delete.NewRouter(
 			&kvstore.KVDeleteManager{},
 			&batch.BatchManager{

@@ -411,7 +411,7 @@ var _ = Describe("Proxy Request", func() {
 	})
 })
 
-func TestTransformForOAuthV2Destination(t *testing.T) {
+func TestTransformForDestination(t *testing.T) {
 	initRouter()
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -426,7 +426,6 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
 			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             true,
 			reloadableConfig:               &reloadableConfig{},
 		},
 	}
@@ -437,10 +436,24 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
 	worker.rt.limiter.stats.transform = partition.NewStats()
 
+	// OAuth destination definition - jobs will be grouped by destination ID
+	oauthDestDef := backendconfig.DestinationDefinitionT{
+		Config: map[string]any{
+			"auth": map[string]any{
+				"type": "OAuth",
+			},
+		},
+	}
+	// Non-OAuth destination definition - jobs will be grouped together
+	nonOauthDestDef := backendconfig.DestinationDefinitionT{
+		Config: map[string]any{},
+	}
+
 	routerJobs := []types.RouterJobT{
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:                    "d1",
+				DestinationDefinition: oauthDestDef, // OAuth
 			},
 			Message: json.RawMessage(`{"event": "d1-test1"}`),
 			JobMetadata: types.JobMetadataT{
@@ -449,7 +462,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:                    "d2",
+				DestinationDefinition: nonOauthDestDef, // non-OAuth
 			},
 			Message: json.RawMessage(`{"event": "d2-test2"}`),
 			JobMetadata: types.JobMetadataT{
@@ -458,7 +472,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:                    "d1",
+				DestinationDefinition: oauthDestDef, // OAuth
 			},
 			Message: json.RawMessage(`{"event": "d1-test3"}`),
 			JobMetadata: types.JobMetadataT{
@@ -467,7 +482,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d3",
+				ID:                    "d3",
+				DestinationDefinition: nonOauthDestDef, // non-OAuth
 			},
 			Message: json.RawMessage(`{"event": "d3-test4"}`),
 			JobMetadata: types.JobMetadataT{
@@ -476,7 +492,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d1",
+				ID:                    "d1",
+				DestinationDefinition: oauthDestDef, // OAuth
 			},
 			Message: json.RawMessage(`{"event": "d1-test5"}`),
 			JobMetadata: types.JobMetadataT{
@@ -485,7 +502,8 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 		},
 		{
 			Destination: backendconfig.DestinationT{
-				ID: "d2",
+				ID:                    "d2",
+				DestinationDefinition: nonOauthDestDef, // non-OAuth
 			},
 			Message: json.RawMessage(`{"event": "d2-test6"}`),
 			JobMetadata: types.JobMetadataT{
@@ -493,6 +511,7 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			},
 		},
 	}
+	// Expect call for OAuth destination d1 (jobs grouped by destination ID)
 	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
 		Data:     []types.RouterJobT{routerJobs[0], routerJobs[2], routerJobs[4]},
 		DestType: worker.rt.destType,
@@ -523,8 +542,9 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 			},
 		},
 	})
+	// Expect call for non-OAuth destinations d2 and d3 (jobs grouped together)
 	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
-		Data:     []types.RouterJobT{routerJobs[1], routerJobs[5]},
+		Data:     []types.RouterJobT{routerJobs[1], routerJobs[3], routerJobs[5]},
 		DestType: worker.rt.destType,
 	}).Return([]types.DestinationJobT{
 		{
@@ -541,11 +561,6 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 				},
 			},
 		},
-	})
-	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
-		Data:     []types.RouterJobT{routerJobs[3]},
-		DestType: worker.rt.destType,
-	}).Return([]types.DestinationJobT{
 		{
 			Destination: backendconfig.DestinationT{
 				ID: "d3",
@@ -567,83 +582,6 @@ func TestTransformForOAuthV2Destination(t *testing.T) {
 	require.Equal(t, 2, len(destinationIDJobsMap["d1"]))
 	require.Equal(t, 1, len(destinationIDJobsMap["d2"]))
 	require.Equal(t, 1, len(destinationIDJobsMap["d3"]))
-}
-
-func TestTransformForNonOAuthDestination(t *testing.T) {
-	initRouter()
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
-	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
-
-	worker := &worker{
-		rt: &Handle{
-			transformer:                    mockTransformer,
-			destType:                       "some_dest_type",
-			logger:                         logger.NOP,
-			batchSizeHistogramStat:         stats.NOP.NewTaggedStat("router_batch_size_histogram", stats.HistogramType, stats.Tags{"destType": "some_dest_type"}),
-			routerTransformInputCountStat:  stats.NOP.NewTaggedStat("router_transform_input_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			routerTransformOutputCountStat: stats.NOP.NewTaggedStat("router_transform_output_count", stats.CountType, stats.Tags{"destType": "some_dest_type"}),
-			isOAuthDestination:             false,
-			reloadableConfig:               &reloadableConfig{},
-		},
-	}
-	var limiterWg sync.WaitGroup
-	ctx, cancel := context.WithCancel(context.Background())
-	defer limiterWg.Wait()
-	defer cancel()
-	worker.rt.limiter.transform = kitsync.NewLimiter(ctx, &limiterWg, "transform", math.MaxInt, stats.Default)
-	worker.rt.limiter.stats.transform = partition.NewStats()
-
-	routerJobs := []types.RouterJobT{
-		{
-			Destination: backendconfig.DestinationT{
-				ID: "d1",
-			},
-			Message: json.RawMessage(`{"event": "d1-test1"}`),
-			JobMetadata: types.JobMetadataT{
-				JobID: 1,
-			},
-		},
-		{
-			Destination: backendconfig.DestinationT{
-				ID: "d2",
-			},
-			Message: json.RawMessage(`{"event": "d2-test2"}`),
-			JobMetadata: types.JobMetadataT{
-				JobID: 2,
-			},
-		},
-	}
-	mockTransformer.EXPECT().Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{
-		Data:     routerJobs,
-		DestType: worker.rt.destType,
-	}).Return([]types.DestinationJobT{
-		{
-			Destination: backendconfig.DestinationT{
-				ID: "d1",
-			},
-			Message: json.RawMessage(`{"event": ["d1-test1"]}`),
-			JobMetadataArray: []types.JobMetadataT{
-				{
-					JobID: 1,
-				},
-			},
-		},
-		{
-			Destination: backendconfig.DestinationT{
-				ID: "d2",
-			},
-			Message: json.RawMessage(`{"event": [ "d2-test2"]}`),
-			JobMetadataArray: []types.JobMetadataT{
-				{
-					JobID: 2,
-				},
-			},
-		},
-	})
-
-	worker.transform(routerJobs)
 }
 
 // Helper function to create test destination job

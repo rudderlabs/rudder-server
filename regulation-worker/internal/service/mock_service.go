@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	model "github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -70,43 +71,43 @@ func (mr *MockAPIClientMockRecorder) UpdateStatus(ctx, status, jobID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateStatus", reflect.TypeOf((*MockAPIClient)(nil).UpdateStatus), ctx, status, jobID)
 }
 
-// MockdestDetail is a mock of destDetail interface.
-type MockdestDetail struct {
+// Mockdest is a mock of dest interface.
+type Mockdest struct {
 	ctrl     *gomock.Controller
-	recorder *MockdestDetailMockRecorder
+	recorder *MockdestMockRecorder
 	isgomock struct{}
 }
 
-// MockdestDetailMockRecorder is the mock recorder for MockdestDetail.
-type MockdestDetailMockRecorder struct {
-	mock *MockdestDetail
+// MockdestMockRecorder is the mock recorder for Mockdest.
+type MockdestMockRecorder struct {
+	mock *Mockdest
 }
 
-// NewMockdestDetail creates a new mock instance.
-func NewMockdestDetail(ctrl *gomock.Controller) *MockdestDetail {
-	mock := &MockdestDetail{ctrl: ctrl}
-	mock.recorder = &MockdestDetailMockRecorder{mock}
+// NewMockdest creates a new mock instance.
+func NewMockdest(ctrl *gomock.Controller) *Mockdest {
+	mock := &Mockdest{ctrl: ctrl}
+	mock.recorder = &MockdestMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockdestDetail) EXPECT() *MockdestDetailMockRecorder {
+func (m *Mockdest) EXPECT() *MockdestMockRecorder {
 	return m.recorder
 }
 
-// GetDestDetails mocks base method.
-func (m *MockdestDetail) GetDestDetails(destID string) (model.Destination, error) {
+// GetDestination mocks base method.
+func (m *Mockdest) GetDestination(destID string) (*backendconfig.DestinationT, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDestDetails", destID)
-	ret0, _ := ret[0].(model.Destination)
+	ret := m.ctrl.Call(m, "GetDestination", destID)
+	ret0, _ := ret[0].(*backendconfig.DestinationT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetDestDetails indicates an expected call of GetDestDetails.
-func (mr *MockdestDetailMockRecorder) GetDestDetails(destID any) *gomock.Call {
+// GetDestination indicates an expected call of GetDestination.
+func (mr *MockdestMockRecorder) GetDestination(destID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), destID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestination", reflect.TypeOf((*Mockdest)(nil).GetDestination), destID)
 }
 
 // Mockdeleter is a mock of deleter interface.
@@ -134,15 +135,15 @@ func (m *Mockdeleter) EXPECT() *MockdeleterMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+func (m *Mockdeleter) Delete(ctx context.Context, job model.Job, dest *backendconfig.DestinationT) model.JobStatus {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, job, destDetail)
+	ret := m.ctrl.Call(m, "Delete", ctx, job, dest)
 	ret0, _ := ret[0].(model.JobStatus)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockdeleterMockRecorder) Delete(ctx, job, destDetail any) *gomock.Call {
+func (mr *MockdeleterMockRecorder) Delete(ctx, job, dest any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*Mockdeleter)(nil).Delete), ctx, job, destDetail)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*Mockdeleter)(nil).Delete), ctx, job, dest)
 }

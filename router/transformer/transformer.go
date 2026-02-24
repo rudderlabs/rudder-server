@@ -80,8 +80,8 @@ type ProxyRequestMetadata struct {
 	SourceID      string          `json:"sourceId"`
 	DestinationID string          `json:"destinationId"`
 	WorkspaceID   string          `json:"workspaceId"`
-	Secret        json.RawMessage `json:"secret"`
-	DestInfo      json.RawMessage `json:"destInfo,omitempty"`
+	Secret        json.RawMessage `json:"secret"`             // Receives OAuth destination secrets in the transformer and holds the current token during refresh token flows
+	DestInfo      json.RawMessage `json:"destInfo,omitempty"` // Used by the transformer; potentially removable
 	DontBatch     bool            `json:"dontBatch"`
 }
 
@@ -95,7 +95,7 @@ type ProxyRequestParams struct {
 	ResponseData ProxyRequestPayload
 	DestName     string
 	Adapter      transformerProxyAdapter
-	DestInfo     *oauthv2.DestinationInfo
+	Destination  *backendconfig.DestinationT
 	Connection   backendconfig.Connection `json:"connection"`
 }
 
@@ -223,14 +223,8 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		// Header to let transformer know that the client understands event filter code
 		req.Header.Set("X-Feature-Filter-Code", "?1")
 
-		destinationInfo := &oauthv2.DestinationInfo{
-			Config:           transformMessageCopy.Data[0].Destination.Config,
-			DefinitionConfig: transformMessageCopy.Data[0].Destination.DestinationDefinition.Config,
-			WorkspaceID:      transformMessageCopy.Data[0].JobMetadata.WorkspaceID,
-			DestType:         transformMessageCopy.Data[0].Destination.DestinationDefinition.Name,
-			ID:               transformMessageCopy.Data[0].Destination.ID,
-		}
-		req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), destinationInfo))
+		dest := &transformMessageCopy.Data[0].Destination
+		req = req.WithContext(cntx.CtxWithDestination(req.Context(), dest))
 		resp, err = trans.clientOAuthV2.Do(req)
 
 		duration := time.Since(s)
@@ -662,7 +656,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
 	httpReqStTime := time.Now()
 	var resp *http.Response
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), proxyReqParams.DestInfo))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), proxyReqParams.Destination))
 	req = req.WithContext(cntx.CtxWithSecret(req.Context(), proxyReqParams.ResponseData.Metadata[0].Secret))
 	resp, err = trans.proxyClientOAuthV2.Do(req)
 
