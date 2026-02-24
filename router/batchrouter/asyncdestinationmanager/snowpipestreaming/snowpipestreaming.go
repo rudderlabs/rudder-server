@@ -711,7 +711,48 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 			logger.NewStringField("latestInsertedOffset", statusRes.LatestInsertedOffset),
 			logger.NewBoolField("valid", statusRes.Valid),
 		)
-		if !statusRes.Valid || !statusRes.Success {
+		if !statusRes.Valid {
+			log.Infon("Invalid status response, recreating channel")
+
+			// Delete the channel from the cache and the Snowpipe as it is invalid
+			if err := m.deleteChannel(ctx, info.Table, info.ChannelID); err != nil {
+				log.Warnn("Failed to delete channel", logger.NewStringField("table", info.Table), logger.NewStringField("channelID", info.ChannelID), obskit.Error(err))
+			}
+
+			var destConf destConfig
+			if decodeErr := destConf.Decode(m.destination.Config); decodeErr != nil {
+				return false, fmt.Errorf("failed to decode destination config during channel recreation: %w", decodeErr)
+			}
+
+			req := buildCreateChannelRequest(m.destination.ID, m.config.instanceID, &destConf, info.Table)
+			recreatedChannel, recreateErr := m.api.CreateChannel(ctx, req)
+			if recreateErr != nil {
+				return false, fmt.Errorf("recreating channel: %w", recreateErr)
+			}
+			m.channelCache.Store(info.Table, recreatedChannel)
+
+			log.Infon("Recreated channel for polling", logger.NewStringField("channelID", recreatedChannel.ChannelID))
+
+			recreatedStatusRes, err := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
+			if err != nil {
+				return false, fmt.Errorf("getting status after channel recreation: %w", err)
+			}
+
+			log.Infon("Polled import info after recreation",
+				logger.NewBoolField("success", recreatedStatusRes.Success),
+				logger.NewStringField("latestCommittedOffset", recreatedStatusRes.Offset),
+				logger.NewStringField("latestInsertedOffset", recreatedStatusRes.LatestInsertedOffset),
+				logger.NewBoolField("valid", recreatedStatusRes.Valid),
+			)
+
+			if !recreatedStatusRes.Valid || !recreatedStatusRes.Success {
+				return false, fmt.Errorf("invalid status response after recreation with valid: %t, success: %t", recreatedStatusRes.Valid, recreatedStatusRes.Success)
+			}
+
+			return isInProgress(recreatedStatusRes, info, log)
+		}
+
+		if !statusRes.Success {
 			return false, fmt.Errorf("invalid status response with valid: %t, success: %t", statusRes.Valid, statusRes.Success)
 		}
 		return isInProgress(statusRes, info, log)
@@ -742,23 +783,23 @@ func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, 
 		// it will update the in memory map and not the database
 		// So the next time we poll, we will get the old channel id and not the new one
 
-		statusRes2, err2 := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
-		if err2 != nil {
-			return false, fmt.Errorf("getting status after channel recreation: %w", err2)
+		recreatedStatusRes, err := m.api.GetStatus(ctx, recreatedChannel.ChannelID)
+		if err != nil {
+			return false, fmt.Errorf("getting status after channel recreation: %w", err)
 		}
 
 		log.Infon("Polled import info after recreation",
-			logger.NewBoolField("success", statusRes2.Success),
-			logger.NewStringField("latestCommittedOffset", statusRes2.Offset),
-			logger.NewStringField("latestInsertedOffset", statusRes2.LatestInsertedOffset),
-			logger.NewBoolField("valid", statusRes2.Valid),
+			logger.NewBoolField("success", recreatedStatusRes.Success),
+			logger.NewStringField("latestCommittedOffset", recreatedStatusRes.Offset),
+			logger.NewStringField("latestInsertedOffset", recreatedStatusRes.LatestInsertedOffset),
+			logger.NewBoolField("valid", recreatedStatusRes.Valid),
 		)
 
-		if !statusRes2.Valid || !statusRes2.Success {
-			return false, fmt.Errorf("invalid status response after recreation with valid: %t, success: %t", statusRes2.Valid, statusRes2.Success)
+		if !recreatedStatusRes.Valid || !recreatedStatusRes.Success {
+			return false, fmt.Errorf("invalid status response after recreation with valid: %t, success: %t", recreatedStatusRes.Valid, recreatedStatusRes.Success)
 		}
 
-		return isInProgress(statusRes2, info, log)
+		return isInProgress(recreatedStatusRes, info, log)
 	}
 	return false, fmt.Errorf("getting status: %w", err)
 }
