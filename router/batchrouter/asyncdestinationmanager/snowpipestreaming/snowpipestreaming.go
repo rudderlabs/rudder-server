@@ -500,24 +500,23 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 
 		m.deleteChannelFromCache(info.tableName)
 
-		var insertRes2 *model.InsertResponse
-		recreatedChannel, err2 := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
-		defer func() {
-			if err2 != nil || !insertRes2.Success {
-				deleteChannel(info.tableName, recreatedChannel.ChannelID)
-			}
-		}()
-		if err2 != nil {
-			return "", fmt.Errorf("creating channel %s: %w", info.tableName, err2)
+		recreatedChannel, recreateErr := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
+		if recreateErr != nil {
+			return "", fmt.Errorf("re-creating channel %s: %w", info.tableName, recreateErr)
 		}
 		log.Infon("Recreated channel", logger.NewStringField("channelID", recreatedChannel.ChannelID))
 
-		insertRes2, err2 = m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
-		if err2 != nil {
-			return "", fmt.Errorf("inserting data %s: %w", info.tableName, err2)
+		insertRes, insertErr := m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
+		defer func() {
+			if insertErr != nil || !insertRes.Success {
+				deleteChannel(info.tableName, recreatedChannel.ChannelID)
+			}
+		}()
+		if insertErr != nil {
+			return "", fmt.Errorf("inserting data %s: %w", info.tableName, insertErr)
 		}
-		if !insertRes2.Success {
-			return "", extractError(insertRes2, info.tableName)
+		if !insertRes.Success {
+			return "", extractError(insertRes, info.tableName)
 		}
 		log.Infon("Inserted data into recreated channel")
 		return recreatedChannel.ChannelID, nil
