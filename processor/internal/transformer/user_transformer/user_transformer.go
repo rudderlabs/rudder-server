@@ -74,18 +74,18 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 
 type Client struct {
 	config struct {
-		userTransformationURL                 string
-		pythonTransformationURL               string
-		pythonTransformConfig                 transformerutils.PythonTransformConfig
-		forMirroring                          bool
-		maxRetry                              config.ValueLoader[int]
-		cpDownEndlessRetries                  config.ValueLoader[bool]
-		failOnUserTransformTimeout            config.ValueLoader[bool]
-		failOnError                           config.ValueLoader[bool]
-		maxRetryBackoffInterval               config.ValueLoader[time.Duration]
-		timeoutDuration                       time.Duration
-		collectInstanceLevelStats             bool
-		batchSize                             config.ValueLoader[int]
+		userTransformationURL      string
+		pythonTransformationURL    string
+		pythonTransformConfig      transformerutils.PythonTransformConfig
+		forMirroring               bool
+		maxRetry                   config.ValueLoader[int]
+		cpDownEndlessRetries       config.ValueLoader[bool]
+		failOnUserTransformTimeout config.ValueLoader[bool]
+		failOnError                config.ValueLoader[bool]
+		maxRetryBackoffInterval    config.ValueLoader[time.Duration]
+		timeoutDuration            time.Duration
+		collectInstanceLevelStats  bool
+		batchSize                  config.ValueLoader[int]
 	}
 	conf                      *config.Config
 	log                       logger.Logger
@@ -428,4 +428,3 @@ func (u *Client) userTransformURL(language, versionID string) (string, bool) {
 
 	return u.config.userTransformationURL + "/customTransform", false
 }
-
