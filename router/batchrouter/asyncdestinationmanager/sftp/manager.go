@@ -1,6 +1,7 @@
 package sftp
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -24,7 +25,7 @@ func (*defaultManager) Transform(job *jobsdb.JobT) (string, error) {
 }
 
 // Upload uploads the data to the destination and marks all jobs to be completed
-func (d *defaultManager) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (d *defaultManager) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	startTime := time.Now()
 	destination := asyncDestStruct.Destination
 	textFilePath := asyncDestStruct.FileName

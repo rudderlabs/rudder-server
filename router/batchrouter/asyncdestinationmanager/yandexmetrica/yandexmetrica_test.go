@@ -2,6 +2,7 @@ package yandexmetrica_test
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -94,7 +95,7 @@ var _ = Describe("Antisymmetric", func() {
 				Destination:     destination,
 				Manager:         yandexmetrica,
 			}
-			res := yandexmetrica.Upload(&asyncDestination)
+			res := yandexmetrica.Upload(context.Background(), &asyncDestination)
 			Expect(res.SuccessResponse).To(Equal("{\"uploading\":{\"id\":719450782,\"source_quantity\":11,\"line_quantity\":11,\"client_id_type\":\"USER_ID\",\"status\":\"UPLOADED\"}}"))
 			Expect(res.SucceededJobIDs).To(Equal([]int64{1, 2, 3, 4}))
 		})
@@ -136,7 +137,7 @@ var _ = Describe("Antisymmetric", func() {
 				Destination:     destination,
 				Manager:         yandexmetrica,
 			}
-			res := yandexmetrica.Upload(&asyncDestination)
+			res := yandexmetrica.Upload(context.Background(), &asyncDestination)
 			Expect(res.AbortReason).To(Equal("got non 200 response from the destination {\"errors\":[{\"error_type\":\"invalid_token\",\"message\":\"Invalid oauth_token\"}],\"code\":403,\"message\":\"Invalid oauth_token\"}"))
 			Expect(res.AbortJobIDs).To(Equal([]int64{1, 2, 3, 4}))
 		})

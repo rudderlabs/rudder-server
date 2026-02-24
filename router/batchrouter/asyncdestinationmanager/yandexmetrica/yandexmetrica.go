@@ -2,6 +2,7 @@ package yandexmetrica
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -122,7 +123,7 @@ func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.St
 }
 
 // Poll return a success response for the poll request every time by default
-func (ym *YandexMetricaBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse {
+func (ym *YandexMetricaBulkUploader) Poll(_ context.Context, _ common.AsyncPoll) common.PollStatusResponse {
 	return common.PollStatusResponse{}
 }
 
@@ -276,7 +277,7 @@ func (*YandexMetricaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
-func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (ym *YandexMetricaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	startTime := time.Now()
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName

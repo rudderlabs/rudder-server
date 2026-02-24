@@ -38,11 +38,11 @@ func (m mockAsyncDestinationManager) Transform(job *jobsdb.JobT) (string, error)
 	return common.GetMarshalledData(string(job.EventPayload), job.JobID)
 }
 
-func (m mockAsyncDestinationManager) Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (m mockAsyncDestinationManager) Upload(context.Context, *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	return m.uploadOutput
 }
 
-func (m mockAsyncDestinationManager) Poll(common.AsyncPoll) common.PollStatusResponse {
+func (m mockAsyncDestinationManager) Poll(context.Context, common.AsyncPoll) common.PollStatusResponse {
 	return m.pollOutput
 }
 
