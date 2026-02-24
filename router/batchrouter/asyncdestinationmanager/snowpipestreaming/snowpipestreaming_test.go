@@ -1326,12 +1326,6 @@ func TestSnowpipeStreaming(t *testing.T) {
 				"test-users-channel": func() (*model.StatusResponse, error) {
 					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
 				},
-				"test-recreated-products-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-				},
-				"test-recreated-users-channel": func() (*model.StatusResponse, error) {
-					return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
 				"test-users-channel": func() error {
@@ -1398,10 +1392,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 			},
 			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
 				"PRODUCTS": func() (*model.ChannelResponse, error) {
-					return nil, fmt.Errorf("failed to recreate channel")
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
 				},
 				"USERS": func() (*model.ChannelResponse, error) {
-					return nil, fmt.Errorf("failed to recreate channel")
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
 				},
 			},
 		}
@@ -1412,7 +1406,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status after channel recreation: failed to get status","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status after channel recreation: failed to get status","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
@@ -1484,6 +1478,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Poll status failed with deletion error", func(t *testing.T) {
 		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
 		statsStore, err := memstats.New()
@@ -1538,6 +1533,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
+
 	t.Run("Poll error", func(t *testing.T) {
 		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
 		statsStore, err := memstats.New()
