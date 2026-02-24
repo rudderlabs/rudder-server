@@ -336,7 +336,7 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 				sourceID := gjson.GetBytes(importingJob.Parameters, "source_id").String()
 				startPollTime := time.Now()
 				brt.logger.Debugn("[Batch Router] Poll Status Started", obskit.DestinationType(brt.destType))
-				pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(pollInput)
+				pollResp := brt.asyncDestinationStruct[destinationID].Manager.Poll(ctx, pollInput)
 				brt.logger.Debugn("[Batch Router] Poll Status Finished", obskit.DestinationType(brt.destType))
 				brt.asyncPollTimeStat.Since(startPollTime)
 				if pollResp.InProgress {
@@ -410,7 +410,7 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				if brt.asyncDestinationStruct[destinationID].Exists && (brt.asyncDestinationStruct[destinationID].CanUpload || timeElapsed > timeout) {
 					brt.asyncDestinationStruct[destinationID].CanUpload = true
 					brt.asyncDestinationStruct[destinationID].PartFileNumber++
-					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(brt.asyncDestinationStruct[destinationID])
+					uploadResponse := brt.asyncDestinationStruct[destinationID].Manager.Upload(ctx, brt.asyncDestinationStruct[destinationID])
 
 					brt.setMultipleJobStatus(setMultipleJobStatusParams{
 						asyncJobMetadata: newAsyncJobMetadataFromDestinationStruct(brt.asyncDestinationStruct[destinationID]),

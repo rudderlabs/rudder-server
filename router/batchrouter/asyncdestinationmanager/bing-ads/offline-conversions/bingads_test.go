@@ -2,6 +2,7 @@ package offline_conversions
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,7 +122,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			received.ImportingParameters = json.RawMessage{}
 
 			// Remove the directory and its contents
@@ -167,7 +168,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			err = os.Mkdir(subDir, 0o755)
 			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			err = os.RemoveAll(dir)
 			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			Expect(received).To(Equal(expected))
@@ -212,7 +213,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 			err = os.Mkdir(subDir, 0o755)
 			Expect(err).ShouldNot(HaveOccurred(), "Creating the directory 'something'")
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			err = os.RemoveAll(dir)
 			Expect(err).ShouldNot(HaveOccurred(), "removing temporary directory")
 			Expect(received).To(Equal(expected))
@@ -267,7 +268,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				DestinationID:       destination.ID,
 				ImportingParameters: json.RawMessage(importParameters),
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -293,7 +294,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				Complete:   true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
@@ -311,7 +312,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				StatusCode: 500,
 				HasFailed:  true,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
@@ -336,7 +337,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				HasFailed:           true,
 				FailedJobParameters: "https://dummy.url.com",
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -362,7 +363,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				InProgress: true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -388,7 +389,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				HasFailed:  true,
 				StatusCode: 500,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -422,7 +423,7 @@ var _ = Describe("Bing ads Offline Conversions", func() {
 				StatusCode:          500,
 				FailedJobParameters: ",", // empty file
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 

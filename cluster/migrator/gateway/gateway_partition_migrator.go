@@ -126,7 +126,7 @@ func (gpm *gatewayPartitionMigrator) watchReloadRequests(ctx context.Context) {
 
 				// handle reload event asynchronously
 				gpm.wg.Go(func() error {
-					gpm.onReloadRequest(ctx, value.Event.Value)
+					gpm.onReloadRequest(ctx, value.Event.Key, value.Event.Value)
 					return nil
 				})
 			}
@@ -146,7 +146,7 @@ func (gpm *gatewayPartitionMigrator) watchReloadRequests(ctx context.Context) {
 }
 
 // onReloadRequest handles a gateway reload request. It keeps retrying until the reload is successful or the context is done.
-func (gpm *gatewayPartitionMigrator) onReloadRequest(ctx context.Context, cmd *etcdtypes.ReloadGatewayCommand) {
+func (gpm *gatewayPartitionMigrator) onReloadRequest(ctx context.Context, requestKey string, cmd *etcdtypes.ReloadGatewayCommand) {
 	start := time.Now()
 	ackKey := cmd.AckKey(gpm.nodeName)
 	gpm.logger.Infon("Received gateway reload request",
@@ -166,16 +166,28 @@ func (gpm *gatewayPartitionMigrator) onReloadRequest(ctx context.Context, cmd *e
 			if err != nil {
 				return fmt.Errorf("marshalling ack value: %w", err)
 			}
-			resp, err := gpm.etcdClient.Put(ctx, ackKey, string(v))
+			resp, err := gpm.etcdClient.Txn(ctx).
+				If(clientv3.Compare(clientv3.CreateRevision(requestKey), ">", 0)). // ensure the reload request still exists before acknowledging
+				Then(clientv3.OpPut(ackKey, string(v))).
+				Commit()
 			if err != nil {
 				return fmt.Errorf("putting ack key in etcd: %w", err)
 			}
-			gpm.logger.Infon("Acknowledged gateway reload request",
-				logger.NewStringField("ackKeyPrefix", cmd.AckKeyPrefix),
-				logger.NewStringField("ackKey", ackKey),
-				logger.NewIntField("revision", resp.Header.Revision),
-				logger.NewDurationField("duration", time.Since(start)),
-			)
+			if !resp.Succeeded {
+				gpm.logger.Infon("Gateway reload request acknowledgment skipped since the reload request no longer exists",
+					logger.NewStringField("ackKeyPrefix", cmd.AckKeyPrefix),
+					logger.NewStringField("ackKey", ackKey),
+					logger.NewDurationField("duration", time.Since(start)),
+				)
+			} else {
+				gpm.logger.Infon("Acknowledged gateway reload request",
+					logger.NewStringField("ackKeyPrefix", cmd.AckKeyPrefix),
+					logger.NewStringField("ackKey", ackKey),
+					logger.NewIntField("revision", resp.Header.Revision),
+					logger.NewDurationField("duration", time.Since(start)),
+				)
+			}
+
 			// remove from pending reloads
 			gpm.pendingReloadsMu.Lock()
 			delete(gpm.pendingReloads, cmd.AckKeyPrefix)

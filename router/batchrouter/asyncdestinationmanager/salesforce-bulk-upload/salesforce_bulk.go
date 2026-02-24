@@ -2,6 +2,7 @@ package salesforcebulkupload
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -157,7 +158,7 @@ func (s *Uploader) readJobsFromFile(filePath string) ([]common.AsyncJob, error) 
 	return jobs, nil
 }
 
-func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (s *Uploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
 	filePath := asyncDestStruct.FileName
@@ -269,7 +270,7 @@ func (s *Uploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common
 	}
 }
 
-func (s *Uploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+func (s *Uploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	var saleforceJobInfo SalesforceJobInfo
 
 	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &saleforceJobInfo)
