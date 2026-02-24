@@ -10,7 +10,8 @@ import (
 )
 
 const (
-	oAuth = "OAuth"
+	oAuthDestinationDefinitionAuthType = "OAuth"
+	oAuthAccountDefinitionAuthType     = "oauth"
 
 	deleteAccountIDKey   = "rudderDeleteAccountId"
 	deliveryAccountIDKey = "rudderAccountId"
@@ -44,8 +45,21 @@ func (d *DestinationT) GetAccountID(flow common.RudderFlow) (string, error) {
 	return rudderAccountId, nil
 }
 
-// IsOAuthDestination checks if a destination is configured for OAuth authentication
+// IsOAuthDestination checks if a destination is configured for OAuth authentication.
+// If the destination has an account with an account definition for the given flow,
+// the account definition's AuthenticationType is used to determine if it is OAuth.
+// Otherwise, it falls back to checking the destination definition config.
 func (d *DestinationT) IsOAuthDestination(flow common.RudderFlow) (bool, error) {
+	var account *Account
+	if flow == common.RudderFlowDelivery {
+		account = d.DeliveryAccount
+	} else {
+		account = d.DeleteAccount
+	}
+	if account != nil && account.AccountDefinition != nil {
+		return account.AccountDefinition.AuthenticationType == oAuthAccountDefinitionAuthType, nil
+	}
+
 	authValue, _ := misc.NestedMapLookup(d.DestinationDefinition.Config, "auth", "type")
 	if authValue == nil {
 		// valid use-case for non-OAuth destinations
@@ -60,7 +74,7 @@ func (d *DestinationT) IsOAuthDestination(flow common.RudderFlow) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	return authType == oAuth && isScopeSupported, nil
+	return authType == oAuthDestinationDefinitionAuthType && isScopeSupported, nil
 }
 
 func isOAuthSupportedForFlow(definitionConfig map[string]any, flow common.RudderFlow) (bool, error) {
