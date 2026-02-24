@@ -417,6 +417,12 @@ func (m *Manager) sendEventsToSnowpipe(
 		}
 	}
 
+	var duplicateIDsInBatch, duplicateCountDueToOffset int
+	if info.tableName != whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
+		duplicateIDsInBatch = checkForDuplicateIDsInBatch(info.events)
+		duplicateCountDueToOffset = m.checkForDuplicatesDueToOffset(ctx, channelResponse.ChannelID, info.events)
+	}
+
 	insertReq := &model.InsertRequest{
 		Rows: lo.Map(info.events, func(event *event, _ int) model.Row {
 			return event.Message.Data
@@ -428,21 +434,16 @@ func (m *Manager) sendEventsToSnowpipe(
 		return nil, nil, fmt.Errorf("inserting events: %w", err)
 	}
 
-	log.Infon("Sent events to Snowpipe")
-
-	if info.tableName != whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
-		duplicateIDsInBatch := checkForDuplicateIDsInBatch(info.events)
-		if duplicateIDsInBatch > 0 {
-			log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateIDsInBatch)), logger.NewStringField("reason", "batch"))
-			m.stats.duplicateEventsInBatch.Count(duplicateIDsInBatch)
-		}
-
-		duplicateCountDueToOffset := m.checkForDuplicatesDueToOffset(ctx, channelResponse.ChannelID, info.events)
-		if duplicateCountDueToOffset > 0 {
-			log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateCountDueToOffset)), logger.NewStringField("reason", "offset"))
-			m.stats.duplicateEventsDueToOffset.Count(duplicateCountDueToOffset)
-		}
+	if duplicateIDsInBatch > 0 {
+		log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateIDsInBatch)), logger.NewStringField("reason", "batch"))
+		m.stats.duplicateEventsInBatch.Count(duplicateIDsInBatch)
 	}
+	if duplicateCountDueToOffset > 0 {
+		log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateCountDueToOffset)), logger.NewStringField("reason", "offset"))
+		m.stats.duplicateEventsDueToOffset.Count(duplicateCountDueToOffset)
+	}
+
+	log.Infon("Sent events to Snowpipe")
 
 	imInfo := &importInfo{
 		ChannelID: channelID,
@@ -479,17 +480,17 @@ func (m *Manager) checkForDuplicatesDueToOffset(ctx context.Context, channelID s
 	statusRes, err := m.api.GetStatus(ctx, channelID)
 	if err != nil {
 		m.logger.Warnn("Failed to get status", obskit.Error(err))
-		return
+		return duplicateCount
 	}
 	if !statusRes.Valid || !statusRes.Success {
 		m.logger.Warnn("Invalid status response", logger.NewBoolField("valid", statusRes.Valid), logger.NewBoolField("success", statusRes.Success))
-		return
+		return duplicateCount
 	}
 
 	latestCommittedOffset, err := convertToInt(statusRes.Offset)
 	if err != nil {
 		m.logger.Warnn("Failed to convert latest committed offset to int", obskit.Error(err))
-		return
+		return duplicateCount
 	}
 
 	for _, event := range events {
