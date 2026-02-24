@@ -1,6 +1,7 @@
 package salesforcebulkupload_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -169,7 +170,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 		mockAPI.EXPECT().CloseJob(gomock.Any()).Return(nil)
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
 
-		result := uploader.Upload(&common.AsyncDestinationStruct{
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 			},
@@ -196,7 +197,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
 
-		result := uploader.Upload(&common.AsyncDestinationStruct{
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 			},
@@ -223,7 +224,7 @@ func TestSalesforceBulk_Upload(t *testing.T) {
 
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
 
-		result := uploader.Upload(&common.AsyncDestinationStruct{
+		result := uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{
 				ID: "test-dest-1",
 			},
@@ -315,7 +316,7 @@ func TestSalesforceBulk_Poll(t *testing.T) {
 
 			uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
 
-			result := uploader.Poll(tc.pollInput)
+			result := uploader.Poll(context.Background(), tc.pollInput)
 
 			require.Equal(t, tc.expectedStatus.StatusCode, result.StatusCode)
 			require.Equal(t, tc.expectedStatus.Complete, result.Complete)
@@ -356,7 +357,7 @@ func TestSalesforceBulk_GetUploadStats(t *testing.T) {
 		mockAPI.EXPECT().GetSuccessfulRecords(gomock.Any()).Return([]map[string]string{{"Email": "test1@example.com", "FirstName": "John", "LastName": "Doe"}, {"Email": "test2@example.com", "FirstName": "Jane", "LastName": "Smith"}}, nil)
 
 		uploader := salesforcebulkupload.NewUploader(config.New(), logger.NOP, stats.NOP, mockAPI, nil)
-		uploader.Upload(&common.AsyncDestinationStruct{
+		uploader.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: &backendconfig.DestinationT{ID: "test-dest"},
 			FileName:    tempFile.Name(),
 		})

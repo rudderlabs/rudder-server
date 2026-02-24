@@ -1,6 +1,7 @@
 package lyticsBulkUpload
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -71,7 +72,7 @@ func (u *LyticsServiceImpl) UploadBulkFile(data *HttpRequestData, filePath strin
 	return nil
 }
 
-func (u *LyticsBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (u *LyticsBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
 	destConfig, err := jsonrs.Marshal(destination.Config)

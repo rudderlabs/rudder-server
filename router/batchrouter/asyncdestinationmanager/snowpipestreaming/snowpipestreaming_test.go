@@ -132,7 +132,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.NoError(t, err)
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
 			Destination:     destination,
 		})
@@ -154,7 +154,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.NoError(t, err)
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
 			Destination:     destination,
 			FileName:        "testdata/invalid_records.txt",
@@ -191,7 +191,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				"enableIceberg": true,
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			ImportingJobIDs: []int64{1},
 			Destination:     dest,
 			FileName:        "testdata/successful_records.txt",
@@ -245,7 +245,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -299,7 +299,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -352,7 +352,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -406,13 +406,13 @@ func TestSnowpipeStreaming(t *testing.T) {
 			FileName:    "testdata/successful_user_records.txt",
 		}
 		require.False(t, sm.isInBackoff())
-		output1 := sm.Upload(asyncDestStruct)
+		output1 := sm.Upload(context.Background(), asyncDestStruct)
 		require.Equal(t, 2, output1.FailedCount)
 		require.Equal(t, 0, output1.AbortCount)
 		require.Equal(t, 1, managerCreatorCallCount)
 		require.True(t, sm.isInBackoff())
 
-		sm.Upload(asyncDestStruct)
+		sm.Upload(context.Background(), asyncDestStruct)
 		// client is not created again due to backoff error
 		require.Equal(t, 1, managerCreatorCallCount)
 		require.True(t, sm.isInBackoff())
@@ -425,7 +425,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 			return timeutil.Now().Add(time.Second * 20)
 		}
 		require.False(t, sm.isInBackoff())
-		sm.Upload(asyncDestStruct)
+		sm.Upload(context.Background(), asyncDestStruct)
 		// client created again since backoff duration has been exceeded
 		require.Equal(t, 2, managerCreatorCallCount)
 		require.True(t, sm.isInBackoff())
@@ -438,7 +438,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		sm.now = func() time.Time {
 			return timeutil.Now().Add(time.Second * 50)
 		}
-		sm.Upload(asyncDestStruct)
+		sm.Upload(context.Background(), asyncDestStruct)
 		require.Equal(t, 3, managerCreatorCallCount)
 		require.False(t, sm.isInBackoff())
 	})
@@ -482,7 +482,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					Destination: destination,
 					FileName:    "testdata/successful_user_records.txt",
 				}
-				output := sm.Upload(asyncDestStruct)
+				output := sm.Upload(context.Background(), asyncDestStruct)
 				require.Equal(t, 2, output.FailedCount)
 				require.Equal(t, 0, output.AbortCount)
 				require.Contains(t, output.FailedReason, tc.expectedFailedReason)
@@ -524,7 +524,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return mm, nil
 				}
 				sm.validator = &mockValidator{err: tc.validationError}
-				output := sm.Upload(&common.AsyncDestinationStruct{
+				output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 					ImportingJobIDs: []int64{1},
 					Destination:     destination,
 					FileName:        "testdata/successful_user_records.txt",
@@ -565,7 +565,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -642,7 +642,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -718,7 +718,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -794,7 +794,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -843,7 +843,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_sort_records.txt",
 		})
@@ -907,7 +907,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_sort_records.txt",
 		})
@@ -959,7 +959,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -1012,7 +1012,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_records.txt",
 		})
@@ -1072,7 +1072,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_sort_records.txt",
 		})
@@ -1120,7 +1120,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_duplicate_records.txt",
 		})
@@ -1209,7 +1209,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Upload(&common.AsyncDestinationStruct{
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
 			FileName:    "testdata/successful_sort_records.txt",
 		})
@@ -1225,7 +1225,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.NoError(t, err)
 
 		sm := New(config.New(), logger.NOP, statsStore, destination)
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: "invalid",
 		})
 		require.False(t, output.InProgress)
@@ -1251,7 +1251,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.True(t, output.InProgress)
@@ -1281,7 +1281,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)
@@ -1321,7 +1321,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)
@@ -1361,7 +1361,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)
@@ -1394,7 +1394,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)
@@ -1445,7 +1445,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)
@@ -1478,7 +1478,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)
@@ -1512,7 +1512,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output := sm.Poll(common.AsyncPoll{
+		output := sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.True(t, output.InProgress)
@@ -1534,7 +1534,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 			},
 		}
-		output = sm.Poll(common.AsyncPoll{
+		output = sm.Poll(context.Background(), common.AsyncPoll{
 			ImportId: importID,
 		})
 		require.False(t, output.InProgress)

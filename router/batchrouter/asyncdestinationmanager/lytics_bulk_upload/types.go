@@ -1,19 +1,15 @@
 package lyticsBulkUpload
 
 import (
-	"context"
 	"encoding/csv"
 	"encoding/json"
 	"io"
-	"net/http"
 	"os"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 )
 
 type LyticsBulkUploader struct {
@@ -81,16 +77,6 @@ type Metadata struct {
 type Data struct {
 	Message  Message  `json:"message"`
 	Metadata Metadata `json:"metadata"`
-}
-
-type Uploader interface {
-	Upload(*common.AsyncDestinationStruct) common.AsyncUploadOutput
-	UploadBulkFile(ctx context.Context, filePath string) (bool, error)
-	PopulateCsvFile(actionFile *ActionFileInfo, streamTraitsMapping []StreamTraitMapping, line string, data Data) error
-}
-
-type HttpClient interface {
-	Do(req *http.Request) (*http.Response, error)
 }
 
 type LyticsService interface {

@@ -2,6 +2,7 @@ package klaviyobulkupload
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -109,7 +110,7 @@ func chunkBySizeAndElements(combinedProfiles []Profile, jobIDs []int64, maxBytes
 	return profileChunks, jobIDChunks, nil
 }
 
-func (kbu *KlaviyoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+func (kbu *KlaviyoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	importIds := strings.Split(pollInput.ImportId, IMPORT_ID_SEPARATOR)
 	importStatuses := make(map[string]string)
 	failedImports := make([]string, 0)
@@ -254,7 +255,7 @@ func (kbu *KlaviyoBulkUploader) ExtractProfile(Data Data) Profile {
 	return profileObject
 }
 
-func (kbu *KlaviyoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (kbu *KlaviyoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	var failedJobs []int64
 	var abortedJobs []int64

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -15,7 +16,7 @@ func (*InvalidManager) Transform(job *jobsdb.JobT) (string, error) {
 	return "", errors.New("invalid job")
 }
 
-func (*InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
+func (*InvalidManager) Upload(_ context.Context, asyncDestStruct *AsyncDestinationStruct) AsyncUploadOutput {
 	abortedJobIDs := append(asyncDestStruct.ImportingJobIDs, asyncDestStruct.FailedJobIDs...)
 	return AsyncUploadOutput{
 		AbortJobIDs: abortedJobIDs,
@@ -26,7 +27,7 @@ func (*InvalidManager) Upload(asyncDestStruct *AsyncDestinationStruct) AsyncUplo
 	}
 }
 
-func (*InvalidManager) Poll(_ AsyncPoll) PollStatusResponse {
+func (*InvalidManager) Poll(_ context.Context, _ AsyncPoll) PollStatusResponse {
 	return PollStatusResponse{
 		StatusCode: 400,
 	}
