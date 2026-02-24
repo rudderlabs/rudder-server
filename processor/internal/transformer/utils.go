@@ -79,15 +79,22 @@ func LoadPythonTransformConfig(conf *config.Config) PythonTransformConfig {
 	ptc := PythonTransformConfig{
 		Enabled: conf.GetBool("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", false),
 	}
-	if ptc.Enabled {
-		if str := conf.GetString("PYTHON_TRANSFORM_VERSION_IDS", ""); str != "" {
-			ids := strings.Split(str, ",")
-			ptc.VersionIDs = make(map[string]struct{}, len(ids))
-			for _, id := range ids {
-				ptc.VersionIDs[id] = struct{}{}
-			}
-		}
+
+	if !ptc.Enabled {
+		return ptc
 	}
+
+	str := conf.GetString("PYTHON_TRANSFORM_VERSION_IDS", "")
+	if str == "" {
+		return ptc
+	}
+
+	ids := strings.Split(str, ",")
+	ptc.VersionIDs = make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		ptc.VersionIDs[id] = struct{}{}
+	}
+
 	return ptc
 }
 
@@ -106,12 +113,15 @@ func GetTransformationInfo(events []types.TransformerEvent) (language, versionID
 	if len(events) == 0 {
 		return language, ""
 	}
-	if len(events[0].Destination.Transformations) > 0 {
-		t := events[0].Destination.Transformations[0]
-		versionID = t.VersionID
-		if t.Language != "" {
-			language = t.Language
-		}
+
+	if len(events[0].Destination.Transformations) == 0 {
+		return language, ""
+	}
+
+	t := events[0].Destination.Transformations[0]
+	versionID = t.VersionID
+	if t.Language != "" {
+		language = t.Language
 	}
 	return language, versionID
 }
