@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -648,8 +649,10 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 			proc := &Handle{conf: c}
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
-			proc.config.pythonTransformVersionIDsEnabled = tc.versionEnabled
-			proc.config.pythonTransformVersionIDs = tc.versionIDs
+			proc.config.pythonTransformConfig = transformerutils.PythonTransformConfig{
+				Enabled:    tc.versionEnabled,
+				VersionIDs: tc.versionIDs,
+			}
 
 			enabled, sanityCh := proc.isUserTransformMirroringEnabled(tc.eventList)
 			require.Equal(t, tc.expectEnabled, enabled)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -65,6 +66,54 @@ func TrackLongRunningTransformation(ctx context.Context, stage string, timeout t
 			)
 		}
 	}
+}
+
+// PythonTransformConfig holds version-based filtering config for Python transformations.
+type PythonTransformConfig struct {
+	Enabled    bool
+	VersionIDs map[string]struct{}
+}
+
+// LoadPythonTransformConfig reads python transform version filtering from config.
+func LoadPythonTransformConfig(conf *config.Config) PythonTransformConfig {
+	ptc := PythonTransformConfig{
+		Enabled: conf.GetBool("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", false),
+	}
+	if ptc.Enabled {
+		if str := conf.GetString("PYTHON_TRANSFORM_VERSION_IDS", ""); str != "" {
+			ids := strings.Split(str, ",")
+			ptc.VersionIDs = make(map[string]struct{}, len(ids))
+			for _, id := range ids {
+				ptc.VersionIDs[id] = struct{}{}
+			}
+		}
+	}
+	return ptc
+}
+
+// IsVersionAllowed returns true if version filtering is disabled or the versionID is in the allowlist.
+func (c PythonTransformConfig) IsVersionAllowed(versionID string) bool {
+	if !c.Enabled {
+		return true
+	}
+	_, ok := c.VersionIDs[versionID]
+	return ok
+}
+
+// GetTransformationInfo extracts language and versionID from the first event's first transformation.
+func GetTransformationInfo(events []types.TransformerEvent) (language, versionID string) {
+	language = "javascript"
+	if len(events) == 0 {
+		return language, ""
+	}
+	if len(events[0].Destination.Transformations) > 0 {
+		t := events[0].Destination.Transformations[0]
+		versionID = t.VersionID
+		if t.Language != "" {
+			language = t.Language
+		}
+	}
+	return language, versionID
 }
 
 // GetEndpointFromURL is a helper function to extract hostname from URL
