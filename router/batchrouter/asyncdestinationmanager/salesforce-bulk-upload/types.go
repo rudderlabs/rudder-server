@@ -8,7 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 const (
@@ -23,7 +23,7 @@ type Uploader struct {
 	statsFactory    stats.Stats
 	apiService      APIServiceInterface
 	dataHashToJobID map[string][]int64
-	destinationInfo *oauthv2.DestinationInfo
+	destination     *backendconfig.DestinationT
 	config          struct {
 		maxBufferCapacity config.ValueLoader[int64]
 	}
@@ -40,9 +40,9 @@ type APIServiceInterface interface {
 }
 
 type apiService struct {
-	logger          logger.Logger
-	destinationInfo *oauthv2.DestinationInfo
-	client          *http.Client
+	logger      logger.Logger
+	destination *backendconfig.DestinationT
+	client      *http.Client
 }
 
 type SalesforceJobInfo struct {

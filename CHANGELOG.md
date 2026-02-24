@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.1](https://github.com/rudderlabs/rudder-server/compare/v1.68.0...v1.68.1) (2026-02-18)
+
+
+### Bug Fixes
+
+* **batchrouter:** klaviyo bulk upload manager tries to update zero-valued job ids in case of failures causing panics ([#6701](https://github.com/rudderlabs/rudder-server/issues/6701)) ([e90b3b7](https://github.com/rudderlabs/rudder-server/commit/e90b3b784585a42214b6644c66a3e9821728db97))
+
 ## [1.68.0](https://github.com/rudderlabs/rudder-server/compare/v1.67.0...v1.68.0) (2026-02-16)
 
 

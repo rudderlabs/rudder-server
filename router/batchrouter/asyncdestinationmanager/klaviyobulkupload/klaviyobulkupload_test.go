@@ -1,6 +1,7 @@
 package klaviyobulkupload_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -74,7 +75,7 @@ func TestUpload(t *testing.T) {
 	}
 	defer os.Remove(tempFile.Name())
 
-	testData := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","first_name":"Testqwe0022","last_name":"user","phone_number":"+919902330123","location":{"address1":"dallas street","address2":"oppenheimer market","city":"delhi","country":"India","ip":"213.5.6.41"},"anonymous_id":"user1","jobIdentifier":"user1:1"}}]}},"relationships":{"lists":{"data":[{"type":"list","id":"list101"}]}}}}}},"metadata":{"jobId":1}}`)
+	testData := []byte(`{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"qwe22@mail.com","first_name":"Testqwe0022","last_name":"user","phone_number":"+919902330123","location":{"address1":"dallas street","address2":"oppenheimer market","city":"delhi","country":"India","ip":"213.5.6.41"},"anonymous_id":"user1","jobIdentifier":"user1:1"}}]}},"relationships":{"lists":{"data":[{"type":"list","id":"list101"}]}}}}}},"metadata":{"job_id":1}}`)
 	_, err = tempFile.Write(testData)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +100,7 @@ func TestUpload(t *testing.T) {
 			ImportingJobIDs: []int64{1},
 		}
 
-		output := uploader.Upload(asyncDestStruct)
+		output := uploader.Upload(context.Background(), asyncDestStruct)
 		assert.NotNil(t, output)
 		assert.Equal(t, destination.ID, output.DestinationID)
 		assert.Empty(t, output.FailedJobIDs)
@@ -121,7 +122,7 @@ func TestUpload(t *testing.T) {
 			ImportingJobIDs: []int64{1},
 		}
 
-		output := uploader.Upload(asyncDestStruct)
+		output := uploader.Upload(context.Background(), asyncDestStruct)
 		assert.NotNil(t, output)
 		assert.Equal(t, destination.ID, output.DestinationID)
 		assert.NotEmpty(t, output.FailedJobIDs)
@@ -142,7 +143,7 @@ func TestUpload(t *testing.T) {
 		}
 		defer os.Remove(tempFile.Name())
 
-		const testProfileTemplate = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"%s@mail.com","jobIdentifier":"%s:%d"}}]}}}}}},"metadata":{"jobId":%d}}`
+		const testProfileTemplate = `{"message":{"body":{"JSON":{"data":{"type":"profile-bulk-import-job","attributes":{"profiles":{"data":[{"type":"profile","attributes":{"email":"%s@mail.com","jobIdentifier":"%s:%d"}}]}}}}}},"metadata":{"job_id":%d}}`
 
 		profiles := []string{
 			fmt.Sprintf(testProfileTemplate, "user1", "user1", 1, 1),
@@ -244,7 +245,7 @@ func TestUpload(t *testing.T) {
 			ImportingJobIDs: []int64{1, 2, 3, 4, 5, 6},
 		}
 
-		output := uploader.Upload(asyncDestStruct)
+		output := uploader.Upload(context.Background(), asyncDestStruct)
 		assert.NotNil(t, output)
 
 		// Verify that job IDs from chunk 2 (the failed chunk) are in FailedJobIDs
@@ -336,7 +337,7 @@ func TestUploadIntegration(t *testing.T) {
 		ImportingJobIDs: []int64{1, 2, 3},
 	}
 
-	uploadResp := kbu.Upload(asyncDestStruct)
+	uploadResp := kbu.Upload(context.Background(), asyncDestStruct)
 	assert.NotNil(t, uploadResp)
 	assert.Equal(t, destination.ID, uploadResp.DestinationID)
 	assert.Empty(t, uploadResp.FailedJobIDs)
@@ -346,7 +347,7 @@ func TestUploadIntegration(t *testing.T) {
 	assert.NotNil(t, uploadResp.ImportingParameters)
 
 	importId := gjson.GetBytes(uploadResp.ImportingParameters, "importId").String()
-	pollResp := kbu.Poll(common.AsyncPoll{ImportId: importId})
+	pollResp := kbu.Poll(context.Background(), common.AsyncPoll{ImportId: importId})
 	assert.NotNil(t, pollResp)
 	assert.Equal(t, http.StatusOK, pollResp.StatusCode)
 	assert.True(t, pollResp.Complete)
@@ -407,7 +408,7 @@ func TestPoll(t *testing.T) {
 			ImportId: "importId1",
 		}
 
-		jobStatus := uploader.Poll(pollInput)
+		jobStatus := uploader.Poll(context.Background(), pollInput)
 		assert.NotNil(t, jobStatus)
 		assert.Equal(t, true, jobStatus.Complete)
 		assert.Equal(t, http.StatusOK, jobStatus.StatusCode)
@@ -452,7 +453,7 @@ func TestPoll(t *testing.T) {
 			ImportId: "importId2",
 		}
 
-		jobStatus := uploader.Poll(pollInput)
+		jobStatus := uploader.Poll(context.Background(), pollInput)
 		assert.NotNil(t, jobStatus)
 		assert.Equal(t, true, jobStatus.Complete)
 		assert.Equal(t, true, jobStatus.HasFailed)

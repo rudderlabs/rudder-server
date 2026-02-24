@@ -2,6 +2,7 @@ package audience
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -121,7 +122,7 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			received.ImportingParameters = json.RawMessage{}
 
 			// Remove the directory and its contents
@@ -178,7 +179,7 @@ var _ = Describe("Bing ads Audience", func() {
 				return
 			}
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			err = os.RemoveAll(dir)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
@@ -232,7 +233,7 @@ var _ = Describe("Bing ads Audience", func() {
 				return
 			}
 			GinkgoT().Setenv("RUDDER_TMPDIR", dir)
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			err = os.RemoveAll(dir)
 			if err != nil {
 				fmt.Printf("Failed to remove the temporary directory: %v\n", err)
@@ -295,7 +296,7 @@ var _ = Describe("Bing ads Audience", func() {
 				DestinationID:       destination.ID,
 				ImportingParameters: json.RawMessage(importParameters),
 			}
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 
 			// Remove the directory and its contents
 			err = os.RemoveAll(dir)
@@ -325,7 +326,7 @@ var _ = Describe("Bing ads Audience", func() {
 				Complete:   true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
@@ -344,7 +345,7 @@ var _ = Describe("Bing ads Audience", func() {
 				StatusCode: 500,
 				HasFailed:  true,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 			Expect(recievedResponse).To(Equal(expectedResp))
 		})
 
@@ -370,7 +371,7 @@ var _ = Describe("Bing ads Audience", func() {
 				HasFailed:           true,
 				FailedJobParameters: "https://dummy.url.com",
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -397,7 +398,7 @@ var _ = Describe("Bing ads Audience", func() {
 				InProgress: true,
 				StatusCode: 200,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -424,7 +425,7 @@ var _ = Describe("Bing ads Audience", func() {
 				HasFailed:  true,
 				StatusCode: 500,
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -459,7 +460,7 @@ var _ = Describe("Bing ads Audience", func() {
 				StatusCode:          500,
 				FailedJobParameters: ",", // empty file
 			}
-			recievedResponse := bulkUploader.Poll(pollInput)
+			recievedResponse := bulkUploader.Poll(context.Background(), pollInput)
 
 			os.Remove(expectedResp.FailedJobParameters)
 
@@ -624,7 +625,7 @@ var _ = Describe("Bing ads Audience", func() {
 			}
 
 			// making upload function call
-			received := bulkUploader.Upload(&asyncDestination)
+			received := bulkUploader.Upload(context.Background(), &asyncDestination)
 			received.ImportingParameters = json.RawMessage{}
 
 			// Remove the directory and its contents

@@ -2,6 +2,7 @@ package yandexmetrica
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -83,24 +84,17 @@ func getID(id any, headerName string) (idStruct, error) {
 }
 
 type YandexMetricaBulkUploader struct {
-	logger          logger.Logger
-	statsFactory    stats.Stats
-	Client          *http.Client
-	destinationInfo *oauthv2.DestinationInfo
+	logger       logger.Logger
+	statsFactory stats.Stats
+	Client       *http.Client
+	destination  *backendconfig.DestinationT
 }
 
 func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (*YandexMetricaBulkUploader, error) {
-	destinationInfo := &oauthv2.DestinationInfo{
-		Config:           destination.Config,
-		DefinitionConfig: destination.DestinationDefinition.Config,
-		WorkspaceID:      destination.WorkspaceID,
-		DestType:         destination.DestinationDefinition.Name,
-		ID:               destination.ID,
-	}
 	yandexUploadManager := &YandexMetricaBulkUploader{
-		destinationInfo: destinationInfo,
-		logger:          logger.Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
-		statsFactory:    statsFactory,
+		destination:  destination,
+		logger:       logger.Child("YandexMetrica").Child("YandexMetricaBulkUploader"),
+		statsFactory: statsFactory,
 	}
 	cache := oauthv2.NewOauthTokenCache()
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
@@ -122,7 +116,7 @@ func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.St
 }
 
 // Poll return a success response for the poll request every time by default
-func (ym *YandexMetricaBulkUploader) Poll(_ common.AsyncPoll) common.PollStatusResponse {
+func (ym *YandexMetricaBulkUploader) Poll(_ context.Context, _ common.AsyncPoll) common.PollStatusResponse {
 	return common.PollStatusResponse{}
 }
 
@@ -241,7 +235,7 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %v", err)
 	}
-	req = req.WithContext(cntx.CtxWithDestInfo(req.Context(), ym.destinationInfo))
+	req = req.WithContext(cntx.CtxWithDestination(req.Context(), ym.destination))
 
 	clientType, ok := idClientMap[userIdType]
 	if !ok {
@@ -261,12 +255,12 @@ func (ym *YandexMetricaBulkUploader) uploadFileToDestination(uploadURL, csvFileP
 func (ym *YandexMetricaBulkUploader) generateErrorOutput(errorString string, err error, importingJobIds []int64) common.AsyncUploadOutput {
 	eventsAbortedStat := ym.statsFactory.NewTaggedStat("failed_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
-		"destType": ym.destinationInfo.DestType,
+		"destType": ym.destination.DestinationDefinition.Name,
 	})
 	eventsAbortedStat.Count(len(importingJobIds))
 	return common.AsyncUploadOutput{
 		AbortCount:    len(importingJobIds),
-		DestinationID: ym.destinationInfo.ID,
+		DestinationID: ym.destination.ID,
 		AbortJobIDs:   importingJobIds,
 		AbortReason:   fmt.Sprintf("%s %v", errorString, err.Error()),
 	}
@@ -276,7 +270,7 @@ func (*YandexMetricaBulkUploader) Transform(job *jobsdb.JobT) (string, error) {
 	return common.GetMarshalledData(gjson.GetBytes(job.EventPayload, "body.JSON").String(), job.JobID)
 }
 
-func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (ym *YandexMetricaBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	startTime := time.Now()
 	destination := asyncDestStruct.Destination
 	filePath := asyncDestStruct.FileName
@@ -368,6 +362,6 @@ func (ym *YandexMetricaBulkUploader) Upload(asyncDestStruct *common.AsyncDestina
 	return common.AsyncUploadOutput{
 		SucceededJobIDs: asyncDestStruct.ImportingJobIDs,
 		SuccessResponse: string(bodyBytes),
-		DestinationID:   ym.destinationInfo.ID,
+		DestinationID:   ym.destination.ID,
 	}
 }

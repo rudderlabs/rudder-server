@@ -1,6 +1,7 @@
 package sftp
 
 import (
+	"context"
 	"encoding/csv"
 	stdjson "encoding/json"
 	"fmt"
@@ -128,7 +129,7 @@ func TestSFTP(t *testing.T) {
 				AbortJobIDs:   []int64{1014, 1015, 1016, 1017},
 				AbortCount:    4,
 			}
-			received := manager.Upload(&asyncDestination)
+			received := manager.Upload(context.Background(), &asyncDestination)
 			require.Equal(t, expected, received)
 		})
 
@@ -150,7 +151,7 @@ func TestSFTP(t *testing.T) {
 				AbortJobIDs:   []int64{1014, 1015, 1016, 1017},
 				AbortCount:    4,
 			}
-			received := manager.Upload(&asyncDestination)
+			received := manager.Upload(context.Background(), &asyncDestination)
 			require.Equal(t, expected, received)
 		})
 
@@ -200,7 +201,7 @@ func TestSFTP(t *testing.T) {
 			_, err = tempFile.Write(data)
 			require.NoError(t, err)
 
-			received := manager.Upload(&asyncDestination)
+			received := manager.Upload(context.Background(), &asyncDestination)
 			require.Equal(t, expected, received)
 		})
 	})
@@ -407,7 +408,7 @@ func TestSFTP(t *testing.T) {
 			}
 
 			// Execute upload
-			result := manager.Upload(&asyncDestination)
+			result := manager.Upload(context.Background(), &asyncDestination)
 
 			// Verify upload was successful
 			require.Equal(t, "destination_id_1", result.DestinationID)
@@ -483,7 +484,7 @@ func TestSFTP(t *testing.T) {
 			}
 
 			// Execute upload
-			result := manager.Upload(&asyncDestination)
+			result := manager.Upload(context.Background(), &asyncDestination)
 
 			// Verify upload was successful
 			require.Equal(t, "destination_id_1", result.DestinationID)

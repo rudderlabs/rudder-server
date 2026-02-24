@@ -4,23 +4,23 @@ import (
 	"context"
 	"encoding/json"
 
-	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 
 type (
-	destIDContextKey struct{}
+	destContextKey   struct{}
 	secretContextKey struct{}
 )
 
-// CtxWithDestInfo returns a new context with the given DestinationInfo.
-func CtxWithDestInfo(ctx context.Context, info *v2.DestinationInfo) context.Context {
-	return context.WithValue(ctx, destIDContextKey{}, info)
+// CtxWithDestination returns a new context with the given destination.
+func CtxWithDestination(ctx context.Context, dest *backendconfig.DestinationT) context.Context {
+	return context.WithValue(ctx, destContextKey{}, dest)
 }
 
-// DestInfoFromCtx returns the DestinationInfo from the context, if present.
-func DestInfoFromCtx(ctx context.Context) (*v2.DestinationInfo, bool) {
-	info, ok := ctx.Value(destIDContextKey{}).(*v2.DestinationInfo)
-	return info, ok
+// DestinationFromCtx returns the destination from the context, if present.
+func DestinationFromCtx(ctx context.Context) (*backendconfig.DestinationT, bool) {
+	dest, ok := ctx.Value(destContextKey{}).(*backendconfig.DestinationT)
+	return dest, ok
 }
 
 // CtxWithSecret returns a new context with the given secret.

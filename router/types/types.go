@@ -88,10 +88,10 @@ type JobMetadataT struct {
 	FirstAttemptedAt   string                    `json:"firstAttemptedAt"`
 	TransformAt        string                    `json:"transformAt"`
 	WorkspaceID        string                    `json:"workspaceId"`
-	Secret             json.RawMessage           `json:"secret"`
+	Secret             json.RawMessage           `json:"secret"` // Populates transformer.ProxyRequestMetadata
 	JobT               *jobsdb.JobT              `json:"jobsT,omitempty"`
 	WorkerAssignedTime time.Time                 `json:"workerAssignedTime"`
-	DestInfo           json.RawMessage           `json:"destInfo,omitempty"`
+	DestInfo           json.RawMessage           `json:"destInfo,omitempty"` // Populates transformer.ProxyRequestMetadata
 	DontBatch          bool                      `json:"dontBatch"`
 	TraceParent        string                    `json:"traceparent"`
 	Parameters         routerutils.JobParameters `json:"-"`

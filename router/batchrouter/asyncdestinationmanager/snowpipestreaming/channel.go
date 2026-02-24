@@ -214,11 +214,16 @@ func (m *Manager) recreateChannel(
 
 // deleteChannel removes a channel from the cache and deletes it from the Snowpipe.
 func (m *Manager) deleteChannel(ctx context.Context, tableName, channelID string) error {
-	m.channelCache.Delete(tableName)
+	m.deleteChannelFromCache(tableName)
 	if err := m.api.DeleteChannel(ctx, channelID, true); err != nil {
 		return fmt.Errorf("deleting channel: %w", err)
 	}
 	return nil
+}
+
+// deleteChannelFromCache removes a channel from the cache
+func (m *Manager) deleteChannelFromCache(tableName string) {
+	m.channelCache.Delete(tableName)
 }
 
 func (m *Manager) createSnowflakeManager(ctx context.Context, namespace string) (manager.Manager, error) {

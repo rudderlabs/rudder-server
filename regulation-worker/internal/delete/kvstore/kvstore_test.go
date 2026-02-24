@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dockerredis "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
@@ -65,15 +66,17 @@ func TestRedisDeletion(t *testing.T) {
 		},
 	}
 
-	dest := model.Destination{
+	dest := &backendconfig.DestinationT{
 		Config: map[string]any{
 			"clusterMode": false,
 			"address":     resource.Addr,
 		},
-		Name: "REDIS",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "REDIS",
+		},
 	}
 
-	manager := kvstoremanager.New(dest.Name, dest.Config)
+	manager := kvstoremanager.New(dest.DestinationDefinition.Name, dest.Config)
 
 	// inserting test data in Redis
 	for _, test := range inputTestData {

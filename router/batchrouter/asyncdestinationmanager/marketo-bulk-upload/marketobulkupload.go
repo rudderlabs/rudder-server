@@ -1,6 +1,7 @@
 package marketobulkupload
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -49,7 +50,7 @@ const (
 	MARKETO_FAILED_HEADER  = "Import Failure Reason"
 )
 
-func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (b *MarketoBulkUploader) Upload(_ context.Context, asyncDestStruct *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	destination := asyncDestStruct.Destination
 	destinationID := destination.ID
 	filePath := asyncDestStruct.FileName
@@ -157,7 +158,7 @@ func (b *MarketoBulkUploader) Upload(asyncDestStruct *common.AsyncDestinationStr
 	}
 }
 
-func (b *MarketoBulkUploader) Poll(pollInput common.AsyncPoll) common.PollStatusResponse {
+func (b *MarketoBulkUploader) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	importId := pollInput.ImportId
 
 	marketoResponse, apiError := b.apiService.PollImportStatus(importId)

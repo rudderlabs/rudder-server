@@ -62,7 +62,7 @@ func TestMigrator(t *testing.T) {
 
 		namespace := rand.String(10)
 		conf := config.New()
-		conf.Set("WORKSPACE_NAMESPACE", namespace)
+		conf.Set("RELEASE_NAME", namespace)
 
 		// Create primary gw jobsdb
 		gwJobsDB := jobsdb.NewForReadWrite("gw",
