@@ -14,12 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -560,14 +560,14 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		eventList       []types.TransformerEvent
-		versionEnabled  bool
-		versionIDs      map[string]struct{}
-		fireAndForget   bool
-		sanitySampling  float64
-		expectEnabled   bool
-		expectSanityCh  bool // true if we expect a non-nil sanity channel
+		name           string
+		eventList      []types.TransformerEvent
+		versionEnabled bool
+		versionIDs     map[string]struct{}
+		fireAndForget  bool
+		sanitySampling float64
+		expectEnabled  bool
+		expectSanityCh bool // true if we expect a non-nil sanity channel
 	}{
 		{
 			name:           "python transform with version filtering enabled and version allowed",
