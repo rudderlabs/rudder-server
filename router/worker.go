@@ -29,7 +29,7 @@ import (
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
+	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/utils/cache"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -231,20 +231,32 @@ func (w *worker) workLoop() {
 	wl.runLoop() // start the worker loop
 }
 
-func (w *worker) transformJobs(routerJobs []types.RouterJobT) []types.DestinationJobT {
-	return w.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(w.rt.destType)})
-}
+func (w *worker) transformRouterJobs(routerJobs []types.RouterJobT) []types.DestinationJobT {
+	result := make([]types.DestinationJobT, 0, len(routerJobs))
 
-func (w *worker) transformJobsPerDestination(routerJobs []types.RouterJobT) []types.DestinationJobT {
-	destinationJobs := make([]types.DestinationJobT, 0, len(routerJobs))
-	destinationIDRouterJobsMap := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
-		return job.Destination.ID
+	// OAuth destinations need to be transformed separately per destination to avoid mixing OAuth credentials/tokens across destinations.
+	// non-OAuth destinations can be transformed together in a single batch as they don't have the issue of mixing credentials/tokens.
+	// So we group router jobs by OAuth vs non-OAuth destinations and transform them separately.
+	oauthDestinationIDs := make(map[string]bool)
+	routerJobGroups := lo.GroupBy(routerJobs, func(job types.RouterJobT) string {
+		isOauth, ok := oauthDestinationIDs[job.Destination.ID]
+		if !ok {
+			var err error
+			isOauth, err = job.Destination.IsOAuthDestination(common.RudderFlowDelivery)
+			if err != nil {
+				isOauth = true // assume oauth on error
+			}
+			oauthDestinationIDs[job.Destination.ID] = isOauth
+		}
+		if isOauth {
+			return job.Destination.ID
+		}
+		return ""
 	})
-	for _, destinationIDRouterJobs := range destinationIDRouterJobsMap {
-		destinationJobs = append(destinationJobs, w.transformJobs(destinationIDRouterJobs)...)
+	for _, routerJobGroup := range routerJobGroups {
+		result = append(result, w.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobGroup, DestType: strings.ToLower(w.rt.destType)})...)
 	}
-
-	return destinationJobs
+	return result
 }
 
 func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
@@ -281,12 +293,7 @@ func (w *worker) transform(routerJobs []types.RouterJobT) []types.DestinationJob
 			w.rt.logger.Debugn("traceParent is empty during router transform", logger.NewIntField("jobId", job.JobMetadata.JobID))
 		}
 	}
-	var destinationJobs []types.DestinationJobT
-	if w.rt.isOAuthDestination {
-		destinationJobs = w.transformJobsPerDestination(routerJobs)
-	} else {
-		destinationJobs = w.transformJobs(routerJobs)
-	}
+	destinationJobs := w.transformRouterJobs(routerJobs)
 	// the following stats (in combination with the limiter's timer stats) are used to capture the transform stage
 	// average latency, batching efficiency and max processing capacity
 	w.rt.batchSizeHistogramStat.Observe(float64(len(routerJobs)))
@@ -791,15 +798,9 @@ func (w *worker) proxyRequest(ctx context.Context, destinationJob types.Destinat
 			Metadata:          m,
 			DestinationConfig: destinationJob.Destination.Config,
 		},
-		DestInfo: &oauthv2.DestinationInfo{
-			Config:           destinationJob.Destination.Config,
-			DefinitionConfig: destinationJob.Destination.DestinationDefinition.Config,
-			WorkspaceID:      destinationJob.Destination.WorkspaceID,
-			DestType:         destinationJob.Destination.DestinationDefinition.Name,
-			ID:               destinationJob.Destination.ID,
-		},
-		Connection: destinationJob.Connection,
-		Adapter:    transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
+		Destination: &destinationJob.Destination,
+		Connection:  destinationJob.Connection,
+		Adapter:     transformer.NewTransformerProxyAdapter(w.rt.transformerFeaturesService.TransformerProxyVersion(), w.rt.logger),
 	}
 	rtlTime := time.Now()
 

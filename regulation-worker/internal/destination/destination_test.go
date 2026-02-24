@@ -11,7 +11,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -90,20 +89,22 @@ func TestDestination(t *testing.T) {
 
 	dest.Start(context.Background())
 	require.Eventually(t, func() bool {
-		_, err := dest.GetDestDetails(destinationID)
+		_, err := dest.GetDestination(destinationID)
 		return err == nil
 	}, time.Second, 10*time.Millisecond, "config not updated")
 
-	expectedDestinationDetail := model.Destination{
+	expectedDestinationDetail := &backendconfig.DestinationT{
+		ID:     destinationID,
 		Config: config,
-		DestDefConfig: map[string]any{
-			"randomKey": "randomValue",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Config: map[string]any{
+				"randomKey": "randomValue",
+			},
+			Name: "S3",
 		},
-		DestinationID: destinationID,
-		Name:          "S3",
 	}
 
-	destDetail, err := dest.GetDestDetails(destinationID)
+	destDetail, err := dest.GetDestination(destinationID)
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expectedDestinationDetail, destDetail, "actual dest detail different than expected")
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -34,7 +35,7 @@ func TestBatchDelete(t *testing.T) {
 	tests := []struct {
 		name           string
 		job            model.Job
-		dest           model.Destination
+		dest           *backendconfig.DestinationT
 		expectedErr    error
 		expectedStatus model.JobStatus
 	}{
@@ -67,7 +68,7 @@ func TestBatchDelete(t *testing.T) {
 					},
 				},
 			},
-			dest: model.Destination{
+			dest: &backendconfig.DestinationT{
 				Config: map[string]any{
 					"bucketName":  "regulation-test-data",
 					"accessKeyID": "abc",
@@ -75,7 +76,9 @@ func TestBatchDelete(t *testing.T) {
 					"enableSSE":   false,
 					"prefix":      "reg-original",
 				},
-				Name: "S3",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "S3",
+				},
 			},
 		},
 	}
