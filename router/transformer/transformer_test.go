@@ -462,6 +462,7 @@ var oauthDests = []backendconfig.DestinationT{
 		Config: map[string]any{
 			"rudderAccountId": "actId",
 		},
+		DeliveryAccount: &backendconfig.Account{ID: "actId"},
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
 			Name: "SALESFORCE_OAUTH",
 			Config: map[string]any{

@@ -44,6 +44,9 @@ var (
 			"rudderAccountId": "1234",
 			"goalId":          "1234",
 		},
+		DeliveryAccount: &backendconfig.Account{
+			ID: "1234",
+		},
 		Enabled:     true,
 		WorkspaceID: "1",
 	}

@@ -113,8 +113,9 @@ var _ = Describe("Http/Client", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "25beoSzcLFmimO8FgiVqTNwBG12",
 				WorkspaceID: "1234",
-				Config: map[string]any{
-					"rudderAccountId": "7693729833",
+				Config:      map[string]any{},
+				DeliveryAccount: &backendconfig.Account{
+					ID: "7693729833",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
@@ -174,9 +175,10 @@ var _ = Describe("Http/Client", func() {
 			httpClient := httpClient.NewOAuthHttpClient(&http.Client{}, common.RudderFlowDelivery, &cache, backendconfig.DefaultBackendConfig, rtTf.GetAuthErrorCategoryFromTransformResponse, &optionalArgs)
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &backendconfig.DestinationT{
-				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]any{
-					"rudderAccountId": "7693729833",
+				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]any{},
+				DeliveryAccount: &backendconfig.Account{
+					ID: "7693729833",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
@@ -222,9 +224,10 @@ var _ = Describe("Http/Client", func() {
 
 			req, _ := http.NewRequest("POST", "url", bytes.NewBuffer([]byte(`{"input":[{"message":{"userId":"user 1","event":"event1","type":"audiencelist","properties":{"listData":{"add":[{"email":"test@abc.com","phone":"@09876543210","firstName":"test","lastName":"rudderlabs","country":"US","postalCode":"1245"}]},"enablePartialFailure":true},"context":{"ip":"14.5.67.21","library":{"name":"http"}},"timestamp":"2020-02-02T00:23:09.544Z"},"metadata":{"secret":{"access_token":"dummy-access","refresh_token":"dummy-refresh","developer_token":"dummy-dev-token"}},"destination":{"secretConfig":{},"config":{},"name":"GARL","destinationDefinition":{"config":{"auth":{"role":"google_adwords_remarketing_lists_v1","type":"OAuth","provider":"Google","rudderScopes":["delivery"]}},"name":"GOOGLE_ADWORDS_REMARKETING_LISTS","displayName":"Google Ads Remarketing Lists (Customer Match)","category":null},"permissions":{"isLocked":false}}}],"destType":"google_adwords_remarketing_lists"}`)))
 			destination := &backendconfig.DestinationT{
-				ID: "25beoSzcLFmimO8FgiVqTNwBG12",
-				Config: map[string]any{
-					"rudderAccountId": "7693729833",
+				ID:     "25beoSzcLFmimO8FgiVqTNwBG12",
+				Config: map[string]any{},
+				DeliveryAccount: &backendconfig.Account{
+					ID: "7693729833",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
@@ -280,8 +283,9 @@ var _ = Describe("Http/Client", func() {
 			destination := &backendconfig.DestinationT{
 				ID:          "25beoSzcLFmimO8FgiVqTNwBG12",
 				WorkspaceID: "1234",
-				Config: map[string]any{
-					"rudderAccountId": "7693729833",
+				Config:      map[string]any{},
+				DeliveryAccount: &backendconfig.Account{
+					ID: "7693729833",
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Name:   "GOOGLE_ADWORDS_REMARKETING_LISTS",
