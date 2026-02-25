@@ -336,7 +336,7 @@ func startRudderTransformer(
 ) *dockertest.Resource {
 	t.Helper()
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-transformer",
+		Repository: "rudderstack/rudder-transformer",
 		Tag:        "latest",
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + configBackendURL,
