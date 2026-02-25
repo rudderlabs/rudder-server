@@ -18,7 +18,7 @@ permissions:
 jobs:
   integration:
     name: Integration
-    runs-on: [ self-hosted, Linux, x64, ubuntu-22 ]
+    runs-on: [ self-hosted, Linux, X64 ]
     permissions:
       id-token: write
       contents: read
@@ -76,7 +76,7 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
   warehouse-integration:
     name: Warehouse Integration
-    runs-on: [ self-hosted, Linux, x64, ubuntu-22 ]
+    runs-on: [ self-hosted, Linux, X64 ]
     permissions:
       id-token: write
       contents: read
@@ -174,7 +174,7 @@ jobs:
           path: coverage.txt
   unit:
     name: Unit
-    runs-on: [ self-hosted, Linux, x64, ubuntu-22 ]
+    runs-on: [ self-hosted, Linux, X64 ]
     permissions:
       id-token: write
       contents: read
@@ -224,7 +224,7 @@ jobs:
           path: coverage.txt
   package-unit:
     name: Package Unit
-    runs-on: [ self-hosted, Linux, x64, ubuntu-22 ]
+    runs-on: [ self-hosted, Linux, X64 ]
     permissions:
       id-token: write
       contents: read
