@@ -19,7 +19,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -543,6 +545,124 @@ func TestUTMirroring(t *testing.T) {
 			return err == nil && len(files) == 0
 		}, 10*time.Second, 50*time.Millisecond, "Expected zero files in the bucket")
 	})
+}
+
+func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
+	makeEventList := func(language, versionID string) []types.TransformerEvent {
+		return []types.TransformerEvent{
+			{
+				Destination: backendconfig.DestinationT{
+					Transformations: []backendconfig.TransformationT{
+						{Language: language, VersionID: versionID},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name           string
+		eventList      []types.TransformerEvent
+		versionEnabled bool
+		versionIDs     map[string]struct{}
+		fireAndForget  bool
+		sanitySampling float64
+		expectEnabled  bool
+		expectSanityCh bool // true if we expect a non-nil sanity channel
+	}{
+		{
+			name:           "python transform with version filtering enabled and version allowed",
+			eventList:      makeEventList("pythonFaaS", "v1"),
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v1": {}},
+			sanitySampling: 100,
+			expectEnabled:  true,
+			expectSanityCh: true,
+		},
+		{
+			name:           "python transform with version filtering enabled and version not allowed",
+			eventList:      makeEventList("pythonFaaS", "v2"),
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v1": {}},
+			sanitySampling: 100,
+			expectEnabled:  false,
+		},
+		{
+			name:           "python transform with version filtering disabled",
+			eventList:      makeEventList("pythonFaaS", "v2"),
+			versionEnabled: false,
+			sanitySampling: 100,
+			expectEnabled:  true,
+			expectSanityCh: true,
+		},
+		{
+			name:           "non-python transform with version filtering enabled",
+			eventList:      makeEventList("javascript", "v1"),
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v99": {}},
+			sanitySampling: 100,
+			expectEnabled:  true,
+			expectSanityCh: true,
+		},
+		{
+			name:           "python transform with fire and forget and version allowed",
+			eventList:      makeEventList("pythonFaaS", "v1"),
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v1": {}},
+			fireAndForget:  true,
+			expectEnabled:  true,
+			expectSanityCh: false,
+		},
+		{
+			name:           "python transform with fire and forget and version not allowed",
+			eventList:      makeEventList("pythonFaaS", "v2"),
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v1": {}},
+			fireAndForget:  true,
+			expectEnabled:  false,
+		},
+		{
+			name:           "empty event list",
+			eventList:      []types.TransformerEvent{},
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v1": {}},
+			sanitySampling: 100,
+			expectEnabled:  true,
+			expectSanityCh: true,
+		},
+		{
+			name: "event with no transformations",
+			eventList: []types.TransformerEvent{
+				{Destination: backendconfig.DestinationT{}},
+			},
+			versionEnabled: true,
+			versionIDs:     map[string]struct{}{"v1": {}},
+			sanitySampling: 100,
+			expectEnabled:  true,
+			expectSanityCh: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.New()
+			proc := &Handle{conf: c}
+			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
+			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
+			proc.config.pythonTransformConfig = transformerutils.PythonTransformConfig{
+				Enabled:    tc.versionEnabled,
+				VersionIDs: tc.versionIDs,
+			}
+
+			enabled, sanityCh := proc.isUserTransformMirroringEnabled(tc.eventList)
+			require.Equal(t, tc.expectEnabled, enabled)
+			if tc.expectSanityCh {
+				require.NotNil(t, sanityCh)
+			} else {
+				require.Nil(t, sanityCh)
+			}
+		})
+	}
 }
 
 func TestShouldSample(t *testing.T) {
