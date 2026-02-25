@@ -244,6 +244,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -298,6 +303,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -349,6 +362,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-products-channel": func() error {
 					return assert.AnError
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
 				},
 			},
 		}
@@ -564,6 +585,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -639,6 +668,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-rudder-discards-channel": func() error {
 					return nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
 				},
 			},
 		}
@@ -717,6 +754,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return assert.AnError
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -793,6 +838,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return nil
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -840,6 +893,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
 					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
 				},
 			},
 		}
@@ -906,6 +964,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -956,6 +1019,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 			deleteChannelOutputMap: map[string]func() error{
 				"test-products-channel": func() error {
 					return nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
 				},
 			},
 		}
@@ -1009,6 +1080,14 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
 					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
 				},
 			},
 		}
@@ -1071,6 +1150,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 					return &model.InsertResponse{Success: true}, nil
 				},
 			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return nil, assert.AnError
+				},
+			},
 		}
 		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
 			Destination: destination,
@@ -1098,7 +1182,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}).LastValue())
 	})
 
-	t.Run("Upload with duplicate ids", func(t *testing.T) {
+	t.Run("Upload with duplicate ids in batch", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
@@ -1117,6 +1201,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
 					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true}, nil
 				},
 			},
 		}
@@ -1149,6 +1238,74 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
+			"reason":        "batch",
+		}).LastValue())
+	})
+
+	t.Run("Upload with duplicate ids due to offset", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+		sm.channelCache.Store("PRODUCTS", productsChannelResponse)
+
+		sm.api = &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-products-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "1002"}, nil
+				},
+			},
+		}
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    "testdata/successful_sort_records.txt",
+		})
+		require.Equal(t, []int64{1002, 1003, 1001, 1004}, output.ImportingJobIDs)
+		require.Equal(t, 4, output.ImportingCount)
+		require.JSONEq(t, `{"importId":[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}],"importCount":4}`, string(output.ImportingParameters))
+		require.Nil(t, output.FailedJobIDs)
+		require.Zero(t, output.FailedCount)
+		require.Equal(t, "test-destination", output.DestinationID)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "importing",
+		}).LastValue())
+		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+		require.EqualValues(t, 0, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"reason":        "batch",
+		}).LastValue())
+		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_duplicate_events", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"reason":        "offset",
 		}).LastValue())
 	})
 
@@ -1206,6 +1363,20 @@ func TestSnowpipeStreaming(t *testing.T) {
 				},
 				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
 					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true}, nil
+				},
+				"test-users-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true}, nil
+				},
+				"test-rudder-discards-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true}, nil
+				},
+				"invalid-test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true}, nil
 				},
 			},
 		}

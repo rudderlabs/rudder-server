@@ -99,7 +99,12 @@ func New(
 
 	m.stats.discards = statsFactory.NewTaggedStat("snowpipe_streaming_discards", stats.CountType, tags)
 	m.stats.pollingInProgress = statsFactory.NewTaggedStat("snowpipe_streaming_polling_in_progress", stats.CountType, tags)
-	m.stats.duplicateEvents = statsFactory.NewTaggedStat("snowpipe_streaming_duplicate_events", stats.CountType, tags)
+	m.stats.duplicateEventsInBatch = statsFactory.NewTaggedStat("snowpipe_streaming_duplicate_events", stats.CountType, lo.Assign(tags, stats.Tags{
+		"reason": "batch",
+	}))
+	m.stats.duplicateEventsDueToOffset = statsFactory.NewTaggedStat("snowpipe_streaming_duplicate_events", stats.CountType, lo.Assign(tags, stats.Tags{
+		"reason": "offset",
+	}))
 
 	if m.requestDoer == nil {
 		m.requestDoer = m.retryableClient().StandardClient()
@@ -412,6 +417,12 @@ func (m *Manager) sendEventsToSnowpipe(
 		}
 	}
 
+	var duplicateIDsInBatch, duplicateCountDueToOffset int
+	if info.tableName != whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
+		duplicateIDsInBatch = checkForDuplicateIDsInBatch(info.events)
+		duplicateCountDueToOffset = m.checkForDuplicatesDueToOffset(ctx, channelResponse.ChannelID, info.events)
+	}
+
 	insertReq := &model.InsertRequest{
 		Rows: lo.Map(info.events, func(event *event, _ int) model.Row {
 			return event.Message.Data
@@ -423,15 +434,16 @@ func (m *Manager) sendEventsToSnowpipe(
 		return nil, nil, fmt.Errorf("inserting events: %w", err)
 	}
 
-	log.Infon("Sent events to Snowpipe")
-
-	if info.tableName != whutils.ToProviderCase(whutils.SnowpipeStreaming, whutils.UsersTable) {
-		duplicateCount := checkForDuplicateIDs(info.events)
-		if duplicateCount > 0 {
-			log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateCount)))
-			m.stats.duplicateEvents.Count(duplicateCount)
-		}
+	if duplicateIDsInBatch > 0 {
+		log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateIDsInBatch)), logger.NewStringField("reason", "batch"))
+		m.stats.duplicateEventsInBatch.Count(duplicateIDsInBatch)
 	}
+	if duplicateCountDueToOffset > 0 {
+		log.Warnn("Duplicate ids found in the events", logger.NewIntField("duplicateEvents", int64(duplicateCountDueToOffset)), logger.NewStringField("reason", "offset"))
+		m.stats.duplicateEventsDueToOffset.Count(duplicateCountDueToOffset)
+	}
+
+	log.Infon("Sent events to Snowpipe")
 
 	imInfo := &importInfo{
 		ChannelID: channelID,
@@ -442,7 +454,7 @@ func (m *Manager) sendEventsToSnowpipe(
 	return imInfo, discardImInfo, nil
 }
 
-func checkForDuplicateIDs(events []*event) (duplicateCount int) {
+func checkForDuplicateIDsInBatch(events []*event) (duplicateCount int) {
 	idColumn := whutils.ToProviderCase(whutils.SnowpipeStreaming, "id")
 	ids := lo.FilterMap(events, func(event *event, _ int) (any, bool) {
 		id, ok := event.Message.Data[idColumn]
@@ -459,6 +471,36 @@ func checkForDuplicateIDs(events []*event) (duplicateCount int) {
 			continue
 		}
 		duplicates[id] = struct{}{}
+	}
+	return duplicateCount
+}
+
+// checkForDuplicatesDueToOffset checks for duplicate ids due to offset.
+func (m *Manager) checkForDuplicatesDueToOffset(ctx context.Context, channelID string, events []*event) (duplicateCount int) {
+	statusRes, err := m.api.GetStatus(ctx, channelID)
+	if err != nil {
+		m.logger.Warnn("Failed to get status", obskit.Error(err))
+		return duplicateCount
+	}
+	if !statusRes.Valid || !statusRes.Success {
+		m.logger.Warnn("Invalid status response", logger.NewBoolField("valid", statusRes.Valid), logger.NewBoolField("success", statusRes.Success))
+		return duplicateCount
+	}
+
+	latestCommittedOffset, err := convertToInt(statusRes.Offset)
+	if err != nil {
+		m.logger.Warnn("Failed to convert latest committed offset to int", obskit.Error(err))
+		return duplicateCount
+	}
+
+	for _, event := range events {
+		if event.Metadata.JobID < 0 {
+			continue // Ignoring negative job ids due to migration
+		}
+
+		if event.Metadata.JobID <= latestCommittedOffset {
+			duplicateCount++
+		}
 	}
 	return duplicateCount
 }
@@ -500,24 +542,23 @@ func (m *Manager) insert(ctx context.Context, destinationID string, destConf *de
 
 		m.deleteChannelFromCache(info.tableName)
 
-		var insertRes2 *model.InsertResponse
-		recreatedChannel, err2 := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
-		defer func() {
-			if err2 != nil || !insertRes2.Success {
-				deleteChannel(info.tableName, recreatedChannel.ChannelID)
-			}
-		}()
-		if err2 != nil {
-			return "", fmt.Errorf("creating channel %s: %w", info.tableName, err2)
+		recreatedChannel, recreateErr := m.initializeChannelWithSchema(ctx, destinationID, destConf, info.tableName, info.eventsSchema)
+		if recreateErr != nil {
+			return "", fmt.Errorf("re-creating channel %s: %w", info.tableName, recreateErr)
 		}
 		log.Infon("Recreated channel", logger.NewStringField("channelID", recreatedChannel.ChannelID))
 
-		insertRes2, err2 = m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
-		if err2 != nil {
-			return "", fmt.Errorf("inserting data %s: %w", info.tableName, err2)
+		insertRes, insertErr := m.api.Insert(ctx, recreatedChannel.ChannelID, insertReq)
+		defer func() {
+			if insertErr != nil || !insertRes.Success {
+				deleteChannel(info.tableName, recreatedChannel.ChannelID)
+			}
+		}()
+		if insertErr != nil {
+			return "", fmt.Errorf("inserting data %s: %w", info.tableName, insertErr)
 		}
-		if !insertRes2.Success {
-			return "", extractError(insertRes2, info.tableName)
+		if !insertRes.Success {
+			return "", extractError(insertRes, info.tableName)
 		}
 		log.Infon("Inserted data into recreated channel")
 		return recreatedChannel.ChannelID, nil
