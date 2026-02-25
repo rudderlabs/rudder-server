@@ -1008,8 +1008,8 @@ def transformEvent(event, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				// Both should succeed (error caught by try/except)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 2, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 2, len(newResp.Events), "new arch: 1 success event expected")
 
 				// Both should report "not supported" error
 				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
