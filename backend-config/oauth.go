@@ -14,18 +14,6 @@ const (
 	accountDefinitionOAuthType     = "oauth"
 )
 
-// resolveAccount resolves the account associated with the destination based on the flow.
-// It returns the account for the specified flow (delivery or delete) if it exists, otherwise it returns nil.
-func (d *DestinationT) resolveAccount(flow common.RudderFlow) *Account {
-	switch flow {
-	case common.RudderFlowDelivery:
-		return d.DeliveryAccount
-	case common.RudderFlowDelete:
-		return d.DeleteAccount
-	}
-	return nil
-}
-
 /*
 GetAccountID Gets AccountId for OAuth destination based on if rudderFlow is `Delivery` or `Delete`
 
@@ -65,6 +53,18 @@ func (d *DestinationT) IsOAuthDestination(flow common.RudderFlow) (bool, error) 
 		return false, err
 	}
 	return authType == destinationDefinitionOAuthType && isScopeSupported, nil
+}
+
+// resolveAccount resolves the account associated with the destination based on the flow.
+// It returns the account for the specified flow (delivery or delete) if it exists, otherwise it returns nil.
+func (d *DestinationT) resolveAccount(flow common.RudderFlow) *Account {
+	switch flow {
+	case common.RudderFlowDelivery:
+		return d.DeliveryAccount
+	case common.RudderFlowDelete:
+		return d.DeleteAccount
+	}
+	return nil
 }
 
 func isOAuthSupportedForFlow(definitionConfig map[string]any, flow common.RudderFlow) (bool, error) {
