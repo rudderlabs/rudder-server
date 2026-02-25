@@ -76,7 +76,7 @@ jobs:
           DOCKERHUB_REGISTRY_MIRROR_PASSWORD: ${{ steps.login-ecr.outputs.docker_password_422074288268_dkr_ecr_us_east_1_amazonaws_com }}
   warehouse-integration:
     name: Warehouse Integration
-    runs-on: [ self-hosted, Linux, X64, ubuntu-22-amd ]
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
