@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-
 	"github.com/samber/lo"
 	"github.com/spf13/cast"
 	"github.com/stretchr/testify/require"

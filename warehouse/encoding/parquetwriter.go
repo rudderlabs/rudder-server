@@ -7,14 +7,11 @@ import (
 	"sort"
 
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	"github.com/xitongsys/parquet-go/writer"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (

@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/etcdwatcher"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	etcdtypes "github.com/rudderlabs/rudder-schemas/go/cluster"
+
 	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 )
 

@@ -6,12 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	routerTypes "github.com/rudderlabs/rudder-server/router/types"
-
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/processor/types"
+	routerTypes "github.com/rudderlabs/rudder-server/router/types"
 )
 
 // NewBuilder returns a new test transformer Builder

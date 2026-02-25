@@ -9,13 +9,11 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestSource_Insert(t *testing.T) {

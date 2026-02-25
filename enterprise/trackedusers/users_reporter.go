@@ -7,24 +7,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
-
-	"github.com/rudderlabs/rudder-server/jobsdb"
-	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	txn "github.com/rudderlabs/rudder-server/utils/tx"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 	"github.com/segmentio/go-hll"
 	"github.com/spaolacci/murmur3"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	txn "github.com/rudderlabs/rudder-server/utils/tx"
 )
 
 const (

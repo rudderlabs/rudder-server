@@ -6,21 +6,19 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/rudderlabs/rudder-server/utils/types"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	utilsTx "github.com/rudderlabs/rudder-server/utils/tx"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 // testSetup holds common test configuration and mocks

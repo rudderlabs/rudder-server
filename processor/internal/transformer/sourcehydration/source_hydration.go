@@ -11,17 +11,15 @@ import (
 	"sync"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	"golang.org/x/sync/errgroup"
-
 	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"

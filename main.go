@@ -9,10 +9,10 @@ import (
 	_ "go.uber.org/automaxprocs"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	kitctx "github.com/rudderlabs/rudder-go-kit/context"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/mem"
 
-	kitctx "github.com/rudderlabs/rudder-go-kit/context"
 	"github.com/rudderlabs/rudder-server/runner"
 )
 

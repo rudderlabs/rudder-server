@@ -10,9 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	"github.com/rudderlabs/rudder-server/utils/types"
 
 	mocks "github.com/rudderlabs/rudder-server/mocks/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func TestErrorDetailReporter_WithMockErrorNormalizer(t *testing.T) {

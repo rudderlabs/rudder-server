@@ -8,9 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/etcdwatcher"
@@ -19,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	etcdtypes "github.com/rudderlabs/rudder-schemas/go/cluster"
+
 	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdkeys"
 	"github.com/rudderlabs/rudder-server/cluster/migrator/partitionmigration/server"

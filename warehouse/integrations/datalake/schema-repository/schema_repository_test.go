@@ -4,13 +4,11 @@ import (
 	"testing"
 
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

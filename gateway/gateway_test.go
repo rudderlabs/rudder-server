@@ -15,32 +15,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ory/dockertest/v3"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
-
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-schemas/go/stream"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
-
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
-
-	"go.uber.org/mock/gomock"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
+	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -48,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
@@ -58,6 +51,7 @@ import (
 	mocksrcdebugger "github.com/rudderlabs/rudder-server/services/debugger/source/mocks"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"

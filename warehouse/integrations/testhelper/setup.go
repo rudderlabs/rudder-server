@@ -15,23 +15,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	_ "github.com/lib/pq"
 	"github.com/samber/lo"
 	"github.com/spf13/cast"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	_ "github.com/lib/pq"
-	"github.com/stretchr/testify/require"
-
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (

@@ -16,21 +16,20 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
-
 	mock_features "github.com/rudderlabs/rudder-server/mocks/services/transformer"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/transformer"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-
-	rudderSync "github.com/rudderlabs/rudder-go-kit/sync"
 	oauthV2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2_http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	"github.com/rudderlabs/rudder-server/services/transformer"
+	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func (d *deleteAPI) handler() http.Handler {

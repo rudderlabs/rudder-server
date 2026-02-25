@@ -5,13 +5,12 @@ import (
 	"net/http"
 	"time"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 // webAudienceListHandler - handler for audience list requests

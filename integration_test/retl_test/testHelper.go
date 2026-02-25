@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 )
 

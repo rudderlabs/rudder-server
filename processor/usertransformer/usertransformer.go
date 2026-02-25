@@ -6,6 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	internal "github.com/rudderlabs/rudder-server/processor/internal/transformer/user_transformer"
 )
 

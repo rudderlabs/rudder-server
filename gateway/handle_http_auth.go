@@ -4,18 +4,16 @@ import (
 	"context"
 	"net/http"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	"github.com/samber/lo"
 
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
-	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
-
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	gwCtx "github.com/rudderlabs/rudder-server/gateway/internal/context"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 // writeKeyAuth middleware to authenticate writeKey in the Authorization header.

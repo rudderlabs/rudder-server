@@ -4,10 +4,10 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-server/router/types"
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	proctypes "github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/router/types"
 )
 
 // TransformerHandler is a function that takes a transformer request and returns a response

@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"cloud.google.com/go/bigquery"
-
 	"github.com/tidwall/gjson"
 	gbq "google.golang.org/api/bigquery/v2"
 	"google.golang.org/api/option"
@@ -19,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )

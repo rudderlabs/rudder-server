@@ -3,9 +3,9 @@ package router
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 func TestState(t *testing.T) {

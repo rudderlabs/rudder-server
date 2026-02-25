@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )

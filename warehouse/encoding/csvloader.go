@@ -5,9 +5,8 @@ import (
 	"encoding/csv"
 	"fmt"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // csvLoader is common for non-BQ warehouses.

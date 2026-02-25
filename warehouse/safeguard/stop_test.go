@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/safeguard"
-
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/warehouse/safeguard"
 )
 
 func TestMustStop(t *testing.T) {

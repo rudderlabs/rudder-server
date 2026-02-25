@@ -7,25 +7,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/spaolacci/murmur3"
-
-	"github.com/segmentio/go-hll"
-
-	txn "github.com/rudderlabs/rudder-server/utils/tx"
-
 	"github.com/google/uuid"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/segmentio/go-hll"
+	"github.com/spaolacci/murmur3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 
-	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	txn "github.com/rudderlabs/rudder-server/utils/tx"
 )
 
 var (

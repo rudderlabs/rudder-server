@@ -11,19 +11,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/sourcehydration"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 func TestSourceHydration_Hydrate(t *testing.T) {
