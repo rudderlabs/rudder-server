@@ -488,7 +488,7 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 			"KEY=city_test.mmdb",
 			"OUTPUT_PATH=/tmp/city.mmdb",
 			"REGION=us-east-1",
-			"S3_ENDPOINT=" + minioResource.Endpoint,
+			"S3_ENDPOINT=" + "http://" + minioResource.Endpoint,
 			"S3_FORCE_PATH_STYLE=true",
 			"AWS_ACCESS_KEY_ID=" + minioResource.AccessKeyID,
 			"AWS_SECRET_ACCESS_KEY=" + minioResource.AccessKeySecret,
