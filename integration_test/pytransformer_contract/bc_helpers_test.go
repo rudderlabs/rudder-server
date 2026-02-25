@@ -494,6 +494,8 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 			"AWS_SECRET_ACCESS_KEY=" + minioResource.AccessKeySecret,
 		},
 		ExposedPorts: []string{containerPort},
+	}, func(hc *docker.HostConfig) {
+		hc.ExtraHosts = []string{"host.docker.internal:host-gateway"}
 	})
 	require.NoError(t, err, "failed to start rudder-geolocation container")
 
