@@ -13,34 +13,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
-	"github.com/rudderlabs/rudder-server/gateway/validator"
-
-	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
-
-	"github.com/rudderlabs/rudder-schemas/go/stream"
-
-	"golang.org/x/sync/errgroup"
-
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/rs/cors"
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/rudder-schemas/go/stream"
 
 	"github.com/rudderlabs/rudder-server/app"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
+	"github.com/rudderlabs/rudder-server/gateway/validator"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/gateway/webhook/auth"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"

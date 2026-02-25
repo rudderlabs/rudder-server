@@ -8,19 +8,16 @@ import (
 	"path/filepath"
 	"sync"
 
-	"go.uber.org/mock/gomock"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	. "github.com/onsi/ginkgo/v2"
-
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mockeloquaservice "github.com/rudderlabs/rudder-server/mocks/router/eloqua"

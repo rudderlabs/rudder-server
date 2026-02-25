@@ -13,10 +13,10 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
-
-	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 

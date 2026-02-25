@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 )

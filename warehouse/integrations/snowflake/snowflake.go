@@ -14,19 +14,16 @@ import (
 	"strings"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/samber/lo"
 	snowflake "github.com/snowflakedb/gosnowflake"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
-
 	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"

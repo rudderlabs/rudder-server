@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strconv"
 
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	stunnel "github.com/rudderlabs/sql-tunnels/driver/ssh"
+
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (

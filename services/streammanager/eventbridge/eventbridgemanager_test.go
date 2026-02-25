@@ -8,12 +8,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/smithy-go"
-
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"

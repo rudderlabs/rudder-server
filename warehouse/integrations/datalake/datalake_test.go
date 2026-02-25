@@ -13,38 +13,30 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/samber/lo"
 	"github.com/spf13/cast"
+	"github.com/stretchr/testify/require"
 	"github.com/trinodb/trino-go-client/trino"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/reader"
 	"github.com/xitongsys/parquet-go/types"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-
 	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/minio/minio-go/v7/pkg/credentials"
-
-	"github.com/rudderlabs/compose-test/testcompose"
-
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/stretchr/testify/require"
-
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {

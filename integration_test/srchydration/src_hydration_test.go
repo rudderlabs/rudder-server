@@ -17,37 +17,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/sqlutil"
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
-
-	"github.com/rudderlabs/rudder-server/processor/isolation"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonparser"
-
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-
-	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
-
 	_ "github.com/duckdb/duckdb-go/v2"
-	"github.com/samber/lo"
-
-	proctypes "github.com/rudderlabs/rudder-server/processor/types"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
+	"github.com/rudderlabs/rudder-go-kit/sqlutil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/isolation"
+	proctypes "github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
+	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 )
 
 const (

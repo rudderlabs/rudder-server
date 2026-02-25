@@ -3,21 +3,18 @@ package slave
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/services/notifier"
-	"github.com/rudderlabs/rudder-server/warehouse/bcm"
-	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-
-	"github.com/rudderlabs/rudder-server/warehouse/encoding"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/bcm"
+	"github.com/rudderlabs/rudder-server/warehouse/constraints"
+	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 )
 
 type slaveNotifier interface {

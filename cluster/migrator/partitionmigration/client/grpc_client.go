@@ -13,6 +13,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	proto "github.com/rudderlabs/rudder-server/proto/cluster"
 )
 

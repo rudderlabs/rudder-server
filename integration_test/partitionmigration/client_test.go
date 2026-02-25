@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/partmap"
+
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 

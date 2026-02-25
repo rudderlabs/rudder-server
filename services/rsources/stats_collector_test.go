@@ -5,18 +5,16 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-
-	"go.uber.org/mock/gomock"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 

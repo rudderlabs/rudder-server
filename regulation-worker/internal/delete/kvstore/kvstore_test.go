@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dockerredis "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"

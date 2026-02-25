@@ -9,9 +9,9 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	ierrors "github.com/rudderlabs/rudder-server/warehouse/internal/errors"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 // emptyRegex matches empty strings

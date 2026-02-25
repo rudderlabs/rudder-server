@@ -10,10 +10,10 @@ import (
 	"text/template"
 	"text/template/parse"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

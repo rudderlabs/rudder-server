@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-go-kit/stringify"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	utils "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded"
 	types "github.com/rudderlabs/rudder-server/processor/types"

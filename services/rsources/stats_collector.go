@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
+
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )

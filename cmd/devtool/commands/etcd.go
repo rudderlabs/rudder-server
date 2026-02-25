@@ -10,6 +10,7 @@ import (
 	etcd "go.etcd.io/etcd/client/v3"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )

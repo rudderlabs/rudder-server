@@ -4,14 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 func TestConstraintsManager(t *testing.T) {

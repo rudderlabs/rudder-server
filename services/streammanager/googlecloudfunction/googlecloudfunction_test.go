@@ -8,14 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/oauth2"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_googlecloudfunction "github.com/rudderlabs/rudder-server/mocks/services/streammanager/googlecloudfunction"
-
-	"github.com/stretchr/testify/assert"
-
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )
 

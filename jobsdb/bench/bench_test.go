@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	statsmetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/bench"
 )
 

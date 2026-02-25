@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/chiware"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/suppression-backup-service/model"
 )
 

@@ -11,10 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lib/pq"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"

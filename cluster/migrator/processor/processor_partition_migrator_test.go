@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	etcdtypes "github.com/rudderlabs/rudder-schemas/go/cluster"
+
 	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdkeys"
 )
 

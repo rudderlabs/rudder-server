@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/jaeger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/jobsdb"

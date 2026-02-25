@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/memory"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/repotest"
 )

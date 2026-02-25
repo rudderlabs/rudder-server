@@ -6,14 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 )
 

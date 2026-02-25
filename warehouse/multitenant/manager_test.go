@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"

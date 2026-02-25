@@ -3,14 +3,12 @@ package validations_test
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestValidationSteps(t *testing.T) {

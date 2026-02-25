@@ -13,30 +13,25 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
+	"github.com/rudderlabs/rudder-server/services/notifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/bcm"
 	"github.com/rudderlabs/rudder-server/warehouse/constraints"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
-	"github.com/rudderlabs/rudder-server/services/notifier"
-
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-server/warehouse/encoding"
 	integrationsconfig "github.com/rudderlabs/rudder-server/warehouse/integrations/config"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/source"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"golang.org/x/sync/errgroup"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 type uploadProcessingResult struct {

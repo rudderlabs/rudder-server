@@ -3,11 +3,11 @@ package mode_test
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/mode"
 )
 
 func TestIsStandAlone(t *testing.T) {

@@ -7,9 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
