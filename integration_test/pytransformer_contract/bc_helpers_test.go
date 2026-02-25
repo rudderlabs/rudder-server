@@ -302,20 +302,24 @@ func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Se
 }
 
 // startOpenFaasFlask starts an openfaas-flask-base container with transformation code
-// loaded at startup via --vid and --config-backend-url.
+// loaded at startup via --vid and --config-backend-url. Optional extra environment
+// variables can be passed (e.g. "geolocation_url=http://...").
 func startOpenFaasFlask(
 	t *testing.T, pool *dockertest.Pool,
 	port int, versionID, configBackendURL string,
+	extraEnv ...string,
 ) *dockertest.Resource {
 	t.Helper()
+	env := []string{
+		fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, configBackendURL),
+		fmt.Sprintf("port=%d", port),
+	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		Tag:        "latest",
 		Auth:       registry.AuthConfiguration(),
-		Env: []string{
-			fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, configBackendURL),
-			fmt.Sprintf("port=%d", port),
-		},
+		Env:        env,
 	}, func(hc *docker.HostConfig) {
 		hc.NetworkMode = "host"
 	})
@@ -347,22 +351,26 @@ func startRudderTransformer(
 }
 
 // startRudderPytransformer starts a rudder-pytransformer container configured
-// to use the mock config backend.
+// to use the mock config backend. Optional extra environment variables can be
+// passed (e.g. "GEOLOCATION_URL=http://...").
 func startRudderPytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	port int, configBackendURL string,
+	extraEnv ...string,
 ) *dockertest.Resource {
 	t.Helper()
+	env := []string{
+		"CONFIG_BACKEND_URL=" + configBackendURL,
+		"GUNICORN_WORKERS=1",
+		"GUNICORN_TIMEOUT=120",
+		"GUNICORN_BIND=0.0.0.0:" + strconv.Itoa(port),
+	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:        "latest",
 		Auth:       registry.AuthConfiguration(),
-		Env: []string{
-			"CONFIG_BACKEND_URL=" + configBackendURL,
-			"GUNICORN_WORKERS=1",
-			"GUNICORN_TIMEOUT=120",
-			"GUNICORN_BIND=0.0.0.0:" + strconv.Itoa(port),
-		},
+		Env:        env,
 	}, func(hc *docker.HostConfig) {
 		hc.NetworkMode = "host"
 	})
@@ -440,4 +448,145 @@ func normalizeResponseErrors(r *types.Response) {
 	for i := range r.FailedEvents {
 		r.FailedEvents[i].Error = normalizeJSON(r.FailedEvents[i].Error)
 	}
+}
+
+// startRudderGeolocation starts a rudder-geolocation container that serves
+// the /geoip/{ip} endpoint for IP geolocation lookups.
+func startRudderGeolocation(t *testing.T, pool *dockertest.Pool, port int) *dockertest.Resource {
+	t.Helper()
+	container, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
+		Tag:        "latest",
+		Auth:       registry.AuthConfiguration(),
+		Env: []string{
+			fmt.Sprintf("PORT=%d", port),
+		},
+	}, func(hc *docker.HostConfig) {
+		hc.NetworkMode = "host"
+	})
+	require.NoError(t, err, "failed to start rudder-geolocation container")
+	return container
+}
+
+// waitForGeolocation polls the rudder-geolocation service until it responds to
+// a /geoip request. We try a well-known public IP (1.2.3.4) to verify the
+// service is up and can resolve IPs.
+func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
+	t.Helper()
+	t.Logf("Waiting for rudder-geolocation at %s to be healthy...", baseURL)
+	err := pool.Retry(func() error {
+		resp, err := http.Get(baseURL + "/geoip/1.2.3.4")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("rudder-geolocation not ready: status %d", resp.StatusCode)
+		}
+		return nil
+	})
+	require.NoError(t, err, "rudder-geolocation failed to become healthy")
+	t.Logf("rudder-geolocation is healthy at %s", baseURL)
+}
+
+// newMockGeolocationService creates a mock geolocation HTTP server that
+// simulates the /geoip/{ip} endpoint. This can be used instead of the real
+// rudder-geolocation container for unit-style testing.
+func newMockGeolocationService(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		if len(parts) < 2 || parts[0] != "geoip" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		ip := parts[1]
+
+		w.Header().Set("Content-Type", "application/json")
+		switch ip {
+		case "1.2.3.4":
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
+				"ip":      "1.2.3.4",
+				"city":    "Test City",
+				"region":  "Test Region",
+				"country": "US",
+				"postal":  "12345",
+				"location": map[string]any{
+					"latitude":  37.751,
+					"longitude": -97.822,
+				},
+			})
+		case "8.8.8.8":
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
+				"ip":      "8.8.8.8",
+				"city":    "Mountain View",
+				"region":  "California",
+				"country": "US",
+				"postal":  "94035",
+				"location": map[string]any{
+					"latitude":  37.386,
+					"longitude": -122.084,
+				},
+			})
+		case "":
+			w.WriteHeader(http.StatusBadRequest)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "empty IP address"})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "IP not found"})
+		}
+	}))
+}
+
+// newMockFailingGeolocationService creates a mock geolocation HTTP server that
+// returns different HTTP status codes based on the IP address pattern.
+// IPs like "500.0.0.1" return HTTP 500, "404.0.0.1" return 404, etc.
+// "1.2.3.4" and "8.8.8.8" return successful responses.
+// "empty.0.0.1" returns 200 with an empty JSON object.
+func newMockFailingGeolocationService(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		if len(parts) < 2 || parts[0] != "geoip" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		ip := parts[1]
+
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case ip == "1.2.3.4":
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
+				"ip": "1.2.3.4", "city": "Test City", "region": "Test Region",
+				"country": "US", "postal": "12345",
+				"location": map[string]any{"latitude": 37.751, "longitude": -97.822},
+			})
+		case ip == "8.8.8.8":
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
+				"ip": "8.8.8.8", "city": "Mountain View", "region": "California",
+				"country": "US", "postal": "94035",
+				"location": map[string]any{"latitude": 37.386, "longitude": -122.084},
+			})
+		case strings.HasPrefix(ip, "empty"):
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{})
+		case strings.HasPrefix(ip, "500"):
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "internal server error"})
+		case strings.HasPrefix(ip, "404"):
+			w.WriteHeader(http.StatusNotFound)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "not found"})
+		case strings.HasPrefix(ip, "400"):
+			w.WriteHeader(http.StatusBadRequest)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "bad request"})
+		case strings.HasPrefix(ip, "503"):
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "service unavailable"})
+		case strings.HasPrefix(ip, "429"):
+			w.WriteHeader(http.StatusTooManyRequests)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "rate limited"})
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "unknown IP"})
+		}
+	}))
 }
