@@ -456,7 +456,7 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool, port int) *dock
 	t.Helper()
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
-		Tag:        "latest",
+		Tag:        "main",
 		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			fmt.Sprintf("PORT=%d", port),
