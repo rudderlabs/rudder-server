@@ -880,17 +880,14 @@ def transformBatch(events, metadata):
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	// Start rudder-geolocation container.
-	geoPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	geoURL := fmt.Sprintf("http://localhost:%d", geoPort)
-	geoContainer := startRudderGeolocation(t, pool, geoPort)
+	// Start rudder-geolocation container (starts MinIO internally and uploads test MMDB).
+	geoContainer, geoURL := startRudderGeolocation(t, pool)
 	t.Cleanup(func() {
 		if err := pool.Purge(geoContainer); err != nil {
 			t.Logf("Failed to purge rudder-geolocation: %v", err)
 		}
 	})
-	waitForGeolocation(t, pool, geoURL)
+	waitForGeolocation(t, pool, geoContainer, geoURL)
 
 	// Collect all config backend entries.
 	allEntries := make(map[string]configBackendEntry, len(subtests))

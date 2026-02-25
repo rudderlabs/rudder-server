@@ -2,6 +2,7 @@ package pytransformer_contract
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	minioclient "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
@@ -22,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	miniodocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -451,28 +454,57 @@ func normalizeResponseErrors(r *types.Response) {
 	}
 }
 
-// startRudderGeolocation starts a rudder-geolocation container that serves
-// the /geoip/{ip} endpoint for IP geolocation lookups.
-func startRudderGeolocation(t *testing.T, pool *dockertest.Pool, port int) *dockertest.Resource {
+// startRudderGeolocation starts a MinIO container, uploads the test MMDB file,
+// then starts a rudder-geolocation container configured to download the database
+// from MinIO on startup. The container serves the /geoip/{ip} endpoint.
+//
+// Unlike other containers in this test suite, the geolocation container uses
+// Docker port mapping instead of host networking. This is because it needs to
+// reach MinIO (also port-mapped) via host.docker.internal, and must expose its
+// own port to the host for the Go test process to reach it.
+func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Resource, string) {
 	t.Helper()
+
+	minioResource, err := miniodocker.Setup(pool, t)
+	require.NoError(t, err, "failed to start MinIO")
+
+	_, err = minioResource.Client.FPutObject(
+		context.Background(),
+		minioResource.BucketName,
+		"city_test.mmdb",
+		"../../services/geolocation/testdata/city_test.mmdb",
+		minioclient.PutObjectOptions{},
+	)
+	require.NoError(t, err, "failed to upload city_test.mmdb to MinIO")
+
+	const containerPort = "3000"
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
-		Tag:        "main",
+		Tag:        "pr-123", // TODO: switch to main once PR-123 is merged
 		Auth:       registry.AuthConfiguration(),
 		Env: []string{
-			fmt.Sprintf("PORT=%d", port),
+			"PORT=" + containerPort,
+			"BUCKET=" + minioResource.BucketName,
+			"KEY=city_test.mmdb",
+			"OUTPUT_PATH=/tmp/city.mmdb",
+			"REGION=us-east-1",
+			"S3_ENDPOINT=http://host.docker.internal:" + minioResource.Endpoint[strings.LastIndex(minioResource.Endpoint, ":")+1:],
+			"S3_FORCE_PATH_STYLE=true",
+			"AWS_ACCESS_KEY_ID=" + minioResource.AccessKeyID,
+			"AWS_SECRET_ACCESS_KEY=" + minioResource.AccessKeySecret,
 		},
-	}, func(hc *docker.HostConfig) {
-		hc.NetworkMode = "host"
+		ExposedPorts: []string{containerPort},
 	})
 	require.NoError(t, err, "failed to start rudder-geolocation container")
-	return container
+
+	geoURL := fmt.Sprintf("http://localhost:%s", container.GetPort(containerPort+"/tcp"))
+	return container, geoURL
 }
 
 // waitForGeolocation polls the rudder-geolocation service until it responds to
 // a /geoip request. We try a well-known public IP (1.2.3.4) to verify the
 // service is up and can resolve IPs.
-func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
+func waitForGeolocation(t *testing.T, pool *dockertest.Pool, container *dockertest.Resource, baseURL string) {
 	t.Helper()
 	t.Logf("Waiting for rudder-geolocation at %s to be healthy...", baseURL)
 	err := pool.Retry(func() error {
