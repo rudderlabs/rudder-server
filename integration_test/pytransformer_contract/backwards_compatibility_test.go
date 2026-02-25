@@ -1084,6 +1084,608 @@ def transformBatch(events, metadata):
 				}
 			},
 		},
+		{
+			name:      "CredentialValidKey",
+			versionID: "bc-cred-valid-key-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    value = getCredential('testKey1')
+    event['credential'] = value
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-valid-key-v1"
+
+				creds := []types.Credential{
+					{ID: "testId1", Key: "testKey1", Value: "testValue1", IsSecret: false},
+					{ID: "testId2", Key: "testKey2", Value: "testValue2", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				// Verify credential value was retrieved correctly
+				require.Equal(t, "testValue1", oldResp.Events[0].Output["credential"], "old arch: credential value should be testValue1")
+				require.Equal(t, "testValue1", newResp.Events[0].Output["credential"], "new arch: credential value should be testValue1")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with valid key")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialMissingKey",
+			versionID: "bc-cred-missing-key-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    value = getCredential('nonExistentKey')
+    event['credential'] = value
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-missing-key-v1"
+
+				creds := []types.Credential{
+					{ID: "testId1", Key: "testKey1", Value: "testValue1", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// getCredential returns None for missing keys — event should succeed with null value
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				require.Nil(t, oldResp.Events[0].Output["credential"], "old arch: credential should be nil for missing key")
+				require.Nil(t, newResp.Events[0].Output["credential"], "new arch: credential should be nil for missing key")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with missing key")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialNoArguments",
+			versionID: "bc-cred-no-args-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    value = getCredential()
+    event['credential'] = value
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-no-args-v1"
+
+				creds := []types.Credential{
+					{ID: "testId1", Key: "testKey1", Value: "testValue1", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// getCredential() with no args raises TypeError — event should fail
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+
+				oldError := oldResp.FailedEvents[0].Error
+				newError := newResp.FailedEvents[0].Error
+				t.Logf("Old arch error: %q", oldError)
+				t.Logf("New arch error: %q", newError)
+
+				require.Contains(t, oldError, "Key should be valid and defined", "old arch: error should mention invalid key")
+				require.Contains(t, newError, "Key should be valid and defined", "new arch: error should mention invalid key")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with no arguments")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialNonStringKeys",
+			versionID: "bc-cred-non-string-keys-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event['credentialValueForNoneKey'] = getCredential(None)
+    event['credentialValueForNumkey'] = getCredential(1)
+    event['credentialValueForBoolkey'] = getCredential(True)
+    event['credentialValueForObjkey'] = getCredential({})
+    event['credentialValueForArrkey'] = getCredential([])
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-non-string-keys-v1"
+
+				creds := []types.Credential{
+					{ID: "testId1", Key: "testKey1", Value: "testValue1", IsSecret: false},
+					{ID: "testId2", Key: "testKey2", Value: "testValue2", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Non-string keys should return None (not raise errors)
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				// All non-string keys (including None) should return None
+				oldOutput := oldResp.Events[0].Output
+				newOutput := newResp.Events[0].Output
+				for _, key := range []string{"credentialValueForNoneKey", "credentialValueForNumkey", "credentialValueForBoolkey", "credentialValueForObjkey", "credentialValueForArrkey"} {
+					require.Nil(t, oldOutput[key], "old arch: %s should be nil", key)
+					require.Nil(t, newOutput[key], "new arch: %s should be nil", key)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with non-string keys")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialEmptyList",
+			versionID: "bc-cred-empty-list-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    value = getCredential('anyKey')
+    event['credential'] = value
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-empty-list-v1"
+
+				// Send event with empty credentials list
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, []types.Credential{}),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// With empty credentials, getCredential returns None for any key
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				require.Nil(t, oldResp.Events[0].Output["credential"], "old arch: credential should be nil with empty credentials")
+				require.Nil(t, newResp.Events[0].Output["credential"], "new arch: credential should be nil with empty credentials")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with empty list")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialNoCredentials",
+			versionID: "bc-cred-no-creds-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    value = getCredential('anyKey')
+    event['credential'] = value
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-no-creds-v1"
+
+				// Send event with no credentials at all (nil)
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// With no credentials field, getCredential returns None for any key
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				require.Nil(t, oldResp.Events[0].Output["credential"], "old arch: credential should be nil with no credentials")
+				require.Nil(t, newResp.Events[0].Output["credential"], "new arch: credential should be nil with no credentials")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with no credentials field")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialBatchTransform",
+			versionID: "bc-cred-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        value = getCredential('testKey1')
+        event['credential'] = value
+    return events
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-batch-v1"
+
+				creds := []types.Credential{
+					{ID: "testId1", Key: "testKey1", Value: "testValue1", IsSecret: false},
+					{ID: "testId2", Key: "testKey2", Value: "testValue2", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+					makeEventWithCredentials("msg-2", versionID, creds),
+				}
+
+				t.Log("Sending 2 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 2 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both events should succeed with credential from first event
+				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				// Both events should have the same credential value
+				for i := range oldResp.Events {
+					require.Equal(t, "testValue1", oldResp.Events[i].Output["credential"],
+						"old arch: event %d credential should be testValue1", i)
+					require.Equal(t, "testValue1", newResp.Events[i].Output["credential"],
+						"new arch: event %d credential should be testValue1", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential in batch transform")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialFromFirstEventOnly",
+			versionID: "bc-cred-first-event-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        event['cred1'] = getCredential('key1')
+        event['cred2'] = getCredential('key2')
+    return events
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-first-event-v1"
+
+				// First event has key1, second event has key2.
+				// Both architectures extract credentials from the first event only.
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, []types.Credential{
+						{ID: "id1", Key: "key1", Value: "value1", IsSecret: false},
+					}),
+					makeEventWithCredentials("msg-2", versionID, []types.Credential{
+						{ID: "id2", Key: "key2", Value: "value2", IsSecret: false},
+					}),
+				}
+
+				t.Log("Sending 2 events to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending 2 events to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
+				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
+
+				// key1 from first event should be available, key2 from second event should not
+				for i, ev := range oldResp.Events {
+					t.Logf("Old arch Event[%d]: cred1=%v, cred2=%v", i, ev.Output["cred1"], ev.Output["cred2"])
+				}
+				for i, ev := range newResp.Events {
+					t.Logf("New arch Event[%d]: cred1=%v, cred2=%v", i, ev.Output["cred1"], ev.Output["cred2"])
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credentials from first event only")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialMultipleAccess",
+			versionID: "bc-cred-multi-access-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event['cred1'] = getCredential('testKey1')
+    event['cred2'] = getCredential('testKey2')
+    event['cred1_again'] = getCredential('testKey1')
+    event['missing'] = getCredential('noSuchKey')
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-multi-access-v1"
+
+				creds := []types.Credential{
+					{ID: "testId1", Key: "testKey1", Value: "testValue1", IsSecret: false},
+					{ID: "testId2", Key: "testKey2", Value: "testValue2", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldOutput := oldResp.Events[0].Output
+				newOutput := newResp.Events[0].Output
+
+				// Verify multiple credential accesses and repeated access
+				require.Equal(t, "testValue1", oldOutput["cred1"], "old arch: cred1 should be testValue1")
+				require.Equal(t, "testValue2", oldOutput["cred2"], "old arch: cred2 should be testValue2")
+				require.Equal(t, "testValue1", oldOutput["cred1_again"], "old arch: cred1_again should be testValue1")
+				require.Nil(t, oldOutput["missing"], "old arch: missing should be nil")
+
+				require.Equal(t, "testValue1", newOutput["cred1"], "new arch: cred1 should be testValue1")
+				require.Equal(t, "testValue2", newOutput["cred2"], "new arch: cred2 should be testValue2")
+				require.Equal(t, "testValue1", newOutput["cred1_again"], "new arch: cred1_again should be testValue1")
+				require.Nil(t, newOutput["missing"], "new arch: missing should be nil")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for multiple credential accesses")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialSecretFlag",
+			versionID: "bc-cred-secret-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event['secretCred'] = getCredential('secretKey')
+    event['publicCred'] = getCredential('publicKey')
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-secret-v1"
+
+				// isSecret flag should not affect getCredential behavior — both should be accessible
+				creds := []types.Credential{
+					{ID: "id1", Key: "secretKey", Value: "secretValue", IsSecret: true},
+					{ID: "id2", Key: "publicKey", Value: "publicValue", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				// Both secret and public credentials should be accessible via getCredential
+				require.Equal(t, "secretValue", oldResp.Events[0].Output["secretCred"], "old arch: secret credential should be accessible")
+				require.Equal(t, "publicValue", oldResp.Events[0].Output["publicCred"], "old arch: public credential should be accessible")
+				require.Equal(t, "secretValue", newResp.Events[0].Output["secretCred"], "new arch: secret credential should be accessible")
+				require.Equal(t, "publicValue", newResp.Events[0].Output["publicCred"], "new arch: public credential should be accessible")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credentials with isSecret flag")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialWithSpecialCharacters",
+			versionID: "bc-cred-special-chars-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event['cred'] = getCredential('key-with-special.chars_123')
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-special-chars-v1"
+
+				creds := []types.Credential{
+					{ID: "id1", Key: "key-with-special.chars_123", Value: "special-value!@#$%", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				require.Equal(t, "special-value!@#$%", oldResp.Events[0].Output["cred"], "old arch: credential value with special chars")
+				require.Equal(t, "special-value!@#$%", newResp.Events[0].Output["cred"], "new arch: credential value with special chars")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credentials with special characters")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialDuplicateKeys",
+			versionID: "bc-cred-dup-keys-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event['cred'] = getCredential('dupKey')
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-dup-keys-v1"
+
+				// When duplicate keys exist, the last one wins (both architectures
+				// iterate the credentials slice in order, overwriting earlier values).
+				creds := []types.Credential{
+					{ID: "id1", Key: "dupKey", Value: "firstValue", IsSecret: false},
+					{ID: "id2", Key: "dupKey", Value: "secondValue", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				// Assert that the last credential wins when keys are duplicated
+				require.Equal(t, "secondValue", oldResp.Events[0].Output["cred"], "old arch: last credential value should win for duplicate keys")
+				require.Equal(t, "secondValue", newResp.Events[0].Output["cred"], "new arch: last credential value should win for duplicate keys")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for duplicate credential keys")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "CredentialEmptyValue",
+			versionID: "bc-cred-empty-value-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    event['cred'] = getCredential('emptyKey')
+    event['credIsNone'] = getCredential('emptyKey') is None
+    event['credIsEmpty'] = getCredential('emptyKey') == ''
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-cred-empty-value-v1"
+
+				creds := []types.Credential{
+					{ID: "id1", Key: "emptyKey", Value: "", IsSecret: false},
+				}
+				events := []types.TransformerEvent{
+					makeEventWithCredentials("msg-1", versionID, creds),
+				}
+
+				t.Log("Sending request to old architecture...")
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				t.Log("Sending request to new architecture...")
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				// An empty string value should be returned (not None)
+				oldOutput := oldResp.Events[0].Output
+				newOutput := newResp.Events[0].Output
+				t.Logf("Old arch: cred=%v, credIsNone=%v, credIsEmpty=%v", oldOutput["cred"], oldOutput["credIsNone"], oldOutput["credIsEmpty"])
+				t.Logf("New arch: cred=%v, credIsNone=%v, credIsEmpty=%v", newOutput["cred"], newOutput["credIsNone"], newOutput["credIsEmpty"])
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for credential with empty value")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
 	}
 
 	pool, err := dockertest.NewPool("")
