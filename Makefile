@@ -27,7 +27,7 @@ test: install-tools test-run test-teardown
 test-run: ## Run all unit tests
 ifeq ($(filter 1,$(debug) $(RUNNER_DEBUG)),)
 	$(eval TEST_CMD = SLOW=0 gotestsum --format pkgname-and-test-fails --)
-	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
+	$(eval TEST_OPTIONS = -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
 else
 	$(eval TEST_CMD = SLOW=0 go test)
 	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -coverpkg=./... -vet=all --timeout=15m)
