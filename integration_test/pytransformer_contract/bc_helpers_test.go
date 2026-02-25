@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	miniodocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -457,11 +458,8 @@ func normalizeResponseErrors(r *types.Response) {
 // startRudderGeolocation starts a MinIO container, uploads the test MMDB file,
 // then starts a rudder-geolocation container configured to download the database
 // from MinIO on startup. The container serves the /geoip/{ip} endpoint.
-//
-// Unlike other containers in this test suite, the geolocation container uses
-// Docker port mapping instead of host networking. This is because it needs to
-// reach MinIO (also port-mapped) via host.docker.internal, and must expose its
-// own port to the host for the Go test process to reach it.
+// Like other containers in this test suite, it uses host networking so it can
+// reach MinIO at localhost and be reached by other host-networked containers.
 func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Resource, string) {
 	t.Helper()
 
@@ -477,13 +475,15 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 	)
 	require.NoError(t, err, "failed to upload city_test.mmdb to MinIO")
 
-	const containerPort = "3000"
+	geoPort, err := kithelper.GetFreePort()
+	require.NoError(t, err, "failed to get free port for rudder-geolocation")
+
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
 		Tag:        "pr-123", // TODO: switch to main once PR-123 is merged
 		Auth:       registry.AuthConfiguration(),
 		Env: []string{
-			"PORT=" + containerPort,
+			"PORT=" + strconv.Itoa(geoPort),
 			"BUCKET=" + minioResource.BucketName,
 			"KEY=city_test.mmdb",
 			"OUTPUT_PATH=/tmp/city.mmdb",
@@ -493,11 +493,12 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 			"AWS_ACCESS_KEY_ID=" + minioResource.AccessKeyID,
 			"AWS_SECRET_ACCESS_KEY=" + minioResource.AccessKeySecret,
 		},
-		ExposedPorts: []string{containerPort},
+	}, func(hc *docker.HostConfig) {
+		hc.NetworkMode = "host"
 	})
 	require.NoError(t, err, "failed to start rudder-geolocation container")
 
-	geoURL := fmt.Sprintf("http://localhost:%s", container.GetPort(containerPort+"/tcp"))
+	geoURL := fmt.Sprintf("http://localhost:%d", geoPort)
 	return container, geoURL
 }
 
