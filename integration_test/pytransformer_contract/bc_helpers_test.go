@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -335,7 +336,7 @@ func startRudderTransformer(
 ) *dockertest.Resource {
 	t.Helper()
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "rudderstack/rudder-transformer",
+		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-transformer",
 		Tag:        "latest",
 		Env: []string{
 			"CONFIG_BACKEND_URL=" + configBackendURL,
@@ -490,103 +491,78 @@ func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
 }
 
 // newMockGeolocationService creates a mock geolocation HTTP server that
-// simulates the /geoip/{ip} endpoint. This can be used instead of the real
-// rudder-geolocation container for unit-style testing.
+// simulates the /geoip/{ip} endpoint matching the real rudder-geolocation
+// service behavior:
+//   - Invalid/malformed IPs → 400 with empty body
+//   - Private/loopback IPs → 200 with all empty string fields
+//   - Known public IPs → 200 with geo data
+//   - Unknown public IPs → 200 with empty string fields
 func newMockGeolocationService(t *testing.T) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		if len(parts) < 2 || parts[0] != "geoip" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		ip := parts[1]
-
-		w.Header().Set("Content-Type", "application/json")
-		switch ip {
-		case "1.2.3.4":
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"ip":      "1.2.3.4",
-				"city":    "Test City",
-				"region":  "Test Region",
-				"country": "US",
-				"postal":  "12345",
-				"location": map[string]any{
-					"latitude":  37.751,
-					"longitude": -97.822,
-				},
-			})
-		case "8.8.8.8":
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"ip":      "8.8.8.8",
-				"city":    "Mountain View",
-				"region":  "California",
-				"country": "US",
-				"postal":  "94035",
-				"location": map[string]any{
-					"latitude":  37.386,
-					"longitude": -122.084,
-				},
-			})
-		case "":
-			w.WriteHeader(http.StatusBadRequest)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "empty IP address"})
-		default:
-			w.WriteHeader(http.StatusNotFound)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "IP not found"})
-		}
-	}))
+	return httptest.NewServer(mockGeolocationHandler(t))
 }
 
-// newMockFailingGeolocationService creates a mock geolocation HTTP server that
-// returns different HTTP status codes based on the IP address pattern.
-// IPs like "500.0.0.1" return HTTP 500, "404.0.0.1" return 404, etc.
-// "1.2.3.4" and "8.8.8.8" return successful responses.
-// "empty.0.0.1" returns 200 with an empty JSON object.
-func newMockFailingGeolocationService(t *testing.T) *httptest.Server {
+// mockGeolocationHandler returns an http.Handler that simulates the real
+// rudder-geolocation /geoip/{ip} endpoint.
+func mockGeolocationHandler(t *testing.T) http.Handler {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	emptyGeoResponse := func(w http.ResponseWriter, ipStr string) {
+		_ = jsonrs.NewEncoder(w).Encode(map[string]any{
+			"ip": ipStr, "city": "", "country": "", "region": "",
+			"loc": "", "postal": "", "timezone": "",
+		})
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Health check
+		if r.URL.Path == "/" || r.URL.Path == "/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
+				"service": "geolocation", "status": "ok",
+			})
+			return
+		}
+
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
 		if len(parts) < 2 || parts[0] != "geoip" {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		ip := parts[1]
+		ipStr := parts[1]
+
+		// Invalid IP → 400 with empty body (matches real service behavior)
+		parsed := net.ParseIP(ipStr)
+		if parsed == nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case ip == "1.2.3.4":
+
+		// Private/loopback → 200 with empty fields
+		if parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsUnspecified() {
+			emptyGeoResponse(w, ipStr)
+			return
+		}
+
+		// Known public IPs with mock geo data
+		switch ipStr {
+		case "1.2.3.4":
 			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
 				"ip": "1.2.3.4", "city": "Test City", "region": "Test Region",
 				"country": "US", "postal": "12345",
-				"location": map[string]any{"latitude": 37.751, "longitude": -97.822},
+				"loc": "37.751,-97.822", "timezone": "America/Chicago",
 			})
-		case ip == "8.8.8.8":
+		case "8.8.8.8":
 			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
 				"ip": "8.8.8.8", "city": "Mountain View", "region": "California",
 				"country": "US", "postal": "94035",
-				"location": map[string]any{"latitude": 37.386, "longitude": -122.084},
+				"loc": "37.386,-122.084", "timezone": "America/Los_Angeles",
 			})
-		case strings.HasPrefix(ip, "empty"):
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{})
-		case strings.HasPrefix(ip, "500"):
-			w.WriteHeader(http.StatusInternalServerError)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "internal server error"})
-		case strings.HasPrefix(ip, "404"):
-			w.WriteHeader(http.StatusNotFound)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "not found"})
-		case strings.HasPrefix(ip, "400"):
-			w.WriteHeader(http.StatusBadRequest)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "bad request"})
-		case strings.HasPrefix(ip, "503"):
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "service unavailable"})
-		case strings.HasPrefix(ip, "429"):
-			w.WriteHeader(http.StatusTooManyRequests)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "rate limited"})
 		default:
-			w.WriteHeader(http.StatusNotFound)
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{"error": "unknown IP"})
+			// Unknown public IP → 200 with empty fields
+			emptyGeoResponse(w, ipStr)
 		}
-	}))
+	})
 }

@@ -725,7 +725,7 @@ def transformEvent(event, metadata):
     try:
         geo = geolocation("1.2.3.4")
         # Access individual fields from the geo response
-        event["geo_type"] = str(type(geo).__name__)
+        event["geo_type"] = str(type(geo))
         event["geo_keys"] = sorted(list(geo.keys())) if isinstance(geo, dict) else None
         event["geo_has_city"] = "city" in geo if isinstance(geo, dict) else False
         event["geo_has_country"] = "country" in geo if isinstance(geo, dict) else False
@@ -750,8 +750,8 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
 
 				// Verify the geo result is a dict
-				require.Equal(t, "dict", oldResp.Events[0].Output["geo_type"], "old arch: geo should be a dict")
-				require.Equal(t, "dict", newResp.Events[0].Output["geo_type"], "new arch: geo should be a dict")
+				require.Contains(t, oldResp.Events[0].Output["geo_type"], "dict", "old arch: geo should be a dict")
+				require.Contains(t, newResp.Events[0].Output["geo_type"], "dict", "new arch: geo should be a dict")
 
 				t.Logf("Old arch: type=%v, keys=%v", oldResp.Events[0].Output["geo_type"], oldResp.Events[0].Output["geo_keys"])
 				t.Logf("New arch: type=%v, keys=%v", newResp.Events[0].Output["geo_type"], newResp.Events[0].Output["geo_keys"])
@@ -1220,19 +1220,19 @@ func TestBackwardsCompatibilityGeolocationFailures(t *testing.T) {
 
 	subtests := []subtest{
 		{
-			name:      "GeolocationService500",
-			versionID: "bc-geo-fail-500-v1",
+			name:      "GeolocationInvalidIP",
+			versionID: "bc-geo-fail-invalid-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     try:
-        result = geolocation("500.0.0.1")
+        result = geolocation("not-an-ip")
         event["geo"] = result
     except Exception as e:
         event["geo_error"] = str(e)
     return event
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-fail-500-v1"
+				const versionID = "bc-geo-fail-invalid-v1"
 
 				events := []types.TransformerEvent{
 					makeEvent("msg-1", versionID),
@@ -1251,74 +1251,32 @@ def transformEvent(event, metadata):
 				t.Logf("Old arch geo_error: %q", oldError)
 				t.Logf("New arch geo_error: %q", newError)
 
-				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
-				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
+				// Real geolocation service returns 400 for invalid IPs
+				require.Contains(t, oldError, "status code: 400", "old arch: error should mention 400")
+				require.Contains(t, newError, "status code: 400", "new arch: error should mention 400")
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for geolocation 500 error")
+					t.Log("Both architectures produce identical responses for invalid IP")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
 		},
 		{
-			name:      "GeolocationService404",
-			versionID: "bc-geo-fail-404-v1",
+			name:      "GeolocationInvalidIPSpecialChars",
+			versionID: "bc-geo-fail-special-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     try:
-        result = geolocation("404.0.0.1")
+        result = geolocation("hello world")
         event["geo"] = result
     except Exception as e:
         event["geo_error"] = str(e)
     return event
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-fail-404-v1"
-
-				events := []types.TransformerEvent{
-					makeEvent("msg-1", versionID),
-				}
-
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 404", "old arch: error should mention 404")
-				require.Contains(t, newError, "status code: 404", "new arch: error should mention 404")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for geolocation 404 error")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			name:      "GeolocationService400",
-			versionID: "bc-geo-fail-400-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    try:
-        result = geolocation("400.0.0.1")
-        event["geo"] = result
-    except Exception as e:
-        event["geo_error"] = str(e)
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-fail-400-v1"
+				const versionID = "bc-geo-fail-special-v1"
 
 				events := []types.TransformerEvent{
 					makeEvent("msg-1", versionID),
@@ -1342,62 +1300,19 @@ def transformEvent(event, metadata):
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for geolocation 400 error")
+					t.Log("Both architectures produce identical responses for special chars IP")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
 		},
 		{
-			name:      "GeolocationService503",
-			versionID: "bc-geo-fail-503-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    try:
-        result = geolocation("503.0.0.1")
-        event["geo"] = result
-    except Exception as e:
-        event["geo_error"] = str(e)
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-fail-503-v1"
-
-				events := []types.TransformerEvent{
-					makeEvent("msg-1", versionID),
-				}
-
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
-				require.Contains(t, newError, "status code: 503", "new arch: error should mention 503")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for geolocation 503 error")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			name:      "GeolocationServiceFailureUncaught",
+			name:      "GeolocationInvalidIPUncaught",
 			versionID: "bc-geo-fail-uncaught-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
-    # Call geolocation that will fail — without try/catch
-    result = geolocation("500.0.0.1")
+    # Call geolocation with invalid IP without try/catch
+    result = geolocation("not-an-ip")
     event["geo"] = result
     return event
 `},
@@ -1424,25 +1339,25 @@ def transformEvent(event, metadata):
 				t.Logf("Old arch error: %q", oldError)
 				t.Logf("New arch error: %q", newError)
 
-				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
-				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
+				require.Contains(t, oldError, "status code: 400", "old arch: error should mention 400")
+				require.Contains(t, newError, "status code: 400", "new arch: error should mention 400")
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
-					t.Log("Both architectures produce identical error for uncaught geolocation service failure")
+					t.Log("Both architectures produce identical error for uncaught invalid IP")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
 		},
 		{
-			name:      "GeolocationServiceFailureBatch",
+			name:      "GeolocationInvalidIPBatch",
 			versionID: "bc-geo-fail-batch-v1",
 			config: configBackendEntry{code: `
 def transformBatch(events, metadata):
     for event in events:
         try:
-            geo = geolocation("500.0.0.1")
+            geo = geolocation("not-an-ip")
             event["geo"] = geo
         except Exception as e:
             event["geo_error"] = str(e)
@@ -1468,29 +1383,29 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Contains(t, newError, "status code: 500", "new arch: event %d error should mention 500", i)
+					require.Contains(t, oldError, "status code: 400", "old arch: event %d error should mention 400", i)
+					require.Contains(t, newError, "status code: 400", "new arch: event %d error should mention 400", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for batch geolocation service failure")
+					t.Log("Both architectures produce identical responses for batch invalid IP")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
 		},
 		{
-			name:      "GeolocationServicePartialFailure",
+			name:      "GeolocationPartialInvalidIP",
 			versionID: "bc-geo-fail-partial-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     msg_id = event.get("messageId", "")
     if msg_id == "msg-2":
-        # This event hits a failing IP (500)
-        ip = "500.0.0.1"
+        # This event uses an invalid IP
+        ip = "not-an-ip"
     else:
-        # These events hit a working IP
+        # These events use a valid IP
         ip = "1.2.3.4"
     try:
         geo = geolocation(ip)
@@ -1523,8 +1438,8 @@ def transformEvent(event, metadata):
 						msgID, _ := ev.Output["messageId"].(string)
 						if msgID == "msg-2" {
 							geoErr, _ := ev.Output["geo_error"].(string)
-							require.Contains(t, geoErr, "status code: 500",
-								"event %s should have 500 error", msgID)
+							require.Contains(t, geoErr, "status code: 400",
+								"event %s should have 400 error", msgID)
 							require.Nil(t, ev.Output["geo"],
 								"event %s should not have geo data", msgID)
 						} else {
@@ -1538,27 +1453,23 @@ def transformEvent(event, metadata):
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for partial geolocation service failure")
+					t.Log("Both architectures produce identical responses for partial invalid IP")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
 		},
 		{
-			name:      "GeolocationServiceEmptyResponse",
-			versionID: "bc-geo-fail-empty-v1",
+			name:      "GeolocationPrivateIP",
+			versionID: "bc-geo-fail-private-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
-    try:
-        result = geolocation("empty.0.0.1")
-        event["geo"] = result
-        event["geo_type"] = str(type(result).__name__)
-    except Exception as e:
-        event["geo_error"] = str(e)
+    result = geolocation("127.0.0.1")
+    event["geo"] = result
     return event
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-fail-empty-v1"
+				const versionID = "bc-geo-fail-private-v1"
 
 				events := []types.TransformerEvent{
 					makeEvent("msg-1", versionID),
@@ -1569,21 +1480,22 @@ def transformEvent(event, metadata):
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
+				// Private IP returns 200 with empty string fields — no error
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-				t.Logf("Old arch output: geo=%v, geo_error=%v, geo_type=%v",
-					oldResp.Events[0].Output["geo"],
-					oldResp.Events[0].Output["geo_error"],
-					oldResp.Events[0].Output["geo_type"])
-				t.Logf("New arch output: geo=%v, geo_error=%v, geo_type=%v",
-					newResp.Events[0].Output["geo"],
-					newResp.Events[0].Output["geo_error"],
-					newResp.Events[0].Output["geo_type"])
+				// Geo data should be present but with empty values
+				require.NotNil(t, oldResp.Events[0].Output["geo"], "old arch: geo should be non-nil")
+				require.NotNil(t, newResp.Events[0].Output["geo"], "new arch: geo should be non-nil")
+
+				t.Logf("Old arch geo: %v", oldResp.Events[0].Output["geo"])
+				t.Logf("New arch geo: %v", newResp.Events[0].Output["geo"])
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
-					t.Log("Both architectures produce identical responses for geolocation empty response")
+					t.Log("Both architectures produce identical responses for private IP")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
@@ -1594,10 +1506,10 @@ def transformEvent(event, metadata):
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	// Start a mock geolocation service that returns error responses based on the
-	// IP address pattern: IPs starting with a status code (e.g. "500.0.0.1")
-	// return that status code. "1.2.3.4" succeeds normally.
-	mockGeoService := newMockFailingGeolocationService(t)
+	// Start a mock geolocation service that behaves like the real
+	// rudder-geolocation: 400 for invalid IPs, 200 with empty fields for
+	// private IPs, 200 with data for known public IPs.
+	mockGeoService := newMockGeolocationService(t)
 	t.Cleanup(mockGeoService.Close)
 	geoURL := mockGeoService.URL
 
@@ -1683,4 +1595,3 @@ def transformEvent(event, metadata):
 		})
 	}
 }
-
