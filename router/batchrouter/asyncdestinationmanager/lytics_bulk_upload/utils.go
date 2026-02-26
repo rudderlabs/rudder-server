@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 

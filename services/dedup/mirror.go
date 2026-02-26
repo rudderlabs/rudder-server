@@ -4,15 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/dedup/types"
-
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-server/services/dedup/types"
 )
 
 const defaultMaxRoutines = 3000

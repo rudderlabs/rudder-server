@@ -13,24 +13,19 @@ import (
 	"time"
 
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
-	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
-
-	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"go.uber.org/mock/gomock"
-
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
-
+	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"

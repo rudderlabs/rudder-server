@@ -15,11 +15,10 @@ import (
 	"cloud.google.com/go/bigquery"
 	"github.com/google/uuid"
 	"github.com/samber/lo"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"

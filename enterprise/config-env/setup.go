@@ -2,6 +2,7 @@ package configenv
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 

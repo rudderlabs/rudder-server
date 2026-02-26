@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jeremywohl/flatten"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/jeremywohl/flatten"
-	"github.com/tidwall/gjson"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/event-schema"

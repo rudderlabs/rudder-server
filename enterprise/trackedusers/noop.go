@@ -6,7 +6,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
-
 	txn "github.com/rudderlabs/rudder-server/utils/tx"
 )
 

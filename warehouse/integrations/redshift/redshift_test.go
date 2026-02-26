@@ -15,26 +15,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
-	"go.uber.org/mock/gomock"
-
-	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
-	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
-
 	"github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/compose-test/compose"
 	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	th "github.com/rudderlabs/rudder-server/testhelper"

@@ -7,20 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
-	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonparser"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 func TestSrcHydrationStage(t *testing.T) {

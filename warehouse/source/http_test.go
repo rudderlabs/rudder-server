@@ -14,19 +14,16 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
-	"github.com/stretchr/testify/require"
 )
 
 func TestValidatePayload(t *testing.T) {

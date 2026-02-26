@@ -6,14 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 // ImportRequestHandler is an empty struct to capture import specific request handling functionality

@@ -15,6 +15,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	mockhttp "github.com/rudderlabs/rudder-server/mocks/services/oauth/v2/http"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )

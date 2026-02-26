@@ -27,6 +27,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	miniodocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"

@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	thEtcd "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
+
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )

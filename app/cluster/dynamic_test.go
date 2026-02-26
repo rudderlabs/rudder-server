@@ -7,16 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
-	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/cluster/migrator/etcdclient"
+	mockjobsforwarder "github.com/rudderlabs/rudder-server/mocks/jobs-forwarder"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 

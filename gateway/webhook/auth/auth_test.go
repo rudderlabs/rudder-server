@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
-
 	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 

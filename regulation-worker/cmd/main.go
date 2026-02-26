@@ -15,7 +15,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	svcMetric "github.com/rudderlabs/rudder-go-kit/stats/metric"
+	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
@@ -27,16 +29,14 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/transformer"
-	"github.com/rudderlabs/rudder-server/utils/crash"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-
-	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	oauthv2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/extensions"
 	oauthv2http "github.com/rudderlabs/rudder-server/services/oauth/v2/http"
+	"github.com/rudderlabs/rudder-server/services/transformer"
+	"github.com/rudderlabs/rudder-server/utils/crash"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")

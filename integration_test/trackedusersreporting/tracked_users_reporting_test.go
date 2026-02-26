@@ -16,28 +16,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
-
-	"github.com/samber/lo"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
-
-	"github.com/segmentio/go-hll"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
+	"github.com/segmentio/go-hll"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
+
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
+	"github.com/rudderlabs/rudder-server/testhelper/transformertest"
 	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
-
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 const (

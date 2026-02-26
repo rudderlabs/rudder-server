@@ -10,13 +10,12 @@ import (
 	"strings"
 	"time"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/lib/pq"
 	"github.com/segmentio/ksuid"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
 const defaultRetentionPeriodInHours = 3 * 24

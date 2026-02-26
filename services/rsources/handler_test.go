@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
+
 	testlog "github.com/rudderlabs/rudder-server/testhelper/log"
 )
 

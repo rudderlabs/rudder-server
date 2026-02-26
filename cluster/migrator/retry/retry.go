@@ -7,6 +7,7 @@ import (
 	"github.com/cenkalti/backoff/v5"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 )
 

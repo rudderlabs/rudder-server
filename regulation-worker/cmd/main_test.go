@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"

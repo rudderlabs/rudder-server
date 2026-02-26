@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )
 

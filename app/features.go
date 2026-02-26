@@ -5,10 +5,10 @@ package app
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 

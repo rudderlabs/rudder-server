@@ -11,19 +11,18 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-
-	"github.com/samber/lo"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_kvstoremanager "github.com/rudderlabs/rudder-server/mocks/services/kvstoremanager"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"

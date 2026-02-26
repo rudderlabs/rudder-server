@@ -15,11 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo/mutable"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/samber/lo"
+	"github.com/samber/lo/mutable"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 
@@ -30,6 +29,7 @@ import (
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/isolation"
 	"github.com/rudderlabs/rudder-server/runner"

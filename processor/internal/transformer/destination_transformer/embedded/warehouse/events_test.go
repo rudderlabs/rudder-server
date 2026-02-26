@@ -13,23 +13,20 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/internal/enricher"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
-	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
-	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
-	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/enricher"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
+	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/testhelper"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestEvents(t *testing.T) {

@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stringify"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
@@ -39,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/internal/preprocessdelay"
+	transformerutils "github.com/rudderlabs/rudder-server/processor/internal/transformer"
 	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -177,6 +179,7 @@ type Handle struct {
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
+		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		archiveInPreProcess                       bool
 	}
@@ -746,6 +749,7 @@ func (proc *Handle) loadConfig() {
 	// GWCustomVal is used as a key in the jobsDB customval column
 	proc.config.GWCustomVal = proc.conf.GetStringVar("GW", "Gateway.CustomVal")
 	proc.config.archiveInPreProcess = proc.conf.GetBoolVar(false, "Processor.archiveInPreProcess")
+	proc.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(proc.conf)
 	proc.loadReloadableConfig(defaultPayloadLimit, defaultMaxEventsToProcess)
 }
 
@@ -3004,7 +3008,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
 		noOfEvents := len(eventList)
-		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled()
+		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled(eventList)
 		proc.logger.Debugn("UT mirroring setting", logger.NewBoolField("enabled", utMirroringEnabled))
 		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
 		var userTransformationMirroringStat *DestStatT
@@ -3469,7 +3473,7 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 	return nil
 }
 
-func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response) {
+func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.TransformerEvent) (bool, chan types.Response) {
 	mirroringSanityChecksSampling := proc.config.userTransformationMirroringSanitySampling.Load()
 	mirroringFireAndForget := proc.config.userTransformationMirroringFireAndForget.Load()
 
@@ -3480,6 +3484,12 @@ func (proc *Handle) isUserTransformMirroringEnabled() (bool, chan types.Response
 		proc.logger.Errorn(
 			"UT mirroring sanity checks and fire&forget are enabled (they are mutually exclusive). Disabling UT mirroring.",
 		)
+		return false, nil
+	}
+
+	// Check if this is a Python transformation and apply version-based filtering
+	language, versionID := transformerutils.GetTransformationInfo(eventList)
+	if strings.HasPrefix(language, "python") && !proc.config.pythonTransformConfig.IsVersionAllowed(versionID) {
 		return false, nil
 	}
 

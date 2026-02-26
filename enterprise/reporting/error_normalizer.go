@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/lcs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 

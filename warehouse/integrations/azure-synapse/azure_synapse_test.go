@@ -10,32 +10,27 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
 	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
-	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
-
-	"github.com/rudderlabs/compose-test/compose"
-
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	whth "github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	mockuploader "github.com/rudderlabs/rudder-server/warehouse/internal/mocks/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func TestIntegration(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"

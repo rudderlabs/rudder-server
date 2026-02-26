@@ -18,13 +18,6 @@ import (
 	"text/template"
 	"time"
 
-	gokitrand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
-
-	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
-
-	"github.com/rudderlabs/rudder-server/processor/types"
-	"github.com/rudderlabs/rudder-server/runner"
-
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	"github.com/ory/dockertest/v3"
@@ -37,6 +30,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -46,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	dockertransformer "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
+	gokitrand "github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/app"
@@ -55,6 +50,8 @@ import (
 	mocksApp "github.com/rudderlabs/rudder-server/mocks/app"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/processor/types"
+	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 	"github.com/rudderlabs/rudder-server/testhelper/health"

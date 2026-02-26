@@ -5,13 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
-	"go.uber.org/mock/gomock"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
@@ -23,6 +20,7 @@ import (
 	arc "github.com/rudderlabs/rudder-server/archiver"
 	backendConfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"

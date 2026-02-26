@@ -5,16 +5,16 @@ import (
 	"net/http"
 	"testing"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )

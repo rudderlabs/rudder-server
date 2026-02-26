@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 )

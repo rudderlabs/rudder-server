@@ -14,20 +14,17 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	embeddedutils "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded"
-
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/response"
 	wtypes "github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/types"
 	"github.com/rudderlabs/rudder-server/processor/internal/transformer/destination_transformer/embedded/warehouse/internal/utils"
 	"github.com/rudderlabs/rudder-server/processor/types"
-
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )

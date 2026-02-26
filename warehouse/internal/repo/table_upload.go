@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/samber/lo"
-
 	"github.com/lib/pq"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"

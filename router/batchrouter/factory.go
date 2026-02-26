@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"

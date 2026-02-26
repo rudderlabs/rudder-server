@@ -12,6 +12,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"

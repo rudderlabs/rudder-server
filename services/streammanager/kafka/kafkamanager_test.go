@@ -35,6 +35,7 @@ import (
 	dockerKafka "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/kafka"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/sshserver"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/keygen"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"

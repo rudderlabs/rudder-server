@@ -8,12 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"

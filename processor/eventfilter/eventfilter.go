@@ -4,12 +4,12 @@ import (
 	"slices"
 	"strings"
 
-	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	reportingtypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (

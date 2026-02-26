@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/redis"
+
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/pickup/adaptive"
 )
 

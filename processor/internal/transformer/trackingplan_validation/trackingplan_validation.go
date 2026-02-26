@@ -10,16 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
-
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/cenkalti/backoff/v5"
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	transformerclient "github.com/rudderlabs/rudder-server/internal/transformer-client"
 	"github.com/rudderlabs/rudder-server/processor/integrations"

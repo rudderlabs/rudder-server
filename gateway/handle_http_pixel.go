@@ -15,7 +15,6 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
-
 	"github.com/rudderlabs/rudder-server/gateway/response"
 )
 
