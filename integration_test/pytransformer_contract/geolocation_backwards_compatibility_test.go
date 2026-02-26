@@ -875,347 +875,6 @@ def transformBatch(events, metadata):
 				}
 			},
 		},
-	}
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	// Start rudder-geolocation container (starts MinIO internally and uploads test MMDB).
-	geoContainer, geoURL := startRudderGeolocation(t, pool)
-	t.Cleanup(func() {
-		if err := pool.Purge(geoContainer); err != nil {
-			t.Logf("Failed to purge rudder-geolocation: %v", err)
-		}
-	})
-	waitForGeolocation(t, pool, geoContainer, geoURL)
-
-	// Collect all config backend entries.
-	allEntries := make(map[string]configBackendEntry, len(subtests))
-	for _, st := range subtests {
-		if st.config != (configBackendEntry{}) {
-			allEntries[st.versionID] = st.config
-		}
-	}
-	configBackend := newContractConfigBackend(t, allEntries)
-	t.Cleanup(configBackend.Close)
-
-	// Mock OpenFaaS gateway with dynamic target.
-	var (
-		gatewayMu        sync.Mutex
-		gatewayTargetURL string
-	)
-	getGatewayTarget := func() string {
-		gatewayMu.Lock()
-		defer gatewayMu.Unlock()
-		return gatewayTargetURL
-	}
-	setGatewayTarget := func(url string) {
-		gatewayMu.Lock()
-		defer gatewayMu.Unlock()
-		gatewayTargetURL = url
-	}
-	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
-	t.Cleanup(mockGateway.Close)
-
-	// Start shared rudder-transformer.
-	transformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
-	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-
-	// Start shared rudder-pytransformer with geolocation URL.
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL, "GEOLOCATION_URL="+geoURL)
-	t.Cleanup(func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer: %v", err)
-		}
-	})
-
-	// Wait for shared services to be healthy.
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
-
-	// Run subtests sequentially.
-	for _, st := range subtests {
-		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
-
-			if st.config.code != "" {
-				openFaasPort, err := kithelper.GetFreePort()
-				require.NoError(t, err)
-				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
-
-				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
-				t.Cleanup(func() {
-					if err := pool.Purge(container); err != nil {
-						t.Logf("Failed to purge openfaas-flask-base: %v", err)
-					}
-				})
-				waitForOpenFaasFlask(t, pool, openFaasURL)
-
-				setGatewayTarget(openFaasURL)
-			}
-
-			st.run(t, env)
-			env.assertRetryCountsMatch(t)
-		})
-	}
-}
-
-// TestBackwardsCompatibilityGeolocationNotConfigured tests geolocation behavior
-// when the geolocation service URL is NOT configured in either architecture.
-// Both should produce the same "not supported" error.
-func TestBackwardsCompatibilityGeolocationNotConfigured(t *testing.T) {
-	type subtest struct {
-		name      string
-		versionID string
-		config    configBackendEntry
-		run       func(t *testing.T, env *bcTestEnv)
-	}
-
-	subtests := []subtest{
-		{
-			name:      "GeolocationNotConfigured",
-			versionID: "bc-geo-not-configured-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    try:
-        result = geolocation("1.2.3.4")
-        event["geo"] = result
-    except Exception as e:
-        event["geo_error"] = str(e)
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-not-configured-v1"
-
-				events := []types.TransformerEvent{
-					makeEvent("msg-1", versionID),
-				}
-
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				// Both should succeed (error caught by try/except)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				// Both should report "not supported" error
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.Contains(t, oldError, "not supported", "old arch: error should mention not supported")
-				require.Contains(t, newError, "not supported", "new arch: error should mention not supported")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses when geolocation is not configured")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			name:      "GeolocationNotConfiguredUncaught",
-			versionID: "bc-geo-not-configured-uncaught-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    # Call geolocation without try/catch — should produce a failed event
-    result = geolocation("1.2.3.4")
-    event["geo"] = result
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-not-configured-uncaught-v1"
-
-				events := []types.TransformerEvent{
-					makeEvent("msg-1", versionID),
-				}
-
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				// Both should fail since exception propagates
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
-				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
-
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
-				t.Logf("Old arch error: %q", oldError)
-				t.Logf("New arch error: %q", newError)
-
-				require.Contains(t, oldError, "not supported", "old arch: error should mention not supported")
-				require.Contains(t, newError, "not supported", "new arch: error should mention not supported")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught geolocation not configured")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			name:      "GeolocationNotConfiguredBatch",
-			versionID: "bc-geo-not-configured-batch-v1",
-			config: configBackendEntry{code: `
-def transformBatch(events, metadata):
-    for event in events:
-        try:
-            geo = geolocation("1.2.3.4")
-            event["geo"] = geo
-        except Exception as e:
-            event["geo_error"] = str(e)
-    return events
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-geo-not-configured-batch-v1"
-
-				events := []types.TransformerEvent{
-					makeEvent("msg-1", versionID),
-					makeEvent("msg-2", versionID),
-				}
-
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
-				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
-
-				// Both should have geo_error for all events
-				for i := range oldResp.Events {
-					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "not supported", "old arch: event %d error should mention not supported", i)
-					require.Contains(t, newError, "not supported", "new arch: event %d error should mention not supported", i)
-				}
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch geolocation not configured")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-	}
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	// Collect all config backend entries.
-	allEntries := make(map[string]configBackendEntry, len(subtests))
-	for _, st := range subtests {
-		if st.config != (configBackendEntry{}) {
-			allEntries[st.versionID] = st.config
-		}
-	}
-	configBackend := newContractConfigBackend(t, allEntries)
-	t.Cleanup(configBackend.Close)
-
-	// Mock OpenFaaS gateway with dynamic target.
-	var (
-		gatewayMu        sync.Mutex
-		gatewayTargetURL string
-	)
-	getGatewayTarget := func() string {
-		gatewayMu.Lock()
-		defer gatewayMu.Unlock()
-		return gatewayTargetURL
-	}
-	setGatewayTarget := func(url string) {
-		gatewayMu.Lock()
-		defer gatewayMu.Unlock()
-		gatewayTargetURL = url
-	}
-	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
-	t.Cleanup(mockGateway.Close)
-
-	// Start shared rudder-transformer (WITHOUT geolocation URL).
-	transformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
-	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-
-	// Start shared rudder-pytransformer (WITHOUT geolocation URL).
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer: %v", err)
-		}
-	})
-
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
-
-	for _, st := range subtests {
-		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
-
-			if st.config.code != "" {
-				openFaasPort, err := kithelper.GetFreePort()
-				require.NoError(t, err)
-				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
-
-				// Start openfaas WITHOUT geolocation URL (not configured test).
-				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL)
-				t.Cleanup(func() {
-					if err := pool.Purge(container); err != nil {
-						t.Logf("Failed to purge openfaas-flask-base: %v", err)
-					}
-				})
-				waitForOpenFaasFlask(t, pool, openFaasURL)
-
-				setGatewayTarget(openFaasURL)
-			}
-
-			st.run(t, env)
-			env.assertRetryCountsMatch(t)
-		})
-	}
-}
-
-// TestBackwardsCompatibilityGeolocationFailures tests behavior when the
-// geolocation service returns error responses (non-200 status codes).
-// Both architectures raise: "geolocation fetch failed with status code: {code}"
-func TestBackwardsCompatibilityGeolocationFailures(t *testing.T) {
-	type subtest struct {
-		name      string
-		versionID string
-		config    configBackendEntry
-		run       func(t *testing.T, env *bcTestEnv)
-	}
-
-	subtests := []subtest{
 		{
 			name:      "GeolocationInvalidIP",
 			versionID: "bc-geo-fail-invalid-v1",
@@ -1248,7 +907,6 @@ def transformEvent(event, metadata):
 				t.Logf("Old arch geo_error: %q", oldError)
 				t.Logf("New arch geo_error: %q", newError)
 
-				// Real geolocation service returns 400 for invalid IPs
 				require.Contains(t, oldError, "status code: 400", "old arch: error should mention 400")
 				require.Contains(t, newError, "status code: 400", "new arch: error should mention 400")
 
@@ -1503,12 +1161,14 @@ def transformEvent(event, metadata):
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
-	// Start a mock geolocation service that behaves like the real
-	// rudder-geolocation: 400 for invalid IPs, 200 with empty fields for
-	// private IPs, 200 with data for known public IPs.
-	mockGeoService := newMockGeolocationService(t)
-	t.Cleanup(mockGeoService.Close)
-	geoURL := mockGeoService.URL
+	// Start rudder-geolocation container (starts MinIO internally and uploads test MMDB).
+	geoContainer, geoURL := startRudderGeolocation(t, pool)
+	t.Cleanup(func() {
+		if err := pool.Purge(geoContainer); err != nil {
+			t.Logf("Failed to purge rudder-geolocation: %v", err)
+		}
+	})
+	waitForGeolocation(t, pool, geoURL)
 
 	// Collect all config backend entries.
 	allEntries := make(map[string]configBackendEntry, len(subtests))
@@ -1549,7 +1209,7 @@ def transformEvent(event, metadata):
 		}
 	})
 
-	// Start shared rudder-pytransformer with mock geolocation URL.
+	// Start shared rudder-pytransformer with geolocation URL.
 	pyTransformerPort, err := kithelper.GetFreePort()
 	require.NoError(t, err)
 	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
@@ -1585,6 +1245,873 @@ def transformEvent(event, metadata):
 				waitForOpenFaasFlask(t, pool, openFaasURL)
 
 				setGatewayTarget(openFaasURL)
+			}
+
+			st.run(t, env)
+			env.assertRetryCountsMatch(t)
+		})
+	}
+}
+
+// TestBackwardsCompatibilityGeolocationNotConfigured tests geolocation behavior
+// when the geolocation service URL is NOT configured in either architecture.
+// Both should produce the same "not supported" error.
+func TestBackwardsCompatibilityGeolocationNotConfigured(t *testing.T) {
+	type subtest struct {
+		name      string
+		versionID string
+		config    configBackendEntry
+		run       func(t *testing.T, env *bcTestEnv)
+	}
+
+	subtests := []subtest{
+		{
+			name:      "GeolocationNotConfigured",
+			versionID: "bc-geo-not-configured-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        event["geo_error"] = str(e)
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-not-configured-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should succeed (error caught by try/except)
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				// Both should report "not supported" error
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				newError, _ := newResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				t.Logf("New arch geo_error: %q", newError)
+
+				require.Contains(t, oldError, "not supported", "old arch: error should mention not supported")
+				require.Contains(t, newError, "not supported", "new arch: error should mention not supported")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses when geolocation is not configured")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeolocationNotConfiguredUncaught",
+			versionID: "bc-geo-not-configured-uncaught-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    # Call geolocation without try/catch — should produce a failed event
+    result = geolocation("1.2.3.4")
+    event["geo"] = result
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-not-configured-uncaught-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should fail since exception propagates
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+
+				oldError := oldResp.FailedEvents[0].Error
+				newError := newResp.FailedEvents[0].Error
+				t.Logf("Old arch error: %q", oldError)
+				t.Logf("New arch error: %q", newError)
+
+				require.Contains(t, oldError, "not supported", "old arch: error should mention not supported")
+				require.Contains(t, newError, "not supported", "new arch: error should mention not supported")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical error for uncaught geolocation not configured")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeolocationNotConfiguredBatch",
+			versionID: "bc-geo-not-configured-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        try:
+            geo = geolocation("1.2.3.4")
+            event["geo"] = geo
+        except Exception as e:
+            event["geo_error"] = str(e)
+    return events
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-not-configured-batch-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 2, len(oldResp.Events), "old arch: 2 success events expected")
+				require.Equal(t, 2, len(newResp.Events), "new arch: 2 success events expected")
+
+				// Both should have geo_error for all events
+				for i := range oldResp.Events {
+					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
+					newError, _ := newResp.Events[i].Output["geo_error"].(string)
+					require.Contains(t, oldError, "not supported", "old arch: event %d error should mention not supported", i)
+					require.Contains(t, newError, "not supported", "new arch: event %d error should mention not supported", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch geolocation not configured")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeolocationNotConfiguredBatchUncaught",
+			versionID: "bc-geo-not-configured-batch-uncaught-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        geo = geolocation("1.2.3.4")
+        event["geo"] = geo
+    return events
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-not-configured-batch-uncaught-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// All events should fail since the exception propagates
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
+
+				for i := range oldResp.FailedEvents {
+					require.Contains(t, oldResp.FailedEvents[i].Error, "not supported", "old arch: event %d error should mention not supported", i)
+					require.Contains(t, newResp.FailedEvents[i].Error, "not supported", "new arch: event %d error should mention not supported", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch geolocation not configured uncaught")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+	}
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	// Collect all config backend entries.
+	allEntries := make(map[string]configBackendEntry, len(subtests))
+	for _, st := range subtests {
+		if st.config != (configBackendEntry{}) {
+			allEntries[st.versionID] = st.config
+		}
+	}
+	configBackend := newContractConfigBackend(t, allEntries)
+	t.Cleanup(configBackend.Close)
+
+	// Mock OpenFaaS gateway with dynamic target.
+	var (
+		gatewayMu        sync.Mutex
+		gatewayTargetURL string
+	)
+	getGatewayTarget := func() string {
+		gatewayMu.Lock()
+		defer gatewayMu.Unlock()
+		return gatewayTargetURL
+	}
+	setGatewayTarget := func(url string) {
+		gatewayMu.Lock()
+		defer gatewayMu.Unlock()
+		gatewayTargetURL = url
+	}
+	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
+	t.Cleanup(mockGateway.Close)
+
+	// Start shared rudder-transformer (WITHOUT geolocation URL).
+	transformerPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
+	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
+	t.Cleanup(func() {
+		if err := pool.Purge(transformerContainer); err != nil {
+			t.Logf("Failed to purge rudder-transformer: %v", err)
+		}
+	})
+
+	// Start shared rudder-pytransformer (WITHOUT geolocation URL).
+	pyTransformerPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
+	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL)
+	t.Cleanup(func() {
+		if err := pool.Purge(pyTransformerContainer); err != nil {
+			t.Logf("Failed to purge rudder-pytransformer: %v", err)
+		}
+	})
+
+	t.Log("Waiting for shared services to be healthy...")
+	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+
+	for _, st := range subtests {
+		t.Run(st.name, func(t *testing.T) {
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+
+			if st.config.code != "" {
+				openFaasPort, err := kithelper.GetFreePort()
+				require.NoError(t, err)
+				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
+
+				// Start openfaas WITHOUT geolocation URL (not configured test).
+				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL)
+				t.Cleanup(func() {
+					if err := pool.Purge(container); err != nil {
+						t.Logf("Failed to purge openfaas-flask-base: %v", err)
+					}
+				})
+				waitForOpenFaasFlask(t, pool, openFaasURL)
+
+				setGatewayTarget(openFaasURL)
+			}
+
+			st.run(t, env)
+			env.assertRetryCountsMatch(t)
+		})
+	}
+}
+
+// TestBackwardsCompatibilityGeolocationFailure tests behavior when the
+// geolocation service experiences network failures or returns various HTTP
+// error status codes. Uses a configurable mock geolocation service to
+// simulate different failure scenarios.
+// Both architectures raise: "geolocation fetch failed with status code: {code}"
+func TestBackwardsCompatibilityGeolocationFailure(t *testing.T) {
+	type subtest struct {
+		name      string
+		versionID string
+		config    configBackendEntry
+		setup     func() // called before run to configure mock behavior
+		run       func(t *testing.T, env *bcTestEnv)
+	}
+
+	mockGeoService, mockGeoCfg := newConfigurableMockGeolocationService(t)
+	t.Cleanup(mockGeoService.Close)
+	geoURL := mockGeoService.URL
+
+	subtests := []subtest{
+		{
+			name:      "GeoStatus500",
+			versionID: "bc-geo-status-500-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup: func() { mockGeoCfg.setResponse(500, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-500-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				newError, _ := newResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				t.Logf("New arch geo_error: %q", newError)
+
+				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
+				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 500")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus502",
+			versionID: "bc-geo-status-502-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup: func() { mockGeoCfg.setResponse(502, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-502-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				newError, _ := newResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				t.Logf("New arch geo_error: %q", newError)
+
+				require.Contains(t, oldError, "status code: 502", "old arch: error should mention 502")
+				require.Contains(t, newError, "status code: 502", "new arch: error should mention 502")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 502")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus503",
+			versionID: "bc-geo-status-503-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup: func() { mockGeoCfg.setResponse(503, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-503-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				newError, _ := newResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				t.Logf("New arch geo_error: %q", newError)
+
+				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
+				require.Contains(t, newError, "status code: 503", "new arch: error should mention 503")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 503")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus429",
+			versionID: "bc-geo-status-429-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup: func() { mockGeoCfg.setResponse(429, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-429-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				newError, _ := newResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				t.Logf("New arch geo_error: %q", newError)
+
+				require.Contains(t, oldError, "status code: 429", "old arch: error should mention 429")
+				require.Contains(t, newError, "status code: 429", "new arch: error should mention 429")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for 429")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus500Uncaught",
+			versionID: "bc-geo-status-500-uncaught-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    result = geolocation("1.2.3.4")
+    event["geo"] = result
+    return event
+`},
+			setup: func() { mockGeoCfg.setResponse(500, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-500-uncaught-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should produce a failed event since the exception propagates
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+
+				oldError := oldResp.FailedEvents[0].Error
+				newError := newResp.FailedEvents[0].Error
+				t.Logf("Old arch error: %q", oldError)
+				t.Logf("New arch error: %q", newError)
+
+				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
+				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical error for uncaught 500")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus500Batch",
+			versionID: "bc-geo-status-500-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        try:
+            geo = geolocation("1.2.3.4")
+            event["geo"] = geo
+        except Exception as e:
+            event["geo_error"] = str(e)
+    return events
+`},
+			setup: func() { mockGeoCfg.setResponse(500, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-500-batch-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+					makeEvent("msg-3", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
+
+				for i := range oldResp.Events {
+					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
+					newError, _ := newResp.Events[i].Output["geo_error"].(string)
+					require.Contains(t, oldError, "status code: 500", "old arch: event %d error should mention 500", i)
+					require.Contains(t, newError, "status code: 500", "new arch: event %d error should mention 500", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch 500")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus502Batch",
+			versionID: "bc-geo-status-502-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        try:
+            geo = geolocation("1.2.3.4")
+            event["geo"] = geo
+        except Exception as e:
+            event["geo_error"] = str(e)
+    return events
+`},
+			setup: func() { mockGeoCfg.setResponse(502, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-502-batch-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+					makeEvent("msg-3", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
+
+				for i := range oldResp.Events {
+					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
+					newError, _ := newResp.Events[i].Output["geo_error"].(string)
+					require.Contains(t, oldError, "status code: 502", "old arch: event %d error should mention 502", i)
+					require.Contains(t, newError, "status code: 502", "new arch: event %d error should mention 502", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch 502")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus503Batch",
+			versionID: "bc-geo-status-503-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        try:
+            geo = geolocation("1.2.3.4")
+            event["geo"] = geo
+        except Exception as e:
+            event["geo_error"] = str(e)
+    return events
+`},
+			setup: func() { mockGeoCfg.setResponse(503, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-503-batch-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+					makeEvent("msg-3", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
+
+				for i := range oldResp.Events {
+					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
+					newError, _ := newResp.Events[i].Output["geo_error"].(string)
+					require.Contains(t, oldError, "status code: 503", "old arch: event %d error should mention 503", i)
+					require.Contains(t, newError, "status code: 503", "new arch: event %d error should mention 503", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch 503")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoStatus429Batch",
+			versionID: "bc-geo-status-429-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        try:
+            geo = geolocation("1.2.3.4")
+            event["geo"] = geo
+        except Exception as e:
+            event["geo_error"] = str(e)
+    return events
+`},
+			setup: func() { mockGeoCfg.setResponse(429, "") },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-status-429-batch-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+					makeEvent("msg-3", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
+
+				for i := range oldResp.Events {
+					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
+					newError, _ := newResp.Events[i].Output["geo_error"].(string)
+					require.Contains(t, oldError, "status code: 429", "old arch: event %d error should mention 429", i)
+					require.Contains(t, newError, "status code: 429", "new arch: event %d error should mention 429", i)
+				}
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Both architectures produce identical responses for batch 429")
+				} else {
+					t.Errorf("Responses differ:\n%s", diff)
+				}
+			},
+		},
+		{
+			name:      "GeoConnectionReset",
+			versionID: "bc-geo-conn-reset-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup: func() { mockGeoCfg.setConnectionClose() },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-conn-reset-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				// Both should succeed (error caught by try/except)
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+
+				// Both should have a geo_error from the network failure
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				newError, _ := newResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				t.Logf("New arch geo_error: %q", newError)
+
+				require.NotEmpty(t, oldError, "old arch: should have a geo_error")
+				require.NotEmpty(t, newError, "new arch: should have a geo_error")
+			},
+		},
+		{
+			name:      "GeoConnectionResetBatch",
+			versionID: "bc-geo-conn-reset-batch-v1",
+			config: configBackendEntry{code: `
+def transformBatch(events, metadata):
+    for event in events:
+        try:
+            geo = geolocation("1.2.3.4")
+            event["geo"] = geo
+        except Exception as e:
+            event["geo_error"] = str(e)
+    return events
+`},
+			setup: func() { mockGeoCfg.setConnectionClose() },
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-conn-reset-batch-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+					makeEvent("msg-2", versionID),
+					makeEvent("msg-3", versionID),
+				}
+
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
+				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
+
+				for i := range oldResp.Events {
+					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
+					newError, _ := newResp.Events[i].Output["geo_error"].(string)
+					require.NotEmpty(t, oldError, "old arch: event %d should have a geo_error", i)
+					require.NotEmpty(t, newError, "new arch: event %d should have a geo_error", i)
+				}
+			},
+		},
+	}
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	// Collect all config backend entries.
+	allEntries := make(map[string]configBackendEntry, len(subtests))
+	for _, st := range subtests {
+		if st.config != (configBackendEntry{}) {
+			allEntries[st.versionID] = st.config
+		}
+	}
+	configBackend := newContractConfigBackend(t, allEntries)
+	t.Cleanup(configBackend.Close)
+
+	// Mock OpenFaaS gateway with dynamic target.
+	var (
+		gatewayMu        sync.Mutex
+		gatewayTargetURL string
+	)
+	getGatewayTarget := func() string {
+		gatewayMu.Lock()
+		defer gatewayMu.Unlock()
+		return gatewayTargetURL
+	}
+	setGatewayTarget := func(url string) {
+		gatewayMu.Lock()
+		defer gatewayMu.Unlock()
+		gatewayTargetURL = url
+	}
+	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
+	t.Cleanup(mockGateway.Close)
+
+	// Start shared rudder-transformer.
+	transformerPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
+	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
+	t.Cleanup(func() {
+		if err := pool.Purge(transformerContainer); err != nil {
+			t.Logf("Failed to purge rudder-transformer: %v", err)
+		}
+	})
+
+	// Start shared rudder-pytransformer with configurable mock geolocation URL.
+	pyTransformerPort, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
+	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+	t.Cleanup(func() {
+		if err := pool.Purge(pyTransformerContainer); err != nil {
+			t.Logf("Failed to purge rudder-pytransformer: %v", err)
+		}
+	})
+
+	// Wait for shared services to be healthy.
+	t.Log("Waiting for shared services to be healthy...")
+	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+
+	// Run subtests sequentially.
+	for _, st := range subtests {
+		t.Run(st.name, func(t *testing.T) {
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+
+			if st.config.code != "" {
+				openFaasPort, err := kithelper.GetFreePort()
+				require.NoError(t, err)
+				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
+
+				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
+				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
+				t.Cleanup(func() {
+					if err := pool.Purge(container); err != nil {
+						t.Logf("Failed to purge openfaas-flask-base: %v", err)
+					}
+				})
+				waitForOpenFaasFlask(t, pool, openFaasURL)
+
+				setGatewayTarget(openFaasURL)
+			}
+
+			if st.setup != nil {
+				st.setup()
 			}
 
 			st.run(t, env)

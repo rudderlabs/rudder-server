@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -505,7 +505,7 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 // waitForGeolocation polls the rudder-geolocation service until it responds to
 // a /geoip request. We try a well-known public IP (1.2.3.4) to verify the
 // service is up and can resolve IPs.
-func waitForGeolocation(t *testing.T, pool *dockertest.Pool, container *dockertest.Resource, baseURL string) {
+func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
 	t.Helper()
 	t.Logf("Waiting for rudder-geolocation at %s to be healthy...", baseURL)
 	err := pool.Retry(func() error {
@@ -523,79 +523,65 @@ func waitForGeolocation(t *testing.T, pool *dockertest.Pool, container *dockerte
 	t.Logf("rudder-geolocation is healthy at %s", baseURL)
 }
 
-// newMockGeolocationService creates a mock geolocation HTTP server that
-// simulates the /geoip/{ip} endpoint matching the real rudder-geolocation
-// service behavior:
-//   - Invalid/malformed IPs → 400 with empty body
-//   - Private/loopback IPs → 200 with all empty string fields
-//   - Known public IPs → 200 with geo data
-//   - Unknown public IPs → 200 with empty string fields
-func newMockGeolocationService(t *testing.T) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(mockGeolocationHandler(t))
+// mockGeoConfig holds configurable behavior for the mock geolocation service.
+// Use setResponse to change the HTTP status code and body between subtests.
+type mockGeoConfig struct {
+	mu         sync.Mutex
+	statusCode int
+	body       string
+	closeConn  bool
 }
 
-// mockGeolocationHandler returns an http.Handler that simulates the real
-// rudder-geolocation /geoip/{ip} endpoint.
-func mockGeolocationHandler(t *testing.T) http.Handler {
+func (c *mockGeoConfig) setResponse(statusCode int, body string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statusCode = statusCode
+	c.body = body
+	c.closeConn = false
+}
+
+func (c *mockGeoConfig) setConnectionClose() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeConn = true
+}
+
+// newConfigurableMockGeolocationService creates a mock geolocation HTTP server
+// whose /geoip/* responses can be changed between subtests via mockGeoConfig.
+// Health check endpoints (/ and /health) always return 200 OK.
+func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *mockGeoConfig) {
 	t.Helper()
-
-	emptyGeoResponse := func(w http.ResponseWriter, ipStr string) {
-		_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-			"ip": ipStr, "city": "", "country": "", "region": "",
-			"loc": "", "postal": "", "timezone": "",
-		})
-	}
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Health check
+	cfg := &mockGeoConfig{statusCode: http.StatusOK, body: `{}`}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Health check — always responds OK so containers stay healthy.
 		if r.URL.Path == "/" || r.URL.Path == "/health" {
 			w.Header().Set("Content-Type", "application/json")
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"service": "geolocation", "status": "ok",
-			})
+			_, _ = w.Write([]byte(`{"service":"geolocation","status":"ok"}`))
 			return
 		}
 
-		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
-		if len(parts) < 2 || parts[0] != "geoip" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		ipStr := parts[1]
+		cfg.mu.Lock()
+		code := cfg.statusCode
+		body := cfg.body
+		closeConn := cfg.closeConn
+		cfg.mu.Unlock()
 
-		// Invalid IP → 400 with empty body (matches real service behavior)
-		parsed := net.ParseIP(ipStr)
-		if parsed == nil {
-			w.WriteHeader(http.StatusBadRequest)
-			return
+		if closeConn {
+			hj, ok := w.(http.Hijacker)
+			if ok {
+				conn, _, err := hj.Hijack()
+				if err == nil {
+					_ = conn.Close()
+				}
+				return
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-
-		// Private/loopback → 200 with empty fields
-		if parsed.IsLoopback() || parsed.IsPrivate() || parsed.IsUnspecified() {
-			emptyGeoResponse(w, ipStr)
-			return
+		w.WriteHeader(code)
+		if body != "" {
+			_, _ = w.Write([]byte(body))
 		}
-
-		// Known public IPs with mock geo data
-		switch ipStr {
-		case "1.2.3.4":
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"ip": "1.2.3.4", "city": "Test City", "region": "Test Region",
-				"country": "US", "postal": "12345",
-				"loc": "37.751,-97.822", "timezone": "America/Chicago",
-			})
-		case "8.8.8.8":
-			_ = jsonrs.NewEncoder(w).Encode(map[string]any{
-				"ip": "8.8.8.8", "city": "Mountain View", "region": "California",
-				"country": "US", "postal": "94035",
-				"loc": "37.386,-122.084", "timezone": "America/Los_Angeles",
-			})
-		default:
-			// Unknown public IP → 200 with empty fields
-			emptyGeoResponse(w, ipStr)
-		}
-	})
+	}))
+	return server, cfg
 }
