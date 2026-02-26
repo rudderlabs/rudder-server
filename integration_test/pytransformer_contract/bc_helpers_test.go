@@ -2,7 +2,6 @@ package pytransformer_contract
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -374,7 +373,7 @@ func startRudderPytransformer(
 	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:        "pr-35", // TODO: switch to latest once PR-35 is merged
+		Tag:        "latest",
 		Auth:       registry.AuthConfiguration(),
 		Env:        env,
 	}, func(hc *docker.HostConfig) {
@@ -468,7 +467,7 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 	require.NoError(t, err, "failed to start MinIO")
 
 	_, err = minioResource.Client.FPutObject(
-		context.Background(),
+		t.Context(),
 		minioResource.BucketName,
 		"city_test.mmdb",
 		"../../services/geolocation/testdata/city_test.mmdb",
@@ -481,7 +480,7 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
-		Tag:        "pr-123", // TODO: switch to main once PR-123 is merged
+		Tag:        "main",
 		Auth:       registry.AuthConfiguration(),
 		Env: []string{
 			"PORT=" + strconv.Itoa(geoPort),
