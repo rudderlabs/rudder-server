@@ -123,6 +123,13 @@ func makeEvent(messageID, versionID string) types.TransformerEvent {
 	}
 }
 
+// makeEventWithCredentials creates a TransformerEvent with credentials attached.
+func makeEventWithCredentials(messageID, versionID string, credentials []types.Credential) types.TransformerEvent {
+	ev := makeEvent(messageID, versionID)
+	ev.Credentials = credentials
+	return ev
+}
+
 // configBackendEntry controls what the mock config backend returns for a given versionId.
 //
 // When statusCode is 0 (default), the entry is treated as a normal transformation:
