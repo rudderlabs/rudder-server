@@ -5,14 +5,13 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	erridx "github.com/rudderlabs/rudder-server/enterprise/reporting/error_index"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/flusher"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"

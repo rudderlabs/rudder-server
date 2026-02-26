@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 )
 

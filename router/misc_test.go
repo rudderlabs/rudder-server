@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
+
 	"github.com/rudderlabs/rudder-server/router"
 )
 

@@ -3,16 +3,15 @@ package delayed_test
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/processor/types"
-
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
+	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
 func TestEventStats(t *testing.T) {

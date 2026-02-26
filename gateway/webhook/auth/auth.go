@@ -5,9 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 )
 
 var ErrSourceNotFound = errors.New("source not found")

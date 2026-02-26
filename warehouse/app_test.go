@@ -8,16 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/yamux"
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
-
-	"go.uber.org/mock/gomock"
-
-	"github.com/hashicorp/yamux"
-	"github.com/ory/dockertest/v3"
-	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"

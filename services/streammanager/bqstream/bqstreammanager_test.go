@@ -8,16 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_bqstream "github.com/rudderlabs/rudder-server/mocks/services/streammanager/bqstream"
-
-	"github.com/stretchr/testify/assert"
-
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 )

@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/gateway/validator"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -17,7 +15,9 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway/validator"
 	mocks_gateway "github.com/rudderlabs/rudder-server/mocks/gateway"
 )
 

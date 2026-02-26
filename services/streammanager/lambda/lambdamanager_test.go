@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/mock/gomock"
-
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_lambda "github.com/rudderlabs/rudder-server/mocks/services/streammanager/lambda"
 	common "github.com/rudderlabs/rudder-server/services/streammanager/common"

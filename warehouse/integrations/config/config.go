@@ -2,6 +2,7 @@ package config
 
 import (
 	"github.com/rudderlabs/rudder-go-kit/config"
+
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

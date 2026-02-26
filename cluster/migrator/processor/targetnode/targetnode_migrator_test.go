@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 	etcdtypes "github.com/rudderlabs/rudder-schemas/go/cluster"
+
 	"github.com/rudderlabs/rudder-server/cluster/migrator/partitionmigration/client"
 	"github.com/rudderlabs/rudder-server/cluster/partitionbuffer"
 	"github.com/rudderlabs/rudder-server/jobsdb"

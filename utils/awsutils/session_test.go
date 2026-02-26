@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-go-kit/awsutil"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 

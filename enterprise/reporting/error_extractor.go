@@ -7,14 +7,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/k3a/html2text"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
-
-	"github.com/k3a/html2text"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

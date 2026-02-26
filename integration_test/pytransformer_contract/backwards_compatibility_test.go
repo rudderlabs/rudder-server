@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 	utilstypes "github.com/rudderlabs/rudder-server/utils/types"

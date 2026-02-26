@@ -10,8 +10,6 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
@@ -19,6 +17,7 @@ import (
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
+	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 

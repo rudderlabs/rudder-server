@@ -15,10 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -27,24 +26,23 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	transformertest "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
 	kituuid "github.com/rudderlabs/rudder-go-kit/uuid"
 	"github.com/rudderlabs/rudder-schemas/go/stream"
+	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
+
 	"github.com/rudderlabs/rudder-server/app"
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
+	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/throttler"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transformer"
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-
-	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
-	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
-	"github.com/rudderlabs/rudder-server/gateway"
-
-	"github.com/rudderlabs/rudder-transformer/go/webhook/testcases"
 )
 
 func TestIntegrationWebhook(t *testing.T) {

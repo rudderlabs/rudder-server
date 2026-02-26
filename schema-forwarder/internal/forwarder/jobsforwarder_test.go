@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	pgdocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	pulsardocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/pulsar"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/internal/pulsar"
 	"github.com/rudderlabs/rudder-server/jobsdb"

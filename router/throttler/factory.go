@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/throttling"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/delivery"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/pickup/adaptive"
 	"github.com/rudderlabs/rudder-server/router/throttler/internal/pickup/adaptive/algorithm"

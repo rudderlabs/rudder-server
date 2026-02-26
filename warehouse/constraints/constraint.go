@@ -1,15 +1,13 @@
 package constraints
 
 import (
-	"github.com/rudderlabs/rudder-go-kit/config"
-
-	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
-
-	"github.com/rudderlabs/rudder-server/utils/misc"
-
 	"github.com/iancoleman/strcase"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils/types"
 )
 
 type constraints interface {

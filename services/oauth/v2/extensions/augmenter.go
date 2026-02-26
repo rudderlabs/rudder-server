@@ -12,6 +12,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 	"github.com/rudderlabs/rudder-server/services/oauth/v2/common"
 )

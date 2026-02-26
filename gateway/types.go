@@ -3,11 +3,11 @@ package gateway
 import (
 	"net/http"
 
-	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
-
 	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
+
+	gwtypes "github.com/rudderlabs/rudder-server/gateway/types"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 

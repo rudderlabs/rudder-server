@@ -7,6 +7,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
 

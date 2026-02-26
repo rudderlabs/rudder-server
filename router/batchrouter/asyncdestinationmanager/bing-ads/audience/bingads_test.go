@@ -12,24 +12,21 @@ import (
 	"path/filepath"
 	"sync"
 
-	"go.uber.org/mock/gomock"
-
-	"github.com/rudderlabs/rudder-go-kit/stats"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 
 	bingads_sdk "github.com/rudderlabs/bing-ads-go-sdk/bingads"
 	mockbulkservice "github.com/rudderlabs/bing-ads-go-sdk/mocks"
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/logger"
-
-	MockAuthorizer "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
-
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
+	"github.com/rudderlabs/rudder-go-kit/stats"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	MockAuthorizer "github.com/rudderlabs/rudder-server/mocks/services/oauthV2"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )

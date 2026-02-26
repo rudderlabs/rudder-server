@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
-
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 type configSubscriber interface {

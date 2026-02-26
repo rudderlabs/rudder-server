@@ -10,19 +10,16 @@ import (
 	"strings"
 	"time"
 
+	dbsqllog "github.com/databricks/databricks-sql-go/logger"
 	"github.com/samber/lo"
 
-	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
-	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
-
-	dbsqllog "github.com/databricks/databricks-sql-go/logger"
-
 	"github.com/rudderlabs/rudder-go-kit/config"
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+	"github.com/rudderlabs/sqlconnect-go/sqlconnect"
+	sqlconnectconfig "github.com/rudderlabs/sqlconnect-go/sqlconnect/config"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"

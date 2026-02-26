@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/rudderauth"
+
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	v2 "github.com/rudderlabs/rudder-server/services/oauth/v2"
 )

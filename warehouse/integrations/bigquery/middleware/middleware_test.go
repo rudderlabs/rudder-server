@@ -7,16 +7,14 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"google.golang.org/api/option"
-
-	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/api/option"
 
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/middleware"
+	bqHelper "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery/testhelper"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 )
 

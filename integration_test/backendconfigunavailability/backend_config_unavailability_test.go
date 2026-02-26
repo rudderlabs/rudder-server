@@ -14,29 +14,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samber/lo"
-	"github.com/tidwall/gjson"
-
-	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
-
-	"golang.org/x/sync/errgroup"
-
-	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
-	"github.com/rudderlabs/rudder-server/testhelper/health"
-
-	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
-
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	kithttputil "github.com/rudderlabs/rudder-go-kit/httputil"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/rand"
 
 	"github.com/rudderlabs/rudder-server/runner"
+	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+	webhookutil "github.com/rudderlabs/rudder-server/testhelper/webhook"
 )
 
 const (

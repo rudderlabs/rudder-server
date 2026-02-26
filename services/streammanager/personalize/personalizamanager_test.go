@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger/mock_logger"
+
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
