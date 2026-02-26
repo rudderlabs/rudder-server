@@ -614,8 +614,8 @@ def transformBatch(events, metadata):
 
 				// All events should have geo data
 				for i := range oldResp.Events {
-					require.NotNil(t, oldResp.Events[i].Output["geo"], "old arch: event %d geo should be non-nil", i)
-					require.NotNil(t, newResp.Events[i].Output["geo"], "new arch: event %d geo should be non-nil", i)
+					require.NotNilf(t, oldResp.Events[i].Output["geo"], "old arch: event %d geo should be non-nil", i)
+					require.NotNilf(t, newResp.Events[i].Output["geo"], "new arch: event %d geo should be non-nil", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -863,8 +863,8 @@ def transformBatch(events, metadata):
 				// First and third should have same geo data (same IP)
 				// Second should have different geo data
 				for i := range oldResp.Events {
-					require.NotNil(t, oldResp.Events[i].Output["geo"], "old arch: event %d geo should be non-nil", i)
-					require.NotNil(t, newResp.Events[i].Output["geo"], "new arch: event %d geo should be non-nil", i)
+					require.NotNilf(t, oldResp.Events[i].Output["geo"], "old arch: event %d geo should be non-nil", i)
+					require.NotNilf(t, newResp.Events[i].Output["geo"], "new arch: event %d geo should be non-nil", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1038,8 +1038,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "status code: 400", "old arch: event %d error should mention 400", i)
-					require.Contains(t, newError, "status code: 400", "new arch: event %d error should mention 400", i)
+					require.Containsf(t, oldError, "status code: 400", "old arch: event %d error should mention 400", i)
+					require.Containsf(t, newError, "status code: 400", "new arch: event %d error should mention 400", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1093,14 +1093,14 @@ def transformEvent(event, metadata):
 						msgID, _ := ev.Output["messageId"].(string)
 						if msgID == "msg-2" {
 							geoErr, _ := ev.Output["geo_error"].(string)
-							require.Contains(t, geoErr, "status code: 400",
+							require.Containsf(t, geoErr, "status code: 400",
 								"event %s should have 400 error", msgID)
-							require.Nil(t, ev.Output["geo"],
+							require.Nilf(t, ev.Output["geo"],
 								"event %s should not have geo data", msgID)
 						} else {
-							require.NotNil(t, ev.Output["geo"],
+							require.NotNilf(t, ev.Output["geo"],
 								"event %s should have geo data", msgID)
-							require.Nil(t, ev.Output["geo_error"],
+							require.Nilf(t, ev.Output["geo_error"],
 								"event %s should not have geo_error", msgID)
 						}
 					}
@@ -1186,8 +1186,8 @@ def transformBatch(events, metadata):
 				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
 
 				for i := range oldResp.FailedEvents {
-					require.Contains(t, oldResp.FailedEvents[i].Error, "status code: 400", "old arch: event %d error should mention 400", i)
-					require.Contains(t, newResp.FailedEvents[i].Error, "status code: 400", "new arch: event %d error should mention 400", i)
+					require.Containsf(t, oldResp.FailedEvents[i].Error, "status code: 400", "old arch: event %d error should mention 400", i)
+					require.Containsf(t, newResp.FailedEvents[i].Error, "status code: 400", "new arch: event %d error should mention 400", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1230,8 +1230,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "single string argument", "old arch: event %d error should mention single string argument", i)
-					require.Contains(t, newError, "single string argument", "new arch: event %d error should mention single string argument", i)
+					require.Containsf(t, oldError, "single string argument", "old arch: event %d error should mention single string argument", i)
+					require.Containsf(t, newError, "single string argument", "new arch: event %d error should mention single string argument", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1516,8 +1516,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "not supported", "old arch: event %d error should mention not supported", i)
-					require.Contains(t, newError, "not supported", "new arch: event %d error should mention not supported", i)
+					require.Containsf(t, oldError, "not supported", "old arch: event %d error should mention not supported", i)
+					require.Containsf(t, newError, "not supported", "new arch: event %d error should mention not supported", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1558,8 +1558,8 @@ def transformBatch(events, metadata):
 				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
 
 				for i := range oldResp.FailedEvents {
-					require.Contains(t, oldResp.FailedEvents[i].Error, "not supported", "old arch: event %d error should mention not supported", i)
-					require.Contains(t, newResp.FailedEvents[i].Error, "not supported", "new arch: event %d error should mention not supported", i)
+					require.Containsf(t, oldResp.FailedEvents[i].Error, "not supported", "old arch: event %d error should mention not supported", i)
+					require.Containsf(t, newResp.FailedEvents[i].Error, "not supported", "new arch: event %d error should mention not supported", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1929,8 +1929,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Contains(t, newError, "status code: 500", "new arch: event %d error should mention 500", i)
+					require.Containsf(t, oldError, "status code: 500", "old arch: event %d error should mention 500", i)
+					require.Containsf(t, newError, "status code: 500", "new arch: event %d error should mention 500", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1975,8 +1975,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "status code: 502", "old arch: event %d error should mention 502", i)
-					require.Contains(t, newError, "status code: 502", "new arch: event %d error should mention 502", i)
+					require.Containsf(t, oldError, "status code: 502", "old arch: event %d error should mention 502", i)
+					require.Containsf(t, newError, "status code: 502", "new arch: event %d error should mention 502", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -2021,8 +2021,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "status code: 503", "old arch: event %d error should mention 503", i)
-					require.Contains(t, newError, "status code: 503", "new arch: event %d error should mention 503", i)
+					require.Containsf(t, oldError, "status code: 503", "old arch: event %d error should mention 503", i)
+					require.Containsf(t, newError, "status code: 503", "new arch: event %d error should mention 503", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -2067,8 +2067,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.Contains(t, oldError, "status code: 429", "old arch: event %d error should mention 429", i)
-					require.Contains(t, newError, "status code: 429", "new arch: event %d error should mention 429", i)
+					require.Containsf(t, oldError, "status code: 429", "old arch: event %d error should mention 429", i)
+					require.Containsf(t, newError, "status code: 429", "new arch: event %d error should mention 429", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -2152,8 +2152,8 @@ def transformBatch(events, metadata):
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
 					newError, _ := newResp.Events[i].Output["geo_error"].(string)
-					require.NotEmpty(t, oldError, "old arch: event %d should have a geo_error", i)
-					require.NotEmpty(t, newError, "new arch: event %d should have a geo_error", i)
+					require.NotEmptyf(t, oldError, "old arch: event %d should have a geo_error", i)
+					require.NotEmptyf(t, newError, "new arch: event %d should have a geo_error", i)
 				}
 			},
 		},
@@ -2396,8 +2396,8 @@ def transformBatch(events, metadata):
 				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
 
 				for i := range oldResp.FailedEvents {
-					require.Contains(t, oldResp.FailedEvents[i].Error, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Contains(t, newResp.FailedEvents[i].Error, "status code: 500", "new arch: event %d error should mention 500", i)
+					require.Containsf(t, oldResp.FailedEvents[i].Error, "status code: 500", "old arch: event %d error should mention 500", i)
+					require.Containsf(t, newResp.FailedEvents[i].Error, "status code: 500", "new arch: event %d error should mention 500", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -2438,8 +2438,8 @@ def transformBatch(events, metadata):
 				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
 
 				for i := range oldResp.FailedEvents {
-					require.NotEmpty(t, oldResp.FailedEvents[i].Error, "old arch: event %d should have an error", i)
-					require.NotEmpty(t, newResp.FailedEvents[i].Error, "new arch: event %d should have an error", i)
+					require.NotEmptyf(t, oldResp.FailedEvents[i].Error, "old arch: event %d should have an error", i)
+					require.NotEmptyf(t, newResp.FailedEvents[i].Error, "new arch: event %d should have an error", i)
 				}
 			},
 		},
