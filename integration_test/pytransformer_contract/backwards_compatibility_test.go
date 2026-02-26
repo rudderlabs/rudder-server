@@ -1261,8 +1261,8 @@ def transformEvent(event, metadata):
 				oldOutput := oldResp.Events[0].Output
 				newOutput := newResp.Events[0].Output
 				for _, key := range []string{"credentialValueForNoneKey", "credentialValueForNumkey", "credentialValueForBoolkey", "credentialValueForObjkey", "credentialValueForArrkey"} {
-					require.Nil(t, oldOutput[key], "old arch: %s should be nil", key)
-					require.Nil(t, newOutput[key], "new arch: %s should be nil", key)
+					require.Nilf(t, oldOutput[key], "old arch: %s should be nil", key)
+					require.Nilf(t, newOutput[key], "new arch: %s should be nil", key)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
