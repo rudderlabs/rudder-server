@@ -473,7 +473,7 @@ func (idr *Identity) uploadFile(ctx context.Context, filePath string, txn *sqlmi
 		)
 		return err
 	}
-	output, err := uploader.Upload(ctx, outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.warehouse.Source.ID, tableName)
+	output, err := uploader.Upload(ctx, outputFile, config.GetStringVar("rudder-warehouse-load-objects", "WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME"), tableName, idr.warehouse.Source.ID, tableName)
 	if err != nil {
 		return err
 	}

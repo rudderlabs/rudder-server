@@ -17,7 +17,7 @@ type AdaptiveLimiterFunc func(int64) int64
 // SetupAdaptiveLimiter creates a new AdaptiveLimiter, starts its RunLoop in a goroutine and periodically collects statistics.
 func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimiterFunc {
 	var freeMem FreeMemory
-	if config.GetBool("AdaptivePayloadLimiter.enabled", true) {
+	if config.GetBoolVar(true, "AdaptivePayloadLimiter.enabled") {
 		useRSS := config.GetReloadableBoolVar(true, "AdaptivePayloadLimiter.useRSS")
 		freeMem = func() (float64, error) {
 			s, err := mem.Get()
@@ -32,15 +32,15 @@ func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimite
 	}
 
 	limiterConfig := AdaptiveLimiterConfig{
-		FreeMemThresholdLimit: config.GetFloat64("AdaptivePayloadLimiter.freeMemThresholdLimit", 30),
-		FreeMemCriticalLimit:  config.GetFloat64("AdaptivePayloadLimiter.freeMemCriticalLimit", 10),
-		MaxThresholdFactor:    config.GetInt("AdaptivePayloadLimiter.maxThresholdFactor", 9),
+		FreeMemThresholdLimit: config.GetFloat64Var(30, "AdaptivePayloadLimiter.freeMemThresholdLimit"),
+		FreeMemCriticalLimit:  config.GetFloat64Var(10, "AdaptivePayloadLimiter.freeMemCriticalLimit"),
+		MaxThresholdFactor:    config.GetIntVar(9, 1, "AdaptivePayloadLimiter.maxThresholdFactor"),
 		Log:                   logger.NewLogger().Child("payload_limiter"),
 		FreeMemory:            freeMem,
 	}
 
 	// run tick periodically
-	tickFrequency := config.GetDuration("AdaptivePayloadLimiter.tickFrequency", 1, time.Second)
+	tickFrequency := config.GetDurationVar(1, time.Second, "AdaptivePayloadLimiter.tickFrequency")
 	limiter := NewAdaptiveLimiter(limiterConfig)
 	g.Go(func() error {
 		limiter.RunLoop(ctx, func() <-chan time.Time {
@@ -50,7 +50,7 @@ func SetupAdaptiveLimiter(ctx context.Context, g *errgroup.Group) AdaptiveLimite
 	})
 
 	// collect statistics
-	statsFrequency := config.GetDuration("AdaptivePayloadLimiter.statsFrequency", 15, time.Second)
+	statsFrequency := config.GetDurationVar(15, time.Second, "AdaptivePayloadLimiter.statsFrequency")
 	g.Go(func() error {
 		for {
 			select {

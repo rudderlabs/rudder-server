@@ -100,10 +100,10 @@ func New(
 		log:                              slogger.Child("schema"),
 		ttlInMinutes:                     ttlInMinutes,
 		schemaRepo:                       schemaRepo,
-		stagingFilesSchemaPaginationSize: conf.GetInt("Warehouse.stagingFilesSchemaPaginationSize", 100),
+		stagingFilesSchemaPaginationSize: conf.GetIntVar(100, 1, "Warehouse.stagingFilesSchemaPaginationSize"),
 		stagingFileRepo:                  stagingFileRepo,
 		fetchSchemaRepo:                  fetchSchemaRepo,
-		enableIDResolution:               conf.GetBool("Warehouse.enableIDResolution", false),
+		enableIDResolution:               conf.GetBoolVar(false, "Warehouse.enableIDResolution"),
 		now:                              timeutil.Now,
 	}
 	sh.stats.schemaSize = statsFactory.NewTaggedStat("warehouse_schema_size", stats.HistogramType, stats.Tags{

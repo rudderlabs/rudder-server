@@ -141,7 +141,7 @@ func GetReservedFolderPaths() []*RFP {
 		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
 		{path: RudderRedshiftManifests, levelsToKeep: 0},
 		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 2},
-		{path: config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
+		{path: config.GetStringVar(RudderTestPayload, "RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME"), levelsToKeep: 0},
 	}
 }
 
@@ -214,7 +214,7 @@ var logOnce sync.Once
 
 // GetTmpDir gets tmp dir at path configured via RUDDER_TMPDIR env var
 func GetTmpDir() (string, error) {
-	tmpdirPath := strings.TrimSuffix(config.GetString("RUDDER_TMPDIR", ""), "/")
+	tmpdirPath := strings.TrimSuffix(config.GetStringVar("", "RUDDER_TMPDIR"), "/")
 	// second chance: fallback to /tmp if this folder exists
 	if tmpdirPath == "" {
 		fallbackPath := "/tmp"
@@ -639,29 +639,29 @@ func HasAWSRegionInConfig(config any) bool {
 }
 
 func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
-	return config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	return config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID"), config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
 }
 
 func GetRudderObjectStoragePrefix() (prefix string) {
-	return config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+	return config.GetStringVar(config.GetNamespaceIdentifier(), "RUDDER_WAREHOUSE_BUCKET_PREFIX")
 }
 
 func GetRegionHint() string {
-	return config.GetString("AWS_S3_REGION_HINT", "us-east-1")
+	return config.GetStringVar("us-east-1", "AWS_S3_REGION_HINT")
 }
 
 func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]any) {
 	// TODO: add error log if s3 keys are not available
 	storageConfig = make(map[string]any)
-	storageConfig["bucketName"] = config.GetString("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
-	storageConfig["accessKeyID"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-	storageConfig["accessKey"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	storageConfig["enableSSE"] = config.GetBool("RUDDER_WAREHOUSE_BUCKET_SSE", true)
+	storageConfig["bucketName"] = config.GetStringVar("rudder-warehouse-storage", "RUDDER_WAREHOUSE_BUCKET")
+	storageConfig["accessKeyID"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID")
+	storageConfig["accessKey"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
+	storageConfig["enableSSE"] = config.GetBoolVar(true, "RUDDER_WAREHOUSE_BUCKET_SSE")
 	// set prefix from override for shared slave type nodes
 	if prefixOverride != "" {
 		storageConfig["prefix"] = prefixOverride
 	} else {
-		storageConfig["prefix"] = config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+		storageConfig["prefix"] = config.GetStringVar(config.GetNamespaceIdentifier(), "RUDDER_WAREHOUSE_BUCKET_PREFIX")
 	}
 	return storageConfig
 }
@@ -694,8 +694,8 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]any {
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
 		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
 			!HasAWSKeysInConfig(objectStorageConfigMap) {
-			clonedObjectStorageConfig["accessKeyID"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-			clonedObjectStorageConfig["accessKey"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+			clonedObjectStorageConfig["accessKeyID"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID")
+			clonedObjectStorageConfig["accessKey"] = config.GetStringVar("", "RUDDER_AWS_S3_COPY_USER_ACCESS_KEY")
 		}
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
@@ -751,16 +751,16 @@ func ConcatErrors(givenErrors []error) error {
 }
 
 func isWarehouseMasterEnabled() bool {
-	warehouseMode := config.GetString("Warehouse.mode", "embedded")
+	warehouseMode := config.GetStringVar("embedded", "Warehouse.mode")
 	return warehouseMode == config.EmbeddedMode ||
 		warehouseMode == config.EmbeddedMasterMode
 }
 
 func GetWarehouseURL() (url string) {
 	if isWarehouseMasterEnabled() {
-		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
+		url = fmt.Sprintf(`http://localhost:%d`, config.GetIntVar(8082, 1, "Warehouse.webPort"))
 	} else {
-		url = config.GetString("WAREHOUSE_URL", "http://localhost:8082")
+		url = config.GetStringVar("http://localhost:8082", "WAREHOUSE_URL")
 	}
 	return url
 }
@@ -911,7 +911,7 @@ func GetBadgerDBUsage(dir string) (int64, int64, int64, error) {
 }
 
 func GetInstanceID() string {
-	instance := config.GetString("INSTANCE_ID", "")
+	instance := config.GetStringVar("", "INSTANCE_ID")
 	instanceArr := strings.Split(instance, "-")
 	length := len(instanceArr)
 	// This handles 2 kinds of server instances

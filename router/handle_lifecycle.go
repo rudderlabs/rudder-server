@@ -80,7 +80,7 @@ func (rt *Handle) Setup(
 	rt.crashRecover()
 	rt.responseQ = make(chan workerJobStatus, rt.reloadableConfig.jobQueryBatchSize.Load())
 	if rt.netHandle == nil {
-		netHandle := &netHandle{disableEgress: config.GetBool("disableEgress", false), destType: destType}
+		netHandle := &netHandle{disableEgress: config.GetBoolVar(false, "disableEgress"), destType: destType}
 		netHandle.logger = rt.logger.Child("network")
 		err := netHandle.Setup(config, rt.netClientTimeout)
 		if err != nil {

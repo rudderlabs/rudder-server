@@ -72,8 +72,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.log = log
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "DestinationTransformer"))
-	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
+	handle.config.destTransformationURL = handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL")
+	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.DestinationTransformer.maxRetry", "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.DestinationTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.DestinationTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
@@ -362,10 +362,10 @@ func (d *Client) destTransformURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/destinations/%s", d.config.destTransformationURL, strings.ToLower(destType))
 
 	if _, ok := warehouseutils.PseudoWarehouseDestinationMap[destType]; ok {
-		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", d.conf.GetBool("Warehouse.enableIDResolution", false))
+		whSchemaVersionQueryParam := fmt.Sprintf("whIDResolve=%t", d.conf.GetBoolVar(false, "Warehouse.enableIDResolution"))
 		switch destType {
 		case warehouseutils.CLICKHOUSE:
-			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", d.conf.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
+			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", d.conf.GetBoolVar(false, "Warehouse.clickhouse.enableArraySupport")))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
 		default:
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam
@@ -455,14 +455,14 @@ func (d *Client) getRequestPayload(data []types.TransformerEvent, compactRequest
 
 func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
-		bucket           = conf.GetString("DTSampling.Bucket", "processor-dt-sampling")
-		endpoint         = conf.GetString("DTSampling.Endpoint", "")
+		bucket           = conf.GetStringVar("processor-dt-sampling", "DTSampling.Bucket")
+		endpoint         = conf.GetStringVar("", "DTSampling.Endpoint")
 		accessKeyID      = conf.GetStringVar("", "DTSampling.AccessKeyId", "AWS_ACCESS_KEY_ID")
 		accessKey        = conf.GetStringVar("", "DTSampling.AccessKey", "AWS_SECRET_ACCESS_KEY")
-		s3ForcePathStyle = conf.GetBool("DTSampling.S3ForcePathStyle", false)
-		disableSSL       = conf.GetBool("DTSampling.DisableSsl", false)
+		s3ForcePathStyle = conf.GetBoolVar(false, "DTSampling.S3ForcePathStyle")
+		disableSSL       = conf.GetBoolVar(false, "DTSampling.DisableSsl")
 		enableSSE        = conf.GetBoolVar(false, "DTSampling.EnableSse", "AWS_ENABLE_SSE")
-		useGlue          = conf.GetBool("DTSampling.UseGlue", false)
+		useGlue          = conf.GetBoolVar(false, "DTSampling.UseGlue")
 		region           = conf.GetStringVar("us-east-1", "DTSampling.Region", "AWS_DEFAULT_REGION")
 	)
 	s3Config := map[string]any{
@@ -478,6 +478,6 @@ func getSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S
 	}
 
 	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "dt-uploader")), func() time.Duration {
-		return conf.GetDuration("DTSampling.Timeout", 120, time.Second)
+		return conf.GetDurationVar(120, time.Second, "DTSampling.Timeout")
 	})
 }

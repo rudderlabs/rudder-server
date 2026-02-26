@@ -250,8 +250,8 @@ func newJobRun(job basePayload, workerIdx int, conf *appConfig.Config, log logge
 	}
 
 	jr.config.slaveUploadTimeout = conf.GetDurationVar(10, time.Minute, "Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin")
-	jr.config.numLoadFileUploadWorkers = conf.GetInt("Warehouse.numLoadFileUploadWorkers", 8)
-	jr.config.loadObjectFolder = conf.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects")
+	jr.config.numLoadFileUploadWorkers = conf.GetIntVar(8, 1, "Warehouse.numLoadFileUploadWorkers")
+	jr.config.loadObjectFolder = conf.GetStringVar("rudder-warehouse-load-objects", "WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME")
 
 	jr.uploadTimeStat = jr.timerStat("load_file_upload_time")
 	jr.totalUploadTimeStat = jr.timerStat("load_file_total_upload_time")
@@ -329,7 +329,7 @@ func (jr *jobRun) loadFilePath(stagingFileInfo stagingFileInfo, loadFileNamePref
 
 	stagingFilePathWithoutExt := strings.TrimSuffix(stagingFilePath, ".json.gz")
 
-	if jr.conf.GetBool("Warehouse.useDeterministicLoadFileName", false) && slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) && len(loadFileNamePrefix) > 0 {
+	if jr.conf.GetBoolVar(false, "Warehouse.useDeterministicLoadFileName") && slices.Contains(warehouseutils.TimeWindowDestinations, jr.job.DestinationType) && len(loadFileNamePrefix) > 0 {
 		loadFileName := fmt.Sprintf("%s.%s.%s", loadFileNamePrefix, jr.job.SourceID, warehouseutils.GetLoadFileFormat(jr.job.LoadFileType))
 		// adding uuid to the load file path to ensure that the load file is unique
 		// Even if same batch is processed by same worker, load file path will be unique but file name is constant

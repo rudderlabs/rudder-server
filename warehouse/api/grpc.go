@@ -113,14 +113,14 @@ func NewGRPCServer(
 		now:                timeutil.Now,
 	}
 
-	g.config.region = conf.GetString("region", "")
-	g.config.cpRouterUseTLS = conf.GetBool("CP_ROUTER_USE_TLS", true)
-	g.config.instanceID = conf.GetString("INSTANCE_ID", "1")
-	g.config.controlPlane.url = conf.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
-	g.config.controlPlane.userName = conf.GetString("CP_INTERNAL_API_USERNAME", "")
-	g.config.controlPlane.password = conf.GetString("CP_INTERNAL_API_PASSWORD", "")
-	g.config.enableTunnelling = conf.GetBool("ENABLE_TUNNELLING", true)
-	g.config.maxLatencyQueryLookbackDays = conf.GetInt("Warehouse.grpc.maxLatencyQueryLookbackDays", 90)
+	g.config.region = conf.GetStringVar("", "region")
+	g.config.cpRouterUseTLS = conf.GetBoolVar(true, "CP_ROUTER_USE_TLS")
+	g.config.instanceID = conf.GetStringVar("1", "INSTANCE_ID")
+	g.config.controlPlane.url = conf.GetStringVar("api.rudderlabs.com", "CONFIG_BACKEND_URL")
+	g.config.controlPlane.userName = conf.GetStringVar("", "CP_INTERNAL_API_USERNAME")
+	g.config.controlPlane.password = conf.GetStringVar("", "CP_INTERNAL_API_PASSWORD")
+	g.config.enableTunnelling = conf.GetBoolVar(true, "ENABLE_TUNNELLING")
+	g.config.maxLatencyQueryLookbackDays = conf.GetIntVar(90, 1, "Warehouse.grpc.maxLatencyQueryLookbackDays")
 
 	g.cpClient = cpclient.NewInternalClientWithCache(
 		g.config.controlPlane.url,
@@ -135,7 +135,7 @@ func NewGRPCServer(
 		return nil, fmt.Errorf("connection token: %w", err)
 	}
 
-	g.config.defaultLatencyAggregationType, err = model.GetLatencyAggregationType(conf.GetString("Warehouse.grpc.defaultLatencyAggregationType", "p90"))
+	g.config.defaultLatencyAggregationType, err = model.GetLatencyAggregationType(conf.GetStringVar("p90", "Warehouse.grpc.defaultLatencyAggregationType"))
 	if err != nil {
 		return nil, fmt.Errorf("default latency aggregation type: %w", err)
 	}

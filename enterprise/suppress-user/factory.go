@@ -56,7 +56,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 
 	pollInterval := config.GetReloadableDurationVar(300, time.Second, "BackendConfig.Regulations.pollInterval")
 
-	useBadgerDB := config.GetBool("BackendConfig.Regulations.useBadgerDB", true)
+	useBadgerDB := config.GetBoolVar(true, "BackendConfig.Regulations.useBadgerDB")
 	if useBadgerDB {
 		identifier := backendConfig.Identity()
 
@@ -73,7 +73,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 			latestSyncer, latestRepo, err := m.newSyncerWithBadgerRepo(
 				latestSuppressionPath,
 				latestDataSeed,
-				config.GetDuration("BackendConfig.Regulations.maxSeedWait", 5, time.Second),
+				config.GetDurationVar(5, time.Second, "BackendConfig.Regulations.maxSeedWait"),
 				identifier,
 				pollInterval)
 			if err != nil {
@@ -145,12 +145,12 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 	} else {
 		memoryRepo := NewMemoryRepository(m.Log)
 		syncer, err := NewSyncer(
-			config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
+			config.GetStringVar("https://api.rudderstack.com", "SUPPRESS_USER_BACKEND_URL"),
 			backendConfig.Identity(),
 			memoryRepo,
 			WithLogger(m.Log),
-			WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
-			WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
+			WithHttpClient(&http.Client{Timeout: config.GetDurationVar(30, time.Second, "HttpClient.suppressUser.timeout")}),
+			WithPageSize(config.GetIntVar(5000, 1, "BackendConfig.Regulations.pageSize")),
 			WithPollIntervalFn(func() time.Duration { return pollInterval.Load() }),
 		)
 		if err != nil {
@@ -201,12 +201,12 @@ func (m *Factory) newSyncerWithBadgerRepo(repoPath string, seederSource func() (
 		return nil, nil, fmt.Errorf("could not create badger repository: %w", err)
 	}
 	syncer, err := NewSyncer(
-		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
+		config.GetStringVar("https://api.rudderstack.com", "SUPPRESS_USER_BACKEND_URL"),
 		identity,
 		repo,
 		WithLogger(m.Log),
-		WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
-		WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
+		WithHttpClient(&http.Client{Timeout: config.GetDurationVar(30, time.Second, "HttpClient.suppressUser.timeout")}),
+		WithPageSize(config.GetIntVar(5000, 1, "BackendConfig.Regulations.pageSize")),
 		WithPollIntervalFn(func() time.Duration { return pollInterval.Load() }),
 	)
 	if err != nil {
@@ -235,7 +235,7 @@ func fullDataSeed() (io.ReadCloser, error) {
 
 func seederSource(endpoint string) (io.ReadCloser, error) {
 	client := http.Client{}
-	baseURL := config.GetString("SUPPRESS_USER_BACKUP_SERVICE_URL", "https://api.rudderstack.com")
+	baseURL := config.GetStringVar("https://api.rudderstack.com", "SUPPRESS_USER_BACKUP_SERVICE_URL")
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%s", baseURL, endpoint), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("could not create request: %w", err)

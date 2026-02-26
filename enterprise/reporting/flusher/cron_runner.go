@@ -45,7 +45,7 @@ type CronRunner struct {
 
 func NewCronRunner(ctx context.Context, log logger.Logger, stats stats.Stats, conf *config.Config, flusher *Flusher, table, module string) *CronRunner {
 	sleepInterval := conf.GetReloadableDurationVar(5, time.Second, "Reporting.flusher.sleepInterval")
-	instanceId := conf.GetString("INSTANCE_ID", "1")
+	instanceId := conf.GetStringVar("1", "INSTANCE_ID")
 
 	ctx, cancel := context.WithCancel(ctx)
 	g, ctx := errgroup.WithContext(ctx)

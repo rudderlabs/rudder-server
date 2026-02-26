@@ -622,31 +622,31 @@ func (proc *Handle) Start(ctx context.Context) error {
 	proc.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_read",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.read.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.read.dynamicPeriod")))
 	proc.limiter.preprocess = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_preprocess",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.preprocess.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.preprocess.dynamicPeriod")))
 	proc.limiter.srcHydration = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_srchydration",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.src_hydration.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.src_hydration.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.src_hydration.dynamicPeriod")))
 	proc.limiter.pretransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_pretransform",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.pretransform.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.pretransform.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.pretransform.dynamicPeriod")))
 	proc.limiter.utransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_utransform",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.utransform.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.utransform.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.utransform.dynamicPeriod")))
 	proc.limiter.dtransform = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_dtransform",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.dtransform.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.dtransform.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.dtransform.dynamicPeriod")))
 	proc.limiter.store = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "proc_store",
 		proc.conf.GetReloadableIntVar(50, 1, "Processor.Limiter.store.limit"),
 		s,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "Processor.Limiter.store.dynamicPeriod")))
 	g.Go(func() error {
 		limiterGroup.Wait()
 		return nil
@@ -729,7 +729,7 @@ func (proc *Handle) loadConfig() {
 	if proc.conf.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
-	proc.config.isolationMode = isolation.Mode(proc.conf.GetString("Processor.isolationMode", string(defaultIsolationMode)))
+	proc.config.isolationMode = isolation.Mode(proc.conf.GetStringVar(string(defaultIsolationMode), "Processor.isolationMode"))
 	// If isolation mode is not none, we need to reduce the values for some of the config variables to more sensible defaults
 	if proc.config.isolationMode != isolation.ModeNone {
 		defaultSubJobSize = 400
@@ -2904,7 +2904,7 @@ func getStoreSamplingUploader(conf *config.Config, log logger.Logger) (*filemana
 		"enableSSE":        enableSSE,
 	}
 	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "proc-uploader")), func() time.Duration {
-		return conf.GetDuration("Processor.Store.Sampling.Timeout", 120, time.Second)
+		return conf.GetDurationVar(120, time.Second, "Processor.Store.Sampling.Timeout")
 	})
 }
 
@@ -3202,7 +3202,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	// Check for overrides through env
 	transformAtOverrideFound := proc.conf.IsSet("Processor." + destination.DestinationDefinition.Name + ".transformAt")
 	if transformAtOverrideFound {
-		transformAt = proc.conf.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
+		transformAt = proc.conf.GetStringVar("processor", "Processor."+destination.DestinationDefinition.Name+".transformAt")
 	}
 	// Filtering events based on the supported message types - START
 	s := time.Now()
@@ -3808,7 +3808,7 @@ func filterConfig(eventCopy *types.TransformerEvent) {
 }
 
 func (*Handle) getLimiterPriority(partition string) kitsync.LimiterPriorityValue {
-	return kitsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
+	return kitsync.LimiterPriorityValue(config.GetIntVar(1, 1, fmt.Sprintf("Processor.Limiter.%s.Priority", partition)))
 }
 
 // check if event has eligible destinations to send to
@@ -3908,14 +3908,14 @@ func shouldSample(samplingPercentage float64) bool {
 // getUTSamplingUploader can be completely removed once we get rid of UT sampling
 func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager.S3Manager, error) {
 	var (
-		bucket           = conf.GetString("UTSampling.Bucket", "processor-ut-mirroring-diffs")
-		endpoint         = conf.GetString("UTSampling.Endpoint", "")
+		bucket           = conf.GetStringVar("processor-ut-mirroring-diffs", "UTSampling.Bucket")
+		endpoint         = conf.GetStringVar("", "UTSampling.Endpoint")
 		accessKeyID      = conf.GetStringVar("", "UTSampling.AccessKeyId", "AWS_ACCESS_KEY_ID")
 		accessKey        = conf.GetStringVar("", "UTSampling.AccessKey", "AWS_SECRET_ACCESS_KEY")
-		s3ForcePathStyle = conf.GetBool("UTSampling.S3ForcePathStyle", false)
-		disableSSL       = conf.GetBool("UTSampling.DisableSsl", false)
+		s3ForcePathStyle = conf.GetBoolVar(false, "UTSampling.S3ForcePathStyle")
+		disableSSL       = conf.GetBoolVar(false, "UTSampling.DisableSsl")
 		enableSSE        = conf.GetBoolVar(false, "UTSampling.EnableSse", "AWS_ENABLE_SSE")
-		useGlue          = conf.GetBool("UTSampling.UseGlue", false)
+		useGlue          = conf.GetBoolVar(false, "UTSampling.UseGlue")
 		region           = conf.GetStringVar("us-east-1", "UTSampling.Region", "AWS_DEFAULT_REGION")
 	)
 	s3Config := map[string]any{
@@ -3930,6 +3930,6 @@ func getUTSamplingUploader(conf *config.Config, log logger.Logger) (*filemanager
 		"region":           region,
 	}
 	return filemanager.NewS3Manager(conf, s3Config, log.Withn(logger.NewStringField("component", "ut-uploader")), func() time.Duration {
-		return conf.GetDuration("UTSampling.Timeout", 120, time.Second)
+		return conf.GetDurationVar(120, time.Second, "UTSampling.Timeout")
 	})
 }

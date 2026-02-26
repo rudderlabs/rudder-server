@@ -28,7 +28,7 @@ type TrackedUsersInAppAggregator struct {
 func NewTrackedUsersInAppAggregator(db *sql.DB, s stats.Stats, conf *config.Config, module string) *TrackedUsersInAppAggregator {
 	t := TrackedUsersInAppAggregator{db: db, stats: s}
 	tags := stats.Tags{
-		"instance": conf.GetString("INSTANCE_ID", "1"),
+		"instance": conf.GetStringVar("1", "INSTANCE_ID"),
 		"table":    tableName,
 		"module":   module,
 	}

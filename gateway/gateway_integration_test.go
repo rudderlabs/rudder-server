@@ -145,7 +145,7 @@ func runGateway(
 	mg := &migrator.Migrator{
 		Handle:                     postgresContainer.DB,
 		MigrationsTable:            "node_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 
 	err = mg.Migrate("node")

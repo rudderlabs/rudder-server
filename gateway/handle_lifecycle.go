@@ -174,7 +174,7 @@ func (gw *Handle) Setup(
 	// new bg ctx for leaky logger
 	// we don't want to cancel the main context.
 	leakyCtx, leakyCancel := context.WithCancel(context.Background())
-	leakyUploaderEnabled := gw.config.GetBool("Gateway.leakyUploader.enabled", false)
+	leakyUploaderEnabled := gw.config.GetBoolVar(false, "Gateway.leakyUploader.enabled")
 	var leakyUploaderDone chan struct{}
 	var leakyUploaderBuffer chan msgToUpload
 
@@ -220,7 +220,7 @@ func (gw *Handle) Setup(
 
 	if leakyUploaderEnabled {
 		leakyUploaderDone = make(chan struct{})
-		leakyUploaderBuffer = make(chan msgToUpload, config.GetInt("Gateway.leakyUploader.bufferSize", 1))
+		leakyUploaderBuffer = make(chan msgToUpload, config.GetIntVar(1, 1, "Gateway.leakyUploader.bufferSize"))
 		fm, err := getLeakyUploaderFileManager(gw.config, gw.logger)
 		if err == nil {
 			gw.leakyUploader = func(upload msgToUpload) {
@@ -241,13 +241,13 @@ func (gw *Handle) Setup(
 func getLeakyUploaderFileManager(conf *config.Config, log logger.Logger) (filemanager.FileManager, error) {
 	var (
 		regionHint       = conf.GetStringVar("us-east-1", "Gateway.leakyUploader.Storage.RegionHint", "AWS_S3_REGION_HINT")
-		endpoint         = conf.GetString("Gateway.leakyUploader.Storage.Endpoint", "")
+		endpoint         = conf.GetStringVar("", "Gateway.leakyUploader.Storage.Endpoint")
 		accessKeyID      = conf.GetStringVar("", "Gateway.leakyUploader.Storage.AccessKeyId", "AWS_ACCESS_KEY_ID")
 		accessKey        = conf.GetStringVar("", "Gateway.leakyUploader.Storage.AccessKey", "AWS_SECRET_ACCESS_KEY")
-		s3ForcePathStyle = conf.GetBool("Gateway.leakyUploader.Storage.S3ForcePathStyle", false)
-		disableSSL       = conf.GetBool("Gateway.leakyUploader.Storage.DisableSsl", false)
+		s3ForcePathStyle = conf.GetBoolVar(false, "Gateway.leakyUploader.Storage.S3ForcePathStyle")
+		disableSSL       = conf.GetBoolVar(false, "Gateway.leakyUploader.Storage.DisableSsl")
 		enableSSE        = conf.GetBoolVar(false, "Gateway.leakyUploader.Storage.EnableSse", "AWS_ENABLE_SSE")
-		useGlue          = conf.GetBool("Gateway.leakyUploader.Storage.UseGlue", false)
+		useGlue          = conf.GetBoolVar(false, "Gateway.leakyUploader.Storage.UseGlue")
 		region           = conf.GetStringVar("us-east-1", "Gateway.leakyUploader.Storage.Region", "AWS_DEFAULT_REGION")
 		bucket           = conf.GetStringVar("rudder-customer-sample-payloads-us", "Gateway.leakyUploader.Storage.Bucket")
 	)
@@ -269,14 +269,14 @@ func getLeakyUploaderFileManager(conf *config.Config, log logger.Logger) (filema
 		s3Config,
 		log.Withn(logger.NewStringField("component", "leaky-uploader")),
 		func() time.Duration {
-			return conf.GetDuration("Gateway.leakyUploader.Timeout", 120, time.Second)
+			return conf.GetDurationVar(120, time.Second, "Gateway.leakyUploader.Timeout")
 		},
 	)
 }
 
 func leakyUploader(ctx context.Context, conf *config.Config, log logger.Logger, done chan struct{}, uploads <-chan msgToUpload, fm filemanager.FileManager) {
-	backoff := conf.GetDuration("Gateway.leakyUploader.backoff", 1, time.Second)
-	instanceName := conf.GetString("INSTANCE_ID", "unknown-instance")
+	backoff := conf.GetDurationVar(1, time.Second, "Gateway.leakyUploader.backoff")
+	instanceName := conf.GetStringVar("unknown-instance", "INSTANCE_ID")
 	log.Infon("starting leaky payload uploader")
 	defer close(done)
 	for {

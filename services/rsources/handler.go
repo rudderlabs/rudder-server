@@ -433,7 +433,7 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	before := time.Now().Add(-config.GetDuration("Rsources.retention", defaultRetentionPeriodInHours, time.Hour))
+	before := time.Now().Add(-config.GetDurationVar(defaultRetentionPeriodInHours, time.Hour, "Rsources.retention"))
 	if _, err := tx.ExecContext(ctx, `delete from "rsources_stats" where job_run_id in (
 		select lastUpdateToJobRunId.job_run_id from
 			(select job_run_id, max(ts) as mts from "rsources_stats" group by job_run_id) lastUpdateToJobRunId
@@ -476,7 +476,7 @@ func (sh *sourcesHandler) init() error {
 	ctx := context.TODO()
 	if sh.cleanupTrigger == nil {
 		sh.cleanupTrigger = func() <-chan time.Time {
-			return time.After(config.GetDuration("Rsources.stats.cleanup.interval", 1, time.Hour))
+			return time.After(config.GetDurationVar(1, time.Hour, "Rsources.stats.cleanup.interval"))
 		}
 	}
 
@@ -780,7 +780,7 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 		return
 	}
 	logicalReplicationTrigger := func() <-chan time.Time {
-		return time.After(config.GetDuration("Rsources.stats.monitoringInterval", 10, time.Second))
+		return time.After(config.GetDurationVar(10, time.Second, "Rsources.stats.monitoringInterval"))
 	}
 	for {
 		select {

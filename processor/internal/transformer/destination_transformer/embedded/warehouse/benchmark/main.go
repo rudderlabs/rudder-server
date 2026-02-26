@@ -90,7 +90,7 @@ func run(ctx context.Context) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return profiler.StartServer(gCtx, config.GetInt("Profiler.Port", 7777))
+		return profiler.StartServer(gCtx, config.GetIntVar(7777, 1, "Profiler.Port"))
 	})
 	g.Go(func() error {
 		for i := range iterations {

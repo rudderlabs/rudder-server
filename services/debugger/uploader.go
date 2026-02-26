@@ -66,13 +66,13 @@ func (uploader *uploaderImpl[E]) Setup() {
 	uploader.maxRetry = config.GetReloadableIntVar(3, 1, "Debugger.maxRetry")
 	uploader.batchTimeout = config.GetReloadableDurationVar(2, time.Second, "Debugger.batchTimeoutInS")
 	uploader.retrySleep = config.GetReloadableDurationVar(100, time.Millisecond, "Debugger.retrySleepInMS")
-	uploader.region = config.GetString("region", "")
+	uploader.region = config.GetStringVar("", "region")
 }
 
 func New[E any](url string, authorizer identity.Authorizer, transformer Transformer[E]) Uploader[E] {
 	eventBatchChannel := make(chan E)
 	eventBuffer := make([]E, 0)
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.debugger.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDurationVar(30, time.Second, "HttpClient.debugger.timeout")}
 
 	uploader := &uploaderImpl[E]{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}, authorizer: authorizer}
 	uploader.Setup()

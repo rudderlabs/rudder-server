@@ -200,8 +200,8 @@ var (
 
 func Init() {
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
-	clientCertFile := config.GetString("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
-	clientKeyFile := config.GetString("KAFKA_SSL_KEY_FILE_PATH", "")
+	clientCertFile := config.GetStringVar("", "KAFKA_SSL_CERTIFICATE_FILE_PATH")
+	clientKeyFile := config.GetStringVar("", "KAFKA_SSL_KEY_FILE_PATH")
 	if clientCertFile != "" && clientKeyFile != "" {
 		var err error
 		clientCert, err = os.ReadFile(clientCertFile)
@@ -655,10 +655,10 @@ func newProducerConfig(destType string) client.ProducerConfig {
 
 func getSSHPrivateKey(ctx context.Context, destinationID string) (string, error) {
 	c := controlplane.NewAdminClient(
-		config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 		&identity.Admin{
-			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
-			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+			Username: config.GetStringVar("", "CP_INTERNAL_API_USERNAME"),
+			Password: config.GetStringVar("", "CP_INTERNAL_API_PASSWORD"),
 		},
 	)
 	keyPair, err := c.GetDestinationSSHKeyPair(ctx, destinationID)

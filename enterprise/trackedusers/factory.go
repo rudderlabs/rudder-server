@@ -11,7 +11,7 @@ type Factory struct {
 }
 
 func (f *Factory) Setup(conf *config.Config) (UsersReporter, error) {
-	if !conf.GetBool("TrackedUsers.enabled", false) {
+	if !conf.GetBoolVar(false, "TrackedUsers.enabled") {
 		return NewNoopDataCollector(), nil
 	}
 	return NewUniqueUsersReporter(f.Log, conf, stats.Default)

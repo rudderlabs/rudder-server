@@ -67,7 +67,7 @@ func (f *Factory) get(workspaceId string) *throttler {
 }
 
 func (f *Factory) initThrottlerFactory() error {
-	throttlingAlgorithm := config.GetString("Gateway.throttler.algorithm", throttlingAlgoTypeGCRA)
+	throttlingAlgorithm := config.GetStringVar(throttlingAlgoTypeGCRA, "Gateway.throttler.algorithm")
 
 	var (
 		err  error
@@ -117,16 +117,16 @@ type throttlingConfig struct {
 func (c *throttlingConfig) readThrottlingConfig(workspaceID string) {
 	rateLimitKey := fmt.Sprintf("RateLimit.%s.eventLimit", workspaceID)
 	if config.IsSet(rateLimitKey) {
-		c.limit = config.GetInt64(rateLimitKey, 1000)
+		c.limit = config.GetInt64Var(1000, 1, rateLimitKey)
 	} else {
-		c.limit = config.GetInt64("RateLimit.eventLimit", 1000)
+		c.limit = config.GetInt64Var(1000, 1, "RateLimit.eventLimit")
 	}
 
 	rateLimitWindowKey := fmt.Sprintf("RateLimit.%s.rateLimitWindow", workspaceID)
 	if config.IsSet(rateLimitWindowKey) {
-		c.window = config.GetDuration(rateLimitWindowKey, 60, time.Second)
+		c.window = config.GetDurationVar(60, time.Second, rateLimitWindowKey)
 	} else {
-		c.window = config.GetDuration("RateLimit.rateLimitWindow", 60, time.Second)
+		c.window = config.GetDurationVar(60, time.Second, "RateLimit.rateLimitWindow")
 	}
 }
 

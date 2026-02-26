@@ -195,7 +195,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		pendingTableUploads:     []model.PendingTableUpload{},
 
 		alertSender: alerta.NewClient(
-			f.conf.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
+			f.conf.GetStringVar("https://alerta.rudderstack.com/api/", "ALERTA_URL"),
 		),
 		now: timeutil.Now,
 
@@ -204,17 +204,17 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		fileManagerFactory: filemanager.New,
 	}
 
-	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
-	uj.config.minRetryAttempts = f.conf.GetInt("Warehouse.minRetryAttempts", 3)
-	uj.config.disableAlter = f.conf.GetBool("Warehouse.disableAlter", false)
-	uj.config.reportingEnabled = f.conf.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
-	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]), 100)
+	uj.config.refreshPartitionBatchSize = f.conf.GetIntVar(100, 1, "Warehouse.refreshPartitionBatchSize")
+	uj.config.minRetryAttempts = f.conf.GetIntVar(3, 1, "Warehouse.minRetryAttempts")
+	uj.config.disableAlter = f.conf.GetBoolVar(false, "Warehouse.disableAlter")
+	uj.config.reportingEnabled = f.conf.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
+	uj.config.columnsBatchSize = f.conf.GetIntVar(100, 1, fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]))
 	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]), nil)
 	uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDurationVar(120, time.Minute, "Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin")
 	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
-	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
+	uj.config.skipPreviouslyFailedTables = f.conf.GetBoolVar(false, "Warehouse.skipPreviouslyFailedTables")
 	uj.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {
 		return f.conf.GetIntVar(10, 1,
 			fmt.Sprintf("Warehouse.filemanager.%s.GCS.maxConcurrentObjDeleteRequests", workspaceID),

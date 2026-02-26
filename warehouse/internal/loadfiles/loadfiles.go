@@ -111,7 +111,7 @@ type WorkerJobRequestV2 struct {
 }
 
 func WithConfig(ld *LoadFileGenerator, config *config.Config) {
-	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", defaultPublishBatchSize)
+	ld.publishBatchSize = config.GetIntVar(defaultPublishBatchSize, 1, "Warehouse.loadFileGenerator.publishBatchSize")
 	mapConfig := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)
 
 	ld.publishBatchSizePerWorkspace = make(map[string]int, len(mapConfig))
@@ -357,7 +357,7 @@ func (lf *LoadFileGenerator) createUploadV2Jobs(ctx context.Context, job *model.
 		return fmt.Errorf("populating destination revision ID: %w", err)
 	}
 	g, gCtx := errgroup.WithContext(ctx)
-	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetInt("Warehouse.loadFiles.maxSizeInMB", 512))
+	stagingFileGroups := lf.GroupStagingFiles(stagingFiles, lf.Conf.GetIntVar(512, 1, "Warehouse.loadFiles.maxSizeInMB"))
 	for i, fileGroups := range lo.Chunk(stagingFileGroups, publishBatchSize) {
 		for j, group := range fileGroups {
 			lf.Logger.Infon("Processing chunk and group",

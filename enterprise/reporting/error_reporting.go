@@ -170,7 +170,7 @@ func NewErrorDetailReporter(
 
 		// Initialize stats manager
 		statsManager: statsManager,
-		instanceID:   conf.GetString("INSTANCE_ID", "1"),
+		instanceID:   conf.GetStringVar("1", "INSTANCE_ID"),
 
 		configSubscriber:     configSubscriber,
 		syncers:              make(map[string]*types.SyncSource),
@@ -200,10 +200,10 @@ func (edr *ErrorDetailReporter) DatabaseSyncer(c types.SyncerConfig) types.Repor
 	}
 	edr.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
-	if !edr.config.GetBool("Reporting.errorReporting.syncer.enabled", true) {
+	if !edr.config.GetBoolVar(true, "Reporting.errorReporting.syncer.enabled") {
 		return func() {}
 	}
-	if edr.config.GetBool("Reporting.errorReporting.vacuumAtStartup", false) {
+	if edr.config.GetBoolVar(false, "Reporting.errorReporting.vacuumAtStartup") {
 		if _, err := dbHandle.ExecContext(
 			context.Background(),
 			fmt.Sprintf("vacuum full analyze %s", pq.QuoteIdentifier(ErrorDetailReportsTable)),
@@ -393,7 +393,7 @@ func (edr *ErrorDetailReporter) migrate(c types.SyncerConfig) (*sql.DB, error) {
 		Handle:          dbHandle,
 		MigrationsTable: fmt.Sprintf("%v_migrations", ErrorDetailReportsTable),
 		// TODO: shall we use separate env ?
-		ShouldForceSetLowerVersion: edr.config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: edr.config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 	err = m.Migrate(ErrorDetailReportsTable)
 	if err != nil {

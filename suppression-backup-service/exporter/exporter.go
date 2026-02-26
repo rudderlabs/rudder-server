@@ -98,7 +98,7 @@ type Exporter struct {
 }
 
 func (e *Exporter) FullExporterLoop(ctx context.Context) error {
-	pollInterval := config.GetDuration("SuppressionExporter.fullExportInterval", 24, time.Hour)
+	pollInterval := config.GetDurationVar(24, time.Hour, "SuppressionExporter.fullExportInterval")
 	tmpDir, err := misc.GetTmpDir()
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
@@ -112,12 +112,12 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 	}()
 
 	syncer, err := suppression.NewSyncer(
-		config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
+		config.GetStringVar("https://api.rudderstack.com", "SUPPRESS_USER_BACKEND_URL"),
 		e.Id,
 		repo,
 		suppression.WithLogger(e.Log),
-		suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
-		suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
+		suppression.WithHttpClient(&http.Client{Timeout: config.GetDurationVar(30, time.Second, "HttpClient.suppressUser.timeout")}),
+		suppression.WithPageSize(config.GetIntVar(5000, 1, "BackendConfig.Regulations.pageSize")),
 	)
 	if err != nil {
 		return fmt.Errorf("fullExporterLoop: %w", err)
@@ -146,7 +146,7 @@ func (e *Exporter) FullExporterLoop(ctx context.Context) error {
 }
 
 func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
-	pollInterval := config.GetDuration("SuppressionExporter.latestExportInterval", 24, time.Hour)
+	pollInterval := config.GetDurationVar(24, time.Hour, "SuppressionExporter.latestExportInterval")
 	for {
 		select {
 		case <-ctx.Done():
@@ -171,12 +171,12 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 				}()
 
 				syncer, err := suppression.NewSyncer(
-					config.GetString("SUPPRESS_USER_BACKEND_URL", "https://api.rudderstack.com"),
+					config.GetStringVar("https://api.rudderstack.com", "SUPPRESS_USER_BACKEND_URL"),
 					e.Id,
 					repo,
 					suppression.WithLogger(e.Log),
-					suppression.WithHttpClient(&http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}),
-					suppression.WithPageSize(config.GetInt("BackendConfig.Regulations.pageSize", 5000)),
+					suppression.WithHttpClient(&http.Client{Timeout: config.GetDurationVar(30, time.Second, "HttpClient.suppressUser.timeout")}),
+					suppression.WithPageSize(config.GetIntVar(5000, 1, "BackendConfig.Regulations.pageSize")),
 				)
 				if err != nil {
 					return fmt.Errorf("latestExporterLoop: %w", err)
@@ -213,7 +213,7 @@ func (e *Exporter) LatestExporterLoop(ctx context.Context) error {
 }
 
 func latestToken() (string, error) {
-	marshalledToken, err := jsonrs.Marshal(Token{SyncStartTime: time.Now().Add(-config.GetDuration("SuppressionExporter.latestExportDuration", 30*24, time.Hour)), SyncSeqId: -1})
+	marshalledToken, err := jsonrs.Marshal(Token{SyncStartTime: time.Now().Add(-config.GetDurationVar(30*24, time.Hour, "SuppressionExporter.latestExportDuration")), SyncSeqId: -1})
 	if err != nil {
 		return "", fmt.Errorf("latestToken: %w", err)
 	}
