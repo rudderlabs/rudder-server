@@ -1558,7 +1558,7 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(500, "") },
+			setup: func() { mockGeoCfg.setResponse(500) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-v1"
 
@@ -1602,7 +1602,7 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(502, "") },
+			setup: func() { mockGeoCfg.setResponse(502) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-502-v1"
 
@@ -1646,7 +1646,7 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(503, "") },
+			setup: func() { mockGeoCfg.setResponse(503) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-503-v1"
 
@@ -1690,7 +1690,7 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(429, "") },
+			setup: func() { mockGeoCfg.setResponse(429) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-429-v1"
 
@@ -1731,7 +1731,7 @@ def transformEvent(event, metadata):
     event["geo"] = result
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(500, "") },
+			setup: func() { mockGeoCfg.setResponse(500) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-uncaught-v1"
 
@@ -1779,7 +1779,7 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(500, "") },
+			setup: func() { mockGeoCfg.setResponse(500) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-batch-v1"
 
@@ -1825,7 +1825,7 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(502, "") },
+			setup: func() { mockGeoCfg.setResponse(502) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-502-batch-v1"
 
@@ -1871,7 +1871,7 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(503, "") },
+			setup: func() { mockGeoCfg.setResponse(503) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-503-batch-v1"
 
@@ -1917,7 +1917,7 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(429, "") },
+			setup: func() { mockGeoCfg.setResponse(429) },
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-429-batch-v1"
 

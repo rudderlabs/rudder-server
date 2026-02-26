@@ -528,15 +528,13 @@ func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
 type mockGeoConfig struct {
 	mu         sync.Mutex
 	statusCode int
-	body       string
 	closeConn  bool
 }
 
-func (c *mockGeoConfig) setResponse(statusCode int, body string) {
+func (c *mockGeoConfig) setResponse(statusCode int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.statusCode = statusCode
-	c.body = body
 	c.closeConn = false
 }
 
@@ -551,7 +549,7 @@ func (c *mockGeoConfig) setConnectionClose() {
 // Health check endpoints (/ and /health) always return 200 OK.
 func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *mockGeoConfig) {
 	t.Helper()
-	cfg := &mockGeoConfig{statusCode: http.StatusOK, body: `{}`}
+	cfg := &mockGeoConfig{statusCode: http.StatusOK}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Health check — always responds OK so containers stay healthy.
 		if r.URL.Path == "/" || r.URL.Path == "/health" {
@@ -562,7 +560,6 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 
 		cfg.mu.Lock()
 		code := cfg.statusCode
-		body := cfg.body
 		closeConn := cfg.closeConn
 		cfg.mu.Unlock()
 
@@ -579,9 +576,6 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(code)
-		if body != "" {
-			_, _ = w.Write([]byte(body))
-		}
 	}))
 	return server, cfg
 }
