@@ -62,9 +62,11 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
 				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-				// Verify geo data was returned (both should have a non-nil geo field)
-				require.NotNil(t, oldResp.Events[0].Output["geo"], "old arch: geo should be non-nil")
-				require.NotNil(t, newResp.Events[0].Output["geo"], "new arch: geo should be non-nil")
+				// Verify geo data was returned with correct IP
+				oldGeo, _ := oldResp.Events[0].Output["geo"].(map[string]any)
+				newGeo, _ := newResp.Events[0].Output["geo"].(map[string]any)
+				require.Equal(t, "1.2.3.4", oldGeo["ip"], "old arch: geo should contain correct ip")
+				require.Equal(t, "1.2.3.4", newGeo["ip"], "new arch: geo should contain correct ip")
 
 				t.Logf("Old arch geo: %v", oldResp.Events[0].Output["geo"])
 				t.Logf("New arch geo: %v", newResp.Events[0].Output["geo"])
@@ -455,11 +457,15 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
 
-				// Both should have two different geo results
-				require.NotNil(t, oldResp.Events[0].Output["geo1"], "old arch: geo1 should be non-nil")
-				require.NotNil(t, oldResp.Events[0].Output["geo2"], "old arch: geo2 should be non-nil")
-				require.NotNil(t, newResp.Events[0].Output["geo1"], "new arch: geo1 should be non-nil")
-				require.NotNil(t, newResp.Events[0].Output["geo2"], "new arch: geo2 should be non-nil")
+				// Both should have two different geo results with correct IPs
+				oldGeo1, _ := oldResp.Events[0].Output["geo1"].(map[string]any)
+				oldGeo2, _ := oldResp.Events[0].Output["geo2"].(map[string]any)
+				newGeo1, _ := newResp.Events[0].Output["geo1"].(map[string]any)
+				newGeo2, _ := newResp.Events[0].Output["geo2"].(map[string]any)
+				require.Equal(t, "1.2.3.4", oldGeo1["ip"], "old arch: geo1 should contain correct ip")
+				require.Equal(t, "8.8.8.8", oldGeo2["ip"], "old arch: geo2 should contain correct ip")
+				require.Equal(t, "1.2.3.4", newGeo1["ip"], "new arch: geo1 should contain correct ip")
+				require.Equal(t, "8.8.8.8", newGeo2["ip"], "new arch: geo2 should contain correct ip")
 
 				t.Logf("Old arch geo1: %v", oldResp.Events[0].Output["geo1"])
 				t.Logf("Old arch geo2: %v", oldResp.Events[0].Output["geo2"])
@@ -561,11 +567,13 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
 
-				// Verify geo data was placed in context.geo
+				// Verify geo data was placed in context.geo with correct IP
 				oldCtx, _ := oldResp.Events[0].Output["context"].(map[string]any)
 				newCtx, _ := newResp.Events[0].Output["context"].(map[string]any)
-				require.NotNil(t, oldCtx["geo"], "old arch: context.geo should be non-nil")
-				require.NotNil(t, newCtx["geo"], "new arch: context.geo should be non-nil")
+				oldGeo, _ := oldCtx["geo"].(map[string]any)
+				newGeo, _ := newCtx["geo"].(map[string]any)
+				require.Equal(t, "8.8.8.8", oldGeo["ip"], "old arch: context.geo should contain correct ip")
+				require.Equal(t, "8.8.8.8", newGeo["ip"], "new arch: context.geo should contain correct ip")
 
 				t.Logf("Old arch context.geo: %v", oldCtx["geo"])
 				t.Logf("New arch context.geo: %v", newCtx["geo"])
@@ -613,10 +621,12 @@ def transformBatch(events, metadata):
 				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
 				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-				// All events should have geo data
+				// All events should have geo data with correct IP
 				for i := range oldResp.Events {
-					require.NotNilf(t, oldResp.Events[i].Output["geo"], "old arch: event %d geo should be non-nil", i)
-					require.NotNilf(t, newResp.Events[i].Output["geo"], "new arch: event %d geo should be non-nil", i)
+					oldGeo, _ := oldResp.Events[i].Output["geo"].(map[string]any)
+					newGeo, _ := newResp.Events[i].Output["geo"].(map[string]any)
+					require.Equalf(t, "1.2.3.4", oldGeo["ip"], "old arch: event %d geo should contain correct ip", i)
+					require.Equalf(t, "1.2.3.4", newGeo["ip"], "new arch: event %d geo should contain correct ip", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -815,8 +825,10 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
 
-				require.NotNil(t, oldResp.Events[0].Output["geo_lookup"], "old arch: geo_lookup should be non-nil")
-				require.NotNil(t, newResp.Events[0].Output["geo_lookup"], "new arch: geo_lookup should be non-nil")
+				oldGeo, _ := oldResp.Events[0].Output["geo_lookup"].(map[string]any)
+				newGeo, _ := newResp.Events[0].Output["geo_lookup"].(map[string]any)
+				require.Equal(t, "8.8.8.8", oldGeo["ip"], "old arch: geo_lookup should contain correct ip")
+				require.Equal(t, "8.8.8.8", newGeo["ip"], "new arch: geo_lookup should contain correct ip")
 
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
@@ -863,9 +875,12 @@ def transformBatch(events, metadata):
 
 				// First and third should have same geo data (same IP)
 				// Second should have different geo data
+				expectedIPs := []string{"1.2.3.4", "8.8.8.8", "1.2.3.4"}
 				for i := range oldResp.Events {
-					require.NotNilf(t, oldResp.Events[i].Output["geo"], "old arch: event %d geo should be non-nil", i)
-					require.NotNilf(t, newResp.Events[i].Output["geo"], "new arch: event %d geo should be non-nil", i)
+					oldGeo, _ := oldResp.Events[i].Output["geo"].(map[string]any)
+					newGeo, _ := newResp.Events[i].Output["geo"].(map[string]any)
+					require.Equalf(t, expectedIPs[i], oldGeo["ip"], "old arch: event %d geo should contain correct ip", i)
+					require.Equalf(t, expectedIPs[i], newGeo["ip"], "new arch: event %d geo should contain correct ip", i)
 				}
 
 				diff, equal := oldResp.Equal(&newResp)
@@ -1099,8 +1114,9 @@ def transformEvent(event, metadata):
 							require.Nilf(t, ev.Output["geo"],
 								"event %s should not have geo data", msgID)
 						} else {
-							require.NotNilf(t, ev.Output["geo"],
-								"event %s should have geo data", msgID)
+							geo, _ := ev.Output["geo"].(map[string]any)
+							require.Equalf(t, "1.2.3.4", geo["ip"],
+								"event %s geo should contain correct ip", msgID)
 							require.Nilf(t, ev.Output["geo_error"],
 								"event %s should not have geo_error", msgID)
 						}
@@ -1142,9 +1158,11 @@ def transformEvent(event, metadata):
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
 				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-				// Geo data should be present but with empty values
-				require.NotNil(t, oldResp.Events[0].Output["geo"], "old arch: geo should be non-nil")
-				require.NotNil(t, newResp.Events[0].Output["geo"], "new arch: geo should be non-nil")
+				// Geo data should be present with correct IP but empty values
+				oldGeo, _ := oldResp.Events[0].Output["geo"].(map[string]any)
+				newGeo, _ := newResp.Events[0].Output["geo"].(map[string]any)
+				require.Equal(t, "127.0.0.1", oldGeo["ip"], "old arch: geo should contain correct ip")
+				require.Equal(t, "127.0.0.1", newGeo["ip"], "new arch: geo should contain correct ip")
 
 				t.Logf("Old arch geo: %v", oldResp.Events[0].Output["geo"])
 				t.Logf("New arch geo: %v", newResp.Events[0].Output["geo"])
