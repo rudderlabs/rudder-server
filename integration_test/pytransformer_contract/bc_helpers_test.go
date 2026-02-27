@@ -571,6 +571,10 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 					_ = conn.Close()
 				}
 				return
+			} else {
+				t.Log("MockGeolocation: failed to hijack connection")
+				w.WriteHeader(http.StatusInternalServerError)
+				return
 			}
 		}
 
