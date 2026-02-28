@@ -103,7 +103,7 @@ func (w *pipelineWorker) start() {
 			}
 			if err != nil {
 				w.logger.Errorn("Error preprocessing jobs", obskit.Error(err))
-				panic(err)
+				continue
 			}
 
 			waitStart := time.Now()
@@ -127,7 +127,7 @@ func (w *pipelineWorker) start() {
 			}
 			if err != nil {
 				w.logger.Errorn("Error generating transformation message", obskit.Error(err))
-				panic(err)
+				continue
 			}
 			waitTime := time.Now()
 			w.channel.preTransform <- preTransformMsg
@@ -149,7 +149,7 @@ func (w *pipelineWorker) start() {
 			}
 			if err != nil {
 				w.logger.Errorn("Error generating transformation message", obskit.Error(err))
-				panic(err)
+				continue
 			}
 			waitStart := time.Now()
 			w.channel.usertransform <- val

@@ -205,28 +205,28 @@ func (b *BingAdsBulkUploader) downloadAndGetUploadStatusFile(ResultFileUrl strin
 	outputDir := "/tmp"
 	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		panic(fmt.Errorf("error creating output directory: err: %w", err))
+		return nil, fmt.Errorf("error creating output directory: err: %w", err)
 	}
 
 	// Download the zip file
 	fileLoadResp, err := http.Get(modifiedUrl)
 	if err != nil {
 		b.logger.Errorn("Error downloading zip file", obskit.Error(err))
-		panic(fmt.Errorf("BRT: Error downloading zip file:. Err: %w", err))
+		return nil, fmt.Errorf("BRT: Error downloading zip file:. Err: %w", err)
 	}
 	defer fileLoadResp.Body.Close()
 
 	// Create a temporary file to save the downloaded zip file
 	tempFile, err := os.CreateTemp("", fmt.Sprintf("bingads_%s_*.zip", uuid.NewString()))
 	if err != nil {
-		panic(fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err))
+		return nil, fmt.Errorf("BRT: Failed creating temporary file. Err: %w", err)
 	}
 	defer os.Remove(tempFile.Name())
 
 	// Save the downloaded zip file to the temporary file
 	_, err = io.Copy(tempFile, fileLoadResp.Body)
 	if err != nil {
-		panic(fmt.Errorf("BRT: Failed saving zip file. Err: %w", err))
+		return nil, fmt.Errorf("BRT: Failed saving zip file. Err: %w", err)
 	}
 	// Extract the contents of the zip file to the output directory
 	filePaths, err := unzip(tempFile.Name(), outputDir)

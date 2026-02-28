@@ -73,7 +73,7 @@ func (w *partitionWorker) Work() bool {
 	// Mark jobs as executing
 	if err := w.handle.markExecuting(ctx, w.partition, jobs.Jobs); err != nil {
 		w.logger.Errorn("Error marking jobs as executing", obskit.Error(err))
-		panic(err)
+		return false
 	}
 
 	// Distribute jobs across partitions based on UserID
@@ -85,7 +85,7 @@ func (w *partitionWorker) Work() bool {
 	err := w.sendToPreProcess(ctx, jobsByPipeline)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		w.logger.Errorn("Error while processing jobs", obskit.Error(err))
-		panic(err)
+		return false
 	}
 
 	// Handle rate limiting if needed
@@ -95,7 +95,7 @@ func (w *partitionWorker) Work() bool {
 			// Sleep for the remaining time, respecting context cancellation
 			_ = w.tracer.TraceFunc(ctx, "Work.sleep", func(ctx context.Context) {
 				if err := misc.SleepCtx(context.Background(), readLoopSleep.Load()-elapsed); err != nil {
-					panic(err)
+					w.logger.Warnn("Sleep interrupted", obskit.Error(err))
 				}
 			}, tracing.WithTraceTags(spanTags))
 		}

@@ -698,8 +698,8 @@ func (proc *Handle) activePartitions(ctx context.Context) []string {
 	defer proc.statsFactory.NewStat("proc_active_partitions_time", stats.TimerType).RecordDuration()()
 	keys, err := proc.isolationStrategy.ActivePartitions(ctx, proc.gatewayDB)
 	if err != nil && ctx.Err() == nil {
-		// TODO: retry?
-		panic(err)
+		proc.logger.Errorn("Error fetching active partitions", obskit.Error(err))
+		return nil
 	}
 	proc.statsFactory.NewStat("proc_active_partitions", stats.GaugeType).Gauge(len(keys))
 	return keys
@@ -2822,7 +2822,8 @@ func (proc *Handle) storeStage(partition string, pipelineIndex int, in *storeMes
 
 	if !enableConcurrentStore {
 		if err := g.Wait(); err != nil {
-			panic(err)
+			proc.logger.Errorn("Error waiting for store goroutines", obskit.Error(err))
+			return err
 		}
 	}
 	in.rsourcesStats.CollectStats(statusList)
