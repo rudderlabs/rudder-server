@@ -130,7 +130,8 @@ func (r *Router) getPendingPopulateIdentitiesLoad(warehouse model.Warehouse) (up
 		return upload, found
 	}
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to query pending populate identities load", obskit.Error(err))
+		return upload, false
 	}
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
@@ -155,8 +156,8 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 	)
 	err := r.db.QueryRow(sqlStatement).Scan(&exists)
 	if err != nil {
-		// TODO: Handle this
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to check local identity data", obskit.Error(err))
+		return false
 	}
 	return exists
 }
@@ -164,7 +165,7 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 func (r *Router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
 	if err != nil {
-		panic(err)
+		return false, fmt.Errorf("creating warehouse manager: %w", err)
 	}
 
 	empty, err := whManager.IsEmpty(ctx, warehouse)
@@ -179,7 +180,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
 	err := r.db.QueryRow(sqlStatement).Scan(&name)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to check identity mappings table", obskit.Error(err))
+		return
 	}
 	if len(name.String) > 0 {
 		return
@@ -199,7 +201,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to create identity merge rules table", obskit.Error(err))
+		return
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -213,7 +216,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to create merge properties index", obskit.Error(err))
+		return
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -230,7 +234,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to create identity mappings table", obskit.Error(err))
+		return
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -247,7 +252,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to add unique constraint to identity mappings", obskit.Error(err))
+		return
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -258,7 +264,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to create rudder_id index", obskit.Error(err))
+		return
 	}
 
 	sqlStatement = fmt.Sprintf(`
@@ -271,7 +278,8 @@ func (r *Router) setupIdentityTables(ctx context.Context, warehouse model.Wareho
 
 	_, err = r.db.ExecContext(ctx, sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("query: %s\nfailed with error : %w", sqlStatement, err))
+		r.logger.Errorn("[WH]: Failed to create merge property index", obskit.Error(err))
+		return
 	}
 }
 
@@ -297,7 +305,8 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 
 	marshalledSchema, err := jsonrs.Marshal(schema)
 	if err != nil {
-		panic(err)
+		r.logger.Errorn("[WH]: Failed to marshal schema for identity upload", obskit.Error(err))
+		return model.Upload{}
 	}
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (
@@ -334,7 +343,8 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 	var uploadID int64
 	err = row.Scan(&uploadID)
 	if err != nil {
-		panic(err)
+		r.logger.Errorn("[WH]: Failed to scan upload ID", obskit.Error(err))
+		return model.Upload{}
 	}
 
 	upload := model.Upload{
@@ -420,7 +430,8 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 
 		whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
 		if err != nil {
-			panic(err)
+			r.logger.Errorn("[WH]: Failed to create warehouse manager for identity population", obskit.Error(err))
+			return
 		}
 
 		job := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{

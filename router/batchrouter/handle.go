@@ -171,7 +171,8 @@ func (brt *Handle) activePartitions(ctx context.Context) []string {
 	defer stats.Default.NewTaggedStat("brt_active_partitions_time", stats.TimerType, statTags).RecordDuration()()
 	keys, err := brt.isolationStrategy.ActivePartitions(ctx, brt.jobsDB)
 	if err != nil && ctx.Err() == nil {
-		panic(err)
+		brt.logger.Errorn("BRT: Error fetching active partitions", obskit.Error(err))
+		return nil
 	}
 	stats.Default.NewTaggedStat("brt_active_partitions", stats.GaugeType, statTags).Gauge(len(keys))
 	return keys
@@ -207,7 +208,7 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	}, brt.sendQueryRetryStats)
 	if err != nil {
 		brt.logger.Errorn("BRT: Error while reading from DB", obskit.DestinationType(brt.destType), obskit.Error(err))
-		panic(err)
+		return workerJobs
 	}
 	jobs = toProcess.Jobs
 
@@ -252,7 +253,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	tmpDirPath, err := misc.GetTmpDir()
 	if err != nil {
-		panic(err)
+		return UploadResult{Error: fmt.Errorf("failed to get tmp dir: %w", err)}
 	}
 	gzipFilePath := filepath.Join(
 		tmpDirPath,
@@ -267,11 +268,11 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
-		panic(err)
+		return UploadResult{Error: fmt.Errorf("failed to create directory: %w", err)}
 	}
 	gzWriter, err := misc.CreateGZ(gzipFilePath)
 	if err != nil {
-		panic(err)
+		return UploadResult{Error: fmt.Errorf("failed to create gzip file: %w", err)}
 	}
 
 	var dedupedIDMergeRuleJobs int
@@ -381,7 +382,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 
 	outputFile, err := os.Open(gzipFilePath)
 	if err != nil {
-		panic(err)
+		return UploadResult{Error: fmt.Errorf("failed to open output file: %w", err), LocalFilePaths: []string{gzipFilePath}}
 	}
 
 	brt.logger.Debugn("BRT: Starting upload to", logger.NewStringField("provider", provider))
@@ -442,7 +443,8 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 		})
 		opID, err = brt.jobsDB.JournalMarkStart(jobsdb.RawDataDestUploadOperation, opPayload)
 		if err != nil {
-			panic(fmt.Errorf("BRT: Error marking start of upload operation in journal: %v", err))
+			brt.logger.Errorn("BRT: Error marking start of upload operation in journal", obskit.Error(err))
+			return UploadResult{Error: err, LocalFilePaths: []string{gzipFilePath}}
 		}
 	}
 
@@ -796,7 +798,8 @@ func (brt *Handle) updateJobStatus(batchJobs *BatchedJobs, isWarehouse bool, err
 		})
 	}, brt.sendRetryUpdateStats)
 	if err != nil {
-		panic(err)
+		brt.logger.Errorn("BRT: Error updating job statuses", obskit.DestinationType(brt.destType), obskit.Error(err))
+		return
 	}
 	routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
 	sendDestStatusStats(batchJobs.Connection, jobStateCounts, brt.destType, isWarehouse)
