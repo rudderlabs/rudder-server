@@ -89,7 +89,8 @@ func (brt *Handle) Setup(
 		_, ok := brt.destinationsMap[destinationID]
 		return ok
 	}); err != nil {
-		panic(fmt.Errorf("resolving isolation strategy for mode %q: %w", isolationMode, err))
+		brt.logger.Errorn("Failed to resolve isolation strategy", obskit.Error(err))
+		return
 	}
 	brt.conf = conf
 	brt.maxEventsInABatch = config.GetIntVar(10000, 1, "BatchRouter."+brt.destType+"."+"maxEventsInABatch", "BatchRouter.maxEventsInABatch")
@@ -295,7 +296,8 @@ func (brt *Handle) crashRecover() {
 		for _, entry := range entries {
 			var object ObjectStorageDefinition
 			if err := jsonrs.Unmarshal(entry.OpPayload, &object); err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to unmarshal journal entry during crash recovery", obskit.Error(err))
+				continue
 			}
 			if len(object.Config) == 0 {
 				// Backward compatibility. If old entries dont have config, just delete journal entry
@@ -308,23 +310,27 @@ func (brt *Handle) crashRecover() {
 				Conf:     brt.conf,
 			})
 			if err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to create file manager during crash recovery", obskit.Error(err))
+				continue
 			}
 
 			localTmpDirName := "/rudder-raw-data-dest-upload-crash-recovery/"
 			tmpDirPath, err := misc.GetTmpDir()
 			if err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to get tmp dir during crash recovery", obskit.Error(err))
+				continue
 			}
 			jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.New().String()))
 
 			err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 			if err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to create directory during crash recovery", obskit.Error(err))
+				continue
 			}
 			jsonFile, err := os.Create(jsonPath)
 			if err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to create file during crash recovery", obskit.Error(err))
+				continue
 			}
 
 			brt.logger.Debugn("BRT: Downloading data for incomplete journal entry to recover from", logger.NewStringField("provider", object.Provider), logger.NewStringField("key", object.Key))
@@ -346,11 +352,14 @@ func (brt *Handle) crashRecover() {
 			defer func() { _ = os.Remove(jsonPath) }()
 			rawf, err := os.Open(jsonPath)
 			if err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to open downloaded file during crash recovery", obskit.Error(err))
+				continue
 			}
 			reader, err := gzip.NewReader(rawf)
 			if err != nil {
-				panic(err)
+				brt.logger.Errorn("BRT: Failed to create gzip reader during crash recovery", obskit.Error(err))
+				_ = rawf.Close()
+				continue
 			}
 
 			sc := bufio.NewScanner(reader)

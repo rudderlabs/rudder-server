@@ -56,9 +56,6 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			return nil
 		}
 		if err := migrate(); err != nil && ctx.Err() == nil {
-			if !jd.conf.skipMaintenanceError {
-				panic(err)
-			}
 			jd.logger.Errorn("migrateDSLoop error", obskit.Error(err))
 		}
 	}
