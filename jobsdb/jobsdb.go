@@ -2031,7 +2031,8 @@ func (jd *Handle) getDistinctValuesPerDataset(
 	customVal string,
 ) (map[string][]string, error) {
 	var queries []string
-	for _, ds := range dsList {
+	var args []interface{}
+	for i, ds := range dsList {
 		if customVal == "" {
 			queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
 				WITH RECURSIVE t AS (
@@ -2047,23 +2048,25 @@ func (jd *Handle) getDistinctValuesPerDataset(
 					)
 				SELECT * FROM t) a`, param.string(), ds))
 		} else {
+			argIndex := i + 1
 			queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
 				WITH RECURSIVE t AS (
-					(SELECT %[1]s as parameter FROM %[2]q WHERE custom_val = '%[3]s' ORDER BY %[1]s LIMIT 1)
+					(SELECT %[1]s as parameter FROM %[2]q WHERE custom_val = $%[3]d ORDER BY %[1]s LIMIT 1)
 					UNION ALL
 					(
 						SELECT s.* FROM t, LATERAL(
 							SELECT %[1]s as parameter FROM %[2]q f
-							WHERE custom_val = '%[3]s' AND f.%[1]s > t.parameter
+							WHERE custom_val = $%[3]d AND f.%[1]s > t.parameter
 							ORDER BY %[1]s LIMIT 1
 							)s
 						)
 					)
-				SELECT * FROM t) a`, param.string(), ds, customVal))
+				SELECT * FROM t) a`, param.string(), ds, argIndex))
+			args = append(args, customVal)
 		}
 	}
 	query := strings.Join(queries, " UNION ")
-	rows, err := jd.dbHandle.QueryContext(ctx, query)
+	rows, err := jd.dbHandle.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", param.string(), err)
 	}

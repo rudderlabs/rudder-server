@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/backoffvoid"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"sigs.k8s.io/yaml"
 )
 
 type singleWorkspaceConfig struct {
@@ -139,9 +140,9 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]Con
 	return conf, nil
 }
 
-// getFromFile reads the workspace config from JSON file
+// getFromFile reads the workspace config from JSON/YAML file
 func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
-	wc.logger.Debugn("Reading workspace config from JSON file")
+	wc.logger.Debugn("Reading workspace config from file", logger.NewStringField("path", wc.configJSONPath))
 
 	conf := make(map[string]ConfigT)
 	data, err := IoUtil.ReadFile(wc.configJSONPath)
@@ -151,16 +152,27 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		)
 		return conf, err
 	}
+
 	var configJSON ConfigT
-	if err = jsonrs.Unmarshal(data, &configJSON); err != nil {
-		wc.logger.Errorn("Unable to parse backend config from file",
-			logger.NewStringField("path", wc.configJSONPath), obskit.Error(err),
-		)
-		return conf, err
+	ext := filepath.Ext(wc.configJSONPath)
+	if ext == ".yaml" || ext == ".yml" {
+		if err = yaml.Unmarshal(data, &configJSON); err != nil {
+			wc.logger.Errorn("Unable to parse backend config from YAML file",
+				logger.NewStringField("path", wc.configJSONPath), obskit.Error(err),
+			)
+			return conf, err
+		}
+	} else {
+		if err = jsonrs.Unmarshal(data, &configJSON); err != nil {
+			wc.logger.Errorn("Unable to parse backend config from JSON file",
+				logger.NewStringField("path", wc.configJSONPath), obskit.Error(err),
+			)
+			return conf, err
+		}
 	}
 	workspaceID := configJSON.WorkspaceID
 	wc.workspaceIDOnce.Do(func() {
-		wc.logger.Infon("Read workspace config from JSON file")
+		wc.logger.Infon("Read workspace config from file", logger.NewStringField("path", wc.configJSONPath))
 		wc.workspaceID = workspaceID
 	})
 	configJSON.processAccountAssociations()

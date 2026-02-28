@@ -25,7 +25,7 @@ func TestJobsDBTableMigrations(t *testing.T) {
 			INSERT INTO test_jobs_1 
 				(uuid, workspace_id, user_id, custom_val, parameters, event_payload, event_count) 
 			VALUES 
-				(gen_random_uuid(), 'worskpace-1', 'user-1', 'gw', '{"source_id": "src1"}', '{}', 1)`)
+				($1, 'worskpace-1', 'user-1', 'gw', '{"source_id": "src1"}', '{}', 1)`, uuid.New().String())
 		require.NoError(t, err, "it should be able to insert initial data")
 
 		// Start JobsDB again to trigger migration to add partition_id column

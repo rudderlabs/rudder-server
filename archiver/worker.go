@@ -60,7 +60,7 @@ start:
 			return false
 		}
 		w.log.Errorn("failed to fetch jobs for archiving", obskit.Error(err))
-		panic(err)
+		return false
 	}
 
 	if len(jobs) == 0 {
@@ -85,8 +85,7 @@ start:
 				return false
 			}
 			log.Errorn("failed to mark unconfigured archive jobs' status", obskit.Error(err))
-			panic(err)
-
+			return false
 		}
 		if !limitReached {
 			return true
@@ -99,7 +98,7 @@ start:
 				return false
 			}
 			log.Errorn("failed to mark archive disabled jobs' status", obskit.Error(err))
-			panic(err)
+			return false
 		}
 		if !limitReached {
 			return true
@@ -119,7 +118,7 @@ start:
 			return false
 		}
 		log.Errorn("failed to mark successful upload status", obskit.Error(err))
-		panic(err)
+		return false
 	}
 	w.stats.NewTaggedStat("arc_uploaded_jobs", stats.CountType, map[string]string{"workspaceId": workspaceID, "sourceId": w.sourceID}).Count(len(jobs))
 	if !limitReached {

@@ -311,9 +311,12 @@ func (job *UploadJob) run() (err error) {
 	job.logger.Infon("Upload job is in progress")
 
 	if len(job.stagingFiles) == 0 {
-		err := fmt.Errorf("no staging files found")
-		_, _ = job.setUploadError(err, InternalProcessingFailed)
-		return err
+		if job.upload.Status == model.ExportedData {
+			job.logger.Infon("No staging files found, but upload is already successful/exported. Skipping.")
+			return nil
+		}
+		job.logger.Warnn("No staging files found for upload job")
+		return nil
 	}
 
 	whManager := job.whManager
@@ -562,9 +565,11 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		logger.NewIntField("chunkSize", int64(chunkSize)),
 	)
 
-	startTime := job.now()
+	// Ensure a reasonable timeout for file deletion even if the job context is tight
+	cleanupCtx, cleanupCancel := context.WithTimeout(job.ctx, 10*time.Minute)
+	defer cleanupCancel()
 
-	g, ctx := errgroup.WithContext(job.ctx)
+	g, ctx := errgroup.WithContext(cleanupCtx)
 	g.SetLimit(concurrency)
 	for _, chunk := range lo.Chunk(filesToDel, chunkSize) {
 		g.Go(func() error {
@@ -575,7 +580,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		return fmt.Errorf("deleting files from object storage: %w", err)
 	}
 
-	deletionTime := job.now().Sub(startTime)
+	deletionTime := time.Since(startTime)
 	log.Infon("Successfully completed file deletion",
 		logger.NewIntField("totalRows", int64(len(filesToDel))),
 		logger.NewDurationField("deletionDuration", deletionTime),
