@@ -2777,9 +2777,6 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 		timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.refreshDSTimeout.Load())
 		if err := jd.RefreshDSList(timeoutCtx); err != nil {
 			cancel()
-			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
-				panic(err)
-			}
 			jd.logger.Errorn("refreshDSListLoop error", obskit.Error(err))
 		}
 		cancel()
