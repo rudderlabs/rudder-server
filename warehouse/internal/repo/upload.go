@@ -202,7 +202,7 @@ func (u *Uploads) CreateWithStagingFiles(ctx context.Context, upload model.Uploa
 		}
 
 		result, err := tx.Exec(
-			`UPDATE `+stagingTableName+` SET upload_id = $1 WHERE id = ANY($2)`,
+			`UPDATE `+stagingTableName+` SET upload_id = $1 WHERE id = ANY($2) AND upload_id IS NULL`,
 			uploadID, pq.Array(stagingFileIDs),
 		)
 		if err != nil {
