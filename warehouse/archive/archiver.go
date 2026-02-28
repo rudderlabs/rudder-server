@@ -89,7 +89,7 @@ func New(
 		tenantManager: tenantManager,
 	}
 
-	a.config.archiveUploadRelatedRecords = a.conf.GetReloadableBoolVar(true, "Warehouse.archiveUploadRelatedRecords")
+	a.config.archiveUploadRelatedRecords = a.conf.GetReloadableBoolVar(false, "Warehouse.archiveUploadRelatedRecords")
 	a.config.canDeleteUploads = a.conf.GetReloadableBoolVar(false, "Warehouse.canDeleteUploads")
 	a.config.uploadsArchivalTimeInDays = a.conf.GetReloadableIntVar(5, 1, "Warehouse.uploadsArchivalTimeInDays")
 	a.config.uploadRetentionTimeInDays = a.conf.GetReloadableIntVar(90, 1, "Warehouse.uploadRetentionTimeInDays")

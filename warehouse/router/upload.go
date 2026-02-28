@@ -288,7 +288,7 @@ func (job *UploadJob) run() (err error) {
 	ch := job.trackLongRunningUpload()
 	defer func() {
 		_ = job.uploadsRepo.Update(
-			job.ctx,
+			context.WithoutCancel(job.ctx),
 			job.upload.ID,
 			[]repo.UpdateKeyValue{
 				repo.UploadFieldInProgress(false),
@@ -327,7 +327,7 @@ func (job *UploadJob) run() (err error) {
 		_, _ = job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
-	defer whManager.Cleanup(job.ctx)
+	defer whManager.Cleanup(context.WithoutCancel(job.ctx))
 
 	job.schemaHandle, err = schema.New(
 		job.ctx,
