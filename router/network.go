@@ -124,7 +124,10 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 			case "JSON":
 				jsonValue, err := jsonrs.Marshal(bodyValue)
 				if err != nil {
-					panic(err)
+					return &utils.SendPostResponse{
+						StatusCode:   500,
+						ResponseBody: []byte(fmt.Sprintf("500 Unable to marshal JSON body: %v", err)),
+					}
 				}
 				payload = strings.NewReader(string(jsonValue))
 			case "JSON_ARRAY":

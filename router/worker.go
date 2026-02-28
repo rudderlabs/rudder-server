@@ -1040,7 +1040,7 @@ func (w *worker) postStatusOnResponseQ(respStatusCode int, destinationJob *types
 				logger.NewIntField("jobId", status.JobID),
 				logger.NewStringField("orderKey", orderKey.String()))
 			if err := w.barrier.StateChanged(orderKey, destinationJobMetadata.JobID, status.JobState); err != nil {
-				panic(err)
+				w.logger.Errorn("EventOrder: error during state change in worker", obskit.Error(err), logger.NewIntField("jobID", destinationJobMetadata.JobID))
 			}
 		}
 	}

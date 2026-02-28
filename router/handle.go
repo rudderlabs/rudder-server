@@ -141,7 +141,8 @@ func (rt *Handle) activePartitions(ctx context.Context) []string {
 	defer stats.Default.NewTaggedStat("rt_active_partitions_time", stats.TimerType, statTags).RecordDuration()()
 	keys, err := rt.isolationStrategy.ActivePartitions(ctx, rt.jobsDB)
 	if err != nil && ctx.Err() == nil {
-		panic(err)
+		rt.logger.Errorn("Error fetching active partitions", obskit.Error(err))
+		return nil
 	}
 	stats.Default.NewTaggedStat("rt_active_partitions", stats.GaugeType, statTags).Gauge(len(keys))
 	return keys
@@ -229,8 +230,8 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			return rt.jobsDB.UpdateJobStatus(ctx, statusList)
 		}, rt.sendRetryUpdateStats)
 		if err != nil {
-			rt.logger.Errorn("Error occurred while marking jobs statuses as executing. Panicking", obskit.DestinationType(rt.destType), obskit.Error(err))
-			panic(err)
+			rt.logger.Errorn("Error occurred while marking jobs statuses as executing", obskit.DestinationType(rt.destType), obskit.Error(err))
+			return
 		}
 
 		rt.logger.Debugn("[DRAIN DEBUG] counts final jobs length being processed", obskit.DestinationType(rt.destType), logger.NewIntField("jobsLength", int64(len(reservedJobs))))
@@ -264,8 +265,8 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 		lastJob = job
 		var parameters routerutils.JobParameters
 		if err := jsonrs.Unmarshal(job.Parameters, &parameters); err != nil {
-			rt.logger.Errorn("Error occurred while unmarshalling job parameters. Panicking", obskit.Error(err))
-			panic(err)
+			rt.logger.Errorn("Error occurred while unmarshalling job parameters", obskit.Error(err))
+			continue
 		}
 		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters, blockedOrderKeys)
 		if err == nil {
@@ -538,7 +539,8 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 			})
 		}, rt.sendRetryStoreStats)
 		if err != nil {
-			panic(err)
+			rt.logger.Errorn("Error updating job statuses", obskit.DestinationType(rt.destType), obskit.Error(err))
+			return
 		}
 		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, rt.destType, statusList, jobIDConnectionDetailsMap)
 	}
@@ -557,7 +559,7 @@ func (rt *Handle) commitStatusList(workerJobStatuses *[]workerJobStatus) {
 				}
 				rt.logger.Debugn("EventOrder", logger.NewIntField("workerID", int64(worker.id)), logger.NewIntField("jobID", resp.status.JobID), logger.NewStringField("key", orderKey.String()), logger.NewStringField("jobState", status))
 				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
-					panic(err)
+					rt.logger.Errorn("EventOrder: error during state change", obskit.Error(err), logger.NewIntField("jobID", resp.status.JobID))
 				}
 			}
 		}
