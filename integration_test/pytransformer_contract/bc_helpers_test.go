@@ -8,11 +8,13 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	minioclient "github.com/minio/minio-go/v7"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
@@ -21,6 +23,8 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	miniodocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
@@ -303,20 +307,24 @@ func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Se
 }
 
 // startOpenFaasFlask starts an openfaas-flask-base container with transformation code
-// loaded at startup via --vid and --config-backend-url.
+// loaded at startup via --vid and --config-backend-url. Optional extra environment
+// variables can be passed (e.g. "geolocation_url=http://...").
 func startOpenFaasFlask(
 	t *testing.T, pool *dockertest.Pool,
 	port int, versionID, configBackendURL string,
+	extraEnv ...string,
 ) *dockertest.Resource {
 	t.Helper()
+	env := []string{
+		fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, configBackendURL),
+		fmt.Sprintf("port=%d", port),
+	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		Tag:        "latest",
 		Auth:       registry.AuthConfiguration(),
-		Env: []string{
-			fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, configBackendURL),
-			fmt.Sprintf("port=%d", port),
-		},
+		Env:        env,
 	}, func(hc *docker.HostConfig) {
 		hc.NetworkMode = "host"
 	})
@@ -348,22 +356,26 @@ func startRudderTransformer(
 }
 
 // startRudderPytransformer starts a rudder-pytransformer container configured
-// to use the mock config backend.
+// to use the mock config backend. Optional extra environment variables can be
+// passed (e.g. "GEOLOCATION_URL=http://...").
 func startRudderPytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	port int, configBackendURL string,
+	extraEnv ...string,
 ) *dockertest.Resource {
 	t.Helper()
+	env := []string{
+		"CONFIG_BACKEND_URL=" + configBackendURL,
+		"GUNICORN_WORKERS=1",
+		"GUNICORN_TIMEOUT=120",
+		"GUNICORN_BIND=0.0.0.0:" + strconv.Itoa(port),
+	}
+	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:        "latest",
 		Auth:       registry.AuthConfiguration(),
-		Env: []string{
-			"CONFIG_BACKEND_URL=" + configBackendURL,
-			"GUNICORN_WORKERS=1",
-			"GUNICORN_TIMEOUT=120",
-			"GUNICORN_BIND=0.0.0.0:" + strconv.Itoa(port),
-		},
+		Env:        env,
 	}, func(hc *docker.HostConfig) {
 		hc.NetworkMode = "host"
 	})
@@ -441,4 +453,133 @@ func normalizeResponseErrors(r *types.Response) {
 	for i := range r.FailedEvents {
 		r.FailedEvents[i].Error = normalizeJSON(r.FailedEvents[i].Error)
 	}
+}
+
+// startRudderGeolocation starts a MinIO container, uploads the test MMDB file,
+// then starts a rudder-geolocation container configured to download the database
+// from MinIO on startup. The container serves the /geoip/{ip} endpoint.
+// Like other containers in this test suite, it uses host networking so it can
+// reach MinIO at localhost and be reached by other host-networked containers.
+func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Resource, string) {
+	t.Helper()
+
+	minioResource, err := miniodocker.Setup(pool, t)
+	require.NoError(t, err, "failed to start MinIO")
+
+	_, err = minioResource.Client.FPutObject(
+		t.Context(),
+		minioResource.BucketName,
+		"city_test.mmdb",
+		"../../services/geolocation/testdata/city_test.mmdb",
+		minioclient.PutObjectOptions{},
+	)
+	require.NoError(t, err, "failed to upload city_test.mmdb to MinIO")
+
+	geoPort, err := kithelper.GetFreePort()
+	require.NoError(t, err, "failed to get free port for rudder-geolocation")
+
+	container, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
+		Tag:        "main",
+		Auth:       registry.AuthConfiguration(),
+		Env: []string{
+			"PORT=" + strconv.Itoa(geoPort),
+			"BUCKET=" + minioResource.BucketName,
+			"KEY=city_test.mmdb",
+			"OUTPUT_PATH=/tmp/city.mmdb",
+			"REGION=us-east-1",
+			"S3_ENDPOINT=" + "http://" + minioResource.Endpoint,
+			"S3_FORCE_PATH_STYLE=true",
+			"AWS_ACCESS_KEY_ID=" + minioResource.AccessKeyID,
+			"AWS_SECRET_ACCESS_KEY=" + minioResource.AccessKeySecret,
+		},
+	}, func(hc *docker.HostConfig) {
+		hc.NetworkMode = "host"
+	})
+	require.NoError(t, err, "failed to start rudder-geolocation container")
+
+	geoURL := fmt.Sprintf("http://localhost:%d", geoPort)
+	return container, geoURL
+}
+
+// waitForGeolocation polls the rudder-geolocation service until it responds to
+// a /geoip request. We try a well-known public IP (1.2.3.4) to verify the
+// service is up and can resolve IPs.
+func waitForGeolocation(t *testing.T, pool *dockertest.Pool, baseURL string) {
+	t.Helper()
+	t.Logf("Waiting for rudder-geolocation at %s to be healthy...", baseURL)
+	err := pool.Retry(func() error {
+		resp, err := http.Get(baseURL + "/geoip/1.2.3.4")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("rudder-geolocation not ready: status %d", resp.StatusCode)
+		}
+		return nil
+	})
+	require.NoError(t, err, "rudder-geolocation failed to become healthy")
+	t.Logf("rudder-geolocation is healthy at %s", baseURL)
+}
+
+// mockGeoConfig holds configurable behavior for the mock geolocation service.
+// Use setResponse to change the HTTP status code and body between subtests.
+type mockGeoConfig struct {
+	mu         sync.Mutex
+	statusCode int
+	closeConn  bool
+}
+
+func (c *mockGeoConfig) setResponse(statusCode int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statusCode = statusCode
+	c.closeConn = false
+}
+
+func (c *mockGeoConfig) setConnectionClose() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.closeConn = true
+}
+
+// newConfigurableMockGeolocationService creates a mock geolocation HTTP server
+// whose /geoip/* responses can be changed between subtests via mockGeoConfig.
+// Health check endpoints (/ and /health) always return 200 OK.
+func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *mockGeoConfig) {
+	t.Helper()
+	cfg := &mockGeoConfig{statusCode: http.StatusOK}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Health check — always responds OK so containers stay healthy.
+		if r.URL.Path == "/" || r.URL.Path == "/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"service":"geolocation","status":"ok"}`))
+			return
+		}
+
+		cfg.mu.Lock()
+		code := cfg.statusCode
+		closeConn := cfg.closeConn
+		cfg.mu.Unlock()
+
+		if closeConn {
+			hj, ok := w.(http.Hijacker)
+			if ok {
+				conn, _, err := hj.Hijack()
+				if err == nil {
+					_ = conn.Close()
+				}
+				return
+			} else {
+				t.Log("MockGeolocation: failed to hijack connection")
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(code)
+	}))
+	return server, cfg
 }
