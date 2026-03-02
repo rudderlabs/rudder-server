@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.69.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.68.0...v1.69.0-rc.1) (2026-03-02)
+
+
+### Bug Fixes
+
+* application context for async jobs framework ([#6709](https://github.com/rudderlabs/rudder-server/issues/6709)) ([8dd73ad](https://github.com/rudderlabs/rudder-server/commit/8dd73adeff30dcd61de3603496ee119f59cfd8fe))
+* **batchrouter:** klaviyo bulk upload manager tries to update zero-valued job ids in case of failures causing panics ([#6701](https://github.com/rudderlabs/rudder-server/issues/6701)) ([67befa5](https://github.com/rudderlabs/rudder-server/commit/67befa5e93ba9c7a05d4099b0b74f2588c65bd4d))
+* false sanity check failures ([#6713](https://github.com/rudderlabs/rudder-server/issues/6713)) ([ec12382](https://github.com/rudderlabs/rudder-server/commit/ec12382ee6382bcc871d97aff5470a86c9ceff3e))
+* snowpipe streaming delete channel logs ([#6695](https://github.com/rudderlabs/rudder-server/issues/6695)) ([8998ece](https://github.com/rudderlabs/rudder-server/commit/8998ece901979eabc85a6fa8c60db9ac0cb79c62))
+* snowpipe streaming poll re-create channel in case of invalid ([#6711](https://github.com/rudderlabs/rudder-server/issues/6711)) ([e379c1f](https://github.com/rudderlabs/rudder-server/commit/e379c1f7e735f6db9bf5582d5706944c9efb46d5))
+* snowpipe streaming recreate channel error response ([#6717](https://github.com/rudderlabs/rudder-server/issues/6717)) ([bceafef](https://github.com/rudderlabs/rudder-server/commit/bceafef199938e849ffb28fb789410f89423642a))
+
+
+### Miscellaneous
+
+* add backwards compatibility tests for getCredential ([#6719](https://github.com/rudderlabs/rudder-server/issues/6719)) ([32dbe77](https://github.com/rudderlabs/rudder-server/commit/32dbe7709bb6c1e3b9645bb15f5308c2f3cc8b4c))
+* add more test cases for pytransformer contract backwards compatibility ([#6698](https://github.com/rudderlabs/rudder-server/issues/6698)) ([9b59ab3](https://github.com/rudderlabs/rudder-server/commit/9b59ab3be274219d30fb291410e8b5a1c44a9cc3))
+* additional logs for async framework ([#6708](https://github.com/rudderlabs/rudder-server/issues/6708)) ([c16c885](https://github.com/rudderlabs/rudder-server/commit/c16c88523e2cac8e0ab502de04eda00e2fb1b938))
+* **gateway:** acknowledge reload requests in a transaction ([#6706](https://github.com/rudderlabs/rudder-server/issues/6706)) ([ef467b1](https://github.com/rudderlabs/rudder-server/commit/ef467b13eef753fc7764de646cb0fac56aacb754))
+* **jobsdb:** optimize partition id read exclusion filter ([#6724](https://github.com/rudderlabs/rudder-server/issues/6724)) ([936b9aa](https://github.com/rudderlabs/rudder-server/commit/936b9aaed96421df00a5b7c6cc041e1fd3de6ce7))
+* move oauth destination logic to backend-config package ([#6677](https://github.com/rudderlabs/rudder-server/issues/6677)) ([4d194a3](https://github.com/rudderlabs/rudder-server/commit/4d194a3e07dcb3e7c431e5a2d911eed9c5cf53c7))
+* pytransformer contract testing ([#6672](https://github.com/rudderlabs/rudder-server/issues/6672)) ([395a4fb](https://github.com/rudderlabs/rudder-server/commit/395a4fbf0431d7a06256a0e66b9e1266f192e404))
+* replace goimports with gci ([#6722](https://github.com/rudderlabs/rudder-server/issues/6722)) ([5947894](https://github.com/rudderlabs/rudder-server/commit/59478940928509b5d97b1362e83743c8fa65dfd7))
+* snowpipe streaming duplicate events due to offset ([#6712](https://github.com/rudderlabs/rudder-server/issues/6712)) ([db6b404](https://github.com/rudderlabs/rudder-server/commit/db6b404ed8231b8530d57b35bafa78363f6510f1))
+* sync release v1.68.0 to main branch ([#6696](https://github.com/rudderlabs/rudder-server/issues/6696)) ([2785583](https://github.com/rudderlabs/rudder-server/commit/278558392329af124a0058c471a1206b16032e50))
+* use release name as etcd namespace ([#6707](https://github.com/rudderlabs/rudder-server/issues/6707)) ([fbf0892](https://github.com/rudderlabs/rudder-server/commit/fbf08928d134191420460dd3752c072e41659d23))
+
 ## [1.68.1](https://github.com/rudderlabs/rudder-server/compare/v1.68.0...v1.68.1) (2026-02-18)
 
 
