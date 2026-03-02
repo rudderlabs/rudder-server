@@ -2261,15 +2261,18 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id IN (%s)", strings.Join(lo.Map(partitionFilters, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
 	} else if !params.ignoreReadPartitionsExclusions {
 		// excludedReadPartitions are mutually exclusive with partitionFilters
+		// Use NOT EXISTS against the exclusions table to avoid generating large NOT IN lists and
+		// improve performance by taking advantage of anti-join optimizations.
 		jd.excludedReadPartitionsLock.RLock()
-		var excludedReadPartitions []string
 		if len(jd.excludedReadPartitions) > 0 {
-			excludedReadPartitions = lo.Keys(jd.excludedReadPartitions) // get excluded read partitions at the time of query
+			filterConditions = append(filterConditions,
+				fmt.Sprintf(
+					`NOT EXISTS (SELECT 1 FROM %s AS excluded WHERE excluded.partition_id = jobs.partition_id)`,
+					jd.tablePrefix+"_read_excluded_partitions",
+				),
+			)
 		}
 		jd.excludedReadPartitionsLock.RUnlock()
-		if len(excludedReadPartitions) > 0 {
-			filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id NOT IN (%s)", strings.Join(lo.Map(excludedReadPartitions, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
-		}
 	}
 
 	var filterQuery string
