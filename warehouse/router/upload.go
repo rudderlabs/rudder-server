@@ -566,7 +566,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 	)
 
 	// Ensure a reasonable timeout for file deletion even if the job context is tight
-	cleanupCtx, cleanupCancel := context.WithTimeout(job.ctx, 10*time.Minute)
+	cleanupCtx, cleanupCancel := context.WithTimeout(job.ctx, 30*time.Minute)
 	defer cleanupCancel()
 
 	g, ctx := errgroup.WithContext(cleanupCtx)

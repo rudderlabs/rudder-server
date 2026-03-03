@@ -43,6 +43,7 @@ type archiver struct {
 		enabled          func() bool
 		customVal        string
 	}
+	lastErrorLogTime time.Time
 }
 
 func New(
@@ -169,7 +170,10 @@ func (a *archiver) Start() error {
 					if ctx.Err() != nil {
 						return err
 					}
-					a.log.Errorn("Failed to fetch sources", obskit.Error(err))
+					if time.Since(a.lastErrorLogTime) > 5*time.Minute {
+						a.log.Errorn("Failed to fetch sources", obskit.Error(err))
+						a.lastErrorLogTime = time.Now()
+					}
 					continue
 				}
 				a.stats.NewStat("arc_active_partitions", stats.GaugeType).Gauge(len(sources))

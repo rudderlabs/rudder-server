@@ -1103,7 +1103,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 			  cityHash64(
 				concat(
 				  toString(
-					toDate(received_at)
+					toYYYYMM(received_at)
 				  ),
 				  id
 				)
@@ -1139,7 +1139,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 					  '{replica}'
 					)
 					ORDER BY
-					  ("received_at", "id") PARTITION BY toDate(received_at);`,
+					  ("received_at", "id") PARTITION BY toYYYYMM(received_at);`,
 					testTable,
 					uuid.New().String(),
 				)
@@ -1170,7 +1170,7 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 					  '{replica}'
 					)
 					ORDER BY
-					  ("received_at", "id") PARTITION BY toDate(received_at);`,
+					  ("received_at", "id") PARTITION BY toYYYYMM(received_at);`,
 					testTable,
 				)
 			}

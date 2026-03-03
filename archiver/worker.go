@@ -49,6 +49,7 @@ type worker struct {
 		uploadFrequency  time.Duration
 	}
 	lastUploadTime time.Time
+	lastErrorLogTime time.Time
 	queryParams    jobsdb.GetQueryParams
 }
 
@@ -59,7 +60,10 @@ start:
 		if w.lifecycle.ctx.Err() != nil {
 			return false
 		}
-		w.log.Errorn("failed to fetch jobs for archiving", obskit.Error(err))
+		if time.Since(w.lastErrorLogTime) > 5*time.Minute {
+			w.log.Errorn("failed to fetch jobs for archiving", obskit.Error(err))
+			w.lastErrorLogTime = time.Now()
+		}
 		return false
 	}
 
@@ -207,7 +211,10 @@ func (w *worker) getJobs() ([]*jobsdb.JobT, bool, error) {
 	params.JobsLimit = w.config.eventsLimit()
 	unProcessed, err := w.jobsDB.GetUnprocessed(w.lifecycle.ctx, params)
 	if err != nil {
-		w.log.Errorn("failed to fetch unprocessed jobs for backup", obskit.Error(err))
+		if time.Since(w.lastErrorLogTime) > 5*time.Minute {
+			w.log.Errorn("failed to fetch unprocessed jobs for backup", obskit.Error(err))
+			w.lastErrorLogTime = time.Now()
+		}
 		return nil, false, err
 	}
 	return unProcessed.Jobs, unProcessed.LimitsReached, nil
