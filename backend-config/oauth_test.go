@@ -11,12 +11,64 @@ import (
 
 func TestDestinationT_IsOAuthDestination(t *testing.T) {
 	tests := []struct {
-		name           string
-		flow           common.RudderFlow
-		inputDefConfig map[string]any
-		expectedOAuth  bool
-		expectedErr    error
+		name            string
+		flow            common.RudderFlow
+		inputDefConfig  map[string]any
+		deliveryAccount *Account
+		deleteAccount   *Account
+		expectedOAuth   bool
+		expectedErr     error
 	}{
+		{
+			name: "should return 'true' for delivery flow when DeliveryAccount has OAuth AccountDefinition",
+			flow: common.RudderFlowDelivery,
+			deliveryAccount: &Account{
+				AccountDefinition: &AccountDefinition{
+					AuthenticationType: "oauth",
+				},
+			},
+			inputDefConfig: map[string]any{},
+			expectedOAuth:  true,
+			expectedErr:    nil,
+		},
+		{
+			name: "should return 'false' for delivery flow when DeliveryAccount has non-OAuth AccountDefinition",
+			flow: common.RudderFlowDelivery,
+			deliveryAccount: &Account{
+				AccountDefinition: &AccountDefinition{
+					AuthenticationType: "BasicAuth",
+				},
+			},
+			inputDefConfig: map[string]any{},
+			expectedOAuth:  false,
+			expectedErr:    nil,
+		},
+		{
+			name: "should return 'true' for delete flow when DeleteAccount has OAuth AccountDefinition",
+			flow: common.RudderFlowDelete,
+			deleteAccount: &Account{
+				AccountDefinition: &AccountDefinition{
+					AuthenticationType: "oauth",
+				},
+			},
+			inputDefConfig: map[string]any{},
+			expectedOAuth:  true,
+			expectedErr:    nil,
+		},
+		{
+			name: "should fall back to dest definition config when DeliveryAccount has no AccountDefinition",
+			flow: common.RudderFlowDelivery,
+			deliveryAccount: &Account{
+				AccountDefinition: nil,
+			},
+			inputDefConfig: map[string]any{
+				"auth": map[string]any{
+					"type": "OAuth",
+				},
+			},
+			expectedOAuth: true,
+			expectedErr:   nil,
+		},
 		{
 			name: "should pass for a destination which contains OAuth and rudderScopes",
 			flow: common.RudderFlowDelivery,
@@ -103,6 +155,8 @@ func TestDestinationT_IsOAuthDestination(t *testing.T) {
 					Name:   "dest_def_name",
 					Config: tt.inputDefConfig,
 				},
+				DeliveryAccount: tt.deliveryAccount,
+				DeleteAccount:   tt.deleteAccount,
 			}
 			isOAuth, err := d.IsOAuthDestination(tt.flow)
 
