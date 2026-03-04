@@ -35,6 +35,25 @@ jobs:
         if: ${{ failure() }}
         run: echo '::error file=go.mod,line=1,col=1::Inconsistent go mod file. Ensure you have run `go mod tidy` and committed the files locally.'; echo '::error file=enterprise_mod.go,line=1,col=1::Possible missing enterprise exclusive dependencies.'
 
+      - name: Check for pseudo-version rudderlabs dependencies
+        run: |
+          # Matches pseudo-versions like:
+          #   v0.0.0-20260211072500-0c7ccaf1aa80
+          #   v0.72.2-0.20260211072500-0c7ccaf1aa80
+          #   v0.72.2-pre.0.20260211072500-0c7ccaf1aa80
+          # The regex matches a 14-digit timestamp followed by a 12-char commit hash at the end.
+          VIOLATIONS=$(go list -m -json all | jq -r '
+            select(.Path | startswith("github.com/rudderlabs/")) |
+            select(.Version | test("[0-9]{14}-[a-f0-9]{12}$")) |
+            "\(.Path)@\(.Version)"
+          ')
+          if [ -n "$VIOLATIONS" ]; then
+            echo "ERROR: Pseudo-version dependencies detected for rudderlabs modules:"
+            echo "$VIOLATIONS"
+            echo "Please use a proper tagged release instead."
+            exit 1
+          fi
+
       - run: make mocks
       - run: git diff --exit-code
       - name: Error message
