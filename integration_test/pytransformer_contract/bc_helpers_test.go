@@ -366,9 +366,7 @@ func startRudderPytransformer(
 	t.Helper()
 	env := []string{
 		"CONFIG_BACKEND_URL=" + configBackendURL,
-		"GUNICORN_WORKERS=1",
-		"GUNICORN_TIMEOUT=120",
-		"GUNICORN_BIND=0.0.0.0:" + strconv.Itoa(port),
+		"UVICORN_PORT=" + strconv.Itoa(port),
 	}
 	env = append(env, extraEnv...)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
