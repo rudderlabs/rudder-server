@@ -10,10 +10,8 @@ import (
 )
 
 const (
-	oAuth = "OAuth"
-
-	deleteAccountIDKey   = "rudderDeleteAccountId"
-	deliveryAccountIDKey = "rudderAccountId"
+	destinationDefinitionOAuthType = "OAuth"
+	accountDefinitionOAuthType     = "oauth"
 )
 
 /*
@@ -24,28 +22,22 @@ Example:
 `dest.GetAccountID(common.RudderFlowDelivery)` --> To be used when we make use of OAuth during normal event delivery
 */
 func (d *DestinationT) GetAccountID(flow common.RudderFlow) (string, error) {
-	oauthDest, err := d.IsOAuthDestination(flow)
-	if err != nil {
-		return "", fmt.Errorf("failed to check if destination is oauth destination: %v", err)
+	account := d.resolveAccount(flow)
+	if account == nil {
+		return "", fmt.Errorf("account not found")
 	}
-
-	idKey := deliveryAccountIDKey
-	if flow == common.RudderFlowDelete {
-		idKey = deleteAccountIDKey
-	}
-	rudderAccountIdInterface, found := d.Config[idKey]
-	if !oauthDest || !found || idKey == "" {
-		return "", fmt.Errorf("destination is not an oauth destination or accountId not found")
-	}
-	rudderAccountId, ok := rudderAccountIdInterface.(string)
-	if !ok {
-		return "", fmt.Errorf("rudderAccountId is not a string")
-	}
-	return rudderAccountId, nil
+	return account.ID, nil
 }
 
-// IsOAuthDestination checks if a destination is configured for OAuth authentication
+// IsOAuthDestination checks if a destination is configured for OAuth authentication.
+// If the destination has an account with an account definition for the given flow,
+// the account definition's AuthenticationType is used to determine if it is OAuth.
+// Otherwise, it falls back to checking the destination definition config.
 func (d *DestinationT) IsOAuthDestination(flow common.RudderFlow) (bool, error) {
+	if account := d.resolveAccount(flow); account != nil && account.AccountDefinition != nil {
+		return account.AccountDefinition.AuthenticationType == accountDefinitionOAuthType, nil
+	}
+
 	authValue, _ := misc.NestedMapLookup(d.DestinationDefinition.Config, "auth", "type")
 	if authValue == nil {
 		// valid use-case for non-OAuth destinations
@@ -60,7 +52,19 @@ func (d *DestinationT) IsOAuthDestination(flow common.RudderFlow) (bool, error) 
 	if err != nil {
 		return false, err
 	}
-	return authType == oAuth && isScopeSupported, nil
+	return authType == destinationDefinitionOAuthType && isScopeSupported, nil
+}
+
+// resolveAccount resolves the account associated with the destination based on the flow.
+// It returns the account for the specified flow (delivery or delete) if it exists, otherwise it returns nil.
+func (d *DestinationT) resolveAccount(flow common.RudderFlow) *Account {
+	switch flow {
+	case common.RudderFlowDelivery:
+		return d.DeliveryAccount
+	case common.RudderFlowDelete:
+		return d.DeleteAccount
+	}
+	return nil
 }
 
 func isOAuthSupportedForFlow(definitionConfig map[string]any, flow common.RudderFlow) (bool, error) {

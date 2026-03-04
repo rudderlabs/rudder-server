@@ -334,6 +334,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 			deleteResponses: []deleteResponseParams{
 				{
@@ -385,6 +386,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 			deleteResponses: []deleteResponseParams{
 				{
@@ -444,6 +446,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 			cpResponses: []testutils.CpResponseParams{
 				{
@@ -490,6 +493,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 			cpResponses: []testutils.CpResponseParams{
 				{
@@ -545,6 +549,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: ""},
 			},
 			cpResponses:                  []testutils.CpResponseParams{},
 			deleteResponses:              []deleteResponseParams{{}},
@@ -632,6 +637,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 
 			oauthHttpClientTimeout: 1 * time.Second,
@@ -687,6 +693,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 			deleteResponses: []deleteResponseParams{
 				{
@@ -733,6 +740,7 @@ func TestOAuth(t *testing.T) {
 					Name:   "GA",
 					Config: defaultDestDefConfig,
 				},
+				DeleteAccount: &backendconfig.Account{ID: "xyz"},
 			},
 			deleteResponses: []deleteResponseParams{
 				// first attempt
