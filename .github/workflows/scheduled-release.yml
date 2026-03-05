@@ -24,12 +24,12 @@ jobs:
       - name: Check biweekly schedule
         id: check
         env:
-          RELEASE_FREEZE: ${{ vars.RELEASE_FREEZE }}
+          PAUSE_AUTO_RELEASE: ${{ vars.PAUSE_AUTO_RELEASE }}
           RELEASE_WEEK_PARITY: ${{ vars.RELEASE_WEEK_PARITY }}
         run: |
           # Check for release freeze (skip for manual dispatch)
-          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$RELEASE_FREEZE" = "true" ]; then
-            echo "Release freeze is active - skipping"
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$PAUSE_AUTO_RELEASE" = "true" ]; then
+            echo "Auto release is paused - skipping"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
