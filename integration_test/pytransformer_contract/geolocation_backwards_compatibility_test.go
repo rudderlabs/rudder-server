@@ -2,14 +2,11 @@ package pytransformer_contract
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
-
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -1347,10 +1344,7 @@ def transformEvent(event, metadata):
 	t.Cleanup(mockGateway.Close)
 
 	// Start shared rudder-transformer.
-	transformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
-	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
+	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	t.Cleanup(func() {
 		if err := pool.Purge(transformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-transformer: %v", err)
@@ -1358,10 +1352,7 @@ def transformEvent(event, metadata):
 	})
 
 	// Start shared rudder-pytransformer with geolocation URL.
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
 	t.Cleanup(func() {
 		if err := pool.Purge(pyTransformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-pytransformer: %v", err)
@@ -1379,12 +1370,8 @@ def transformEvent(event, metadata):
 			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
 
 			if st.config.code != "" {
-				openFaasPort, err := kithelper.GetFreePort()
-				require.NoError(t, err)
-				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
-
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
+				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
 				t.Cleanup(func() {
 					if err := pool.Purge(container); err != nil {
 						t.Logf("Failed to purge openfaas-flask-base: %v", err)
@@ -1623,10 +1610,7 @@ def transformBatch(events, metadata):
 	t.Cleanup(mockGateway.Close)
 
 	// Start shared rudder-transformer (WITHOUT geolocation URL).
-	transformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
-	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
+	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	t.Cleanup(func() {
 		if err := pool.Purge(transformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-transformer: %v", err)
@@ -1634,10 +1618,7 @@ def transformBatch(events, metadata):
 	})
 
 	// Start shared rudder-pytransformer (WITHOUT geolocation URL).
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL)
+	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 	t.Cleanup(func() {
 		if err := pool.Purge(pyTransformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-pytransformer: %v", err)
@@ -1653,12 +1634,8 @@ def transformBatch(events, metadata):
 			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
 
 			if st.config.code != "" {
-				openFaasPort, err := kithelper.GetFreePort()
-				require.NoError(t, err)
-				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
-
 				// Start openfaas WITHOUT geolocation URL (not configured test).
-				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL)
+				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL)
 				t.Cleanup(func() {
 					if err := pool.Purge(container); err != nil {
 						t.Logf("Failed to purge openfaas-flask-base: %v", err)
@@ -2496,10 +2473,7 @@ def transformBatch(events, metadata):
 	t.Cleanup(mockGateway.Close)
 
 	// Start shared rudder-transformer.
-	transformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
-	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
+	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	t.Cleanup(func() {
 		if err := pool.Purge(transformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-transformer: %v", err)
@@ -2507,10 +2481,7 @@ def transformBatch(events, metadata):
 	})
 
 	// Start shared rudder-pytransformer with configurable mock geolocation URL.
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
 	t.Cleanup(func() {
 		if err := pool.Purge(pyTransformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-pytransformer: %v", err)
@@ -2528,12 +2499,8 @@ def transformBatch(events, metadata):
 			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
 
 			if st.config.code != "" {
-				openFaasPort, err := kithelper.GetFreePort()
-				require.NoError(t, err)
-				openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
-
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				container := startOpenFaasFlask(t, pool, openFaasPort, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
+				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
 				t.Cleanup(func() {
 					if err := pool.Purge(container); err != nil {
 						t.Logf("Failed to purge openfaas-flask-base: %v", err)
