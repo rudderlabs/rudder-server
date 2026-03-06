@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	dockertesthelper "github.com/rudderlabs/rudder-go-kit/testhelper/docker"
 	miniodocker "github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
@@ -30,6 +33,69 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
+
+// containerConfig holds platform-specific Docker container configuration.
+// On Linux, containers use host networking (sharing the host's network namespace).
+// On macOS, containers use bridge networking with port bindings and host.docker.internal.
+type containerConfig struct {
+	hostPort     int // allocated host port (Linux only)
+	ExtraHosts   []string
+	PortBindings map[docker.Port][]docker.PortBinding
+	hostConfigFn func(*docker.HostConfig)
+}
+
+// newContainerConfig returns the appropriate Docker configuration for the current platform.
+// Default is host networking (Linux, CI, production). On macOS, Docker Desktop does not
+// support host networking so we fall back to bridge networking with port bindings.
+func newContainerConfig(t *testing.T, containerPort string) containerConfig {
+	t.Helper()
+	if runtime.GOOS == "darwin" {
+		return containerConfig{
+			ExtraHosts: []string{"host.docker.internal:host-gateway"},
+			PortBindings: map[docker.Port][]docker.PortBinding{
+				docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
+			},
+			hostConfigFn: func(hc *docker.HostConfig) {},
+		}
+	}
+	port, err := kithelper.GetFreePort()
+	require.NoError(t, err)
+	return containerConfig{
+		hostPort: port,
+		hostConfigFn: func(hc *docker.HostConfig) {
+			hc.NetworkMode = "host"
+		},
+	}
+}
+
+// portStr returns the port to pass as a container environment variable.
+func (c containerConfig) portStr(containerPort string) string {
+	if runtime.GOOS == "darwin" {
+		return containerPort
+	}
+	return strconv.Itoa(c.hostPort)
+}
+
+// url returns the URL to reach the container from the host test process.
+func (c containerConfig) url(container *dockertest.Resource, containerPort string) string {
+	if runtime.GOOS == "darwin" {
+		return fmt.Sprintf("http://%s:%s",
+			container.GetBoundIP(containerPort+"/tcp"),
+			container.GetPort(containerPort+"/tcp"),
+		)
+	}
+	return fmt.Sprintf("http://localhost:%d", c.hostPort)
+}
+
+// toContainerURL rewrites a host URL for use inside a Docker container.
+// On macOS (bridge networking): replaces localhost/127.0.0.1 with host.docker.internal.
+// Default (host networking): returns the URL as-is since containers share the host namespace.
+func toContainerURL(url string) string {
+	if runtime.GOOS == "darwin" {
+		return dockertesthelper.ToInternalDockerHost(url)
+	}
+	return url
+}
 
 // bcTestEnv holds clients for both the old architecture (rudder-transformer + openfaas)
 // and the new architecture (rudder-pytransformer) to compare their responses.
@@ -316,27 +382,24 @@ func startOpenFaasFlask(
 ) (*dockertest.Resource, string) {
 	t.Helper()
 	const containerPort = "8080"
-	internalConfigURL := dockertesthelper.ToInternalDockerHost(configBackendURL)
+	cfg := newContainerConfig(t, containerPort)
 	env := []string{
-		fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, internalConfigURL),
-		fmt.Sprintf("port=%s", containerPort),
+		fmt.Sprintf("fprocess=python index.py --vid %s --config-backend-url %s", versionID, toContainerURL(configBackendURL)),
+		fmt.Sprintf("port=%s", cfg.portStr(containerPort)),
 	}
 	for _, e := range extraEnv {
-		env = append(env, dockertesthelper.ToInternalDockerHost(e))
+		env = append(env, toContainerURL(e))
 	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		Tag:          "latest",
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
-		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
-		},
-	})
+		ExtraHosts:   cfg.ExtraHosts,
+		PortBindings: cfg.PortBindings,
+	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start openfaas-flask-base container")
-	url := fmt.Sprintf("http://%s:%s", container.GetBoundIP(containerPort+"/tcp"), container.GetPort(containerPort+"/tcp"))
-	return container, url
+	return container, cfg.url(container, containerPort)
 }
 
 // startRudderTransformer starts a rudder-transformer container configured to use
@@ -348,23 +411,21 @@ func startRudderTransformer(
 ) (*dockertest.Resource, string) {
 	t.Helper()
 	const containerPort = "9090"
+	cfg := newContainerConfig(t, containerPort)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "rudderstack/rudder-transformer",
 		Tag:        "latest",
 		Env: []string{
-			"CONFIG_BACKEND_URL=" + dockertesthelper.ToInternalDockerHost(configBackendURL),
-			"OPENFAAS_GATEWAY_URL=" + dockertesthelper.ToInternalDockerHost(openfaasGatewayURL),
-			"PORT=" + containerPort,
+			"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+			"OPENFAAS_GATEWAY_URL=" + toContainerURL(openfaasGatewayURL),
+			"PORT=" + cfg.portStr(containerPort),
 			"NODE_OPTIONS=--no-node-snapshot",
 		},
-		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
-		},
-	})
+		ExtraHosts:   cfg.ExtraHosts,
+		PortBindings: cfg.PortBindings,
+	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-transformer container")
-	url := fmt.Sprintf("http://%s:%s", container.GetBoundIP(containerPort+"/tcp"), container.GetPort(containerPort+"/tcp"))
-	return container, url
+	return container, cfg.url(container, containerPort)
 }
 
 // startRudderPytransformer starts a rudder-pytransformer container configured
@@ -378,26 +439,24 @@ func startRudderPytransformer(
 ) (*dockertest.Resource, string) {
 	t.Helper()
 	const containerPort = "8080"
+	cfg := newContainerConfig(t, containerPort)
 	env := []string{
-		"CONFIG_BACKEND_URL=" + dockertesthelper.ToInternalDockerHost(configBackendURL),
-		"UVICORN_PORT=" + containerPort,
+		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+		"UVICORN_PORT=" + cfg.portStr(containerPort),
 	}
 	for _, e := range extraEnv {
-		env = append(env, dockertesthelper.ToInternalDockerHost(e))
+		env = append(env, toContainerURL(e))
 	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:          "latest",
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
-		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
-		},
-	})
+		ExtraHosts:   cfg.ExtraHosts,
+		PortBindings: cfg.PortBindings,
+	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-pytransformer container")
-	url := fmt.Sprintf("http://%s:%s", container.GetBoundIP(containerPort+"/tcp"), container.GetPort(containerPort+"/tcp"))
-	return container, url
+	return container, cfg.url(container, containerPort)
 }
 
 // waitForHealthy polls a service's /health endpoint until it returns 200 OK.
@@ -492,30 +551,28 @@ func startRudderGeolocation(t *testing.T, pool *dockertest.Pool) (*dockertest.Re
 	require.NoError(t, err, "failed to upload city_test.mmdb to MinIO")
 
 	const containerPort = "8080"
+	cfg := newContainerConfig(t, containerPort)
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-geolocation",
 		Tag:        "main",
 		Auth:       registry.AuthConfiguration(),
 		Env: []string{
-			"PORT=" + containerPort,
+			"PORT=" + cfg.portStr(containerPort),
 			"BUCKET=" + minioResource.BucketName,
 			"KEY=city_test.mmdb",
 			"OUTPUT_PATH=/tmp/city.mmdb",
 			"REGION=us-east-1",
-			"S3_ENDPOINT=" + dockertesthelper.ToInternalDockerHost("http://"+minioResource.Endpoint),
+			"S3_ENDPOINT=" + toContainerURL("http://"+minioResource.Endpoint),
 			"S3_FORCE_PATH_STYLE=true",
 			"AWS_ACCESS_KEY_ID=" + minioResource.AccessKeyID,
 			"AWS_SECRET_ACCESS_KEY=" + minioResource.AccessKeySecret,
 		},
-		ExtraHosts:   []string{"host.docker.internal:host-gateway"},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			docker.Port(containerPort + "/tcp"): {{HostIP: "127.0.0.1", HostPort: "0"}},
-		},
-	})
+		ExtraHosts:   cfg.ExtraHosts,
+		PortBindings: cfg.PortBindings,
+	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-geolocation container")
 
-	geoURL := fmt.Sprintf("http://%s:%s", container.GetBoundIP(containerPort+"/tcp"), container.GetPort(containerPort+"/tcp"))
-	return container, geoURL
+	return container, cfg.url(container, containerPort)
 }
 
 // waitForGeolocation polls the rudder-geolocation service until it responds to
