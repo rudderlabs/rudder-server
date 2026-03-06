@@ -198,7 +198,7 @@ func (c *testContext) Setup() {
 				close(ch)
 			}()
 			return ch
-		})
+		}).AnyTimes()
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
@@ -1660,6 +1660,11 @@ var _ = Describe("Gateway", func() {
 					userIDHeader:   userIDHeader,
 					requestPayload: []byte(`{"batch": [{"type": "track", "userId": "123"}]}`),
 				}
+			})
+
+			AfterEach(func() {
+				err := gateway.Shutdown()
+				Expect(err).To(BeNil())
 			})
 
 			It("returns errRequestDropped when rate limit is reached", func() {
