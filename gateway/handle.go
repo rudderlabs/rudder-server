@@ -454,7 +454,7 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 		if limitReached {
 			return jobData, errRequestDropped
 		}
-		if req.ctx.Err()!= nil {
+		if req.ctx.Err() != nil {
 			return jobData, req.ctx.Err()
 		}
 	}

@@ -1666,7 +1666,7 @@ var _ = Describe("Gateway", func() {
 				ctx := context.Background()
 				req.ctx = ctx
 				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(true, nil).Times(1)
-				
+
 				jobData, err := gateway.getJobDataFromRequest(req)
 				Expect(err).To(Equal(errRequestDropped))
 				Expect(jobData).To(Not(BeNil()))
@@ -1676,10 +1676,10 @@ var _ = Describe("Gateway", func() {
 				ctx, cancel := context.WithCancel(context.Background())
 				req.ctx = ctx
 				cancel() // This line cancels the context immediately
-				
+
 				expectedErr := errors.New("some rate limit error")
 				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
-				
+
 				jobData, err := gateway.getJobDataFromRequest(req)
 				Expect(err).To(Equal(context.Canceled))
 				Expect(jobData).To(Not(BeNil()))
@@ -1690,7 +1690,7 @@ var _ = Describe("Gateway", func() {
 				req.ctx = ctx
 				expectedErr := errors.New("some rate limit error")
 				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
-				
+
 				jobData, err := gateway.getJobDataFromRequest(req)
 				Expect(err).To(BeNil())
 				Expect(jobData).To(Not(BeNil()))
