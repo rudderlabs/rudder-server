@@ -2,7 +2,6 @@ package pytransformer_contract
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -11,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
-	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
@@ -98,20 +96,8 @@ def transformEvent(event, metadata):
 	defer configBackend.Close()
 	t.Logf("Config backend at %s", configBackend.URL)
 
-	t.Log("Allocating free ports...")
-	openFaasPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	transformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-
-	openFaasURL := fmt.Sprintf("http://localhost:%d", openFaasPort)
-	transformerURL := fmt.Sprintf("http://localhost:%d", transformerPort)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-
 	t.Log("Starting openfaas-flask-base container...")
-	openFaasContainer := startOpenFaasFlask(t, pool, openFaasPort, versionID, configBackend.URL)
+	openFaasContainer, openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
 	defer func() {
 		if err := pool.Purge(openFaasContainer); err != nil {
 			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
@@ -125,7 +111,7 @@ def transformEvent(event, metadata):
 	t.Logf("Mock OpenFaaS gateway at %s", mockGateway.URL)
 
 	t.Log("Starting rudder-transformer container...")
-	transformerContainer := startRudderTransformer(t, pool, transformerPort, configBackend.URL, mockGateway.URL)
+	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	defer func() {
 		if err := pool.Purge(transformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-transformer container: %v", err)
@@ -133,7 +119,7 @@ def transformEvent(event, metadata):
 	}()
 
 	t.Log("Starting rudder-pytransformer container...")
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, configBackend.URL)
+	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 	defer func() {
 		if err := pool.Purge(pyTransformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-pytransformer container: %v", err)
