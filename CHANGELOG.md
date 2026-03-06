@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.70.0](https://github.com/rudderlabs/rudder-server/compare/v1.69.0...v1.70.0) (2026-03-06)
+
+
+### Features
+
+* add a scheduled release cut workflow to cut release branches ([#6739](https://github.com/rudderlabs/rudder-server/issues/6739)) ([ab887ac](https://github.com/rudderlabs/rudder-server/commit/ab887ac57afcb61a520214342803a494d473bc3f))
+* infer OAuth type from account definition when destination supports accounts ([#6718](https://github.com/rudderlabs/rudder-server/issues/6718)) ([00d1755](https://github.com/rudderlabs/rudder-server/commit/00d175524ea0804e0b0a125cd60979d90c7af1d5))
+
+
+### Miscellaneous
+
+* add check for pseudo-version dependencies in rudderlabs modules ([#6737](https://github.com/rudderlabs/rudder-server/issues/6737)) ([55ecd10](https://github.com/rudderlabs/rudder-server/commit/55ecd10e4ad32da658dfb7a663338f21f38af546))
+
 ## [1.69.0](https://github.com/rudderlabs/rudder-server/compare/v1.68.0...v1.69.0) (2026-03-03)
 
 
