@@ -97,7 +97,7 @@ jobs:
           MAJOR=$(echo "$VERSION" | cut -d. -f1)
           MINOR=$(echo "$VERSION" | cut -d. -f2)
           BRANCH="release/${MAJOR}.${MINOR}.x"
-          PRERELEASE_BRANCH="prerelease/${MAJOR}.${MINOR}-rc.1"
+          PRERELEASE_BRANCH="prerelease/${MAJOR}.${MINOR}.0-rc.1"
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
