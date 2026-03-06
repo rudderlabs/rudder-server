@@ -2,11 +2,15 @@ package crash
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 )
 
-var Default panicHandler = &NOOP{}
+var (
+	defaultMu      sync.RWMutex
+	defaultHandler panicHandler = &NOOP{}
+)
 
 type panicHandler interface {
 	Notify(team string) func()
@@ -19,28 +23,36 @@ type PanicWrapperOpts struct {
 	AppType      string
 }
 
+func getDefault() panicHandler {
+	defaultMu.RLock()
+	defer defaultMu.RUnlock()
+	return defaultHandler
+}
+
 func Configure(logger logger.Logger, opts PanicWrapperOpts) {
-	Default = UsingLogger(logger, opts)
+	defaultMu.Lock()
+	defer defaultMu.Unlock()
+	defaultHandler = UsingLogger(logger, opts)
 }
 
 func NotifyWarehouse(fn func() error) func() error {
 	return func() error {
-		defer Default.Notify("Warehouse")()
+		defer getDefault().Notify("Warehouse")()
 		return fn()
 	}
 }
 
 func Wrapper(fn func() error) func() error {
 	return func() error {
-		defer Default.Notify("Core")()
+		defer getDefault().Notify("Core")()
 		return fn()
 	}
 }
 
 func Notify(team string) func() {
-	return Default.Notify(team)
+	return getDefault().Notify(team)
 }
 
 func Handler(h http.Handler) http.Handler {
-	return Default.Handler(h)
+	return getDefault().Handler(h)
 }
