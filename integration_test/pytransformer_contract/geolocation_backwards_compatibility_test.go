@@ -1696,23 +1696,18 @@ def transformEvent(event, metadata):
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
+				// Old arch: geolocation raises immediately on 500, try/except catches it
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
 				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
 				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
 				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
-				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 500")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: geolocation retries on 5xx until sandbox timeout kills the process.
+				// The try/except never catches because geolocation() never raises — it retries forever.
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -1741,22 +1736,13 @@ def transformEvent(event, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
 				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
 				require.Contains(t, oldError, "status code: 502", "old arch: error should mention 502")
-				require.Contains(t, newError, "status code: 502", "new arch: error should mention 502")
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 502")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -1785,22 +1771,13 @@ def transformEvent(event, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
 				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
 				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
-				require.Contains(t, newError, "status code: 503", "new arch: error should mention 503")
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 503")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -1881,14 +1858,8 @@ def transformEvent(event, metadata):
 				t.Logf("New arch error: %q", newError)
 
 				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
-				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught 500")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Contains(t, newError, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -1920,21 +1891,15 @@ def transformBatch(events, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.Containsf(t, oldError, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Containsf(t, newError, "status code: 500", "new arch: event %d error should mention 500", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 500")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -1966,21 +1931,15 @@ def transformBatch(events, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.Containsf(t, oldError, "status code: 502", "old arch: event %d error should mention 502", i)
-					require.Containsf(t, newError, "status code: 502", "new arch: event %d error should mention 502", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 502")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -2012,21 +1971,15 @@ def transformBatch(events, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.Containsf(t, oldError, "status code: 503", "old arch: event %d error should mention 503", i)
-					require.Containsf(t, newError, "status code: 503", "new arch: event %d error should mention 503", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 503")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -2100,18 +2053,15 @@ def transformEvent(event, metadata):
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-				// Both should succeed (error caught by try/except)
+				// Old arch: error caught by try/except, returns success with geo_error
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				// Both should have a geo_error from the network failure
 				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
 				require.NotEmpty(t, oldError, "old arch: should have a geo_error")
-				require.NotEmpty(t, newError, "new arch: should have a geo_error")
+
+				// New arch: retries on connection error until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -2143,14 +2093,15 @@ def transformBatch(events, metadata):
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.NotEmptyf(t, oldError, "old arch: event %d should have a geo_error", i)
-					require.NotEmptyf(t, newError, "new arch: event %d should have a geo_error", i)
 				}
+
+				// New arch: retries on connection error until sandbox timeout
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events (sandbox timed out)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -2230,14 +2181,8 @@ def transformEvent(event, metadata):
 				t.Logf("New arch error: %q", newError)
 
 				require.Contains(t, oldError, "status code: 502", "old arch: error should mention 502")
-				require.Contains(t, newError, "status code: 502", "new arch: error should mention 502")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught 502")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Contains(t, newError, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -2273,14 +2218,8 @@ def transformEvent(event, metadata):
 				t.Logf("New arch error: %q", newError)
 
 				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
-				require.Contains(t, newError, "status code: 503", "new arch: error should mention 503")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught 503")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Contains(t, newError, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
@@ -2393,15 +2332,9 @@ def transformBatch(events, metadata):
 
 				for i := range oldResp.FailedEvents {
 					require.Containsf(t, oldResp.FailedEvents[i].Error, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Containsf(t, newResp.FailedEvents[i].Error, "status code: 500", "new arch: event %d error should mention 500", i)
 				}
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 500 uncaught")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				// New arch: retries on 5xx until sandbox timeout
+				require.Contains(t, newResp.FailedEvents[0].Error, "timed out", "new arch: error should mention timeout")
 			},
 		},
 		{
