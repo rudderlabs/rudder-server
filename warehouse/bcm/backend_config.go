@@ -237,7 +237,7 @@ func (bcm *BackendConfigManager) namespace(ctx context.Context, source backendco
 		}
 	}
 
-	namespacePrefix := bcm.conf.GetStringVar(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "")
+	namespacePrefix := bcm.conf.GetStringVar("", fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]))
 	if namespacePrefix != "" {
 		return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}
