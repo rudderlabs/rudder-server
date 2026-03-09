@@ -136,9 +136,9 @@ func New(conf *config.Config, log logger.Logger, stats stats.Stats) *MSSQL {
 		stats:  stats,
 		logger: log.Child("integrations").Child("mssql"),
 	}
-	ms.config.enableDeleteByJobs = conf.GetBool("Warehouse.mssql.enableDeleteByJobs", false)
-	ms.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.mssql.numWorkersDownloadLoadFiles", 1)
-	ms.config.slowQueryThreshold = conf.GetDuration("Warehouse.mssql.slowQueryThreshold", 5, time.Minute)
+	ms.config.enableDeleteByJobs = conf.GetBoolVar(false, "Warehouse.mssql.enableDeleteByJobs")
+	ms.config.numWorkersDownloadLoadFiles = conf.GetIntVar(1, 1, "Warehouse.mssql.numWorkersDownloadLoadFiles")
+	ms.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.mssql.slowQueryThreshold")
 
 	return ms
 }

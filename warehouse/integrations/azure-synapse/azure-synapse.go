@@ -131,8 +131,8 @@ func New(conf *config.Config, log logger.Logger, stats stats.Stats) *AzureSynaps
 		logger: log.Child("integrations").Child("synapse"),
 	}
 
-	az.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.azure_synapse.numWorkersDownloadLoadFiles", 1)
-	az.config.slowQueryThreshold = conf.GetDuration("Warehouse.azure_synapse.slowQueryThreshold", 5, time.Minute)
+	az.config.numWorkersDownloadLoadFiles = conf.GetIntVar(1, 1, "Warehouse.azure_synapse.numWorkersDownloadLoadFiles")
+	az.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.azure_synapse.slowQueryThreshold")
 
 	return az
 }

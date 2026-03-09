@@ -257,7 +257,7 @@ func TestBackoff(t *testing.T) {
 		}
 		conf := config.New()
 		barrier := eventorder.NewBarrier(eventorder.WithOrderingDisabledCheckForBarrierKey(func(key eventorder.BarrierKey) bool {
-			return slices.Contains(conf.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
+			return slices.Contains(conf.GetStringSliceVar(nil, "Router.orderingDisabledDestinationIDs"), destinationID)
 		}))
 		r := &Handle{
 			logger:                logger.NOP,
@@ -273,10 +273,10 @@ func TestBackoff(t *testing.T) {
 			drainer:          &drainer{},
 			throttlerFactory: &mockThrottlerFactory{count: new(atomic.Int64)},
 			eventOrderingDisabledForWorkspace: func(workspaceID string) bool {
-				return slices.Contains(conf.GetStringSlice("Router.orderingDisabledWorkspaceIDs", nil), workspaceID)
+				return slices.Contains(conf.GetStringSliceVar(nil, "Router.orderingDisabledWorkspaceIDs"), workspaceID)
 			},
 			eventOrderingDisabledForDestination: func(destinationID string) bool {
-				return slices.Contains(conf.GetStringSlice("Router.orderingDisabledDestinationIDs", nil), destinationID)
+				return slices.Contains(conf.GetStringSliceVar(nil, "Router.orderingDisabledDestinationIDs"), destinationID)
 			},
 		}
 		workers := []*worker{{

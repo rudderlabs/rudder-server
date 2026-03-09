@@ -47,13 +47,13 @@ type validationFunc struct {
 }
 
 func Init() {
-	connectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
+	connectionTestingFolder = config.GetStringVar(misc.RudderTestPayload, "RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME")
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
 	fileManagerFactory = filemanager.New
-	objectStorageTimeout = config.GetDuration("Warehouse.Validations.ObjectStorageTimeout", 15, time.Second)
+	objectStorageTimeout = config.GetDurationVar(15, time.Second, "Warehouse.Validations.ObjectStorageTimeout")
 
 	// Since we have a cp-router default timeout of 30 seconds, keeping the query timeout to 25 seconds
-	queryTimeout = config.GetDuration("Warehouse.Validations.QueryTimeout", 25, time.Second)
+	queryTimeout = config.GetDurationVar(25, time.Second, "Warehouse.Validations.QueryTimeout")
 }
 
 // Validate the destination by running all the validation steps

@@ -60,7 +60,7 @@ func (brt *Handle) Setup(
 
 	brt.netHandle = &http.Client{
 		Transport: &http.Transport{},
-		Timeout:   config.GetDuration("BatchRouter.httpTimeout", 10, time.Second),
+		Timeout:   config.GetDurationVar(10, time.Second, "BatchRouter.httpTimeout"),
 	}
 	brt.jobsDB = jobsDB
 	brt.reporting = reporting
@@ -69,7 +69,7 @@ func (brt *Handle) Setup(
 	brt.rsourcesService = rsourcesService
 	if brt.warehouseClient == nil {
 		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), stats.Default, client.WithTimeout(
-			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
+			config.GetDurationVar(30, time.Second, "WarehouseClient.timeout"),
 		))
 	}
 	brt.debugger = debugger
@@ -81,7 +81,7 @@ func (brt *Handle) Setup(
 	if config.IsSet("WORKSPACE_NAMESPACE") {
 		defaultIsolationMode = isolation.ModeWorkspace
 	}
-	isolationMode := config.GetString("BatchRouter.isolationMode", string(defaultIsolationMode))
+	isolationMode := config.GetStringVar(string(defaultIsolationMode), "BatchRouter.isolationMode")
 	var err error
 	if brt.isolationStrategy, err = isolation.GetStrategy(isolation.Mode(isolationMode), destType, func(destinationID string) bool {
 		brt.configSubscriberMu.RLock()
@@ -96,7 +96,7 @@ func (brt *Handle) Setup(
 	brt.maxPayloadSizeInBytes = config.GetIntVar(10000, 1, "BatchRouter."+brt.destType+"."+"maxPayloadSizeInBytes", "BatchRouter.maxPayloadSizeInBytes")
 	brt.reportingEnabled = config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
 	brt.disableEgress = config.GetBoolVar(false, "disableEgress")
-	brt.transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	brt.transformerURL = config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL")
 	brt.setupReloadableVars()
 	brt.drainer = routerutils.NewDrainer(
 		conf,
@@ -125,11 +125,11 @@ func (brt *Handle) Setup(
 	brt.uploadedRawDataJobsCache = make(map[string]map[string]bool)
 
 	var limiterGroup sync.WaitGroup
-	limiterStatsPeriod := config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second)
+	limiterStatsPeriod := config.GetDurationVar(15, time.Second, "BatchRouter.Limiter.statsPeriod")
 	brt.limiter.read = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_read",
 		getReloadableBatchRouterConfigInt("Limiter.read.limit", brt.destType, 20),
 		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.read.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "BatchRouter.Limiter.read.dynamicPeriod")),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)
@@ -138,7 +138,7 @@ func (brt *Handle) Setup(
 	brt.limiter.upload = kitsync.NewReloadableLimiter(ctx, &limiterGroup, "brt_upload",
 		getReloadableBatchRouterConfigInt("Limiter.upload.limit", brt.destType, 200),
 		stats.Default,
-		kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.upload.dynamicPeriod", 1, time.Second)),
+		kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "BatchRouter.Limiter.upload.dynamicPeriod")),
 		kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
 		kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
 			return time.After(limiterStatsPeriod)

@@ -42,14 +42,14 @@ func TestDrainConfigRoutine(t *testing.T) {
 	_, err = db.ExecContext(ctx, "INSERT INTO drain_config (key, value) VALUES ('drain.jobRunIDs', '123')")
 	require.NoError(t, err, "should insert into config table")
 	require.Eventually(t, func() bool {
-		return slices.Equal([]string{"123"}, conf.GetStringSlice("drain.jobRunIDs", nil))
+		return slices.Equal([]string{"123"}, conf.GetStringSliceVar(nil, "drain.jobRunIDs"))
 	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
 
 	conf.Set("drain.age", "1ms")
 	require.Eventually(t, func() bool {
-		return slices.Equal([]string{}, conf.GetStringSlice("drain.jobRunIDs", nil))
+		return slices.Equal([]string{}, conf.GetStringSliceVar(nil, "drain.jobRunIDs"))
 	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table")
-	require.Nil(t, conf.GetStringSlice("drain.jobRunIDs", nil), "should've cleaned up")
+	require.Nil(t, conf.GetStringSliceVar(nil, "drain.jobRunIDs"), "should've cleaned up")
 
 	drainConfigManager.Stop()
 }
@@ -78,8 +78,8 @@ func TestDrainConfigHttpHandler(t *testing.T) {
 	drainConfigManager.DrainConfigHttpHandler().ServeHTTP(resp, req)
 	require.Equal(t, http.StatusCreated, resp.Code, "expected status code to be 201")
 	require.Eventually(t, func() bool {
-		return slices.Equal([]string{"randomJobRunID"}, conf.GetStringSlice("drain.jobRunIDs", nil))
-	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table", conf.GetStringSlice("drain.jobRunIDs", nil))
+		return slices.Equal([]string{"randomJobRunID"}, conf.GetStringSliceVar(nil, "drain.jobRunIDs"))
+	}, 1*time.Second, 100*time.Millisecond, "should read from drain config table", conf.GetStringSliceVar(nil, "drain.jobRunIDs"))
 
 	cancel()
 	drainConfigManager.Stop()

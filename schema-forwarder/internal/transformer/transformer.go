@@ -31,9 +31,9 @@ type Transformer interface {
 func New(backendConfig backendconfig.BackendConfig, config *config.Config) Transformer {
 	return &transformer{
 		backendConfig:        backendConfig,
-		captureNilAsUnknowns: config.GetBool("EventSchemas.captureUnknowns", false),
-		keysLimit:            config.GetInt("EventSchemas.keysLimit", 500),
-		identifierLimit:      config.GetInt("EventSchemas.identifierLimit", 100),
+		captureNilAsUnknowns: config.GetBoolVar(false, "EventSchemas.captureUnknowns"),
+		keysLimit:            config.GetIntVar(500, 1, "EventSchemas.keysLimit"),
+		identifierLimit:      config.GetIntVar(100, 1, "EventSchemas.identifierLimit"),
 	}
 }
 

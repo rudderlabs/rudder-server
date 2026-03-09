@@ -67,12 +67,12 @@ type Runner struct {
 // New creates and initializes a new Runner
 func New(releaseInfo ReleaseInfo) *Runner {
 	return &Runner{
-		appType:                   strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED)),
+		appType:                   strings.ToUpper(config.GetStringVar(app.EMBEDDED, "APP_TYPE")),
 		releaseInfo:               releaseInfo,
 		logger:                    logger.NewLogger().Child("runner"),
-		warehouseMode:             config.GetString("Warehouse.mode", "embedded"),
-		enableSuppressUserFeature: config.GetBool("Gateway.enableSuppressUserFeature", true),
-		gracefulShutdownTimeout:   config.GetDuration("GracefulShutdownTimeout", 15, time.Second),
+		warehouseMode:             config.GetStringVar("embedded", "Warehouse.mode"),
+		enableSuppressUserFeature: config.GetBoolVar(true, "Gateway.enableSuppressUserFeature"),
+		gracefulShutdownTimeout:   config.GetDurationVar(15, time.Second, "GracefulShutdownTimeout"),
 	}
 }
 
@@ -103,7 +103,7 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
-		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetStringVar("", "WORKSPACE_NAMESPACE"), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
 	statsOptions := []stats.Option{
@@ -152,7 +152,7 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	}
 
 	crash.Configure(r.logger, crash.PanicWrapperOpts{
-		ReleaseStage: config.GetString("GO_ENV", "development"),
+		ReleaseStage: config.GetStringVar("development", "GO_ENV"),
 		AppType:      fmt.Sprintf("rudder-server-%s", r.appType),
 		AppVersion:   r.releaseInfo.Version,
 	})
@@ -200,7 +200,7 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start admin server
-	if config.GetBool("AdminServer.enabled", true) {
+	if config.GetBoolVar(true, "AdminServer.enabled") {
 		g.Go(func() error {
 			if err := admin.StartServer(ctx); err != nil {
 				return fmt.Errorf("admin server routine: %w", err)
@@ -209,9 +209,9 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 		})
 	}
 
-	if config.GetBool("Profiler.Enabled", true) {
+	if config.GetBoolVar(true, "Profiler.Enabled") {
 		g.Go(func() error {
-			return profiler.StartServer(ctx, config.GetInt("Profiler.Port", 7777))
+			return profiler.StartServer(ctx, config.GetIntVar(7777, 1, "Profiler.Port"))
 		})
 	}
 
@@ -227,7 +227,7 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := controlplane.NewClient(
-				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+				config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
@@ -290,7 +290,7 @@ func (r *Runner) Run(ctx context.Context, shutdownFn func(), args []string) int 
 		r.application.Stop()
 		logger.Sync()
 		stats.Default.Stop()
-		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
+		if config.GetBoolVar(true, "RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT") {
 			return 1
 		}
 	}

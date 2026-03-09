@@ -11,7 +11,7 @@ import (
 
 func GetProviderConfigForBackupsFromEnv(ctx context.Context, config *config.Config) map[string]any {
 	return filemanager.GetProviderConfigFromEnv(ProviderConfigOpts(ctx,
-		config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		config.GetStringVar("S3", "JOBS_BACKUP_STORAGE_PROVIDER"),
 		config,
 	))
 }
@@ -19,8 +19,8 @@ func GetProviderConfigForBackupsFromEnv(ctx context.Context, config *config.Conf
 func ProviderConfigOpts(ctx context.Context, provider string, config *config.Config) filemanager.ProviderConfigOpts {
 	return filemanager.ProviderConfigOpts{
 		Provider: provider,
-		Bucket:   config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas"),
-		Prefix:   config.GetString("JOBS_BACKUP_PREFIX", ""),
+		Bucket:   config.GetStringVar("rudder-saas", "JOBS_BACKUP_BUCKET"),
+		Prefix:   config.GetStringVar("", "JOBS_BACKUP_PREFIX"),
 		Config:   config,
 		ExternalIDSupplier: func() string {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)

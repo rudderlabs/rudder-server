@@ -27,7 +27,7 @@ func TestEventOrderDebugInfo(t *testing.T) {
 	m := &migrator.Migrator{
 		Handle:                     pgContainer.DB,
 		MigrationsTable:            "node_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 	require.NoError(t, m.Migrate("node"))
 

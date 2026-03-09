@@ -42,11 +42,11 @@ func (bf *BaseForwarder) LoadMetaData(terminalErrFn func(error), schemaDB jobsdb
 	bf.stat = stat
 	bf.jobsDB = schemaDB
 
-	bf.conf.pickupSize = config.GetInt("SchemaForwarder.eventCount", 10000)
-	bf.conf.loopSleepTime = config.GetDuration("SchemaForwarder.loopSleepTime", 10, time.Second)
-	bf.conf.jobsDBQueryRequestTimeout = config.GetDuration("SchemaForwarder.queryTimeout", 10, time.Second)
-	bf.conf.jobsDBMaxRetries = config.GetInt("SchemaForwarder.maxRetries", 3)
-	bf.conf.jobsDBPayloadSize = config.GetInt64("SchemaForwarder.payloadSize", 20*bytesize.MB)
+	bf.conf.pickupSize = config.GetIntVar(10000, 1, "SchemaForwarder.eventCount")
+	bf.conf.loopSleepTime = config.GetDurationVar(10, time.Second, "SchemaForwarder.loopSleepTime")
+	bf.conf.jobsDBQueryRequestTimeout = config.GetDurationVar(10, time.Second, "SchemaForwarder.queryTimeout")
+	bf.conf.jobsDBMaxRetries = config.GetIntVar(3, 1, "SchemaForwarder.maxRetries")
+	bf.conf.jobsDBPayloadSize = config.GetInt64Var(20*bytesize.MB, 1, "SchemaForwarder.payloadSize")
 }
 
 // GetJobs is an abstraction over the GetUnprocessed method of the jobsdb which includes retries

@@ -74,7 +74,7 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 		if _, err := d.db.ExecContext(
 			ctx,
 			"DELETE FROM drain_config WHERE created_at < $1",
-			time.Now().Add(-d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
+			time.Now().Add(-d.conf.GetDurationVar(defaultMaxAge, defaultMaxAgeUnits, "drain.age")),
 		); err != nil && ctx.Err() == nil {
 			d.log.Errorn("db cleanup", obskit.Error(err))
 			return fmt.Errorf("db cleanup: %v", err)
@@ -84,11 +84,7 @@ func (d *drainConfigManager) CleanupRoutine(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(
-			d.conf.GetDuration(
-				"drainConfig.cleanupFrequency",
-				defaultCleanupFrequency,
-				defaultCleanupFrequencyUnits,
-			),
+			d.conf.GetDurationVar(defaultCleanupFrequency, defaultCleanupFrequencyUnits, "drainConfig.cleanupFrequency"),
 		):
 		}
 	}
@@ -112,7 +108,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 			rows, err := d.db.QueryContext(
 				ctx,
 				"SELECT key, value FROM drain_config where created_at > $1 ORDER BY key, value ASC",
-				time.Now().Add(-1*d.conf.GetDuration("drain.age", defaultMaxAge, defaultMaxAgeUnits)),
+				time.Now().Add(-1*d.conf.GetDurationVar(defaultMaxAge, defaultMaxAgeUnits, "drain.age")),
 			)
 			if err != nil {
 				d.log.Errorn("db query", obskit.Error(err))
@@ -159,11 +155,7 @@ func (d *drainConfigManager) DrainConfigRoutine(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(
-			d.conf.GetDuration(
-				"drainConfig.pollFrequency",
-				defaultPollFrequency,
-				defaultPollFrequencyUnits,
-			),
+			d.conf.GetDurationVar(defaultPollFrequency, defaultPollFrequencyUnits, "drainConfig.pollFrequency"),
 		):
 		}
 	}
@@ -179,7 +171,7 @@ func migrate(db *sql.DB) error {
 	m := &migrator.Migrator{
 		Handle:                     db,
 		MigrationsTable:            "drain_config_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 
 	return m.Migrate("drain_config")
@@ -189,14 +181,14 @@ func migrate(db *sql.DB) error {
 func setupDBConn(conf *config.Config, stats stats.Stats) (*sql.DB, error) {
 	psqlInfo := misc.GetConnectionString(conf, "drain-config")
 	if conf.IsSet("SharedDB.dsn") {
-		psqlInfo = conf.GetString("SharedDB.dsn", "")
+		psqlInfo = conf.GetStringVar("", "SharedDB.dsn")
 	}
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return nil, fmt.Errorf("db open: %v", err)
 	}
-	db.SetMaxIdleConns(conf.GetInt("drainConfig.maxIdleConns", 1))
-	db.SetMaxOpenConns(conf.GetInt("drainConfig.maxOpenConns", 2))
+	db.SetMaxIdleConns(conf.GetIntVar(1, 1, "drainConfig.maxIdleConns"))
+	db.SetMaxOpenConns(conf.GetIntVar(2, 1, "drainConfig.maxOpenConns"))
 	err = stats.RegisterCollector(collectors.NewDatabaseSQLStats("drain_config", db))
 	if err != nil {
 		return nil, fmt.Errorf("registering collector: %v", err)

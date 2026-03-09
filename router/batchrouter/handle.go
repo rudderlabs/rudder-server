@@ -386,9 +386,9 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	brt.logger.Debugn("BRT: Starting upload to", logger.NewStringField("provider", provider))
 	var folderName string
 	if isWarehouse {
-		folderName = config.GetString("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
+		folderName = config.GetStringVar("rudder-warehouse-staging-logs", "WAREHOUSE_STAGING_BUCKET_FOLDER_NAME")
 	} else {
-		folderName = config.GetString("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
+		folderName = config.GetStringVar("rudder-logs", "DESTINATION_BUCKET_FOLDER_NAME")
 	}
 
 	var datePrefixLayout string
@@ -400,7 +400,7 @@ func (brt *Handle) upload(provider string, batchJobs *BatchedJobs, isWarehouse b
 	}
 
 	workspaceID := batchJobs.Connection.Destination.WorkspaceID
-	customTimezone := brt.conf.GetString("BatchRouter.customTimezone."+workspaceID, "")
+	customTimezone := brt.conf.GetStringVar("", "BatchRouter.customTimezone."+workspaceID)
 
 	now := brt.now()
 	if customTimezone != "" {
@@ -504,7 +504,7 @@ func (brt *Handle) pingWarehouse(batchJobs *BatchedJobs, output UploadResult) (e
 		SourceJobID:           sampleParameters.SourceJobID,
 		SourceJobRunID:        sampleParameters.SourceJobRunID,
 		DestinationRevisionID: batchJobs.Connection.Destination.RevisionID,
-		ServerInstanceID:      brt.conf.GetString("INSTANCE_ID", ""),
+		ServerInstanceID:      brt.conf.GetStringVar("", "INSTANCE_ID"),
 	}
 
 	if slices.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {

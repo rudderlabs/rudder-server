@@ -55,10 +55,10 @@ func NewPartitionWorker(log logger.Logger, partition string, brt *Handle, cb cir
 			ctx, wg, "brt_work",
 			brt.conf.GetReloadableIntVar(10, 1, "BatchRouter."+brt.destType+".partitionWorker.concurrency", "BatchRouter.partitionWorker.concurrency"),
 			stats.Default,
-			kitsync.WithLimiterDynamicPeriod(config.GetDuration("BatchRouter.Limiter.process.dynamicPeriod", 1, time.Second)),
+			kitsync.WithLimiterDynamicPeriod(config.GetDurationVar(1, time.Second, "BatchRouter.Limiter.process.dynamicPeriod")),
 			kitsync.WithLimiterTags(map[string]string{"destType": brt.destType}),
 			kitsync.WithLimiterStatsTriggerFunc(func() <-chan time.Time {
-				return time.After(config.GetDuration("BatchRouter.Limiter.statsPeriod", 15, time.Second))
+				return time.After(config.GetDurationVar(15, time.Second, "BatchRouter.Limiter.statsPeriod"))
 			}),
 		),
 		delayedJobAdditionTimerFrequency: brt.conf.GetDurationVar(5, time.Second, "BatchRouter."+brt.destType+".partitionWorker.addJobMaxDelaySeconds", "BatchRouter.partitionWorker.addJobMaxDelaySeconds"),

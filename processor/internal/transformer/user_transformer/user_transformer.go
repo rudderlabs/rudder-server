@@ -46,16 +46,16 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
-	handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_URL", handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"))
-	handle.config.pythonTransformationURL = handle.conf.GetString("PYTHON_TRANSFORM_URL", "")
+	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
+	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
 	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
-	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
+	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.failOnUserTransformTimeout = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnUserTransformTimeout", "Processor.Transformer.failOnUserTransformTimeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.UserTransformer.maxRetry", "Processor.maxRetry")
 	handle.config.cpDownEndlessRetries = conf.GetReloadableBoolVar(true, "Processor.UserTransformer.cpDownEndlessRetries")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.UserTransformer.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.UserTransformer.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
-	handle.config.collectInstanceLevelStats = conf.GetBool("Processor.collectInstanceLevelStats", false)
+	handle.config.collectInstanceLevelStats = conf.GetBoolVar(false, "Processor.collectInstanceLevelStats")
 	handle.config.batchSize = conf.GetReloadableIntVar(200, 1, "Processor.UserTransformer.batchSize", "Processor.userTransformBatchSize")
 
 	for _, opt := range opts {
@@ -63,8 +63,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	}
 
 	if handle.config.forMirroring {
-		handle.config.userTransformationURL = handle.conf.GetString("USER_TRANSFORM_MIRROR_URL", "")
-		handle.config.pythonTransformationURL = handle.conf.GetString("PYTHON_TRANSFORM_MIRROR_URL", "")
+		handle.config.userTransformationURL = handle.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
+		handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
 		handle.skippedEventsForMirroring = handle.stat.NewStat(
 			"processor_transformer_skipped_events_for_mirroring", stats.CountType,
 		)

@@ -94,8 +94,8 @@ type backendConfigImpl struct {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
-	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
+	configBackendURL = config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL")
+	cpRouterURL = config.GetStringVar("https://cp-router.rudderlabs.com", "CP_ROUTER_URL")
 	pollInterval = config.GetReloadableDurationVar(5, time.Second, "BackendConfig.pollInterval", "BackendConfig.pollIntervalInS")
 	configJSONPath = config.GetStringVar("/etc/rudderstack/workspaceConfig.json", "BackendConfig.configJSONPath")
 	configFromFile = config.GetBoolVar(false, "BackendConfig.configFromFile")
@@ -308,7 +308,7 @@ func newForDeployment(deploymentType deployment.Type, region string, configEnvHa
 // Setup backend config
 func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	deploymentType, err := deployment.GetFromEnv()
-	region := config.GetString("region", "")
+	region := config.GetStringVar("", "region")
 	if err != nil {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}

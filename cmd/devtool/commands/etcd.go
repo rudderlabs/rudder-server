@@ -59,7 +59,7 @@ func Mode(c *cli.Context) error {
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
 
-	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetStringVar("127.0.0.1:2379", "ETCD_HOSTS"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
 		Context:   c.Context,
@@ -100,7 +100,7 @@ func Mode(c *cli.Context) error {
 }
 
 func List(c *cli.Context) error {
-	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetStringVar("127.0.0.1:2379", "ETCD_HOSTS"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
 		Context:   c.Context,

@@ -302,7 +302,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	network.blockPrivateIPs = getRouterConfigBool("blockPrivateIPs", network.destType, false)
 	network.logger.Infon("blockPrivateIPs", logger.NewBoolField("blockPrivateIPs", network.blockPrivateIPs))
 
-	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetString("privateIPRanges", netutil.DefaultPrivateIPRanges), ","))
+	privateIPRanges, err := netutil.NewCidrRanges(strings.Split(config.GetStringVar(netutil.DefaultPrivateIPRanges, "privateIPRanges"), ","))
 	if err != nil {
 		network.logger.Errorn("Error loading private IP ranges", obskit.Error(err))
 		return err
@@ -370,7 +370,7 @@ func (network *netHandle) Setup(config *config.Config, netClientTimeout time.Dur
 	)
 	network.httpClient = &http.Client{Transport: &defaultTransportCopy, Timeout: netClientTimeout}
 	if config.GetBoolVar(false, "Router.Network.IncludeInstanceIdInHeader") {
-		network.instanceID = config.GetString("INSTANCE_ID", "")
+		network.instanceID = config.GetStringVar("", "INSTANCE_ID")
 	}
 
 	return nil

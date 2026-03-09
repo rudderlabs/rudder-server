@@ -21,7 +21,7 @@ type HandleT struct {
 var configEnvReplacer string
 
 func loadConfig() {
-	configEnvReplacer = config.GetString("BackendConfig.configEnvReplacer", "env.")
+	configEnvReplacer = config.GetStringVar("env.", "BackendConfig.configEnvReplacer")
 }
 
 // ReplaceConfigWithEnvVariables : Replaces all env variables in the config

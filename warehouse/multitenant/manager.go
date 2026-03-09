@@ -26,7 +26,7 @@ type Manager struct {
 func New(conf *config.Config, bcConfig backendconfig.BackendConfig) *Manager {
 	m := &Manager{}
 	m.backendConfig = bcConfig
-	m.degradedWorkspaceIDs = conf.GetStringSlice("Warehouse.degradedWorkspaceIDs", nil)
+	m.degradedWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.degradedWorkspaceIDs")
 
 	return m
 }

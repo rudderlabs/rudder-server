@@ -188,7 +188,7 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 
 	defer wc.httpCallsStat.Increment()
 
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDurationVar(30, time.Second, "HttpClient.backendConfig.timeout")}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

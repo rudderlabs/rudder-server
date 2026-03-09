@@ -50,7 +50,7 @@ func NewConnector(conf *config.Config, options ...func(*connector)) Connector {
 	cpConnector := &connector{
 		client: &http.Client{
 			Transport: http.DefaultTransport,
-			Timeout:   conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second),
+			Timeout:   conf.GetDurationVar(30, time.Second, "HttpClient.oauth.timeout"),
 		},
 	}
 

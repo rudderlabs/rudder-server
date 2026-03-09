@@ -57,7 +57,7 @@ type Handle struct {
 func NewHandle(backendConfig backendconfig.BackendConfig) (DestinationDebugger, error) {
 	h := &Handle{
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
-		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		configBackendURL: config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 		disableEventDeliveryStatusUploads: config.GetReloadableBoolVar(
 			false, "DestinationDebugger.disableEventDeliveryStatusUploads",
 		),
@@ -68,7 +68,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig) (DestinationDebugger, 
 	h.uploader = debugger.New[*DeliveryStatusT](url, backendConfig.Identity(), eventUploader)
 	h.uploader.Start()
 
-	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.MemoryCacheType)))
+	cacheType := cache.CacheType(config.GetIntVar(int(cache.MemoryCacheType), 1, "DestinationDebugger.cacheType"))
 	h.eventsDeliveryCache, err = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
 	if err != nil {
 		return nil, err
