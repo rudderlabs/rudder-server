@@ -80,7 +80,7 @@ func NewFlusher(db *sql.DB, log logger.Logger, stats stats.Stats, conf *config.C
 	f := Flusher{
 		db:                         db,
 		log:                        log,
-		instanceId:                 conf.GetString("INSTANCE_ID", "1"),
+		instanceId:                 conf.GetStringVar("1", "INSTANCE_ID"),
 		sleepInterval:              sleepInterval,
 		flushWindow:                flushWindow,
 		recentExclusionWindow:      recentExclusionWindow,

@@ -93,9 +93,9 @@ func Run(ctx context.Context) error {
 	g.Go(func() error {
 		api := api.NewAPI(pkgLogger, fullExportFile, latestExportFile)
 		httpServer = &http.Server{
-			Addr:              fmt.Sprintf(":%s", config.GetString("HTTP_PORT", "8000")),
+			Addr:              fmt.Sprintf(":%s", config.GetStringVar("8000", "HTTP_PORT")),
 			Handler:           api.Handler(gCtx),
-			ReadHeaderTimeout: config.GetDuration("HTTP_READ_HEADER_TIMEOUT", 3, time.Second),
+			ReadHeaderTimeout: config.GetDurationVar(3, time.Second, "HTTP_READ_HEADER_TIMEOUT"),
 		}
 		return httpServer.ListenAndServe()
 	})

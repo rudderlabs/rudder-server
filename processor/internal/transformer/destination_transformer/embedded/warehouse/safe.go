@@ -71,7 +71,7 @@ func isAlphaAlphanumeric(c int32) bool {
 
 func shouldSkipSnakeCasing(conf *config.Config, destType string) bool {
 	configKey := fmt.Sprintf("Warehouse.%s.skipNamespaceSnakeCasing", whutils.WHDestNameMap[destType])
-	return conf.GetBool(configKey, false)
+	return conf.GetBoolVar(false, configKey)
 }
 
 func safeTableNameCached(tec *transformEventContext, key string) (string, error) {

@@ -20,10 +20,10 @@ func Init() {
 }
 
 func loadConfig() {
-	alertProvider = config.GetString("ALERT_PROVIDER", "victorops")
-	pagerDutyRoutingKey = config.GetString("PG_ROUTING_KEY", "")
-	instanceName = config.GetString("INSTANCE_ID", "")
-	victorOpsRoutingKey = config.GetString("VICTOROPS_ROUTING_KEY", "")
+	alertProvider = config.GetStringVar("victorops", "ALERT_PROVIDER")
+	pagerDutyRoutingKey = config.GetStringVar("", "PG_ROUTING_KEY")
+	instanceName = config.GetStringVar("", "INSTANCE_ID")
+	victorOpsRoutingKey = config.GetStringVar("", "VICTOROPS_ROUTING_KEY")
 }
 
 // AlertManager interface

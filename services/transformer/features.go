@@ -53,12 +53,12 @@ func NewFeaturesService(ctx context.Context, config *config.Config, featConfig F
 		options:  featConfig,
 		client: &http.Client{
 			Transport: &http.Transport{
-				DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
-				MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
-				MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
-				IdleConnTimeout:     config.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second),
+				DisableKeepAlives:   config.GetBoolVar(true, "Transformer.Client.disableKeepAlives"),
+				MaxConnsPerHost:     config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections"),
+				MaxIdleConnsPerHost: config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections"),
+				IdleConnTimeout:     config.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration"),
 			},
-			Timeout: config.GetDuration("HttpClient.processor.timeout", 30, time.Second),
+			Timeout: config.GetDurationVar(30, time.Second, "HttpClient.processor.timeout"),
 		},
 	}
 

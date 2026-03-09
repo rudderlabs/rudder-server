@@ -158,14 +158,14 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Postgres {
 	pg.logger = log.Child("integrations").Child("postgres")
 	pg.stats = stat
 
-	pg.config.allowMerge = conf.GetBool("Warehouse.postgres.allowMerge", true)
-	pg.config.enableDeleteByJobs = conf.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
-	pg.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 1)
-	pg.config.slowQueryThreshold = conf.GetDuration("Warehouse.postgres.slowQueryThreshold", 5, time.Minute)
-	pg.config.txnRollbackTimeout = conf.GetDuration("Warehouse.postgres.txnRollbackTimeout", 30, time.Second)
-	pg.config.skipDedupDestinationIDs = conf.GetStringSlice("Warehouse.postgres.skipDedupDestinationIDs", nil)
-	pg.config.skipComputingUserLatestTraits = conf.GetBool("Warehouse.postgres.skipComputingUserLatestTraits", false)
-	pg.config.skipComputingUserLatestTraitsWorkspaceIDs = conf.GetStringSlice("Warehouse.postgres.skipComputingUserLatestTraitsWorkspaceIDs", nil)
+	pg.config.allowMerge = conf.GetBoolVar(true, "Warehouse.postgres.allowMerge")
+	pg.config.enableDeleteByJobs = conf.GetBoolVar(false, "Warehouse.postgres.enableDeleteByJobs")
+	pg.config.numWorkersDownloadLoadFiles = conf.GetIntVar(1, 1, "Warehouse.postgres.numWorkersDownloadLoadFiles")
+	pg.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.postgres.slowQueryThreshold")
+	pg.config.txnRollbackTimeout = conf.GetDurationVar(30, time.Second, "Warehouse.postgres.txnRollbackTimeout")
+	pg.config.skipDedupDestinationIDs = conf.GetStringSliceVar(nil, "Warehouse.postgres.skipDedupDestinationIDs")
+	pg.config.skipComputingUserLatestTraits = conf.GetBoolVar(false, "Warehouse.postgres.skipComputingUserLatestTraits")
+	pg.config.skipComputingUserLatestTraitsWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.postgres.skipComputingUserLatestTraitsWorkspaceIDs")
 
 	return pg
 }

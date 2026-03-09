@@ -92,7 +92,7 @@ type TransformationDebugger interface {
 
 func NewHandle(backendConfig backendconfig.BackendConfig) (TransformationDebugger, error) {
 	h := &Handle{
-		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		configBackendURL: config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 		log:              logger.NewLogger().Child("debugger").Child("transformation"),
 		disableTransformationUploads: config.GetReloadableBoolVar(
 			false, "TransformationDebugger.disableTransformationStatusUploads",
@@ -104,9 +104,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig) (TransformationDebugge
 		err                          error
 		url                          = fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
 		transformationStatusUploader = &TransformationStatusUploader{}
-		cacheType                    = cache.CacheType(config.GetInt(
-			"TransformationDebugger.cacheType", int(cache.MemoryCacheType),
-		))
+		cacheType                    = cache.CacheType(config.GetIntVar(int(cache.MemoryCacheType), 1, "TransformationDebugger.cacheType"))
 	)
 
 	h.transformationCacheMap, err = cache.New[TransformationStatusT](cacheType, "transformation", h.log)

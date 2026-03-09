@@ -27,7 +27,7 @@ const defaultClusterType = DedicatedType
 var pkgLogger = logger.NewLogger().Child("deployment")
 
 func GetFromEnv() (Type, error) {
-	t := Type(config.GetString("DEPLOYMENT_TYPE", ""))
+	t := Type(config.GetStringVar("", "DEPLOYMENT_TYPE"))
 	if t == "" {
 		t = defaultClusterType
 	}
@@ -62,13 +62,13 @@ func GetConnectionToken() (string, string, bool, error) {
 		tokenType = namespace
 		isNamespaced := config.IsSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
-			connectionToken = config.GetString("WORKSPACE_NAMESPACE", "")
+			connectionToken = config.GetStringVar("", "WORKSPACE_NAMESPACE")
 		} else {
 			if !config.IsSet("HOSTED_SERVICE_SECRET") {
 				pkgLogger.Errorn("hosted service secret not set")
 				return "", "", false, errors.New("hosted service secret not set")
 			}
-			connectionToken = config.GetString("HOSTED_SERVICE_SECRET", "")
+			connectionToken = config.GetStringVar("", "HOSTED_SERVICE_SECRET")
 		}
 	}
 	return connectionToken, tokenType, isMultiWorkspace, nil

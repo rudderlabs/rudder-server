@@ -48,14 +48,14 @@ func New(conf *config.Config, log logger.Logger, statsFactory stats.Stats, db *s
 		publisher:        publisher,
 	}
 
-	m.config.maxBatchSizeToProcess = conf.GetInt64("Warehouse.jobs.maxBatchSizeToProcess", 10)
-	m.config.maxAttemptsPerJob = conf.GetInt("Warehouse.jobs.maxAttemptsPerJob", 3)
+	m.config.maxBatchSizeToProcess = conf.GetInt64Var(10, 1, "Warehouse.jobs.maxBatchSizeToProcess")
+	m.config.maxAttemptsPerJob = conf.GetIntVar(3, 1, "Warehouse.jobs.maxAttemptsPerJob")
 
 	m.trigger.processingTimeout = func() <-chan time.Time {
-		return time.After(conf.GetDuration("Warehouse.jobs.processingTimeout", 300, time.Second))
+		return time.After(conf.GetDurationVar(300, time.Second, "Warehouse.jobs.processingTimeout"))
 	}
 	m.trigger.processingSleepInterval = func() <-chan time.Time {
-		return time.After(conf.GetDuration("Warehouse.jobs.processingSleepInterval", 10, time.Second))
+		return time.After(conf.GetDurationVar(10, time.Second, "Warehouse.jobs.processingSleepInterval"))
 	}
 	return m
 }

@@ -98,7 +98,7 @@ type ExtractorHandle struct {
 }
 
 func NewErrorDetailExtractor(log logger.Logger, conf *config.Config) *ExtractorHandle {
-	errMsgKeys := config.GetStringSlice("Reporting.ErrorDetail.ErrorMessageKeys", []string{})
+	errMsgKeys := config.GetStringSliceVar([]string{}, "Reporting.ErrorDetail.ErrorMessageKeys")
 	// adding to default message keys
 	defaultErrorMessageKeys = append(defaultErrorMessageKeys, errMsgKeys...)
 

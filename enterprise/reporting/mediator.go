@@ -45,7 +45,7 @@ func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.L
 		cancel: cancel,
 	}
 
-	reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
+	reportingEnabled := config.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
 	if enterpriseToken == "" || !reportingEnabled {
 		return rm
 	}
@@ -61,13 +61,13 @@ func NewReportingMediator(ctx context.Context, conf *config.Config, log logger.L
 	rm.reporters = append(rm.reporters, defaultReporter)
 
 	// error reporting implementation
-	if config.GetBool("Reporting.errorReporting.enabled", false) {
+	if config.GetBoolVar(false, "Reporting.errorReporting.enabled") {
 		errorReporter := NewErrorDetailReporter(rm.ctx, configSubscriber, rm.stats, config.Default)
 		rm.reporters = append(rm.reporters, errorReporter)
 	}
 
 	// error index reporting implementation
-	if config.GetBool("Reporting.errorIndexReporting.enabled", false) {
+	if config.GetBoolVar(false, "Reporting.errorIndexReporting.enabled") {
 		errorIndexReporter := erridx.NewErrorIndexReporter(rm.ctx, rm.log, configSubscriber, config.Default, stats.Default)
 		rm.reporters = append(rm.reporters, errorIndexReporter)
 	}

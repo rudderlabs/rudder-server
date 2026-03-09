@@ -182,14 +182,14 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Redshift {
 	rs.logger = log.Child("integrations").Child("redshift")
 	rs.stats = stat
 
-	rs.config.allowMerge = conf.GetBool("Warehouse.redshift.allowMerge", true)
-	rs.config.dedupWindow = conf.GetBool("Warehouse.redshift.dedupWindow", false)
-	rs.config.dedupWindowInHours = conf.GetDuration("Warehouse.redshift.dedupWindowInHours", 720, time.Hour)
-	rs.config.skipDedupDestinationIDs = conf.GetStringSlice("Warehouse.redshift.skipDedupDestinationIDs", nil)
-	rs.config.skipComputingUserLatestTraits = conf.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
-	rs.config.enableDeleteByJobs = conf.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
-	rs.config.slowQueryThreshold = conf.GetDuration("Warehouse.redshift.slowQueryThreshold", 5, time.Minute)
-	rs.config.loadByFolderPath = conf.GetBool("Warehouse.redshift.loadByFolderPath", false)
+	rs.config.allowMerge = conf.GetBoolVar(true, "Warehouse.redshift.allowMerge")
+	rs.config.dedupWindow = conf.GetBoolVar(false, "Warehouse.redshift.dedupWindow")
+	rs.config.dedupWindowInHours = conf.GetDurationVar(720, time.Hour, "Warehouse.redshift.dedupWindowInHours")
+	rs.config.skipDedupDestinationIDs = conf.GetStringSliceVar(nil, "Warehouse.redshift.skipDedupDestinationIDs")
+	rs.config.skipComputingUserLatestTraits = conf.GetBoolVar(false, "Warehouse.redshift.skipComputingUserLatestTraits")
+	rs.config.enableDeleteByJobs = conf.GetBoolVar(false, "Warehouse.redshift.enableDeleteByJobs")
+	rs.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.redshift.slowQueryThreshold")
+	rs.config.loadByFolderPath = conf.GetBoolVar(false, "Warehouse.redshift.loadByFolderPath")
 	return rs
 }
 
@@ -1510,7 +1510,7 @@ func (rs *Redshift) ShouldMerge(tableName string) bool {
 	}
 
 	configKey := "Warehouse.redshift.appendOnlyTables." + rs.Warehouse.Destination.ID
-	appendOnlyTables := rs.conf.GetStringSlice(configKey, nil)
+	appendOnlyTables := rs.conf.GetStringSliceVar(nil, configKey)
 	if slices.Contains(appendOnlyTables, tableName) {
 		return false
 	}

@@ -40,7 +40,7 @@ func CreateRunner(ctx context.Context, table string, log logger.Logger, stats st
 
 	if table == "tracked_users_reports" {
 
-		if !conf.GetBool("TrackedUsers.enabled", false) {
+		if !conf.GetBoolVar(false, "TrackedUsers.enabled") {
 			return &NOPCronRunner{}, nil
 		}
 

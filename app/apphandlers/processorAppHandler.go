@@ -144,8 +144,8 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	}
 
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+		TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
 		FeaturesRetryMaxAttempts: 10,
 	})
 
@@ -185,7 +185,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	gwROHandle := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithDSLimit(a.config.gwDSLimit),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "Gateway.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
@@ -197,7 +197,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.rtDSLimit),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Router.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Router.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
@@ -210,7 +210,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.batchrtDSLimit),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("BatchRouter.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "BatchRouter.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithPriorityPoolDB(priorityPool),
@@ -231,7 +231,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 		"arc",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithDSLimit(a.config.arcDSLimit),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Processor.jobsDB.skipMaintenanceError", false)),
+		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(false, "Processor.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "archival.jobRetention")),
 		jobsdb.WithDBHandle(jobsdbPool),
@@ -239,7 +239,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, shutdownFn func(), o
 	defer arcRWDB.Close()
 
 	var schemaForwarder schema_forwarder.Forwarder
-	if config.GetBool("EventSchemas2.enabled", false) {
+	if config.GetBoolVar(false, "EventSchemas2.enabled") {
 		client, err := pulsar.NewClient(config)
 		if err != nil {
 			return err

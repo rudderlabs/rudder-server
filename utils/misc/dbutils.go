@@ -36,7 +36,7 @@ func GetConnectionString(c *config.Config, componentName string) string {
 	}
 	idleTxTimeout := c.GetDurationVar(5, time.Minute, dbConfigKeys("idleTxTimeout")...)
 
-	hostname := c.GetString("HOSTNAME", DefaultString("rudder-server").OnError(os.Hostname()))
+	hostname := c.GetStringVar(DefaultString("rudder-server").OnError(os.Hostname()), "HOSTNAME")
 
 	// [application_name] can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// Format: [component_prefix][hostname_suffix]

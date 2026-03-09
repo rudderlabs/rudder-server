@@ -63,8 +63,8 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.log = log
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "SourceHydration"))
-	handle.config.sourceHydrationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
-	handle.config.logLongRunningTransformAfter = conf.GetDuration("HttpClient.procTransformer.logLongRunningTransformAfter", 600, time.Second)
+	handle.config.sourceHydrationURL = handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL")
+	handle.config.logLongRunningTransformAfter = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.logLongRunningTransformAfter")
 	handle.config.maxRetry = conf.GetReloadableIntVar(0, 1, "Processor.SourceHydration.maxRetry", "Processor.maxRetry")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.SourceHydration.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(1, time.Minute, "Processor.SourceHydration.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")

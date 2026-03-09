@@ -66,9 +66,9 @@ func isolationMode(destType string, config *config.Config) isolation.Mode {
 	}
 	destTypeKey := fmt.Sprintf("Router.%s.isolationMode", destType)
 	if config.IsSet(destTypeKey) {
-		return isolation.Mode(config.GetString(destTypeKey, string(defaultIsolationMode)))
+		return isolation.Mode(config.GetStringVar(string(defaultIsolationMode), destTypeKey))
 	}
-	return isolation.Mode(config.GetString("Router.isolationMode", string(defaultIsolationMode)))
+	return isolation.Mode(config.GetStringVar(string(defaultIsolationMode), "Router.isolationMode"))
 }
 
 func LimiterPriorityValueFrom(v, max int) kitsync.LimiterPriorityValue {

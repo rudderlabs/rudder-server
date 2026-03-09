@@ -176,7 +176,7 @@ func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
 }
 
 func (c *Client) isEnabled() bool {
-	return c.config.GetBool("ALERTA_ENABLED", true)
+	return c.config.GetBoolVar(true, "ALERTA_ENABLED")
 }
 
 func (c *Client) setDefaultsOpts(resource string, opts *SendAlertOpts) {
@@ -213,7 +213,7 @@ func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertO
 	)
 
 	if alertTimeout == 0 {
-		alertTimeout = c.config.GetInt("alerta.timeout", 86400)
+		alertTimeout = c.config.GetIntVar(86400, 1, "alerta.timeout")
 	}
 
 	payload := Alert{
@@ -240,7 +240,7 @@ func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertO
 		}
 
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-		req.Header.Set("Authorization", c.config.GetString("ALERTA_AUTH_TOKEN", ""))
+		req.Header.Set("Authorization", c.config.GetStringVar("", "ALERTA_AUTH_TOKEN"))
 
 		resp, err := c.client.Do(req)
 		if err != nil {

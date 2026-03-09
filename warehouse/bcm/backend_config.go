@@ -47,12 +47,12 @@ func New(
 		InitialConfigFetched: make(chan struct{}),
 		connectionsMap:       make(map[string]map[string]model.Warehouse),
 	}
-	if c.GetBool("ENABLE_TUNNELLING", true) {
+	if c.GetBoolVar(true, "ENABLE_TUNNELLING") {
 		bcm.internalControlPlaneClient = cpclient.NewInternalClientWithCache(
-			c.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+			c.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 			cpclient.BasicAuth{
-				Username: c.GetString("CP_INTERNAL_API_USERNAME", ""),
-				Password: c.GetString("CP_INTERNAL_API_PASSWORD", ""),
+				Username: c.GetStringVar("", "CP_INTERNAL_API_USERNAME"),
+				Password: c.GetStringVar("", "CP_INTERNAL_API_PASSWORD"),
 			},
 		)
 	}
@@ -237,7 +237,7 @@ func (bcm *BackendConfigManager) namespace(ctx context.Context, source backendco
 		}
 	}
 
-	namespacePrefix := bcm.conf.GetString(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "")
+	namespacePrefix := bcm.conf.GetStringVar(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", whutils.WHDestNameMap[destType]), "")
 	if namespacePrefix != "" {
 		return whutils.ToProviderCase(destType, whutils.ToSafeNamespace(destType, fmt.Sprintf(`%s_%s`, namespacePrefix, source.Name)))
 	}

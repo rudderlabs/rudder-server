@@ -65,12 +65,12 @@ func NewUniqueUsersReporter(log logger.Logger, conf *config.Config, stats stats.
 	return &UniqueUsersReporter{
 		log: log,
 		hllSettings: &hll.Settings{
-			Log2m:             conf.GetInt("TrackedUsers.precision", 16),
-			Regwidth:          conf.GetInt("TrackedUsers.registerWidth", 5),
+			Log2m:             conf.GetIntVar(16, 1, "TrackedUsers.precision"),
+			Regwidth:          conf.GetIntVar(5, 1, "TrackedUsers.registerWidth"),
 			ExplicitThreshold: hll.AutoExplicitThreshold,
 			SparseEnabled:     true,
 		},
-		instanceID: config.GetString("INSTANCE_ID", "1"),
+		instanceID: config.GetStringVar("1", "INSTANCE_ID"),
 		stats:      stats,
 		now: func() time.Time {
 			return timeutil.Now()
@@ -92,7 +92,7 @@ func (u *UniqueUsersReporter) MigrateDatabase(dbConn string, conf *config.Config
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "tracked_users_reports_migrations",
-		ShouldForceSetLowerVersion: conf.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: conf.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 	err = m.Migrate("tracked_users")
 	if err != nil {

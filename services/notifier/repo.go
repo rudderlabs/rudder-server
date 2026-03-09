@@ -340,7 +340,7 @@ func (n *repo) deleteByBatchID(
 	).Scan(&sizeEstimate); err != nil {
 		return fmt.Errorf("size estimate for notifierTable failed with: %w", err)
 	}
-	if sizeEstimate > config.GetInt64("Notifier.vacuumThresholdBytes", 5*bytesize.GB) {
+	if sizeEstimate > config.GetInt64Var(5*bytesize.GB, 1, "Notifier.vacuumThresholdBytes") {
 		if _, err := n.db.ExecContext(ctx, fmt.Sprintf(`vacuum full analyze %q;`, notifierTableName)); err != nil {
 			return fmt.Errorf("deleting by batchID: vacuum: %w", err)
 		}

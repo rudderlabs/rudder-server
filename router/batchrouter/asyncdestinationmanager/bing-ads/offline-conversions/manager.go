@@ -55,7 +55,7 @@ func newManagerInternal(logger logger.Logger, statsFactory stats.Stats, destinat
 func NewManager(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, destination *backendconfig.DestinationT, backendConfig backendconfig.BackendConfig) (asynccommon.AsyncDestinationManager, error) {
 	oauthClientV2 := oauthv2.NewOAuthHandler(backendConfig,
 		oauthv2.WithLogger(logger),
-		oauthv2.WithCPClientTimeout(conf.GetDuration("HttpClient.oauth.timeout", 30, time.Second)),
+		oauthv2.WithCPClientTimeout(conf.GetDurationVar(30, time.Second, "HttpClient.oauth.timeout")),
 		oauthv2.WithStats(statsFactory),
 		oauthv2.WithOauthBreakerOptions(oauthv2.ConfigToOauthBreakerOptions("BatchRouter.BING_ADS_OFFLINE_CONVERSIONS", conf)),
 	)
