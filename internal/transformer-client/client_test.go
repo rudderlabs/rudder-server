@@ -296,7 +296,7 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxRetry:        0, // zero means unlimited retries
+				MaxRetry:        0, // zero value gets overridden with default unlimited retries
 				InitialInterval: 10 * time.Millisecond,
 				MaxInterval:     50 * time.Millisecond,
 				MaxElapsedTime:  500 * time.Millisecond,
@@ -337,7 +337,7 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxRetry:        0, // zero means unlimited retries
+				MaxRetry:        0, // zero value gets overridden with default unlimited retries
 				InitialInterval: 10 * time.Millisecond,
 				MaxInterval:     50 * time.Millisecond,
 				MaxElapsedTime:  500 * time.Millisecond,
