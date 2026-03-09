@@ -43,7 +43,7 @@ func TransformerClientConfig(conf *config.Config, configPrefix string) *transfor
 	transformerClientConfig.Recycle = conf.GetBoolVar(false, fmt.Sprintf("Transformer.Client.%s.recycle", configPrefix), "Transformer.Client.recycle")
 	transformerClientConfig.RecycleTTL = conf.GetDurationVar(60, time.Second, fmt.Sprintf("Transformer.Client.%s.recycleTTL", configPrefix), "Transformer.Client.recycleTTL")
 	transformerClientConfig.RetryRudderErrors.Enabled = conf.GetBoolVar(true, fmt.Sprintf("Transformer.Client.%s.retryRudderErrors.enabled", configPrefix), "Transformer.Client.retryRudderErrors.enabled")
-	transformerClientConfig.RetryRudderErrors.MaxTries = conf.GetIntVar(0, 1, fmt.Sprintf("Transformer.Client.%s.retryRudderErrors.maxTries", configPrefix), "Transformer.Client.retryRudderErrors.maxTries")
+	transformerClientConfig.RetryRudderErrors.MaxRetry = conf.GetIntVar(-1, 1, fmt.Sprintf("Transformer.Client.%s.retryRudderErrors.maxRetry", configPrefix), "Transformer.Client.retryRudderErrors.maxRetry")
 	transformerClientConfig.RetryRudderErrors.InitialInterval = conf.GetDurationVar(1, time.Second, fmt.Sprintf("Transformer.Client.%s.retryRudderErrors.initialInterval", configPrefix), "Transformer.Client.retryRudderErrors.initialInterval")
 	transformerClientConfig.RetryRudderErrors.MaxInterval = conf.GetDurationVar(30, time.Second, fmt.Sprintf("Transformer.Client.%s.retryRudderErrors.maxInterval", configPrefix), "Transformer.Client.retryRudderErrors.maxInterval")
 	transformerClientConfig.RetryRudderErrors.MaxElapsedTime = conf.GetDurationVar(0, time.Second, fmt.Sprintf("Transformer.Client.%s.retryRudderErrors.maxElapsedTime", configPrefix), "Transformer.Client.retryRudderErrors.maxElapsedTime")

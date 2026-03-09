@@ -38,14 +38,14 @@ func TestClient_RetryBehavior(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        0, // Unlimited retries
+				MaxRetry:        -1, // Unlimited retries
 				InitialInterval: 50 * time.Millisecond,
 				MaxInterval:     200 * time.Millisecond,
 				MaxElapsedTime:  5 * time.Second,
@@ -86,14 +86,14 @@ func TestClient_RetryBehavior(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        0, // Unlimited retries
+				MaxRetry:        -1, // Unlimited retries
 				InitialInterval: 50 * time.Millisecond,
 				MaxInterval:     200 * time.Millisecond,
 				MaxElapsedTime:  1 * time.Second, // Short elapsed time to test timeout
@@ -144,14 +144,14 @@ func TestClient_RetryBehavior(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        0, // Unlimited retries
+				MaxRetry:        -1, // Unlimited retries
 				InitialInterval: 50 * time.Millisecond,
 				MaxInterval:     200 * time.Millisecond,
 				MaxElapsedTime:  5 * time.Second,
@@ -201,14 +201,14 @@ func TestClient_RetryBehavior(t *testing.T) {
 					ClientTimeout: 10 * time.Second,
 					RetryRudderErrors: struct {
 						Enabled         bool
-						MaxTries        int
+						MaxRetry        int
 						InitialInterval time.Duration
 						MaxInterval     time.Duration
 						MaxElapsedTime  time.Duration
 						Multiplier      float64
 					}{
 						Enabled:         true,
-						MaxTries:        0, // Unlimited retries
+						MaxRetry:        -1, // Unlimited retries
 						InitialInterval: 50 * time.Millisecond,
 						MaxInterval:     200 * time.Millisecond,
 						MaxElapsedTime:  5 * time.Second,
@@ -247,14 +247,14 @@ func TestClient_RetryBehavior(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        0, // Unlimited retries
+				MaxRetry:        -1, // Unlimited retries
 				InitialInterval: 50 * time.Millisecond,
 				MaxInterval:     200 * time.Millisecond,
 				MaxElapsedTime:  5 * time.Second,
@@ -289,14 +289,14 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 			ClientTimeout: 1 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        1, // No retries
+				MaxRetry:        0, // zero means unlimited retries
 				InitialInterval: 10 * time.Millisecond,
 				MaxInterval:     50 * time.Millisecond,
 				MaxElapsedTime:  500 * time.Millisecond,
@@ -330,14 +330,14 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 			ClientTimeout: 1 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        1, // No retries
+				MaxRetry:        0, // zero means unlimited retries
 				InitialInterval: 10 * time.Millisecond,
 				MaxInterval:     50 * time.Millisecond,
 				MaxElapsedTime:  500 * time.Millisecond,
@@ -379,14 +379,14 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        2, // Only 1 retry
+				MaxRetry:        1, // Only 1 retry
 				InitialInterval: 10 * time.Millisecond,
 				MaxInterval:     50 * time.Millisecond,
 				MaxElapsedTime:  500 * time.Millisecond,
@@ -426,14 +426,14 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
 				Multiplier      float64
 			}{
 				Enabled:         true,
-				MaxTries:        0, // Allow unlimited retries but limit by time
+				MaxRetry:        -1, // Allow unlimited retries but limit by time
 				InitialInterval: 100 * time.Millisecond,
 				MaxInterval:     200 * time.Millisecond,
 				MaxElapsedTime:  1 * time.Millisecond, // Very short time to prevent retries
@@ -473,7 +473,7 @@ func TestClient_RetryDisabled(t *testing.T) {
 			ClientTimeout: 10 * time.Second,
 			RetryRudderErrors: struct {
 				Enabled         bool
-				MaxTries        int
+				MaxRetry        int
 				InitialInterval time.Duration
 				MaxInterval     time.Duration
 				MaxElapsedTime  time.Duration
