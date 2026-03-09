@@ -51,10 +51,10 @@ func NewJobsForwarder(terminalErrFn func(error), schemaDB jobsdb.JobsDB, client 
 	forwarder.LoadMetaData(terminalErrFn, schemaDB, log, config, stat)
 
 	forwarder.transformer = transformer.New(backendConfig, config)
-	forwarder.sampler = newSampler[string](config.GetDuration("SchemaForwarder.samplingPeriod", 10, time.Minute), config.GetInt("SchemaForwarder.sampleCacheSize", 10000))
+	forwarder.sampler = newSampler[string](config.GetDurationVar(10, time.Minute, "SchemaForwarder.samplingPeriod"), config.GetIntVar(10000, 1, "SchemaForwarder.sampleCacheSize"))
 	forwarder.pulsarClient = client
 
-	forwarder.topic = config.GetString("SchemaForwarder.pulsarTopic", "event-schema")
+	forwarder.topic = config.GetStringVar("event-schema", "SchemaForwarder.pulsarTopic")
 	forwarder.setupReloadableVars()
 
 	return &forwarder

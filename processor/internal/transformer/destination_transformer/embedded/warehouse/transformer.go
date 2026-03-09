@@ -81,7 +81,7 @@ func New(conf *config.Config, logger logger.Logger, statsFactory stats.Stats, op
 	t.config.maxColumnsInEvent = conf.GetReloadableIntVar(1600, 1, "WH_MAX_COLUMNS_IN_EVENT")
 	t.config.maxLoggedEvents = conf.GetReloadableIntVar(100, 1, "Warehouse.Transformer.Sampling.maxLoggedEvents")
 	t.config.concurrentTransformations = conf.GetReloadableIntVar(1, 1, "Warehouse.concurrentTransformations")
-	t.config.instanceID = conf.GetString("INSTANCE_ID", "1")
+	t.config.instanceID = conf.GetStringVar("1", "INSTANCE_ID")
 
 	var err error
 	t.loggedSamplesUploader, err = getSamplingUploader(t.conf, t.logger)

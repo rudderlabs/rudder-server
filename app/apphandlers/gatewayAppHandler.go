@@ -88,7 +88,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 	gwWOHandle := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithSkipMaintenanceErr(config.GetBool("Gateway.jobsDB.skipMaintenanceError", true)),
+		jobsdb.WithSkipMaintenanceErr(config.GetBoolVar(true, "Gateway.jobsDB.skipMaintenanceError")),
 		jobsdb.WithStats(statsFactory),
 		jobsdb.WithDBHandle(jobsdbPool),
 		jobsdb.WithNumPartitions(partitionCount),
@@ -137,8 +137,8 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, _ func(), options *app
 		return err
 	}
 	transformerFeaturesService := transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-		PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-		TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+		PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+		TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
 		FeaturesRetryMaxAttempts: 10,
 	})
 	drainConfigManager, err := drain_config.NewDrainConfigManager(config, a.log.Child("drain-config"), statsFactory)

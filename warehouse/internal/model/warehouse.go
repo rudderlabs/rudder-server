@@ -30,7 +30,7 @@ func (w *Warehouse) GetBoolDestinationConfig(key DestinationConfigSetting) bool 
 func (w *Warehouse) GetStringDestinationConfig(conf *config.Config, key DestinationConfigSetting) string {
 	configKey := fmt.Sprintf("Warehouse.pipeline.%s.%s.%s", w.Source.ID, w.Destination.ID, key)
 	if conf.IsSet(configKey) {
-		return conf.GetString(configKey, "")
+		return conf.GetStringVar("", configKey)
 	}
 
 	destConfig := w.Destination.Config

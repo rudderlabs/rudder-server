@@ -77,14 +77,14 @@ type PythonTransformConfig struct {
 // LoadPythonTransformConfig reads python transform version filtering from config.
 func LoadPythonTransformConfig(conf *config.Config) PythonTransformConfig {
 	ptc := PythonTransformConfig{
-		Enabled: conf.GetBool("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", false),
+		Enabled: conf.GetBoolVar(false, "PYTHON_TRANSFORM_VERSION_IDS_ENABLE"),
 	}
 
 	if !ptc.Enabled {
 		return ptc
 	}
 
-	str := conf.GetString("PYTHON_TRANSFORM_VERSION_IDS", "")
+	str := conf.GetStringVar("", "PYTHON_TRANSFORM_VERSION_IDS")
 	if str == "" {
 		return ptc
 	}

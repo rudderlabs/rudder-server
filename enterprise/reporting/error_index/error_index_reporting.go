@@ -100,7 +100,7 @@ func NewErrorIndexReporter(ctx context.Context, log logger.Logger, configSubscri
 	})
 
 	eir.trigger = func() <-chan time.Time {
-		return time.After(conf.GetDuration("Reporting.errorIndexReporting.SleepDuration", 30, time.Second))
+		return time.After(conf.GetDurationVar(30, time.Second, "Reporting.errorIndexReporting.SleepDuration"))
 	}
 
 	eir.stats.partitionTime = eir.statsFactory.NewStat("erridx_partition_time", stats.TimerType)
@@ -200,7 +200,7 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 		jobsdb.WithDBHandle(dbHandle),
 		jobsdb.WithDSLimit(eir.conf.GetReloadableIntVar(0, 1, "Reporting.errorIndexReporting.dsLimit")),
 		jobsdb.WithConfig(eir.conf),
-		jobsdb.WithSkipMaintenanceErr(eir.conf.GetBool("Reporting.errorIndexReporting.skipMaintenanceError", false)),
+		jobsdb.WithSkipMaintenanceErr(eir.conf.GetBoolVar(false, "Reporting.errorIndexReporting.skipMaintenanceError")),
 		jobsdb.WithJobMaxAge(config.GetReloadableDurationVar(24, time.Hour, "Reporting.errorIndexReporting.jobRetention")),
 	)
 	if err := errIndexDB.Start(); err != nil {
@@ -211,7 +211,7 @@ func (eir *ErrorIndexReporter) DatabaseSyncer(c types.SyncerConfig) types.Report
 		sqlDB:  dbHandle,
 	}
 
-	if !eir.conf.GetBool("Reporting.errorIndexReporting.syncer.enabled", true) {
+	if !eir.conf.GetBoolVar(true, "Reporting.errorIndexReporting.syncer.enabled") {
 		return func() {
 			<-eir.ctx.Done()
 			errIndexDB.Stop()
@@ -251,7 +251,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 		"enableSSE":        enableSSE,
 	}
 	fm, err := filemanager.NewS3Manager(eir.conf, s3Config, eir.log, func() time.Duration {
-		return eir.conf.GetDuration("ErrorIndex.Uploader.Timeout", 120, time.Second)
+		return eir.conf.GetDurationVar(120, time.Second, "ErrorIndex.Uploader.Timeout")
 	})
 	if err != nil {
 		return fmt.Errorf("creating file manager: %w", err)
@@ -274,7 +274,7 @@ func (eir *ErrorIndexReporter) mainLoop(ctx context.Context, errIndexDB *jobsdb.
 			)
 		},
 		eir.log,
-		workerpool.WithIdleTimeout(2*eir.conf.GetDuration("Reporting.errorIndexReporting.uploadFrequency", 5, time.Minute)),
+		workerpool.WithIdleTimeout(2*eir.conf.GetDurationVar(5, time.Minute, "Reporting.errorIndexReporting.uploadFrequency")),
 	)
 	defer workerPool.Shutdown()
 

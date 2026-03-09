@@ -159,7 +159,7 @@ func migrate(db *sql.DB) error {
 	m := &migrator.Migrator{
 		Handle:                     db,
 		MigrationsTable:            "config_cache_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 
 	return m.Migrate("config_cache")

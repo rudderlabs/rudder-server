@@ -85,7 +85,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	var dbQueryTimeout *config.Reloadable[time.Duration]
 	var eventSampler event_sampler.EventSampler
 
-	sourcesWithEventNameTrackingDisabled := config.GetStringSlice("Reporting.sourcesWithEventNameTrackingDisabled", []string{})
+	sourcesWithEventNameTrackingDisabled := config.GetStringSliceVar([]string{}, "Reporting.sourcesWithEventNameTrackingDisabled")
 
 	mainLoopSleepInterval := config.GetReloadableDurationVar(5, time.Second, "Reporting.mainLoopSleepInterval")
 	sleepInterval := config.GetReloadableDurationVar(30, time.Second, "Reporting.sleepInterval")
@@ -100,7 +100,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 	eventNamePrefixLength := conf.GetReloadableIntVar(40, 1, "Reporting.eventNameTrimming.prefixLength")
 	eventNameSuffixLength := conf.GetReloadableIntVar(10, 1, "Reporting.eventNameTrimming.suffixLength")
 	// only send reports for wh actions sources if whActionsOnly is configured
-	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
+	whActionsOnly := config.GetBoolVar(false, "REPORTING_WH_ACTIONS_ONLY")
 	if whActionsOnly {
 		log.Infon("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
@@ -122,7 +122,7 @@ func NewDefaultReporter(ctx context.Context, conf *config.Config, log logger.Log
 		configSubscriber:                     configSubscriber,
 		syncers:                              make(map[string]*types.SyncSource),
 		namespace:                            config.GetKubeNamespace(),
-		instanceID:                           config.GetString("INSTANCE_ID", "1"),
+		instanceID:                           config.GetStringVar("1", "INSTANCE_ID"),
 		whActionsOnly:                        whActionsOnly,
 		sleepInterval:                        sleepInterval,
 		mainLoopSleepInterval:                mainLoopSleepInterval,
@@ -163,7 +163,7 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "reports_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 	err = m.Migrate("reports")
 	if err != nil {
@@ -183,10 +183,10 @@ func (r *DefaultReporter) DatabaseSyncer(c types.SyncerConfig) types.ReportingSy
 	}
 	r.syncers[c.ConnInfo] = &types.SyncSource{SyncerConfig: c, DbHandle: dbHandle}
 
-	if !config.GetBool("Reporting.syncer.enabled", true) {
+	if !config.GetBoolVar(true, "Reporting.syncer.enabled") {
 		return func() {}
 	}
-	if config.GetBool("Reporting.syncer.vacuumAtStartup", false) {
+	if config.GetBoolVar(false, "Reporting.syncer.vacuumAtStartup") {
 		if _, err := dbHandle.ExecContext(context.Background(), `vacuum full analyze reports;`); err != nil {
 			r.log.Errorn(`[ Reporting ]: Error full vacuuming reports table`, obskit.Error(err))
 			panic(err)

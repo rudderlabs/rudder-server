@@ -24,7 +24,7 @@ const (
 
 // getMode determines which mode to use based on configuration
 func getMode(conf *config.Config) mode {
-	mirrorMode := conf.GetString("Dedup.Mirror.Mode", string(badgerOnlyMode))
+	mirrorMode := conf.GetStringVar(string(badgerOnlyMode), "Dedup.Mirror.Mode")
 	return mode(mirrorMode)
 }
 

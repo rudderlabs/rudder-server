@@ -180,21 +180,21 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Snowflake {
 		stats:  stat,
 	}
 
-	sf.config.allowMerge = conf.GetBool("Warehouse.snowflake.allowMerge", true)
-	sf.config.enableDeleteByJobs = conf.GetBool("Warehouse.snowflake.enableDeleteByJobs", false)
-	sf.config.slowQueryThreshold = conf.GetDuration("Warehouse.snowflake.slowQueryThreshold", 5, time.Minute)
+	sf.config.allowMerge = conf.GetBoolVar(true, "Warehouse.snowflake.allowMerge")
+	sf.config.enableDeleteByJobs = conf.GetBoolVar(false, "Warehouse.snowflake.enableDeleteByJobs")
+	sf.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.snowflake.slowQueryThreshold")
 
 	// appendOnlyTables is a workaround introduced for Mattermost for now. It is only supported for snowflake.
-	sf.config.appendOnlyTables = conf.GetStringSlice("Warehouse.snowflake.appendOnlyTables", nil)
+	sf.config.appendOnlyTables = conf.GetStringSliceVar(nil, "Warehouse.snowflake.appendOnlyTables")
 
-	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSlice("Warehouse.snowflake.debugDuplicateWorkspaceIDs", nil)
-	sf.config.debugDuplicateIntervalInDays = conf.GetInt("Warehouse.snowflake.debugDuplicateIntervalInDays", 30)
-	sf.config.debugDuplicateLimit = conf.GetInt("Warehouse.snowflake.debugDuplicateLimit", 100)
-	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSlice("Warehouse.snowflake.debugDuplicateTables", nil), func(item string, index int) string {
+	sf.config.debugDuplicateWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.snowflake.debugDuplicateWorkspaceIDs")
+	sf.config.debugDuplicateIntervalInDays = conf.GetIntVar(30, 1, "Warehouse.snowflake.debugDuplicateIntervalInDays")
+	sf.config.debugDuplicateLimit = conf.GetIntVar(100, 1, "Warehouse.snowflake.debugDuplicateLimit")
+	sf.config.debugDuplicateTables = lo.Map(conf.GetStringSliceVar(nil, "Warehouse.snowflake.debugDuplicateTables"), func(item string, index int) string {
 		return strings.ToUpper(item)
 	})
-	sf.config.privileges.fetchSchema.required = conf.GetStringSlice("Warehouse.snowflake.privileges.fetchSchema.required", []string{"USAGE"})
-	sf.config.privileges.fetchSchema.enabled = conf.GetBool("Warehouse.snowflake.privileges.fetchSchema.enabled", false)
+	sf.config.privileges.fetchSchema.required = conf.GetStringSliceVar([]string{"USAGE"}, "Warehouse.snowflake.privileges.fetchSchema.required")
+	sf.config.privileges.fetchSchema.enabled = conf.GetBoolVar(false, "Warehouse.snowflake.privileges.fetchSchema.enabled")
 
 	return sf
 }
@@ -460,11 +460,11 @@ func (sf *Snowflake) mergeIntoLoadTable(
 	}
 
 	configKeyPrefix := "Warehouse.snowflake.mergeWindow." + sf.Warehouse.Destination.ID
-	mergeWindowTables := sf.conf.GetStringSlice(configKeyPrefix+".tables", nil)
+	mergeWindowTables := sf.conf.GetStringSliceVar(nil, configKeyPrefix+".tables")
 
 	if slices.Contains(mergeWindowTables, tableName) {
-		mergeWindowDuration := sf.conf.GetDuration(configKeyPrefix+".duration", 30*24, time.Hour)
-		mergeWindowColumn := sf.conf.GetString(configKeyPrefix+".column", "RECEIVED_AT")
+		mergeWindowDuration := sf.conf.GetDurationVar(30*24, time.Hour, configKeyPrefix+".duration")
+		mergeWindowColumn := sf.conf.GetStringVar("RECEIVED_AT", configKeyPrefix+".column")
 
 		additionalJoinClause += fmt.Sprintf(
 			` AND original.%s >= DATEADD(hour, -%d, CURRENT_TIMESTAMP())`,

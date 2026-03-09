@@ -92,9 +92,9 @@ func (p *Producer) SendMessageAsync(ctx context.Context, key, orderingKey string
 
 func getClientConf(config *config.Config) ClientConf {
 	return ClientConf{
-		url:               config.GetString("Pulsar.Client.url", "pulsar://localhost:6650"),
-		operationTimeout:  config.GetDuration("Pulsar.Client.operationTimeout", 30, time.Second),
-		connectionTimeout: config.GetDuration("Pulsar.Client.connectionTimeout", 30, time.Second),
+		url:               config.GetStringVar("pulsar://localhost:6650", "Pulsar.Client.url"),
+		operationTimeout:  config.GetDurationVar(30, time.Second, "Pulsar.Client.operationTimeout"),
+		connectionTimeout: config.GetDurationVar(30, time.Second, "Pulsar.Client.connectionTimeout"),
 	}
 }
 

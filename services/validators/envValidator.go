@@ -147,7 +147,7 @@ func InitializeNodeMigrations() error {
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "node_migrations",
-		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 	if err := m.Migrate("node"); err != nil {
 		return fmt.Errorf("could not run node schema migrations: %w", err)

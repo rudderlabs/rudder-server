@@ -56,7 +56,7 @@ type modeAckValue struct {
 }
 
 func EnvETCDConfig() *ETCDConfig {
-	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetStringVar("127.0.0.1:2379", "ETCD_HOSTS"), `,`)
 	releaseName := config.GetReleaseName()
 	serverIndex := misc.GetInstanceID()
 	var ackTimeout time.Duration

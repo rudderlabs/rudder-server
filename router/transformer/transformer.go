@@ -246,7 +246,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 				obskit.Error(err),
 				logger.NewStringField("URL", url),
 			)
-			if retryCount > config.GetInt("Processor.maxRetry", 30) {
+			if retryCount > config.GetIntVar(30, 1, "Processor.maxRetry") {
 				panic(fmt.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err))
 			}
 			retryCount++
@@ -561,9 +561,9 @@ func (trans *handle) setup(destType string, destinationTimeout, transformTimeout
 	}
 
 	trans.tr = &http.Transport{
-		DisableKeepAlives:   config.GetBool("Transformer.Client.disableKeepAlives", true),
-		MaxConnsPerHost:     config.GetInt("Transformer.Client.maxHTTPConnections", 100),
-		MaxIdleConnsPerHost: config.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
+		DisableKeepAlives:   config.GetBoolVar(true, "Transformer.Client.disableKeepAlives"),
+		MaxConnsPerHost:     config.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections"),
+		MaxIdleConnsPerHost: config.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections"),
 		IdleConnTimeout:     30 * time.Second,
 	}
 	// The timeout between server and transformer
@@ -733,11 +733,11 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyUrl string, proxyR
 }
 
 func getBatchURL() string {
-	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
+	return strings.TrimSuffix(config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "/") + "/batch"
 }
 
 func getRouterTransformURL() string {
-	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
+	return strings.TrimSuffix(config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "/") + "/routerTransform"
 }
 
 type transformerResponse struct {

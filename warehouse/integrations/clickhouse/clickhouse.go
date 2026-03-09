@@ -218,19 +218,19 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Clickhouse {
 	ch.logger = log.Child("integrations").Child("clickhouse")
 	ch.stats = stat
 
-	ch.config.queryDebugLogs = conf.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
-	ch.config.blockSize = conf.GetString("Warehouse.clickhouse.blockSize", "1000000")
-	ch.config.poolSize = conf.GetString("Warehouse.clickhouse.poolSize", "100")
-	ch.config.readTimeout = conf.GetString("Warehouse.clickhouse.readTimeout", "300")
-	ch.config.writeTimeout = conf.GetString("Warehouse.clickhouse.writeTimeout", "1800")
-	ch.config.compress = conf.GetBool("Warehouse.clickhouse.compress", false)
-	ch.config.disableNullable = conf.GetBool("Warehouse.clickhouse.disableNullable", false)
-	ch.config.execTimeout = conf.GetDuration("Warehouse.clickhouse.execTimeOutInSeconds", 600, time.Second)
-	ch.config.commitTimeout = conf.GetDuration("Warehouse.clickhouse.commitTimeOutInSeconds", 600, time.Second)
-	ch.config.loadTableFailureRetries = conf.GetInt("Warehouse.clickhouse.loadTableFailureRetries", 3)
-	ch.config.numWorkersDownloadLoadFiles = conf.GetInt("Warehouse.clickhouse.numWorkersDownloadLoadFiles", 8)
-	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", nil)
-	ch.config.slowQueryThreshold = conf.GetDuration("Warehouse.clickhouse.slowQueryThreshold", 5, time.Minute)
+	ch.config.queryDebugLogs = conf.GetStringVar("false", "Warehouse.clickhouse.queryDebugLogs")
+	ch.config.blockSize = conf.GetStringVar("1000000", "Warehouse.clickhouse.blockSize")
+	ch.config.poolSize = conf.GetStringVar("100", "Warehouse.clickhouse.poolSize")
+	ch.config.readTimeout = conf.GetStringVar("300", "Warehouse.clickhouse.readTimeout")
+	ch.config.writeTimeout = conf.GetStringVar("1800", "Warehouse.clickhouse.writeTimeout")
+	ch.config.compress = conf.GetBoolVar(false, "Warehouse.clickhouse.compress")
+	ch.config.disableNullable = conf.GetBoolVar(false, "Warehouse.clickhouse.disableNullable")
+	ch.config.execTimeout = conf.GetDurationVar(600, time.Second, "Warehouse.clickhouse.execTimeOutInSeconds")
+	ch.config.commitTimeout = conf.GetDurationVar(600, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
+	ch.config.loadTableFailureRetries = conf.GetIntVar(3, 1, "Warehouse.clickhouse.loadTableFailureRetries")
+	ch.config.numWorkersDownloadLoadFiles = conf.GetIntVar(8, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
+	ch.config.s3EngineEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs")
+	ch.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.clickhouse.slowQueryThreshold")
 	ch.config.disableLoadTableStats = func(workspaceID string) bool {
 		return conf.GetBoolVar(
 			false,

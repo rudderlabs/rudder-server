@@ -178,10 +178,10 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 					continue
 				}
 			} else {
-				bucket = getDefaultBucket(ctx, config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
+				bucket = getDefaultBucket(ctx, config.GetStringVar("S3", "JOBS_BACKUP_STORAGE_PROVIDER"))
 				switch c.Settings.DataRetention.RetentionPeriod {
 				case "default":
-					bucket.Config["prefix"] = config.GetString("JOBS_BACKUP_DEFAULT_PREFIX", "7dayretention")
+					bucket.Config["prefix"] = config.GetStringVar("7dayretention", "JOBS_BACKUP_DEFAULT_PREFIX")
 				case "full":
 				default:
 				}
@@ -226,7 +226,7 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 type defaultProvider struct{}
 
 func (*defaultProvider) GetFileManager(context.Context, string) (filemanager.FileManager, error) {
-	defaultConfig := getDefaultBucket(context.Background(), config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
+	defaultConfig := getDefaultBucket(context.Background(), config.GetStringVar("S3", "JOBS_BACKUP_STORAGE_PROVIDER"))
 	return filemanager.New(&filemanager.Settings{
 		Provider: defaultConfig.Type,
 		Config:   defaultConfig.Config,

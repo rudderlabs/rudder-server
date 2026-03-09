@@ -144,12 +144,12 @@ var _ = Describe("Transformer features", func() {
 				options:  featConfig,
 				client: &http.Client{
 					Transport: &http.Transport{
-						DisableKeepAlives:   config.Default.GetBool("Transformer.Client.disableKeepAlives", true),
-						MaxConnsPerHost:     config.Default.GetInt("Transformer.Client.maxHTTPConnections", 100),
-						MaxIdleConnsPerHost: config.Default.GetInt("Transformer.Client.maxHTTPIdleConnections", 10),
-						IdleConnTimeout:     config.Default.GetDuration("Transformer.Client.maxIdleConnDuration", 30, time.Second),
+						DisableKeepAlives:   config.Default.GetBoolVar(true, "Transformer.Client.disableKeepAlives"),
+						MaxConnsPerHost:     config.Default.GetIntVar(100, 1, "Transformer.Client.maxHTTPConnections"),
+						MaxIdleConnsPerHost: config.Default.GetIntVar(10, 1, "Transformer.Client.maxHTTPIdleConnections"),
+						IdleConnTimeout:     config.Default.GetDurationVar(30, time.Second, "Transformer.Client.maxIdleConnDuration"),
 					},
-					Timeout: config.Default.GetDuration("HttpClient.processor.timeout", 30, time.Second),
+					Timeout: config.Default.GetDurationVar(30, time.Second, "HttpClient.processor.timeout"),
 				},
 			}
 			handler.syncTransformerFeatureJson(context.TODO())

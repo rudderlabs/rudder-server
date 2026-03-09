@@ -154,15 +154,15 @@ func getHealthVal(jobsDB jobsdb.JobsDB) (bool, string) {
 		healthy = false
 	}
 	enabledRouter := "TRUE"
-	if !config.GetBool("enableRouter", true) {
+	if !config.GetBoolVar(true, "enableRouter") {
 		enabledRouter = "FALSE"
 	}
 	backendConfigMode := "API"
-	if config.GetBool("BackendConfig.configFromFile", false) {
+	if config.GetBoolVar(false, "BackendConfig.configFromFile") {
 		backendConfigMode = "JSON"
 	}
 
-	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
+	appTypeStr := strings.ToUpper(config.GetStringVar(EMBEDDED, "APP_TYPE"))
 	return healthy, fmt.Sprintf(
 		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"NORMAL",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,

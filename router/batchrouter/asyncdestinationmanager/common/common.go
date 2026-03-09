@@ -166,15 +166,15 @@ func GetMarshalledData(payload string, jobID int64) (string, error) {
 func GetBatchRouterConfigInt64(key, destType string, defaultValue int64) int64 {
 	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
 	if destOverrideFound {
-		return config.GetInt64("BatchRouter."+destType+"."+key, defaultValue)
+		return config.GetInt64Var(defaultValue, 1, "BatchRouter."+destType+"."+key)
 	}
-	return config.GetInt64("BatchRouter."+key, defaultValue)
+	return config.GetInt64Var(defaultValue, 1, "BatchRouter."+key)
 }
 
 func GetBatchRouterConfigStringMap(key, destType string, defaultValue []string) []string {
 	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
 	if destOverrideFound {
-		return config.GetStringSlice("BatchRouter."+destType+"."+key, defaultValue)
+		return config.GetStringSliceVar(defaultValue, "BatchRouter."+destType+"."+key)
 	}
-	return config.GetStringSlice("BatchRouter."+key, defaultValue)
+	return config.GetStringSliceVar(defaultValue, "BatchRouter."+key)
 }
