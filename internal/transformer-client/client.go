@@ -15,7 +15,6 @@ import (
 	"github.com/bufbuild/httplb/resolver"
 	"github.com/cenkalti/backoff/v5"
 
-	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
@@ -201,15 +200,6 @@ func getRecycleTTL(config *ClientConfig) time.Duration {
 }
 
 func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Config) Client {
-	if retryableConfig == nil {
-		retryableConfig = &retryablehttp.Config{
-			MaxRetry:        config.GetIntVar(defaultRetryRudderErrorsMaxRetry, defaultRetryRudderErrorsMaxRetry, "Transformer.Client.Retryable.maxRetry"),
-			InitialInterval: config.GetDurationVar(1, time.Second, "Transformer.Client.Retryable.initialInterval"),
-			MaxInterval:     config.GetDurationVar(30, time.Second, "Transformer.Client.Retryable.maxInterval"),
-			MaxElapsedTime:  config.GetDurationVar(0, time.Second, "Transformer.Client.Retryable.maxElapsedTime"),
-			Multiplier:      config.GetFloat64Var(defaultRetryRudderErrorsMultiplier, "Transformer.Client.Retryable.multiplier"),
-		}
-	}
 	return retryablehttp.NewRetryableHTTPClient(
 		retryableConfig,
 		retryablehttp.WithHttpClient(baseClient),
