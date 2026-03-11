@@ -446,13 +446,16 @@ func (gw *Handle) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, 
 
 	if gw.conf.enableRateLimit.Load() && sourcesJobRunID == "" && sourcesTaskRunID == "" {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-		ok, errCheck := gw.rateLimiter.CheckLimitReached(context.TODO(), workspaceId, int64(len(eventsBatch)))
-		if errCheck != nil {
+		limitReached, errCheck := gw.rateLimiter.CheckLimitReached(req.ctx, workspaceId, int64(len(eventsBatch)))
+		if errCheck != nil && req.ctx.Err() == nil {
 			gw.stats.NewTaggedStat("gateway.rate_limiter_error", stats.CountType, stats.Tags{"workspaceId": workspaceId}).Increment()
 			gw.logger.Errorn("Rate limiter error: Allowing the request", obskit.Error(errCheck))
 		}
-		if ok {
+		if limitReached {
 			return jobData, errRequestDropped
+		}
+		if req.ctx.Err() != nil {
+			return jobData, req.ctx.Err()
 		}
 	}
 
@@ -685,6 +688,7 @@ func (gw *Handle) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, do
 		traceParent:    traceParent,
 		ipAddr:         ipAddr,
 		userIDHeader:   userIDHeader,
+		ctx:            req.Context(),
 	}
 	userWebRequestWorker.webRequestQ <- &webReq
 }

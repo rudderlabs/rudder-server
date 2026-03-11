@@ -198,7 +198,7 @@ func (c *testContext) Setup() {
 				close(ch)
 			}()
 			return ch
-		})
+		}).AnyTimes()
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
@@ -1636,6 +1636,71 @@ var _ = Describe("Gateway", func() {
 			}
 			_, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(BeNil())
+		})
+
+		Context("rate limit checks", func() {
+			var (
+				req     *webRequestT
+				gateway *Handle
+			)
+			BeforeEach(func() {
+				c.initializeAppFeatures()
+				gateway = &Handle{}
+				conf.Set("Gateway.enableRateLimit", true)
+
+				// Create a new fresh logger and stats to avoid nils
+				err := gateway.Setup(context.Background(), conf, logger.NOP, stats.NOP, c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), transformer.NewNoOpService(), sourcedebugger.NewNoOpService(), nil)
+				Expect(err).To(BeNil())
+				waitForBackendConfigInit(gateway)
+
+				req = &webRequestT{
+					reqType:        "batch",
+					authContext:    rCtxEnabled,
+					done:           make(chan<- string),
+					userIDHeader:   userIDHeader,
+					requestPayload: []byte(`{"batch": [{"type": "track", "userId": "123"}]}`),
+				}
+			})
+
+			AfterEach(func() {
+				err := gateway.Shutdown()
+				Expect(err).To(BeNil())
+			})
+
+			It("returns errRequestDropped when rate limit is reached", func() {
+				ctx := context.Background()
+				req.ctx = ctx
+				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(true, nil).Times(1)
+
+				jobData, err := gateway.getJobDataFromRequest(req)
+				Expect(err).To(Equal(errRequestDropped))
+				Expect(jobData).To(Not(BeNil()))
+			})
+
+			It("returns context error when context is cancelled and rate limit returns error", func() {
+				ctx, cancel := context.WithCancel(context.Background())
+				req.ctx = ctx
+				cancel() // This line cancels the context immediately
+
+				expectedErr := errors.New("some rate limit error")
+				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
+
+				jobData, err := gateway.getJobDataFromRequest(req)
+				Expect(err).To(Equal(context.Canceled))
+				Expect(jobData).To(Not(BeNil()))
+			})
+
+			It("logs error and allows request when rate limit returns error but context is not cancelled", func() {
+				ctx := context.Background()
+				req.ctx = ctx
+				expectedErr := errors.New("some rate limit error")
+				c.mockRateLimiter.EXPECT().CheckLimitReached(ctx, rCtxEnabled.WorkspaceID, int64(1)).Return(false, expectedErr).Times(1)
+
+				jobData, err := gateway.getJobDataFromRequest(req)
+				Expect(err).To(BeNil())
+				Expect(jobData).To(Not(BeNil()))
+				Expect(jobData.jobs).To(HaveLen(1))
+			})
 		})
 	})
 

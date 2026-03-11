@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -28,6 +29,7 @@ type webRequestT struct {
 	ipAddr         string
 	userIDHeader   string
 	errors         []string
+	ctx            context.Context
 }
 
 type batchWebRequestT struct {
