@@ -120,10 +120,10 @@ func NewApi(
 		uploadRepo:    repo.NewUploads(db, repo.WithStats(statsFactory)),
 		schemaRepo:    repo.NewWHSchemas(db, conf, log, repo.WithStats(statsFactory)),
 	}
-	a.config.healthTimeout = conf.GetDuration("Warehouse.healthTimeout", 10, time.Second)
-	a.config.readerHeaderTimeout = conf.GetDuration("Warehouse.readerHeaderTimeout", 3, time.Second)
-	a.config.runningMode = conf.GetString("Warehouse.runningMode", "")
-	a.config.webPort = conf.GetInt("Warehouse.webPort", 8082)
+	a.config.healthTimeout = conf.GetDurationVar(10, time.Second, "Warehouse.healthTimeout")
+	a.config.readerHeaderTimeout = conf.GetDurationVar(3, time.Second, "Warehouse.readerHeaderTimeout")
+	a.config.runningMode = conf.GetStringVar("", "Warehouse.runningMode")
+	a.config.webPort = conf.GetIntVar(8082, 1, "Warehouse.webPort")
 	return a
 }
 

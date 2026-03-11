@@ -42,9 +42,9 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.log = log
 	handle.stat = stat
 	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "TrackingPlanValidation"))
-	handle.config.destTransformationURL = handle.conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	handle.config.destTransformationURL = handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.TrackingPlanValidation.maxRetry", "Processor.maxRetry")
-	handle.config.timeoutDuration = conf.GetDuration("HttpClient.procTransformer.timeout", 600, time.Second)
+	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.failOnError = conf.GetReloadableBoolVar(false, "Processor.TrackingPlanValidation.failOnError", "Processor.Transformer.failOnError")
 	handle.config.maxRetryBackoffInterval = conf.GetReloadableDurationVar(30, time.Second, "Processor.TrackingPlanValidation.maxRetryBackoffInterval", "Processor.maxRetryBackoffInterval")
 	handle.config.batchSize = conf.GetReloadableIntVar(200, 1, "Processor.TrackingPlanValidation.batchSize", "Processor.userTransformBatchSize")

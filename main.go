@@ -57,7 +57,7 @@ func main() {
 		Commit:          commit,
 		BuildDate:       buildDate,
 		BuiltBy:         builtBy,
-		EnterpriseToken: config.GetString("ENTERPRISE_TOKEN", enterpriseToken),
+		EnterpriseToken: config.GetStringVar(enterpriseToken, "ENTERPRISE_TOKEN"),
 	})
 	exitCode := r.Run(ctx, shutdownFn, os.Args)
 

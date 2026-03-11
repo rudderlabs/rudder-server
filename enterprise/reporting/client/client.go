@@ -80,14 +80,14 @@ type Client struct {
 func backoffOptsFromConfig(conf *config.Config) (opts []backoff.RetryOption) {
 	opts = append(opts, backoff.WithBackOff(backoff.NewExponentialBackOff()))
 	if conf.IsSet("Reporting.httpClient.backoff.maxRetries") {
-		opts = append(opts, backoff.WithMaxTries(uint(conf.GetInt("Reporting.httpClient.backoff.maxRetries", 0)+1)))
+		opts = append(opts, backoff.WithMaxTries(uint(conf.GetIntVar(0, 1, "Reporting.httpClient.backoff.maxRetries")+1)))
 	}
 	return opts
 }
 
 // New creates a new reporting client
 func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) *Client {
-	reportingServiceURL := conf.GetString("REPORTING_URL", "https://reporting.dev.rudderlabs.com")
+	reportingServiceURL := conf.GetStringVar("https://reporting.dev.rudderlabs.com", "REPORTING_URL")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 
 	return &Client{
@@ -96,11 +96,11 @@ func New(path Route, conf *config.Config, log logger.Logger, stats stats.Stats) 
 			Transport: &http.Transport{},
 		},
 		reportingServiceURL: reportingServiceURL,
-		userName:            conf.GetString("REPORTING_USERNAME", ""),
-		password:            conf.GetString("REPORTING_PASSWORD", ""),
+		userName:            conf.GetStringVar("", "REPORTING_USERNAME"),
+		password:            conf.GetStringVar("", "REPORTING_PASSWORD"),
 		route:               path,
-		instanceID:          conf.GetString("INSTANCE_ID", "1"),
-		moduleName:          conf.GetString("clientName", ""),
+		instanceID:          conf.GetStringVar("1", "INSTANCE_ID"),
+		moduleName:          conf.GetStringVar("", "clientName"),
 		stats:               stats,
 		log:                 log,
 		conf:                conf,

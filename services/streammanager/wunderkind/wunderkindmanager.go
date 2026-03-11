@@ -33,9 +33,9 @@ type LambdaClient interface {
 
 // NewProducer creates a producer based on destination config
 func NewProducer(conf *config.Config, destination *backendconfig.DestinationT, o common.Opts) (common.Producer, error) {
-	region := conf.GetString(WunderkindRegion, "")
-	iamRoleArn := conf.GetString(WunderkindIamRoleArn, "")
-	externalID := conf.GetString(WunderkindExternalId, "")
+	region := conf.GetStringVar("", WunderkindRegion)
+	iamRoleArn := conf.GetStringVar("", WunderkindIamRoleArn)
+	externalID := conf.GetStringVar("", WunderkindExternalId)
 
 	sessionConfig := &awsutil.SessionConfig{
 		Region:        region,
@@ -76,7 +76,7 @@ func (p *Producer) Produce(jsonData json.RawMessage, destConfig any) (int, strin
 	}
 
 	var invokeInput lambda.InvokeInput
-	wunderKindLambda := p.conf.GetString(WunderkindLambda, "")
+	wunderKindLambda := p.conf.GetStringVar("", WunderkindLambda)
 	invokeInput.FunctionName = &wunderKindLambda
 	invokeInput.Payload = []byte(input.Payload)
 	invokeInput.InvocationType = InvocationType

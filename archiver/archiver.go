@@ -61,31 +61,31 @@ func New(
 
 		archiveFrom: "gw",
 		archiveTrigger: func() <-chan time.Time {
-			return time.After(c.GetDuration("archival.ArchiveSleepDuration", 30, time.Second))
+			return time.After(c.GetDurationVar(30, time.Second, "archival.ArchiveSleepDuration"))
 		},
 		adaptivePayloadLimitFunc: func(i int64) int64 { return i },
 	}
 
 	a.config.enabled = func() bool {
-		return c.GetBool("archival.Enabled", true)
+		return c.GetBoolVar(true, "archival.Enabled")
 	}
 	a.config.concurrency = c.GetReloadableIntVar(10, 1, "archival.ArchiveConcurrency")
 	a.config.payloadLimit = func() int64 {
-		return c.GetInt64("archival.ArchivePayloadSizeLimit", 1*bytesize.GB)
+		return c.GetInt64Var(1*bytesize.GB, 1, "archival.ArchivePayloadSizeLimit")
 	}
 	a.config.jobsdbMaxRetries = func() int {
 		if c.IsSet("JobsDB.Archiver.MaxRetries") {
-			return c.GetInt("JobsDB.Archiver.MaxRetries", 3)
+			return c.GetIntVar(3, 1, "JobsDB.Archiver.MaxRetries")
 		}
-		return c.GetInt("JobsDB.MaxRetries", 3)
+		return c.GetIntVar(3, 1, "JobsDB.MaxRetries")
 	}
 	a.config.eventsLimit = func() int {
-		return c.GetInt("archival.ArchiveEventsLimit", 100000)
+		return c.GetIntVar(100000, 1, "archival.ArchiveEventsLimit")
 	}
-	a.config.instanceID = c.GetString("INSTANCE_ID", "1")
-	a.config.minWorkerSleep = c.GetDuration("archival.MinWorkerSleep", 1, time.Minute)
-	a.config.uploadFrequency = c.GetDuration("archival.UploadFrequency", 5, time.Minute)
-	a.config.customVal = c.GetString("Gateway.CustomVal", "GW")
+	a.config.instanceID = c.GetStringVar("1", "INSTANCE_ID")
+	a.config.minWorkerSleep = c.GetDurationVar(1, time.Minute, "archival.MinWorkerSleep")
+	a.config.uploadFrequency = c.GetDurationVar(5, time.Minute, "archival.UploadFrequency")
+	a.config.customVal = c.GetStringVar("GW", "Gateway.CustomVal")
 
 	for _, opt := range opts {
 		opt(a)

@@ -318,7 +318,7 @@ type BatchManager struct {
 }
 
 func (*BatchManager) GetSupportedDestinations() []string {
-	if config.Default.GetBool("REGULATION_WORKER_BATCH_DESTINATIONS_ENABLED", false) {
+	if config.Default.GetBoolVar(false, "REGULATION_WORKER_BATCH_DESTINATIONS_ENABLED") {
 		return supportedDestinations
 	}
 	return nil

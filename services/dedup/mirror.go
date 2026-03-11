@@ -35,7 +35,7 @@ type mirrorDB struct {
 }
 
 func NewMirrorDB(primary, mirror types.DB, mode mode, conf *config.Config, s stats.Stats, log logger.Logger) *mirrorDB {
-	groupLimit := conf.GetInt("KeyDB.Dedup.Mirror.MaxRoutines", defaultMaxRoutines)
+	groupLimit := conf.GetIntVar(defaultMaxRoutines, 1, "KeyDB.Dedup.Mirror.MaxRoutines")
 	if groupLimit < 1 {
 		groupLimit = defaultMaxRoutines
 	}
@@ -67,7 +67,7 @@ func NewMirrorDB(primary, mirror types.DB, mode mode, conf *config.Config, s sta
 	})
 
 	group.Go(func() error {
-		mirrorDB.printErrs(conf.GetDuration("KeyDB.Dedup.Mirror.PrintErrorsInterval", 10, time.Second))
+		mirrorDB.printErrs(conf.GetDurationVar(10, time.Second, "KeyDB.Dedup.Mirror.PrintErrorsInterval"))
 		return nil
 	})
 

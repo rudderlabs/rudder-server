@@ -86,13 +86,8 @@ def transformEvent(event, metadata):
 	}))
 	defer pyConfigBackend.Close()
 
-	// 4. Get a free port for pytransformer
-	pyTransformerPort, err := kithelper.GetFreePort()
-	require.NoError(t, err)
-	pyTransformerURL := fmt.Sprintf("http://localhost:%d", pyTransformerPort)
-
-	// 5. Start rudder-pytransformer container with host network (Linux)
-	pyTransformerContainer := startRudderPytransformer(t, pool, pyTransformerPort, pyConfigBackend.URL)
+	// 4. Start rudder-pytransformer container
+	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, pyConfigBackend.URL)
 	defer func() {
 		if err := pool.Purge(pyTransformerContainer); err != nil {
 			t.Logf("Failed to purge pytransformer container: %v", err)

@@ -359,7 +359,7 @@ func TestSendPost(t *testing.T) {
 
 	t.Run("should handle private IP in block mode", func(t *testing.T) {
 		// Save original config value and restore after test
-		originalValue := config.GetBool("Router.blockPrivateIPs", false)
+		originalValue := config.GetBoolVar(false, "Router.blockPrivateIPs")
 		config.Set("Router.blockPrivateIPs", true)
 		defer config.Set("Router.blockPrivateIPs", originalValue)
 

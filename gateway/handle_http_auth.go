@@ -152,7 +152,7 @@ func (gw *Handle) authDestIDForSource(delegate http.HandlerFunc) http.HandlerFun
 		destinationID := r.Header.Get("X-Rudder-Destination-Id")
 		if destinationID == "" {
 			// TODO: make default value true once rETL team migrates to sending destination ID in header
-			if !gw.config.GetBool("Gateway.requireDestinationIdHeader", false) {
+			if !gw.config.GetBoolVar(false, "Gateway.requireDestinationIdHeader") {
 				delegate.ServeHTTP(w, r)
 				return
 			}

@@ -129,7 +129,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 }
 
 func getPIIColumnsToExclude() []string {
-	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event,sample_response"), ",")
+	piiColumnsToExclude := strings.Split(config.GetStringVar("sample_event,sample_response", "REPORTING_PII_COLUMNS_TO_EXCLUDE"), ",")
 	for i := range piiColumnsToExclude {
 		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
 	}

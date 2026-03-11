@@ -153,18 +153,18 @@ func (e *geoEnricher) Close() error {
 // a specified location. Download is skipped if the file already exists in the expected path.
 func downloadMaxmindDB(ctx context.Context, conf *config.Config, log logger.Logger) (string, error) {
 	var (
-		dbKey            = conf.GetString("Geolocation.db.key", "geolite2City.mmdb")
-		bucket           = conf.GetString("Geolocation.db.storage.bucket", "rudderstack-geolocation")
-		region           = conf.GetString("Geolocation.db.storage.region", "us-east-1")
-		endpoint         = conf.GetString("Geolocation.db.storage.endpoint", "")
-		accessKeyID      = conf.GetString("Geolocation.db.storage.accessKey", "")
-		secretAccessKey  = conf.GetString("Geolocation.db.storage.secretAccessKey", "")
-		s3ForcePathStyle = conf.GetBool("Geolocation.db.storage.s3ForcePathStyle", false)
-		disableSSL       = conf.GetBool("Geolocation.db.storage.disableSSL", false)
+		dbKey            = conf.GetStringVar("geolite2City.mmdb", "Geolocation.db.key")
+		bucket           = conf.GetStringVar("rudderstack-geolocation", "Geolocation.db.storage.bucket")
+		region           = conf.GetStringVar("us-east-1", "Geolocation.db.storage.region")
+		endpoint         = conf.GetStringVar("", "Geolocation.db.storage.endpoint")
+		accessKeyID      = conf.GetStringVar("", "Geolocation.db.storage.accessKey")
+		secretAccessKey  = conf.GetStringVar("", "Geolocation.db.storage.secretAccessKey")
+		s3ForcePathStyle = conf.GetBoolVar(false, "Geolocation.db.storage.s3ForcePathStyle")
+		disableSSL       = conf.GetBoolVar(false, "Geolocation.db.storage.disableSSL")
 	)
 
 	var (
-		baseDIR      = filepath.Join(conf.GetString("RUDDER_TMPDIR", "."), "geolocation")
+		baseDIR      = filepath.Join(conf.GetStringVar(".", "RUDDER_TMPDIR"), "geolocation")
 		downloadPath = filepath.Join(baseDIR, dbKey)
 	)
 

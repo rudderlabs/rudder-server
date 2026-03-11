@@ -132,7 +132,7 @@ func (v2 *v2Adapter) getAdapterVersion() string {
 
 func newSourceTransformAdapter(version string, conf *config.Config) sourceTransformAdapter {
 	// V0 Deprecation: this function returns v1 adapter by default, thereby deprecating v0
-	baseTransformerUrl := conf.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	baseTransformerUrl := conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL")
 	if version == transformer.V2 {
 		return &v2Adapter{
 			baseTransformerURL: baseTransformerUrl,

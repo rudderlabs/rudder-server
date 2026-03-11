@@ -56,11 +56,11 @@ func rudderCoreNodeSetup() error {
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
 func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool, stats stats.Stats) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
-	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.MaxPoolSize", 3)
-	rsourcesConfig.MinPoolSize = config.GetInt("Rsources.MinPoolSize", 1)
+	rsourcesConfig.MaxPoolSize = config.GetIntVar(3, 1, "Rsources.MaxPoolSize")
+	rsourcesConfig.MinPoolSize = config.GetIntVar(1, 1, "Rsources.MinPoolSize")
 	rsourcesConfig.LocalConn = misc.GetConnectionString(config.Default, "rsources")
-	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
-	sharedDBConnUrl := config.GetString("SharedDB.dsn", "")
+	rsourcesConfig.LocalHostname = config.GetStringVar("localhost", "DB.host")
+	sharedDBConnUrl := config.GetStringVar("", "SharedDB.dsn")
 	if len(sharedDBConnUrl) != 0 {
 		var err error
 		sharedDBConnUrl, err = misc.SetAppNameInDBConnURL(sharedDBConnUrl, "rsources")
@@ -69,12 +69,12 @@ func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool
 		}
 	}
 	rsourcesConfig.SharedConn = sharedDBConnUrl
-	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)
+	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBoolVar(true, "Router.failedKeysEnabled")
 
 	if deploymentType == deployment.MultiTenantType {
 		// For multitenant deployment type we shall require the existence of a SHARED_DB
 		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
-		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
+		if rsourcesConfig.SharedConn == "" && config.GetBoolVar(false, "Rsources.FailOnMissingSharedDB") {
 			return nil, fmt.Errorf("deployment type %s requires SharedDB.dsn to be provided", deploymentType)
 		}
 	}
@@ -85,9 +85,9 @@ func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool
 }
 
 func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {
-	enableProcessor := config.GetBool("enableProcessor", true)
-	enableRouter := config.GetBool("enableRouter", true)
-	forceStaticMode := config.GetBool("forceStaticModeProvider", false)
+	enableProcessor := config.GetBoolVar(true, "enableProcessor")
+	enableRouter := config.GetBoolVar(true, "enableRouter")
+	forceStaticMode := config.GetBoolVar(false, "forceStaticModeProvider")
 
 	var modeProvider cluster.ChangeEventProvider
 
@@ -141,7 +141,7 @@ func terminalErrorFunction(ctx context.Context, g *errgroup.Group) func(error) {
 func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.Stats) ([]enricher.PipelineEnricher, error) {
 	var enrichers []enricher.PipelineEnricher
 
-	if conf.GetBool("GeoEnrichment.enabled", false) {
+	if conf.GetBoolVar(false, "GeoEnrichment.enabled") {
 		log.Infon("Setting up the geolocation pipeline enricher")
 
 		geoEnricher, err := enricher.NewGeoEnricher(conf, log, stats)
@@ -151,7 +151,7 @@ func setupPipelineEnrichers(conf *config.Config, log logger.Logger, stats stats.
 		enrichers = append(enrichers, geoEnricher)
 	}
 
-	if conf.GetBool("BotEnrichment.enabled", true) {
+	if conf.GetBoolVar(true, "BotEnrichment.enabled") {
 		log.Infon("Setting up the bot pipeline enricher")
 
 		botEnricher, err := enricher.NewBotEnricher()

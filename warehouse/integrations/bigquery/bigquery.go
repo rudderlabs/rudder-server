@@ -125,12 +125,12 @@ func New(conf *config.Config, log logger.Logger) *BigQuery {
 	bq.logger = log.Child("integrations").Child("bigquery")
 	bq.now = timeutil.Now
 
-	bq.config.setUsersLoadPartitionFirstEventFilter = conf.GetBool("Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter", true)
-	bq.config.customPartitionsEnabled = conf.GetBool("Warehouse.bigquery.customPartitionsEnabled", false)
-	bq.config.enableDeleteByJobs = conf.GetBool("Warehouse.bigquery.enableDeleteByJobs", false)
-	bq.config.customPartitionsEnabledWorkspaceIDs = conf.GetStringSlice("Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs", nil)
-	bq.config.slowQueryThreshold = conf.GetDuration("Warehouse.bigquery.slowQueryThreshold", 5, time.Minute)
-	bq.config.loadByFolderPath = conf.GetBool("Warehouse.bigquery.loadByFolderPath", false)
+	bq.config.setUsersLoadPartitionFirstEventFilter = conf.GetBoolVar(true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
+	bq.config.customPartitionsEnabled = conf.GetBoolVar(false, "Warehouse.bigquery.customPartitionsEnabled")
+	bq.config.enableDeleteByJobs = conf.GetBoolVar(false, "Warehouse.bigquery.enableDeleteByJobs")
+	bq.config.customPartitionsEnabledWorkspaceIDs = conf.GetStringSliceVar(nil, "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs")
+	bq.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.bigquery.slowQueryThreshold")
+	bq.config.loadByFolderPath = conf.GetBoolVar(false, "Warehouse.bigquery.loadByFolderPath")
 
 	return bq
 }

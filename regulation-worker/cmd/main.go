@@ -102,19 +102,19 @@ func Run(ctx context.Context) error {
 			&kvstore.KVDeleteManager{},
 			&batch.BatchManager{
 				FMFactory:  filemanager.New,
-				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
+				FilesLimit: config.GetIntVar(1000, 1, "REGULATION_WORKER_FILES_LIMIT"),
 			},
 			&api.APIManager{
 				Client:                       apiManagerHttpClient,
 				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
-				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
+				MaxOAuthRefreshRetryAttempts: config.GetIntVar(1, 1, "RegulationWorker.oauth.maxRefreshRetryAttempts"),
 				TransformerFeaturesService: transformer.NewFeaturesService(ctx, config, transformer.FeaturesServiceOptions{
-					PollInterval:             config.GetDuration("Transformer.pollInterval", 10, time.Second),
-					TransformerURL:           config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"),
+					PollInterval:             config.GetDurationVar(10, time.Second, "Transformer.pollInterval"),
+					TransformerURL:           config.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"),
 					FeaturesRetryMaxAttempts: 10,
 				}),
 			}),
-		MaxFailedAttempts: config.GetInt("REGULATION_DELETION_MAX_FAILED_ATTEMPTS", 4),
+		MaxFailedAttempts: config.GetIntVar(4, 1, "REGULATION_DELETION_MAX_FAILED_ATTEMPTS"),
 	}
 
 	pkgLogger.Infon("calling looper with service")
@@ -138,9 +138,9 @@ func createHTTPClient(conf *config.Config, httpTimeout time.Duration) *http.Clie
 	cli := &http.Client{
 		Timeout: httpTimeout,
 		Transport: &http.Transport{
-			DisableKeepAlives:   conf.GetBool("HttpClient.regulationWorker.regulationManager.disableKeepAlives", true),
-			MaxConnsPerHost:     conf.GetInt("HttpClient.regulationWorker.regulationManager.maxHTTPConnections", 100),
-			MaxIdleConnsPerHost: conf.GetInt("HttpClient.regulationWorker.regulationManager.maxHTTPIdleConnections", 10),
+			DisableKeepAlives:   conf.GetBoolVar(true, "HttpClient.regulationWorker.regulationManager.disableKeepAlives"),
+			MaxConnsPerHost:     conf.GetIntVar(100, 1, "HttpClient.regulationWorker.regulationManager.maxHTTPConnections"),
+			MaxIdleConnsPerHost: conf.GetIntVar(10, 1, "HttpClient.regulationWorker.regulationManager.maxHTTPIdleConnections"),
 			IdleConnTimeout:     300 * time.Second,
 		},
 	}

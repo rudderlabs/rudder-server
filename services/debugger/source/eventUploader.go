@@ -64,7 +64,7 @@ type Handle struct {
 
 func NewHandle(backendConfig backendconfig.BackendConfig) (SourceDebugger, error) {
 	h := &Handle{
-		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		configBackendURL: config.GetStringVar("https://api.rudderstack.com", "CONFIG_BACKEND_URL"),
 		log:              logger.NewLogger().Child("debugger").Child("source"),
 	}
 	var err error
@@ -74,7 +74,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig) (SourceDebugger, error
 	h.uploader = debugger.New[*GatewayEventBatchT](url, backendConfig.Identity(), eventUploader)
 	h.uploader.Start()
 
-	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.MemoryCacheType)))
+	cacheType := cache.CacheType(config.GetIntVar(int(cache.MemoryCacheType), 1, "SourceDebugger.cacheType"))
 	h.eventsCache, err = cache.New[[]byte](cacheType, "source", h.log)
 	if err != nil {
 		return nil, err

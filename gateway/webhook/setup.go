@@ -102,11 +102,11 @@ func Setup(gwHandle Gateway, transformerFeaturesService TransformerFeaturesServi
 
 	transformerClient := transformerclient.NewClient(transformerClientConfig)
 	retryableClientConfig := &retryablehttp.Config{
-		MaxRetry:        conf.GetInt("Gateway.webhook.maxRetry", 5),
-		InitialInterval: conf.GetDuration("Gateway.webhook.minRetryTime", 100, time.Millisecond),
-		MaxInterval:     conf.GetDuration("Gateway.webhook.maxRetryTime", 1000, time.Millisecond),
-		MaxElapsedTime:  conf.GetDuration("Gateway.webhook.maxElapsedTime", 10, time.Second),
-		Multiplier:      conf.GetFloat64("Gateway.webhook.backoffMultiplier", 1.5),
+		MaxRetry:        conf.GetIntVar(5, 1, "Gateway.webhook.maxRetry"),
+		InitialInterval: conf.GetDurationVar(100, time.Millisecond, "Gateway.webhook.minRetryTime"),
+		MaxInterval:     conf.GetDurationVar(1000, time.Millisecond, "Gateway.webhook.maxRetryTime"),
+		MaxElapsedTime:  conf.GetDurationVar(10, time.Second, "Gateway.webhook.maxElapsedTime"),
+		Multiplier:      conf.GetFloat64Var(1.5, "Gateway.webhook.backoffMultiplier"),
 	}
 	webhook.httpClient = retryablehttp.NewRetryableHTTPClient(
 		retryableClientConfig,

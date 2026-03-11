@@ -39,7 +39,7 @@ func migrateDatabase(dbConn string, conf *config.Config) error {
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "tracked_users_reports_migrations",
-		ShouldForceSetLowerVersion: conf.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: conf.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 	}
 	err = m.Migrate("tracked_users")
 	if err != nil {

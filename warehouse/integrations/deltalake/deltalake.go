@@ -148,13 +148,13 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats) *Deltalake {
 	dl.logger = log.Child("integration").Child("deltalake")
 	dl.stats = stat
 
-	dl.config.allowMerge = conf.GetBool("Warehouse.deltalake.allowMerge", true)
-	dl.config.enablePartitionPruning = conf.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
-	dl.config.slowQueryThreshold = conf.GetDuration("Warehouse.deltalake.slowQueryThreshold", 5, time.Minute)
-	dl.config.maxRetries = conf.GetInt("Warehouse.deltalake.maxRetries", 10)
-	dl.config.retryMinWait = conf.GetDuration("Warehouse.deltalake.retryMinWait", 1, time.Second)
-	dl.config.retryMaxWait = conf.GetDuration("Warehouse.deltalake.retryMaxWait", 300, time.Second)
-	dl.config.maxErrorLength = conf.GetInt("Warehouse.deltalake.maxErrorLength", 64*1024) // 64 KB
+	dl.config.allowMerge = conf.GetBoolVar(true, "Warehouse.deltalake.allowMerge")
+	dl.config.enablePartitionPruning = conf.GetBoolVar(true, "Warehouse.deltalake.enablePartitionPruning")
+	dl.config.slowQueryThreshold = conf.GetDurationVar(5, time.Minute, "Warehouse.deltalake.slowQueryThreshold")
+	dl.config.maxRetries = conf.GetIntVar(10, 1, "Warehouse.deltalake.maxRetries")
+	dl.config.retryMinWait = conf.GetDurationVar(1, time.Second, "Warehouse.deltalake.retryMinWait")
+	dl.config.retryMaxWait = conf.GetDurationVar(300, time.Second, "Warehouse.deltalake.retryMaxWait")
+	dl.config.maxErrorLength = conf.GetIntVar(64*1024, 1, "Warehouse.deltalake.maxErrorLength") // 64 KB
 	return dl
 }
 

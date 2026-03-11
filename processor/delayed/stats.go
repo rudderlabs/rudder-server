@@ -18,7 +18,7 @@ type eventStats struct {
 }
 
 func NewEventStats(stats stats.Stats, config *config.Config) *eventStats {
-	threshold := config.GetDuration("processor.delayed_events.threshold", 10*24, time.Hour)
+	threshold := config.GetDurationVar(10*24, time.Hour, "processor.delayed_events.threshold")
 
 	return &eventStats{
 		stats:     stats,

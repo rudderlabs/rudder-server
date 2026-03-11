@@ -46,7 +46,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	rtRWDB, brtRWDB jobsdb.JobsDB,
 	etcdClientProvider func() (etcdclient.Client, error),
 ) (ProcessorPartitionMigratorSetup, error) {
-	if !config.GetBool("PartitionMigration.enabled", false) {
+	if !config.GetBoolVar(false, "PartitionMigration.enabled") {
 		finally := func() {}
 		if gwWODB == nil {
 			// caller expects to get reader gw db back if writer is nil
@@ -272,7 +272,7 @@ func setupGatewayPartitionMigrator(ctx context.Context,
 	gwWODB jobsdb.JobsDB,
 	etcdClientProvider func() (etcdclient.Client, error),
 ) (partitionMigrator PartitionMigrator, gwDB jobsdb.JobsDB, err error) {
-	if !config.GetBool("PartitionMigration.enabled", false) {
+	if !config.GetBoolVar(false, "PartitionMigration.enabled") {
 		return &noOpPartitionMigrator{}, gwWODB, nil
 	}
 	partitionCount := config.GetIntVar(0, 1, "JobsDB.partitionCount")

@@ -28,7 +28,7 @@ func (jd *Handle) setupDatabaseTables(templateData map[string]any) {
 	m := &migrator.Migrator{
 		Handle:                     jd.dbHandle,
 		MigrationsTable:            jd.SchemaMigrationTable(),
-		ShouldForceSetLowerVersion: jd.config.GetBool("SQLMigrator.forceSetLowerVersion", true),
+		ShouldForceSetLowerVersion: jd.config.GetBoolVar(true, "SQLMigrator.forceSetLowerVersion"),
 		Version:                    uint(jd.conf.dbTablesVersion),
 	}
 	// execute any necessary migrations
