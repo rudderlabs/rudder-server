@@ -14,10 +14,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/rudderlabs/rudder-go-kit/partmap"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/etcd"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/postgres"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/rudo"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/transformer"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/localip"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/rudoacker"
 	etcdtypes "github.com/rudderlabs/rudder-schemas/go/cluster"
 
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
@@ -38,8 +42,8 @@ import (
 // 6. Starts 2 rudder-server nodes in embedded mode with some partitions.
 // 7. Starts a test gateway proxy that listens for partition reload events and forwards requests to the relevant rudder-server node.
 // 8. Starts a client goroutine that sends requests to the gateway proxy for all partitions at a prescribed rate.
-// 9. Starts a test migration controller that orchestrates a migration through etcd.
-// 10. Waits for the migration controller to complete the migration and verifies that there were no errors.
+// 9. Starts a rudder-orchestrator and creates a migration.
+// 10. Waits for the migration to complete and verifies that there were no errors.
 // 11. Stops the client goroutine after a while.
 // 12. Waits for all requests to complete.
 // 13. Verifies that all requests were received successfully and in order.
@@ -56,7 +60,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	)
 
 	// distribute partitions across the 2 nodes equally
-	initialMappings := map[int]int{}
+	initialMappings := partmap.PartitionIndexMapping{}
 	var node0PartitionToMigrate, node1PartitionToMigrate int
 	for i := range numPartitions {
 		nodeIndex := i % 2
@@ -66,11 +70,13 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		case 1:
 			node1PartitionToMigrate = i
 		}
-		initialMappings[i] = i % 2
+		initialMappings[partmap.PartitionIndex(i)] = partmap.NodeIndex(i % 2)
 	}
 	// setup docker pool
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+
+	localIp := localip.GetLocalIP()
 
 	// start 2 postgresql containers
 	pg0, err := postgres.Setup(pool, t)
@@ -84,7 +90,12 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	require.NoError(t, err)
 
 	// start an etcd container
-	etcdResource, err := etcd.Setup(pool, t)
+	etcdResource, err := etcd.Setup(pool, t, etcd.WithBindIP(localIp))
+	require.NoError(t, err)
+
+	// put mappings in etcd
+	wpmh := clustertest.NewWorkspacePartitionMappingHandler(etcdResource.Client, numPartitions, namespace, workspaceID)
+	err = wpmh.SetWorkspacePartitionMappings(t.Context(), initialMappings)
 	require.NoError(t, err)
 
 	// start a test webhook that will verify event order based on userId
@@ -109,6 +120,22 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 					Build()).
 			Build()).
 		Build()
+
+	bc.URL = strings.Replace(bc.URL, "127.0.0.1", localIp, 1) // replace localhost with local IP for docker containers to access
+
+	// start rudder-orchestrator that will run the migration
+	rudoResource, err := rudo.Setup(pool, t,
+		rudo.WithBindIP(localIp),
+		rudo.WithEtcdHosts(etcdResource.Hosts),
+		rudo.WithGatewaySeparateService(false),
+		rudo.WithReleaseName(namespace),
+		rudo.WithPartitionCount(numPartitions),
+		rudo.WithPollerBaseURL(bc.URL),
+		rudo.WithWorkspaceNamespace(namespace),
+		rudo.WithSrcRouterNodes([]string{"srcrouter"}),
+		rudo.WithWorkspacePartitionGroups(1),
+	)
+	require.NoError(t, err)
 
 	gw0Port, err := kithelper.GetFreePort() // for gateway node 0
 	require.NoError(t, err)
@@ -238,48 +265,40 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	// wait for some time to let events flow
 	time.Sleep(10 * time.Second)
 
-	if true { // quick way to enable/disable migration in the test for debugging
-		// start a migration controller that will run a migration in etcd
-		migrationExecutor := clustertest.NewPartitionMigrationExecutor(
-			namespace,
-			etcdtypes.PartitionMigration{
-				ID: "my-migration",
-				Jobs: []*etcdtypes.PartitionMigrationJobHeader{
-					{ // move a partition from node 0 to node 1
-						JobID:      "my-migration-job-1",
-						SourceNode: 0,
-						TargetNode: 1,
-						Partitions: []string{workspaceID + "-" + strconv.Itoa(node0PartitionToMigrate)},
-					},
-					{ // move a partition from node 1 to node 0
-						JobID:      "my-migration-job-2",
-						SourceNode: 1,
-						TargetNode: 0,
-						Partitions: []string{workspaceID + "-" + strconv.Itoa(node1PartitionToMigrate)},
-					},
-				},
-			},
-			false,
-			etcdResource.Client,
-			func(partitionID string, newNodeIndex int) {
-				parts := strings.Split(partitionID, "-")
-				partitionIdx, err := strconv.Atoi(parts[len(parts)-1])
-				require.NoError(t, err, "partition ID should end with partition index")
-				t.Logf("testscenario: starting routing partition %d to node %d", partitionIdx, newNodeIndex)
-				routingProxy.UpdatePartitionMapping(partitionIdx, newNodeIndex)
-			},
-			t,
-		)
-		migCtx, migCancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer migCancel()
-		start := time.Now()
-		err = migrationExecutor.Run(migCtx)
-		require.NoError(t, err, "migration should complete without error")
-		t.Logf("testscenario: migration completed in %s", time.Since(start))
-	} else {
-		// just wait for a while with no migration
-		time.Sleep(15 * time.Second)
-	}
+	var srcRouterAcks []string
+	err = rudoacker.NewSrcrouterAcker(ctx, g, etcdResource.Client, namespace, []string{"srcrouter"}).
+		WithEventListener(func(key string, value etcdtypes.ReloadSrcRouterCommand) {
+			// get new mappings and set them
+			newMappings, err := wpmh.GetWorkspacePartitionMappings(ctx)
+			require.NoError(t, err, "getting new partition mappings should not produce an error")
+			t.Logf("testscenario: received reload command for key %s with new mappings: %+v", key, newMappings)
+			routingProxy.SetPartitionMappings(newMappings)
+		}).
+		WithAckListener(func(ackKey string) {
+			srcRouterAcks = append(srcRouterAcks, ackKey)
+		}).
+		Start()
+	require.NoError(t, err)
+	// create the migration
+	start := time.Now()
+	_, err = rudoResource.CreateMigration(ctx, rudo.WorkspaceMigration{
+		WorkspaceID: workspaceID,
+		Migrations: []rudo.Migration{
+			// move a partition from node 0 to node 1
+			{Src: rudo.Src{ServerID: 0, PartitionIdxs: []int{node0PartitionToMigrate}}, Dst: rudo.Dst{ServerID: 1}},
+			// move a partition from node 1 to node 0
+			{Src: rudo.Src{ServerID: 1, PartitionIdxs: []int{node1PartitionToMigrate}}, Dst: rudo.Dst{ServerID: 0}},
+		},
+	})
+	require.NoError(t, err)
+	// wait for migration to complete
+	require.Eventually(t, func() bool {
+		migrations, err := rudoResource.ListMigrations(ctx)
+		require.NoError(t, err)
+		return len(migrations) == 0
+	}, 2*time.Minute, 1*time.Second, "migration should complete within the timeout")
+	require.NoError(t, err, "migration should complete without error")
+	t.Logf("testscenario: migration completed in %s", time.Since(start))
 
 	// after migration is done, wait for some more time to let events flow on the other side as well
 	time.Sleep(2 * time.Second)
@@ -301,4 +320,5 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	require.EqualValuesf(t, 0, wh.outOfOrderCount.Load(), "there should be no out of order events: %+v", wh.outOfOrderEvents)
 	cancel() // cancel the main test context to stop all servers
 	require.NoError(t, g.Wait(), "all goroutines should complete without error")
+	require.Len(t, srcRouterAcks, 1)
 }
