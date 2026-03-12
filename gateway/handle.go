@@ -1028,10 +1028,47 @@ func (gw *Handle) getSourceConfigFromSourceID(sourceID string) (src backendconfi
 	return backendconfig.SourceT{}, false
 }
 
+func startStoreJobsWatchdog(writeTimeout, gracePeriod time.Duration, jobsCount int, panicFn func(any)) func() {
+	done := make(chan struct{})
+	var (
+		once sync.Once
+		wg   sync.WaitGroup
+	)
+	timeout := writeTimeout + gracePeriod
+	wg.Go(func() {
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+
+		select {
+		case <-done:
+			return
+		case <-timer.C:
+			select {
+			case <-done:
+				return
+			default:
+				panicFn(fmt.Errorf(
+					"gateway storeJobs exceeded watchdog timeout: write_timeout=%s watchdog_timeout=%s jobs=%d",
+					writeTimeout,
+					timeout,
+					jobsCount,
+				))
+			}
+		}
+	})
+	return func() {
+		once.Do(func() {
+			close(done)
+		})
+		wg.Wait()
+	}
+}
+
 func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 	ctx, cancel := context.WithTimeout(ctx, gw.conf.WriteTimeout)
 	defer cancel()
 	defer gw.dbWritesStat.Count(1)
+	defer startStoreJobsWatchdog(gw.conf.WriteTimeout, time.Minute, len(jobs), func(v any) { panic(v) })()
 	return gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 		if err := gw.jobsDB.StoreInTx(ctx, tx, jobs); err != nil {
 			gw.logger.Errorn(
