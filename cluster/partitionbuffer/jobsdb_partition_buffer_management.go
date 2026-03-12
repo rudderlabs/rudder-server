@@ -24,7 +24,7 @@ func (b *jobsDBPartitionBuffer) BufferPartitions(ctx context.Context, partitionI
 		query := `INSERT INTO ` + b.Identifier() + `_buffered_partitions (partition_id) VALUES ($1) ON CONFLICT DO NOTHING`
 		for _, partition := range partitionIds {
 			if _, err := tx.ExecContext(ctx, query, partition); err != nil {
-				return fmt.Errorf("adding buffered partition %s: %w", partition, err)
+				return fmt.Errorf("adding buffered partition %s: %w, query: (%s)", partition, err, query)
 			}
 		}
 		var err error

@@ -68,7 +68,7 @@ func (m *migrator) Handle(ctx context.Context, migration *etcdtypes.PartitionMig
 	for _, pb := range allBufferedDBs {
 		g.Go(func() error {
 			if err := pb.BufferPartitions(ctx, targetPartitions); err != nil {
-				return fmt.Errorf("marking partitions as buffered in in %q jobsdb: %w", pb.Identifier(), err)
+				return fmt.Errorf("marking partitions as buffered in %q jobsdb: %w", pb.Identifier(), err)
 			}
 			return nil
 		})
