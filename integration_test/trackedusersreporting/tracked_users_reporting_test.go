@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	nethttptest "net/http/httptest"
 	"os"
 	"path"
 	"strconv"
@@ -46,7 +45,7 @@ type testConfig struct {
 	postgresResource *postgres.Resource
 	gwPort           int
 	webhook          *webhookutil.Recorder
-	configBEServer   *nethttptest.Server
+	configBEServer   *httptest.Server
 	transformerUrl   string
 	reportingServer  *mockReportingServer
 }

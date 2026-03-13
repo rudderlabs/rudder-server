@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	nethttptest "net/http/httptest"
 	"os"
 	"path"
 	"strconv"
@@ -45,7 +44,7 @@ type testConfig struct {
 	gwPort                    int
 	transformerConfigBEServer *httptest.Server
 	webhook                   *webhookutil.Recorder
-	configBEServer            *nethttptest.Server
+	configBEServer            *httptest.Server
 }
 
 func TestBackendConfigUnavailabilityForTransformer(t *testing.T) {

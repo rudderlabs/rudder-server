@@ -3,11 +3,11 @@ package backendconfigtest
 import (
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 
 	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/httptest"
 
 	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 )
@@ -51,6 +51,10 @@ func (b *ServerBuilder) Build() *httptest.Server {
 	if b.namespace != "" {
 		mux.HandleFunc(fmt.Sprintf("/data-plane/v1/namespaces/%s/config", b.namespace), func(w http.ResponseWriter, r *http.Request) {
 			response, _ := jsonrs.Marshal(b.configs)
+			_, _ = w.Write(response)
+		})
+		mux.HandleFunc(fmt.Sprintf("/configuration/v2/namespaces/%s/workspace-ids", b.namespace), func(w http.ResponseWriter, r *http.Request) {
+			response, _ := jsonrs.Marshal(map[string][]string{"data": lo.Keys(b.configs)})
 			_, _ = w.Write(response)
 		})
 	} else {
