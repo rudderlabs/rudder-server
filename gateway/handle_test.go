@@ -447,6 +447,37 @@ func TestIsEventBlocked(t *testing.T) {
 	}
 }
 
+func TestStartStoreJobsWatchdog(t *testing.T) {
+	t.Run("fires", func(t *testing.T) {
+		panicCh := make(chan any, 1)
+		stop := startStoreJobsWatchdog(5*time.Millisecond, 5*time.Millisecond, 3, func(v any) {
+			panicCh <- v
+		})
+		defer stop()
+
+		select {
+		case got := <-panicCh:
+			require.EqualError(t, got.(error), "gateway storeJobs exceeded watchdog timeout: write_timeout=5ms watchdog_timeout=10ms jobs=3")
+		case <-time.After(time.Second):
+			t.Fatal("expected watchdog to fire")
+		}
+	})
+
+	t.Run("stops", func(t *testing.T) {
+		panicCh := make(chan any, 1)
+		stop := startStoreJobsWatchdog(25*time.Millisecond, 25*time.Millisecond, 1, func(v any) {
+			panicCh <- v
+		})
+		stop()
+
+		select {
+		case got := <-panicCh:
+			t.Fatalf("unexpected watchdog panic: %v", got)
+		case <-time.After(100 * time.Millisecond):
+		}
+	})
+}
+
 func TestExtractJobsFromInternalBatchPayload_EventBlocking(t *testing.T) {
 	type expectedJob struct {
 		eventName              string
