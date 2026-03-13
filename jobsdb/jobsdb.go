@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -1310,7 +1311,10 @@ func (jd *Handle) doRefreshDSRangeList(l lock.LockToken) error {
 		if _, ok := jd.dsRangeFuncMap[ds.Index]; !ok {
 			getIndex := func() (sql.NullInt64, sql.NullInt64, error) {
 				var minID, maxID sql.NullInt64
-				sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, ds.JobTable)
+				if err := jd.validateTableName(ds.JobTable); err != nil {
+					return sql.NullInt64{}, sql.NullInt64{}, err
+				}
+				sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, pq.QuoteIdentifier(ds.JobTable))
 				row := jd.dbHandle.QueryRow(sqlStatement)
 				if err := row.Scan(&minID, &maxID); err != nil {
 					return sql.NullInt64{}, sql.NullInt64{}, fmt.Errorf("scanning min & max jobID %w", err)
@@ -1461,6 +1465,15 @@ func mapDSToLevel(ds dataSetT) (levelInt int, levelVals []int, err error) {
 	return len(levelVals), levelVals, nil
 }
 
+
+func (jd *Handle) validateTableName(tableName string) error {
+	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_]*$`, tableName)
+	if !matched || len(tableName) > 64 {
+		return fmt.Errorf("invalid table name: %s", tableName)
+	}
+	return nil
+}
+
 func newDataSet(tablePrefix, dsIdx string) dataSetT {
 	jobTable := fmt.Sprintf("%s_jobs_%s", tablePrefix, dsIdx)
 	jobStatusTable := fmt.Sprintf("%s_job_status_%s", tablePrefix, dsIdx)
@@ -1609,7 +1622,7 @@ func (jd *Handle) createDSTablesInTx(ctx context.Context, tx *Tx, newDS dataSetT
 }
 
 func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSetT) error {
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %s (workspace_id)`, newDS.Index, pq.QuoteIdentifier(newDS.JobTable))); err != nil {
 		return fmt.Errorf("creating workspace_id index: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_partid" ON %[1]q (partition_id)`, newDS.JobTable)); err != nil {
@@ -1619,15 +1632,15 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 		return fmt.Errorf("creating custom_val index: %w", err)
 	}
 	for _, param := range cacheParameterFilters {
-		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %[1]q USING BTREE ((parameters->>'%[2]s'))`, newDS.JobTable, param)); err != nil {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_%[2]s" ON %s USING BTREE ((parameters->>'%[2]s'))`, newDS.Index, pq.QuoteIdentifier(newDS.JobTable), param)); err != nil {
 			return fmt.Errorf("creating %s index: %w", param, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %[1]q(job_id asc,id desc,job_state)`, newDS.JobStatusTable)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id_js" ON %s(job_id asc,id desc,job_state)`, newDS.Index, pq.QuoteIdentifier(newDS.JobStatusTable))); err != nil {
 		return fmt.Errorf("adding job_id_id index: %w", err)
 	}
 	// index used for maxDSRetention during migration
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %[1]q(id ,job_state) INCLUDE (exec_time)`, newDS.JobStatusTable)); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_id_js" ON %s(id ,job_state) INCLUDE (exec_time)`, newDS.Index, pq.QuoteIdentifier(newDS.JobStatusTable))); err != nil {
 		return fmt.Errorf("adding job_id_js index: %w", err)
 	}
 

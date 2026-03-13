@@ -1,5 +1,9 @@
 -- Create a table to store schema snapshots for staging files.
 -- Each snapshot represents the schema at a specific point in time for a (source, destination, workspace).
+-- Enable pgcrypto extension for PostgreSQL < 13 compatibility
+-- gen_random_uuid() is built-in from PG 13, but requires pgcrypto on earlier versions
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS wh_staging_file_schema_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), -- Unique identifier for the snapshot
     schema TEXT NOT NULL,                          -- JSON-encoded schema at the time of the snapshot
