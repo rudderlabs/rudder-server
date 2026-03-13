@@ -65,9 +65,6 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	if handle.config.forMirroring {
 		handle.config.userTransformationURL = handle.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
 		handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
-		handle.skippedEventsForMirroring = handle.stat.NewStat(
-			"processor_transformer_skipped_events_for_mirroring", stats.CountType,
-		)
 	}
 
 	return handle
@@ -88,11 +85,10 @@ type Client struct {
 		collectInstanceLevelStats  bool
 		batchSize                  config.ValueLoader[int]
 	}
-	conf                      *config.Config
-	log                       logger.Logger
-	stat                      stats.Stats
-	client                    transformerclient.Client
-	skippedEventsForMirroring stats.Counter
+	conf   *config.Config
+	log    logger.Logger
+	stat   stats.Stats
+	client transformerclient.Client
 }
 
 func (u *Client) Transform(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
@@ -106,11 +102,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 
 	transformationLanguage, transformationVersionID := transformerutils.GetTransformationInfo(clientEvents)
-	userURL, skip := u.userTransformURL(transformationLanguage, transformationVersionID)
-	if skip {
-		u.skippedEventsForMirroring.Count(len(clientEvents))
-		return types.Response{}
-	}
+	userURL := u.userTransformURL(transformationLanguage, transformationVersionID)
 
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
@@ -398,34 +390,10 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	return respData, resp.StatusCode, nil
 }
 
-func (u *Client) userTransformURL(language, versionID string) (string, bool) {
+func (u *Client) userTransformURL(language, versionID string) string {
 	isPython := strings.HasPrefix(language, "python")
-
-	if !u.config.forMirroring { // Common production branch
-		if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) && u.config.pythonTransformationURL != "" {
-			return u.config.pythonTransformationURL + "/customTransform", false
-		}
-		return u.config.userTransformationURL + "/customTransform", false
+	if isPython && u.config.pythonTransformConfig.IsVersionAllowed(versionID) && u.config.pythonTransformationURL != "" {
+		return u.config.pythonTransformationURL + "/customTransform"
 	}
-
-	// Mirroring
-	if isPython {
-		if u.config.pythonTransformationURL == "" {
-			// mirroring is enabled but without a URL for the PyTransformer, SKIP!
-			return "", true
-		}
-		if !u.config.pythonTransformConfig.IsVersionAllowed(versionID) {
-			// mirroring is enabled, but this transformation version is not allowed, SKIP!
-			return "", true
-		}
-		return u.config.pythonTransformationURL + "/customTransform", false
-	}
-
-	// Mirroring JS
-	if u.config.userTransformationURL == "" {
-		// mirroring is enabled but without a URL for the JSTransformer, SKIP!
-		return "", true
-	}
-
-	return u.config.userTransformationURL + "/customTransform", false
+	return u.config.userTransformationURL + "/customTransform"
 }

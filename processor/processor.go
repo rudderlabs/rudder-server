@@ -179,6 +179,8 @@ type Handle struct {
 		enableConcurrentStore                     config.ValueLoader[bool]
 		userTransformationMirroringSanitySampling config.ValueLoader[float64]
 		userTransformationMirroringFireAndForget  config.ValueLoader[bool]
+		userTransformMirrorURL                    string
+		pythonTransformMirrorURL                  string
 		pythonTransformConfig                     transformerutils.PythonTransformConfig
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		archiveInPreProcess                       bool
@@ -767,6 +769,8 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	// UserTransformation mirroring settings
 	proc.config.userTransformationMirroringSanitySampling = proc.conf.GetReloadableFloat64Var(0, "Processor.userTransformationMirroring.sanitySampling")
 	proc.config.userTransformationMirroringFireAndForget = proc.conf.GetReloadableBoolVar(false, "Processor.userTransformationMirroring.fireAndForget")
+	proc.config.userTransformMirrorURL = proc.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
+	proc.config.pythonTransformMirrorURL = proc.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 }
 
@@ -3489,7 +3493,16 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	// Check if this is a Python transformation and apply version-based filtering
 	language, versionID := transformerutils.GetTransformationInfo(eventList)
-	if strings.HasPrefix(language, "python") && !proc.config.pythonTransformConfig.IsVersionAllowed(versionID) {
+	isPython := strings.HasPrefix(language, "python")
+	if isPython && !proc.config.pythonTransformConfig.IsVersionAllowed(versionID) {
+		return false, nil
+	}
+
+	// Check if the mirror URL is configured for the transformation language
+	if isPython && proc.config.pythonTransformMirrorURL == "" {
+		return false, nil
+	}
+	if !isPython && proc.config.userTransformMirrorURL == "" {
 		return false, nil
 	}
 
