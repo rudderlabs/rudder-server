@@ -41,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/utils/crash"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -1035,7 +1036,7 @@ func startStoreJobsWatchdog(writeTimeout, gracePeriod time.Duration, jobsCount i
 		wg   sync.WaitGroup
 	)
 	timeout := writeTimeout + gracePeriod
-	wg.Go(func() {
+	wg.Go(crash.WrapperNoError(func() {
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 
@@ -1055,7 +1056,7 @@ func startStoreJobsWatchdog(writeTimeout, gracePeriod time.Duration, jobsCount i
 				))
 			}
 		}
-	})
+	}))
 	return func() {
 		once.Do(func() {
 			close(done)
