@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
-
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -57,9 +56,6 @@ func (jd *Handle) migrateDSLoop(ctx context.Context) {
 			return nil
 		}
 		if err := migrate(); err != nil && ctx.Err() == nil {
-			if !jd.conf.skipMaintenanceError {
-				panic(err)
-			}
 			jd.logger.Errorn("migrateDSLoop error", obskit.Error(err))
 		}
 	}
@@ -87,7 +83,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 	var lockChan chan<- lock.LockToken
 
 	lockStart := time.Now()
-	err = jd.WithTx(ctx, func(tx *Tx) error {
+	err = jd.WithTx(func(tx *Tx) error {
 		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 			// Take the lock and run actual migration
 			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
@@ -227,7 +223,7 @@ type dsWithPendingJobCount struct {
 func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT) ([]string, error) {
 	// get name and it's size of all tables
 	var rows *sql.Rows
-	rows, err := jd.getDB(ctx).QueryContext(
+	rows, err := jd.dbHandle.QueryContext(
 		ctx,
 		`SELECT pg_table_size(oid) AS size, relname
 		FROM pg_class
@@ -274,7 +270,7 @@ func (jd *Handle) getVacuumFullCandidates(ctx context.Context, dsList []dataSetT
 func (jd *Handle) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
 	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
 	var rows *sql.Rows
-	rows, err := jd.getDB(ctx).QueryContext(
+	rows, err := jd.dbHandle.QueryContext(
 		ctx,
 		`SELECT reltuples AS estimate, relname
 		FROM pg_class
@@ -340,7 +336,7 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 		stats.Tags{"customVal": jd.tablePrefix},
 	).Since(start)
 
-	if err := jd.WithTx(ctx, func(tx *Tx) error {
+	if err := jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
 			table := statusTable.JobStatusTable
 			// clean up and vacuum if not present in toVacuumFullMap
@@ -361,14 +357,14 @@ func (jd *Handle) cleanupStatusTables(ctx context.Context, dsList []dataSetT) er
 	// vacuum full
 	for _, table := range toVacuumFull {
 		jd.logger.Infon("vacuuming full", logger.NewStringField("table", table))
-		if _, err := jd.getDB(ctx).ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
+		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM FULL %[1]q`, table)); err != nil {
 			return err
 		}
 	}
 	// vacuum analyze
 	for _, table := range toVacuum {
 		jd.logger.Infon("vacuuming", logger.NewStringField("table", table))
-		if _, err := jd.getDB(ctx).ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
+		if _, err := jd.dbHandle.ExecContext(ctx, fmt.Sprintf(`VACUUM ANALYZE %[1]q`, table)); err != nil {
 			return err
 		}
 	}
