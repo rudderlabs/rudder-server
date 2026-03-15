@@ -1,0 +1,15 @@
+﻿6630	OPEN	Backup Errors: Container logs inundated with errors about archiver failing.		2026-02-27T15:41:55Z
+6349	OPEN	Enabling "Enable for cleanup of object storage files (deletion) after successful sync" causes constant "context deadline exceeded" errors		2026-01-10T03:13:05Z
+6336	OPEN	Migration fails: `gen_random_uuid()` not found on PostgreSQL 11 (pgcrypto extension required)		2025-10-29T02:49:21Z
+6284	OPEN	SQL Injection Vulnerabilities (CWE-89) at jobsdb/jobsdb.go		2026-01-10T03:14:36Z
+5341	OPEN	K3S deploy rudder-server stdout only one message	Need more info	2025-07-19T02:19:27Z
+5213	OPEN	User details not being sent to Destination Intercom	Stale, Need more info	2025-07-19T02:19:51Z
+5166	OPEN	What and how to contribute?		2024-10-03T15:26:37Z
+5079	OPEN	Clickhouse - Default Partition should be monthly (toYYYYMM) rather than daily		2025-01-09T17:10:23Z
+5076	OPEN	Sudden error: "No staging files found		2025-01-17T15:20:32Z
+4953	OPEN	Rudderstack becomes extremely slow when you have one destination down	Need more info	2025-07-19T02:21:12Z
+4660	OPEN	Where to post?	Info	2024-05-06T16:53:21Z
+4588	OPEN	Crashing with "panic: failed to migrate ds"	Stale, Need more info	2026-02-05T12:03:16Z
+4535	OPEN	backupDSLoop exception: mark end of backup operation: driver: bad connection; driver: bad connection	Could not reproduce	2024-07-14T09:34:49Z
+3498	OPEN	Google Adwords Remarketing List 404 error	Need more info	2025-10-10T10:55:03Z
+2045	OPEN	Request: Declarative text-based configuration support	enhancement	2024-06-03T10:49:13Z

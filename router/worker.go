@@ -915,6 +915,8 @@ func (w *worker) updateReqMetrics(respStatusCodes map[int64]int, diagnosisStartT
 
 		if isSuccessStatus(respStatusCode) {
 			reqMetric.RequestSuccess++
+		} else if isJobTerminated(respStatusCode) {
+			reqMetric.RequestAborted++
 		} else {
 			reqMetric.RequestRetries++
 		}

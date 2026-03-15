@@ -2252,7 +2252,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 	}
 
 	if workspaceID != "" {
-		filterConditions = append(filterConditions, fmt.Sprintf("jobs.workspace_id = '%s'", workspaceID))
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.workspace_id = %s", pq.QuoteLiteral(workspaceID)))
 	}
 
 	if len(partitionFilters) > 0 {

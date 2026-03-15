@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/lib/pq"
 	"github.com/samber/lo"
-
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 )
@@ -116,7 +116,7 @@ func checkValidJobState(jd assertInterface, stateFilters []string) {
 func constructQueryOR(paramKey string, paramList []string, additionalPredicates ...string) string {
 	var queryList []string
 	for _, p := range paramList {
-		queryList = append(queryList, "("+paramKey+"='"+p+"')")
+		queryList = append(queryList, "("+paramKey+"="+pq.QuoteLiteral(p)+")")
 	}
 	queryList = append(queryList, additionalPredicates...)
 	return "(" + strings.Join(queryList, " OR ") + ")"
@@ -126,7 +126,7 @@ func constructQueryOR(paramKey string, paramList []string, additionalPredicates 
 func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	conditions := lo.Map(parameterFilters, func(parameter ParameterFilterT, _ int) string {
-		return fmt.Sprintf(`%s.parameters->>'%s'='%s'`, alias, parameter.Name, parameter.Value)
+		return fmt.Sprintf(`%s.parameters->>'%s'=%s`, alias, parameter.Name, pq.QuoteLiteral(parameter.Value))
 	})
 
 	return "(" + strings.Join(conditions, " OR ") + ")"

@@ -1,0 +1,28 @@
+﻿title:	[WIP] chore: gofix demo
+state:	DRAFT
+author:	atzoum
+labels:	
+assignees:	
+reviewers:	
+projects:	
+milestone:	
+number:	6723
+url:	https://github.com/rudderlabs/rudder-server/pull/6723
+additions:	1023
+deletions:	546
+auto-merge:	disabled
+--
+≡ƒöÆ Scanned for secrets using gitleaks 8.30.0
+
+# Description
+
+< Replace with adequate description for this PR as per [Pull Request document](https://www.notion.so/rudderstacks/Pull-Requests-40a4c6bd7a5e4387ba9029bab297c9e3) >
+
+## Linear Ticket
+
+< Replace with Linear Link ( [create](https://linear.new?title=Awesome-pr-without-linear-ticket) or [search](https://linear.app/rudderstack/search) linear ticket) or  >
+
+## Security
+
+- [ ] The code changed/added as part of this pull request won't create any security issues with how the software is being used.
+
