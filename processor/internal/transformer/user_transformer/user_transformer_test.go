@@ -1126,7 +1126,6 @@ func TestUserTransformer(t *testing.T) {
 					require.Equal(t, expectedResponse, rsp)
 				})
 
-	
 				t.Run("filtering disabled allows all python transformations", func(t *testing.T) {
 					jsSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 						t.Error("request should not hit JS transformer")

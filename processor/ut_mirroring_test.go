@@ -562,16 +562,16 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                 string
-		eventList            []types.TransformerEvent
-		versionEnabled       bool
-		versionIDs           map[string]struct{}
-		fireAndForget        bool
-		sanitySampling       float64
-		userTransformURL     string
-		pythonTransformURL   string
-		expectEnabled        bool
-		expectSanityCh       bool // true if we expect a non-nil sanity channel
+		name               string
+		eventList          []types.TransformerEvent
+		versionEnabled     bool
+		versionIDs         map[string]struct{}
+		fireAndForget      bool
+		sanitySampling     float64
+		userTransformURL   string
+		pythonTransformURL string
+		expectEnabled      bool
+		expectSanityCh     bool // true if we expect a non-nil sanity channel
 	}{
 		{
 			name:               "python transform with version filtering enabled and version allowed",
