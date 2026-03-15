@@ -37,6 +37,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
@@ -45,13 +47,12 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/partmap"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/collectors"
-	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
@@ -83,10 +84,8 @@ type GetQueryParams struct {
 	CustomValFilters []string
 	ParameterFilters []ParameterFilterT
 	PartitionFilters []string
-
-	stateFilters                   []string
-	afterJobID                     *int64
-	ignoreReadPartitionsExclusions bool // if true, includes results from all partitions, ignoring any preconfigured excluded read partitions
+	stateFilters     []string
+	afterJobID       *int64
 
 	// query limits
 
@@ -190,7 +189,7 @@ func (h *HandleInspector) DSIndicesList() []string {
 }
 
 // MoreToken is a token that can be used to fetch more jobs
-type MoreToken any
+type MoreToken interface{}
 
 // MoreJobsResult is a JobsResult with a MoreToken
 type MoreJobsResult struct {
@@ -210,7 +209,7 @@ type JobsDB interface {
 	// WithTx begins a new transaction that can be used by the provided function.
 	// If the function returns an error, the transaction will be rollbacked and return the error,
 	// otherwise the transaction will be committed and a nil error will be returned.
-	WithTx(context.Context, func(tx *Tx) error) error
+	WithTx(func(tx *Tx) error) error
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
 	// that can be used by the provided function.
@@ -360,7 +359,7 @@ func (jd *Handle) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, stat
 		command := func() error {
 			return jd.internalUpdateJobStatusInTx(ctx, tx.Tx(), dsList, dsRangeList, statusList)
 		}
-		err := executeDbRequest(ctx, jd, newWriteDbRequest("update_job_status", &tags, command))
+		err := executeDbRequest(jd, newWriteDbRequest("update_job_status", &tags, command))
 		return err
 	}
 
@@ -525,7 +524,6 @@ jobs. The caller must call the SetUp function on a Handle object
 */
 type Handle struct {
 	dbHandle             *sql.DB
-	priorityPool         *sql.DB // dedicated connection pool for high-priority operations (e.g., partition migration)
 	sharedConnectionPool bool
 	ownerType            OwnerType
 	tablePrefix          string
@@ -836,15 +834,6 @@ func WithNumPartitions(numPartitions int) OptsFunc {
 	}
 }
 
-// WithPriorityPoolDB sets a dedicated connection pool for high-priority operations.
-// Operations that use WithPriorityPool(ctx) context will use this pool and bypass
-// the regular reader/writer queues.
-func WithPriorityPoolDB(pool *sql.DB) OptsFunc {
-	return func(jd *Handle) {
-		jd.priorityPool = pool
-	}
-}
-
 // withDatabaseTablesVersion sets the database tables version to use (internal use only for verifying database table migrations)
 func withDatabaseTablesVersion(dbVersion int) OptsFunc {
 	return func(jd *Handle) {
@@ -961,7 +950,7 @@ func (jd *Handle) init() {
 
 	jd.workersAndAuxSetup()
 
-	err := jd.WithTx(context.Background(), func(tx *Tx) error {
+	err := jd.WithTx(func(tx *Tx) error {
 		// only one migration should run at a time and block all other processes from adding or removing tables
 		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
 			// Database schema migration should happen early, even before jobsdb is started,
@@ -972,7 +961,7 @@ func (jd *Handle) init() {
 				if writer && jd.conf.clearAll {
 					jd.dropDatabaseTables(l)
 				}
-				templateData := func() map[string]any {
+				templateData := func() map[string]interface{} {
 					// Important: if jobsdb type is acting as a writer then refreshDSList
 					// doesn't return the full list of datasets, only the rightmost two.
 					// But we need to run the schema migration against all datasets, no matter
@@ -1472,7 +1461,7 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 }
 
 func (jd *Handle) addNewDS(ctx context.Context, l lock.LockToken, ds dataSetT) {
-	err := jd.WithTx(ctx, func(tx *Tx) error {
+	err := jd.WithTx(func(tx *Tx) error {
 		dsList, err := jd.doRefreshDSList(l)
 		jd.assertError(err)
 		return jd.addNewDSInTx(ctx, tx, l, dsList, ds)
@@ -1530,7 +1519,7 @@ func (jd *Handle) doComputeNewIdxForAppend(dList []dataSetT) string {
 }
 
 type transactionHandler interface {
-	Exec(string, ...any) (sql.Result, error)
+	Exec(string, ...interface{}) (sql.Result, error)
 	Prepare(query string) (*sql.Stmt, error)
 	// If required, add other definitions that are common between *sql.DB and *sql.Tx
 	// Never include Commit and Rollback in this interface
@@ -1612,8 +1601,10 @@ func (jd *Handle) createDSIndicesInTx(ctx context.Context, tx *Tx, newDS dataSet
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating workspace_id index: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_partid" ON %[1]q (partition_id)`, newDS.JobTable)); err != nil {
-		return fmt.Errorf("creating partition_id index: %w", err)
+	if jd.conf.numPartitions > 0 {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_partid" ON %[1]q (partition_id)`, newDS.JobTable)); err != nil {
+			return fmt.Errorf("creating partition_id index: %w", err)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv" ON %[1]q (custom_val)`, newDS.JobTable)); err != nil {
 		return fmt.Errorf("creating custom_val index: %w", err)
@@ -1719,7 +1710,7 @@ func (jd *Handle) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement st
 }
 
 func (jd *Handle) dropDS(ds dataSetT) error {
-	return jd.WithTx(context.Background(), func(tx *Tx) error {
+	return jd.WithTx(func(tx *Tx) error {
 		return jd.dropDSInTx(tx, ds)
 	})
 }
@@ -1814,7 +1805,7 @@ func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT
 
 func (jd *Handle) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
 	return jd.inStoreSafeCtx(ctx, func() error {
-		return jd.WithTx(ctx, func(tx *Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
+		return jd.WithTx(func(tx *Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
@@ -1854,7 +1845,7 @@ func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
 
 func (jd *Handle) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) error) error {
 	return jd.inUpdateSafeCtx(ctx, func(dsList []dataSetT, dsRangeList []dataSetRangeT) error {
-		return jd.WithTx(ctx, func(tx *Tx) error {
+		return jd.WithTx(func(tx *Tx) error {
 			return f(&updateSafeTx{
 				tx:          tx,
 				identity:    jd.tablePrefix,
@@ -1894,8 +1885,8 @@ func (jd *Handle) inUpdateSafeCtx(ctx context.Context, f func(dsList []dataSetT,
 	return f(dsList, dsRangeList)
 }
 
-func (jd *Handle) WithTx(ctx context.Context, f func(tx *Tx) error) error {
-	sqltx, err := jd.getDB(ctx).BeginTx(ctx, nil)
+func (jd *Handle) WithTx(f func(tx *Tx) error) error {
+	sqltx, err := jd.dbHandle.Begin()
 	if err != nil {
 		return err
 	}
@@ -2001,8 +1992,9 @@ FROM pending GROUP BY workspace_id, custom_val, destination_id;`
 	}
 	g.SetLimit(conc)
 	for _, ds := range dsList {
+		ds := ds
 		g.Go(func() error {
-			rows, err := jd.getDB(ctx).QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
+			rows, err := jd.dbHandle.QueryContext(ctx, fmt.Sprintf(queryString, ds.JobTable, ds.JobStatusTable),
 				cutoffTime,
 				pq.Array([]string{Executing.State, Failed.State, Importing.State, Waiting.State}))
 			if err != nil {
@@ -2039,7 +2031,8 @@ func (jd *Handle) getDistinctValuesPerDataset(
 	customVal string,
 ) (map[string][]string, error) {
 	var queries []string
-	for _, ds := range dsList {
+	var args []interface{}
+	for i, ds := range dsList {
 		if customVal == "" {
 			queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
 				WITH RECURSIVE t AS (
@@ -2055,23 +2048,25 @@ func (jd *Handle) getDistinctValuesPerDataset(
 					)
 				SELECT * FROM t) a`, param.string(), ds))
 		} else {
+			argIndex := i + 1
 			queries = append(queries, fmt.Sprintf(`SELECT '%[2]s', * FROM (
 				WITH RECURSIVE t AS (
-					(SELECT %[1]s as parameter FROM %[2]q WHERE custom_val = '%[3]s' ORDER BY %[1]s LIMIT 1)
+					(SELECT %[1]s as parameter FROM %[2]q WHERE custom_val = $%[3]d ORDER BY %[1]s LIMIT 1)
 					UNION ALL
 					(
 						SELECT s.* FROM t, LATERAL(
 							SELECT %[1]s as parameter FROM %[2]q f
-							WHERE custom_val = '%[3]s' AND f.%[1]s > t.parameter
+							WHERE custom_val = $%[3]d AND f.%[1]s > t.parameter
 							ORDER BY %[1]s LIMIT 1
 							)s
 						)
 					)
-				SELECT * FROM t) a`, param.string(), ds, customVal))
+				SELECT * FROM t) a`, param.string(), ds, argIndex))
+			args = append(args, customVal)
 		}
 	}
 	query := strings.Join(queries, " UNION ")
-	rows, err := jd.getDB(ctx).QueryContext(ctx, query)
+	rows, err := jd.dbHandle.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't query distinct parameter-%s: %w", param.string(), err)
 	}
@@ -2125,7 +2120,10 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 
 		defer func() { _ = stmt.Close() }()
 		for _, job := range jobList {
-			eventCount := max(job.EventCount, 1)
+			eventCount := 1
+			if job.EventCount > 1 {
+				eventCount = job.EventCount
+			}
 			// Assign partition ID if not already assigned
 			if job.PartitionID == "" && jd.conf.numPartitions > 0 {
 				job.PartitionID = jd.conf.partitionFunction(job)
@@ -2259,20 +2257,17 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 
 	if len(partitionFilters) > 0 {
 		filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id IN (%s)", strings.Join(lo.Map(partitionFilters, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
-	} else if !params.ignoreReadPartitionsExclusions {
+	} else {
 		// excludedReadPartitions are mutually exclusive with partitionFilters
-		// Use NOT EXISTS against the exclusions table to avoid generating large NOT IN lists and
-		// improve performance by taking advantage of anti-join optimizations.
 		jd.excludedReadPartitionsLock.RLock()
+		var excludedReadPartitions []string
 		if len(jd.excludedReadPartitions) > 0 {
-			filterConditions = append(filterConditions,
-				fmt.Sprintf(
-					`NOT EXISTS (SELECT 1 FROM %s AS excluded WHERE excluded.partition_id = jobs.partition_id)`,
-					jd.tablePrefix+"_read_excluded_partitions",
-				),
-			)
+			excludedReadPartitions = lo.Keys(jd.excludedReadPartitions) // get excluded read partitions at the time of query
 		}
 		jd.excludedReadPartitionsLock.RUnlock()
+		if len(excludedReadPartitions) > 0 {
+			filterConditions = append(filterConditions, fmt.Sprintf("jobs.partition_id NOT IN (%s)", strings.Join(lo.Map(excludedReadPartitions, func(p string, _ int) string { return pq.QuoteLiteral(p) }), ",")))
+		}
 	}
 
 	var filterQuery string
@@ -2334,7 +2329,7 @@ func (jd *Handle) getJobsDS(ctx context.Context, ds dataSetT, lastDS bool, param
 		sqlStatement = `SELECT * FROM (` + sqlStatement + `) t WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
-	stmt, err := jd.getDB(ctx).PrepareContext(ctx, sqlStatement)
+	stmt, err := jd.dbHandle.PrepareContext(ctx, sqlStatement)
 	if err != nil {
 		return JobsResult{}, false, err
 	}
@@ -2682,7 +2677,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 			}()
 			// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
 			// start a transaction
-			err := jd.WithTx(ctx, func(tx *Tx) error {
+			err := jd.WithTx(func(tx *Tx) error {
 				return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
 					return jd.withDistributedLock(ctx, tx, "add_ds", func() error { // only one add_ds can run at a time
 						var err error
@@ -2747,7 +2742,7 @@ func (jd *Handle) addNewDSLoop(ctx context.Context) {
 		}
 		if err := addNewDS(); err != nil {
 			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
-				panic(fmt.Errorf("adding new ds for %q: %w", jd.tablePrefix, err))
+				panic(err)
 			}
 			jd.logger.Errorn("addNewDSLoop error", obskit.Error(err))
 		}
@@ -2782,9 +2777,6 @@ func (jd *Handle) refreshDSListLoop(ctx context.Context) {
 		timeoutCtx, cancel := context.WithTimeout(ctx, jd.conf.refreshDSTimeout.Load())
 		if err := jd.RefreshDSList(timeoutCtx); err != nil {
 			cancel()
-			if !jd.conf.skipMaintenanceError && ctx.Err() == nil {
-				panic(err)
-			}
 			jd.logger.Errorn("refreshDSListLoop error", obskit.Error(err))
 		}
 		cancel()
@@ -2803,7 +2795,7 @@ func (jd *Handle) RefreshDSList(ctx context.Context) error {
 	jd.dsListLock.RLock()
 	previousDS := jd.datasetList
 	jd.dsListLock.RUnlock()
-	nextDS, err := getDSList(jd, jd.getDB(ctx), jd.tablePrefix)
+	nextDS, err := getDSList(jd, jd.dbHandle, jd.tablePrefix)
 	if err != nil {
 		return fmt.Errorf("getDSList: %w", err)
 	}
@@ -2827,16 +2819,6 @@ func (jd *Handle) RefreshDSList(ctx context.Context) error {
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
 func (jd *Handle) Identifier() string {
 	return jd.tablePrefix
-}
-
-// getDB returns the appropriate database handle based on context.
-// If the context requests priority pool usage and a priority pool is configured,
-// it returns the priority pool. Otherwise, it returns the regular dbHandle.
-func (jd *Handle) getDB(ctx context.Context) *sql.DB {
-	if usePriorityPool(ctx) && jd.priorityPool != nil {
-		return jd.priorityPool
-	}
-	return jd.dbHandle
 }
 
 /*
@@ -2865,7 +2847,7 @@ func (jd *Handle) dropJournal() {
 
 func (jd *Handle) JournalMarkStart(opType string, opPayload json.RawMessage) (int64, error) {
 	var opID int64
-	return opID, jd.WithTx(context.Background(), func(tx *Tx) error {
+	return opID, jd.WithTx(func(tx *Tx) error {
 		var err error
 		opID, err = jd.JournalMarkStartInTx(tx, opType, opPayload)
 		return err
@@ -2888,7 +2870,7 @@ func (jd *Handle) JournalMarkStartInTx(tx *Tx, opType string, opPayload json.Raw
 
 // JournalMarkDone marks the end of a journal action
 func (jd *Handle) JournalMarkDone(opID int64) error {
-	return jd.WithTx(context.Background(), func(tx *Tx) error {
+	return jd.WithTx(func(tx *Tx) error {
 		return jd.journalMarkDoneInTx(tx, opID)
 	})
 }
@@ -3237,7 +3219,7 @@ func (jd *Handle) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT
 			err := jd.internalStoreJobsInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
 			return err
 		}
-		err := executeDbRequest(ctx, jd, newWriteDbRequest("store", nil, command))
+		err := executeDbRequest(jd, newWriteDbRequest("store", nil, command))
 		return err
 	}
 
@@ -3280,7 +3262,7 @@ func (jd *Handle) StoreEachBatchRetryInTx(
 			)
 			return res
 		}
-		res = executeDbRequest(ctx, jd, newWriteDbRequest("store_each_batch_retry", nil, command))
+		res = executeDbRequest(jd, newWriteDbRequest("store_each_batch_retry", nil, command))
 		return err
 	}
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
@@ -3380,12 +3362,6 @@ func (jd *Handle) GetUnprocessed(ctx context.Context, params GetQueryParams) (Jo
 
 // GetImporting finds jobs in importing state
 func (jd *Handle) GetImporting(ctx context.Context, params GetQueryParams, more MoreToken) (*MoreJobsResult, error) { // skipcq: CRT-P0003
-	// Importing jobs are not to be migrated, they are a special case of [executing] jobs, which get queried by
-	// batchrouter's async handler periodically to check for the status of imports. Eventually, these jobs will
-	// transition to [succeeded]/[failed]/[aborted] state once the import is complete.
-	// Hence, we ignore read partition exclusions when fetching importing jobs, so that we can always
-	// find all of them regardless of any partition exclusions.
-	params.ignoreReadPartitionsExclusions = true
 	return jd.getMoreJobs(ctx, []string{Importing.State}, params, more)
 }
 
@@ -3557,7 +3533,7 @@ func (jd *Handle) GetJobs(ctx context.Context, states []string, params GetQueryP
 	command := func() queryResult {
 		return queryResultWrapper(jd.getJobs(ctx, params, nil))
 	}
-	res := executeDbRequest(ctx, jd, newReadDbRequest("get_jobs", &tags, command))
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.JobsResult, res.err
 }
 
@@ -3578,7 +3554,7 @@ func (jd *Handle) getMoreJobs(ctx context.Context, states []string, params GetQu
 	command := func() moreQueryResult {
 		return moreQueryResultWrapper(jd.getJobs(ctx, params, more))
 	}
-	res := executeDbRequest(ctx, jd, newReadDbRequest("get_jobs", &tags, command))
+	res := executeDbRequest(jd, newReadDbRequest("get_jobs", &tags, command))
 	return res.MoreJobsResult, res.err
 }
 
@@ -3633,7 +3609,7 @@ func (jd *Handle) GetLastJob(ctx context.Context) *JobT {
 	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
-	err := jd.getDB(ctx).QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		jd.assertError(err)
 	}
