@@ -18,10 +18,11 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/filemanager"
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -114,7 +115,7 @@ type UploadJob struct {
 		minUploadBackoff                    time.Duration
 		maxUploadBackoff                    time.Duration
 		reportingEnabled                    bool
-		maxParallelLoadsWorkspaceIDs        map[string]any
+		maxParallelLoadsWorkspaceIDs        map[string]interface{}
 		columnsBatchSize                    int
 		longRunningUploadStatThresholdInMin time.Duration
 		skipPreviouslyFailedTables          bool
@@ -195,7 +196,7 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		pendingTableUploads:     []model.PendingTableUpload{},
 
 		alertSender: alerta.NewClient(
-			f.conf.GetStringVar("https://alerta.rudderstack.com/api/", "ALERTA_URL"),
+			f.conf.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 		),
 		now: timeutil.Now,
 
@@ -204,17 +205,17 @@ func (f *UploadJobFactory) NewUploadJob(ctx context.Context, dto *model.UploadJo
 		fileManagerFactory: filemanager.New,
 	}
 
-	uj.config.refreshPartitionBatchSize = f.conf.GetIntVar(100, 1, "Warehouse.refreshPartitionBatchSize")
-	uj.config.minRetryAttempts = f.conf.GetIntVar(3, 1, "Warehouse.minRetryAttempts")
-	uj.config.disableAlter = f.conf.GetBoolVar(false, "Warehouse.disableAlter")
-	uj.config.reportingEnabled = f.conf.GetBoolVar(types.DefaultReportingEnabled, "Reporting.enabled")
-	uj.config.columnsBatchSize = f.conf.GetIntVar(100, 1, fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]))
-	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMapVar(nil, fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]))
+	uj.config.refreshPartitionBatchSize = f.conf.GetInt("Warehouse.refreshPartitionBatchSize", 100)
+	uj.config.minRetryAttempts = f.conf.GetInt("Warehouse.minRetryAttempts", 3)
+	uj.config.disableAlter = f.conf.GetBool("Warehouse.disableAlter", false)
+	uj.config.reportingEnabled = f.conf.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
+	uj.config.columnsBatchSize = f.conf.GetInt(fmt.Sprintf("Warehouse.%s.columnsBatchSize", whutils.WHDestNameMap[uj.upload.DestinationType]), 100)
+	uj.config.maxParallelLoadsWorkspaceIDs = f.conf.GetStringMap(fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", whutils.WHDestNameMap[uj.upload.DestinationType]), nil)
 	uj.config.longRunningUploadStatThresholdInMin = f.conf.GetDurationVar(120, time.Minute, "Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin")
 	uj.config.minUploadBackoff = f.conf.GetDurationVar(60, time.Second, "Warehouse.minUploadBackoff", "Warehouse.minUploadBackoffInS")
 	uj.config.maxUploadBackoff = f.conf.GetDurationVar(1800, time.Second, "Warehouse.maxUploadBackoff", "Warehouse.maxUploadBackoffInS")
 	uj.config.retryTimeWindow = f.conf.GetDurationVar(180, time.Minute, "Warehouse.retryTimeWindow", "Warehouse.retryTimeWindowInMins")
-	uj.config.skipPreviouslyFailedTables = f.conf.GetBoolVar(false, "Warehouse.skipPreviouslyFailedTables")
+	uj.config.skipPreviouslyFailedTables = f.conf.GetBool("Warehouse.skipPreviouslyFailedTables", false)
 	uj.config.maxConcurrentObjDeleteRequests = func(workspaceID string) int {
 		return f.conf.GetIntVar(10, 1,
 			fmt.Sprintf("Warehouse.filemanager.%s.GCS.maxConcurrentObjDeleteRequests", workspaceID),
@@ -310,9 +311,12 @@ func (job *UploadJob) run() (err error) {
 	job.logger.Infon("Upload job is in progress")
 
 	if len(job.stagingFiles) == 0 {
-		err := fmt.Errorf("no staging files found")
-		_, _ = job.setUploadError(err, InternalProcessingFailed)
-		return err
+		if job.upload.Status == model.ExportedData {
+			job.logger.Infon("No staging files found, but upload is already successful/exported. Skipping.")
+			return nil
+		}
+		job.logger.Warnn("No staging files found for upload job")
+		return nil
 	}
 
 	whManager := job.whManager
@@ -561,9 +565,11 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		logger.NewIntField("chunkSize", int64(chunkSize)),
 	)
 
-	startTime := job.now()
+	// Ensure a reasonable timeout for file deletion even if the job context is tight
+	cleanupCtx, cleanupCancel := context.WithTimeout(job.ctx, 30*time.Minute)
+	defer cleanupCancel()
 
-	g, ctx := errgroup.WithContext(job.ctx)
+	g, ctx := errgroup.WithContext(cleanupCtx)
 	g.SetLimit(concurrency)
 	for _, chunk := range lo.Chunk(filesToDel, chunkSize) {
 		g.Go(func() error {
@@ -574,7 +580,7 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 		return fmt.Errorf("deleting files from object storage: %w", err)
 	}
 
-	deletionTime := job.now().Sub(startTime)
+	deletionTime := time.Since(startTime)
 	log.Infon("Successfully completed file deletion",
 		logger.NewIntField("totalRows", int64(len(filesToDel))),
 		logger.NewDurationField("deletionDuration", deletionTime),
@@ -697,19 +703,19 @@ func (job *UploadJob) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 // extractAndUpdateUploadErrorsByState extracts and augment errors in format
 // { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
 // from a particular upload.
-func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]any, error) {
-	var uploadErrors map[string]map[string]any
+func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
+	var uploadErrors map[string]map[string]interface{}
 	err := jsonrs.Unmarshal(message, &uploadErrors)
 	if err != nil {
 		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
 	}
 
 	if uploadErrors == nil {
-		uploadErrors = make(map[string]map[string]any)
+		uploadErrors = make(map[string]map[string]interface{})
 	}
 
 	if _, ok := uploadErrors[state]; !ok {
-		uploadErrors[state] = make(map[string]any)
+		uploadErrors[state] = make(map[string]interface{})
 	}
 	errorByState := uploadErrors[state]
 
@@ -722,7 +728,7 @@ func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, 
 
 	// append errors for errored stage
 	if errList, ok := errorByState["errors"]; ok {
-		errorByState["errors"] = append(errList.([]any), statusError.Error())
+		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
 	} else {
 		errorByState["errors"] = []string{statusError.Error()}
 	}
