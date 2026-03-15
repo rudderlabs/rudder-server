@@ -176,7 +176,7 @@ func TestUTMirroring(t *testing.T) {
 		conf := config.New()
 		conf.Set("Processor.userTransformationMirroring.sanitySampling", strconv.FormatFloat(sanitySampling, 'f', 0, 64))
 		conf.Set("Processor.userTransformationMirroring.fireAndForget", strconv.FormatBool(fireAndForget))
-		// conf.Set("USER_TRANSFORM_MIRROR_URL", "TODO")
+		conf.Set("USER_TRANSFORM_MIRROR_URL", "http://mirror-placeholder:9090")
 		conf.Set("UTSampling.Bucket", minioContainer.BucketName)
 		conf.Set("UTSampling.Endpoint", fmt.Sprintf("http://%s", minioContainer.Endpoint))
 		conf.Set("UTSampling.AccessKeyId", minioContainer.AccessKeyID)
@@ -562,85 +562,121 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		eventList      []types.TransformerEvent
-		versionEnabled bool
-		versionIDs     map[string]struct{}
-		fireAndForget  bool
-		sanitySampling float64
-		expectEnabled  bool
-		expectSanityCh bool // true if we expect a non-nil sanity channel
+		name               string
+		eventList          []types.TransformerEvent
+		versionEnabled     bool
+		versionIDs         map[string]struct{}
+		fireAndForget      bool
+		sanitySampling     float64
+		userTransformURL   string
+		pythonTransformURL string
+		expectEnabled      bool
+		expectSanityCh     bool // true if we expect a non-nil sanity channel
 	}{
 		{
-			name:           "python transform with version filtering enabled and version allowed",
-			eventList:      makeEventList("pythonFaaS", "v1"),
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v1": {}},
-			sanitySampling: 100,
-			expectEnabled:  true,
-			expectSanityCh: true,
+			name:               "python transform with version filtering enabled and version allowed",
+			eventList:          makeEventList("pythonFaaS", "v1"),
+			versionEnabled:     true,
+			versionIDs:         map[string]struct{}{"v1": {}},
+			sanitySampling:     100,
+			pythonTransformURL: "http://python-mirror:9090",
+			expectEnabled:      true,
+			expectSanityCh:     true,
 		},
 		{
-			name:           "python transform with version filtering enabled and version not allowed",
-			eventList:      makeEventList("pythonFaaS", "v2"),
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v1": {}},
-			sanitySampling: 100,
-			expectEnabled:  false,
+			name:               "python transform with version filtering enabled and version not allowed",
+			eventList:          makeEventList("pythonFaaS", "v2"),
+			versionEnabled:     true,
+			versionIDs:         map[string]struct{}{"v1": {}},
+			sanitySampling:     100,
+			pythonTransformURL: "http://python-mirror:9090",
+			expectEnabled:      false,
 		},
 		{
-			name:           "python transform with version filtering disabled",
-			eventList:      makeEventList("pythonFaaS", "v2"),
-			versionEnabled: false,
-			sanitySampling: 100,
-			expectEnabled:  true,
-			expectSanityCh: true,
+			name:               "python transform with version filtering disabled",
+			eventList:          makeEventList("pythonFaaS", "v2"),
+			versionEnabled:     false,
+			sanitySampling:     100,
+			pythonTransformURL: "http://python-mirror:9090",
+			expectEnabled:      true,
+			expectSanityCh:     true,
 		},
 		{
-			name:           "non-python transform with version filtering enabled",
-			eventList:      makeEventList("javascript", "v1"),
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v99": {}},
-			sanitySampling: 100,
-			expectEnabled:  true,
-			expectSanityCh: true,
+			name:             "non-python transform with version filtering enabled",
+			eventList:        makeEventList("javascript", "v1"),
+			versionEnabled:   true,
+			versionIDs:       map[string]struct{}{"v99": {}},
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    true,
+			expectSanityCh:   true,
 		},
 		{
-			name:           "python transform with fire and forget and version allowed",
-			eventList:      makeEventList("pythonFaaS", "v1"),
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v1": {}},
-			fireAndForget:  true,
-			expectEnabled:  true,
-			expectSanityCh: false,
+			name:               "python transform with fire and forget and version allowed",
+			eventList:          makeEventList("pythonFaaS", "v1"),
+			versionEnabled:     true,
+			versionIDs:         map[string]struct{}{"v1": {}},
+			fireAndForget:      true,
+			pythonTransformURL: "http://python-mirror:9090",
+			expectEnabled:      true,
+			expectSanityCh:     false,
 		},
 		{
-			name:           "python transform with fire and forget and version not allowed",
-			eventList:      makeEventList("pythonFaaS", "v2"),
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v1": {}},
-			fireAndForget:  true,
-			expectEnabled:  false,
+			name:               "python transform with fire and forget and version not allowed",
+			eventList:          makeEventList("pythonFaaS", "v2"),
+			versionEnabled:     true,
+			versionIDs:         map[string]struct{}{"v1": {}},
+			fireAndForget:      true,
+			pythonTransformURL: "http://python-mirror:9090",
+			expectEnabled:      false,
 		},
 		{
-			name:           "empty event list",
-			eventList:      []types.TransformerEvent{},
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v1": {}},
-			sanitySampling: 100,
-			expectEnabled:  true,
-			expectSanityCh: true,
+			name:             "empty event list",
+			eventList:        []types.TransformerEvent{},
+			versionEnabled:   true,
+			versionIDs:       map[string]struct{}{"v1": {}},
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    true,
+			expectSanityCh:   true,
 		},
 		{
 			name: "event with no transformations",
 			eventList: []types.TransformerEvent{
 				{Destination: backendconfig.DestinationT{}},
 			},
-			versionEnabled: true,
-			versionIDs:     map[string]struct{}{"v1": {}},
+			versionEnabled:   true,
+			versionIDs:       map[string]struct{}{"v1": {}},
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			expectEnabled:    true,
+			expectSanityCh:   true,
+		},
+		{
+			name:             "python transform skips when python mirror URL not configured",
+			eventList:        makeEventList("pythonFaaS", "v1"),
+			versionEnabled:   false,
+			sanitySampling:   100,
+			userTransformURL: "http://js-mirror:9090",
+			// pythonTransformURL not set
+			expectEnabled: false,
+		},
+		{
+			name:               "javascript transform skips when JS mirror URL not configured",
+			eventList:          makeEventList("javascript", "v1"),
+			versionEnabled:     true,
+			versionIDs:         map[string]struct{}{"v99": {}},
+			sanitySampling:     100,
+			pythonTransformURL: "http://python-mirror:9090",
+			// userTransformURL not set
+			expectEnabled: false,
+		},
+		{
+			name:           "both mirror URLs not configured",
+			eventList:      makeEventList("javascript", "v1"),
 			sanitySampling: 100,
-			expectEnabled:  true,
-			expectSanityCh: true,
+			// neither URL set
+			expectEnabled: false,
 		},
 	}
 
@@ -650,6 +686,8 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 			proc := &Handle{conf: c}
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
+			proc.config.userTransformMirrorURL = tc.userTransformURL
+			proc.config.pythonTransformMirrorURL = tc.pythonTransformURL
 			proc.config.pythonTransformConfig = transformerutils.PythonTransformConfig{
 				Enabled:    tc.versionEnabled,
 				VersionIDs: tc.versionIDs,
