@@ -1213,6 +1213,8 @@ github.com/rudderlabs/rudder-schemas v0.10.0 h1:OzhmoV3wIyZG4cH7RtixYEF23VwWaxyI
 github.com/rudderlabs/rudder-schemas v0.10.0/go.mod h1:mb7XxrdYj6iqz5GNbhv4cvmGjMGYgirpQnfm7WPXmyE=
 github.com/rudderlabs/rudder-transformer/go v1.122.0 h1:XmCKiSbhj5SMRPPQzyXnx6RnP2FjPnZ4ARXGR4ByrPk=
 github.com/rudderlabs/rudder-transformer/go v1.122.0/go.mod h1:3NGitPz4pYRRZ6Xt09S+8hb0tHK/9pZcKJ3OgOTaSmE=
+github.com/rudderlabs/rudder-transformer/go v1.126.0 h1:KxHkKAexrpQxnsHrb9l1hrcg2psdvl5ZwnwShmknQK0=
+github.com/rudderlabs/rudder-transformer/go v1.126.0/go.mod h1:3NGitPz4pYRRZ6Xt09S+8hb0tHK/9pZcKJ3OgOTaSmE=
 github.com/rudderlabs/sonnet v1.0.2 h1:nPfmDKD9gUwT571Dwtcsx0VIglSchvyNjuRLju4Xs3s=
 github.com/rudderlabs/sonnet v1.0.2/go.mod h1:tjQmKEGAo/xwmhw9AwLkazP5b5m8VpUvWNzPSx4ve0g=
 github.com/rudderlabs/sql-tunnels v0.1.7 h1:wDCRl6zY4M5gfWazf7XkSTGQS3yjBzUiUgEMBIfHNDA=
