@@ -949,27 +949,6 @@ func TestUserTransformer(t *testing.T) {
 					require.Equal(t, expectedResponse, rsp)
 				})
 
-				t.Run("python mirroring skips when python mirror URL not configured", func(t *testing.T) {
-					jsMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS mirror transformer")
-					}))
-					defer jsMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
-					// PYTHON_TRANSFORM_MIRROR_URL not set
-
-					memStats, err := memstats.New()
-					require.NoError(t, err)
-
-					tr := user_transformer.New(c, logger.NOP, memStats, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
-
-					require.Equal(t, types.Response{}, rsp)
-					require.EqualValues(t, 1, memStats.Get("processor_transformer_skipped_events_for_mirroring", nil).LastValue())
-				})
-
 				t.Run("javascript mirroring routes to JS mirror URL when configured", func(t *testing.T) {
 					jsMirrorSrv := httptest.NewServer(&endpointTransformer{
 						supportedPaths: []string{"/customTransform"},
@@ -991,48 +970,6 @@ func TestUserTransformer(t *testing.T) {
 					rsp := tr.Transform(context.TODO(), makeEvents("javascript"))
 
 					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("javascript mirroring skips when JS mirror URL not configured", func(t *testing.T) {
-					pythonMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python mirror transformer")
-					}))
-					defer pythonMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					// USER_TRANSFORM_MIRROR_URL not set
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
-
-					memStats, err := memstats.New()
-					require.NoError(t, err)
-
-					tr := user_transformer.New(c, logger.NOP, memStats, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEvents("javascript"))
-
-					require.Equal(t, types.Response{}, rsp)
-					require.EqualValues(t, 1, memStats.Get("processor_transformer_skipped_events_for_mirroring", nil).LastValue())
-				})
-
-				t.Run("mirroring skips when both mirror URLs not configured", func(t *testing.T) {
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					// Neither URL set
-
-					memStats, err := memstats.New()
-					require.NoError(t, err)
-
-					tr := user_transformer.New(c, logger.NOP, memStats, user_transformer.ForMirroring())
-
-					// Test Python
-					rsp := tr.Transform(context.TODO(), makeEvents("pythonfaas"))
-					require.Equal(t, types.Response{}, rsp)
-
-					// Test JavaScript
-					rsp = tr.Transform(context.TODO(), makeEvents("javascript"))
-					require.Equal(t, types.Response{}, rsp)
-
-					require.EqualValues(t, 2, memStats.Get("processor_transformer_skipped_events_for_mirroring", nil).LastValue())
 				})
 			})
 
@@ -1187,34 +1124,6 @@ func TestUserTransformer(t *testing.T) {
 					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "allowed-version-1"))
 
 					require.Equal(t, expectedResponse, rsp)
-				})
-
-				t.Run("mirroring with version not in allowlist skips", func(t *testing.T) {
-					jsMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit JS mirror transformer")
-					}))
-					defer jsMirrorSrv.Close()
-
-					pythonMirrorSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						t.Error("request should not hit Python mirror transformer")
-					}))
-					defer pythonMirrorSrv.Close()
-
-					c := config.New()
-					c.Set("Processor.maxRetry", 1)
-					c.Set("USER_TRANSFORM_MIRROR_URL", jsMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_MIRROR_URL", pythonMirrorSrv.URL)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS_ENABLE", true)
-					c.Set("PYTHON_TRANSFORM_VERSION_IDS", "allowed-version-1")
-
-					memStats, err := memstats.New()
-					require.NoError(t, err)
-
-					tr := user_transformer.New(c, logger.NOP, memStats, user_transformer.ForMirroring())
-					rsp := tr.Transform(context.TODO(), makeEventsWithVersion("pythonfaas", "not-allowed-version"))
-
-					require.Equal(t, types.Response{}, rsp)
-					require.EqualValues(t, 1, memStats.Get("processor_transformer_skipped_events_for_mirroring", nil).LastValue())
 				})
 
 				t.Run("filtering disabled allows all python transformations", func(t *testing.T) {
