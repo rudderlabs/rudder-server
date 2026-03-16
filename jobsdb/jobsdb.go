@@ -547,6 +547,8 @@ type Handle struct {
 	statTableCount        stats.Measurement
 	statPreDropTableCount stats.Measurement
 
+	statReadExcludedPartitionsCount stats.Gauge
+
 	// ds creation and drop period stats
 	statNewDSPeriod               stats.Measurement
 	newDSCreationTime             time.Time
@@ -1038,6 +1040,7 @@ func (jd *Handle) workersAndAuxSetup() {
 	jd.statTableCount = jd.stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statNewDSPeriod = jd.stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.statDropDSPeriod = jd.stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statReadExcludedPartitionsCount = jd.stats.NewTaggedStat("jobsdb_read_excluded_partitions_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 }
 
 func (jd *Handle) loadConfig() {
