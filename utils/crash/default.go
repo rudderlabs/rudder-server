@@ -48,6 +48,13 @@ func Wrapper(fn func() error) func() error {
 	}
 }
 
+func WrapperNoError(fn func()) func() {
+	return func() {
+		defer getDefault().Notify("Core")()
+		fn()
+	}
+}
+
 func Notify(team string) func() {
 	return getDefault().Notify(team)
 }
