@@ -76,8 +76,8 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	if partitionCount == 0 {
 		return ppmSetup, fmt.Errorf("partition migrator needs partition count > 0")
 	}
-	bufferFlushBatchSize := config.GetReloadableIntVar(20000, 1, "PartitionMigration.bufferFlushBatchSize")
-	bufferFlushPayloadSize := config.GetReloadableInt64Var(500, bytesize.MB, "PartitionMigration.bufferFlushPayloadSize")
+	bufferFlushBatchSize := config.GetReloadableIntVar(2000, 1, "PartitionMigration.bufferFlushBatchSize")
+	bufferFlushPayloadSize := config.GetReloadableInt64Var(100, bytesize.MB, "PartitionMigration.bufferFlushPayloadSize")
 	bufferFlushMoveTimeout := config.GetReloadableDurationVar(30, time.Minute, "PartitionMigration.bufferFlushMoveTimeout")
 	bufferWatchdogInterval := config.GetReloadableDurationVar(5, time.Minute, "PartitionMigration.bufferWatchdogInterval")
 
