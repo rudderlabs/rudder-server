@@ -11107,5 +11107,235 @@ g,0<c.length&&(c=Aa[c[0]])&&(a.c[e]=c))}a.c[e]||(c=Aa[e])&&(a.c[e]=c);for(c=0;c<
     $(this).scrollspy({ target: '#scrollingNav', offset: 18 });
   });
   </script>
+
+  <style>
+    :root {
+      --dm-bg: #f8fafc;
+      --dm-elev: #ffffff;
+      --dm-surface: #eef2f7;
+      --dm-text: #0f172a;
+      --dm-muted: #475569;
+      --dm-border: #d0d7e2;
+      --dm-link: #2563eb;
+      --dm-link-hover: #1d4ed8;
+      --dm-btn-bg: #1f2937;
+      --dm-btn-text: #e2e8f0;
+      --dm-focus: rgba(96, 165, 250, 0.45);
+    }
+
+    html.dark-mode {
+      color-scheme: dark;
+      --dm-bg: #0b0f19;
+      --dm-elev: #121826;
+      --dm-surface: #1a1f2b;
+      --dm-text: #e2e8f0;
+      --dm-muted: #a8b3c7;
+      --dm-border: #333333;
+      --dm-link: #7cc8ff;
+      --dm-link-hover: #a5dcff;
+      --dm-btn-bg: #1f2937;
+      --dm-btn-text: #e2e8f0;
+    }
+
+    html.dark-mode body,
+    html.dark-mode .container,
+    html.dark-mode .container-fluid,
+    html.dark-mode .well,
+    html.dark-mode .navbar-inner,
+    html.dark-mode .dropdown-menu,
+    html.dark-mode pre,
+    html.dark-mode code,
+    html.dark-mode table,
+    html.dark-mode .table,
+    html.dark-mode .modal-content,
+    html.dark-mode .accordion-group,
+    html.dark-mode .tab-content {
+      background-color: var(--dm-elev) !important;
+      color: var(--dm-text) !important;
+      border-color: var(--dm-border) !important;
+    }
+
+    html.dark-mode body {
+      background-color: var(--dm-bg) !important;
+      color: var(--dm-text) !important;
+    }
+
+    html.dark-mode h1,
+    html.dark-mode h2,
+    html.dark-mode h3,
+    html.dark-mode h4,
+    html.dark-mode h5,
+    html.dark-mode h6,
+    html.dark-mode p,
+    html.dark-mode li,
+    html.dark-mode th,
+    html.dark-mode td,
+    html.dark-mode label,
+    html.dark-mode span {
+      color: var(--dm-text) !important;
+    }
+
+    html.dark-mode .muted,
+    html.dark-mode .help-inline,
+    html.dark-mode .help-block,
+    html.dark-mode .nav-header {
+      color: var(--dm-muted) !important;
+    }
+
+    html.dark-mode a,
+    html.dark-mode .navbar .nav > li > a,
+    html.dark-mode .navbar .brand {
+      color: var(--dm-link) !important;
+    }
+
+    html.dark-mode a:hover,
+    html.dark-mode .navbar .nav > li > a:hover,
+    html.dark-mode .navbar .brand:hover {
+      color: var(--dm-link-hover) !important;
+    }
+
+    html.dark-mode .btn,
+    html.dark-mode .btn:hover,
+    html.dark-mode .btn:active,
+    html.dark-mode input,
+    html.dark-mode select,
+    html.dark-mode textarea {
+      background-image: none !important;
+      background-color: var(--dm-surface) !important;
+      color: var(--dm-text) !important;
+      border-color: var(--dm-border) !important;
+      text-shadow: none !important;
+      box-shadow: none !important;
+    }
+
+    html.dark-mode .table th,
+    html.dark-mode .table td,
+    html.dark-mode .nav-tabs,
+    html.dark-mode .nav-tabs > li > a,
+    html.dark-mode .nav-pills > li > a,
+    html.dark-mode hr {
+      border-color: var(--dm-border) !important;
+    }
+
+    html.dark-mode .table-striped tbody > tr:nth-child(odd) > td,
+    html.dark-mode .table-striped tbody > tr:nth-child(odd) > th {
+      background-color: rgba(255, 255, 255, 0.02) !important;
+    }
+
+    html.dark-mode .dropdown-menu > li > a:hover,
+    html.dark-mode .dropdown-menu > li > a:focus,
+    html.dark-mode .nav > li > a:hover,
+    html.dark-mode .nav > li > a:focus,
+    html.dark-mode .btn:focus,
+    html.dark-mode input:focus,
+    html.dark-mode select:focus,
+    html.dark-mode textarea:focus {
+      background-color: #263145 !important;
+      outline: 2px solid transparent !important;
+      box-shadow: 0 0 0 3px var(--dm-focus) !important;
+      border-color: #4b5b76 !important;
+    }
+
+    #rs-darkmode-toggle {
+      position: fixed;
+      right: 16px;
+      top: 12px;
+      z-index: 2000;
+      border: 1px solid var(--dm-border);
+      background: var(--dm-btn-bg);
+      color: var(--dm-btn-text);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+
+    #rs-darkmode-toggle:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    #rs-darkmode-toggle:focus {
+      outline: 2px solid transparent;
+      box-shadow: 0 0 0 3px var(--dm-focus);
+    }
+  </style>
+
+  <script>
+    (function() {
+      var THEME_KEY = 'openapi-theme';
+      var root = document.documentElement;
+
+      function systemPrefersDark() {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      }
+
+      function getTheme() {
+        try {
+          var stored = window.localStorage.getItem(THEME_KEY);
+          if (stored === 'dark' || stored === 'light') return stored;
+        } catch (e) {}
+        return systemPrefersDark() ? 'dark' : 'light';
+      }
+
+      function applyTheme(theme) {
+        root.classList.toggle('dark-mode', theme === 'dark');
+        root.setAttribute('data-theme', theme);
+      }
+
+      function persistTheme(theme) {
+        try {
+          window.localStorage.setItem(THEME_KEY, theme);
+        } catch (e) {}
+      }
+
+      function updateLabel(button, isDark) {
+        var icon = isDark ? '☀' : '☾';
+        var next = isDark ? 'Light' : 'Dark';
+        button.innerText = icon + ' ' + next;
+        button.setAttribute('aria-label', isDark ? 'Switch to light mode' : 'Switch to dark mode');
+      }
+
+      var current = getTheme();
+      applyTheme(current);
+
+      document.addEventListener('DOMContentLoaded', function() {
+        if (document.getElementById('rs-darkmode-toggle')) return;
+
+        var button = document.createElement('button');
+        button.id = 'rs-darkmode-toggle';
+        button.type = 'button';
+        button.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+        updateLabel(button, current === 'dark');
+
+        button.addEventListener('click', function() {
+          current = current === 'dark' ? 'light' : 'dark';
+          applyTheme(current);
+          persistTheme(current);
+          button.setAttribute('aria-pressed', current === 'dark' ? 'true' : 'false');
+          updateLabel(button, current === 'dark');
+        });
+
+        document.body.appendChild(button);
+      });
+
+      if (window.matchMedia) {
+        var media = window.matchMedia('(prefers-color-scheme: dark)');
+        if (media.addEventListener) {
+          media.addEventListener('change', function(event) {
+            try {
+              var stored = window.localStorage.getItem(THEME_KEY);
+              if (stored === 'dark' || stored === 'light') return;
+            } catch (e) {}
+            current = event.matches ? 'dark' : 'light';
+            applyTheme(current);
+          });
+        }
+      }
+    })();
+  </script>
 </body>
 </html>
