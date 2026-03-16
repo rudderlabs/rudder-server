@@ -68,7 +68,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	})
 
 	g.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithDockerImageTag("1.126.2"))
 		if err != nil {
 			return fmt.Errorf("starting transformer: %w", err)
 		}
