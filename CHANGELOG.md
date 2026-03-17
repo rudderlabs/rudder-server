@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.70.0](https://github.com/rudderlabs/rudder-server/compare/v1.69.0...v1.70.0) (2026-03-16)
+
+
+### Features
+
+* add a scheduled release cut workflow to cut release branches ([#6739](https://github.com/rudderlabs/rudder-server/issues/6739)) ([ab887ac](https://github.com/rudderlabs/rudder-server/commit/ab887ac57afcb61a520214342803a494d473bc3f))
+* infer OAuth type from account definition when destination supports accounts ([#6718](https://github.com/rudderlabs/rudder-server/issues/6718)) ([00d1755](https://github.com/rudderlabs/rudder-server/commit/00d175524ea0804e0b0a125cd60979d90c7af1d5))
+
+
+### Bug Fixes
+
+* false sanity check failure due to empty response ([#6762](https://github.com/rudderlabs/rudder-server/issues/6762)) ([0384603](https://github.com/rudderlabs/rudder-server/commit/0384603fe4dd5e4176c98287b38b6c2c3ccddba1))
+* gateway request blocked in store jobs blocking all other requests ([#6760](https://github.com/rudderlabs/rudder-server/issues/6760)) ([ca4d514](https://github.com/rudderlabs/rudder-server/commit/ca4d5144387437eb3c67009b365e40f7c1cd8bf5))
+* respect context cancellation in gateway rate limiter ([#6751](https://github.com/rudderlabs/rudder-server/issues/6751)) ([589251a](https://github.com/rudderlabs/rudder-server/commit/589251a2348eb42108208492044052f13b8cc1a1))
+* update prerelease branch versioning format in scheduled release workflow ([#6745](https://github.com/rudderlabs/rudder-server/issues/6745)) ([fede9e4](https://github.com/rudderlabs/rudder-server/commit/fede9e4623ceb3c5de0dfe29004d7b6c4470a099))
+
+
+### Miscellaneous
+
+* add check for pseudo-version dependencies in rudderlabs modules ([#6737](https://github.com/rudderlabs/rudder-server/issues/6737)) ([55ecd10](https://github.com/rudderlabs/rudder-server/commit/55ecd10e4ad32da658dfb7a663338f21f38af546))
+* bump rudder-go-kit to 0.73.0 ([#6753](https://github.com/rudderlabs/rudder-server/issues/6753)) ([1743f6b](https://github.com/rudderlabs/rudder-server/commit/1743f6bc68e2b16d742cd47ebd64ce607378935d))
+* remove gunicorn and add darwin compatibility ([#6742](https://github.com/rudderlabs/rudder-server/issues/6742)) ([392d1f4](https://github.com/rudderlabs/rudder-server/commit/392d1f418b5cb565b39a245983afffb93b2bc05b))
+* use latest retryablehttp client ([#6754](https://github.com/rudderlabs/rudder-server/issues/6754)) ([629f036](https://github.com/rudderlabs/rudder-server/commit/629f03642231dbf601a84ebbd9e40f1a5df7f117))
+* user rudo docker image for partition migration integration tests ([#6757](https://github.com/rudderlabs/rudder-server/issues/6757)) ([5022fbd](https://github.com/rudderlabs/rudder-server/commit/5022fbdcbce004b06fe40056fc98d73bb071091f))
+
 ## [1.69.0](https://github.com/rudderlabs/rudder-server/compare/v1.68.0...v1.69.0) (2026-03-03)
 
 
