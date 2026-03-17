@@ -16,6 +16,12 @@ import (
 
 const statusMirrorFiltered = 297
 
+const (
+	versionHTTPCall        = "mf-http-call-v1"
+	versionNoHTTPCall      = "mf-no-http-call-v1"
+	versionCaughtException = "mf-caught-exception-v1"
+)
+
 // TestMirrorFilter tests the mirror filtering feature of rudder-pytransformer.
 // When MIRROR_FILTER_ENABLED=true, transformations that make external HTTP calls
 // return HTTP 297 (StatusMirrorFiltered), while transformations that don't make
@@ -29,7 +35,7 @@ func TestMirrorFilter(t *testing.T) {
 
 	// Register transformation codes in the mock config backend
 	allEntries := map[string]configBackendEntry{
-		"mf-http-call-v1": {code: `
+		versionHTTPCall: {code: `
 import requests
 
 def transformEvent(event, metadata):
@@ -37,12 +43,12 @@ def transformEvent(event, metadata):
     event['fetched'] = True
     return event
 `},
-		"mf-no-http-call-v1": {code: `
+		versionNoHTTPCall: {code: `
 def transformEvent(event, metadata):
     event['foo'] = 'bar'
     return event
 `},
-		"mf-caught-exception-v1": {code: `
+		versionCaughtException: {code: `
 import requests
 
 def transformEvent(event, metadata):
@@ -109,8 +115,8 @@ def transformEvent(event, metadata):
 
 	t.Run("FilterEnabled_HTTPCallReturns297", func(t *testing.T) {
 		events := []types.TransformerEvent{
-			makeEvent("msg-1", "mf-http-call-v1"),
-			makeEvent("msg-2", "mf-http-call-v1"),
+			makeEvent("msg-1", versionHTTPCall),
+			makeEvent("msg-2", versionHTTPCall),
 		}
 
 		httpStatus, items := sendTransform(t, pyFilteredURL, events)
@@ -122,7 +128,7 @@ def transformEvent(event, metadata):
 
 	t.Run("FilterEnabled_NoHTTPCallReturns200", func(t *testing.T) {
 		events := []types.TransformerEvent{
-			makeEvent("msg-1", "mf-no-http-call-v1"),
+			makeEvent("msg-1", versionNoHTTPCall),
 		}
 
 		httpStatus, items := sendTransform(t, pyFilteredURL, events)
@@ -136,7 +142,7 @@ def transformEvent(event, metadata):
 
 	t.Run("FilterEnabled_CaughtExceptionStillFiltered", func(t *testing.T) {
 		events := []types.TransformerEvent{
-			makeEvent("msg-1", "mf-caught-exception-v1"),
+			makeEvent("msg-1", versionCaughtException),
 		}
 
 		httpStatus, items := sendTransform(t, pyFilteredURL, events)
@@ -149,7 +155,7 @@ def transformEvent(event, metadata):
 
 	t.Run("FilterDisabled_HTTPCallProcessesNormally", func(t *testing.T) {
 		events := []types.TransformerEvent{
-			makeEvent("msg-1", "mf-http-call-v1"),
+			makeEvent("msg-1", versionHTTPCall),
 		}
 
 		httpStatus, items := sendTransform(t, pyNormalURL, events)
