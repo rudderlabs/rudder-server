@@ -121,7 +121,7 @@ func (m *Manager) createChannel(
 		m.channelCache.Store(tableName, resp)
 		return resp, nil
 	case internalapi.ErrValidationError, internalapi.ErrAuthenticationFailed, internalapi.ErrRoleDoesNotExistOrNotAuthorized, internalapi.ErrDatabaseDoesNotExistOrNotAuthorized:
-		return nil, fmt.Errorf("%w, %w", errAbort, err)
+		return nil, fmt.Errorf("%w: validation or authorization error", errAbort)
 	default:
 		if resp.SnowflakeAPIHttpCode == internalapi.ApiStatusUnsupportedColumn {
 			return nil, fmt.Errorf("%w: creating channel with code %s, message: %s and error: %s", errAbort, resp.Code, resp.SnowflakeAPIMessage, resp.Error)
