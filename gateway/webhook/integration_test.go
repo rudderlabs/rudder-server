@@ -45,6 +45,25 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/backendconfigtest"
 )
 
+func transformerModuleVersion(t *testing.T) string {
+	t.Helper()
+	goMod, err := os.ReadFile("../../go.mod")
+	require.NoError(t, err, "failed to read go.mod")
+	for line := range strings.SplitSeq(string(goMod), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "github.com/rudderlabs/rudder-transformer/go ") {
+			// version is like "v1.126.2-beta", strip "v" prefix and any pre-release suffix
+			v := strings.TrimPrefix(strings.Fields(line)[1], "v")
+			if i := strings.Index(v, "-"); i != -1 {
+				v = v[:i]
+			}
+			return v
+		}
+	}
+	t.Fatal("github.com/rudderlabs/rudder-transformer/go not found in go.mod")
+	return ""
+}
+
 func TestIntegrationWebhook(t *testing.T) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -68,7 +87,7 @@ func TestIntegrationWebhook(t *testing.T) {
 	})
 
 	g.Go(func() (err error) {
-		transformerContainer, err = transformertest.Setup(pool, t)
+		transformerContainer, err = transformertest.Setup(pool, t, transformertest.WithDockerImageTag(transformerModuleVersion(t)))
 		if err != nil {
 			return fmt.Errorf("starting transformer: %w", err)
 		}

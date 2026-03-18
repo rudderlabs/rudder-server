@@ -91,7 +91,7 @@ func (c *ConfigT) enrichDestinationWithAccounts(dest *DestinationT) {
 		obskit.DestinationType(dest.DestinationDefinition.Name),
 	)
 	if !dest.Enabled {
-		accountAssociationLogger.Infon("Skipping disabled destination from associating account")
+		accountAssociationLogger.Debugn("Skipping disabled destination from associating account")
 		return
 	}
 	// Check and set the delivery account if specified in the destination config
