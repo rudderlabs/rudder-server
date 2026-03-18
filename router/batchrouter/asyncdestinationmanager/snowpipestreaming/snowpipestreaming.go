@@ -185,7 +185,10 @@ func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestination
 			obskit.Error(err),
 		)
 
-		return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		if errors.Is(err, errAbort) {
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", errAbort).Error())
+		}
+		return m.failedJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 	}
 	m.logger.Infon("Prepared discards channel")
 
@@ -545,6 +548,16 @@ func (m *Manager) abortJobs(asyncDest *common.AsyncDestinationStruct, abortReaso
 		AbortJobIDs:   asyncDest.ImportingJobIDs,
 		AbortCount:    len(asyncDest.ImportingJobIDs),
 		AbortReason:   abortReason,
+		DestinationID: asyncDest.Destination.ID,
+	}
+}
+
+func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedReason string) common.AsyncUploadOutput {
+	m.stats.jobs.failed.Count(len(asyncDest.ImportingJobIDs))
+	return common.AsyncUploadOutput{
+		FailedJobIDs:  asyncDest.ImportingJobIDs,
+		FailedCount:   len(asyncDest.ImportingJobIDs),
+		FailedReason:  failedReason,
 		DestinationID: asyncDest.Destination.ID,
 	}
 }
