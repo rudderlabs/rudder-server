@@ -205,6 +205,12 @@ func (*Archiver) usedRudderStorage(metadata []byte) bool {
 func (a *Archiver) Do(ctx context.Context) error {
 	a.log.Infon("[Archiver]: Started archiving for warehouse")
 
+	// Check if archival is properly configured before proceeding
+	if !a.isArchivalConfigured() {
+		a.log.Debugn("[Archiver]: Archival not configured, skipping")
+		return nil
+	}
+
 	uploadsToArchive, err := a.countUploadsToArchive(ctx)
 	if err != nil {
 		return fmt.Errorf("counting uploads to archive: %w", err)
@@ -219,6 +225,28 @@ func (a *Archiver) Do(ctx context.Context) error {
 		uploadsToArchive -= maxLimit
 	}
 	return nil
+}
+
+// isArchivalConfigured checks if the archival storage is properly configured
+func (a *Archiver) isArchivalConfigured() bool {
+	provider := a.conf.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "")
+	if provider == "" {
+		return false
+	}
+	// Check if required config is present for the provider
+	switch provider {
+	case "S3":
+		return a.conf.GetString("AWS_ACCESS_KEY_ID", "") != "" ||
+			a.conf.GetString("AWS_IAM_ROLE", "") != ""
+	case "GCS":
+		return a.conf.GetString("GOOGLE_APPLICATION_CREDENTIALS", "") != ""
+	case "AZURE_BLOB":
+		return a.conf.GetString("AZURE_STORAGE_ACCOUNT", "") != ""
+	case "MINIO":
+		return a.conf.GetString("MINIO_ENDPOINT", "") != ""
+	default:
+		return false
+	}
 }
 
 func (a *Archiver) countUploadsToArchive(ctx context.Context) (int, error) {
