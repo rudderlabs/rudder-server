@@ -134,18 +134,20 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		labels.ToStatsTag(),
 	).Observe(float64(len(batches)))
 
-	transformResponse := make([][]types.TransformerResponse, len(batches))
+	type sendBatchResult struct {
+		responses      []types.TransformerResponse
+		mirrorFiltered bool
+	}
+	transformResponse := make([]sendBatchResult, len(batches))
 
 	var wg sync.WaitGroup
-	wg.Add(len(batches))
-
 	lo.ForEach(
 		batches,
 		func(batch []types.TransformerEvent, i int) {
-			go func() {
-				transformResponse[i] = u.sendBatch(ctx, userURL, labels, batch)
-				wg.Done()
-			}()
+			wg.Go(func() {
+				responses, mirrorFiltered := u.sendBatch(ctx, userURL, labels, batch)
+				transformResponse[i] = sendBatchResult{responses: responses, mirrorFiltered: mirrorFiltered}
+			})
 		},
 	)
 	wg.Wait()
@@ -153,10 +155,16 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	var outClientEvents []types.TransformerResponse
 	var failedEvents []types.TransformerResponse
 
-	for _, batch := range transformResponse {
+	for _, br := range transformResponse {
+		if br.mirrorFiltered {
+			// If any batch was mirror-filtered, the whole response is mirror-filtered.
+			// All batches share the same transformation, so this is all-or-nothing.
+			return types.Response{MirrorFiltered: true}
+		}
+
 		// Transform is one to many mapping so returned
 		// response for each is an array. We flatten it out
-		for _, transformerResponse := range batch {
+		for _, transformerResponse := range br.responses {
 			if transformerResponse.Metadata.OriginalSourceID != "" {
 				transformerResponse.Metadata.SourceID, transformerResponse.Metadata.OriginalSourceID = transformerResponse.Metadata.OriginalSourceID, transformerResponse.Metadata.SourceID
 			}
@@ -178,9 +186,17 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	}
 }
 
-func (u *Client) sendBatch(ctx context.Context, url string, labels types.TransformerMetricLabels, clientEvents []types.TransformerEvent) []types.TransformerResponse {
+func (u *Client) sendBatch(
+	ctx context.Context,
+	url string,
+	labels types.TransformerMetricLabels,
+	clientEvents []types.TransformerEvent,
+) (
+	[]types.TransformerResponse,
+	bool, // is mirror filtered
+) {
 	if len(clientEvents) == 0 {
-		return nil
+		return nil, false
 	}
 	start := time.Now()
 	// Call remote transformation
@@ -260,7 +276,8 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	case http.StatusOK,
 		http.StatusBadRequest,
 		http.StatusNotFound,
-		http.StatusRequestEntityTooLarge:
+		http.StatusRequestEntityTooLarge,
+		transformerutils.StatusMirrorFiltered:
 	default:
 		u.log.Errorn("Transformer returned status code", logger.NewStringField("statusCode", strconv.Itoa(statusCode)))
 	}
@@ -277,6 +294,11 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 			u.log.Errorn("Transformer returned", logger.NewStringField("payload", string(respData)))
 			panic(err)
 		}
+	case transformerutils.StatusMirrorFiltered:
+		if !u.config.forMirroring {
+			panic("received mirror-filtered response (HTTP 297) outside of mirroring mode")
+		}
+		return nil, true
 	default:
 		for i := range data {
 			transformEvent := &data[i]
@@ -287,7 +309,7 @@ func (u *Client) sendBatch(ctx context.Context, url string, labels types.Transfo
 	u.stat.NewTaggedStat("transformer_client_request_total_events", stats.CountType, labels.ToStatsTag()).Count(len(clientEvents))
 	u.stat.NewTaggedStat("transformer_client_response_total_events", stats.CountType, labels.ToStatsTag()).Count(len(transformerResponses))
 	u.stat.NewTaggedStat("transformer_client_total_time", stats.TimerType, labels.ToStatsTag()).SendTiming(time.Since(start))
-	return transformerResponses
+	return transformerResponses, false
 }
 
 func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels types.TransformerMetricLabels) ([]byte, int, error) {

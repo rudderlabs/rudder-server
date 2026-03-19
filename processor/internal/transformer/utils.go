@@ -18,6 +18,7 @@ import (
 
 const (
 	StatusCPDown              = 809
+	StatusMirrorFiltered      = 297
 	TransformerRequestFailure = 909
 	TransformerRequestTimeout = 919
 )
