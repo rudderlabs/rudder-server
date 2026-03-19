@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.1](https://github.com/rudderlabs/rudder-server/compare/v1.70.0...v1.70.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* snowpipe streaming remove authz error handling ([#6777](https://github.com/rudderlabs/rudder-server/issues/6777)) ([3ecd5cd](https://github.com/rudderlabs/rudder-server/commit/3ecd5cdacf8b4fcfde7c4485bfe6dbf557254c94))
+
 ## [1.70.0](https://github.com/rudderlabs/rudder-server/compare/v1.69.0...v1.70.0) (2026-03-16)
 
 
