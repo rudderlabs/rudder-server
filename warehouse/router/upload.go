@@ -564,7 +564,12 @@ func (job *UploadJob) cleanupObjectStorageFiles() error {
 
 	startTime := job.now()
 
-	g, ctx := errgroup.WithContext(job.ctx)
+	// Use a background context with timeout to avoid cancellation when request ends
+	// This fixes the "context deadline exceeded" errors during cleanup
+	deleteCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	g, ctx := errgroup.WithContext(deleteCtx)
 	g.SetLimit(concurrency)
 	for _, chunk := range lo.Chunk(filesToDel, chunkSize) {
 		g.Go(func() error {
