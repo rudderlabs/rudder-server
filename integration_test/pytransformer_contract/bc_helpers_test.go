@@ -444,6 +444,14 @@ func startRudderPytransformer(
 		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
 		"UVICORN_PORT=" + cfg.portStr(containerPort),
 	}
+	// With host networking (Linux/CI) all containers share the same network
+	// namespace, so the Prometheus metrics server (default port 9091) must use
+	// a unique port to avoid "Address already in use" collisions.
+	if runtime.GOOS != "darwin" {
+		metricsPort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		env = append(env, "METRICS_PORT="+strconv.Itoa(metricsPort))
+	}
 	for _, e := range extraEnv {
 		env = append(env, toContainerURL(e))
 	}
