@@ -120,16 +120,16 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Destination:     destination,
 			FileName:        "testdata/invalid_records.txt",
 		})
-		require.Equal(t, []int64{1}, output.AbortJobIDs)
-		require.Equal(t, 1, output.AbortCount)
-		require.NotEmpty(t, output.AbortReason)
+		require.Equal(t, []int64{1}, output.FailedJobIDs)
+		require.Equal(t, 1, output.FailedCount)
+		require.NotEmpty(t, output.FailedReason)
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
-			"status":        "aborted",
+			"status":        "failed",
 		}).LastValue())
 	})
 
@@ -157,16 +157,16 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Destination:     dest,
 			FileName:        "testdata/successful_records.txt",
 		})
-		require.Equal(t, []int64{1}, output.AbortJobIDs)
-		require.Equal(t, 1, output.AbortCount)
-		require.NotEmpty(t, output.AbortReason)
+		require.Equal(t, []int64{1}, output.FailedJobIDs)
+		require.Equal(t, 1, output.FailedCount)
+		require.NotEmpty(t, output.FailedReason)
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
-			"status":        "aborted",
+			"status":        "failed",
 		}).LastValue())
 		require.Equal(t, &model.CreateChannelRequest{
 			RudderIdentifier: dest.ID,
