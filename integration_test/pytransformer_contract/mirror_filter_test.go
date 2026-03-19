@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -32,6 +34,8 @@ const (
 func TestMirrorFilter(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
+
+	pool.MaxWait = 2 * time.Minute
 
 	// Register transformation codes in the mock config backend
 	allEntries := map[string]configBackendEntry{
@@ -63,19 +67,28 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, allEntries)
 	defer configBackend.Close()
 
-	// Start pytransformer WITH mirror filter enabled
-	pyFilteredContainer, pyFilteredURL := startRudderPytransformer(
-		t, pool, configBackend.URL, "MIRROR_FILTER_ENABLED=true",
+	var (
+		pyFilteredContainer, pyNormalContainer *dockertest.Resource
+		pyFilteredURL, pyNormalURL             string
 	)
-	defer func() { _ = pool.Purge(pyFilteredContainer) }()
-	waitForHealthy(t, pool, pyFilteredURL, "pytransformer-filtered")
-
-	// Start pytransformer WITHOUT mirror filter (default)
-	pyNormalContainer, pyNormalURL := startRudderPytransformer(
-		t, pool, configBackend.URL,
-	)
-	defer func() { _ = pool.Purge(pyNormalContainer) }()
-	waitForHealthy(t, pool, pyNormalURL, "pytransformer-normal")
+	wg := sync.WaitGroup{}
+	wg.Go(func() {
+		// Start pytransformer WITH mirror filter enabled
+		pyFilteredContainer, pyFilteredURL = startRudderPytransformer(
+			t, pool, configBackend.URL, "MIRROR_FILTER_ENABLED=true",
+		)
+		t.Cleanup(func() { _ = pool.Purge(pyFilteredContainer) })
+		waitForHealthy(t, pool, pyFilteredURL, "pytransformer-filtered")
+	})
+	wg.Go(func() {
+		// Start pytransformer WITHOUT mirror filter (default)
+		pyNormalContainer, pyNormalURL = startRudderPytransformer(
+			t, pool, configBackend.URL,
+		)
+		t.Cleanup(func() { _ = pool.Purge(pyNormalContainer) })
+		waitForHealthy(t, pool, pyNormalURL, "pytransformer-normal")
+	})
+	wg.Wait()
 
 	// sendTransform sends events to pytransformer and returns the HTTP status code and parsed response items.
 	sendTransform := func(t *testing.T, baseURL string, events []types.TransformerEvent) (int, []types.TransformerResponse) {
