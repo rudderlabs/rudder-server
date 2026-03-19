@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/samber/lo"
@@ -37,7 +36,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 func New(
@@ -59,7 +57,6 @@ func New(
 		now:                 timeutil.Now,
 		channelCache:        sync.Map{},
 		polledImportInfoMap: make(map[string]*importInfo),
-		validator:           validations.NewDestinationValidator(),
 	}
 
 	m.config.client.url = conf.GetStringVar("http://localhost:9078", "SnowpipeStreaming.Client.URL")
@@ -73,9 +70,6 @@ func New(
 	m.config.client.retryMax = conf.GetIntVar(5, 1, "SnowpipeStreaming.Client.retryMax")
 	m.config.instanceID = conf.GetStringVar("1", "INSTANCE_ID")
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
-	m.config.backoff.initialInterval = conf.GetReloadableDurationVar(1, time.Second, "SnowpipeStreaming.backoffInitialIntervalInSeconds")
-	m.config.backoff.multiplier = conf.GetReloadableFloat64Var(2.0, "SnowpipeStreaming.backoffMultiplier")
-	m.config.backoff.maxInterval = conf.GetReloadableDurationVar(1, time.Hour, "SnowpipeStreaming.backoffMaxIntervalInHours")
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 
 	tags := stats.Tags{
@@ -148,14 +142,6 @@ func (m *Manager) retryableClient() *retryablehttp.Client {
 	return client
 }
 
-func (m *Manager) validateConfig(ctx context.Context, dest *backendconfig.DestinationT) error {
-	response := m.validator.Validate(ctx, dest)
-	if response.Success {
-		return nil
-	}
-	return errors.New(response.Error)
-}
-
 func (m *Manager) Now() time.Time {
 	return m.now()
 }
@@ -199,19 +185,10 @@ func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestination
 			obskit.Error(err),
 		)
 
-		switch {
-		case errors.Is(err, errAuthz):
-			m.setBackOff(err)
-			validationError := m.validateConfig(ctx, asyncDest.Destination)
-			if validationError != nil {
-				err = fmt.Errorf("failed to validate snowpipe credentials: %s", validationError.Error())
-			}
-			return m.failedJobs(asyncDest, err.Error())
-		case errors.Is(err, errBackoff):
-			return m.failedJobs(asyncDest, err.Error())
-		default:
-			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
+		if errors.Is(err, errAbort) {
+			return m.abortJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", errAbort).Error())
 		}
+		return m.failedJobs(asyncDest, fmt.Errorf("failed to prepare discards channel: %w", err).Error())
 	}
 	m.logger.Infon("Prepared discards channel")
 
@@ -248,8 +225,6 @@ func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestination
 		abortedJobIDs []int64
 		abortReason   string
 	)
-	shouldResetBackoff := true // backoff should be reset if authz error is not encountered for any of the tables
-	isBackoffSet := false      // should not be set again if already set
 	for _, info := range uploadInfos {
 		fields := []logger.Field{
 			logger.NewStringField("table", info.tableName),
@@ -263,18 +238,6 @@ func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestination
 			log.Warnn("Failed to send events to Snowpipe", obskit.Error(err))
 
 			switch {
-			case errors.Is(err, errAuthz):
-				shouldResetBackoff = false
-				if !isBackoffSet {
-					isBackoffSet = true
-					m.setBackOff(err)
-					validationError := m.validateConfig(ctx, asyncDest.Destination)
-					if validationError != nil && failedReason == "" {
-						failedReason = fmt.Sprintf("failed to validate snowpipe credentials: %s", validationError.Error())
-					}
-				}
-			case errors.Is(err, errBackoff):
-				shouldResetBackoff = false
 			case errors.Is(err, errAbort):
 				abortedJobIDs = append(abortedJobIDs, info.jobIDs...)
 				if abortReason == "" {
@@ -298,9 +261,6 @@ func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestination
 			discardImportInfo.Count += discardImInfo.Count
 			discardImportInfo.Offset = discardImInfo.Offset
 		}
-	}
-	if shouldResetBackoff {
-		m.resetBackoff()
 	}
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
@@ -986,36 +946,6 @@ func (m *Manager) GetUploadStats(input common.GetUploadStatsInput) common.GetUpl
 			SucceededKeys: succeededJobIDs,
 		},
 	}
-}
-
-func (m *Manager) isInBackoff() bool {
-	if m.backoff.next.IsZero() {
-		return false
-	}
-	return m.Now().Before(m.backoff.next)
-}
-
-func (m *Manager) resetBackoff() {
-	m.backoff.next = time.Time{}
-	m.backoff.attempts = 0
-	m.backoff.error = ""
-}
-
-func (m *Manager) setBackOff(err error) {
-	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = m.config.backoff.initialInterval.Load()
-	bo.Multiplier = m.config.backoff.multiplier.Load()
-	bo.MaxInterval = m.config.backoff.maxInterval.Load()
-	bo.RandomizationFactor = 0
-	bo.Reset()
-	m.backoff.attempts++
-	m.backoff.error = err.Error()
-
-	var d time.Duration
-	for index := int64(0); index < int64(m.backoff.attempts); index++ {
-		d = bo.NextBackOff()
-	}
-	m.backoff.next = m.Now().Add(d)
 }
 
 func buildCreateChannelRequest(destinationID, partition string, destConf *destConfig, tableName string) *model.CreateChannelRequest {

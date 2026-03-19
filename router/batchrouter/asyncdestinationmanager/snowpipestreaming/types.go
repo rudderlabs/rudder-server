@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 type (
@@ -31,7 +30,6 @@ type (
 		api                 api
 		channelCache        sync.Map
 		polledImportInfoMap map[string]*importInfo
-		validator           validations.DestinationValidator
 
 		config struct {
 			client struct {
@@ -45,22 +43,9 @@ type (
 				retryWaitMax           time.Duration
 				retryMax               int
 			}
-			instanceID        string
-			maxBufferCapacity config.ValueLoader[int64]
-			backoff           struct {
-				multiplier      config.ValueLoader[float64]
-				initialInterval config.ValueLoader[time.Duration]
-				maxInterval     config.ValueLoader[time.Duration]
-			}
+			instanceID             string
+			maxBufferCapacity      config.ValueLoader[int64]
 			stuckPipelineThreshold config.ValueLoader[time.Duration]
-		}
-		backoff struct {
-			// If an attempt was made to create a resource but it failed likely due to permission issues,
-			// then the next attempt to create a SF connection will be made after "next".
-			// This approach prevents repeatedly activating the warehouse even though the permission issue remains unresolved.
-			attempts int
-			next     time.Time
-			error    string
 		}
 
 		stats struct {
