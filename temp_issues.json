@@ -1,0 +1,800 @@
+[
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Separate config definition and export leads to build error",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/2080",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2025-05-20T09:33:00Z",
+    "body": "When defining the config like this:\n\n```ts\nimport { defineConfig } from \"@trigger.dev/sdk\";\n\nconst config = defineConfig({\n  project: \"<project ref>\",\n  dirs: [\"./src/trigger\"],\n  maxDuration: 3600,\n ..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: `Unknown URL parameters: secure` in trigger container",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3184",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2026-03-05T10:27:30Z",
+    "body": "### Provide environment information\n\n```\n+ NODE_PATH=/triggerdotdev/node_modules/.pnpm/node_modules exec dumb-init node --max-old-space-size=1024 ./build/server.js\n/triggerdotdev/node_modules/.pnpm/@c..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Vouch Request: fix ClickHouse query client startup crash (#3184)",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3198",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-03-09T19:58:01Z",
+    "body": "### Why do you want to contribute?\n\nI'm setting up a self-hosted Trigger.dev instance using the Docker Compose \"combined setup\" and ran into a startup crash caused by a missing `url.searchParams.delet..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Support ReplicatedMergeTree for multi-replica ClickHouse deployments",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3194",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-03-08T09:14:24Z",
+    "body": "## Problem\n\nWhen self-hosting trigger.dev with a multi-replica ClickHouse cluster (e.g., ClickHouse Operator on Kubernetes with 2+ replicas behind a load-balanced Service), the dashboard shows inconsi..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Vouch Request: AI contributor (Claude, operated by @MaxwellCalkin)",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3193",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-03-08T06:46:36Z",
+    "body": "## What I'd like to work on\n\nI'd like to contribute bug fixes to Trigger.dev. I just submitted PR #3192 (fix for issue #1510 — period-in-key flattening bug) which was auto-closed because I wasn't vouc..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Playwright extension breaks with Playwright 1.58+ (--dry-run output format change)",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3089",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-19T03:27:02Z",
+    "body": "## Problem\n\nThe Playwright build extension (`@trigger.dev/build@4.3.3`) fails during Docker image builds when using Playwright 1.58+.\n\nThe extension runs `npx playwright install --dry-run` and then gr..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: Bun runtime `ENOENT` when `bun` installed using `brew`",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3059",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2026-02-14T09:12:01Z",
+    "body": "Pretty much the title.\n\n```\nBinaries:\n  Node: 22.16.0 - /Users/me/.nvm/versions/node/v22.16.0/bin/node\n  npm: 10.9.2 - /Users/me/.nvm/versions/node/v22.16.0/bin/npm\n  bun: 1.3.9 - /opt/homebrew/bin/bu..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "useRealtimeStream returns '[object Object]' for object stream append payloads",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3169",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-03-04T08:45:52Z",
+    "body": "## Summary\nWhen appending object payloads to a realtime stream with `stream.append(...)`, `useRealtimeStream(...)` receives chunks as `\"[object Object]\"` (or otherwise non-typed), and the Trigger dash..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Requesting Vouch to Open PR for #3122",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3141",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-27T09:39:10Z",
+    "body": "### Why do you want to contribute?\n\nHi team 👋\n\nI’d like to request a vouch so I can contribute to Trigger.dev.\nI’m currently working on issue #3122 (Configure repository access link 404 issue) and pl..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: Self-hosted local push gets registry_not_supported (CLI 4.4.0+)",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3168",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-03-03T18:36:44Z",
+    "body": "### Provide environment information\n\nCLI 4.4.0+\n\n### Describe the bug\n\nWhen deploying with local Docker push against a self-hosted Trigger webapp (CLI 4.4.0+), the CLI requests registry credentials fr..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Vouch request for @CuboYe",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3165",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-03-03T05:19:30Z",
+    "body": "Hi Trigger.dev maintainers — I’d like to request vouching for @CuboYe so I can contribute via PRs.\n\nI picked up issue #1361 (LibreOffice headless build extension for docx/pptx → PDF conversion) and al..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Create a libreoffice build extension to allow docx/pptx to PDF conversion",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/1361",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2024-09-26T09:57:42Z",
+    "body": "[Papermark](https://www.papermark.io/) is using Trigger.dev v3 but they have to resort to calling out to a separate service (gotenberg.dev) they are running on fly.io to do docx/pptx to PDF conversion..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "feat: Allow to define custom otel span processors",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/2979",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-01-30T17:33:12Z",
+    "body": "### Is your feature request related to a problem? Please describe.\n\nHi following up on my long standing battle to make vercel ai sdk traces to show up in Sentry's AI dashboard, would it be possible to..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: CLI displays incorrect profile name when using --profile option",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/2542",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2025-09-23T09:08:54Z",
+    "body": "## Bug Description\n\nWhen using the `--profile` option with CLI commands, the displayed profile name in the command output doesn't match the profile actually being used. Instead, it shows \"default\" or ..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Vouch Request - Add pythonVersion option to pythonExtension (#3154)",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3156",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-03-01T04:28:32Z",
+    "body": "### Why do you want to contribute?\n\nI came across issue #3154 while exploring the trigger.dev codebase and noticed it's a well-scoped, beginner-friendly fix. The `pythonExtension()` function currently..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "feat: pythonExtension does not support specifying python version",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3154",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-02-28T16:18:27Z",
+    "body": "### Is your feature request related to a problem? Please describe.\n\nCurrently there is no support to specify a python version like 3.12 in the `pythonExtension()` function. It always install 3.11 righ..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: Same deduplication key in multiple envs causes schedule to move/disappear",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3150",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2026-02-27T18:14:22Z",
+    "body": "### Provide environment information\n\nn/a\n\n### Describe the bug\n\nDeduplication key is per project, not per environment. Using the same key in Prod and Staging creates one schedule; the last upsert deci..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: SDK fails in Supabase Edge (Deno) runtime when calling task.trigger()",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3147",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-02-27T15:07:58Z",
+    "body": "### Provide environment information\n\ntrigger v4.4.1 but also happens with previous versions\n\n### Describe the bug\n\nWhen triggering a task from a Supabase Edge Function using `tasks.trigger()` (or `tas..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: \"Configure repository access in GitHub\" link 404s",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3122",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-24T18:32:19Z",
+    "body": "### Provide environment information\n\nn/a\n\n### Describe the bug\n\nClicking \"Configure repository access in GitHub\" in the Git settings modal opens https://github.com/settings/installations/{id}, which r..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "MCP server: list_deploys fails with validation error on null runtime/runtimeVersion",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3139",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-02-26T20:44:49Z",
+    "body": "## Bug Description\n\nThe `list_deploys` MCP tool fails with a Zod validation error when deployments have `null` values for `runtime` and/or `runtimeVersion` fields.\n\n## Error\n\n```\n200 Validation error:..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "feat: ai.tool() should support passing triggerOptions (priority, tags) to subtasks",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3123",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-02-24T18:41:39Z",
+    "body": "## Is your feature request related to a problem?\n\n`ai.tool()` internally calls `task.triggerAndWait()` but only passes `metadata`. There's no way to forward `priority`, `tags`, or other trigger option..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "feat: support pyproject.toml + entry point for python projects",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3118",
+    "labels": [],
+    "comments": 0,
+    "created_at": "2026-02-23T19:41:26Z",
+    "body": "### Is your feature request related to a problem? Please describe.\n\npython projects are moving to the pyproject.toml standard for declaring dependencies and requirements.txt is less common by the day...."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: .env.local doesn't override .env values in dev command",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/2999",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-04T17:16:35Z",
+    "body": "### Provide environment information\n\nv4.3.2\n\n### Describe the bug\n\nWhen running trigger dev, .env.local should override values from .env, but it doesn't. The .env values are used instead\n\n\n### Reprodu..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Vouch Request - BeeBombshell",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3110",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-21T19:32:19Z",
+    "body": "### Why do you want to contribute?\n\nHi, Trigger.dev team! I’m Bhavya Verma, a Product Engineer with 3+ YOE in seed-stage startups. Previously, I worked at [BuildShip](https://buildship.com/) on workfl..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: Deployment UI shows Node.js runtime when using Bun",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3105",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-20T14:46:18Z",
+    "body": "### Provide environment information\n\nn/a\n\n### Describe the bug\n\nThe deployment UI shows \"Node.js\" as the runtime even when the project is built and run with Bun.\n\n- Build works with a pre-build comman..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Integration Proposal: MoltBridge Agent Discovery for Trigger.dev Workflows",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3066",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-15T19:04:45Z",
+    "body": "## Summary\n\n[MoltBridge](https://moltbridge.ai) provides trust-verified agent discovery — cryptographic identity, a trust graph, and broker-mediated introductions between AI agents. We'd like to propo..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "bug: Sentry esbuild plugin fails to upload sourcemaps",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/2865",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2026-01-09T17:01:10Z",
+    "body": "### Provide environment information\n\nN/A\n\n### Describe the bug\n\n**Expected behavior:** Sourcemaps should be automatically uploaded to Sentry during deployment when using the `sentryEsbuildPlugin` with..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "feat: Allow setting default region for the task",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3017",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2026-02-08T07:05:14Z",
+    "body": "### Is your feature request related to a problem? Please describe.\n\nI have some specific services deployed in some location of my organization which require local access. Most task can run all locatio..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Add Shaik-Sirajuddin to voched",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3040",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2026-02-13T04:13:25Z",
+    "body": "### Why do you want to contribute?\n\nI am looking to contribute to observability , workflow related integrations\n\n### Prior contributions or relevant experience\n\nPreviously contributed to [Cal.com](htt..."
+  },
+  {
+    "repo": "triggerdotdev/trigger.dev",
+    "title": "Bun runtime: source-map crash during indexing (Column must be >= 0, got -1)",
+    "url": "https://github.com/triggerdotdev/trigger.dev/issues/3045",
+    "labels": [],
+    "comments": 3,
+    "created_at": "2026-02-13T11:45:07Z",
+    "body": "## Description\n\nWhen using `runtime: 'bun'` in trigger.config.ts, the indexing phase crashes with:\n\n```\nTypeError: Column must be greater than or equal to 0, got -1\n    at SourceMapConsumer_findMappin..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Prisma unique constraint fails when inviting new team member",
+    "url": "https://github.com/calcom/cal.com/issues/28351",
+    "labels": [
+      "🐛 bug"
+    ],
+    "comments": 0,
+    "created_at": "2026-03-10T01:01:21Z",
+    "body": "### Issue Summary\n\nInviting a new team member fails with\n\nInvalid 'prisma.user.create(' invocation:\nUnique constraint failed on the fields:\n('username', ' (\"organizationld\" IS NULL')\n\n### Steps to Rep..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Queue-based booking mode for clinics (instead of time-slot appointments)",
+    "url": "https://github.com/calcom/cal.com/issues/28348",
+    "labels": [
+      "✨ feature",
+      "🚨 needs approval"
+    ],
+    "comments": 0,
+    "created_at": "2026-03-09T20:15:42Z",
+    "body": "### Is your proposal related to a problem?\n\nI want to promote Cal.com booking services to dental clinics in Iraq to encourage electronic appointment booking. However, in Iraq most clinics do not use f..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "[CAL-3213] disabled apps are still installable and upon restart of calcom all apps get set to enabled (self hosted)",
+    "url": "https://github.com/calcom/cal.com/issues/13884",
+    "labels": [
+      "🐛 bug",
+      "linear",
+      "Low priority",
+      "self-hosting"
+    ],
+    "comments": 4,
+    "created_at": "2024-02-27T10:30:04Z",
+    "body": "This doesn't seem to ever have been fixed:\r\nhttps://github.com/calcom/cal.com/issues/6652\r\n\r\nYou can disable 2 of them (as seen in my bottom screenshot)\r\nit shows 11 which is proper\r\n![image](https://..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Paid booking per meeting duration",
+    "url": "https://github.com/calcom/cal.com/issues/24994",
+    "labels": [
+      "✨ feature",
+      "🚨 needs approval"
+    ],
+    "comments": 2,
+    "created_at": "2025-11-07T12:14:50Z",
+    "body": "### I want to be able to\n\nSet booking price per meeting duration, not for the whole event.\n\n### So that\n\nWhen the event has multiple duration options to choose from, each duration will be priced diffe..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Unable to login on the app with an EU account",
+    "url": "https://github.com/calcom/cal.com/issues/28201",
+    "labels": [
+      "🐛 bug"
+    ],
+    "comments": 5,
+    "created_at": "2026-02-27T12:56:52Z",
+    "body": "Found a bug? Please fill out the sections below. 👍\n\n### Issue Summary\n\nI installed the Android app, signed up (on the browser) with EU region with an email (not Google). Now I when I try to log in in..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Proton Calendar Integration",
+    "url": "https://github.com/calcom/cal.com/issues/5756",
+    "labels": [
+      "✨ feature",
+      "app-store",
+      "Low priority"
+    ],
+    "comments": 96,
+    "created_at": "2022-11-29T06:38:14Z",
+    "body": "### Is your proposal related to a problem?\r\n\r\n<!--\r\n  Provide a clear and concise description of what the problem is.\r\n  For example, \"I'm always frustrated when...\"\r\n-->\r\n\r\nfor [Proton Calendar](http..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "fix: v2 get slots for event with rolling window",
+    "url": "https://github.com/calcom/cal.com/issues/25405",
+    "labels": [
+      "platform",
+      "Stale",
+      "api",
+      "reactive⚡︎"
+    ],
+    "comments": 3,
+    "created_at": "2025-11-26T11:52:07Z",
+    "body": "## Problem\n\nIf event type has rolling window limit:\n\n```\n\"bookingWindow\": {\n      \"type\": \"businessDays\",\n      \"value\": 60,\n      \"rolling\": true\n},\n```\n\nand then today is November 26 but we fetch fr..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Incorrect data being returned at the event type API endpoint",
+    "url": "https://github.com/calcom/cal.com/issues/25429",
+    "labels": [
+      "🐛 bug",
+      "Stale"
+    ],
+    "comments": 2,
+    "created_at": "2025-11-27T12:19:29Z",
+    "body": "### Issue Summary\n\nWhen calling the get event type endpoint we're receiving incorrect data (according to the [docs](https://cal.com/docs/api-reference/v2/event-types/get-an-event-type#get-an-event-typ..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Update event type endpoint fails when the email is not set as required and visible for phone confirmation calendars",
+    "url": "https://github.com/calcom/cal.com/issues/25430",
+    "labels": [
+      "🐛 bug",
+      "Stale"
+    ],
+    "comments": 1,
+    "created_at": "2025-11-27T12:25:14Z",
+    "body": "\n### Issue Summary\n\nWhen calling the update event type endpoint with a calendar with phone confirmation an error is returned indicating that the email field should be required and visible.\n\n### Steps ..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Create booking via API overwrites email with phone confirmation when the email field is not visible",
+    "url": "https://github.com/calcom/cal.com/issues/25432",
+    "labels": [
+      "🐛 bug",
+      "Stale"
+    ],
+    "comments": 3,
+    "created_at": "2025-11-27T12:33:07Z",
+    "body": "\n### Issue Summary\n\nThis issue happens when a calendar is set to Phone confirmation and the email field is optional.\n\nIf the email field is set to `hidden` the API create booking [endpoint](https://ca..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Adjacency-only booking",
+    "url": "https://github.com/calcom/cal.com/issues/26187",
+    "labels": [
+      "✨ feature",
+      "Stale",
+      "🚨 needs approval"
+    ],
+    "comments": 9,
+    "created_at": "2025-12-24T12:23:25Z",
+    "body": "### Is your proposal related to a problem?\n\n**Yes**. Current scheduling tools force me to choose between two bad options:\n- Scattered meetings throughout the day: Destroys focus time, creates constant..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Events with multiple seats, that allow rescheduling last booking, reschedule for all users",
+    "url": "https://github.com/calcom/cal.com/issues/26361",
+    "labels": [
+      "🐛 bug",
+      "Stale"
+    ],
+    "comments": 3,
+    "created_at": "2025-12-31T19:50:45Z",
+    "body": "Found a bug? Please fill out the sections below. 👍\n\n### Issue Summary\n\nTwo options checked creates an issue:\nOption 1: allow multiple seats\nOption 2: Limit number of upcoming bookings per booker, and..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Don't allow variables in query params for custom event redirects (routing forms)",
+    "url": "https://github.com/calcom/cal.com/issues/26535",
+    "labels": [
+      "🧹 Improvements",
+      "Medium priority",
+      "Stale"
+    ],
+    "comments": 2,
+    "created_at": "2026-01-07T10:24:23Z",
+    "body": "<img src=\"https://uploads.linear.app/e86bf957-d82f-465e-b205-135559f4b623/9815ef0d-8171-4c3e-94cf-0e569d786504/3d366757-fc9b-4d53-a234-4a5df88eac48?signature=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJwY..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Settings/General buttons are performing at high latency and  dependent on other switches of that page",
+    "url": "https://github.com/calcom/cal.com/issues/28330",
+    "labels": [
+      "🐛 bug"
+    ],
+    "comments": 7,
+    "created_at": "2026-03-07T12:20:26Z",
+    "body": "### Issue Summary\n\nWhile contributing to the Settings page I found a UX/regression issue: toggle switches in a group are using a global loading state, so clicking one toggle disables the entire group ..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Internal Server Error when rescheduling a booking",
+    "url": "https://github.com/calcom/cal.com/issues/28310",
+    "labels": [
+      "🐛 bug"
+    ],
+    "comments": 2,
+    "created_at": "2026-03-06T10:15:10Z",
+    "body": "Found a bug? Please fill out the sections below. 👍\n\n### Issue Summary\n\nA summary of the issue. This needs to be a clear detailed-rich summary.\n\n### Steps to Reproduce\n\n1. Send `POST` request to `http..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Add Razorpay as a Payment Gateway Option for Indian Users",
+    "url": "https://github.com/calcom/cal.com/issues/28259",
+    "labels": [
+      "✨ feature",
+      "🚨 needs approval"
+    ],
+    "comments": 3,
+    "created_at": "2026-03-04T05:03:59Z",
+    "body": "### Is your proposal related to a problem?\n\nCurrently, Cal.com supports Stripe and PayPal for collecting payments on bookings. However, these payment gateways are not widely used by many customers in ..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "\"Time-slot Intervals\" are Broken",
+    "url": "https://github.com/calcom/cal.com/issues/21441",
+    "labels": [
+      "🐛 bug",
+      "🧹 Improvements",
+      "bookings"
+    ],
+    "comments": 9,
+    "created_at": "2025-05-21T16:33:43Z",
+    "body": "### Issue Summary\n\n\"Time-slot Intervals\" are limited to predefined values. This prevents back-to-back meeting capability.\n\nExample:\n\nIf I am available for a 20 min meeting every 35 min (20 min meeting..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "When signing with Gmail: Showing form when we register as first user",
+    "url": "https://github.com/calcom/cal.com/issues/25445",
+    "labels": [
+      "🐛 bug",
+      "Stale"
+    ],
+    "comments": 1,
+    "created_at": "2025-11-28T06:48:30Z",
+    "body": "Found a bug? Please fill out the sections below. 👍\n\n### Issue Summary\n\nWhen I sigin in with Google account, after continueing Google auth I am redirecting to profile completion form. But the form is ..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Atoms: Team event type Assignment tab not rendering member controls for ADMIN users",
+    "url": "https://github.com/calcom/cal.com/issues/25457",
+    "labels": [
+      "🐛 bug",
+      "platform",
+      "Stale",
+      "⚛️ atoms"
+    ],
+    "comments": 6,
+    "created_at": "2025-11-28T12:52:15Z",
+    "body": "### Is your proposal related to a problem?\n\nYes. When using the Cal.com Atoms library with platform OAuth (managed users), the `EventTypeSettings` component allows ADMIN users to edit *some* fields of..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "only show the LAST slot available",
+    "url": "https://github.com/calcom/cal.com/issues/25462",
+    "labels": [
+      "✨ feature",
+      "Stale",
+      "🚨 needs approval"
+    ],
+    "comments": 1,
+    "created_at": "2025-11-28T22:17:25Z",
+    "body": "<img width=\"509\" height=\"92\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/7574ac0c-ce80-4b94-9265-c343d17ad808\" />\n\n---\n\n\"only show the **_first_** slot\" is already implemented\nplease a..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Customize the title and description of the calendar events that the client can add to their calendar",
+    "url": "https://github.com/calcom/cal.com/issues/25486",
+    "labels": [
+      "✨ feature",
+      "Low priority",
+      "Stale"
+    ],
+    "comments": 3,
+    "created_at": "2025-12-01T08:30:29Z",
+    "body": "### Is your proposal related to a problem?\n\n<!--\n  Provide a clear and concise description of what the problem is.\n  For example, \"I'm always frustrated when...\"\n-->\n\nThe Description of my calendar ev..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Location missing in intercept payload",
+    "url": "https://github.com/calcom/cal.com/issues/25496",
+    "labels": [
+      "🐛 bug",
+      "High priority",
+      "Stale",
+      "reactive⚡︎"
+    ],
+    "comments": 2,
+    "created_at": "2025-12-01T11:36:14Z",
+    "body": "When using handleCreateBooking to intercept the booking (for custom payment logic), the payload does **not** include the location field.\n\n**Impact:**\n\n* Customer cannot determine which meeting provide..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "[Feature] documentation for Embed Events via React widget",
+    "url": "https://github.com/calcom/cal.com/issues/25517",
+    "labels": [
+      "✨ feature",
+      "Stale",
+      "🚨 needs approval"
+    ],
+    "comments": 3,
+    "created_at": "2025-12-02T01:45:14Z",
+    "body": "The page listing instructions for Embed Events doesn't say anything setting up events with the `@calcom/embed-react` component. \n\nI managed to hack this out, and I was wondering if anyone would like m..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "feat: use API to create/edit workflows",
+    "url": "https://github.com/calcom/cal.com/issues/25560",
+    "labels": [
+      "✨ feature",
+      "Stale",
+      "🚨 needs approval"
+    ],
+    "comments": 2,
+    "created_at": "2025-12-02T21:58:03Z",
+    "body": "### Is your proposal related to a problem?\n\nCurrently, workflows in Cal.com can only be created or edited through the UI unless the user is part of a team. This limitation makes it difficult to automa..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Ability to import custom fields (via API, etc.) and use them in event workflow notifications",
+    "url": "https://github.com/calcom/cal.com/issues/25562",
+    "labels": [
+      "✨ feature",
+      "Stale",
+      "🚨 needs approval"
+    ],
+    "comments": 1,
+    "created_at": "2025-12-03T01:31:22Z",
+    "body": "### Is your proposal related to a problem?\n Yes, lack of options\n\n  Provide a clear and concise description of what the problem is.\n  For example, \"I'm always frustrated when...\"\n\nThere is currently n..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Add uuid to 409 Conflict response body when creating a webhook via /v2/webhooks",
+    "url": "https://github.com/calcom/cal.com/issues/25573",
+    "labels": [
+      "🧹 Improvements",
+      "Stale"
+    ],
+    "comments": 1,
+    "created_at": "2025-12-03T13:16:49Z",
+    "body": "### Is your proposal related to a problem?\n\nWhen creating a webhook using `POST /v2/webhooks`, if the `subscriberUrl` is already registered for the store, the API returns a 409 Conflict response.\nThe ..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Show Cal Video url in webhook payload",
+    "url": "https://github.com/calcom/cal.com/issues/25604",
+    "labels": [
+      "Medium priority",
+      "Stale"
+    ],
+    "comments": 1,
+    "created_at": "2025-12-04T09:39:36Z",
+    "body": "The webhook payload shows the Daily Video URL in: \n\n```\n{ \"videoCallData\": \n  \"url\": \"https://meetco.daily.co/….\"\n}\n```\n\nWe should instead show the cal.com video link, same we already show in \"videoCa..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Label should not be required for `phone` field in API",
+    "url": "https://github.com/calcom/cal.com/issues/25589",
+    "labels": [
+      "🐛 bug",
+      "Stale"
+    ],
+    "comments": 4,
+    "created_at": "2025-12-03T17:26:36Z",
+    "body": "### Issue Summary\n\nWhen creating an event type using the v2 API I get the following error:\n\n```\nValidation failed for phone booking field: label must be a string\n```\n\nThe problem is that if I set a cu..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "[CAL-5091] additional settings: \"add team member as optional guest",
+    "url": "https://github.com/calcom/cal.com/issues/18947",
+    "labels": [
+      "✨ feature",
+      "teams",
+      "community",
+      "$25"
+    ],
+    "comments": 36,
+    "created_at": "2025-01-28T16:13:09Z",
+    "body": "![Image](https://github.com/user-attachments/assets/305d292b-a984-44c0-b89f-f8ed979d4c71)\n\n1. team members only (to protect spam) and show `<UpgradeTeamsBadge />`\n2.  don't check the team members cale..."
+  },
+  {
+    "repo": "calcom/cal.com",
+    "title": "Dzylo CRM App",
+    "url": "https://github.com/calcom/cal.com/issues/28326",
+    "labels": [
+      "✨ feature",
+      "🚨 needs approval"
+    ],
+    "comments": 1,
+    "created_at": "2026-03-07T10:02:52Z",
+    "body": "### Is your proposal related to a problem?\n\n<!--\n  Provide a clear and concise description of what the problem is.\n  For example, \"I'm always frustrated when...\"\n-->\n\nwe using dzylo CRM https://dzylo...."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Backup Errors: Container logs inundated with errors about archiver failing.",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/6630",
+    "labels": [],
+    "comments": 15,
+    "created_at": "2026-01-25T03:04:06Z",
+    "body": "**Describe the bug**\nIn the docker container logs for the rudder-server I am getting a lot of the following errors:\n\n```2026-01-25T01:44:30.031Z        ERROR   tablearchiver   tablearchiver/tablearchi..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Crashing with \"panic: failed to migrate ds\"",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/4588",
+    "labels": [
+      "Stale",
+      "Need more info"
+    ],
+    "comments": 21,
+    "created_at": "2024-04-18T07:20:49Z",
+    "body": "**Describe the bug**\r\n\r\nDeployed using https://github.com/rudderlabs/rudderstack-helm\r\nrudderstack backend keeps crashing and restarting with the error\r\n\r\n<img width=\"719\" alt=\"Screenshot 2024-04-18 a..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "SQL Injection Vulnerabilities (CWE-89) at jobsdb/jobsdb.go",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/6284",
+    "labels": [],
+    "comments": 3,
+    "created_at": "2025-09-01T00:12:38Z",
+    "body": "Multiple instances of string formatting in SQL queries without proper parameterization.\n\ncurrent code:\n// jobsdb/jobsdb.go - Line ~2847\nsqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FRO..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Enabling \"Enable for cleanup of object storage files (deletion) after successful sync\" causes constant \"context deadline exceeded\" errors",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/6349",
+    "labels": [],
+    "comments": 3,
+    "created_at": "2025-09-15T14:18:54Z",
+    "body": "**Describe the bug**\nEver since enabling this flag my logs are full of these context deadline exceeded errors, is there a goroutine that's scoped to the request scope that's being cancelled by the req..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Migration fails: `gen_random_uuid()` not found on PostgreSQL 11 (pgcrypto extension required)",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/6336",
+    "labels": [],
+    "comments": 2,
+    "created_at": "2025-09-12T02:26:12Z",
+    "body": "**Describe the bug**\n\nFollowing the docs/Helm defaults leads to [PostgreSQL 11](https://github.com/rudderlabs/rudderstack-helm/blob/8435f4726552c48783f7785272b2e2bfe3511b55/values.yaml#L158), which is..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Google Adwords Remarketing List 404 error",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/3498",
+    "labels": [
+      "Need more info"
+    ],
+    "comments": 2,
+    "created_at": "2023-06-14T16:43:17Z",
+    "body": "I'm trying to onboard data through Rudderstack open source to a Google Adwords Remarketing List.\r\n\r\nWhen I view the Live Events, I see nothing but 404 errors.  Interestingly, if I post the same data t..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Rudderstack becomes extremely slow when you have one destination down",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/4953",
+    "labels": [
+      "Need more info"
+    ],
+    "comments": 16,
+    "created_at": "2024-07-31T14:39:42Z",
+    "body": "**Describe the bug**\r\nWe have data-plane running in k8s. There are 60 pods. When we see in Grafana that one of our Webhook destinations is down, then Rudderstack becomes extremely slow. Webhook delive..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "User details not being sent to Destination Intercom",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/5213",
+    "labels": [
+      "Stale",
+      "Need more info"
+    ],
+    "comments": 3,
+    "created_at": "2024-10-21T11:42:35Z",
+    "body": "Describe the bug\r\nWhen sending an Identify event from Backend(JavaScript) to Intercom as the destination via RudderStack, an error is returned stating \"User Not Found.\" The event fails to process and ..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "K3S deploy rudder-server stdout only one message",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/5341",
+    "labels": [
+      "Need more info"
+    ],
+    "comments": 5,
+    "created_at": "2024-12-05T06:51:41Z",
+    "body": "**Describe the bug**\r\nDeploy with k3s, rudder-server print only one message in stdout and exit.\r\n\r\n```shell\r\n2024/12/05 06:38:38 maxprocs: Updating GOMAXPROCS=5: determined from CPU quota\r\n```\r\n\r\n\r\n**..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Sudden error: \"No staging files found",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/5076",
+    "labels": [],
+    "comments": 7,
+    "created_at": "2024-09-10T07:43:04Z",
+    "body": "**Describe the bug**\r\nAfter running rudderstack for a while a “no staging files found” message gets logged with error log level pretty frequently. See below: \r\n\r\n```\r\n“{\"level\":\"WARN\",\"ts\":\"2024-08-07..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Clickhouse - Default Partition should be monthly (toYYYYMM) rather than daily",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/5079",
+    "labels": [],
+    "comments": 8,
+    "created_at": "2024-09-10T12:26:21Z",
+    "body": "Advised on Clickhouse to have partitions of between 30gb and 150gb per partition, I am sure most people using rudder->click do not have this volume daily therefore the default should be monthly - keep..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "What and how to contribute?",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/5166",
+    "labels": [],
+    "comments": 1,
+    "created_at": "2024-10-03T15:25:12Z",
+    "body": "This post is a brief guide for developers who want to contribute to RudderStack.\r\nWe appreciate your contribution. As you might already know that RudderStack helps stream data from multiple sources to..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "backupDSLoop exception: mark end of backup operation: driver: bad connection; driver: bad connection",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/4535",
+    "labels": [
+      "Could not reproduce"
+    ],
+    "comments": 2,
+    "created_at": "2024-04-02T13:52:07Z",
+    "body": "**Describe the bug**\r\nmark end of backup operation: driver: bad connection; driver: bad connection\r\n\r\n**Expected behavior**\r\nversion: [1.22.1](https://hub.docker.com/layers/rudderlabs/rudder-server/1...."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Request: Declarative text-based configuration support",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/2045",
+    "labels": [
+      "enhancement"
+    ],
+    "comments": 3,
+    "created_at": "2022-06-10T16:09:01Z",
+    "body": "It would be great if RudderStack Server supported configuration by means of text files. In principal, this could enable the following workflow:\r\n\r\n- actively developing a Server configuration in a dev..."
+  },
+  {
+    "repo": "rudderlabs/rudder-server",
+    "title": "Where to post?",
+    "url": "https://github.com/rudderlabs/rudder-server/issues/4660",
+    "labels": [
+      "Info"
+    ],
+    "comments": 0,
+    "created_at": "2024-05-06T16:53:21Z",
+    "body": "Recommended channels based on the type of issue\r\n\r\n* Question - [Slack](https://www.rudderstack.com/join-rudderstack-slack-community/)\r\n* Bug - [GitHub Issues](https://github.com/rudderlabs/rudder-ser..."
+  }
+]

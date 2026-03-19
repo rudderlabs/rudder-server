@@ -1,0 +1,3 @@
+### Issue Summary
+
+While contributing to the Settings page I found a UX/regression issue: toggle switches in a group are using a global loading state, so clicking one toggle disables the entire group ...

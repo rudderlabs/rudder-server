@@ -32,6 +32,57 @@ func (jd *Handle) startMigrateDSLoop(ctx context.Context) {
 	}))
 }
 
+// isRetryableError checks if an error is retryable (e.g., connection errors)
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	// Check for common PostgreSQL connection errors that are retryable
+	retryablePatterns := []string{
+		"driver: bad connection",
+		"connection refused",
+		"connection reset by peer",
+		"broken pipe",
+		"network is unreachable",
+		"no such host",
+		"timeout",
+		"deadline exceeded",
+	}
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(errStr, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryWithBackoff retries an operation with exponential backoff for retryable errors
+func retryWithBackoff(ctx context.Context, maxRetries int, operation func() error) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = operation()
+		if err == nil {
+			return nil
+		}
+		if !isRetryableError(err) {
+			return err
+		}
+		// Exponential backoff: 1s, 2s, 4s, 8s, etc.
+		backoffDuration := time.Duration(1<<i) * time.Second
+		if backoffDuration > 30*time.Second {
+			backoffDuration = 30 * time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoffDuration):
+			continue
+		}
+	}
+	return fmt.Errorf("max retries exceeded: %w", err)
+}
+
 func (jd *Handle) migrateDSLoop(ctx context.Context) {
 	for {
 		select {
@@ -172,7 +223,10 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("create %v indices: %w", destination, err)
 				}
-				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
+				// Retry journal mark done with exponential backoff for transient connection errors
+				if err = retryWithBackoff(ctx, 3, func() error {
+					return jd.journalMarkDoneInTx(tx, opID)
+				}); err != nil {
 					return fmt.Errorf("mark journal done: %w", err)
 				}
 				jd.logger.Infon("[[ migrateDSLoop ]]: Jobs migrated", logger.NewIntField("count", int64(totalJobsMigrated)))

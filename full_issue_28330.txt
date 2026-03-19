@@ -1,0 +1,34 @@
+### Issue Summary
+
+While contributing to the Settings page I found a UX/regression issue: toggle switches in a group are using a global loading state, so clicking one toggle disables the entire group until the network call resolves. This creates a heavy, blocking feel and high perceived latency—users see a blocked cursor and can’t interact with sibling switches while one action is pending. Root cause looks like a single mutation isPending (or similar) being wired to every switch’s disabled prop instead of tracking loading per-item. I consider this a bug because toggles are independent features and should be interactive concurrently; the current behavior hurts throughput and user satisfaction.
+
+### Steps to Reproduce
+
+1. Go to the **Settings** page (e.g., Profile or General settings where multiple toggles exist).
+2. Click on any toggle, like **"Allow search engine indexing."**
+3. Immediately try to click a second toggle, like **"Monthly digest email."**
+4. You will see that the second switch is "locked" or shows a blocked cursor while the first one is still processing.
+
+### Actual Results
+
+- Clicking one switch triggers a global loading state (`isPending`) that disables all other switches in that section.
+- High perceived latency—the user has to wait for the "Settings updated successfully" toast before they can interact with any other setting.
+
+### Expected Results
+
+- Each switch should behave independently.
+- Clicking one should not disable or block the others.
+- Ideally, we should use **optimistic updates** so the toggle flips instantly without waiting for the network response to finish.
+
+### Technical details
+
+- **Browser:** Chrome / Brave (Latest)
+- **Node.js version:** v18.x / v20.x
+- **Potential Cause:** It looks like a single `useMutation` hook's `isPending` or similar state is being passed to the `disabled` prop of every switch in the list, rather than tracking loading states per individual item.
+
+### Evidence
+
+- I have observed that as soon as one switch is clicked, the `disabled` state is applied globally to the sibling components.
+- **Testing:** Verified by trying to "double-tap" multiple settings quickly; the UI blocks the second interaction until the first request resolve
+
+https://github.com/user-attachments/assets/df7a8b03-e6f2-4c03-bea5-284a7b4a7261

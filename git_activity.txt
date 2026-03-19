@@ -1,0 +1,31 @@
+﻿commit 7c12a753fe94d056888e5ae4416ac9a1197a60cb
+Author: deepshekhardas <deepshekharadas1234@gmail.com>
+Date:   Sun Mar 15 20:09:16 2026 +0530
+
+    fix(warehouse): implement graceful termination for upload jobs (#6730)
+On branch fix/warehouse-graceful-termination
+Your branch and 'origin/master' have diverged,
+and have 1 and 5 different commits each, respectively.
+  (use "git pull" if you want to integrate the remote branch with yours)
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	.agent/
+	fetch_issues.js
+	format_issues.js
+	full_issue_28330.txt
+	git_activity.txt
+	issue.txt
+	issue_28330.txt
+	issue_comments.txt
+	pr_stats.json
+	prs.json
+	recent_prs_full.json
+	rudder-sdk-android/
+	rudder-sdk-js/
+	rudder-transformer/
+	temp_issues.json
+	terraform-provider-rudderstack/
+	trigger.dev/
+
+nothing added to commit but untracked files present (use "git add" to track)
