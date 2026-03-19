@@ -50,6 +50,7 @@ func (jd *Handle) AddReadExcludedPartitionIDs(ctx context.Context, partitionIDs 
 	for _, partitionID := range partitionIDs {
 		jd.excludedReadPartitions[partitionID] = struct{}{}
 	}
+	jd.statReadExcludedPartitionsCount.Gauge(len(jd.excludedReadPartitions))
 
 	return nil
 }
@@ -75,6 +76,7 @@ func (jd *Handle) RemoveReadExcludedPartitionIDs(ctx context.Context, partitionI
 	for _, partitionID := range partitionIDs {
 		delete(jd.excludedReadPartitions, partitionID)
 	}
+	jd.statReadExcludedPartitionsCount.Gauge(len(jd.excludedReadPartitions))
 	jd.noResultsCache.InvalidatePartitions(partitionIDs)
 	return nil
 }
@@ -108,5 +110,6 @@ func (jd *Handle) loadReadExcludedPartitions() error {
 	if err = rows.Err(); err != nil {
 		return fmt.Errorf("iterating read excluded partitions: %w", err)
 	}
+	jd.statReadExcludedPartitionsCount.Gauge(len(jd.excludedReadPartitions))
 	return nil
 }
