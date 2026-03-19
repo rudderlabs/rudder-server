@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -22,9 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	internalapi "github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/api"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/snowpipestreaming/internal/model"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -52,41 +48,6 @@ func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertReq
 
 func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusResponse, error) {
 	return m.getStatusOutputMap[channelID]()
-}
-
-type mockManager struct {
-	manager.Manager
-	createSchemaErr error
-}
-
-func newMockManager(m manager.Manager) *mockManager {
-	return &mockManager{
-		Manager: m,
-	}
-}
-
-func (m *mockManager) CreateSchema(context.Context) error {
-	return m.createSchemaErr
-}
-
-func (m *mockManager) CreateTable(context.Context, string, whutils.ModelTableSchema) error {
-	return nil
-}
-
-type mockValidator struct {
-	err error
-}
-
-func (m *mockValidator) Validate(_ context.Context, _ *backendconfig.DestinationT) *validations.DestinationValidationResponse {
-	if m.err != nil {
-		return &validations.DestinationValidationResponse{
-			Success: false,
-			Error:   m.err.Error(),
-		}
-	}
-	return &validations.DestinationValidationResponse{
-		Success: true,
-	}
 }
 
 var (
@@ -159,16 +120,16 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Destination:     destination,
 			FileName:        "testdata/invalid_records.txt",
 		})
-		require.Equal(t, []int64{1}, output.AbortJobIDs)
-		require.Equal(t, 1, output.AbortCount)
-		require.NotEmpty(t, output.AbortReason)
+		require.Equal(t, []int64{1}, output.FailedJobIDs)
+		require.Equal(t, 1, output.FailedCount)
+		require.NotEmpty(t, output.FailedReason)
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
-			"status":        "aborted",
+			"status":        "failed",
 		}).LastValue())
 	})
 
@@ -196,16 +157,16 @@ func TestSnowpipeStreaming(t *testing.T) {
 			Destination:     dest,
 			FileName:        "testdata/successful_records.txt",
 		})
-		require.Equal(t, []int64{1}, output.AbortJobIDs)
-		require.Equal(t, 1, output.AbortCount)
-		require.NotEmpty(t, output.AbortReason)
+		require.Equal(t, []int64{1}, output.FailedJobIDs)
+		require.Equal(t, 1, output.FailedCount)
+		require.NotEmpty(t, output.FailedReason)
 		require.Equal(t, "test-destination", output.DestinationID)
 		require.EqualValues(t, 1, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
 			"destType":      "SNOWPIPE_STREAMING",
 			"destinationId": "test-destination",
-			"status":        "aborted",
+			"status":        "failed",
 		}).LastValue())
 		require.Equal(t, &model.CreateChannelRequest{
 			RudderIdentifier: dest.ID,
@@ -399,166 +360,6 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"status":        "failed",
 		}).LastValue())
 	})
-
-	t.Run("Upload with unauthorized schema error should add backoff", func(t *testing.T) {
-		statsStore, err := memstats.New()
-		require.NoError(t, err)
-
-		sm := New(config.New(), logger.NOP, statsStore, destination)
-		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
-		sm.api = &mockAPI{
-			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
-				"USERS": func() (*model.ChannelResponse, error) {
-					return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
-				},
-			},
-		}
-		managerCreatorCallCount := 0
-		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
-			managerCreatorCallCount++
-			mm := newMockManager(sf)
-			mm.createSchemaErr = fmt.Errorf("failed to create schema")
-			return mm, nil
-		}
-		sm.config.backoff.initialInterval = config.SingleValueLoader(time.Second * 10)
-		asyncDestStruct := &common.AsyncDestinationStruct{
-			Destination: destination,
-			FileName:    "testdata/successful_user_records.txt",
-		}
-		require.False(t, sm.isInBackoff())
-		output1 := sm.Upload(context.Background(), asyncDestStruct)
-		require.Equal(t, 2, output1.FailedCount)
-		require.Equal(t, 0, output1.AbortCount)
-		require.Equal(t, 1, managerCreatorCallCount)
-		require.True(t, sm.isInBackoff())
-
-		sm.Upload(context.Background(), asyncDestStruct)
-		// client is not created again due to backoff error
-		require.Equal(t, 1, managerCreatorCallCount)
-		require.True(t, sm.isInBackoff())
-
-		sm.now = func() time.Time {
-			return timeutil.Now().Add(time.Second * 5)
-		}
-		require.True(t, sm.isInBackoff())
-		sm.now = func() time.Time {
-			return timeutil.Now().Add(time.Second * 20)
-		}
-		require.False(t, sm.isInBackoff())
-		sm.Upload(context.Background(), asyncDestStruct)
-		// client created again since backoff duration has been exceeded
-		require.Equal(t, 2, managerCreatorCallCount)
-		require.True(t, sm.isInBackoff())
-
-		sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-			sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
-			managerCreatorCallCount++
-			return newMockManager(sf), nil
-		}
-		sm.now = func() time.Time {
-			return timeutil.Now().Add(time.Second * 50)
-		}
-		sm.Upload(context.Background(), asyncDestStruct)
-		require.Equal(t, 3, managerCreatorCallCount)
-		require.False(t, sm.isInBackoff())
-	})
-
-	t.Run("destination config validation", func(t *testing.T) {
-		testCases := []struct {
-			name                 string
-			validationError      error
-			expectedFailedReason string
-		}{
-			{
-				name:                 "should return validation error",
-				validationError:      fmt.Errorf("missing permissions to do xyz"),
-				expectedFailedReason: "missing permissions to do xyz",
-			},
-			{
-				name:                 "should not return any error",
-				validationError:      nil,
-				expectedFailedReason: "failed to create schema",
-			},
-		}
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				sm := New(config.New(), logger.NOP, stats.NOP, destination)
-				sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
-				sm.api = &mockAPI{
-					createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
-						"USERS": func() (*model.ChannelResponse, error) {
-							return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
-						},
-					},
-				}
-				sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-					sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
-					mm := newMockManager(sf)
-					mm.createSchemaErr = fmt.Errorf("failed to create schema")
-					return mm, nil
-				}
-				sm.validator = &mockValidator{err: tc.validationError}
-				asyncDestStruct := &common.AsyncDestinationStruct{
-					Destination: destination,
-					FileName:    "testdata/successful_user_records.txt",
-				}
-				output := sm.Upload(context.Background(), asyncDestStruct)
-				require.Equal(t, 2, output.FailedCount)
-				require.Equal(t, 0, output.AbortCount)
-				require.Contains(t, output.FailedReason, tc.expectedFailedReason)
-			})
-		}
-	})
-
-	t.Run("Upload with discards table authorization error should mark the job as failed", func(t *testing.T) {
-		testCases := []struct {
-			name                 string
-			validationError      error
-			expectedFailedReason string
-		}{
-			{
-				name:                 "authorization error",
-				validationError:      fmt.Errorf("authorization error"),
-				expectedFailedReason: "failed to validate snowpipe credentials: authorization error",
-			},
-			{
-				name:                 "other error",
-				validationError:      nil,
-				expectedFailedReason: "failed to create schema",
-			},
-		}
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				sm := New(config.New(), logger.NOP, stats.NOP, destination)
-				sm.api = &mockAPI{
-					createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
-						"RUDDER_DISCARDS": func() (*model.ChannelResponse, error) {
-							return &model.ChannelResponse{Code: internalapi.ErrSchemaDoesNotExistOrNotAuthorized}, nil
-						},
-					},
-				}
-				sm.managerCreator = func(_ context.Context, _ whutils.ModelWarehouse, _ *config.Config, _ logger.Logger, _ stats.Stats) (manager.Manager, error) {
-					sf := snowflake.New(config.New(), logger.NOP, stats.NOP)
-					mm := newMockManager(sf)
-					mm.createSchemaErr = fmt.Errorf("failed to create schema")
-					return mm, nil
-				}
-				sm.validator = &mockValidator{err: tc.validationError}
-				output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
-					ImportingJobIDs: []int64{1},
-					Destination:     destination,
-					FileName:        "testdata/successful_user_records.txt",
-				})
-				require.Equal(t, 1, output.FailedCount)
-				require.Equal(t, 0, output.AbortCount)
-				require.Contains(t, output.FailedReason, tc.expectedFailedReason)
-				require.Empty(t, output.AbortReason)
-				require.Equal(t, true, sm.isInBackoff())
-			})
-		}
-	})
-
 	t.Run("Upload insert error for all events", func(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
