@@ -78,7 +78,7 @@ def transformEvent(event, metadata):
 			t, pool, configBackend.URL, "MIRROR_FILTER_ENABLED=true",
 		)
 		t.Cleanup(func() { _ = pool.Purge(pyFilteredContainer) })
-		waitForHealthy(t, pool, pyFilteredURL, "pytransformer-filtered")
+		waitForHealthy(t, pool, pyFilteredURL, "pytransformer-filtered", pyFilteredContainer)
 	})
 	wg.Go(func() {
 		// Start pytransformer WITHOUT mirror filter (default)
@@ -86,7 +86,7 @@ def transformEvent(event, metadata):
 			t, pool, configBackend.URL,
 		)
 		t.Cleanup(func() { _ = pool.Purge(pyNormalContainer) })
-		waitForHealthy(t, pool, pyNormalURL, "pytransformer-normal")
+		waitForHealthy(t, pool, pyNormalURL, "pytransformer-normal", pyNormalContainer)
 	})
 	wg.Wait()
 

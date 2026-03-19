@@ -460,7 +460,9 @@ func startRudderPytransformer(
 }
 
 // waitForHealthy polls a service's /health endpoint until it returns 200 OK.
-func waitForHealthy(t *testing.T, pool *dockertest.Pool, baseURL, name string) {
+// If a container is provided and the health check fails, container state and
+// logs are dumped to the test output to aid CI debugging.
+func waitForHealthy(t *testing.T, pool *dockertest.Pool, baseURL, name string, containers ...*dockertest.Resource) {
 	t.Helper()
 	t.Logf("Waiting for %s at %s to be healthy...", name, baseURL)
 	err := pool.Retry(func() error {
@@ -475,8 +477,41 @@ func waitForHealthy(t *testing.T, pool *dockertest.Pool, baseURL, name string) {
 		}
 		return nil
 	})
+	if err != nil && len(containers) > 0 {
+		dumpContainerLogs(t, pool, containers[0], name)
+	}
 	require.NoError(t, err, "%s failed to become healthy", name)
 	t.Logf("%s is healthy at %s", name, baseURL)
+}
+
+// dumpContainerLogs inspects a container's state and prints its last 100 log
+// lines. This is called when a health check fails so CI output contains enough
+// context to diagnose startup issues.
+func dumpContainerLogs(t *testing.T, pool *dockertest.Pool, container *dockertest.Resource, name string) {
+	t.Helper()
+
+	info, err := pool.Client.InspectContainer(container.Container.ID)
+	if err != nil {
+		t.Logf("Failed to inspect %s container: %v", name, err)
+	} else {
+		t.Logf("%s container state: Running=%v, ExitCode=%d, Status=%s",
+			name, info.State.Running, info.State.ExitCode, info.State.Status)
+	}
+
+	var buf bytes.Buffer
+	err = pool.Client.Logs(docker.LogsOptions{
+		Container:    container.Container.ID,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+		Stdout:       true,
+		Stderr:       true,
+		Tail:         "100",
+	})
+	if err != nil {
+		t.Logf("Failed to fetch %s container logs: %v", name, err)
+		return
+	}
+	t.Logf("=== %s container logs ===\n%s=== end %s logs ===", name, buf.String(), name)
 }
 
 // waitForOpenFaasFlask polls the openfaas-flask-base fwatchdog health endpoint.
