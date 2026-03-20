@@ -540,6 +540,12 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 		}
 		migrateDSProbeCount++
 	}
+	// if we didn't find any eligible datasets, reset firstEligible to nil to avoid confusion,
+	// since a non-nil firstEligible with an empty migrateFrom slice would be contradictory,
+	// e.g. the case of needsPair without a pair actually being found.
+	if len(result.migrateFrom) == 0 {
+		result.firstEligible = nil
+	}
 	return result, nil
 }
 
