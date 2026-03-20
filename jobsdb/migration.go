@@ -76,13 +76,21 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 		return err
 	}
 
-	optimisticCheckResult, err := jd.getMigrationList(dsList, nil)
+	optimisticCheck, err := jd.getMigrationList(dsList, jd.lastMigrateProbeIndex)
+	jd.lastMigrateProbeIndex = nil
 	if err != nil {
 		return fmt.Errorf("could not get migration list: %w", err)
 	}
-	if len(optimisticCheckResult.migrateFrom) == 0 {
-		return nil
+
+	if len(optimisticCheck.migrateFrom) == 0 {
+		// if we reached the probe limit, we know that all datasets before lastProbed are ineligible,
+		// so we can use lastProbed as the resume point for the next iteration
+		if optimisticCheck.probeLimitReached {
+			jd.lastMigrateProbeIndex = optimisticCheck.lastProbed
+		}
+		return nil // no eligible datasets found, nothing to migrate
 	}
+
 	var l lock.LockToken
 	var lockChan chan<- lock.LockToken
 
@@ -97,7 +105,7 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
 			// the pending jobs count cannot change after the dsMigrationLock is acquired.
 			// skip datasets before the first eligible one found in the optimistic check.
-			migrateResult, err := jd.getMigrationList(dsList, optimisticCheckResult.firstEligible)
+			migrateResult, err := jd.getMigrationList(dsList, optimisticCheck.firstEligible)
 			if err != nil {
 				return fmt.Errorf("could not get migration list: %w", err)
 			}
@@ -242,6 +250,17 @@ type migrationListResult struct {
 	// firstEligible is the parsed dsindex of the first dataset found eligible
 	// for migration. nil if no eligible datasets were found.
 	firstEligible *dsindex.Index
+	// lastProbed is the parsed dsindex of the last dataset that was checked
+	// (had checkIfMigrateDS called on it). Used for cross-invocation resumption
+	// so the next migration loop iteration can skip already-probed datasets.
+	// nil if no datasets were probed.
+	lastProbed *dsindex.Index
+	// probeLimitReached is true when the loop stopped because migrateDSProbeCount
+	// exceeded maxMigrateDSProbe. Only when this is true should lastProbed be used
+	// as a cross-invocation resume point, since other exit conditions (idxCheck,
+	// found eligible datasets, etc.) don't guarantee that skipped datasets won't
+	// become eligible before the next iteration.
+	probeLimitReached bool
 }
 
 // based on size of given DSs, gives a list of DSs for us to vacuum full status tables
@@ -474,6 +493,7 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 		if migrateErr != nil {
 			return result, migrateErr
 		}
+		result.lastProbed = dsindex.MustParse(ds.Index)
 		jd.logger.Debugn(
 			"[[ migrateDSLoop ]]: Migrate check",
 			logger.NewBoolField("migrate", migrate),
@@ -510,8 +530,11 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 			}
 		} else {
 			waiting = nil // if there was a DS waiting, we should remove it since its next dataset is not eligible for migration
-			if liveDSCount > 0 || migrateDSProbeCount > jd.conf.migration.maxMigrateDSProbe.Load() {
-				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
+			if liveDSCount > 0 {
+				break
+			}
+			if migrateDSProbeCount > jd.conf.migration.maxMigrateDSProbe.Load() {
+				result.probeLimitReached = true
 				break
 			}
 		}

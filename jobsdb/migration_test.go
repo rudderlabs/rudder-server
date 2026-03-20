@@ -703,35 +703,79 @@ func TestMigrationSkipsDatasets(t *testing.T) {
 
 	require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(statusJobs, "succeeded")))
 
-	// Allow probing enough datasets to reach the eligible one
-	c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
+	t.Run("intra-invocation skip", func(t *testing.T) {
+		// Allow probing enough datasets to reach the eligible one in a single call
+		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
 
-	// Measure first getMigrationList call (full scan, no skip)
-	checkStart := time.Now()
-	checkResult, err := jobDB.getMigrationList(dsList, nil)
-	checkDuration := time.Since(checkStart)
-	require.NoError(t, err)
-	require.NotEmpty(t, checkResult.migrateFrom, "should find eligible datasets")
-	require.NotNil(t, checkResult.firstEligible, "should have firstEligible set")
+		// Measure first getMigrationList call (full scan, no skip)
+		checkStart := time.Now()
+		checkResult, err := jobDB.getMigrationList(dsList, nil)
+		checkDuration := time.Since(checkStart)
+		require.NoError(t, err)
+		require.NotEmpty(t, checkResult.migrateFrom, "should find eligible datasets")
+		require.NotNil(t, checkResult.firstEligible, "should have firstEligible set")
 
-	// Measure second getMigrationList call (with skipBefore from first call)
-	lockCheckStart := time.Now()
-	lockResult, err := jobDB.getMigrationList(dsList, checkResult.firstEligible)
-	lockCheckDuration := time.Since(lockCheckStart)
-	require.NoError(t, err)
-	require.NotEmpty(t, lockResult.migrateFrom)
+		// Measure second getMigrationList call (with skipBefore from first call)
+		lockCheckStart := time.Now()
+		lockResult, err := jobDB.getMigrationList(dsList, checkResult.firstEligible)
+		lockCheckDuration := time.Since(lockCheckStart)
+		require.NoError(t, err)
+		require.NotEmpty(t, lockResult.migrateFrom)
 
-	// Both calls should find the same eligible datasets
-	require.Equal(t, len(checkResult.migrateFrom), len(lockResult.migrateFrom))
-	for i := range checkResult.migrateFrom {
-		require.Equal(t, checkResult.migrateFrom[i].ds.Index, lockResult.migrateFrom[i].ds.Index)
-	}
+		// Both calls should find the same eligible datasets
+		require.Equal(t, len(checkResult.migrateFrom), len(lockResult.migrateFrom))
+		for i := range checkResult.migrateFrom {
+			require.Equal(t, checkResult.migrateFrom[i].ds.Index, lockResult.migrateFrom[i].ds.Index)
+		}
 
-	t.Logf("check duration (no skip):   %v", checkDuration)
-	t.Logf("lock check duration (skip):  %v", lockCheckDuration)
+		t.Logf("check duration (no skip):   %v", checkDuration)
+		t.Logf("lock check duration (skip):  %v", lockCheckDuration)
 
-	// The second call with skipBefore should be significantly faster
-	require.Greater(t, checkDuration, lockCheckDuration,
-		"getMigrationList with skipBefore should be faster than without",
-	)
+		// The second call with skipBefore should be significantly faster
+		require.Greater(t, checkDuration, lockCheckDuration,
+			"getMigrationList with skipBefore should be faster than without",
+		)
+	})
+
+	t.Run("cross-invocation resume", func(t *testing.T) {
+		// Set maxMigrateDSProbe to 100 so the first iteration can't reach the
+		// eligible dataset at position 150. It will need 2 iterations.
+		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", 100)
+		jobDB.lastMigrateProbeIndex = nil
+
+		// 1st iteration: probes datasets 1..100, finds nothing, hits probe limit.
+		// Should store lastMigrateProbeIndex for resumption.
+		result1, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex)
+		require.NoError(t, err)
+		require.Empty(t, result1.migrateFrom, "should not find eligible datasets in first 100")
+		require.True(t, result1.probeLimitReached, "should hit probe limit")
+		require.NotNil(t, result1.lastProbed, "should have lastProbed set")
+
+		// Simulate what doMigrateDS does: save the resume point
+		jobDB.lastMigrateProbeIndex = result1.lastProbed
+
+		// 2nd iteration: resumes from where the first left off, finds the eligible dataset.
+		resumeStart := time.Now()
+		result2, err := jobDB.getMigrationList(dsList, jobDB.lastMigrateProbeIndex)
+		resumeDuration := time.Since(resumeStart)
+		require.NoError(t, err)
+		require.NotEmpty(t, result2.migrateFrom, "should find eligible datasets in second iteration")
+		require.Equal(t, dsList[eligibleDSPos].Index, result2.migrateFrom[0].ds.Index)
+
+		// Compare with a full scan from scratch
+		c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
+		fullStart := time.Now()
+		resultFull, err := jobDB.getMigrationList(dsList, nil)
+		fullDuration := time.Since(fullStart)
+		require.NoError(t, err)
+		require.NotEmpty(t, resultFull.migrateFrom)
+
+		t.Logf("full scan duration:    %v", fullDuration)
+		t.Logf("resumed scan duration: %v", resumeDuration)
+
+		// The resumed scan should be faster than a full scan
+		require.Greater(t, fullDuration, resumeDuration,
+			"resumed scan should be faster than full scan from scratch",
+		)
+	})
 }
