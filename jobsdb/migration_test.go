@@ -652,3 +652,86 @@ func Test_GetColumnConversion(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+func TestMigrationSkipsDatasets(t *testing.T) {
+	config.Reset()
+	c := config.New()
+	c.Set("JobsDB.maxDSSize", 10)
+
+	_ = startPostgres(t)
+
+	triggerAddNewDS := make(chan time.Time)
+	triggerMigrateDS := make(chan time.Time)
+
+	jobDB := Handle{
+		TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
+		TriggerMigrateDS: func() <-chan time.Time { return triggerMigrateDS },
+		config:           c,
+	}
+	tablePrefix := strings.ToLower(rand.String(5))
+	require.NoError(t, jobDB.Setup(ReadWrite, true, tablePrefix))
+	defer jobDB.TearDown()
+
+	const totalDS = 200
+	const eligibleDSPos = 150 // 0-indexed position of the dataset we'll make eligible
+
+	// Create totalDS datasets: store jobs then trigger addNewDS to create the next one
+	for i := range totalDS - 1 { // -1 because Setup already creates DS 1
+		_ = i
+		require.NoError(t, jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, "test", 10, 1)))
+		triggerAddNewDS <- time.Now()
+		triggerAddNewDS <- time.Now()
+	}
+	// Store jobs in the last DS too
+	require.NoError(t, jobDB.Store(context.Background(), genJobs(defaultWorkspaceID, "test", 10, 1)))
+
+	dsList := jobDB.getDSList()
+	require.Len(t, dsList, totalDS)
+
+	// Make all jobs in the dataset at eligibleDSPos terminal (succeeded)
+	eligibleDS := dsList[eligibleDSPos]
+	rows, err := jobDB.dbHandle.Query(fmt.Sprintf(`SELECT job_id FROM %q`, eligibleDS.JobTable))
+	require.NoError(t, err)
+	var statusJobs []*JobT
+	for rows.Next() {
+		var id int64
+		require.NoError(t, rows.Scan(&id))
+		statusJobs = append(statusJobs, &JobT{JobID: id})
+	}
+	require.NoError(t, rows.Err())
+	_ = rows.Close()
+
+	require.NoError(t, jobDB.UpdateJobStatus(context.Background(), genJobStatuses(statusJobs, "succeeded")))
+
+	// Allow probing enough datasets to reach the eligible one
+	c.Set("JobsDB."+tablePrefix+"."+"maxMigrateDSProbe", totalDS)
+
+	// Measure first getMigrationList call (full scan, no skip)
+	checkStart := time.Now()
+	checkResult, err := jobDB.getMigrationList(dsList, nil)
+	checkDuration := time.Since(checkStart)
+	require.NoError(t, err)
+	require.NotEmpty(t, checkResult.migrateFrom, "should find eligible datasets")
+	require.NotNil(t, checkResult.firstEligible, "should have firstEligible set")
+
+	// Measure second getMigrationList call (with skipBefore from first call)
+	lockCheckStart := time.Now()
+	lockResult, err := jobDB.getMigrationList(dsList, checkResult.firstEligible)
+	lockCheckDuration := time.Since(lockCheckStart)
+	require.NoError(t, err)
+	require.NotEmpty(t, lockResult.migrateFrom)
+
+	// Both calls should find the same eligible datasets
+	require.Equal(t, len(checkResult.migrateFrom), len(lockResult.migrateFrom))
+	for i := range checkResult.migrateFrom {
+		require.Equal(t, checkResult.migrateFrom[i].ds.Index, lockResult.migrateFrom[i].ds.Index)
+	}
+
+	t.Logf("check duration (no skip):   %v", checkDuration)
+	t.Logf("lock check duration (skip):  %v", lockCheckDuration)
+
+	// The second call with skipBefore should be significantly faster
+	require.Greater(t, checkDuration, lockCheckDuration,
+		"getMigrationList with skipBefore should be faster than without",
+	)
+}
