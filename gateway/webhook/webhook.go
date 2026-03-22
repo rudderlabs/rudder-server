@@ -321,6 +321,9 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
 		// If unable to fetch features from transformer, send GatewayTimeout to all requests
+		if len(breq.batchRequest) == 0 {       //ensures that we don't process empty batch requests
+			continue
+		}
 		ctx := breq.batchRequest[0].request.Context()
 		sourceTransformAdapter, err := bt.sourceTransformAdapter(ctx)
 		if err != nil {
