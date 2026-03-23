@@ -257,8 +257,9 @@ type ValidationError struct {
 
 // Response represents a Transformer response
 type Response struct {
-	Events       []TransformerResponse
-	FailedEvents []TransformerResponse
+	Events         []TransformerResponse
+	FailedEvents   []TransformerResponse
+	MirrorFiltered bool
 }
 
 // Equal compares two Response structs and returns true if they are equal

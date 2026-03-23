@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -76,8 +77,9 @@ func NewMigrationJobExecutor(migrationJobID string, nodeIndex int, partitionIDs 
 		logger.NewStringField("partitions", strings.Join(mpe.partitionIDs, ",")),
 		logger.NewStringField("target", mpe.target),
 	)
-	mpe.batchSize = mpe.conf.GetReloadableIntVar(10000, 1, "PartitionMigration.Executor.BatchSize")
-	mpe.chunkSize = mpe.conf.GetReloadableIntVar(1000, 1, "PartitionMigration.Executor.ChunkSize")
+	mpe.batchSize = mpe.conf.GetReloadableIntVar(2000, 1, "PartitionMigration.Executor.BatchSize")
+	mpe.payloadSizeLimit = mpe.conf.GetReloadableInt64Var(100, bytesize.MB, "PartitionMigration.Executor.PayloadSizeLimit") // 100 MB
+	mpe.chunkSize = mpe.conf.GetReloadableIntVar(200, 1, "PartitionMigration.Executor.ChunkSize")
 	mpe.progressPeriod = mpe.conf.GetReloadableDurationVar(30, time.Second, "PartitionMigration.Executor.ProgressPeriod")
 	mpe.sendTimeout = mpe.conf.GetReloadableDurationVar(10, time.Minute, "PartitionMigration.Executor.SendTimeout", "PartitionMigration.Executor.StreamTimeout")
 	mpe.receiveTimeout = mpe.conf.GetReloadableDurationVar(10, time.Minute, "PartitionMigration.Executor.ReceiveTimeout", "PartitionMigration.Executor.StreamTimeout")
@@ -101,11 +103,12 @@ type migrationJobExecutor struct {
 	logger logger.Logger
 	stats  stats.Stats
 
-	batchSize      config.ValueLoader[int]           // number of jobs to fetch in each batch
-	chunkSize      config.ValueLoader[int]           // number of jobs to send in each chunk to the remote server
-	progressPeriod config.ValueLoader[time.Duration] // period for logging progress
-	sendTimeout    config.ValueLoader[time.Duration] // timeout for stream send operations
-	receiveTimeout config.ValueLoader[time.Duration] // timeout for stream receive operations
+	batchSize        config.ValueLoader[int]           // number of jobs to fetch in each batch
+	payloadSizeLimit config.ValueLoader[int64]         // maximum total payload size of jobs to fetch
+	chunkSize        config.ValueLoader[int]           // number of jobs to send in each chunk to the remote server
+	progressPeriod   config.ValueLoader[time.Duration] // period for logging progress
+	sendTimeout      config.ValueLoader[time.Duration] // timeout for stream send operations
+	receiveTimeout   config.ValueLoader[time.Duration] // timeout for stream receive operations
 }
 
 // Run executes the migration job
@@ -190,6 +193,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 			jobs, err := mpe.sourceDB.GetToProcess(streamCtx, jobsdb.GetQueryParams{
 				PartitionFilters: mpe.partitionIDs,
 				JobsLimit:        mpe.batchSize.Load(),
+				PayloadSizeLimit: mpe.payloadSizeLimit.Load(),
 			}, nil)
 			if err != nil {
 				return fmt.Errorf("getting batch %d of jobs to process: %w", batchIndex, err)
@@ -378,6 +382,7 @@ func (mpe *migrationJobExecutor) markExecutingJobsAsFailed(ctx context.Context) 
 		executingJobsResult, err := mpe.sourceDB.GetJobs(ctx, []string{jobsdb.Executing.State}, jobsdb.GetQueryParams{
 			PartitionFilters: mpe.partitionIDs,
 			JobsLimit:        mpe.batchSize.Load(),
+			PayloadSizeLimit: mpe.payloadSizeLimit.Load(),
 		})
 		if err != nil {
 			return fmt.Errorf("getting executing jobs: %w", err)

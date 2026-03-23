@@ -88,7 +88,7 @@ require (
 	github.com/rudderlabs/keydb v1.3.0
 	github.com/rudderlabs/rudder-go-kit v0.74.0
 	github.com/rudderlabs/rudder-observability-kit v0.0.6
-	github.com/rudderlabs/rudder-schemas v0.10.0
+	github.com/rudderlabs/rudder-schemas v0.11.0
 	github.com/rudderlabs/rudder-transformer/go v1.126.2-beta
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.20.3
