@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.71.0](https://github.com/rudderlabs/rudder-server/compare/v1.70.0...v1.71.0) (2026-03-23)
+
+
+### Bug Fixes
+
+* snowpipe streaming remove authz error handling ([#6777](https://github.com/rudderlabs/rudder-server/issues/6777)) ([5eaffb6](https://github.com/rudderlabs/rudder-server/commit/5eaffb6daa6d857a8404a4a963634e727a938343))
+
+
+### Miscellaneous
+
+* bump rudder-schemas to 0.11.0 ([#6779](https://github.com/rudderlabs/rudder-server/issues/6779)) ([7c7296b](https://github.com/rudderlabs/rudder-server/commit/7c7296b6e1a5b67800c30af6cce5ef951fbf96ac))
+* bump rudder-transformer to v1.126.2 ([#6774](https://github.com/rudderlabs/rudder-server/issues/6774)) ([69692ac](https://github.com/rudderlabs/rudder-server/commit/69692ac730d6c8a823afc89654e451c15e05d8f7))
+* force release 1.71.0 ([#6791](https://github.com/rudderlabs/rudder-server/issues/6791)) ([9cf21c7](https://github.com/rudderlabs/rudder-server/commit/9cf21c7effc7ab8cf87fae412b58cf8072816424))
+* **jobsdb:** partition migration improvements ([#6772](https://github.com/rudderlabs/rudder-server/issues/6772)) ([57b1c70](https://github.com/rudderlabs/rudder-server/commit/57b1c70a1b26aca730a2141aacaedefb0739e06d))
+* sync release v1.70.0 to main branch ([#6775](https://github.com/rudderlabs/rudder-server/issues/6775)) ([74125a6](https://github.com/rudderlabs/rudder-server/commit/74125a6bb068673472f188814a1f742e60a8c0b3))
+* ut mirror filtering ([#6776](https://github.com/rudderlabs/rudder-server/issues/6776)) ([fa4d1c4](https://github.com/rudderlabs/rudder-server/commit/fa4d1c4cb90480166efffa2ec2d976703d32db98))
+
 ## [1.70.1](https://github.com/rudderlabs/rudder-server/compare/v1.70.0...v1.70.1) (2026-03-19)
 
 
