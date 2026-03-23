@@ -245,7 +245,7 @@ func TestSendPostWithGzipData(t *testing.T) {
 		structData.Type = "REST"
 		structData.URL = testServer.URL
 		structData.UserID = "anon_id"
-		structData.Headers = map[string]any{
+		structData.Headers = map[string]string{
 			"X-Custom-Header": "test",
 		}
 		structData.Body = map[string]any{
@@ -277,7 +277,7 @@ func TestSendPost(t *testing.T) {
 		structData.RequestMethod = "POST"
 		structData.URL = "https://www.google-analytics.com/collect"
 		structData.UserID = "anon_id"
-		structData.Headers = map[string]any{}
+		structData.Headers = map[string]string{}
 		structData.QueryParams = map[string]any{
 			"aiid": "com.rudderlabs.android.sdk",
 			"an":   "RudderAndroidClient",

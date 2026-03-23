@@ -223,7 +223,7 @@ func (network *netHandle) SendPost(ctx context.Context, structData integrations.
 		req.URL.RawQuery = queryParams.Encode()
 		headerKV := postInfo.Headers
 		for key, val := range headerKV {
-			req.Header.Add(key, val.(string))
+			req.Header.Add(key, val)
 		}
 
 		for key, val := range headers {

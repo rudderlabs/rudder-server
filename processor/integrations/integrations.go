@@ -15,11 +15,11 @@ type PostParametersT struct {
 	EndpointPath  string `json:"endpointPath,omitempty"`
 	RequestMethod string `json:"method"`
 	// Invalid tag used in struct. skipcq: SCC-SA5008
-	UserID      string         `json:"userId"`
-	Headers     map[string]any `json:"headers"`
-	QueryParams map[string]any `json:"params"`
-	Body        map[string]any `json:"body"`
-	Files       map[string]any `json:"files"`
+	UserID      string            `json:"userId"`
+	Headers     map[string]string `json:"headers"`
+	QueryParams map[string]any    `json:"params"`
+	Body        map[string]any    `json:"body"`
+	Files       map[string]any    `json:"files"`
 }
 
 type TransStatsT struct {
