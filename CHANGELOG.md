@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.2](https://github.com/rudderlabs/rudder-server/compare/v1.70.1...v1.70.2) (2026-03-23)
+
+
+### Bug Fixes
+
+* router panics when invalid header format is returned by transformer ([#6795](https://github.com/rudderlabs/rudder-server/issues/6795)) ([6023648](https://github.com/rudderlabs/rudder-server/commit/60236484c0789d24950e3ff5b5a2a75eafc80160))
+
 ## [1.70.1](https://github.com/rudderlabs/rudder-server/compare/v1.70.0...v1.70.1) (2026-03-19)
 
 
