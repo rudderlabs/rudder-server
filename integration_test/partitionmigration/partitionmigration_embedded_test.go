@@ -281,7 +281,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 	require.NoError(t, err)
 	// create the migration
 	start := time.Now()
-	_, err = rudoResource.CreateMigration(ctx, rudo.WorkspaceMigration{
+	_, err = rudoResource.CreateMigration(ctx, []rudo.WorkspaceMigration{{
 		WorkspaceID: workspaceID,
 		Migrations: []rudo.Migration{
 			// move a partition from node 0 to node 1
@@ -289,7 +289,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 			// move a partition from node 1 to node 0
 			{Src: rudo.Src{ServerID: 1, PartitionIdxs: []int{node1PartitionToMigrate}}, Dst: rudo.Dst{ServerID: 0}},
 		},
-	})
+	}})
 	require.NoError(t, err)
 	// wait for migration to complete
 	require.Eventually(t, func() bool {

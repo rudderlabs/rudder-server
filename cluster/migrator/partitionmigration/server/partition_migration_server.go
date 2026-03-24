@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/cluster"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/tx"
 )
 
@@ -121,7 +121,7 @@ func (s *partitionMigrationServer) StreamJobs(stream proto.PartitionMigration_St
 		log := s.logger.Withn(
 			logger.NewStringField("migrationJobID", metadata.MigrationJobId),
 			logger.NewStringField("tablePrefix", metadata.TablePrefix),
-			logger.NewStringField("partitions", strings.Join(metadata.PartitionIds, ",")),
+			logger.NewStringField("partitions", misc.TruncatedList(metadata.PartitionIds, 10)),
 		)
 		statTags := stats.Tags{
 			"tablePrefix": metadata.TablePrefix,

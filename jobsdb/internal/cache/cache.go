@@ -12,6 +12,8 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 const (
@@ -108,7 +110,7 @@ func (c *NoResultsCache[T]) Invalidate(dataset string, partitions []string, work
 		if c.warnOnBranchInvalidation.Load() && (len(customVals) > 0 || len(states) > 0 || len(parameters) > 0) {
 			c.logger.Warnn("Cache Invalidation Bug: invalidating entire dataset",
 				logger.NewStringField("dataset", dataset),
-				logger.NewStringField("partitions", strings.Join(partitions, ",")),
+				logger.NewStringField("partitions", misc.TruncatedList(partitions, 10)),
 				logger.NewStringField("workspace", workspace),
 				logger.NewStringField("customVals", strings.Join(customVals, ",")),
 				logger.NewStringField("states", strings.Join(states, ",")),
