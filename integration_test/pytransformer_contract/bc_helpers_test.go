@@ -120,12 +120,18 @@ func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string) *bcTest
 	oldArchConf.Set("Processor.UserTransformer.maxRetry", 2)
 	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	oldArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	oldArchConf.Set("Processor.UserTransformer.failOnError", true)
+	oldArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
+	oldArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
 
 	newArchConf := config.New()
 	newArchConf.Set("Processor.UserTransformer.maxRetry", 2)
 	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	newArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
+	newArchConf.Set("Processor.UserTransformer.failOnError", true)
+	newArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
+	newArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
 
 	var (
