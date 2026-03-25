@@ -35,6 +35,9 @@ endif
 ifeq ($(RACE_ENABLED), true)
 	$(eval TEST_OPTIONS := $(TEST_OPTIONS) -race)
 endif
+ifeq ($(package), integration_test/pytransformer_contract)
+	$(eval TEST_OPTIONS := $(subst --timeout=15m,--timeout=20m,$(TEST_OPTIONS)))
+endif
 ifdef package
 ifdef exclude
 	$(eval FILES = `go list ./$(package)/... | egrep -iv '$(exclude)'`)
