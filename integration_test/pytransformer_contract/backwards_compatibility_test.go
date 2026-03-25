@@ -25,10 +25,11 @@ import (
 // since openfaas loads transformation code at startup (one version per container).
 func TestBackwardsCompatibility(t *testing.T) {
 	type subtest struct {
-		name      string
-		versionID string
-		config    configBackendEntry
-		run       func(t *testing.T, env *bcTestEnv)
+		name                string
+		versionID           string
+		config              configBackendEntry
+		run                 func(t *testing.T, env *bcTestEnv)
+		skipRetryCountMatch bool
 	}
 
 	subtests := []subtest{
@@ -599,9 +600,10 @@ def transformEvent(event, metadata):
 			},
 		},
 		{
-			name:      "ConfigBackendInternalError",
-			versionID: "bc-cb-500-v1",
-			config:    configBackendEntry{statusCode: http.StatusInternalServerError},
+			name:                "ConfigBackendInternalError",
+			versionID:           "bc-cb-500-v1",
+			config:              configBackendEntry{statusCode: http.StatusInternalServerError},
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-cb-500-v1"
 
@@ -610,30 +612,24 @@ def transformEvent(event, metadata):
 					makeEvent("msg-2", versionID),
 				}
 
+				// Old arch: transformer returns 809 (CP down) → failed events
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+
+				// New arch: pytransformer returns 503 + retry for config backend 5xx
+				// → retries exhausted → failed events (different status code from old arch)
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
 				require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
-
-				// Normalize JSON key ordering in Error strings (raw JSON body from non-200 responses)
-				normalizeResponseErrors(&oldResp)
-				normalizeResponseErrors(&newResp)
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 500 config backend")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
 			},
 		},
 		{
-			name:      "ConfigBackend5xx",
-			versionID: "bc-cb-5xx-v1",
+			name:                "ConfigBackend5xx",
+			versionID:           "bc-cb-5xx-v1",
+			skipRetryCountMatch: true,
 			// config is zero-value — the individual 5xx versionIDs are registered separately below.
 			run: func(t *testing.T, env *bcTestEnv) {
 				for _, statusCode := range []int{
@@ -649,24 +645,18 @@ def transformEvent(event, metadata):
 							makeEvent("msg-2", versionID),
 						}
 
+						// Old arch: transformer returns 809 (CP down) → failed events
 						oldResp := env.OldClient.Transform(context.Background(), events)
 						t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+						require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
+						require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
+
+						// New arch: pytransformer returns 503 + retry for config backend 5xx
+						// → retries exhausted → failed events (different status code from old arch)
 						newResp := env.NewClient.Transform(context.Background(), events)
 						t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-						require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 						require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-						require.True(t, len(oldResp.FailedEvents) > 0, "old arch: expected at least 1 failed event")
 						require.True(t, len(newResp.FailedEvents) > 0, "new arch: expected at least 1 failed event")
-
-						normalizeResponseErrors(&oldResp)
-						normalizeResponseErrors(&newResp)
-						diff, equal := oldResp.Equal(&newResp)
-						if equal {
-							t.Logf("Both architectures produce identical responses for %d config backend", statusCode)
-						} else {
-							t.Errorf("Responses differ:\n%s", diff)
-						}
 					})
 				}
 			},
@@ -1754,7 +1744,10 @@ def transformEvent(event, metadata):
 	// retry counts are isolated per subtest.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
@@ -1773,7 +1766,9 @@ def transformEvent(event, metadata):
 			}
 
 			st.run(t, env)
-			env.assertRetryCountsMatch(t)
+			if !st.skipRetryCountMatch {
+				env.assertRetryCountsMatch(t)
+			}
 		})
 	}
 }

@@ -1367,7 +1367,7 @@ def transformEvent(event, metadata):
 	// Run subtests sequentially.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL, withLimitedRetryableHTTPRetries())
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
@@ -1631,7 +1631,7 @@ def transformBatch(events, metadata):
 
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL, withLimitedRetryableHTTPRetries())
 
 			if st.config.code != "" {
 				// Start openfaas WITHOUT geolocation URL (not configured test).
@@ -1659,11 +1659,12 @@ def transformBatch(events, metadata):
 // Both architectures raise: "geolocation fetch failed with status code: {code}"
 func TestBackwardsCompatibilityGeolocationFailure(t *testing.T) {
 	type subtest struct {
-		name      string
-		versionID string
-		config    configBackendEntry
-		setup     func() // called before run to configure mock behavior
-		run       func(t *testing.T, env *bcTestEnv)
+		name                string
+		versionID           string
+		config              configBackendEntry
+		setup               func() // called before run to configure mock behavior
+		run                 func(t *testing.T, env *bcTestEnv)
+		skipRetryCountMatch bool // skip assertRetryCountsMatch when old/new arch retry differently
 	}
 
 	mockGeoService, mockGeoCfg := newConfigurableMockGeolocationService(t)
@@ -1683,7 +1684,8 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(500) },
+			setup:               func() { mockGeoCfg.setResponse(500) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-v1"
 
@@ -1693,26 +1695,20 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+				// Old arch: except Exception catches the error → success event with geo_error
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
+
+				// New arch: GeolocationServerError(BaseException) bypasses except Exception
+				// → propagates as HTTP 503 with retry → retries exhausted → failed event
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
-				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 500")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -1727,7 +1723,8 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(502) },
+			setup:               func() { mockGeoCfg.setResponse(502) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-502-v1"
 
@@ -1737,26 +1734,16 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				require.Contains(t, oldError, "status code: 502", "old arch: error should mention 502")
+
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 502", "old arch: error should mention 502")
-				require.Contains(t, newError, "status code: 502", "new arch: error should mention 502")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 502")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -1771,7 +1758,8 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(503) },
+			setup:               func() { mockGeoCfg.setResponse(503) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-503-v1"
 
@@ -1781,26 +1769,16 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
+
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
-				require.Contains(t, newError, "status code: 503", "new arch: error should mention 503")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for 503")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -1856,7 +1834,8 @@ def transformEvent(event, metadata):
     event["geo"] = result
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(500) },
+			setup:               func() { mockGeoCfg.setResponse(500) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-uncaught-v1"
 
@@ -1866,29 +1845,21 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-				// Both should produce a failed event since the exception propagates
+				// Both produce failed events, but via different paths:
+				// Old arch: exception propagates → failed event with "status code: 500"
+				// New arch: GeolocationServerError → 503 retries → exhausted → failed event
 				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				oldError := oldResp.FailedEvents[0].Error
+				t.Logf("Old arch error: %q", oldError)
+				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
 				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
-
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
-				t.Logf("Old arch error: %q", oldError)
-				t.Logf("New arch error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 500", "old arch: error should mention 500")
-				require.Contains(t, newError, "status code: 500", "new arch: error should mention 500")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught 500")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -1904,7 +1875,8 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(500) },
+			setup:               func() { mockGeoCfg.setResponse(500) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-batch-v1"
 
@@ -1916,25 +1888,16 @@ def transformBatch(events, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.Containsf(t, oldError, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Containsf(t, newError, "status code: 500", "new arch: event %d error should mention 500", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 500")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
 			},
 		},
 		{
@@ -1950,7 +1913,8 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(502) },
+			setup:               func() { mockGeoCfg.setResponse(502) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-502-batch-v1"
 
@@ -1962,25 +1926,16 @@ def transformBatch(events, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.Containsf(t, oldError, "status code: 502", "old arch: event %d error should mention 502", i)
-					require.Containsf(t, newError, "status code: 502", "new arch: event %d error should mention 502", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 502")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
 			},
 		},
 		{
@@ -1996,7 +1951,8 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(503) },
+			setup:               func() { mockGeoCfg.setResponse(503) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-503-batch-v1"
 
@@ -2008,25 +1964,16 @@ def transformBatch(events, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.Containsf(t, oldError, "status code: 503", "old arch: event %d error should mention 503", i)
-					require.Containsf(t, newError, "status code: 503", "new arch: event %d error should mention 503", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 503")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo 5xx triggers retries)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
 			},
 		},
 		{
@@ -2087,7 +2034,8 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup: func() { mockGeoCfg.setConnectionClose() },
+			setup:               func() { mockGeoCfg.setConnectionClose() },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-conn-reset-v1"
 
@@ -2095,23 +2043,20 @@ def transformEvent(event, metadata):
 					makeEvent("msg-1", versionID),
 				}
 
+				// Old arch: connection error raises Exception → caught by except → success with geo_error
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
+				t.Logf("Old arch geo_error: %q", oldError)
+				require.NotEmpty(t, oldError, "old arch: should have a geo_error")
+
+				// New arch: connection error → GeolocationServerError(BaseException) → 503 retries → failed event
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				// Both should succeed (error caught by try/except)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
-				// Both should have a geo_error from the network failure
-				oldError, _ := oldResp.Events[0].Output["geo_error"].(string)
-				newError, _ := newResp.Events[0].Output["geo_error"].(string)
-				t.Logf("Old arch geo_error: %q", oldError)
-				t.Logf("New arch geo_error: %q", newError)
-
-				require.NotEmpty(t, oldError, "old arch: should have a geo_error")
-				require.NotEmpty(t, newError, "new arch: should have a geo_error")
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo errors trigger retries)")
+				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -2127,7 +2072,8 @@ def transformBatch(events, metadata):
             event["geo_error"] = str(e)
     return events
 `},
-			setup: func() { mockGeoCfg.setConnectionClose() },
+			setup:               func() { mockGeoCfg.setConnectionClose() },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-conn-reset-batch-v1"
 
@@ -2139,18 +2085,16 @@ def transformBatch(events, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 3, len(oldResp.Events), "old arch: 3 success events expected")
-				require.Equal(t, 3, len(newResp.Events), "new arch: 3 success events expected")
-
 				for i := range oldResp.Events {
 					oldError, _ := oldResp.Events[i].Output["geo_error"].(string)
-					newError, _ := newResp.Events[i].Output["geo_error"].(string)
 					require.NotEmptyf(t, oldError, "old arch: event %d should have a geo_error", i)
-					require.NotEmptyf(t, newError, "new arch: event %d should have a geo_error", i)
 				}
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected (geo errors trigger retries)")
+				require.Equal(t, 3, len(newResp.FailedEvents), "new arch: 3 failed events expected")
 			},
 		},
 		{
@@ -2206,7 +2150,8 @@ def transformEvent(event, metadata):
     event["geo"] = result
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(502) },
+			setup:               func() { mockGeoCfg.setResponse(502) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-502-uncaught-v1"
 
@@ -2216,28 +2161,16 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				t.Logf("Old arch error: %q", oldResp.FailedEvents[0].Error)
+				require.Contains(t, oldResp.FailedEvents[0].Error, "status code: 502", "old arch: error should mention 502")
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
 				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
-
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
-				t.Logf("Old arch error: %q", oldError)
-				t.Logf("New arch error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 502", "old arch: error should mention 502")
-				require.Contains(t, newError, "status code: 502", "new arch: error should mention 502")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught 502")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -2249,7 +2182,8 @@ def transformEvent(event, metadata):
     event["geo"] = result
     return event
 `},
-			setup: func() { mockGeoCfg.setResponse(503) },
+			setup:               func() { mockGeoCfg.setResponse(503) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-503-uncaught-v1"
 
@@ -2259,28 +2193,16 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				t.Logf("Old arch error: %q", oldResp.FailedEvents[0].Error)
+				require.Contains(t, oldResp.FailedEvents[0].Error, "status code: 503", "old arch: error should mention 503")
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
 				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
-
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
-				t.Logf("Old arch error: %q", oldError)
-				t.Logf("New arch error: %q", newError)
-
-				require.Contains(t, oldError, "status code: 503", "old arch: error should mention 503")
-				require.Contains(t, newError, "status code: 503", "new arch: error should mention 503")
-
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical error for uncaught 503")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
 			},
 		},
 		{
@@ -2335,7 +2257,8 @@ def transformEvent(event, metadata):
     event["geo"] = result
     return event
 `},
-			setup: func() { mockGeoCfg.setConnectionClose() },
+			setup:               func() { mockGeoCfg.setConnectionClose() },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-conn-reset-uncaught-v1"
 
@@ -2345,21 +2268,17 @@ def transformEvent(event, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 1, len(oldResp.FailedEvents), "old arch: 1 failed event expected")
+				t.Logf("Old arch error: %q", oldResp.FailedEvents[0].Error)
+				require.NotEmpty(t, oldResp.FailedEvents[0].Error, "old arch: should have an error")
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
 				require.Equal(t, 1, len(newResp.FailedEvents), "new arch: 1 failed event expected")
-
-				oldError := oldResp.FailedEvents[0].Error
-				newError := newResp.FailedEvents[0].Error
-				t.Logf("Old arch error: %q", oldError)
-				t.Logf("New arch error: %q", newError)
-
-				require.NotEmpty(t, oldError, "old arch: should have an error")
-				require.NotEmpty(t, newError, "new arch: should have an error")
+				t.Logf("New arch error: %q", newResp.FailedEvents[0].Error)
+				require.NotEmpty(t, newResp.FailedEvents[0].Error, "new arch: should have an error")
 			},
 		},
 		{
@@ -2372,7 +2291,8 @@ def transformBatch(events, metadata):
         event["geo"] = geo
     return events
 `},
-			setup: func() { mockGeoCfg.setResponse(500) },
+			setup:               func() { mockGeoCfg.setResponse(500) },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-status-500-batch-uncaught-v1"
 
@@ -2383,25 +2303,16 @@ def transformBatch(events, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
-
 				for i := range oldResp.FailedEvents {
 					require.Containsf(t, oldResp.FailedEvents[i].Error, "status code: 500", "old arch: event %d error should mention 500", i)
-					require.Containsf(t, newResp.FailedEvents[i].Error, "status code: 500", "new arch: event %d error should mention 500", i)
 				}
 
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Both architectures produce identical responses for batch 500 uncaught")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
 			},
 		},
 		{
@@ -2414,7 +2325,8 @@ def transformBatch(events, metadata):
         event["geo"] = geo
     return events
 `},
-			setup: func() { mockGeoCfg.setConnectionClose() },
+			setup:               func() { mockGeoCfg.setConnectionClose() },
+			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-conn-reset-batch-uncaught-v1"
 
@@ -2425,16 +2337,17 @@ def transformBatch(events, metadata):
 
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 0, len(oldResp.Events), "old arch: no success events expected")
 				require.Equal(t, 2, len(oldResp.FailedEvents), "old arch: 2 failed events expected")
-				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
-				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
-
 				for i := range oldResp.FailedEvents {
 					require.NotEmptyf(t, oldResp.FailedEvents[i].Error, "old arch: event %d should have an error", i)
+				}
+
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Equal(t, 0, len(newResp.Events), "new arch: no success events expected")
+				require.Equal(t, 2, len(newResp.FailedEvents), "new arch: 2 failed events expected")
+				for i := range newResp.FailedEvents {
 					require.NotEmptyf(t, newResp.FailedEvents[i].Error, "new arch: event %d should have an error", i)
 				}
 			},
@@ -2496,7 +2409,10 @@ def transformBatch(events, metadata):
 	// Run subtests sequentially.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
@@ -2516,7 +2432,9 @@ def transformBatch(events, metadata):
 			}
 
 			st.run(t, env)
-			env.assertRetryCountsMatch(t)
+			if !st.skipRetryCountMatch {
+				env.assertRetryCountsMatch(t)
+			}
 		})
 	}
 }

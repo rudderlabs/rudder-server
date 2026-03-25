@@ -107,6 +107,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	labels := types.TransformerMetricLabels{
 		Endpoint:         transformerutils.GetEndpointFromURL(userURL),
 		Stage:            "user_transformer",
+		Language:         transformationLanguage,
 		DestinationType:  clientEvents[0].Destination.DestinationDefinition.Name,
 		SourceType:       clientEvents[0].Metadata.SourceType,
 		WorkspaceID:      clientEvents[0].Metadata.WorkspaceID,

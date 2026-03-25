@@ -252,6 +252,7 @@ func TestUserTransformer(t *testing.T) {
 					labels := types.TransformerMetricLabels{
 						Endpoint:         transformerutils.GetEndpointFromURL(srv.URL),
 						Stage:            "user_transformer",
+						Language:         "javascript",
 						SourceID:         Metadata.SourceID,
 						SourceType:       Metadata.SourceType,
 						DestinationType:  destinationConfig.DestinationDefinition.Name,
@@ -275,7 +276,7 @@ func TestUserTransformer(t *testing.T) {
 								"destinationId":    destinationConfig.ID,
 								"transformationId": destinationConfig.Transformations[0].ID,
 								"workspaceId":      Metadata.WorkspaceID,
-								"language":         "",
+								"language":         "javascript",
 								"mirroring":        "false",
 								"success":          "true",
 
@@ -1150,6 +1151,102 @@ func TestUserTransformer(t *testing.T) {
 
 					require.Equal(t, expectedResponse, rsp)
 				})
+			})
+
+			t.Run("language label in metrics", func(t *testing.T) {
+				testCases := []struct {
+					name             string
+					language         string
+					expectedLanguage string
+				}{
+					{
+						name:             "javascript transformation emits javascript language label",
+						language:         "javascript",
+						expectedLanguage: "javascript",
+					},
+					{
+						name:             "pythonfaas transformation emits pythonfaas language label",
+						language:         "pythonfaas",
+						expectedLanguage: "pythonfaas",
+					},
+					{
+						name:             "pythonwithlibs transformation emits pythonwithlibs language label",
+						language:         "pythonwithlibs",
+						expectedLanguage: "pythonwithlibs",
+					},
+					{
+						name:             "empty language defaults to javascript",
+						language:         "",
+						expectedLanguage: "javascript",
+					},
+				}
+
+				for _, tc := range testCases {
+					t.Run(tc.name, func(t *testing.T) {
+						statsStore, err := memstats.New()
+						require.NoError(t, err)
+
+						srv := httptest.NewServer(&endpointTransformer{
+							t:              t,
+							supportedPaths: []string{"/customTransform"},
+						})
+						defer srv.Close()
+
+						c := config.New()
+						c.Set("Processor.maxRetry", 1)
+						c.Set("USER_TRANSFORM_URL", srv.URL)
+						c.Set("PYTHON_TRANSFORM_URL", srv.URL)
+						c.Set("Processor.userTransformBatchSize", 10)
+
+						tr := user_transformer.New(c, logger.NOP, statsStore, user_transformer.WithClient(srv.Client()))
+
+						msgID := "messageID-0"
+						events := []types.TransformerEvent{{
+							Metadata: types.Metadata{
+								MessageID:   msgID,
+								SourceID:    "source-1",
+								SourceType:  "webhook",
+								WorkspaceID: "workspace-1",
+							},
+							Message: map[string]any{"src-key-1": msgID},
+							Destination: backendconfig.DestinationT{
+								ID: "dest-1",
+								DestinationDefinition: backendconfig.DestinationDefinitionT{
+									Name: "WEBHOOK",
+								},
+								Transformations: []backendconfig.TransformationT{{
+									ID:        "transform-1",
+									VersionID: "version-1",
+									Language:  tc.language,
+								}},
+							},
+							Credentials: []types.Credential{{
+								ID:       "test-credential",
+								Key:      "test-key",
+								Value:    "test-value",
+								IsSecret: false,
+							}},
+						}}
+
+						rsp := tr.Transform(context.TODO(), events)
+						require.Len(t, rsp.Events, 1)
+
+						metricsToCheck := []string{
+							"transformer_client_request_total_events",
+							"transformer_client_response_total_events",
+							"transformer_client_total_time",
+							"processor_transformer_request_batch_count",
+						}
+						for _, metricName := range metricsToCheck {
+							measurements := statsStore.GetByName(metricName)
+							require.NotEmpty(t, measurements, "metric %s should have measurements", metricName)
+							for _, m := range measurements {
+								assert.Equal(t, tc.expectedLanguage, m.Tags["language"],
+									"metric %s should have language=%s, got language=%s", metricName, tc.expectedLanguage, m.Tags["language"])
+							}
+						}
+					})
+				}
 			})
 		})
 	}
