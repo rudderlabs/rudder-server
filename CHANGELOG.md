@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.71.1](https://github.com/rudderlabs/rudder-server/compare/v1.71.0...v1.71.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* language label ([#6809](https://github.com/rudderlabs/rudder-server/issues/6809)) ([e12d57c](https://github.com/rudderlabs/rudder-server/commit/e12d57c2c08490beef336d96a6deebba30517e62))
+
 ## [1.71.0](https://github.com/rudderlabs/rudder-server/compare/v1.70.0...v1.71.0) (2026-03-23)
 
 
