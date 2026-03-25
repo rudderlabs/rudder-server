@@ -1367,7 +1367,7 @@ def transformEvent(event, metadata):
 	// Run subtests sequentially.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL, withLimitedRetryableHTTPRetries())
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
@@ -1631,7 +1631,7 @@ def transformBatch(events, metadata):
 
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL, withLimitedRetryableHTTPRetries())
 
 			if st.config.code != "" {
 				// Start openfaas WITHOUT geolocation URL (not configured test).
@@ -2409,7 +2409,10 @@ def transformBatch(events, metadata):
 	// Run subtests sequentially.
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)

@@ -106,9 +106,32 @@ type bcTestEnv struct {
 	NewStats  *memstats.Store         // stats store for new architecture client
 }
 
+type bcTestEnvOpt func(oldConf, newConf *config.Config)
+
+// withFailOnError configures the test env to return error responses (instead of
+// panicking) when transformer retries are exhausted. Required for tests where
+// the new architecture triggers retries (e.g. geolocation 5xx → HTTP 503).
+func withFailOnError() bcTestEnvOpt {
+	return func(oldConf, newConf *config.Config) {
+		oldConf.Set("Processor.UserTransformer.failOnError", true)
+		newConf.Set("Processor.UserTransformer.failOnError", true)
+	}
+}
+
+// withLimitedRetryableHTTPRetries caps the retryable HTTP client retries so that
+// 503 + X-Rudder-Should-Retry responses don't retry indefinitely in tests.
+func withLimitedRetryableHTTPRetries() bcTestEnvOpt {
+	return func(oldConf, newConf *config.Config) {
+		for _, c := range []*config.Config{oldConf, newConf} {
+			c.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
+			c.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
+		}
+	}
+}
+
 // newBCTestEnv creates a bcTestEnv with fresh memstats stores per subtest.
 // Fresh stores are needed because memstats accumulates counts and cannot be reset.
-func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string) *bcTestEnv {
+func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string, opts ...bcTestEnvOpt) *bcTestEnv {
 	t.Helper()
 
 	oldStats, err := memstats.New()
@@ -120,19 +143,17 @@ func newBCTestEnv(t *testing.T, transformerURL, pyTransformerURL string) *bcTest
 	oldArchConf.Set("Processor.UserTransformer.maxRetry", 2)
 	oldArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	oldArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
-	oldArchConf.Set("Processor.UserTransformer.failOnError", true)
-	oldArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
-	oldArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 	oldArchConf.Set("USER_TRANSFORM_URL", transformerURL)
 
 	newArchConf := config.New()
 	newArchConf.Set("Processor.UserTransformer.maxRetry", 2)
 	newArchConf.Set("Processor.UserTransformer.cpDownEndlessRetries", false)
 	newArchConf.Set("Processor.UserTransformer.maxRetryBackoffInterval", 1*time.Millisecond)
-	newArchConf.Set("Processor.UserTransformer.failOnError", true)
-	newArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxRetry", 2)
-	newArchConf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 	newArchConf.Set("PYTHON_TRANSFORM_URL", pyTransformerURL)
+
+	for _, opt := range opts {
+		opt(oldArchConf, newArchConf)
+	}
 
 	var (
 		oldArchLogger = logger.NOP
