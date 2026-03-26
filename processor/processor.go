@@ -3111,6 +3111,22 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 						proc.logger.Warnn("Cannot unmarshal transformer response", obskit.Error(err))
 						return
 					}
+
+					// Apply the same Marshal→Unmarshal round-trip to the mirror response
+					// so both sides go through identical serialization. Without this,
+					// the primary is compared after a JSON round-trip (which can normalize
+					// typed nils, omitempty zero values, etc.) while the mirror is compared
+					// directly from HTTP deserialization — causing false-positive diffs.
+					mirroredCopy, err := jsonrs.Marshal(mirroredResponse)
+					if err != nil {
+						proc.logger.Warnn("Cannot marshal mirrored response for normalization", obskit.Error(err))
+						return
+					}
+					if err := jsonrs.Unmarshal(mirroredCopy, &mirroredResponse); err != nil {
+						proc.logger.Warnn("Cannot unmarshal mirrored response for normalization", obskit.Error(err))
+						return
+					}
+
 					diff, equal := response.Equal(&mirroredResponse)
 					if equal {
 						proc.stats.utMirroringEqualResponses(partition).Increment()
