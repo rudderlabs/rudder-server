@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.71.2](https://github.com/rudderlabs/rudder-server/compare/v1.71.1...v1.71.2) (2026-03-26)
+
+
+### Bug Fixes
+
+* mirroring round trip comparison ([#6813](https://github.com/rudderlabs/rudder-server/issues/6813)) ([ffc11e2](https://github.com/rudderlabs/rudder-server/commit/ffc11e2d61064afe3a042aad32e7845e2c21c2f4))
+
+## [1.71.1](https://github.com/rudderlabs/rudder-server/compare/v1.71.0...v1.71.1) (2026-03-25)
+
+
+### Bug Fixes
+
+* language label ([#6809](https://github.com/rudderlabs/rudder-server/issues/6809)) ([e12d57c](https://github.com/rudderlabs/rudder-server/commit/e12d57c2c08490beef336d96a6deebba30517e62))
+
 ## [1.71.1](https://github.com/rudderlabs/rudder-server/compare/v1.71.0...v1.71.1) (2026-03-25)
 
 
