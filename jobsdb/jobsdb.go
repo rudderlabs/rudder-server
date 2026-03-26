@@ -53,6 +53,7 @@ import (
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/cache"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/services/rmetrics"
 	"github.com/rudderlabs/rudder-server/utils/crash"
@@ -538,7 +539,13 @@ type Handle struct {
 	distinctValuesCache *distinctValuesCache
 	dsListLock          *lock.Locker
 	dsMigrationLock     *lock.Locker
-	noResultsCache      *cache.NoResultsCache[ParameterFilterT]
+	// lastMigrateProbeIndex stores the dsindex of the last dataset probed by
+	// getMigrationList when no eligible datasets were found and scanning was
+	// cut short by maxMigrateDSProbe. The next invocation resumes from here
+	// instead of re-scanning from the beginning.
+	// Only accessed from the single migrateDSLoop goroutine.
+	lastMigrateProbeIndex *dsindex.Index
+	noResultsCache        *cache.NoResultsCache[ParameterFilterT]
 
 	excludedReadPartitionsLock sync.RWMutex
 	excludedReadPartitions     map[string]struct{}
