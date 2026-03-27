@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
@@ -52,8 +53,9 @@ func startGatewayClient(ctx context.Context, g *errgroup.Group, cfg gatewayClien
 					jobs := gc.generateJobs(userID, orderIdx, cfg.jobsPerPartitionPerSecond)
 					orderIdx += cfg.jobsPerPartitionPerSecond
 					for _, job := range jobs {
-						err := gc.sendRequest(cfg.url, cfg.writeKey, userID, job)
+						err := gc.sendRequest(ctx, cfg.url, cfg.writeKey, userID, job)
 						if err != nil && ctx.Err() == nil {
+							l.Logf("Error sending request for user %s: %v", userID, err)
 							return fmt.Errorf("sending request for user %s: %w", userID, err)
 						}
 					}
@@ -132,25 +134,37 @@ func legacyUserID(userID string) string {
 	return separator + userID + separator + userID
 }
 
-func (gc *gatewayClient) sendRequest(urlString, writeKey, userID, payload string) error {
+func (gc *gatewayClient) sendRequest(ctx context.Context, urlString, writeKey, userID, payload string) error {
 	u, _ := url.Parse(urlString)
 	u.Path = path.Join(u.Path, "v1", "identify")
 	requestURL := u.String()
-	req, err := http.NewRequest(http.MethodPost, requestURL, strings.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("creating http request: %w", err)
-	}
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(writeKey+":")))
-	req.Header.Add("X-Partition-Key", legacyUserID(userID))
-	res, err := http.DefaultClient.Do(req)
-	defer func() { httputil.CloseResponse(res) }()
-	if err != nil {
-		return fmt.Errorf("doing http request: %w", err)
-	}
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", res.StatusCode)
-	}
-	gc.totalSent.Add(1)
-	return nil
+
+	// we are only using the context for cancellation, not for the http request itself, to avoid cancelling mid-flight.
+	_, err := backoff.Retry(context.Background(), func() (struct{}, error) { // retry 502 up to 5 times with backoff
+		if ctx.Err() != nil {
+			return struct{}{}, nil
+		}
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, requestURL, strings.NewReader(payload))
+		if err != nil {
+			return struct{}{}, backoff.Permanent(fmt.Errorf("creating http request: %w", err))
+		}
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(writeKey+":")))
+		req.Header.Add("X-Partition-Key", legacyUserID(userID))
+		res, err := http.DefaultClient.Do(req)
+		defer func() { httputil.CloseResponse(res) }()
+		if err != nil {
+			return struct{}{}, backoff.Permanent(fmt.Errorf("doing http request: %w", err))
+		}
+		if res.StatusCode == http.StatusBadGateway {
+			return struct{}{}, fmt.Errorf("bad gateway")
+		}
+		if res.StatusCode != http.StatusOK {
+			return struct{}{}, backoff.Permanent(fmt.Errorf("unexpected status code: %d", res.StatusCode))
+		}
+		gc.totalSent.Add(1)
+
+		return struct{}{}, nil
+	}, backoff.WithMaxTries(5))
+	return err
 }

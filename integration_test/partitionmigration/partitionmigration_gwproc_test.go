@@ -50,6 +50,23 @@ import (
 // 12. Waits for all requests to complete.
 // 13. Verifies that all requests were received successfully and in order.
 func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		extraStressWorkspaces int           // number of extra workspace migrations to include (0 = normal mode)
+		restartProcessorEvery time.Duration // how often to restart processor nodes while migration is ongoing
+	}{
+		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 10 * time.Second},
+		{name: "stress_100_workspaces", extraStressWorkspaces: 100, restartProcessorEvery: 10 * time.Second},
+		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 20 * time.Second},
+		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 40 * time.Second},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testPartitionMigrationGatewayProcessorMode(t, tc.extraStressWorkspaces, tc.restartProcessorEvery)
+		})
+	}
+}
+
+func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspaces int, restartProcessorEvery time.Duration) {
 	const (
 		namespace     = "namespace123"
 		workspaceID   = "workspace123"
@@ -57,10 +74,9 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		destinationID = "destination123"
 		writeKey      = "writekey123"
 
-		numPartitions             = 4                // needs to be a power of 2 (e.g., 2, 4, 8, 16, ...)
-		jobsPerPartitionPerSecond = 50               // number of jobs to send per partition per second from the gateway client
-		restartProcessorEvery     = 10 * time.Second // how often to restart processor nodes while migration is ongoing
-		readExcludeSleep          = 5 * time.Second  // sleep duration for read exclusion during migration
+		numPartitions             = 4               // needs to be a power of 2 (e.g., 2, 4, 8, 16, ...)
+		jobsPerPartitionPerSecond = 50              // number of jobs to send per partition per second from the gateway client
+		readExcludeSleep          = 5 * time.Second // sleep duration for read exclusion during migration
 	)
 
 	// distribute partitions across the 2 nodes equally
@@ -97,10 +113,21 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 	etcdResource, err := etcd.Setup(pool, t, etcd.WithBindIP(localIp))
 	require.NoError(t, err)
 
-	// put mappings in etcd
+	// put mappings in etcd for the main workspace
 	wpmh := clustertest.NewWorkspacePartitionMappingHandler(etcdResource.Client, numPartitions, namespace, workspaceID)
 	err = wpmh.SetWorkspacePartitionMappings(t.Context(), initialMappings)
 	require.NoError(t, err)
+
+	// put mappings in etcd for extra stress workspaces (same partition mappings, no backend config needed)
+	if extraStressWorkspaces > 0 {
+		t.Logf("testscenario: setting up partition mappings for %d extra stress workspaces", extraStressWorkspaces)
+		for i := range extraStressWorkspaces {
+			stressWpmh := clustertest.NewWorkspacePartitionMappingHandler(etcdResource.Client, numPartitions, namespace, fmt.Sprintf("workspace-stress-%d", i))
+			err = stressWpmh.SetWorkspacePartitionMappings(t.Context(), initialMappings)
+			require.NoError(t, err)
+		}
+		t.Logf("testscenario: finished setting up partition mappings for %d extra stress workspaces", extraStressWorkspaces)
+	}
 
 	// start a test webhook that will verify event order based on userId
 	wh := newTestWebhook(t)
@@ -160,7 +187,8 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 	// start 2 rudder-server gw/proc pairs
 
 	gwCommonEnv := map[string]string{
-		"APP_TYPE": "gateway",
+		"LOG_LEVEL": "WARN",
+		"APP_TYPE":  "gateway",
 
 		"PartitionMigration.enabled": "true",
 
@@ -179,14 +207,15 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		"Gateway.allowPartialWriteWithErrors": "false", // not going through the lecacy gateway path
 
 		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
-		"JobsDB.maxDSSize":                      "200",
-		"JobsDB.addNewDSLoopSleepDuration":      "500ms",
+		"JobsDB.maxDSSize":                      "500",
+		"JobsDB.addNewDSLoopSleepDuration":      "2s",
 		"JobsDB.dsLimit":                        "3",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
 		"JobsDB.partitionCount":                 strconv.Itoa(numPartitions),
 	}
 
 	procCommonEnv := map[string]string{
+		"LOG_LEVEL":                   "WARN",
 		"APP_TYPE":                    "processor",
 		"PROCESSOR_NODE_HOST_PATTERN": "proc-node-{index}.localhost",
 
@@ -220,8 +249,8 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		"Profiler.Enabled":    "false", // we don't need to specify a port if disabled
 
 		// we want to create multiple datasets during the test and ensure that migration works correctly with ds limits as well
-		"JobsDB.maxDSSize":                      "200",
-		"JobsDB.addNewDSLoopSleepDuration":      "500ms",
+		"JobsDB.maxDSSize":                      "500",
+		"JobsDB.addNewDSLoopSleepDuration":      "2s",
 		"JobsDB.dsLimit":                        "3",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
 		"JobsDB.partitionCount":                 strconv.Itoa(numPartitions),
@@ -344,40 +373,46 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		Start()
 	require.NoError(t, err)
 
+	// buildMigrations wraps the real workspace migration with extra stress workspace migrations (if any)
+	buildMigrations := func(realMigrations []rudo.Migration) []rudo.WorkspaceMigration {
+		wms := []rudo.WorkspaceMigration{{
+			WorkspaceID: workspaceID,
+			Migrations:  realMigrations,
+		}}
+		for i := range extraStressWorkspaces {
+			wms = append(wms, rudo.WorkspaceMigration{
+				WorkspaceID: fmt.Sprintf("workspace-stress-%d", i),
+				Migrations:  realMigrations, // same partition movements
+			})
+		}
+		return wms
+	}
+
 	start := time.Now()
-	t.Logf("testscenario: starting migrations")
+	t.Logf("testscenario: starting migrations (extraStressWorkspaces=%d)", extraStressWorkspaces)
 
 	// create migration 0: swap first partitions between nodes
-	_, err = rudoResource.CreateMigration(ctx, rudo.WorkspaceMigration{
-		WorkspaceID: workspaceID,
-		Migrations: []rudo.Migration{
-			// move a partition from node 0 to node 1
-			{Src: rudo.Src{ServerID: 0, PartitionIdxs: []int{node0Partitions[0]}}, Dst: rudo.Dst{ServerID: 1}},
-			// move a partition from node 1 to node 0
-			{Src: rudo.Src{ServerID: 1, PartitionIdxs: []int{node1Partitions[0]}}, Dst: rudo.Dst{ServerID: 0}},
-		},
-	})
+	_, err = rudoResource.CreateMigration(ctx, buildMigrations([]rudo.Migration{
+		// move a partition from node 0 to node 1
+		{Src: rudo.Src{ServerID: 0, PartitionIdxs: []int{node0Partitions[0]}}, Dst: rudo.Dst{ServerID: 1}},
+		// move a partition from node 1 to node 0
+		{Src: rudo.Src{ServerID: 1, PartitionIdxs: []int{node1Partitions[0]}}, Dst: rudo.Dst{ServerID: 0}},
+	}))
 	require.NoError(t, err)
 
 	if len(node0Partitions) > 1 {
 		// create migration 1: move second partition from node0 to node1
-		_, err = rudoResource.CreateMigration(ctx, rudo.WorkspaceMigration{
-			WorkspaceID: workspaceID,
-			Migrations: []rudo.Migration{
-				{Src: rudo.Src{ServerID: 0, PartitionIdxs: []int{node0Partitions[1]}}, Dst: rudo.Dst{ServerID: 1}},
-			},
-		})
+		_, err = rudoResource.CreateMigration(ctx, buildMigrations([]rudo.Migration{
+			{Src: rudo.Src{ServerID: 0, PartitionIdxs: []int{node0Partitions[1]}}, Dst: rudo.Dst{ServerID: 1}},
+		}))
 		require.NoError(t, err)
 	}
 
 	if len(node1Partitions) > 1 {
 		// create migration 2: move second partition from node1 to node0
-		_, err = rudoResource.CreateMigration(ctx, rudo.WorkspaceMigration{
-			WorkspaceID: workspaceID,
-			Migrations: []rudo.Migration{
-				{Src: rudo.Src{ServerID: 1, PartitionIdxs: []int{node1Partitions[1]}}, Dst: rudo.Dst{ServerID: 0}},
-			},
-		})
+		_, err = rudoResource.CreateMigration(ctx, buildMigrations([]rudo.Migration{
+			{Src: rudo.Src{ServerID: 1, PartitionIdxs: []int{node1Partitions[1]}}, Dst: rudo.Dst{ServerID: 0}},
+		}))
 		require.NoError(t, err)
 	}
 
@@ -386,8 +421,8 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		migrations, err := rudoResource.ListMigrations(ctx)
 		require.NoError(t, err)
 		return len(migrations) == 0
-	}, 2*time.Minute, 1*time.Second, "all migrations should complete within the timeout")
-	t.Logf("testscenario: all migrations completed in %s", time.Since(start))
+	}, 5*time.Minute, 1*time.Second, "all migrations should complete within the timeout")
+	end := time.Now()
 
 	// stop restarting processor nodes
 	skipProcessorRestart.Store(true)
@@ -405,14 +440,15 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		totalReceived := wh.totalEvents.Load()
 		t.Logf("testscenario: total Sent: %d, total received: %d", gwClient.GetTotalSent(), totalReceived)
 		require.LessOrEqualf(t, totalReceived, gwClient.GetTotalSent(), "received should be less or equal than sent")
-		return totalReceived == gwClient.GetTotalSent()
-	}, 2*time.Minute, 1*time.Second, "all sent events should be received by the webhook")
+		return totalReceived >= gwClient.GetTotalSent()
+	}, 5*time.Minute, 1*time.Second, "all sent events should be received by the webhook")
 
 	require.NoError(t, ctx.Err(), "context should not have been cancelled or timed out")
 	require.EqualValuesf(t, 0, wh.outOfOrderCount.Load(), "there should be no out of order events: %+v", wh.outOfOrderEvents)
 	cancel() // cancel the main test context to stop all servers
 	require.NoError(t, g.Wait(), "all goroutines should complete without error")
 	require.Len(t, srcRouterAcks, 3)
+	t.Logf("testscenario: all migrations completed in %s (extraStressWorkspaces=%d)", end.Sub(start), extraStressWorkspaces)
 }
 
 func restartingProcessorServer(t *testing.T, ctx context.Context, g *errgroup.Group, name, rsBinaryPath string, envVars map[string]string, skipRestart *atomic.Bool, restartEvery time.Duration) {

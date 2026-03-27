@@ -968,3 +968,12 @@ func GetMurmurHash(input string) uint64 {
 func GetMurmurHashWithSeed(input string, seed uint32) uint64 {
 	return murmur3.Sum64WithSeed([]byte(input), seed)
 }
+
+// TruncatedList returns a comma-separated string of items,
+// showing at most maxShow items followed by "+N more" if truncated.
+func TruncatedList(items []string, maxShow int) string {
+	if len(items) <= maxShow {
+		return strings.Join(items, ",")
+	}
+	return strings.Join(items[:maxShow], ",") + " +" + strconv.Itoa(len(items)-maxShow) + " more"
+}

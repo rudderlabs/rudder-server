@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/samber/lo"
@@ -13,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/tx"
 )
 
@@ -67,7 +67,7 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 
 	// move in batches until we stop reaching limits
 	b.logger.Infon("Flushing jobs from buffer to primary jobsdb (move phase)",
-		logger.NewStringField("partitions", strings.Join(partitions, ",")),
+		logger.NewStringField("partitions", misc.TruncatedList(partitions, 10)),
 		logger.NewStringField("prefix", b.Identifier()),
 	)
 	for limitsReached := true; limitsReached; {
@@ -76,7 +76,7 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 		case <-moveTimeout:
 			// timeout reached, break out to switchover
 			b.logger.Warnn("Flush move timeout reached, proceeding to switchover",
-				logger.NewStringField("partitions", fmt.Sprintf("%v", partitions)),
+				logger.NewStringField("partitions", misc.TruncatedList(partitions, 10)),
 				logger.NewDurationField("duration", time.Since(start)),
 			)
 			limitsReached = false
@@ -91,7 +91,7 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 	}
 	// switchover
 	b.logger.Infon("Flushing jobs from buffer to primary jobsdb (switchover phase)",
-		logger.NewStringField("partitions", strings.Join(partitions, ",")),
+		logger.NewStringField("partitions", misc.TruncatedList(partitions, 10)),
 		logger.NewStringField("prefix", b.Identifier()),
 		logger.NewIntField("movedCount", int64(totalCount)),
 	)
@@ -101,7 +101,7 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 	}
 	totalCount += switchoverCount
 	b.logger.Infon("Flushing of buffered partitions completed successfully",
-		logger.NewStringField("partitions", strings.Join(partitions, ",")),
+		logger.NewStringField("partitions", misc.TruncatedList(partitions, 10)),
 		logger.NewStringField("prefix", b.Identifier()),
 		logger.NewDurationField("duration", time.Since(start)),
 		logger.NewIntField("totalCount", int64(totalCount)),
@@ -172,13 +172,13 @@ func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context
 		return 0, fmt.Errorf("acquiring a buffered partitions write lock during switchover: %w", ctx.Err())
 	}
 	b.logger.Infon("Buffered partitions write lock acquired (switchover phase)",
-		logger.NewStringField("partitions", strings.Join(partitionIDs, ",")),
+		logger.NewStringField("partitions", misc.TruncatedList(partitionIDs, 10)),
 		logger.NewStringField("prefix", b.Identifier()),
 	)
 	defer func() {
 		b.bufferedPartitionsMu.Unlock()
 		b.logger.Infon("Buffered partitions write lock released (switchover phase)",
-			logger.NewStringField("partitions", strings.Join(partitionIDs, ",")),
+			logger.NewStringField("partitions", misc.TruncatedList(partitionIDs, 10)),
 			logger.NewStringField("prefix", b.Identifier()),
 		)
 	}()

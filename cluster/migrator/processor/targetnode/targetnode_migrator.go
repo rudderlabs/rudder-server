@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/cluster/migrator/retry"
 	"github.com/rudderlabs/rudder-server/cluster/partitionbuffer"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // Migrator defines the interface for a target node migrator
@@ -185,7 +186,7 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 		logger.NewIntField("targetNode", int64(job.TargetNode)),
 	)
 	log.Infon("Received moved partition migration job",
-		logger.NewStringField("partitions", fmt.Sprintf("%v", job.Partitions)),
+		logger.NewStringField("partitions", misc.TruncatedList(job.Partitions, 10)),
 	)
 
 	// Keep retrying errors with a backoff until context is done

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -80,7 +79,7 @@ func (m *migrator) Handle(ctx context.Context, migration *etcdtypes.PartitionMig
 		return fmt.Errorf("adding read excluded partitions: %w", err)
 	}
 	m.logger.Infon("Marked source partitions as read-excluded",
-		logger.NewStringField("partitions", strings.Join(sourcePartitions, ",")),
+		logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
 	)
 	// wait for sleep time so that in-flight queries can complete
 	if err := misc.SleepCtx(ctx, m.c.readExcludeSleep.Load()); err != nil {
@@ -163,7 +162,7 @@ func (m *migrator) waitForNoInProgressJobs(ctx context.Context, sourcePartitions
 					if hasInProgressJobs {
 						m.logger.Infon("Waiting for in-progress jobs to complete",
 							logger.NewStringField("jobsdb", readerJobsDB.Identifier()),
-							logger.NewStringField("partitions", fmt.Sprintf("%v", sourcePartitions)),
+							logger.NewStringField("partitions", misc.TruncatedList(sourcePartitions, 10)),
 							logger.NewDurationField("elapsed", time.Since(start)),
 						)
 						// sleep for a short duration before checking again
@@ -276,7 +275,7 @@ func (m *migrator) onNewJob(ctx context.Context, key string, job *etcdtypes.Part
 		logger.NewIntField("targetNode", int64(job.TargetNode)),
 	)
 	log.Infon("Received new partition migration job",
-		logger.NewStringField("partitions", fmt.Sprintf("%v", job.Partitions)),
+		logger.NewStringField("partitions", misc.TruncatedList(job.Partitions, 10)),
 	)
 
 	// Keep retrying errors with a backoff until context is done

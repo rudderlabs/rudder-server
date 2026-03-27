@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,6 +24,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	proto "github.com/rudderlabs/rudder-server/proto/cluster"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type Opt func(*migrationJobExecutor)
@@ -74,7 +74,7 @@ func NewMigrationJobExecutor(migrationJobID string, nodeIndex int, partitionIDs 
 	mpe.logger = mpe.logger.Withn(
 		logger.NewStringField("migrationJobID", mpe.migrationJobID),
 		logger.NewStringField("tablePrefix", mpe.sourceDB.Identifier()),
-		logger.NewStringField("partitions", strings.Join(mpe.partitionIDs, ",")),
+		logger.NewStringField("partitions", misc.TruncatedList(mpe.partitionIDs, 10)),
 		logger.NewStringField("target", mpe.target),
 	)
 	mpe.batchSize = mpe.conf.GetReloadableIntVar(2000, 1, "PartitionMigration.Executor.BatchSize")
@@ -352,7 +352,7 @@ func (mpe *migrationJobExecutor) Run(ctx context.Context) error {
 							logger.NewIntField("batchIndex", int64(index)),
 							logger.NewStringField("tablePrefix", mpe.sourceDB.Identifier()),
 							logger.NewStringField("migrationJobID", mpe.migrationJobID),
-							logger.NewStringField("partitions", strings.Join(mpe.partitionIDs, ",")),
+							logger.NewStringField("partitions", misc.TruncatedList(mpe.partitionIDs, 10)),
 							obskit.Error(err),
 						)
 					}
