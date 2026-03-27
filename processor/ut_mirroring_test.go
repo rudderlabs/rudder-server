@@ -430,6 +430,13 @@ func TestUTMirroring(t *testing.T) {
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected same response from UserMirrorTransform")
 
+		require.Eventually(t, func() bool {
+			metric := memStats.Get("processor_ut_mirroring_datetime_forgiven_total", stats.Tags{
+				"partition": "",
+			})
+			return metric != nil && metric.LastValue() == 1
+		}, 10*time.Second, 10*time.Millisecond, "Expected datetime forgiven metric to be bumped")
+
 		var files []minio.File
 		require.Eventually(t, func() bool {
 			files, err = minioContainer.Contents(context.Background(), "")

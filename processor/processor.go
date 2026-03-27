@@ -224,9 +224,10 @@ type processorStats struct {
 	statDtransformStageCount   func(partition string) stats.Measurement
 	statStoreStageCount        func(partition string) stats.Measurement
 
-	utMirroringEqualResponses     func(partition string) stats.Measurement
-	utMirroringDifferentResponses func(partition string) stats.Measurement
-	utMirroringFilteredResponses  func(partition string) stats.Measurement
+	utMirroringEqualResponses            func(partition string) stats.Measurement
+	utMirroringDifferentResponses        func(partition string) stats.Measurement
+	utMirroringFilteredResponses         func(partition string) stats.Measurement
+	utMirroringDatetimeForgivenResponses func(partition string) stats.Measurement
 }
 type DestStatT struct {
 	numEvents               stats.Measurement
@@ -571,6 +572,11 @@ func (proc *Handle) Setup(
 	}
 	proc.stats.utMirroringFilteredResponses = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
+			"partition": partition,
+		})
+	}
+	proc.stats.utMirroringDatetimeForgivenResponses = func(partition string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_datetime_forgiven_total", stats.CountType, stats.Tags{
 			"partition": partition,
 		})
 	}
@@ -3127,11 +3133,15 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 						proc.logger.Warnn("Cannot unmarshal mirrored response for normalization", obskit.Error(err))
 						return
 					}
-					diff, equal := response.Equal(&normalizedMirror)
-					if equal {
+					result := response.EqualDetailed(&normalizedMirror)
+					if result.Equal {
 						proc.stats.utMirroringEqualResponses(partition).Increment()
+						if result.DatetimeForgiven {
+							proc.stats.utMirroringDatetimeForgivenResponses(partition).Increment()
+						}
 						return
 					}
+					diff := result.Diff
 
 					defer proc.stats.utMirroringDifferentResponses(partition).Increment()
 

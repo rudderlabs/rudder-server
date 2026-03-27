@@ -30,16 +30,32 @@ func TestResponseEqualDatetimeStrings(t *testing.T) {
 		}
 	}
 
-	t.Run("datetime strings compare equal", func(t *testing.T) {
+	t.Run("identical responses are strictly equal", func(t *testing.T) {
+		left := makeResponse(base.Format(time.DateTime))
+		right := makeResponse(base.Format(time.DateTime))
+
+		result := left.EqualDetailed(&right)
+		require.True(t, result.Equal)
+		require.Empty(t, result.Diff)
+		require.False(t, result.DatetimeForgiven, "identical responses should match strictly")
+	})
+
+	t.Run("datetime strings compare equal with forgiveness", func(t *testing.T) {
 		left := makeResponse(base.Format(time.DateTime))
 		right := makeResponse(base.Add(2 * time.Second).Format(time.DateTime))
 
+		result := left.EqualDetailed(&right)
+		require.True(t, result.Equal)
+		require.Empty(t, result.Diff)
+		require.True(t, result.DatetimeForgiven, "different datetime strings should require forgiveness")
+
+		// Backward-compatible Equal still works
 		diff, equal := left.Equal(&right)
 		require.True(t, equal)
 		require.Empty(t, diff)
 	})
 
-	t.Run("nested datetime strings compare equal", func(t *testing.T) {
+	t.Run("nested datetime strings compare equal with forgiveness", func(t *testing.T) {
 		left := makeResponse(map[string]any{
 			"processedAt": base.Format(time.RFC3339),
 		})
@@ -47,18 +63,20 @@ func TestResponseEqualDatetimeStrings(t *testing.T) {
 			"processedAt": base.Add(37 * time.Minute).Format(time.RFC3339),
 		})
 
-		diff, equal := left.Equal(&right)
-		require.True(t, equal)
-		require.Empty(t, diff)
+		result := left.EqualDetailed(&right)
+		require.True(t, result.Equal)
+		require.Empty(t, result.Diff)
+		require.True(t, result.DatetimeForgiven)
 	})
 
 	t.Run("non datetime strings still differ", func(t *testing.T) {
 		left := makeResponse("not-a-datetime")
 		right := makeResponse("still-not-a-datetime")
 
-		diff, equal := left.Equal(&right)
-		require.False(t, equal)
-		require.Contains(t, diff, "rudderstackTransformedUtc")
+		result := left.EqualDetailed(&right)
+		require.False(t, result.Equal)
+		require.Contains(t, result.Diff, "rudderstackTransformedUtc")
+		require.False(t, result.DatetimeForgiven)
 	})
 
 	t.Run("timestamp field missing on one side", func(t *testing.T) {
@@ -80,8 +98,9 @@ func TestResponseEqualDatetimeStrings(t *testing.T) {
 			},
 		}
 
-		diff, equal := left.Equal(&right)
-		require.False(t, equal)
-		require.Contains(t, diff, "rudderstackTransformedUtc")
+		result := left.EqualDetailed(&right)
+		require.False(t, result.Equal)
+		require.Contains(t, result.Diff, "rudderstackTransformedUtc")
+		require.False(t, result.DatetimeForgiven)
 	})
 }

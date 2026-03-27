@@ -418,7 +418,9 @@ func startOpenFaasFlask(
 		env = append(env, toContainerURL(e))
 	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "hub.rudderlabs.com/dockerhub-proxy/rudderlabs/openfaas-flask",
+		Repository: "hub.rudderlabs.com/dockerhub-proxy/rudderlabs/openfaas-flask",
+		// Pinned to match the production version running during the mirroring validation
+		// that produced the diffs in rudder-pytransformer/diffs/diff.txt.
 		Tag:          "1.13.2",
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
