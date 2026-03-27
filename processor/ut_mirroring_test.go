@@ -377,6 +377,66 @@ func TestUTMirroring(t *testing.T) {
 		}, 10*time.Second, 50*time.Millisecond, "Expected zero files in the bucket")
 	})
 
+	t.Run("mirror returns different datetime strings", func(t *testing.T) {
+		mockTransformerClients := transformer.NewSimpleClients()
+		minioContainer, processor, tc := prepareProcessor(t, mockTransformerClients, 100, false)
+
+		setupMocksExpectations(t, tc, processor)
+
+		baseTimestamp := time.Date(2026, time.March, 27, 13, 7, 55, 0, time.UTC)
+		makeResponse := func(transformedAt string) func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+				copiedEvents := copyClientEvents(t, clientEvents)
+				outputEvents := make([]types.TransformerResponse, 0)
+				for _, event := range copiedEvents {
+					event.Message["user-transform"] = "value"
+					event.Message["rudderstackTransformedUtc"] = transformedAt
+					outputEvents = append(outputEvents, types.TransformerResponse{
+						Output:     event.Message,
+						StatusCode: 200,
+						Metadata: types.Metadata{
+							SourceID:        SourceIDEnabledOnlyUT,
+							SourceName:      sourceIDToName[SourceIDEnabledOnlyUT],
+							DestinationID:   DestinationIDEnabledB,
+							DestinationType: "MINIO",
+						},
+					})
+				}
+				return types.Response{Events: outputEvents}
+			}
+		}
+
+		mockTransformerClients.WithDynamicUserTransform(makeResponse(baseTimestamp.Format(time.DateTime)))
+		mockTransformerClients.WithDynamicUserMirrorTransform(
+			makeResponse(baseTimestamp.Add(2 * time.Second).Format(time.DateTime)),
+		)
+		mockTransformerClients.WithDynamicDestinationTransform(func(ctx context.Context, clientEvents []types.TransformerEvent) types.Response {
+			return assertDestinationTransform(
+				messages, SourceIDEnabledOnlyUT, DestinationIDEnabledB, transformExpectations[DestinationIDEnabledB], t,
+			)(ctx, clientEvents, 1)
+		})
+
+		memStats, err := memstats.New()
+		require.NoError(t, err)
+		handlePendingGatewayJobs(t, processor, tc, func(h *Handle) {
+			h.statsFactory = memStats
+		})
+
+		require.Eventually(t, func() bool {
+			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
+				"equal":     "true",
+				"partition": "",
+			})
+			return metric != nil && metric.LastValue() == 1
+		}, 10*time.Second, 10*time.Millisecond, "Expected same response from UserMirrorTransform")
+
+		var files []minio.File
+		require.Eventually(t, func() bool {
+			files, err = minioContainer.Contents(context.Background(), "")
+			return err == nil && len(files) == 0
+		}, 10*time.Second, 50*time.Millisecond, "Expected zero files in the bucket")
+	})
+
 	t.Run("mirror returns slightly different events", func(t *testing.T) {
 		mockTransformerClients := transformer.NewSimpleClients()
 		minioContainer, processor, tc := prepareProcessor(t, mockTransformerClients, 100, false)

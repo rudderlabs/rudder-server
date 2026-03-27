@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -325,6 +326,69 @@ def transformEvent(event, metadata):
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
+			},
+		},
+		{
+			name:      "ExecutionTimeGeneratedTimestampField",
+			versionID: "bc-execution-time-field-v1",
+			config: configBackendEntry{code: `
+from datetime import datetime
+
+def transformEvent(event, metadata):
+    event["metadata"] = metadata(event)
+    event["source"] = event["metadata"]["sourceId"]
+    event["rudderstackTransformedUtc"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return event
+`},
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-execution-time-field-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				oldStartedAt := time.Now().UTC()
+				oldResp := env.OldClient.Transform(context.Background(), events)
+				oldFinishedAt := time.Now().UTC()
+
+				time.Sleep(1100 * time.Millisecond)
+
+				newStartedAt := time.Now().UTC()
+				newResp := env.NewClient.Transform(context.Background(), events)
+				newFinishedAt := time.Now().UTC()
+
+				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+				oldTimestamp, ok := oldResp.Events[0].Output["rudderstackTransformedUtc"].(string)
+				require.True(t, ok, "old arch: generated timestamp should be present")
+				newTimestamp, ok := newResp.Events[0].Output["rudderstackTransformedUtc"].(string)
+				require.True(t, ok, "new arch: generated timestamp should be present")
+
+				oldParsed, err := time.ParseInLocation(time.DateTime, oldTimestamp, time.UTC)
+				require.NoError(t, err, "old arch: generated timestamp should parse")
+				newParsed, err := time.ParseInLocation(time.DateTime, newTimestamp, time.UTC)
+				require.NoError(t, err, "new arch: generated timestamp should parse")
+
+				require.False(t, oldParsed.Before(oldStartedAt.Add(-time.Second)), "old arch timestamp should be created during the old request window")
+				require.False(t, oldParsed.After(oldFinishedAt.Add(time.Second)), "old arch timestamp should be created during the old request window")
+				require.False(t, newParsed.Before(newStartedAt.Add(-time.Second)), "new arch timestamp should be created during the new request window")
+				require.False(t, newParsed.After(newFinishedAt.Add(time.Second)), "new arch timestamp should be created during the new request window")
+				require.NotEqual(t, oldTimestamp, newTimestamp, "separate invocations should stamp different second-level UTC values")
+
+				diff, equal := oldResp.Equal(&newResp)
+				if equal {
+					t.Log("Responses are equal once datetime matching is applied")
+				} else {
+					t.Errorf("Responses differ despite datetime matching:\n%s", diff)
+				}
+
+				delete(oldResp.Events[0].Output, "rudderstackTransformedUtc")
+				delete(newResp.Events[0].Output, "rudderstackTransformedUtc")
+
+				require.Equal(t, oldResp, newResp, "execution-time field should be the only raw response difference")
 			},
 		},
 		{

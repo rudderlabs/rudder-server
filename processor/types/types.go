@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -262,8 +263,14 @@ type Response struct {
 	MirrorFiltered bool
 }
 
+var responseDatetimePattern = regexp.MustCompile(
+	`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})?$`,
+)
+
 // Equal compares two Response structs and returns true if they are equal
-// regardless of the order of elements in the Events and FailedEvents slices
+// regardless of the order of elements in the Events and FailedEvents slices.
+// Matching datetime values in Output are treated as equal when both values
+// match responseDatetimePattern.
 func (r *Response) Equal(v *Response) (string, bool) {
 	if len(r.Events) != len(v.Events) {
 		return fmt.Sprintf("Expected Events length %d, got %d", len(r.Events), len(v.Events)), false
@@ -395,7 +402,7 @@ func diffLists(listA, listB any) (extraA, extraB []any) {
 			if visited[j] {
 				continue
 			}
-			if assert.ObjectsAreEqual(bValue.Index(j).Interface(), element) {
+			if responseObjectsEqual(bValue.Index(j).Interface(), element) {
 				visited[j] = true
 				found = true
 				break
@@ -414,6 +421,88 @@ func diffLists(listA, listB any) (extraA, extraB []any) {
 	}
 
 	return extraA, extraB
+}
+
+func responseObjectsEqual(left, right any) bool {
+	leftResponse, leftIsResponse := left.(TransformerResponse)
+	rightResponse, rightIsResponse := right.(TransformerResponse)
+	if leftIsResponse || rightIsResponse {
+		if !leftIsResponse || !rightIsResponse {
+			return false
+		}
+		return transformerResponsesEqual(leftResponse, rightResponse)
+	}
+	return assert.ObjectsAreEqual(left, right)
+}
+
+func transformerResponsesEqual(left, right TransformerResponse) bool {
+	if !assert.ObjectsAreEqual(left.Metadata, right.Metadata) {
+		return false
+	}
+	if left.StatusCode != right.StatusCode {
+		return false
+	}
+	if left.Error != right.Error {
+		return false
+	}
+	if !assert.ObjectsAreEqual(left.ValidationErrors, right.ValidationErrors) {
+		return false
+	}
+	if !assert.ObjectsAreEqual(left.StatTags, right.StatTags) {
+		return false
+	}
+
+	return responseValuesEqual(left.Output, right.Output)
+}
+
+func responseValuesEqual(left, right any) bool {
+	leftMap, leftIsMap := left.(map[string]any)
+	rightMap, rightIsMap := right.(map[string]any)
+	if leftIsMap || rightIsMap {
+		if !leftIsMap || !rightIsMap {
+			return false
+		}
+		if len(leftMap) != len(rightMap) {
+			return false
+		}
+		for key, leftValue := range leftMap {
+			rightValue, ok := rightMap[key]
+			if !ok {
+				return false
+			}
+			if !responseValuesEqual(leftValue, rightValue) {
+				return false
+			}
+		}
+		return true
+	}
+
+	leftSlice, leftIsSlice := left.([]any)
+	rightSlice, rightIsSlice := right.([]any)
+	if leftIsSlice || rightIsSlice {
+		if !leftIsSlice || !rightIsSlice {
+			return false
+		}
+		if len(leftSlice) != len(rightSlice) {
+			return false
+		}
+		for i := range leftSlice {
+			if !responseValuesEqual(leftSlice[i], rightSlice[i]) {
+				return false
+			}
+		}
+		return true
+	}
+
+	leftString, leftIsString := left.(string)
+	rightString, rightIsString := right.(string)
+	if leftIsString && rightIsString {
+		if responseDatetimePattern.MatchString(leftString) && responseDatetimePattern.MatchString(rightString) {
+			return true
+		}
+	}
+
+	return reflect.DeepEqual(left, right)
 }
 
 var spewConfig = spew.ConfigState{
