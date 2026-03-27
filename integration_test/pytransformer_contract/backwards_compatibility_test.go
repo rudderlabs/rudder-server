@@ -251,23 +251,40 @@ def transformEvent(event, metadata):
 			},
 		},
 		{
-			name:      "MetadataMissingKeys",
+			name:      "MetadataPreservesOnlyPresentKeys",
 			versionID: "bc-metadata-keys-v1",
 			config: configBackendEntry{code: `
 def transformEvent(event, metadata):
     m = metadata(event)
-    # trackingPlanId is NOT in the input metadata.
-    event["has_tracking_plan_id"] = "trackingPlanId" in m
-    event["has_source_id"] = "sourceId" in m  # control: sourceId IS in metadata
-    event["metadata_keys_count"] = len(m)
+    for key, value in m.items():
+        if not event.get(key):
+            event[key] = value
     return event
 `},
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionId = "bc-metadata-keys-v1"
 
-				// Send event with minimal metadata (no trackingPlanId)
 				events := []types.TransformerEvent{
-					makeEvent("msg-1", versionId),
+					{
+						Message: types.SingularEventT{
+							"messageId": "msg-1",
+							"type":      "track",
+							"event":     "Test Event",
+						},
+						Metadata: types.Metadata{
+							SourceID:      "src-1",
+							DestinationID: "dest-1",
+							WorkspaceID:   "ws-1",
+							MessageID:     "msg-1",
+							PartitionID:   "ws-1-42",
+							InstanceID:    "2",
+						},
+						Destination: backendconfig.DestinationT{
+							Transformations: []backendconfig.TransformationT{
+								{VersionID: versionId, ID: "transformation-1", Language: "pythonfaas"},
+							},
+						},
+					},
 				}
 
 				t.Log("Sending request to old architecture...")
@@ -278,30 +295,34 @@ def transformEvent(event, metadata):
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-				// Both should succeed
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+				require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+				require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-				oldOutput := oldResp.Events[0].Output
 				newOutput := newResp.Events[0].Output
+				require.Equal(t, "src-1", newOutput["sourceId"])
+				require.Equal(t, "2", newOutput["instanceId"])
+				require.Equal(t, "ws-1-42", newOutput["partitionId"])
 
-				t.Logf("Old arch: has_tracking_plan_id=%v, has_source_id=%v, metadata_keys_count=%v",
-					oldOutput["has_tracking_plan_id"], oldOutput["has_source_id"], oldOutput["metadata_keys_count"])
-				t.Logf("New arch: has_tracking_plan_id=%v, has_source_id=%v, metadata_keys_count=%v",
-					newOutput["has_tracking_plan_id"], newOutput["has_source_id"], newOutput["metadata_keys_count"])
+				for _, key := range []string{
+					"eventName",
+					"messageIds",
+					"recordId",
+					"sourceJobId",
+					"sourceJobRunId",
+					"sourceTaskRunId",
+					"trackingPlanId",
+					"trackingPlanVersion",
+				} {
+					_, ok := newOutput[key]
+					require.Falsef(t, ok, "key %q should stay absent when it wasn't present in the input metadata", key)
+				}
 
-				// Control: both should have sourceId in metadata
-				require.Equal(t, true, oldOutput["has_source_id"], "old arch: sourceId should be in metadata")
-				require.Equal(t, true, newOutput["has_source_id"], "new arch: sourceId should be in metadata")
-
-				// Compare: responses should be equal — both architectures return all 29
-				// curated metadata keys (with None for missing values).
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
-					t.Logf("Old arch has_tracking_plan_id=%v, New arch has_tracking_plan_id=%v",
-						oldOutput["has_tracking_plan_id"], newOutput["has_tracking_plan_id"])
 					t.Errorf("Responses differ:\n%s", diff)
 				}
 			},
@@ -1669,190 +1690,6 @@ def transformEvent(event, metadata):
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Both architectures produce identical responses for credential with empty value")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			// MetadataMergeAllKeys tests event.update(metadata(event)) which merges
-			// all 29 metadata keys (including None for missing fields) into the event.
-			name:      "MetadataMergeAllKeys",
-			versionID: "bc-metadata-merge-all-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    event.update(metadata(event))
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-metadata-merge-all-v1"
-				events := []types.TransformerEvent{
-					{
-						Message: types.SingularEventT{
-							"messageId":   "msg-1",
-							"type":        "track",
-							"event":       "Test Event",
-							"instanceId":  "1",
-							"partitionId": "ws-1-42",
-						},
-						Metadata: types.Metadata{
-							JobID: 1234, WorkspaceID: "ws-1", MessageID: "msg-1",
-							SourceID: "src-1", SourceName: "test-source", SourceType: "javascript",
-							DestinationID: "dest-1", DestinationName: "test-dest", DestinationType: "AM",
-							InstanceID: "1", PartitionID: "ws-1-42", Namespace: "test-ns",
-							RudderID: "rudder-id-1", ReceivedAt: "2024-01-01T00:00:00.000Z",
-							EventName: "Test Event", EventType: "track",
-							SourceDefinitionID: "src-def-1", DestinationDefinitionID: "dest-def-1",
-							TransformationID: "tf-1", TransformationVersionID: versionID,
-						},
-						Destination: backendconfig.DestinationT{
-							Transformations: []backendconfig.TransformationT{
-								{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
-							},
-						},
-					},
-				}
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				newResp := env.NewClient.Transform(context.Background(), events)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Responses are equal")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			// MetadataMergeIfFalsy tests the production user pattern where metadata
-			// values are added to the event only when the event doesn't already have
-			// a truthy value for that key: `if not event.get(k): event[k] = v`.
-			// This is sensitive to None vs "" vs 0 differences in the metadata dict.
-			name:      "MetadataMergeIfFalsy",
-			versionID: "bc-metadata-merge-falsy-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    meta = metadata(event)
-    for k, v in meta.items():
-        if not event.get(k):
-            event[k] = v
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-metadata-merge-falsy-v1"
-				events := []types.TransformerEvent{
-					{
-						Message: types.SingularEventT{
-							"messageId":   "msg-1",
-							"type":        "track",
-							"event":       "Test Event",
-							"instanceId":  "1",
-							"partitionId": "ws-1-42",
-						},
-						Metadata: types.Metadata{
-							JobID: 1234, WorkspaceID: "ws-1", MessageID: "msg-1",
-							SourceID: "src-1", SourceName: "test-source", SourceType: "javascript",
-							DestinationID: "dest-1", DestinationName: "test-dest", DestinationType: "AM",
-							InstanceID: "1", PartitionID: "ws-1-42", Namespace: "test-ns",
-							RudderID: "rudder-id-1", ReceivedAt: "2024-01-01T00:00:00.000Z",
-							EventName: "Test Event", EventType: "track",
-							SourceDefinitionID: "src-def-1", DestinationDefinitionID: "dest-def-1",
-							TransformationID: "tf-1", TransformationVersionID: versionID,
-						},
-						Destination: backendconfig.DestinationT{
-							Transformations: []backendconfig.TransformationT{
-								{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
-							},
-						},
-					},
-				}
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				newResp := env.NewClient.Transform(context.Background(), events)
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Responses are equal")
-				} else {
-					t.Errorf("Responses differ:\n%s", diff)
-				}
-			},
-		},
-		{
-			// MetadataAddMetaPattern tests the production preprocessEvents.py pattern:
-			//
-			//   meta = self.metadata(self.event)
-			//   for k, v in meta.items():
-			//       if not self.event.get(k):
-			//           self.event[k] = v
-			//
-			// The key difference from MetadataMergeIfFalsy is the event setup:
-			// instanceId and partitionId are NOT present in the message body (so they
-			// will be copied from metadata), userId is an empty string (falsy, so it
-			// will also be overwritten), and SourceJobID/TrackingPlanID/etc. are zero
-			// values which are omitted from the metadata JSON (omitempty) so the metadata
-			// function returns None for them. This mirrors the production scenario that
-			// exposed the diff between old and new arch.
-			name:      "MetadataAddMetaPattern",
-			versionID: "bc-add-meta-pattern-v1",
-			config: configBackendEntry{code: `
-def transformEvent(event, metadata):
-    meta = metadata(event)
-    for k, v in meta.items():
-        if not event.get(k):
-            event[k] = v
-    return event
-`},
-			run: func(t *testing.T, env *bcTestEnv) {
-				const versionID = "bc-add-meta-pattern-v1"
-				events := []types.TransformerEvent{
-					{
-						Message: types.SingularEventT{
-							"messageId": "msg-1",
-							"type":      "track",
-							"event":     "Test Event",
-							"channel":   "web",
-							"userId":    "", // empty string — falsy, will be overwritten by metadata value
-							// instanceId and partitionId are intentionally absent from the message body
-						},
-						Metadata: types.Metadata{
-							JobID: 1234, WorkspaceID: "ws-1", MessageID: "msg-1",
-							SourceID: "src-1", SourceName: "test-source", SourceType: "javascript",
-							DestinationID: "dest-1", DestinationName: "test-dest", DestinationType: "AM",
-							// InstanceID and PartitionID are set (present in metadata JSON) but absent
-							// from the message body — the pattern will add them to the event.
-							InstanceID: "3", PartitionID: "ws-1-33", Namespace: "test-ns",
-							RudderID: "rudder-id-1", ReceivedAt: "2024-01-01T00:00:00.000Z",
-							EventName: "Test Event", EventType: "track",
-							SourceDefinitionID: "src-def-1", DestinationDefinitionID: "dest-def-1",
-							TransformationID: "tf-1", TransformationVersionID: versionID,
-							// SourceJobID, TrackingPlanID, TrackingPlanVersion, SourceJobRunID,
-							// SourceTaskRunID, RecordID and MessageIDs are left as zero values.
-							// They are omitted from the metadata JSON (omitempty) so the metadata
-							// function returns None for them (present in the dict, value is None).
-						},
-						Destination: backendconfig.DestinationT{
-							Transformations: []backendconfig.TransformationT{
-								{VersionID: versionID, ID: "transformation-1", Language: "pythonfaas"},
-							},
-						},
-					},
-				}
-
-				t.Log("Sending request to old architecture...")
-				oldResp := env.OldClient.Transform(context.Background(), events)
-				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-
-				t.Log("Sending request to new architecture...")
-				newResp := env.NewClient.Transform(context.Background(), events)
-				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
-				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-				diff, equal := oldResp.Equal(&newResp)
-				if equal {
-					t.Log("Responses are equal")
 				} else {
 					t.Errorf("Responses differ:\n%s", diff)
 				}
