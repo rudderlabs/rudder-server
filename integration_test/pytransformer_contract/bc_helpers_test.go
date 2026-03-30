@@ -418,7 +418,7 @@ func startOpenFaasFlask(
 		env = append(env, toContainerURL(e))
 	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "hub.rudderlabs.com/dockerhub-proxy/rudderlabs/openfaas-flask",
+		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
 		// Pinned to match the production version
 		Tag:          "1.13.2",
 		Auth:         registry.AuthConfiguration(),
