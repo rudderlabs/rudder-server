@@ -418,8 +418,9 @@ func startOpenFaasFlask(
 		env = append(env, toContainerURL(e))
 	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/openfaas-flask",
-		Tag:          "latest",
+		Repository: "422074288268.dkr.ecr.us-east-1.amazonaws.com/docker-hub/rudderlabs/openfaas-flask",
+		// Pinned to match the production version
+		Tag:          "1.13.2",
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,
@@ -484,7 +485,7 @@ func startRudderPytransformer(
 	}
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
-		Tag:          "latest",
+		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
 		Auth:         registry.AuthConfiguration(),
 		Env:          env,
 		ExtraHosts:   cfg.ExtraHosts,

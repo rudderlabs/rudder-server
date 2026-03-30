@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -262,30 +263,61 @@ type Response struct {
 	MirrorFiltered bool
 }
 
-// Equal compares two Response structs and returns true if they are equal
-// regardless of the order of elements in the Events and FailedEvents slices
-func (r *Response) Equal(v *Response) (string, bool) {
+var responseDatetimePattern = regexp.MustCompile(
+	`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})?$`,
+)
+
+// EqualResult holds the result of a Response comparison.
+type EqualResult struct {
+	Diff             string
+	Equal            bool
+	DatetimeForgiven bool // true when responses matched only because datetime strings were treated as equal
+}
+
+// EqualDetailed compares two Response structs using a two-pass strategy:
+//  1. Strict comparison (exact match). If it passes, returns Equal with DatetimeForgiven=false.
+//  2. Lax comparison (datetime strings forgiven). If it passes, returns Equal with DatetimeForgiven=true.
+//  3. If both fail, returns the diff from the lax pass.
+func (r *Response) EqualDetailed(v *Response) EqualResult {
 	if len(r.Events) != len(v.Events) {
-		return fmt.Sprintf("Expected Events length %d, got %d", len(r.Events), len(v.Events)), false
+		return EqualResult{Diff: fmt.Sprintf("Expected Events length %d, got %d", len(r.Events), len(v.Events))}
 	}
-
 	if len(r.FailedEvents) != len(v.FailedEvents) {
-		return fmt.Sprintf("Expected FailedEvents length %d, got %d", len(r.FailedEvents), len(v.FailedEvents)), false
+		return EqualResult{Diff: fmt.Sprintf("Expected FailedEvents length %d, got %d", len(r.FailedEvents), len(v.FailedEvents))}
 	}
 
-	extraA, extraB := diffLists(r.Events, v.Events)
+	// First pass: strict comparison (no datetime forgiveness)
+	extraA, extraB := diffLists(r.Events, v.Events, strictObjectsEqual)
+	strictEventsMatch := len(extraA) == 0 && len(extraB) == 0
+	strictFailedMatch := false
+	if strictEventsMatch {
+		extraA, extraB = diffLists(r.FailedEvents, v.FailedEvents, strictObjectsEqual)
+		strictFailedMatch = len(extraA) == 0 && len(extraB) == 0
+	}
+	if strictEventsMatch && strictFailedMatch {
+		return EqualResult{Equal: true}
+	}
+
+	// Second pass: lax comparison (datetime strings forgiven)
+	extraA, extraB = diffLists(r.Events, v.Events, responseObjectsEqual)
 	if len(extraA) > 0 || len(extraB) > 0 {
-		diff := formatListDiff(r.Events, v.Events, extraA, extraB)
-		return diff, false
+		return EqualResult{Diff: formatListDiff(r.Events, v.Events, extraA, extraB)}
 	}
-
-	extraA, extraB = diffLists(r.FailedEvents, v.FailedEvents)
+	extraA, extraB = diffLists(r.FailedEvents, v.FailedEvents, responseObjectsEqual)
 	if len(extraA) > 0 || len(extraB) > 0 {
-		diff := formatListDiff(r.FailedEvents, v.FailedEvents, extraA, extraB)
-		return diff, false
+		return EqualResult{Diff: formatListDiff(r.FailedEvents, v.FailedEvents, extraA, extraB)}
 	}
 
-	return "", true
+	return EqualResult{Equal: true, DatetimeForgiven: true}
+}
+
+// Equal compares two Response structs and returns true if they are equal
+// regardless of the order of elements in the Events and FailedEvents slices.
+// Matching datetime values in Output are treated as equal when both values
+// match responseDatetimePattern.
+func (r *Response) Equal(v *Response) (string, bool) {
+	result := r.EqualDetailed(v)
+	return result.Diff, result.Equal
 }
 
 type EventParams struct {
@@ -379,7 +411,7 @@ type SrcHydrationResponse struct {
 	Batch []SrcHydrationEvent `json:"batch" required:"true"`
 }
 
-func diffLists(listA, listB any) (extraA, extraB []any) {
+func diffLists(listA, listB any, equalFn func(a, b any) bool) (extraA, extraB []any) {
 	aValue := reflect.ValueOf(listA)
 	bValue := reflect.ValueOf(listB)
 
@@ -395,7 +427,7 @@ func diffLists(listA, listB any) (extraA, extraB []any) {
 			if visited[j] {
 				continue
 			}
-			if assert.ObjectsAreEqual(bValue.Index(j).Interface(), element) {
+			if equalFn(bValue.Index(j).Interface(), element) {
 				visited[j] = true
 				found = true
 				break
@@ -414,6 +446,92 @@ func diffLists(listA, listB any) (extraA, extraB []any) {
 	}
 
 	return extraA, extraB
+}
+
+func strictObjectsEqual(left, right any) bool {
+	return assert.ObjectsAreEqual(left, right)
+}
+
+func responseObjectsEqual(left, right any) bool {
+	leftResponse, leftIsResponse := left.(TransformerResponse)
+	rightResponse, rightIsResponse := right.(TransformerResponse)
+	if leftIsResponse || rightIsResponse {
+		if !leftIsResponse || !rightIsResponse {
+			return false
+		}
+		return transformerResponsesEqual(leftResponse, rightResponse)
+	}
+	return assert.ObjectsAreEqual(left, right)
+}
+
+func transformerResponsesEqual(left, right TransformerResponse) bool {
+	if !assert.ObjectsAreEqual(left.Metadata, right.Metadata) {
+		return false
+	}
+	if left.StatusCode != right.StatusCode {
+		return false
+	}
+	if left.Error != right.Error {
+		return false
+	}
+	if !assert.ObjectsAreEqual(left.ValidationErrors, right.ValidationErrors) {
+		return false
+	}
+	if !assert.ObjectsAreEqual(left.StatTags, right.StatTags) {
+		return false
+	}
+
+	return responseValuesEqual(left.Output, right.Output)
+}
+
+func responseValuesEqual(left, right any) bool {
+	leftMap, leftIsMap := left.(map[string]any)
+	rightMap, rightIsMap := right.(map[string]any)
+	if leftIsMap || rightIsMap {
+		if !leftIsMap || !rightIsMap {
+			return false
+		}
+		if len(leftMap) != len(rightMap) {
+			return false
+		}
+		for key, leftValue := range leftMap {
+			rightValue, ok := rightMap[key]
+			if !ok {
+				return false
+			}
+			if !responseValuesEqual(leftValue, rightValue) {
+				return false
+			}
+		}
+		return true
+	}
+
+	leftSlice, leftIsSlice := left.([]any)
+	rightSlice, rightIsSlice := right.([]any)
+	if leftIsSlice || rightIsSlice {
+		if !leftIsSlice || !rightIsSlice {
+			return false
+		}
+		if len(leftSlice) != len(rightSlice) {
+			return false
+		}
+		for i := range leftSlice {
+			if !responseValuesEqual(leftSlice[i], rightSlice[i]) {
+				return false
+			}
+		}
+		return true
+	}
+
+	leftString, leftIsString := left.(string)
+	rightString, rightIsString := right.(string)
+	if leftIsString && rightIsString {
+		if responseDatetimePattern.MatchString(leftString) && responseDatetimePattern.MatchString(rightString) {
+			return true
+		}
+	}
+
+	return reflect.DeepEqual(left, right)
 }
 
 var spewConfig = spew.ConfigState{
