@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.72.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.71.0...v1.72.0-rc.1) (2026-03-30)
+
+
+### Features
+
+* **jobsdb:** migration optimizations for large number of datasets ([#6786](https://github.com/rudderlabs/rudder-server/issues/6786)) ([641f9fd](https://github.com/rudderlabs/rudder-server/commit/641f9fdcefda3b9dd567294cdd432e05b03ce257))
+
+
+### Bug Fixes
+
+* language label ([#6809](https://github.com/rudderlabs/rudder-server/issues/6809)) ([ac501c8](https://github.com/rudderlabs/rudder-server/commit/ac501c80162c853a5954e902fd85c33c7e7ea1d9))
+* mirroring round trip comparison ([#6813](https://github.com/rudderlabs/rudder-server/issues/6813)) ([57a079b](https://github.com/rudderlabs/rudder-server/commit/57a079b23a5c81d3fb87cf8e49990cc4507318ce))
+
+
+### Miscellaneous
+
+* partition migration stress test and improvements ([#6802](https://github.com/rudderlabs/rudder-server/issues/6802)) ([419818a](https://github.com/rudderlabs/rudder-server/commit/419818a5c3e1b30000825e0ca36f06f2e41075a8))
+* sync release v1.71.0 to main branch ([#6801](https://github.com/rudderlabs/rudder-server/issues/6801)) ([6a6ee90](https://github.com/rudderlabs/rudder-server/commit/6a6ee90e9c6641df7e70dfc60f0f256fa1e22f02))
+
 ## [1.71.2](https://github.com/rudderlabs/rudder-server/compare/v1.71.1...v1.71.2) (2026-03-26)
 
 
