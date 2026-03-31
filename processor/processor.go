@@ -3576,7 +3576,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	if blockedIDs := proc.config.userTransformationMirroringBlockedIDs.Load(); slices.Contains(blockedIDs, transformationID) {
 		proc.stats.utMirroringBlockedByTransformationID(partition, transformationID).Increment()
-		proc.logger.Infon("UT mirroring blocked by transformation ID",
+		proc.logger.Debugn("UT mirroring blocked by transformation ID",
 			logger.NewStringField("versionId", versionID),
 			logger.NewStringField("transformationId", transformationID),
 		)
@@ -3585,7 +3585,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	if proc.mirrorFilteredCache.Get(versionID) {
 		proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
-		proc.logger.Infon("UT mirroring filtered by cache",
+		proc.logger.Debugn("UT mirroring filtered by cache",
 			logger.NewStringField("versionId", versionID),
 			logger.NewStringField("transformationId", transformationID),
 		)
