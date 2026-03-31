@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
@@ -754,7 +755,7 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
-			proc := &Handle{conf: c, statsFactory: statsStore}
+			proc := &Handle{conf: c, statsFactory: statsStore, logger: logger.NOP}
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
 			proc.config.userTransformMirrorURL = tc.userTransformURL
@@ -889,7 +890,7 @@ func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
 			require.NoError(t, err)
 
 			c := config.New()
-			proc := &Handle{conf: c, statsFactory: statsStore}
+			proc := &Handle{conf: c, statsFactory: statsStore, logger: logger.NOP}
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(100.0)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(false)
 			proc.config.userTransformMirrorURL = "http://js-mirror:9090"

@@ -3064,6 +3064,10 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 						_, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 						proc.mirrorFilteredCache.Put(versionID, true, proc.config.mirrorFilterCacheTTL)
 						proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
+						proc.logger.Infon("UT mirroring filtered by mirror response",
+							logger.NewStringField("versionId", versionID),
+							logger.NewStringField("transformationId", transformationID),
+						)
 						if utMirroringSanityChecks != nil {
 							utMirroringSanityChecks <- response
 							close(utMirroringSanityChecks)
@@ -3105,7 +3109,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					proc.logger.Warnn("Cannot create copy of transformer events", obskit.Error(err))
 				}
 
-				_, _, transformationID := transformerutils.GetTransformationInfo(eventList)
+				_, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 				go func(responseCopy, eventListCopy []byte) {
 					if len(responseCopy) == 0 || len(eventListCopy) == 0 {
 						return
@@ -3143,8 +3147,16 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					result := response.EqualDetailed(&normalizedMirror)
 					if result.Equal {
 						proc.stats.utMirroringEqualResponses(partition, transformationID).Increment()
+						proc.logger.Debugn("UT mirroring sanity check equal",
+							logger.NewStringField("versionId", versionID),
+							logger.NewStringField("transformationId", transformationID),
+						)
 						if result.DatetimeForgiven {
 							proc.stats.utMirroringDatetimeForgivenResponses(partition, transformationID).Increment()
+							proc.logger.Debugn("UT mirroring sanity check datetime forgiven",
+								logger.NewStringField("versionId", versionID),
+								logger.NewStringField("transformationId", transformationID),
+							)
 						}
 						return
 					}
@@ -3166,6 +3178,8 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 							obskit.WorkspaceID(tr.Metadata.WorkspaceID),
 							obskit.SourceID(tr.Metadata.SourceID),
 							logger.NewStringField("messageId", tr.Metadata.MessageID),
+							logger.NewStringField("versionId", versionID),
+							logger.NewStringField("transformationId", transformationID),
 						)
 					}
 
@@ -3562,11 +3576,19 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 
 	if blockedIDs := proc.config.userTransformationMirroringBlockedIDs.Load(); slices.Contains(blockedIDs, transformationID) {
 		proc.stats.utMirroringBlockedByTransformationID(partition, transformationID).Increment()
+		proc.logger.Infon("UT mirroring blocked by transformation ID",
+			logger.NewStringField("versionId", versionID),
+			logger.NewStringField("transformationId", transformationID),
+		)
 		return false, nil
 	}
 
 	if proc.mirrorFilteredCache.Get(versionID) {
 		proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
+		proc.logger.Infon("UT mirroring filtered by cache",
+			logger.NewStringField("versionId", versionID),
+			logger.NewStringField("transformationId", transformationID),
+		)
 		return false, nil
 	}
 
