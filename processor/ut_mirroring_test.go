@@ -289,8 +289,9 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "false",
-				"partition": "",
+				"equal":            "false",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected different response from UserMirrorTransform")
@@ -366,8 +367,9 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "true",
-				"partition": "",
+				"equal":            "true",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected same response from UserMirrorTransform")
@@ -426,15 +428,17 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "true",
-				"partition": "",
+				"equal":            "true",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected same response from UserMirrorTransform")
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_datetime_forgiven_total", stats.Tags{
-				"partition": "",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected datetime forgiven metric to be bumped")
@@ -502,8 +506,9 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "false",
-				"partition": "",
+				"equal":            "false",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected different response from UserMirrorTransform")
@@ -914,7 +919,6 @@ func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
 			}
 
 			enabled, _ := proc.isUserTransformMirroringEnabled(tc.eventList, "")
-
 			require.Equal(t, tc.expectEnabled, enabled)
 
 			if tc.expectMetricHit {
@@ -924,6 +928,10 @@ func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
 				})
 				require.NotNil(t, m, "expected metric to be recorded for transformationId=%s", tc.expectedMetricID)
 				require.EqualValues(t, 1, m.LastValue())
+			} else {
+				// Verify no blocked metric was recorded for any transformationId
+				require.Empty(t, statsStore.GetByName("processor_ut_mirroring_blocked_transformation"),
+					"expected no blocked transformation metric to be recorded")
 			}
 		})
 	}
