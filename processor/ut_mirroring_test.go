@@ -751,10 +751,10 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := config.New()
 			statsStore, err := memstats.New()
 			require.NoError(t, err)
 
+			c := config.New()
 			proc := &Handle{conf: c, statsFactory: statsStore, logger: logger.NOP}
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
