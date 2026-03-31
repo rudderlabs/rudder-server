@@ -96,12 +96,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 		return types.Response{}
 	}
 	batchSize := u.config.batchSize.Load()
-	var transformationID string
-	if len(clientEvents[0].Destination.Transformations) > 0 {
-		transformationID = clientEvents[0].Destination.Transformations[0].ID
-	}
-
-	transformationLanguage, transformationVersionID := transformerutils.GetTransformationInfo(clientEvents)
+	transformationLanguage, transformationVersionID, transformationID := transformerutils.GetTransformationInfo(clientEvents)
 	userURL := u.userTransformURL(transformationLanguage, transformationVersionID)
 
 	labels := types.TransformerMetricLabels{

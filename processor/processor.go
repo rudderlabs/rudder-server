@@ -185,6 +185,7 @@ type Handle struct {
 		pythonTransformMirrorURL                  string
 		mirrorFilterCacheTTL                      time.Duration
 		pythonTransformConfig                     transformerutils.PythonTransformConfig
+		userTransformationMirroringBlockedIDs     config.ValueLoader[[]string]
 		storeSamplerEnabled                       config.ValueLoader[bool]
 		archiveInPreProcess                       bool
 	}
@@ -227,6 +228,7 @@ type processorStats struct {
 	utMirroringEqualResponses            func(partition string) stats.Measurement
 	utMirroringDifferentResponses        func(partition string) stats.Measurement
 	utMirroringFilteredResponses         func(partition string) stats.Measurement
+	utMirroringBlockedByTransformationID func(partition, transformationID string) stats.Measurement
 	utMirroringDatetimeForgivenResponses func(partition string) stats.Measurement
 }
 type DestStatT struct {
@@ -575,6 +577,12 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
+	proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
+		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{
+			"partition":        partition,
+			"transformationId": transformationID,
+		})
+	}
 	proc.stats.utMirroringDatetimeForgivenResponses = func(partition string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_datetime_forgiven_total", stats.CountType, stats.Tags{
 			"partition": partition,
@@ -789,6 +797,7 @@ func (proc *Handle) loadReloadableConfig(defaultPayloadLimit int64, defaultMaxEv
 	proc.config.userTransformMirrorURL = proc.conf.GetStringVar("", "USER_TRANSFORM_MIRROR_URL")
 	proc.config.pythonTransformMirrorURL = proc.conf.GetStringVar("", "PYTHON_TRANSFORM_MIRROR_URL")
 	proc.config.mirrorFilterCacheTTL = proc.conf.GetDurationVar(3, time.Hour, "Processor.userTransformationMirroring.filterCacheTTL")
+	proc.config.userTransformationMirroringBlockedIDs = proc.conf.GetReloadableStringSliceVar(nil, "Processor.userTransformationMirroring.blockedTransformationIDs")
 	proc.config.storeSamplerEnabled = proc.conf.GetReloadableBoolVar(false, "Processor.storeSamplerEnabled")
 }
 
@@ -1175,19 +1184,19 @@ func (proc *Handle) getTransformerEvents(
 }
 
 func (proc *Handle) updateMetricMaps(
-	// countMetadataMap provides metadata context for getDiffMetrics to create detailed PUReportedMetric objects
-	// storing rich context during event processing for diff metric reporting
+// countMetadataMap provides metadata context for getDiffMetrics to create detailed PUReportedMetric objects
+// storing rich context during event processing for diff metric reporting
 	countMetadataMap map[string]MetricMetadata,
 
-	// countMap accumulates event counts by unique key combinations, feeding into getDiffMetrics to capture diff metrics
+// countMap accumulates event counts by unique key combinations, feeding into getDiffMetrics to capture diff metrics
 	countMap map[string]int64,
 
-	// connectionDetailsMap stores source-destination relationship data that becomes PUReportedMetric.ConnectionDetails
-	// for constructing complete reporting metrics with workspace, source, and destination context
+// connectionDetailsMap stores source-destination relationship data that becomes PUReportedMetric.ConnectionDetails
+// for constructing complete reporting metrics with workspace, source, and destination context
 	connectionDetailsMap map[string]*reportingtypes.ConnectionDetails,
 
-	// statusDetailsMap captures processing outcomes including error details, validation violations, and sample payloads
-	// that become PUReportedMetric.StatusDetail
+// statusDetailsMap captures processing outcomes including error details, validation violations, and sample payloads
+// that become PUReportedMetric.StatusDetail
 	statusDetailsMap map[string]map[string]*reportingtypes.StatusDetail,
 
 	event *types.TransformerResponse,
@@ -3030,14 +3039,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	// Send to custom transformer only if the destination has a transformer enabled
 	if transformationEnabled {
 		noOfEvents := len(eventList)
-		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled(eventList)
-		if utMirroringEnabled {
-			_, versionID := transformerutils.GetTransformationInfo(eventList)
-			if proc.mirrorFilteredCache.Get(versionID) {
-				utMirroringEnabled = false
-				proc.stats.utMirroringFilteredResponses(partition).Increment()
-			}
-		}
+		utMirroringEnabled, utMirroringSanityChecks := proc.isUserTransformMirroringEnabled(eventList, partition)
 		proc.logger.Debugn("UT mirroring setting", logger.NewBoolField("enabled", utMirroringEnabled))
 		userTransformationStat := proc.newUserTransformationStat(sourceID, workspaceID, destination, false)
 		var userTransformationMirroringStat *DestStatT
@@ -3055,7 +3057,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 				go func() { // mirroring go routine
 					response := proc.transformerClients.UserMirror().Transform(ctx, eventList)
 					if response.MirrorFiltered {
-						_, versionID := transformerutils.GetTransformationInfo(eventList)
+						_, versionID, _ := transformerutils.GetTransformationInfo(eventList)
 						proc.mirrorFilteredCache.Put(versionID, true, proc.config.mirrorFilterCacheTTL)
 						proc.stats.utMirroringFilteredResponses(partition).Increment()
 						if utMirroringSanityChecks != nil {
@@ -3537,7 +3539,7 @@ func (proc *Handle) saveDroppedJobs(ctx context.Context, droppedJobs []*jobsdb.J
 	return nil
 }
 
-func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.TransformerEvent) (bool, chan types.Response) {
+func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.TransformerEvent, partition string) (bool, chan types.Response) {
 	mirroringSanityChecksSampling := proc.config.userTransformationMirroringSanitySampling.Load()
 	mirroringFireAndForget := proc.config.userTransformationMirroringFireAndForget.Load()
 
@@ -3551,8 +3553,19 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 		return false, nil
 	}
 
+	language, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
+
+	if blockedIDs := proc.config.userTransformationMirroringBlockedIDs.Load(); slices.Contains(blockedIDs, transformationID) {
+		proc.stats.utMirroringBlockedByTransformationID(partition, transformationID).Increment()
+		return false, nil
+	}
+
+	if proc.mirrorFilteredCache.Get(versionID) {
+		proc.stats.utMirroringFilteredResponses(partition).Increment()
+		return false, nil
+	}
+
 	// Check if this is a Python transformation and apply version-based filtering
-	language, versionID := transformerutils.GetTransformationInfo(eventList)
 	isPython := strings.HasPrefix(language, "python")
 	if isPython && !proc.config.pythonTransformConfig.IsVersionAllowed(versionID) {
 		return false, nil
