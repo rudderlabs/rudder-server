@@ -765,8 +765,8 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 			}
 			proc.config.userTransformationMirroringBlockedIDs = config.SingleValueLoader[[]string](nil)
 			proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
-			proc.stats.utMirroringFilteredResponses = func(partition string) stats.Measurement {
-				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{"partition": partition})
+			proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
+				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{"partition": partition, "transformationId": transformationID})
 			}
 			proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
 				return statsStore.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{"partition": partition, "transformationId": transformationID})
@@ -899,9 +899,10 @@ func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
 
 			proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
 
-			proc.stats.utMirroringFilteredResponses = func(partition string) stats.Measurement {
+			proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
 				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
-					"partition": partition,
+					"partition":        partition,
+					"transformationId": transformationID,
 				})
 			}
 			proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {

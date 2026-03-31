@@ -225,11 +225,11 @@ type processorStats struct {
 	statDtransformStageCount   func(partition string) stats.Measurement
 	statStoreStageCount        func(partition string) stats.Measurement
 
-	utMirroringEqualResponses            func(partition string) stats.Measurement
-	utMirroringDifferentResponses        func(partition string) stats.Measurement
-	utMirroringFilteredResponses         func(partition string) stats.Measurement
+	utMirroringEqualResponses            func(partition, transformationID string) stats.Measurement
+	utMirroringDifferentResponses        func(partition, transformationID string) stats.Measurement
+	utMirroringFilteredResponses         func(partition, transformationID string) stats.Measurement
 	utMirroringBlockedByTransformationID func(partition, transformationID string) stats.Measurement
-	utMirroringDatetimeForgivenResponses func(partition string) stats.Measurement
+	utMirroringDatetimeForgivenResponses func(partition, transformationID string) stats.Measurement
 }
 type DestStatT struct {
 	numEvents               stats.Measurement
@@ -560,21 +560,24 @@ func (proc *Handle) Setup(
 			"partition": partition,
 		})
 	}
-	proc.stats.utMirroringEqualResponses = func(partition string) stats.Measurement {
+	proc.stats.utMirroringEqualResponses = func(partition, transformationID string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
-			"equal":     "true",
-			"partition": partition,
+			"equal":            "true",
+			"partition":        partition,
+			"transformationId": transformationID,
 		})
 	}
-	proc.stats.utMirroringDifferentResponses = func(partition string) stats.Measurement {
+	proc.stats.utMirroringDifferentResponses = func(partition, transformationID string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_responses_count", stats.CountType, stats.Tags{
-			"equal":     "false",
-			"partition": partition,
+			"equal":            "false",
+			"partition":        partition,
+			"transformationId": transformationID,
 		})
 	}
-	proc.stats.utMirroringFilteredResponses = func(partition string) stats.Measurement {
+	proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
-			"partition": partition,
+			"partition":        partition,
+			"transformationId": transformationID,
 		})
 	}
 	proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
@@ -583,9 +586,10 @@ func (proc *Handle) Setup(
 			"transformationId": transformationID,
 		})
 	}
-	proc.stats.utMirroringDatetimeForgivenResponses = func(partition string) stats.Measurement {
+	proc.stats.utMirroringDatetimeForgivenResponses = func(partition, transformationID string) stats.Measurement {
 		return proc.statsFactory.NewTaggedStat("processor_ut_mirroring_datetime_forgiven_total", stats.CountType, stats.Tags{
-			"partition": partition,
+			"partition":        partition,
+			"transformationId": transformationID,
 		})
 	}
 
@@ -3057,9 +3061,9 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 				go func() { // mirroring go routine
 					response := proc.transformerClients.UserMirror().Transform(ctx, eventList)
 					if response.MirrorFiltered {
-						_, versionID, _ := transformerutils.GetTransformationInfo(eventList)
+						_, versionID, transformationID := transformerutils.GetTransformationInfo(eventList)
 						proc.mirrorFilteredCache.Put(versionID, true, proc.config.mirrorFilterCacheTTL)
-						proc.stats.utMirroringFilteredResponses(partition).Increment()
+						proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
 						if utMirroringSanityChecks != nil {
 							utMirroringSanityChecks <- response
 							close(utMirroringSanityChecks)
@@ -3101,6 +3105,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					proc.logger.Warnn("Cannot create copy of transformer events", obskit.Error(err))
 				}
 
+				_, _, transformationID := transformerutils.GetTransformationInfo(eventList)
 				go func(responseCopy, eventListCopy []byte) {
 					if len(responseCopy) == 0 || len(eventListCopy) == 0 {
 						return
@@ -3137,15 +3142,15 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 					}
 					result := response.EqualDetailed(&normalizedMirror)
 					if result.Equal {
-						proc.stats.utMirroringEqualResponses(partition).Increment()
+						proc.stats.utMirroringEqualResponses(partition, transformationID).Increment()
 						if result.DatetimeForgiven {
-							proc.stats.utMirroringDatetimeForgivenResponses(partition).Increment()
+							proc.stats.utMirroringDatetimeForgivenResponses(partition, transformationID).Increment()
 						}
 						return
 					}
 					diff := result.Diff
 
-					defer proc.stats.utMirroringDifferentResponses(partition).Increment()
+					defer proc.stats.utMirroringDifferentResponses(partition, transformationID).Increment()
 
 					var (
 						tr  *types.TransformerResponse
@@ -3561,7 +3566,7 @@ func (proc *Handle) isUserTransformMirroringEnabled(eventList []types.Transforme
 	}
 
 	if proc.mirrorFilteredCache.Get(versionID) {
-		proc.stats.utMirroringFilteredResponses(partition).Increment()
+		proc.stats.utMirroringFilteredResponses(partition, transformationID).Increment()
 		return false, nil
 	}
 
