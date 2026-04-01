@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.1](https://github.com/rudderlabs/rudder-server/compare/v1.72.0...v1.72.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* blacklist uts by transformation id ([#6832](https://github.com/rudderlabs/rudder-server/issues/6832)) ([a1d9613](https://github.com/rudderlabs/rudder-server/commit/a1d9613f17e4c334c232d4ff398743308cd52152))
+
 ## [1.72.0](https://github.com/rudderlabs/rudder-server/compare/v1.71.0...v1.72.0) (2026-03-30)
 
 
