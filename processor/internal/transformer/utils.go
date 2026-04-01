@@ -108,23 +108,24 @@ func (c PythonTransformConfig) IsVersionAllowed(versionID string) bool {
 	return ok
 }
 
-// GetTransformationInfo extracts language and versionID from the first event's first transformation.
-func GetTransformationInfo(events []types.TransformerEvent) (language, versionID string) {
+// GetTransformationInfo extracts language, versionID, and transformationID from the first event's first transformation.
+func GetTransformationInfo(events []types.TransformerEvent) (language, versionID, transformationID string) {
 	language = "javascript"
 	if len(events) == 0 {
-		return language, ""
+		return language, "", ""
 	}
 
 	if len(events[0].Destination.Transformations) == 0 {
-		return language, ""
+		return language, "", ""
 	}
 
 	t := events[0].Destination.Transformations[0]
 	versionID = t.VersionID
+	transformationID = t.ID
 	if t.Language != "" {
 		language = t.Language
 	}
-	return language, versionID
+	return language, versionID, transformationID
 }
 
 // GetEndpointFromURL is a helper function to extract hostname from URL

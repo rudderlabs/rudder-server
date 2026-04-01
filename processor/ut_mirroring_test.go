@@ -14,8 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/rudderlabs/rudder-go-kit/cachettl"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/minio"
@@ -287,8 +289,9 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "false",
-				"partition": "",
+				"equal":            "false",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected different response from UserMirrorTransform")
@@ -364,8 +367,9 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "true",
-				"partition": "",
+				"equal":            "true",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected same response from UserMirrorTransform")
@@ -424,15 +428,17 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "true",
-				"partition": "",
+				"equal":            "true",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected same response from UserMirrorTransform")
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_datetime_forgiven_total", stats.Tags{
-				"partition": "",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected datetime forgiven metric to be bumped")
@@ -500,8 +506,9 @@ func TestUTMirroring(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			metric := memStats.Get("processor_ut_mirroring_responses_count", stats.Tags{
-				"equal":     "false",
-				"partition": "",
+				"equal":            "false",
+				"partition":        "",
+				"transformationId": "",
 			})
 			return metric != nil && metric.LastValue() == 1
 		}, 10*time.Second, 10*time.Millisecond, "Expected different response from UserMirrorTransform")
@@ -749,8 +756,11 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
 			c := config.New()
-			proc := &Handle{conf: c}
+			proc := &Handle{conf: c, statsFactory: statsStore, logger: logger.NOP}
 			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(tc.sanitySampling)
 			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(tc.fireAndForget)
 			proc.config.userTransformMirrorURL = tc.userTransformURL
@@ -759,8 +769,16 @@ func TestIsUserTransformMirroringEnabled_PythonVersionFiltering(t *testing.T) {
 				Enabled:    tc.versionEnabled,
 				VersionIDs: tc.versionIDs,
 			}
+			proc.config.userTransformationMirroringBlockedIDs = config.SingleValueLoader[[]string](nil)
+			proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
+			proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
+				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{"partition": partition, "transformationId": transformationID})
+			}
+			proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
+				return statsStore.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{"partition": partition, "transformationId": transformationID})
+			}
 
-			enabled, sanityCh := proc.isUserTransformMirroringEnabled(tc.eventList)
+			enabled, sanityCh := proc.isUserTransformMirroringEnabled(tc.eventList, "")
 			require.Equal(t, tc.expectEnabled, enabled)
 			if tc.expectSanityCh {
 				require.NotNil(t, sanityCh)
@@ -812,4 +830,109 @@ func copyClientEvents(t *testing.T, clientEvents []types.TransformerEvent) []typ
 	var copiedEvents []types.TransformerEvent
 	require.NoError(t, jsonrs.Unmarshal(marshalledEvents, &copiedEvents))
 	return copiedEvents
+}
+
+func TestUTMirroringBlockedTransformationIDs(t *testing.T) {
+	makeEventList := func(language, versionID, transformationID string) []types.TransformerEvent {
+		return []types.TransformerEvent{
+			{
+				Destination: backendconfig.DestinationT{
+					Transformations: []backendconfig.TransformationT{
+						{Language: language, VersionID: versionID, ID: transformationID},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name             string
+		eventList        []types.TransformerEvent
+		blockedIDs       []string
+		expectEnabled    bool
+		expectMetricHit  bool
+		expectedMetricID string
+	}{
+		{
+			name:             "transformation ID in blocklist disables mirroring",
+			eventList:        makeEventList("javascript", "v1", "tr-blocked"),
+			blockedIDs:       []string{"tr-blocked"},
+			expectEnabled:    false,
+			expectMetricHit:  true,
+			expectedMetricID: "tr-blocked",
+		},
+		{
+			name:          "transformation ID not in blocklist keeps mirroring enabled",
+			eventList:     makeEventList("javascript", "v1", "tr-allowed"),
+			blockedIDs:    []string{"tr-blocked"},
+			expectEnabled: true,
+		},
+		{
+			name:          "empty blocklist keeps mirroring enabled",
+			eventList:     makeEventList("javascript", "v1", "tr-any"),
+			blockedIDs:    nil,
+			expectEnabled: true,
+		},
+		{
+			name:          "no transformations on destination keeps mirroring enabled",
+			eventList:     []types.TransformerEvent{{Destination: backendconfig.DestinationT{}}},
+			blockedIDs:    []string{"tr-blocked"},
+			expectEnabled: true,
+		},
+		{
+			name:             "multiple blocked IDs matches correctly",
+			eventList:        makeEventList("pythonFaaS", "v2", "tr-second"),
+			blockedIDs:       []string{"tr-first", "tr-second", "tr-third"},
+			expectEnabled:    false,
+			expectMetricHit:  true,
+			expectedMetricID: "tr-second",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			c := config.New()
+			proc := &Handle{conf: c, statsFactory: statsStore, logger: logger.NOP}
+			proc.config.userTransformationMirroringSanitySampling = config.SingleValueLoader(100.0)
+			proc.config.userTransformationMirroringFireAndForget = config.SingleValueLoader(false)
+			proc.config.userTransformMirrorURL = "http://js-mirror:9090"
+			proc.config.pythonTransformMirrorURL = "http://python-mirror:9090"
+			proc.config.pythonTransformConfig = transformerutils.PythonTransformConfig{Enabled: false}
+			proc.config.userTransformationMirroringBlockedIDs = config.SingleValueLoader(tc.blockedIDs)
+
+			proc.mirrorFilteredCache = cachettl.New[string, bool](cachettl.WithNoRefreshTTL)
+
+			proc.stats.utMirroringFilteredResponses = func(partition, transformationID string) stats.Measurement {
+				return statsStore.NewTaggedStat("processor_ut_mirroring_filtered_count", stats.CountType, stats.Tags{
+					"partition":        partition,
+					"transformationId": transformationID,
+				})
+			}
+			proc.stats.utMirroringBlockedByTransformationID = func(partition, transformationID string) stats.Measurement {
+				return statsStore.NewTaggedStat("processor_ut_mirroring_blocked_transformation", stats.CountType, stats.Tags{
+					"partition":        partition,
+					"transformationId": transformationID,
+				})
+			}
+
+			enabled, _ := proc.isUserTransformMirroringEnabled(tc.eventList, "")
+			require.Equal(t, tc.expectEnabled, enabled)
+
+			if tc.expectMetricHit {
+				m := statsStore.Get("processor_ut_mirroring_blocked_transformation", stats.Tags{
+					"partition":        "",
+					"transformationId": tc.expectedMetricID,
+				})
+				require.NotNil(t, m, "expected metric to be recorded for transformationId=%s", tc.expectedMetricID)
+				require.EqualValues(t, 1, m.LastValue())
+			} else {
+				// Verify no blocked metric was recorded for any transformationId
+				require.Empty(t, statsStore.GetByName("processor_ut_mirroring_blocked_transformation"),
+					"expected no blocked transformation metric to be recorded")
+			}
+		})
+	}
 }

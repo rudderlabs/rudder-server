@@ -9,6 +9,7 @@ import (
 
 	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 
+	backendconfig "github.com/rudderlabs/rudder-server/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
@@ -122,4 +123,70 @@ func TestWithProcTransformReqTimeStat(t *testing.T) {
 		require.NotNil(t, metric)
 		require.GreaterOrEqual(t, metric.LastDuration(), time.Duration(executionTime.Nanoseconds()))
 	})
+}
+
+func TestGetTransformationInfo(t *testing.T) {
+	tests := []struct {
+		name                string
+		events              []types.TransformerEvent
+		expectedLanguage    string
+		expectedVersionID   string
+		expectedTransformID string
+	}{
+		{
+			name:                "empty event list",
+			events:              nil,
+			expectedLanguage:    "javascript",
+			expectedVersionID:   "",
+			expectedTransformID: "",
+		},
+		{
+			name: "event with no transformations",
+			events: []types.TransformerEvent{
+				{Destination: backendconfig.DestinationT{}},
+			},
+			expectedLanguage:    "javascript",
+			expectedVersionID:   "",
+			expectedTransformID: "",
+		},
+		{
+			name: "event with transformation returns all fields",
+			events: []types.TransformerEvent{
+				{
+					Destination: backendconfig.DestinationT{
+						Transformations: []backendconfig.TransformationT{
+							{Language: "pythonFaaS", VersionID: "v42", ID: "tr-123"},
+						},
+					},
+				},
+			},
+			expectedLanguage:    "pythonFaaS",
+			expectedVersionID:   "v42",
+			expectedTransformID: "tr-123",
+		},
+		{
+			name: "empty language defaults to javascript",
+			events: []types.TransformerEvent{
+				{
+					Destination: backendconfig.DestinationT{
+						Transformations: []backendconfig.TransformationT{
+							{Language: "", VersionID: "v1", ID: "tr-456"},
+						},
+					},
+				},
+			},
+			expectedLanguage:    "javascript",
+			expectedVersionID:   "v1",
+			expectedTransformID: "tr-456",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			language, versionID, transformationID := GetTransformationInfo(tc.events)
+			require.Equal(t, tc.expectedLanguage, language)
+			require.Equal(t, tc.expectedVersionID, versionID)
+			require.Equal(t, tc.expectedTransformID, transformationID)
+		})
+	}
 }
