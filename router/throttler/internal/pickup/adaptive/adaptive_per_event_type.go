@@ -32,13 +32,9 @@ func NewPerEventTypeThrottler(destType, destinationID, eventType string,
 			`Router.throttler.minLimit`,
 		),
 		maxLimit: c.GetReloadableInt64Var(DefaultMaxThrottlingLimit, 1,
-			fmt.Sprintf(`Router.throttler.%s.%s.%s.maxLimit`, destType, destinationID, eventType), // TODO: remove in future
 			fmt.Sprintf(`Router.throttler.%s.%s.%s.limit`, destType, destinationID, eventType),
-			fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, destinationID), // TODO: remove in future
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, destinationID),
-			fmt.Sprintf(`Router.throttler.%s.%s.maxLimit`, destType, eventType), // TODO: remove in future
 			fmt.Sprintf(`Router.throttler.%s.%s.limit`, destType, eventType),
-			fmt.Sprintf(`Router.throttler.%s.maxLimit`, destType), // TODO: remove in future
 			fmt.Sprintf(`Router.throttler.%s.limit`, destType),
 			"Router.throttler.defaultMaxLimit",
 		),
