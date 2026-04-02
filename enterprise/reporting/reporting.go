@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lib/pq"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -24,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -629,7 +629,7 @@ func (r *DefaultReporter) Report(ctx context.Context, metrics []*types.PUReporte
 		return err
 	}
 
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ReportsTable,
+	stmt, err := txn.PrepareContext(ctx, misc.DBCopyIn(ReportsTable,
 		"workspace_id", "namespace", "instance_id",
 		"source_definition_id",
 		"source_category",

@@ -1,6 +1,7 @@
 package misc
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -132,4 +133,22 @@ func SetAppNameInDBConnURL(connectionUrl, appName string) (string, error) {
 
 func QuoteLiteral(literal string) string {
 	return pq.QuoteLiteral(literal)
+}
+
+// DBCopyIn generates a COPY ... FROM STDIN statement for the given table and columns.
+func DBCopyIn(table string, columns ...string) string {
+	b := bytes.NewBufferString("COPY ")
+	pq.BufferQuoteIdentifier(table, b)
+	if len(columns) > 0 {
+		b.WriteString(" (")
+		for i, col := range columns {
+			if i != 0 {
+				b.WriteString(", ")
+			}
+			pq.BufferQuoteIdentifier(col, b)
+		}
+		b.WriteString(")")
+	}
+	b.WriteString(" FROM STDIN")
+	return b.String()
 }

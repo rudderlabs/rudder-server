@@ -231,7 +231,7 @@ func (idr *Identity) addRules(txn *sqlmiddleware.Tx, loadFileNames []string, gzW
 	}
 
 	sortedColumnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value", "id"}
-	stmt, err := txn.Prepare(pq.CopyIn(mergeRulesStagingTable, sortedColumnNames...))
+	stmt, err := txn.Prepare(misc.DBCopyIn(mergeRulesStagingTable, sortedColumnNames...))
 	if err != nil {
 		pkgLogger.Errorn("IDR: Error starting bulk copy using CopyIn",
 			obskit.Error(err),

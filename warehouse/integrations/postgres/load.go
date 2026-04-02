@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lib/pq"
-
 	"github.com/rudderlabs/rudder-go-kit/logger"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -111,7 +109,7 @@ func (pg *Postgres) loadTable(
 	)
 
 	log.Debugn("creating prepared stmt for loading data")
-	copyInStmt := pq.CopyIn(stagingTableName, sortedColumnKeys...)
+	copyInStmt := misc.DBCopyIn(stagingTableName, sortedColumnKeys...)
 	stmt, err := txn.PrepareContext(ctx, copyInStmt)
 	if err != nil {
 		return nil, "", fmt.Errorf("preparing statement for copy in: %w", err)
