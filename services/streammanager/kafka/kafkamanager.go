@@ -147,10 +147,12 @@ type internalProducer interface {
 }
 
 type ProducerManager struct {
-	p                 internalProducer
-	timeout           time.Duration
-	embedAvroSchemaID bool
+	p       internalProducer
+	timeout time.Duration
+	topic   string
+
 	codecs            map[string]*goavro.Codec
+	embedAvroSchemaID bool
 }
 
 func (p *ProducerManager) getTimeout() time.Duration {
@@ -333,10 +335,12 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	}
 
 	return &ProducerManager{
-		p:                 p,
-		timeout:           o.Timeout,
-		embedAvroSchemaID: destConfig.EmbedAvroSchemaID,
+		p:       p,
+		timeout: o.Timeout,
+		topic:   destConfig.Topic,
+
 		codecs:            codecs,
+		embedAvroSchemaID: destConfig.EmbedAvroSchemaID,
 	}, nil
 }
 
@@ -386,7 +390,9 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 		return nil, err
 	}
 	return &ProducerManager{
-		p: p, timeout: o.Timeout,
+		p:       p,
+		timeout: o.Timeout,
+		topic:   destConfig.Topic,
 	}, nil
 }
 
@@ -438,7 +444,9 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		return nil, err
 	}
 	return &ProducerManager{
-		p: p, timeout: o.Timeout,
+		p:       p,
+		timeout: o.Timeout,
+		topic:   destConfig.Topic,
 	}, nil
 }
 
@@ -525,33 +533,12 @@ func (p *ProducerManager) Publish(ctx context.Context, msgs ...client.Message) e
 	return p.p.Publish(ctx, msgs...)
 }
 
-// Produce creates a producer and send data to Kafka.
-func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig any) (int, string, string) {
-	if p.p == nil {
-		// return 400 if producer is invalid
-		return 400, "Could not create producer", "Could not create producer"
-	}
-	start := now()
-	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
-
-	conf := configuration{}
-	jsonConfig, err := jsonrs.Marshal(destConfig)
-	if err != nil {
-		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
-	}
-	err = jsonrs.Unmarshal(jsonConfig, &conf)
-	if err != nil {
-		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
-	}
-
-	if conf.Topic == "" {
-		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
-	}
-
+// Produce sends data to Kafka.
+func (p *ProducerManager) Produce(jsonData json.RawMessage, _ any) (int, string, string) {
+	defer kafkaStats.produceTime.RecordDuration()()
 	ctx, cancel := context.WithTimeout(context.Background(), p.getTimeout())
 	defer cancel()
-
-	return sendMessage(ctx, jsonData, p, conf.Topic)
+	return sendMessage(ctx, jsonData, p, p.topic)
 }
 
 func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
