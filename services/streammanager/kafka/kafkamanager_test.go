@@ -284,7 +284,7 @@ func TestNewProducer(t *testing.T) {
 func TestIntegration(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
-	kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.produceTime = getMockedRecordDuration(t, ctrl, true)
 	kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
 	kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
 
@@ -310,7 +310,7 @@ func TestIntegration(t *testing.T) {
 	var returnMessage, errMessage string
 	for _, message := range []string{"one", "two", "three"} {
 		require.Eventually(t, func() bool {
-			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`{"message":"`+message+`","topic":"foo-bar","userId":"1234"}`), destConfig)
+			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`{"message":"`+message+`","topic":"foo-bar","userId":"1234"}`), nil)
 			return statusCode == http.StatusOK
 		}, 30*time.Second, 100*time.Millisecond)
 		require.Equal(t, "Message delivered to topic: foo-bar", returnMessage)
@@ -353,7 +353,7 @@ func TestAIOKafka(t *testing.T) {
 	})
 	ctrl := gomock.NewController(t)
 	kafkaStats.creationTime = getMockedTimer(t, ctrl, true)
-	kafkaStats.produceTime = getMockedTimer(t, ctrl, true)
+	kafkaStats.produceTime = getMockedRecordDuration(t, ctrl, true)
 	kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl, true)
 	kafkaStats.publishTime = getMockedTimer(t, ctrl, true)
 
@@ -388,7 +388,7 @@ func TestAIOKafka(t *testing.T) {
 	var returnMessage, errMessage string
 	for _, message := range []string{"one", "two", "three"} {
 		require.Eventually(t, func() bool {
-			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`{"message":"`+message+`","topic":"foo-bar","userId":"1234"}`), destConfig)
+			statusCode, returnMessage, errMessage = p.Produce(json.RawMessage(`{"message":"`+message+`","topic":"foo-bar","userId":"1234"}`), nil)
 			return statusCode == http.StatusOK
 		}, 30*time.Second, 100*time.Millisecond)
 		require.Equal(t, "Message delivered to topic: foo-bar", returnMessage)
@@ -609,42 +609,11 @@ func TestClose(t *testing.T) {
 }
 
 func TestProduce(t *testing.T) {
-	t.Run("invalid producer", func(t *testing.T) {
-		pm := ProducerManager{}
-		sc, res, err := pm.Produce(nil, nil)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "Could not create producer", res)
-		require.Equal(t, "Could not create producer", err)
-	})
-
-	t.Run("invalid destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
-
-		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
-		sc, res, err := pm.Produce(nil, destConfig)
-		require.Equal(t, 400, sc)
-		require.Contains(t, res, "unsupported type")
-		require.Contains(t, err, "unsupported type")
-	})
-
-	t.Run("empty destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
-
-		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := map[string]any{"foo": "bar"}
-		sc, res, err := pm.Produce(json.RawMessage(""), destConfig)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
-		require.Equal(t, "invalid destination configuration: no topic", err)
-	})
-
 	t.Run("invalid message", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, gomock.NewController(t), false)
 
-		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := map[string]any{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(""), destConfig)
+		pm := ProducerManager{p: &client.Producer{}, topic: "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(""), nil)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
@@ -653,11 +622,10 @@ func TestProduce(t *testing.T) {
 	t.Run("producer error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, ctrl, false)
 
-		pm := &ProducerManager{p: &pMockErr{error: fmt.Errorf("super bad")}}
-		destConfig := map[string]any{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
+		pm := &ProducerManager{p: &pMockErr{error: fmt.Errorf("super bad")}, topic: "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), nil)
 		require.Equal(t, 400, sc)
 		require.Contains(t, res, "super bad error occurred.")
 		require.Contains(t, err, "super bad")
@@ -666,11 +634,10 @@ func TestProduce(t *testing.T) {
 	t.Run("producer retryable error", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, ctrl, false)
 
-		pm := &ProducerManager{p: &pMockErr{error: kafka.LeaderNotAvailable}}
-		destConfig := map[string]any{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
+		pm := &ProducerManager{p: &pMockErr{error: kafka.LeaderNotAvailable}, topic: "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), nil)
 		require.Equal(t, 500, sc)
 		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
 		require.Contains(t, err, kafka.LeaderNotAvailable.Error())
@@ -679,11 +646,10 @@ func TestProduce(t *testing.T) {
 	t.Run("default-topic-test", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, ctrl, false)
 
-		pm := &ProducerManager{p: &pMockErr{}}
-		destConfig := map[string]any{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		pm := &ProducerManager{p: &pMockErr{}, topic: "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), nil)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
 		require.Equal(t, "Message delivered to topic: foo-bar", err)
@@ -692,11 +658,10 @@ func TestProduce(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl, false)
-		kafkaStats.produceTime = getMockedTimer(t, ctrl, false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, ctrl, false)
 
-		pm := &ProducerManager{p: &pMockErr{}}
-		destConfig := map[string]any{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
+		pm := &ProducerManager{p: &pMockErr{}, topic: "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), nil)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
 		require.Equal(t, "Message delivered to topic: foo-bar", err)
@@ -893,7 +858,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		t.Cleanup(config.Reset)
 
 		// Setting up mocks
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, gomock.NewController(t), false)
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
@@ -903,7 +868,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, nil)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
@@ -976,7 +941,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		t.Cleanup(config.Reset)
 
 		// Setting up mocks
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, gomock.NewController(t), false)
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
@@ -992,7 +957,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfigCopy)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, nil)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
@@ -1007,7 +972,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		t.Cleanup(config.Reset)
 
 		// Setting up mocks
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t), false)
+		kafkaStats.produceTime = getMockedRecordDuration(t, gomock.NewController(t), false)
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t), false)
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t), false)
 
@@ -1018,7 +983,7 @@ func TestAvroSchemaRegistry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		statusCode, returnMsg, errMsg := p.Produce(rawMessage, &destConfig)
+		statusCode, returnMsg, errMsg := p.Produce(rawMessage, nil)
 		require.EqualValuesf(t, http.StatusOK, statusCode, "Produce failed: %s - %s", returnMsg, errMsg)
 
 		// Start consuming
@@ -1034,6 +999,18 @@ func getMockedTimer(t *testing.T, ctrl *gomock.Controller, anyTimes bool) *mock_
 	t.Helper()
 	mockedTimer := mock_stats.NewMockMeasurement(ctrl)
 	call := mockedTimer.EXPECT().SendTiming(sinceDuration)
+	if anyTimes {
+		call.AnyTimes()
+	} else {
+		call.Times(1)
+	}
+	return mockedTimer
+}
+
+func getMockedRecordDuration(t *testing.T, ctrl *gomock.Controller, anyTimes bool) *mock_stats.MockMeasurement {
+	t.Helper()
+	mockedTimer := mock_stats.NewMockMeasurement(ctrl)
+	call := mockedTimer.EXPECT().RecordDuration().Return(func() {})
 	if anyTimes {
 		call.AnyTimes()
 	} else {
