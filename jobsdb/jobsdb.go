@@ -1281,12 +1281,12 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken) (dataSetTList, error) {
 	// report table count metrics before shrinking the datasetList
 	jd.statTableCount.Gauge(len(jd.datasetList))
 
-	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
-	// this shrank datasetList is used to compute DSRangeList
-	// This is done because, writers don't care about the left datasets in the sorted datasetList
+	// If the owner of this jobsdb is a writer, then shrinking datasetList to have only last dataset
+	// which is being written to.
+	// Writers only write to the last dataset and if this dataset is full, then create a new dataset.
 	if jd.ownerType == Write {
-		if len(jd.datasetList) > 2 {
-			jd.datasetList = jd.datasetList[len(jd.datasetList)-2 : len(jd.datasetList)]
+		if len(jd.datasetList) > 1 {
+			jd.datasetList = jd.datasetList[len(jd.datasetList)-1 : len(jd.datasetList)]
 		}
 	}
 

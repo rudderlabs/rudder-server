@@ -476,14 +476,8 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 			}
 		}
 
-		var idxCheck bool
-		if jd.ownerType == Read {
-			// if jobsdb owner is read, exempting the last two datasets from migration.
-			// This is done to avoid dsList conflicts between reader and writer
-			idxCheck = idx == len(dsList)-1 || idx == len(dsList)-2
-		} else {
-			idxCheck = idx == len(dsList)-1
-		}
+		// exempting the last dataset from migration since it is the one being currently written to.
+		idxCheck := idx == len(dsList)-1
 
 		if liveDSCount >= jd.conf.migration.maxMigrateOnce.Load() || result.pendingJobsCount >= maxDSSize || idxCheck {
 			break
