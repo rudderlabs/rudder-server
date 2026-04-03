@@ -582,17 +582,11 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 		r.Post("/v1/replay", gw.webReplayHandler())
 		r.Post("/v1/batch", gw.internalBatchHandler())
 
-		// TODO: delete this handler once we are ready to remove support for the v1 api
-		r.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
-
 		r.Mount("/v2/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV2.ServeHTTP))
 		for path, handler := range gw.internalHttpHandlers {
 			r.Mount(path, withContentType("application/json; charset=utf-8", handler.ServeHTTP))
 		}
 	})
-
-	// TODO: delete this handler once we are ready to remove support for the v1 api
-	srvMux.Mount("/v1/job-status", withContentType("application/json; charset=utf-8", rsourcesHandlerV1.ServeHTTP))
 
 	srvMux.Route("/v1", func(r chi.Router) {
 		r.Post("/alias", gw.webAliasHandler())
