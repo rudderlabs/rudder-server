@@ -1,9 +1,14 @@
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 10
+      semver-patch-days: 5
+      exclude:
+        - "github.com/rudderlabs/*"
     groups:
       frequent:
         patterns:
@@ -17,13 +22,17 @@ updates:
           - "minor"
           - "patch"
   - package-ecosystem: "github-actions"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 10
   - package-ecosystem: "docker"
-    directory: "/" 
+    directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 10
     groups:
       docker-deps:
         patterns:
