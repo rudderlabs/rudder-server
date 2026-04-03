@@ -7,6 +7,8 @@ updates:
     cooldown:
       default-days: 10
       semver-patch-days: 5
+      exclude:
+        - "github.com/rudderlabs/*"
     groups:
       frequent:
         patterns:
