@@ -317,9 +317,12 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 	}
 }
 
-// TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
-	for breq := range bt.webhook.batchRequestQ {
+for breq := range bt.webhook.batchRequestQ {
+// Return immediately if no requests in batch to avoid unnecessary timeout waits
+if len(breq.batchRequest) == 0 {
+continue
+}
 		// If unable to fetch features from transformer, send GatewayTimeout to all requests
 		// TODO: Remove timeout from here after timeout handler is added in gateway
 		ctx, cancel := context.WithTimeout(context.Background(), config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"))
@@ -580,7 +583,6 @@ func (webhook *HandleT) recordWebhookErrors(sourceType, reason string, reqs []*w
 	}
 }
 
-// TODO: Check if correct
 func (bt *batchWebhookTransformerT) newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
 		"sourceType": sourceType,
