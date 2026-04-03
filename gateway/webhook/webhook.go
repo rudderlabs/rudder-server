@@ -321,8 +321,12 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
 		// If unable to fetch features from transformer, send GatewayTimeout to all requests
-		// TODO: Remove timeout from here after timeout handler is added in gateway
-		ctx, cancel := context.WithTimeout(context.Background(), config.GetDurationVar(10, time.Second, "WriteTimeout", "WriteTimeOutInSec"))
+		// Using request context for timeout handling instead of manual context.WithTimeout
+		if len(breq.batchRequest) == 0 {
+			continue
+		}
+		// Use the first request's context as the base context for the batch
+		ctx := breq.batchRequest[0].request.Context()
 		sourceTransformAdapter, err := bt.sourceTransformAdapter(ctx)
 		if err != nil {
 			bt.webhook.logger.Errorn("webhook source transformation failed",
@@ -332,10 +336,8 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: response.GetErrorStatusCode(response.GatewayTimeout), Err: response.GetStatus(response.GatewayTimeout)}
 			}
-			cancel()
 			continue
 		}
-		cancel()
 
 		transformerURL, err := sourceTransformAdapter.getTransformerURL(breq.sourceType)
 		if err != nil {
