@@ -89,7 +89,7 @@ func startKeydb(t testing.TB, conf *config.Config) {
 		NodeID:           0,
 		TotalHashRanges:  128,
 		SnapshotInterval: time.Minute,
-		Addresses:        []string{address},
+		Addresses:        func() []string { return []string{address} },
 	}
 
 	require.NoError(t, err)

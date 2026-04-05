@@ -2128,7 +2128,7 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 		var stmt *sql.Stmt
 		var err error
 
-		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id", "partition_id"))
+		stmt, err = tx.PrepareContext(ctx, misc.DBCopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id", "partition_id"))
 		if err != nil {
 			return err
 		}
@@ -2553,7 +2553,7 @@ func (jd *Handle) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSetT
 	updatedStates = updateJobStatusStats{}
 	store := func() error {
 		updatedStates = updateJobStatusStats{} // reset in case of retry
-		stmt, err := tx.PrepareContext(ctx, pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
+		stmt, err := tx.PrepareContext(ctx, misc.DBCopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 			"retry_time", "error_code", "error_response", "parameters"))
 		if err != nil {
 			return err

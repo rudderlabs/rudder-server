@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	sqlmiddleware "github.com/rudderlabs/rudder-server/warehouse/integrations/middleware/sqlquerywrapper"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -83,7 +84,7 @@ func (lf *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) err
 	return lf.WithTx(ctx, func(tx *sqlmiddleware.Tx) error {
 		stmt, err := tx.PrepareContext(
 			ctx,
-			pq.CopyIn(
+			misc.DBCopyIn(
 				"wh_load_files",
 				"location",
 				"source_id",

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lib/pq"
 	"github.com/samber/lo"
 	"github.com/segmentio/go-hll"
 	"github.com/spaolacci/murmur3"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	txn "github.com/rudderlabs/rudder-server/utils/tx"
 )
@@ -193,7 +193,7 @@ func (u *UniqueUsersReporter) ReportUsers(ctx context.Context, reports []*UsersR
 	if len(reports) == 0 {
 		return nil
 	}
-	stmt, err := tx.PrepareContext(ctx, pq.CopyIn(trackUsersTable,
+	stmt, err := tx.PrepareContext(ctx, misc.DBCopyIn(trackUsersTable,
 		"workspace_id",
 		"instance_id",
 		"source_id",

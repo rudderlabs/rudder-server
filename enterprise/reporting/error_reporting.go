@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/client"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting/event_sampler"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -324,7 +325,7 @@ func (edr *ErrorDetailReporter) normalizeErrors(ctx context.Context, connectionG
 }
 
 func (edr *ErrorDetailReporter) writeGroupedErrors(ctx context.Context, groups map[types.ErrorDetailGroupKey][]*types.EDReportsDB, txn *Tx) error {
-	stmt, err := txn.PrepareContext(ctx, pq.CopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
+	stmt, err := txn.PrepareContext(ctx, misc.DBCopyIn(ErrorDetailReportsTable, ErrorDetailReportsColumns...))
 	if err != nil {
 		return fmt.Errorf("preparing statement: %v", err)
 	}

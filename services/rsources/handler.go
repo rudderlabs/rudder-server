@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 	"github.com/segmentio/ksuid"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
@@ -708,22 +709,19 @@ func setupStatsTable(ctx context.Context, db *sql.DB, defaultDbName string, log 
 
 func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	if _, err := sh.localDB.ExecContext(ctx, `CREATE PUBLICATION "rsources_stats_pub" FOR TABLE rsources_stats`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+		if pq.As(err, pqerror.DuplicateObject) == nil {
 			return fmt.Errorf("failed to create publication on local database: %w", err)
 		}
 	}
 
 	if _, err := sh.localDB.ExecContext(ctx, `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys_v2`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+		if pq.As(err, pqerror.DuplicateObject) == nil {
 			return fmt.Errorf("failed to alter publication on local database to add rsources_failed_keys_v2 table: %w", err)
 		}
 	}
 
 	if _, err := sh.localDB.ExecContext(ctx, `ALTER PUBLICATION "rsources_stats_pub" ADD TABLE rsources_failed_keys_v2_records`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+		if pq.As(err, pqerror.DuplicateObject) == nil {
 			return fmt.Errorf("failed to alter publication on local database to add rsources_failed_keys_v2_records table: %w", err)
 		}
 	}
@@ -737,8 +735,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 	subscriptionQuery := fmt.Sprintf(`CREATE SUBSCRIPTION "%s" CONNECTION %s PUBLICATION "rsources_stats_pub"`, subscriptionName, pq.QuoteLiteral(subscriptionConn)) // skipcq: GO-R4002
 	if _, err := sh.sharedDB.ExecContext(ctx, subscriptionQuery); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("42710") { // duplicate
+		if pq.As(err, pqerror.DuplicateObject) == nil {
 			return fmt.Errorf("failed to create subscription on shared database: %w", err)
 		}
 	}
@@ -748,8 +745,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 
 	// TODO: Remove this after a few releases
 	if _, err := sh.sharedDB.ExecContext(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
-		pqError, ok := err.(*pq.Error)
-		if !ok || pqError.Code != pq.ErrorCode("22023") { // table synchronization in progress
+		if pq.As(err, pqerror.InvalidParameterValue) == nil { // table synchronization in progress
 			return fmt.Errorf("failed to drop old rsources_failed_keys table on shared database: %w", err)
 		}
 	}

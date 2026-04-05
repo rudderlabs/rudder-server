@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/lib/pq/pqerror"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
@@ -1232,7 +1233,7 @@ func TestIntegration(t *testing.T) {
 			require.Error(t, err)
 			var pgErr *pq.Error
 			require.ErrorAs(t, err, &pgErr)
-			require.EqualValues(t, pq.ErrorCode("55000"), pgErr.Code)
+			require.EqualValues(t, pqerror.ObjectNotInPrerequisiteState, pgErr.Code)
 
 			// Adding primary key
 			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, tableName))
@@ -1342,7 +1343,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, errorsMap[whutils.IdentifiesTable])
 			var pgErr *pq.Error
 			require.ErrorAs(t, errorsMap[whutils.UsersTable], &pgErr)
-			require.EqualValues(t, pq.ErrorCode("55000"), pgErr.Code)
+			require.EqualValues(t, pqerror.ObjectNotInPrerequisiteState, pgErr.Code)
 
 			// Adding primary key to users table
 			_, err = primaryDB.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE %s.%s ADD PRIMARY KEY ("id");`, namespace, whutils.UsersTable))
