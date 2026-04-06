@@ -27,7 +27,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			// Set configuration
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -52,7 +52,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			// Set only destination type config (fallback)
 			config.Set("Router.throttler.WEBHOOK.minLimit", 5)
-			config.Set("Router.throttler.WEBHOOK.maxLimit", 50)
+			config.Set("Router.throttler.WEBHOOK.limit", 50)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "5s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -90,7 +90,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -117,7 +117,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -142,7 +142,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -167,7 +167,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			// Invalid configuration - minLimit > maxLimit
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 200)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
 
 			limited, err := throttler.CheckLimitReached(context.Background(), 5)
@@ -189,7 +189,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 200)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
@@ -214,7 +214,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -233,7 +233,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 0)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -253,9 +253,9 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			// Set zero max limit and disable fallbacks
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 0)
-			config.Set("Router.throttler.WEBHOOK.maxLimit", 0)
-			config.Set("Router.throttler.maxLimit", 0)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 0)
+			config.Set("Router.throttler.WEBHOOK.limit", 0)
+			config.Set("Router.throttler.limit", 0)
 			config.Set("Router.throttler.defaultMaxLimit", 0)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
@@ -275,7 +275,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "0s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -294,7 +294,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 200)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOKtimeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -316,7 +316,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 0)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
@@ -341,9 +341,9 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			// Set zero max limit and disable fallbacks
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 0)
-			config.Set("Router.throttler.WEBHOOK.maxLimit", 0)
-			config.Set("Router.throttler.maxLimit", 0)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 0)
+			config.Set("Router.throttler.WEBHOOK.limit", 0)
+			config.Set("Router.throttler.limit", 0)
 			config.Set("Router.throttler.defaultMaxLimit", 0)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
@@ -368,7 +368,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "0s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
@@ -392,7 +392,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 200)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
@@ -416,7 +416,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, mockLogger)
@@ -444,7 +444,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
@@ -463,7 +463,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
@@ -482,7 +482,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
@@ -504,7 +504,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 15)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 15)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", 2*time.Second)
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -566,7 +566,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 			// Set valid configuration
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
@@ -588,7 +588,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 
 		// Set valid configuration
 		config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-		config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+		config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 		config.Set("Router.throttler.WEBHOOK.dest123.timeWindow", "10s")
 
 		throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, &MockLogger{})
@@ -612,7 +612,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "10s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -664,7 +664,7 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			destinationID := "dest123"
 
 			config.Set("Router.throttler.WEBHOOK.dest123.minLimit", 10)
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 100)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 100)
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "0s")
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
@@ -699,9 +699,9 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			config.Set("Router.throttler.WEBHOOK.minLimit", 10)
 			config.Set("Router.throttler.minLimit", 5)
 
-			config.Set("Router.throttler.WEBHOOK.dest123.maxLimit", 200)
-			config.Set("Router.throttler.WEBHOOK.maxLimit", 100)
-			config.Set("Router.throttler.maxLimit", 50)
+			config.Set("Router.throttler.WEBHOOK.dest123.limit", 200)
+			config.Set("Router.throttler.WEBHOOK.limit", 100)
+			config.Set("Router.throttler.limit", 50)
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 
@@ -723,8 +723,8 @@ func TestAdaptiveAllEventTypesThrottler(t *testing.T) {
 			config.Set("Router.throttler.WEBHOOK.minLimit", 15)
 			config.Set("Router.throttler.minLimit", 5)
 
-			config.Set("Router.throttler.WEBHOOK.maxLimit", 150)
-			config.Set("Router.throttler.maxLimit", 50)
+			config.Set("Router.throttler.WEBHOOK.limit", 150)
+			config.Set("Router.throttler.limit", 50)
 
 			throttler := NewAllEventTypesThrottler(destType, destinationID, mockAlgorithm, mockLimiter, config, statsStore, logger.NOP)
 

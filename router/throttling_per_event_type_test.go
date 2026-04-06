@@ -135,10 +135,10 @@ func TestThrottlePerEventType(t *testing.T) {
 			config.Set("Router.throttler.WEBHOOK.throttlerPerEventType", true)
 			config.Set("Router.throttler.WEBHOOK.pickupQueryThrottlingEnabled", true)
 			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".limit", rpsForIdentify)
-			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".maxLimit", rpsForIdentify)
+			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".limit", rpsForIdentify)
 			config.Set("Router.throttler.WEBHOOK."+identifyEventType+".minLimit", rpsForIdentify)
 			config.Set("Router.throttler.WEBHOOK."+trackEventType+".limit", rpsForTrack)
-			config.Set("Router.throttler.WEBHOOK."+trackEventType+".maxLimit", rpsForTrack)
+			config.Set("Router.throttler.WEBHOOK."+trackEventType+".limit", rpsForTrack)
 			config.Set("Router.throttler.WEBHOOK."+trackEventType+".minLimit", rpsForTrack)
 			config.Set("Router.throttler.WEBHOOK.limit", rpsForTrack) // use the higher limit as a fallback
 			config.Set("Router.throttler.WEBHOOK.timeWindow", "1s")

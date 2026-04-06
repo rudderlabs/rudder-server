@@ -488,9 +488,6 @@ func (sh *sourcesHandler) init() error {
 		if err := setupTables(ctx, sh.localDB, sh.config.LocalHostname, sh.log); err != nil {
 			return err
 		}
-		if err := migrateFailedKeysTable(ctx, tx); err != nil {
-			return fmt.Errorf("migrating rsources_failed_keys table: %w", err)
-		}
 		sh.log.Debugn("rsources tables setup successfully", logger.NewStringField("hostname", sh.config.LocalHostname))
 		return nil
 	}); err != nil {
@@ -524,118 +521,6 @@ func setupTables(ctx context.Context, db *sql.DB, defaultDbName string, log logg
 	}
 	if err := setupStatsTable(ctx, db, defaultDbName, log); err != nil {
 		return fmt.Errorf("failed to setup %s rsources stats table: %w", defaultDbName, err)
-	}
-	return nil
-}
-
-// TODO: Remove this after a few releases
-func migrateFailedKeysTable(ctx context.Context, tx *sql.Tx) error {
-	var previousTableExists bool
-	row := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema') AND  tablename  = 'rsources_failed_keys')`)
-	if err := row.Scan(&previousTableExists); err != nil {
-		return err
-	}
-	if previousTableExists {
-		if _, err := tx.ExecContext(ctx, `create or replace function ksuid() returns text as $$
-		declare
-			v_time timestamp with time zone := null;
-			v_seconds numeric(50) := null;
-			v_numeric numeric(50) := null;
-			v_epoch numeric(50) = 1400000000; -- 2014-05-13T16:53:20Z
-			v_base62 text := '';
-			v_alphabet char array[62] := array[
-				'0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-				'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
-				'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
-				'U', 'V', 'W', 'X', 'Y', 'Z',
-				'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
-				'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-				'u', 'v', 'w', 'x', 'y', 'z'];
-			i integer := 0;
-		begin
-
-			-- Get the current time
-			v_time := clock_timestamp();
-
-			-- Extract epoch seconds
-			v_seconds := EXTRACT(EPOCH FROM v_time) - v_epoch;
-
-			-- Generate a KSUID in a numeric variable
-			v_numeric := v_seconds * pow(2::numeric(50), 128) -- 32 bits for seconds and 128 bits for randomness
-				+ ((random()::numeric(70,20) * pow(2::numeric(70,20), 48))::numeric(50) * pow(2::numeric(50), 80)::numeric(50))
-				+ ((random()::numeric(70,20) * pow(2::numeric(70,20), 40))::numeric(50) * pow(2::numeric(50), 40)::numeric(50))
-				+  (random()::numeric(70,20) * pow(2::numeric(70,20), 40))::numeric(50);
-
-			-- Encode it to base-62
-			while v_numeric <> 0 loop
-				v_base62 := v_base62 || v_alphabet[mod(v_numeric, 62) + 1];
-				v_numeric := div(v_numeric, 62);
-			end loop;
-			v_base62 := reverse(v_base62);
-			v_base62 := lpad(v_base62, 27, '0');
-
-			return v_base62;
-
-		end $$ language plpgsql;`); err != nil {
-			return fmt.Errorf("failed to create ksuid function: %w", err)
-		}
-
-		if _, err := tx.ExecContext(ctx, `WITH new_keys AS (
-			INSERT INTO "rsources_failed_keys_v2"
-			(id, job_run_id, task_run_id, source_id, destination_id, db_name)
-			SELECT ksuid(), t.* FROM (
-				SELECT DISTINCT job_run_id, task_run_id, source_id, destination_id, db_name from "rsources_failed_keys"
-			) t
-			RETURNING *
-		)
-		INSERT INTO "rsources_failed_keys_v2_records" (id, record_id, ts)
-		 SELECT n.id, o.record_id::text, min(o.ts) FROM new_keys n
-			JOIN rsources_failed_keys o
-				on o.db_name = n.db_name
-				and o.destination_id = n.destination_id
-				and o.source_id = n.source_id
-				and o.task_run_id = n.task_run_id
-				and o.job_run_id = n.job_run_id
-			group by n.id, o.record_id
-		`); err != nil {
-			return fmt.Errorf("failed to migrate rsources_failed_keys table: %w", err)
-		}
-
-		if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
-			return fmt.Errorf("failed to drop old rsources_failed_keys table: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `drop function if exists ksuid()`); err != nil {
-			return fmt.Errorf("failed to drop ksuid function: %w", err)
-		}
-		return nil
-	}
-
-	return nil
-}
-
-// TODO: Remove this after a few releases
-func setupFailedKeysTableV0(ctx context.Context, db *sql.DB, defaultDbName string, log logger.Logger) error {
-	sqlStatement := fmt.Sprintf(`create table "rsources_failed_keys" (
-		id BIGSERIAL,
-		db_name text not null default '%s',
-		job_run_id text not null,
-		task_run_id text not null,
-		source_id text not null,
-		destination_id text not null,
-		record_id jsonb not null,
-		ts timestamp not null default NOW(),
-		primary key (job_run_id, task_run_id, source_id, destination_id, db_name, id)
-	)`, defaultDbName)
-	_, err := db.ExecContext(ctx, sqlStatement)
-	if err != nil {
-		if pqError, ok := err.(*pq.Error); ok && pqError.Code == "42P07" {
-			log.Debugn("table rsources_failed_keys already exists", logger.NewStringField("dbName", defaultDbName))
-		} else {
-			return err
-		}
-	}
-	if _, err := db.ExecContext(ctx, `create index if not exists rsources_failed_keys_job_run_id_idx on "rsources_failed_keys" (job_run_id)`); err != nil {
-		return err
 	}
 	return nil
 }
@@ -741,13 +626,6 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 	if _, err := sh.sharedDB.ExecContext(ctx, fmt.Sprintf(`ALTER SUBSCRIPTION "%s" REFRESH PUBLICATION`, subscriptionName)); err != nil {
 		return fmt.Errorf("failed to refresh subscription on shared database: %w", err)
-	}
-
-	// TODO: Remove this after a few releases
-	if _, err := sh.sharedDB.ExecContext(ctx, `DROP TABLE IF EXISTS "rsources_failed_keys" CASCADE`); err != nil {
-		if pq.As(err, pqerror.InvalidParameterValue) == nil { // table synchronization in progress
-			return fmt.Errorf("failed to drop old rsources_failed_keys table on shared database: %w", err)
-		}
 	}
 
 	return nil

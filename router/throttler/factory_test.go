@@ -274,7 +274,7 @@ func TestFactory(t *testing.T) {
 		config := config.New()
 		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
-		config.Set("Router.throttler.destName.destID.track.maxLimit", int64(50))
+		config.Set("Router.throttler.destName.destID.track.limit", int64(50))
 		config.Set("Router.throttler.destName.destID.track.minLimit", int64(10))
 		config.Set("Router.throttler.destName.timeWindow", time.Second)
 
@@ -440,7 +440,7 @@ func TestFactory(t *testing.T) {
 			config := config.New()
 			config.Set("Router.throttler.adaptiveEnabled", true)
 			config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
-			config.Set("Router.throttler.destName.destID.track.maxLimit", int64(150))
+			config.Set("Router.throttler.destName.destID.track.limit", int64(150))
 			config.Set("Router.throttler.destName.destID.track.minLimit", int64(50))
 			config.Set("Router.throttler.destName.timeWindow", 3*time.Second)
 
@@ -722,9 +722,9 @@ func TestFactoryWithRedis(t *testing.T) {
 		config.Set("Router.throttler.redisThrottler.addr", redisContainer.Addr)
 		config.Set("Router.throttler.adaptiveEnabled", true)
 		config.Set("Router.throttler.destName.destID.throttlerPerEventType", true)
-		config.Set("Router.throttler.destName.destID.track.maxLimit", int64(80))
+		config.Set("Router.throttler.destName.destID.track.limit", int64(80))
 		config.Set("Router.throttler.destName.destID.track.minLimit", int64(8))
-		config.Set("Router.throttler.destName.destID.identify.maxLimit", int64(40))
+		config.Set("Router.throttler.destName.destID.identify.limit", int64(40))
 		config.Set("Router.throttler.destName.destID.identify.minLimit", int64(4))
 		config.Set("Router.throttler.destName.destID.timeWindow", time.Second)
 

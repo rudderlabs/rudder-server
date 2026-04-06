@@ -568,9 +568,6 @@ type Handle struct {
 	backgroundGroup  *errgroup.Group
 
 	// skipSetupDBSetup is useful for testing as we mock the database client
-	// TODO: Remove this flag once we have test setup that uses real database
-	skipSetupDBSetup bool
-
 	// TriggerAddNewDS, TriggerMigrateDS is useful for triggering addNewDS to run from tests.
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
@@ -1152,9 +1149,7 @@ func (jd *Handle) Start() error {
 	jd.backgroundCancel = cancel
 	jd.backgroundGroup = g
 
-	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, jd.ownerType)
-	}
+	jd.setUpForOwnerType(ctx, jd.ownerType)
 	return nil
 }
 
