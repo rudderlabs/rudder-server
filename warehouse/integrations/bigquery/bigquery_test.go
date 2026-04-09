@@ -1585,7 +1585,7 @@ func listPartitions(t testing.TB, ctx context.Context, db *bigquery.Client, name
 	t.Helper()
 	t.Log("Listing partitions in namespace", namespace)
 
-	query := fmt.Sprintf(`SELECT table_name, partition_id FROM %s.INFORMATION_SCHEMA.PARTITIONS;`,
+	query := fmt.Sprintf(`SELECT table_name, partition_id FROM %s.INFORMATION_SCHEMA.PARTITIONS WHERE table_name NOT LIKE 'rudder_staging_%%';`,
 		namespace,
 	)
 
