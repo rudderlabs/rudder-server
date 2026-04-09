@@ -17,6 +17,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
@@ -1570,7 +1571,15 @@ func list(t testing.TB, ctx context.Context, db *bigquery.Client, namespace stri
 		require.NoError(t, err)
 
 		metadata, err := db.Dataset(namespace).Table(table.TableID).Metadata(ctx)
-		require.NoError(t, err)
+		if err != nil {
+			// Table may have been dropped between listing and metadata fetch
+			// (e.g. staging tables cleaned up concurrently).
+			var e *googleapi.Error
+			if errors.As(err, &e) && e.Code == 404 {
+				continue
+			}
+			require.NoError(t, err)
+		}
 
 		metadata.Name = table.TableID
 		tables = append(tables, metadata)
@@ -1585,7 +1594,7 @@ func listPartitions(t testing.TB, ctx context.Context, db *bigquery.Client, name
 	t.Helper()
 	t.Log("Listing partitions in namespace", namespace)
 
-	query := fmt.Sprintf(`SELECT table_name, partition_id FROM %s.INFORMATION_SCHEMA.PARTITIONS;`,
+	query := fmt.Sprintf(`SELECT table_name, partition_id FROM %s.INFORMATION_SCHEMA.PARTITIONS WHERE table_name NOT LIKE 'rudder_staging_%%';`,
 		namespace,
 	)
 
