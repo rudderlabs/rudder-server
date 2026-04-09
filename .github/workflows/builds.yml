@@ -20,7 +20,7 @@ jobs:
     uses: ./.github/workflows/docker-build-dockerhub.yml
     with:
       image_names: |
-        ["rudderlabs/develop-rudder-server", "rudderlabs/rudder-server,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
+        ["rudderlabs/develop-rudder-server", "rudderlabs/rudder-server,enable=${{ github.ref == refs/heads/master || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
       tags: |
         type=ref,event=branch
@@ -54,7 +54,7 @@ jobs:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
       image_names: |
-        ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
+        ["rudderstack/develop-rudder-server-enterprise", "rudderstack/rudder-server-enterprise,enable=${{ github.ref == refs/heads/master || github.event_name == 'release' }}"]
       dockerfile: Dockerfile
       tags: |
         type=ref,event=branch,suffix=-race
@@ -70,7 +70,7 @@ jobs:
     uses: ./.github/workflows/docker-build-ecr.yml
     with:
       image_names: |
-        ["rudderstack/develop-suppression-backup-service", "rudderstack/suppression-backup-service,enable=${{ github.ref == format('refs/heads/{0}', 'master') || github.event_name == 'release' }}"]
+        ["rudderstack/develop-suppression-backup-service", "rudderstack/suppression-backup-service,enable=${{ github.ref == refs/heads/master || github.event_name == 'release' }}"]
       dockerfile: ./suppression-backup-service/Dockerfile
       tags: |
         type=ref,event=branch
@@ -88,7 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@95d9a5deda9de15063e7595e9719c11c38c90ae2 # v2.13.2
+        uses: step-security/harden-runner@5ef0c079ce82195b2a36a210272d6b661572d83e # v2.14.2
         with:
           egress-policy: audit
 
