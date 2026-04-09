@@ -123,7 +123,7 @@ func TestIntegration(t *testing.T) {
 				stagingFilePath2: "../testdata/source-job.events-2.json",
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedSourcesSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -165,7 +165,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -223,7 +223,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -281,7 +281,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -347,7 +347,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -413,7 +413,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -476,7 +476,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
@@ -563,7 +563,7 @@ func TestIntegration(t *testing.T) {
 				},
 				verifySchema: func(t testing.TB, db *bigquery.Client, namespace string) {
 					t.Helper()
-					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
+					schema := bqhelper.RetrieveRecordsFromWarehouse(t, db, fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') AND (t.table_name NOT LIKE 'rudder_staging_%%') AND ( c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL );`, namespace))
 					require.Equal(t, expectedUploadJobSchema, whth.ConvertRecordsToSchema(schema))
 				},
 				verifyRecords: func(t testing.TB, db *bigquery.Client, sourceID, destinationID, namespace, jobRunID, taskRunID string) {
