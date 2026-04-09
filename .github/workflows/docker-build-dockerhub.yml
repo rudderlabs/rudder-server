@@ -67,14 +67,14 @@ jobs:
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: ${{ steps.process-images.outputs.formatted_images }}
           tags: ${{ inputs.tags }}
 
       - name: Docker arm64 meta
         id: arm64_meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: |
             ${{ steps.process-images.outputs.formatted_images }}
@@ -84,7 +84,7 @@ jobs:
 
       - name: Docker amd64 meta
         id: amd64_meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf # v6.0.0
         with:
           images: |
             ${{ steps.process-images.outputs.formatted_images }}
