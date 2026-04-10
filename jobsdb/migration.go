@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/samber/lo"
 
@@ -21,6 +22,55 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/crash"
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
+
+// isRetryableError checks if the error is a retryable database connection error
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	retryableErrors := []string{
+		"driver: bad connection",
+		"connection refused",
+		"connection reset by peer",
+		"broken pipe",
+		"network is unreachable",
+		"no such host",
+		"i/o timeout",
+		"context deadline exceeded",
+		"sql: connection is already closed",
+		"sql: database is closed",
+	}
+	for _, retryable := range retryableErrors {
+		if strings.Contains(errStr, retryable) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryWithBackoff retries the given operation with exponential backoff
+func retryWithBackoff(operation func() error, maxRetries int) error {
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 1 * time.Second
+	b.MaxInterval = 30 * time.Second
+	b.MaxElapsedTime = 0 // No max elapsed time, rely on maxRetries
+
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		err := operation()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !isRetryableError(err) {
+			return err
+		}
+		duration := b.NextBackOff()
+		time.Sleep(duration)
+	}
+	return fmt.Errorf("max retries (%d) exceeded: %w", maxRetries, lastErr)
+}
 
 // startMigrateDSLoop migrates jobs from src dataset (srcDS) to destination dataset (dest_ds)
 // First all the unprocessed jobs are copied over. Then all the jobs which haven't
@@ -180,12 +230,19 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 							logger.NewStringField("from", source.ds.Index),
 							logger.NewStringField("to", destination.Index),
 						)
-					}
 				}
 				if err = jd.createDSIndicesInTx(ctx, tx, destination); err != nil {
 					return fmt.Errorf("create %v indices: %w", destination, err)
 				}
-				if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
+				if err = retryWithBackoff(func() error {
+					return jd.journalMarkDoneInTx(tx, opID)
+				}, 3); err != nil {
+					if isRetryableError(err) {
+						jd.logger.Warn("Database connection error, retrying...")
+						return retryWithBackoff(func() error {
+							return jd.journalMarkDoneInTx(tx, opID)
+						}, 3)
+					}
 					return fmt.Errorf("mark journal done: %w", err)
 				}
 				jd.logger.Infon("[[ migrateDSLoop ]]: Jobs migrated", logger.NewIntField("count", int64(totalJobsMigrated)))
@@ -212,7 +269,9 @@ func (jd *Handle) doMigrateDS(ctx context.Context) error {
 			if err = jd.postMigrateHandleDS(tx, migrateFromDatasets); err != nil {
 				return fmt.Errorf("post migrate handle ds: %w", err)
 			}
-			if err = jd.journalMarkDoneInTx(tx, opID); err != nil {
+			if err = retryWithBackoff(func() error {
+				return jd.journalMarkDoneInTx(tx, opID)
+			}, 3); err != nil {
 				return fmt.Errorf("mark journal done: %w", err)
 			}
 			return nil
