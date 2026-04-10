@@ -2,17 +2,21 @@ package pytransformer_contract
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-go-kit/httputil"
@@ -183,20 +187,15 @@ def transformEvent(event, metadata):
 // correctly overrides DNS resolution for transformation HTTP calls.
 //
 // A mock HTTP server runs on the host. DNS_OVERRIDES maps a fake hostname
-// (custom-api.test) to 127.0.0.1. The transformation calls
+// (custom-api.test) to an IP that reaches the host's loopback from inside
+// the pytransformer container. The transformation calls
 // http://custom-api.test:PORT/data and should reach the mock server.
-//
-// Only runs on Linux (host networking) — on macOS, 127.0.0.1 inside the
-// container is the container's loopback, not the host's.
 func TestDNSOverrides(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("DNS override contract test requires host networking (Linux/CI only)")
-	}
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
 
+	hostIP := hostReachableIP(t, pool)
 	mockSrv, mockCalls := newMockAPIServer(t, "override-target")
 
 	u, err := url.Parse(mockSrv.URL)
@@ -222,7 +221,7 @@ def transformEvent(event, metadata):
 
 	container, pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		"DNS_OVERRIDES=custom-api.test,127.0.0.1",
+		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
 	t.Cleanup(func() { _ = pool.Purge(container) })
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
@@ -232,8 +231,8 @@ def transformEvent(event, metadata):
 		status, items := sendRawTransform(t, pyURL, events)
 
 		require.Equal(t, http.StatusOK, status)
-		require.Equal(t, 1, len(items))
-		require.Equal(t, 200, items[0].StatusCode, "event error: %s", items[0].Error)
+		require.Len(t, items, 1)
+		require.Equal(t, http.StatusOK, items[0].StatusCode, "event error: %s", items[0].Error)
 
 		external, ok := items[0].Output["external"].(map[string]any)
 		require.True(t, ok, "external should be a map")
@@ -250,8 +249,8 @@ def transformEvent(event, metadata):
 			status, items := sendRawTransform(t, pyURL, events)
 
 			require.Equal(t, http.StatusOK, status)
-			require.Equal(t, 1, len(items))
-			require.Equal(t, 200, items[0].StatusCode, "event error: %s", items[0].Error)
+			require.Len(t, items, 1)
+			require.Equal(t, http.StatusOK, items[0].StatusCode, "event error: %s", items[0].Error)
 
 			external := items[0].Output["external"].(map[string]any)
 			require.Equal(t, "override-target", external["server"])
@@ -265,21 +264,19 @@ def transformEvent(event, metadata):
 // work correctly together — overrides are served from the override map
 // (not from the DNS cache), while non-overridden hosts use the DNS cache.
 func TestDNSCachingWithOverrides(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("requires host networking (Linux/CI only)")
-	}
-
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
 
-	// Mock server A: reached via DNS override (custom-api.test → 127.0.0.1)
+	hostIP := hostReachableIP(t, pool)
+
+	// Mock server A: reached via DNS override (custom-api.test → hostIP)
 	mockSrvA, _ := newMockAPIServer(t, "override-server")
 	uA, err := url.Parse(mockSrvA.URL)
 	require.NoError(t, err)
 	portA := uA.Port()
 
-	// Mock server B: reached via normal DNS resolution (localhost)
+	// Mock server B: reached via normal DNS resolution (localhost / host.docker.internal)
 	mockSrvB, _ := newMockAPIServer(t, "cached-server")
 
 	const (
@@ -306,7 +303,7 @@ def transformEvent(event, metadata):
     resp = requests.get("%s/data", timeout=5)
     event['external'] = resp.json()
     return event
-`, mockSrvB.URL),
+`, toContainerURL(mockSrvB.URL)),
 		},
 	}
 
@@ -317,7 +314,7 @@ def transformEvent(event, metadata):
 		t, pool, configBackend.URL,
 		"DNS_CACHE_ENABLED=true",
 		"DNS_CACHE_TTL_S=300",
-		"DNS_OVERRIDES=custom-api.test,127.0.0.1",
+		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
 	t.Cleanup(func() { _ = pool.Purge(container) })
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
@@ -356,8 +353,8 @@ def transformEvent(event, metadata):
 
 	for _, r := range results {
 		require.Equal(t, http.StatusOK, r.status, "HTTP status for %s", r.label)
-		require.Equal(t, 1, len(r.items), "expected 1 item for %s", r.label)
-		require.Equal(t, 200, r.items[0].StatusCode,
+		require.Len(t, r.items, 1, "expected 1 item for %s", r.label)
+		require.Equal(t, http.StatusOK, r.items[0].StatusCode,
 			"event status for %s: error=%s", r.label, r.items[0].Error)
 
 		external, ok := r.items[0].Output["external"].(map[string]any)
@@ -365,6 +362,69 @@ def transformEvent(event, metadata):
 		require.Equal(t, r.expectedServer, external["server"],
 			"%s should reach %s", r.label, r.expectedServer)
 	}
+}
+
+// hostReachableIP returns an IPv4 address that, from inside a Docker
+// container, reaches the host machine's loopback — i.e. the address where
+// httptest.NewServer has bound its listener.
+//
+// On Linux (host networking), containers share the host's network namespace
+// so 127.0.0.1 is the correct answer.
+//
+// On macOS (bridge networking), containers run inside a Docker Desktop VM
+// and must go through a special gateway to reach the host. We spawn a
+// short-lived alpine container with `host.docker.internal:host-gateway` in
+// ExtraHosts, resolve that name inside the container, and return the
+// resulting IP. Connecting to that IP from any subsequent container is
+// routed by Docker Desktop to the Mac host's loopback.
+//
+// We cannot use the literal string "host.docker.internal" because pytransformer's
+// parse_dns_overrides() validates the override target as IPv4 — hostnames
+// are rejected. We also cannot hardcode "127.0.0.1" on macOS because Docker
+// Desktop's bridge networking makes that the container's own loopback.
+func hostReachableIP(t *testing.T, pool *dockertest.Pool) string {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		return "127.0.0.1"
+	}
+
+	// On Docker Desktop for Mac, host.docker.internal resolves to both an
+	// IPv4 and an IPv6 address. We need the IPv4 one because
+	// parse_dns_overrides() in pytransformer only accepts IPv4. musl's
+	// `getent ahostsv4` forces an IPv4-only lookup and returns lines of the
+	// form `<ipv4>  STREAM  host.docker.internal` — the first field is the
+	// IPv4 we want.
+	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "alpine",
+		Tag:        "3",
+		Entrypoint: []string{"/bin/sh", "-c"},
+		Cmd:        []string{"getent ahostsv4 host.docker.internal | awk 'NR==1 {print $1}'"},
+		ExtraHosts: []string{"host.docker.internal:host-gateway"},
+	})
+	require.NoError(t, err, "failed to start alpine helper container")
+	t.Cleanup(func() { _ = pool.Purge(resource) })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	exit, err := pool.Client.WaitContainerWithContext(resource.Container.ID, ctx)
+	require.NoError(t, err, "failed to wait for alpine helper container")
+	require.Zero(t, exit, "alpine helper container exited non-zero")
+
+	var buf bytes.Buffer
+	err = pool.Client.Logs(docker.LogsOptions{
+		Container:    resource.Container.ID,
+		OutputStream: &buf,
+		Stdout:       true,
+	})
+	require.NoError(t, err, "failed to read alpine helper container logs")
+
+	ip := strings.TrimSpace(buf.String())
+	require.NotEmpty(t, ip, "could not resolve host.docker.internal inside helper container")
+	parsed := net.ParseIP(ip)
+	require.NotNil(t, parsed, "expected a valid IP from alpine helper, got %q", ip)
+	require.NotNil(t, parsed.To4(), "expected an IPv4 address (not IPv6), got %q", ip)
+	t.Logf("resolved host.docker.internal → %s", ip)
+	return ip
 }
 
 // newMockAPIServer creates a test HTTP server that responds to all requests
