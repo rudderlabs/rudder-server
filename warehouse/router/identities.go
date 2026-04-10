@@ -161,7 +161,8 @@ func (r *Router) hasLocalIdentityData(warehouse model.Warehouse) (exists bool) {
 func (r *Router) hasWarehouseData(ctx context.Context, warehouse model.Warehouse) (bool, error) {
 	whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
 	if err != nil {
-		panic(err)
+		r.logger.Errorn("[WH]: Failed to create warehouse manager", obskit.Error(err))
+		return false, err
 	}
 
 	empty, err := whManager.IsEmpty(ctx, warehouse)
@@ -294,7 +295,8 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 
 	marshalledSchema, err := jsonrs.Marshal(schema)
 	if err != nil {
-		panic(err)
+		r.logger.Errorn("[WH]: Failed to marshal schema for identity upload", obskit.Error(err))
+		return model.Upload{}
 	}
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (
@@ -331,7 +333,8 @@ func (r *Router) initPrePopulateDestIdentitiesUpload(warehouse model.Warehouse) 
 	var uploadID int64
 	err = row.Scan(&uploadID)
 	if err != nil {
-		panic(err)
+		r.logger.Errorn("[WH]: Failed to scan upload ID", obskit.Error(err))
+		return model.Upload{}
 	}
 
 	upload := model.Upload{
@@ -417,7 +420,8 @@ func (r *Router) populateHistoricIdentities(ctx context.Context, warehouse model
 
 		whManager, err := manager.New(r.destType, r.conf, r.logger, r.statsFactory)
 		if err != nil {
-			panic(err)
+			r.logger.Errorn("[WH]: Failed to create warehouse manager for identity population", obskit.Error(err))
+			return
 		}
 
 		job := r.uploadJobFactory.NewUploadJob(ctx, &model.UploadJob{

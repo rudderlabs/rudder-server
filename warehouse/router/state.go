@@ -84,7 +84,7 @@ func init() {
 func inProgressState(currentState string) string {
 	uploadState, ok := stateTransitions[currentState]
 	if !ok {
-		panic(fmt.Errorf("invalid state: %s", currentState))
+		return ""
 	}
 	return uploadState.inProgress
 }
