@@ -149,7 +149,8 @@ func (gw *Handle) findUserWebRequestWorker(userID string) *userWebRequestWorkerT
 
 	userWebRequestWorker := gw.userWebRequestWorkers[index]
 	if userWebRequestWorker == nil {
-		panic(fmt.Errorf("worker is nil"))
+		gw.logger.Errorn("Worker is nil", logger.NewIntField("index", int64(index)))
+		return nil
 	}
 
 	return userWebRequestWorker
@@ -1069,7 +1070,9 @@ func (gw *Handle) storeJobs(ctx context.Context, jobs []*jobsdb.JobT) error {
 	ctx, cancel := context.WithTimeout(ctx, gw.conf.WriteTimeout)
 	defer cancel()
 	defer gw.dbWritesStat.Count(1)
-	defer startStoreJobsWatchdog(gw.conf.WriteTimeout, time.Minute, len(jobs), func(v any) { panic(v) })()
+	defer startStoreJobsWatchdog(gw.conf.WriteTimeout, time.Minute, len(jobs), func(v any) {
+		gw.logger.Errorn("Gateway storeJobs watchdog timeout", logger.NewStringField("error", fmt.Sprintf("%v", v)))
+	})()
 	return gw.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 		if err := gw.jobsDB.StoreInTx(ctx, tx, jobs); err != nil {
 			gw.logger.Errorn(
