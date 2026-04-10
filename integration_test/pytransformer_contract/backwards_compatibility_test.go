@@ -1866,21 +1866,11 @@ def transformEvent(event, metadata):
 				newOutput := newResp.Events[0].Output
 				t.Logf("Old arch output keys: %d", len(oldOutput))
 				t.Logf("New arch output keys: %d", len(newOutput))
-				for _, key := range []string{
-					"instanceId", "partitionId",
-					"sourceJobId", "sourceJobRunId", "sourceTaskRunId",
-					"recordId", "trackingPlanId", "trackingPlanVersion", "messageIds",
-				} {
-					oldVal, oldOk := oldOutput[key]
-					newVal, newOk := newOutput[key]
-					t.Logf("Output field %q: old=(present=%v, val=%v) new=(present=%v, val=%v)",
-						key, oldOk, oldVal, newOk, newVal)
-				}
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
-					t.Errorf("Responses differ:\n%s", diff)
+					t.Errorf("Responses differ: %s\n", diff)
 				}
 			},
 		},
@@ -1935,21 +1925,11 @@ def transformEvent(event, metadata):
 				newOutput := newResp.Events[0].Output
 				t.Logf("Old arch output keys: %d", len(oldOutput))
 				t.Logf("New arch output keys: %d", len(newOutput))
-				for _, key := range []string{
-					"instanceId", "partitionId",
-					"sourceJobId", "sourceJobRunId", "sourceTaskRunId",
-					"recordId", "trackingPlanId", "trackingPlanVersion", "messageIds",
-				} {
-					oldVal, oldOk := oldOutput[key]
-					newVal, newOk := newOutput[key]
-					t.Logf("Output field %q: old=(present=%v, val=%v) new=(present=%v, val=%v)",
-						key, oldOk, oldVal, newOk, newVal)
-				}
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
-					t.Errorf("Responses differ:\n%s", diff)
+					t.Errorf("Responses differ: %s\n", diff)
 				}
 			},
 		},
@@ -2013,44 +1993,23 @@ def transformEvent(event, metadata):
 						},
 					},
 				}
-
 				t.Log("Sending request to old architecture...")
 				oldResp := env.OldClient.Transform(context.Background(), events)
 				t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
-
 				t.Log("Sending request to new architecture...")
 				newResp := env.NewClient.Transform(context.Background(), events)
 				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
-
 				require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
 				require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
-
 				oldOutput := oldResp.Events[0].Output
 				newOutput := newResp.Events[0].Output
 				t.Logf("Old arch output keys: %d", len(oldOutput))
 				t.Logf("New arch output keys: %d", len(newOutput))
-
-				// Log the fields sensitive to the add-meta pattern:
-				// instanceId and partitionId should be added (absent from message body).
-				// sourceJobId, sourceJobRunId, sourceTaskRunId, recordId, trackingPlanId,
-				// trackingPlanVersion, messageIds are zero/omitted in metadata — both
-				// archs should behave the same for these.
-				for _, key := range []string{
-					"instanceId", "partitionId",
-					"sourceJobId", "sourceJobRunId", "sourceTaskRunId",
-					"recordId", "trackingPlanId", "trackingPlanVersion", "messageIds",
-				} {
-					oldVal, oldOk := oldOutput[key]
-					newVal, newOk := newOutput[key]
-					t.Logf("Output field %q: old=(present=%v, val=%v) new=(present=%v, val=%v)",
-						key, oldOk, oldVal, newOk, newVal)
-				}
-
 				diff, equal := oldResp.Equal(&newResp)
 				if equal {
 					t.Log("Responses are equal")
 				} else {
-					t.Errorf("Responses differ:\n%s", diff)
+					t.Errorf("Responses differ: %s\n", diff)
 				}
 			},
 		},

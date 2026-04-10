@@ -3,7 +3,6 @@ package pytransformer_contract
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,61 +15,11 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/httputil"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
-
-// newMockAPIServer creates a test HTTP server that responds to all requests
-// with a JSON payload identifying the server. Tracks invocation count.
-func newMockAPIServer(t *testing.T, name string) (*httptest.Server, *atomic.Int64) {
-	t.Helper()
-	calls := &atomic.Int64{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		_ = jsonrs.NewEncoder(w).Encode(map[string]string{"server": name})
-	}))
-	t.Cleanup(srv.Close)
-	return srv, calls
-}
-
-// sendRawTransform sends events directly to pytransformer's /customTransform
-// endpoint and returns the HTTP status code and parsed response items.
-// Unlike the usertransformer.Client, this allows inspecting raw HTTP status.
-func sendRawTransform(t *testing.T, baseURL string, events []types.TransformerEvent) (int, []types.TransformerResponse) {
-	t.Helper()
-	payload := make([]any, len(events))
-	for i, ev := range events {
-		payload[i] = map[string]any{
-			"message":  ev.Message,
-			"metadata": ev.Metadata,
-			"destination": map[string]any{
-				"Transformations": ev.Destination.Transformations,
-			},
-		}
-	}
-	body, err := jsonrs.Marshal(payload)
-	require.NoError(t, err)
-
-	req, err := http.NewRequest("POST", baseURL+"/customTransform", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-
-	var items []types.TransformerResponse
-	if len(respBody) > 0 {
-		err = jsonrs.Unmarshal(respBody, &items)
-		require.NoError(t, err, "failed to parse response: %s", string(respBody))
-	}
-	return resp.StatusCode, items
-}
 
 // TestDNSCaching verifies that DNS caching in pytransformer works correctly
 // and does not cause cross-request pollution.
@@ -129,8 +78,8 @@ def transformEvent(event, metadata):
 	requireCorrectServer := func(t *testing.T, name string, status int, items []types.TransformerResponse) {
 		t.Helper()
 		require.Equal(t, http.StatusOK, status, "HTTP status for %s", name)
-		require.Equal(t, 1, len(items), "expected 1 item for %s", name)
-		require.Equal(t, 200, items[0].StatusCode, "event status for %s: error=%s", name, items[0].Error)
+		require.Len(t, items, 1, "expected 1 item for %s", name)
+		require.Equal(t, http.StatusOK, items[0].StatusCode, "event status for %s: error=%s", name, items[0].Error)
 
 		external, ok := items[0].Output["external"].(map[string]any)
 		require.True(t, ok, "external field should be a map for %s, got %v", name, items[0].Output["external"])
@@ -138,12 +87,28 @@ def transformEvent(event, metadata):
 			"should reach mock server %s, not another (DNS cache pollution check)", name)
 	}
 
+	// resetCallCounts zeroes every mock server's invocation counter so each
+	// subtest can assert absolute call counts independently.
+	resetCallCounts := func() {
+		for _, m := range mocks {
+			m.calls.Store(0)
+		}
+	}
+
 	t.Run("SequentialRequestsNoPollution", func(t *testing.T) {
+		resetCallCounts()
+
 		// Send one request per mock server, sequentially
 		for _, name := range names {
 			events := []types.TransformerEvent{makeEvent("msg-"+name, versionIDs[name])}
 			status, items := sendRawTransform(t, pyURL, events)
 			requireCorrectServer(t, name, status, items)
+		}
+
+		// After one request to each, every mock should have been hit exactly once
+		for _, name := range names {
+			require.EqualValues(t, 1, mocks[name].calls.Load(),
+				"mock server %s should have been called exactly once", name)
 		}
 
 		// Now repeat the first two — DNS cache should still resolve correctly
@@ -152,26 +117,64 @@ def transformEvent(event, metadata):
 			status, items := sendRawTransform(t, pyURL, events)
 			requireCorrectServer(t, name, status, items)
 		}
+
+		// alpha/bravo now called twice; charlie/delta still once (no pollution)
+		require.EqualValues(t, 2, mocks["alpha"].calls.Load(), "alpha should be called twice")
+		require.EqualValues(t, 2, mocks["bravo"].calls.Load(), "bravo should be called twice")
+		require.EqualValues(t, 1, mocks["charlie"].calls.Load(), "charlie should not be called again")
+		require.EqualValues(t, 1, mocks["delta"].calls.Load(), "delta should not be called again")
 	})
 
 	t.Run("ParallelRequestsNoPollution", func(t *testing.T) {
-		// Send 4 requests in parallel, each calling a different mock server
-		for _, name := range names {
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
-				events := []types.TransformerEvent{makeEvent("msg-parallel-"+name, versionIDs[name])}
+		resetCallCounts()
+
+		// Send 4 requests in parallel, each calling a different mock server.
+		// Using wg.Go (instead of t.Parallel() subtests) so we can verify the
+		// call counts once all requests have finished.
+		type result struct {
+			name   string
+			status int
+			items  []types.TransformerResponse
+		}
+		results := make([]result, len(names))
+		var wg sync.WaitGroup
+		for i, name := range names {
+			idx, n := i, name
+			wg.Go(func() {
+				events := []types.TransformerEvent{makeEvent("msg-parallel-"+n, versionIDs[n])}
 				status, items := sendRawTransform(t, pyURL, events)
-				requireCorrectServer(t, name, status, items)
+				results[idx] = result{name: n, status: status, items: items}
 			})
+		}
+		wg.Wait()
+
+		for _, r := range results {
+			requireCorrectServer(t, r.name, r.status, r.items)
+		}
+
+		// Each mock should have been called exactly once — proves parallel
+		// requests did not cross-pollute via a shared DNS cache.
+		for _, name := range names {
+			require.EqualValues(t, 1, mocks[name].calls.Load(),
+				"parallel: mock server %s should have been called exactly once", name)
 		}
 	})
 
 	t.Run("RepeatedRequestsSameEndpoint", func(t *testing.T) {
+		resetCallCounts()
+
 		// Same transformation 3 times — DNS cache must remain correct
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			events := []types.TransformerEvent{makeEvent(fmt.Sprintf("msg-repeat-%d", i), versionIDs["alpha"])}
 			status, items := sendRawTransform(t, pyURL, events)
 			requireCorrectServer(t, "alpha", status, items)
+		}
+
+		// alpha called 3 times; others never touched
+		require.Equal(t, int64(3), mocks["alpha"].calls.Load(), "alpha should be called 3 times")
+		for _, name := range []string{"bravo", "charlie", "delta"} {
+			require.Equal(t, int64(0), mocks[name].calls.Load(),
+				"mock server %s should not have been called", name)
 		}
 	})
 }
@@ -242,7 +245,7 @@ def transformEvent(event, metadata):
 
 	t.Run("OverrideWorksOnRepeatedCalls", func(t *testing.T) {
 		callsBefore := mockCalls.Load()
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			events := []types.TransformerEvent{makeEvent(fmt.Sprintf("msg-override-repeat-%d", i), versionID)}
 			status, items := sendRawTransform(t, pyURL, events)
 
@@ -362,4 +365,57 @@ def transformEvent(event, metadata):
 		require.Equal(t, r.expectedServer, external["server"],
 			"%s should reach %s", r.label, r.expectedServer)
 	}
+}
+
+// newMockAPIServer creates a test HTTP server that responds to all requests
+// with a JSON payload identifying the server. Tracks invocation count.
+func newMockAPIServer(t *testing.T, name string) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	calls := &atomic.Int64{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_ = jsonrs.NewEncoder(w).Encode(map[string]string{"server": name})
+	}))
+	t.Cleanup(srv.Close)
+	return srv, calls
+}
+
+// sendRawTransform sends events directly to pytransformer's /customTransform
+// endpoint and returns the HTTP status code and parsed response items.
+// Unlike the usertransformer.Client, this allows inspecting raw HTTP status.
+func sendRawTransform(
+	t *testing.T,
+	baseURL string,
+	events []types.TransformerEvent,
+) (
+	int,
+	[]types.TransformerResponse,
+) {
+	t.Helper()
+	payload := make([]any, len(events))
+	for i, ev := range events {
+		payload[i] = map[string]any{
+			"message":  ev.Message,
+			"metadata": ev.Metadata,
+			"destination": map[string]any{
+				"Transformations": ev.Destination.Transformations,
+			},
+		}
+	}
+	body, err := jsonrs.Marshal(payload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("POST", baseURL+"/customTransform", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httputil.DefaultHttpClient().Do(req)
+	require.NoError(t, err)
+	defer func() { httputil.CloseResponse(resp) }()
+
+	var items []types.TransformerResponse
+	require.NoError(t, jsonrs.NewDecoder(resp.Body).Decode(&items))
+
+	return resp.StatusCode, items
 }
