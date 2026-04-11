@@ -5647,8 +5647,8 @@ func TestStoreMessageMerge(t *testing.T) {
 		statusList:    []*jobsdb.JobStatusT{{JobID: 1}},
 		destJobs:      []*jobsdb.JobT{{JobID: 1}},
 		batchDestJobs: []*jobsdb.JobT{{JobID: 1}},
-		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-			"1": {{JobID: 1}},
+		procErrorJobsByDestID: map[string][]procErrorJob{
+			"1": {{JobT: &jobsdb.JobT{JobID: 1}}},
 		},
 		routerDestIDs:       []string{"1"},
 		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
@@ -5662,8 +5662,8 @@ func TestStoreMessageMerge(t *testing.T) {
 		statusList:    []*jobsdb.JobStatusT{{JobID: 2}},
 		destJobs:      []*jobsdb.JobT{{JobID: 2}},
 		batchDestJobs: []*jobsdb.JobT{{JobID: 2}},
-		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-			"2": {{JobID: 2}},
+		procErrorJobsByDestID: map[string][]procErrorJob{
+			"2": {{JobT: &jobsdb.JobT{JobID: 2}}},
 		},
 		routerDestIDs:       []string{"2"},
 		reportMetrics:       []*reportingtypes.PUReportedMetric{{}},
@@ -5674,28 +5674,25 @@ func TestStoreMessageMerge(t *testing.T) {
 	}
 
 	sm3 := &storeMessage{
-		context.Background(),
-		[]*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
-		[]*jobsdb.JobStatusT{{JobID: 3}},
-		[]*jobsdb.JobT{{JobID: 3}},
-		[]*jobsdb.JobT{{JobID: 3}},
-		[]*jobsdb.JobT{{JobID: 3}},
-		map[string][]*jobsdb.JobT{
-			"3": {{JobID: 3}},
+		ctx:                 context.Background(),
+		trackedUsersReports: []*trackedusers.UsersReport{{WorkspaceID: sampleWorkspaceID}, {WorkspaceID: sampleWorkspaceID}},
+		statusList:          []*jobsdb.JobStatusT{{JobID: 3}},
+		destJobs:            []*jobsdb.JobT{{JobID: 3}},
+		batchDestJobs:       []*jobsdb.JobT{{JobID: 3}},
+		droppedJobs:         []*jobsdb.JobT{{JobID: 3}},
+		procErrorJobsByDestID: map[string][]procErrorJob{
+			"3": {{JobT: &jobsdb.JobT{JobID: 3}}},
 		},
-		[]string{"3"},
-		[]*reportingtypes.PUReportedMetric{{}},
-		map[dupStatKey]int{{sourceID: "1"}: 3},
-		map[string]struct{}{"3": {}},
-		1,
-		time.Time{},
-		false,
-		nil,
-		map[string]stats.Tags{},
+		routerDestIDs:  []string{"3"},
+		reportMetrics:  []*reportingtypes.PUReportedMetric{{}},
+		sourceDupStats: map[dupStatKey]int{{sourceID: "1"}: 3},
+		dedupKeys:      map[string]struct{}{"3": {}},
+		totalEvents:    1,
+		traces:         map[string]stats.Tags{},
 	}
 
 	merged := storeMessage{
-		procErrorJobsByDestID: map[string][]*jobsdb.JobT{},
+		procErrorJobsByDestID: map[string][]procErrorJob{},
 		sourceDupStats:        map[dupStatKey]int{},
 		dedupKeys:             map[string]struct{}{},
 		start:                 time.UnixMicro(99999999),
@@ -5739,10 +5736,10 @@ func TestStoreMessageMerge(t *testing.T) {
 		destJobs:      []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
 		batchDestJobs: []*jobsdb.JobT{{JobID: 1}, {JobID: 2}, {JobID: 3}},
 		droppedJobs:   []*jobsdb.JobT{{JobID: 3}},
-		procErrorJobsByDestID: map[string][]*jobsdb.JobT{
-			"1": {{JobID: 1}},
-			"2": {{JobID: 2}},
-			"3": {{JobID: 3}},
+		procErrorJobsByDestID: map[string][]procErrorJob{
+			"1": {{JobT: &jobsdb.JobT{JobID: 1}}},
+			"2": {{JobT: &jobsdb.JobT{JobID: 2}}},
+			"3": {{JobT: &jobsdb.JobT{JobID: 3}}},
 		},
 		routerDestIDs:  []string{"1", "2", "3"},
 		reportMetrics:  []*reportingtypes.PUReportedMetric{{}, {}, {}},
