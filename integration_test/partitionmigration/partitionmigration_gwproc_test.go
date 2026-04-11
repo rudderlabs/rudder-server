@@ -55,9 +55,9 @@ func TestPartitionMigrationGatewayProcessorMode(t *testing.T) {
 		extraStressWorkspaces int           // number of extra workspace migrations to include (0 = normal mode)
 		restartProcessorEvery time.Duration // how often to restart processor nodes while migration is ongoing
 	}{
-		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 30 * time.Second},
+		{name: "normal", extraStressWorkspaces: 0, restartProcessorEvery: 25 * time.Second},
 		{name: "stress_100_workspaces", extraStressWorkspaces: 100, restartProcessorEvery: 30 * time.Second},
-		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 40 * time.Second},
+		{name: "stress_1000_workspaces", extraStressWorkspaces: 1000, restartProcessorEvery: 35 * time.Second},
 		{name: "stress_5000_workspaces", extraStressWorkspaces: 5000, restartProcessorEvery: 50 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -76,8 +76,10 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 
 		numPartitions             = 4                // needs to be a power of 2 (e.g., 2, 4, 8, 16, ...)
 		jobsPerPartitionPerSecond = 50               // number of jobs to send per partition per second from the gateway client
-		readExcludeSleep          = 15 * time.Second // sleep duration for read exclusion during migration
+		readExcludeSleep          = 15 * time.Second // sleep duration for read exclusion during migration, must not be greater than restartProcessorEvery-5s
 	)
+	require.LessOrEqual(t, readExcludeSleep, restartProcessorEvery-5*time.Second,
+		"readExcludeSleep must not be greater than restartProcessorEvery-5s")
 
 	// distribute partitions across the 2 nodes equally
 	initialMappings := map[partmap.PartitionIndex]partmap.NodeIndex{}
