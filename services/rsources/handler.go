@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,19 +129,36 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
-	if err != nil {
-		return err
+	batchSize := sh.config.FailedRecordsInsertBatchSize
+	defaultFailedRecordsBatchSize := 5000
+	if batchSize <= 0 {
+		batchSize = defaultFailedRecordsBatchSize
 	}
-	defer func() { _ = stmt.Close() }()
 
-	for i := range records {
-		if _, err = stmt.ExecContext(
-			ctx,
-			id,
-			records[i].Record,
-			records[i].Code,
-		); err != nil {
+	for start := 0; start < len(records); start += batchSize {
+		end := min(start+batchSize, len(records))
+		batch := records[start:end]
+
+		var sb strings.Builder
+		args := make([]any, 0, len(batch)*3)
+		sb.WriteString(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES `)
+		for i, rec := range batch {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			paramIdx := i*3 + 1
+			sb.WriteString("($")
+			sb.WriteString(strconv.Itoa(paramIdx))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(paramIdx + 1))
+			sb.WriteString(",$")
+			sb.WriteString(strconv.Itoa(paramIdx + 2))
+			sb.WriteByte(')')
+			args = append(args, id, rec.Record, rec.Code)
+		}
+		sb.WriteString(` ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
+
+		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}
 	}

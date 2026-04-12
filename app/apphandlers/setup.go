@@ -70,6 +70,7 @@ func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool
 	}
 	rsourcesConfig.SharedConn = sharedDBConnUrl
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBoolVar(true, "Router.failedKeysEnabled")
+	rsourcesConfig.FailedRecordsInsertBatchSize = config.GetIntVar(5000, 1, "Rsources.failedRecordsInsertBatchSize")
 
 	if deploymentType == deployment.MultiTenantType {
 		// For multitenant deployment type we shall require the existence of a SHARED_DB

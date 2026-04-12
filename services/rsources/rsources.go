@@ -198,15 +198,16 @@ type StatsIncrementer interface {
 }
 
 type JobServiceConfig struct {
-	LocalHostname               string
-	LocalConn                   string
-	MaxPoolSize                 int
-	MinPoolSize                 int
-	SharedConn                  string
-	SubscriptionTargetConn      string
-	SkipFailedRecordsCollection bool
-	Log                         logger.Logger
-	ShouldSetupSharedDB         bool
+	LocalHostname                string
+	LocalConn                    string
+	MaxPoolSize                  int
+	MinPoolSize                  int
+	SharedConn                   string
+	SubscriptionTargetConn       string
+	SkipFailedRecordsCollection  bool
+	FailedRecordsInsertBatchSize int
+	Log                          logger.Logger
+	ShouldSetupSharedDB          bool
 }
 
 // JobService manages information about jobs created by rudder-sources
