@@ -673,6 +673,7 @@ type mockGeoConfig struct {
 	mu         sync.Mutex
 	statusCode int
 	closeConn  bool
+	delay      time.Duration
 }
 
 func (c *mockGeoConfig) setResponse(statusCode int) {
@@ -680,12 +681,25 @@ func (c *mockGeoConfig) setResponse(statusCode int) {
 	defer c.mu.Unlock()
 	c.statusCode = statusCode
 	c.closeConn = false
+	c.delay = 0
 }
 
 func (c *mockGeoConfig) setConnectionClose() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closeConn = true
+	c.delay = 0
+}
+
+// setSlow makes the mock /geoip/* handler block for "delay" before responding
+// with HTTP 200. Used to simulate a hung geolocation backend so the
+// pytransformer's per-request timeout (or its urllib3 wall-clock cap) fires.
+func (c *mockGeoConfig) setSlow(delay time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statusCode = http.StatusOK
+	c.closeConn = false
+	c.delay = delay
 }
 
 // newConfigurableMockGeolocationService creates a mock geolocation HTTP server
@@ -705,6 +719,7 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 		cfg.mu.Lock()
 		code := cfg.statusCode
 		closeConn := cfg.closeConn
+		delay := cfg.delay
 		cfg.mu.Unlock()
 
 		if closeConn {
@@ -718,6 +733,15 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 			} else {
 				t.Log("MockGeolocation: failed to hijack connection")
 				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				// Client gave up — stop waiting so we don't leak a goroutine.
 				return
 			}
 		}

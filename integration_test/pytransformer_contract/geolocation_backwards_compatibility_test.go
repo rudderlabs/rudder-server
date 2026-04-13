@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -2352,6 +2353,63 @@ def transformBatch(events, metadata):
 				}
 			},
 		},
+		{
+			// Locks the contract that a slow/hung geolocation backend is
+			// distinguished from a slow user HTTP call: it must propagate as
+			// a retryable HTTP 503 (GeolocationServerError → retry) rather
+			// than a per-event 400. The mock service blocks for 1s while
+			// the pytransformer container is configured with a 0.5s cap, so
+			// either the urllib3 wall-clock patch or the geolocation
+			// session timeout fires first — both routes wrap the timeout in
+			// GeolocationServerError(BaseException), which bypasses the
+			// user-code except-Exception and surfaces as retryable.
+			name:      "GeoTimeout",
+			versionID: "bc-geo-timeout-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        # New arch must NOT reach this branch — GeolocationServerError
+        # inherits BaseException so it bypasses except-Exception and
+        # propagates to the worker as a retryable 503.
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup:               func() { mockGeoCfg.setSlow(1 * time.Second) },
+			skipRetryCountMatch: true,
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-timeout-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				// Old arch: openfaas-flask-base catches the timeout via
+				// `except Exception` so the user code records geo_error
+				// and the event succeeds.
+
+				// New arch: timeout → GeolocationServerError →
+				// HTTP 503 + X-Rudder-Should-Retry → retries exhausted →
+				// failed event (with the user's `event["geo_error"]`
+				// branch never executed).
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Len(t, newResp.Events, 0,
+					"new arch: slow geolocation must NOT produce a success event "+
+						"(GeolocationServerError must bypass user except-Exception)")
+				require.Len(t, newResp.FailedEvents, 1,
+					"new arch: slow geolocation must surface as a failed event after retries")
+				require.Contains(t, newResp.FailedEvents[0].Error,
+					"transformer returned status code: 503",
+					"new arch: failed event must carry the correct error message")
+
+				retriesCounter := env.NewStats.GetByName("processor_user_transformer_http_retries")
+				require.Len(t, retriesCounter, 1)
+				require.EqualValues(t, 2, retriesCounter[0].Value)
+			},
+		},
 	}
 
 	pool, err := dockertest.NewPool("")
@@ -2394,7 +2452,16 @@ def transformBatch(events, metadata):
 	})
 
 	// Start shared rudder-pytransformer with configurable mock geolocation URL.
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+	// SANDBOX_HTTP_TIMEOUT_S is set short so the GeoTimeout subtest's slow
+	// handler (1s delay) trips the urllib3 wall-clock cap quickly. Other
+	// subtests in this suite trigger failures via 5xx / connection reset and
+	// don't depend on the timeout magnitude, so the lower cap is safe for
+	// the whole shared container.
+	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL,
+		"GEOLOCATION_URL="+geoURL,
+		"SANDBOX_HTTP_TIMEOUT_S=0.5",
+		"GEOLOCATION_TIMEOUT_SECS=0.5",
+	)
 	t.Cleanup(func() {
 		if err := pool.Purge(pyTransformerContainer); err != nil {
 			t.Logf("Failed to purge rudder-pytransformer: %v", err)
