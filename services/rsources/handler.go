@@ -131,7 +131,8 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 
 	batchSize := sh.config.FailedRecordsInsertBatchSize
 	defaultFailedRecordsBatchSize := 5000
-	if batchSize <= 0 {
+	maxQweryParamsForPostgres := 65535
+	if batchSize <= 0 || batchSize > (maxQweryParamsForPostgres/3) {
 		batchSize = defaultFailedRecordsBatchSize
 	}
 
