@@ -1,5 +1,39 @@
 # Changelog
 
+## [1.73.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.72.0...v1.73.0-rc.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* blacklist uts by transformation id ([#6832](https://github.com/rudderlabs/rudder-server/issues/6832)) ([a78fa93](https://github.com/rudderlabs/rudder-server/commit/a78fa93bd087eba73f3d612c6e3a7ba31b98c063))
+* **warehouse:** intermittent failures in bigquery integration test partition listing ([#6862](https://github.com/rudderlabs/rudder-server/issues/6862)) ([f0bdc52](https://github.com/rudderlabs/rudder-server/commit/f0bdc529d99ec142fa9b3e14072c617dc63ea10f))
+* **warehouse:** intermittent failures in bigquery integration test schema verification ([#6858](https://github.com/rudderlabs/rudder-server/issues/6858)) ([8244315](https://github.com/rudderlabs/rudder-server/commit/82443150b7d7d0c48c589045c1f98106ba4216f1))
+
+
+### Miscellaneous
+
+* add dependabot cooldown ([#6842](https://github.com/rudderlabs/rudder-server/issues/6842)) ([8a96763](https://github.com/rudderlabs/rudder-server/commit/8a967633088d3176df71c3aa73cd8f7bdcd151b7))
+* apply security best practices from step security ([#6746](https://github.com/rudderlabs/rudder-server/issues/6746)) ([ec4390d](https://github.com/rudderlabs/rudder-server/commit/ec4390d496af53600d18b1430abb22bba7d7f283))
+* **deps:** bump actions/checkout from 4.3.0 to 6.0.2 ([#6848](https://github.com/rudderlabs/rudder-server/issues/6848)) ([f393a5f](https://github.com/rudderlabs/rudder-server/commit/f393a5f91717090df7bed6e3314f8694a459116e))
+* **deps:** bump actions/create-github-app-token from 2.1.4 to 3.0.0 ([#6845](https://github.com/rudderlabs/rudder-server/issues/6845)) ([7b5bd0f](https://github.com/rudderlabs/rudder-server/commit/7b5bd0fe63eab6c02d957a7796a15b5a2fbc63b1))
+* **deps:** bump actions/download-artifact from 4.3.0 to 8.0.1 ([#6849](https://github.com/rudderlabs/rudder-server/issues/6849)) ([3d0c5f5](https://github.com/rudderlabs/rudder-server/commit/3d0c5f5708764a7daf6f4cbecaec83f16281fede))
+* **deps:** bump actions/setup-go from 5.5.0 to 6.4.0 ([#6831](https://github.com/rudderlabs/rudder-server/issues/6831)) ([f4d7c78](https://github.com/rudderlabs/rudder-server/commit/f4d7c787704403633d433f4612a1d48e62fc91fe))
+* **deps:** bump actions/stale from 9.1.0 to 10.2.0 ([#6805](https://github.com/rudderlabs/rudder-server/issues/6805)) ([fe697e3](https://github.com/rudderlabs/rudder-server/commit/fe697e3e01473c5fbc05115b3a135ea5e2412945))
+* **deps:** bump actions/upload-artifact from 4.6.2 to 7.0.0 ([#6847](https://github.com/rudderlabs/rudder-server/issues/6847)) ([8cc34b8](https://github.com/rudderlabs/rudder-server/commit/8cc34b8f6d5af06a715f860eaeb2d238281d98b2))
+* **deps:** bump codecov/codecov-action from 5.5.1 to 6.0.0 ([#6830](https://github.com/rudderlabs/rudder-server/issues/6830)) ([667d363](https://github.com/rudderlabs/rudder-server/commit/667d363d3764a1eae4a6a45bf77b6814f842ce3d))
+* **deps:** bump docker/login-action from 3.4.0 to 4.0.0 ([#6808](https://github.com/rudderlabs/rudder-server/issues/6808)) ([fdd16b5](https://github.com/rudderlabs/rudder-server/commit/fdd16b51b8d8797f473788c72ef39a422128ad3d))
+* **deps:** bump docker/metadata-action from 5.9.0 to 6.0.0 ([#6851](https://github.com/rudderlabs/rudder-server/issues/6851)) ([766203b](https://github.com/rudderlabs/rudder-server/commit/766203bcb697507ff18aaaff4b07babb8b408372))
+* **deps:** bump docker/setup-buildx-action from 3.11.1 to 4.0.0 ([#6806](https://github.com/rudderlabs/rudder-server/issues/6806)) ([1ac9e51](https://github.com/rudderlabs/rudder-server/commit/1ac9e51d2c9740b758ca864e190f848152921e7f))
+* **deps:** bump github.com/evanphx/json-patch from 0.5.2 to 5.9.11+incompatible ([#6853](https://github.com/rudderlabs/rudder-server/issues/6853)) ([8526e45](https://github.com/rudderlabs/rudder-server/commit/8526e45e729d20062928823c416a2db3651bd89f))
+* **deps:** bump go dependencies ([#6816](https://github.com/rudderlabs/rudder-server/issues/6816)) ([5630ae4](https://github.com/rudderlabs/rudder-server/commit/5630ae456a1f89f7d64f31c0bb2e451533e8499c))
+* **deps:** bump slackapi/slack-github-action from 1.26.0 to 3.0.1 ([#6846](https://github.com/rudderlabs/rudder-server/issues/6846)) ([b16d1f7](https://github.com/rudderlabs/rudder-server/commit/b16d1f7b083dd43ff59dff7c1d356fa01e97e6f9))
+* **deps:** bump the go-deps group across 1 directory with 8 updates ([#6859](https://github.com/rudderlabs/rudder-server/issues/6859)) ([29c7c59](https://github.com/rudderlabs/rudder-server/commit/29c7c59c72e4e881aacdf13febef6296b96a2f9f))
+* dispatch release events to operator/devops after image builds complete ([#6827](https://github.com/rudderlabs/rudder-server/issues/6827)) ([c9c0dde](https://github.com/rudderlabs/rudder-server/commit/c9c0dde9bc1142e041d8410cedbfccfca9d1dae1))
+* remove rsources_failed_keys migration and unused code ([#6837](https://github.com/rudderlabs/rudder-server/issues/6837)) ([9460873](https://github.com/rudderlabs/rudder-server/commit/9460873a2606e1cbbc3064e7248661ad95002bae))
+* **router:** kafka destination performance improvement ([#6836](https://github.com/rudderlabs/rudder-server/issues/6836)) ([90cbb45](https://github.com/rudderlabs/rudder-server/commit/90cbb45c5807e106c7d9be08119bd67685889247))
+* sync release v1.72.0 to main branch ([#6829](https://github.com/rudderlabs/rudder-server/issues/6829)) ([cd13f36](https://github.com/rudderlabs/rudder-server/commit/cd13f36140bca778e24929c775220466dbdf1ebe))
+* update openfaas-flask ecr repo ([#6828](https://github.com/rudderlabs/rudder-server/issues/6828)) ([3aa2485](https://github.com/rudderlabs/rudder-server/commit/3aa2485c4d27ab45022a674f105197c5d7f9095c))
+
 ## [1.72.1](https://github.com/rudderlabs/rudder-server/compare/v1.72.0...v1.72.1) (2026-03-31)
 
 
