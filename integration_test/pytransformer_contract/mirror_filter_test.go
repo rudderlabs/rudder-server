@@ -67,9 +67,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, allEntries)
 	defer configBackend.Close()
 
-	var (
-		pyFilteredURL, pyNormalURL string
-	)
+	var pyFilteredURL, pyNormalURL string
 	wg := sync.WaitGroup{}
 	wg.Go(func() {
 		// Start pytransformer WITH mirror filter enabled
