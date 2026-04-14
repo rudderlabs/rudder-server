@@ -1,6 +1,7 @@
 package pytransformer_contract
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -42,7 +43,8 @@ import (
 //     second positional to the matching keyword keeps the observable result
 //     identical to the other two paths.
 //
-// Every configuration must produce the same successful event output.
+// For every new-arch configuration the old-arch and new-arch responses
+// must compare equal field-for-field via “types.Response.Equal“.
 func TestBareRequestsPositionalParamsContract(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -82,7 +84,8 @@ def transformEvent(event, metadata):
 	//
 	// The old stack runs the user code under vanilla ``requests`` with no
 	// pooling layer in front of it, so it defines the reference behaviour
-	// every new-arch configuration must match.
+	// every new-arch configuration must match. Started once and shared
+	// across both new-arch subtests.
 
 	t.Log("Starting openfaas-flask-base (old arch backend)...")
 	openFaasContainer, openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
@@ -106,19 +109,6 @@ def transformEvent(event, metadata):
 	})
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
 
-	oldArchEvents := []types.TransformerEvent{makeEvent("msg-old-arch", versionID)}
-	t.Log("Sending request to old architecture (rudder-transformer + openfaas)...")
-	oldStatus, oldItems := sendRawTransform(t, transformerURL, oldArchEvents)
-	require.Equal(t, http.StatusOK, oldStatus,
-		"old arch /customTransform must return HTTP 200")
-	require.Len(t, oldItems, 1)
-	require.Equalf(t, http.StatusOK, oldItems[0].StatusCode,
-		"old arch must succeed: requests.get(url, {\"q\": \"hello\"}) is a valid "+
-			"call against the real `requests` module. Got StatusCode=%d, Error=%q",
-		oldItems[0].StatusCode, oldItems[0].Error)
-	require.Equal(t, "hello", oldItems[0].Output["echo"],
-		"old arch must forward the positional params dict as a ?q=hello query string")
-
 	// --- New architecture (rudder-pytransformer) ---
 	//
 	// Exercised twice — once with the connection pool disabled (bare
@@ -127,16 +117,14 @@ def transformEvent(event, metadata):
 	// pooled ``Session``). Both configurations must match the old-arch
 	// reference.
 	newArchCases := []struct {
-		name              string
-		enableConnPool    string
-		extraPytransEnv   []string
-		eventMessageIDTag string
+		name            string
+		enableConnPool  string
+		extraPytransEnv []string
 	}{
 		{
-			name:              "ConnPoolDisabled",
-			enableConnPool:    "false",
-			extraPytransEnv:   nil,
-			eventMessageIDTag: "msg-new-arch-nopool",
+			name:            "ConnPoolDisabled",
+			enableConnPool:  "false",
+			extraPytransEnv: nil,
 		},
 		{
 			name:           "ConnPoolEnabled",
@@ -148,34 +136,52 @@ def transformEvent(event, metadata):
 				"USER_CONN_POOL_MAX_SIZE=1",
 				"SANDBOX_POOL_MAX_SIZE=1",
 			},
-			eventMessageIDTag: "msg-new-arch-pool",
 		},
 	}
 
 	for _, tc := range newArchCases {
 		t.Run(tc.name, func(t *testing.T) {
-			env := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraPytransEnv...)
-			t.Logf("Starting rudder-pytransformer with %v...", env)
-			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, env...)
+			pyEnv := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraPytransEnv...)
+			t.Logf("Starting rudder-pytransformer with %v...", pyEnv)
+			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, pyEnv...)
 
-			events := []types.TransformerEvent{makeEvent(tc.eventMessageIDTag, versionID)}
-			t.Log("Sending request to new architecture (rudder-pytransformer)...")
-			newStatus, newItems := sendRawTransform(t, pyTransformerURL, events)
-			require.Equal(t, http.StatusOK, newStatus,
-				"new arch /customTransform must return HTTP 200 "+
-					"(per-event errors sit inside the payload, not at the HTTP layer)")
-			require.Len(t, newItems, 1)
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
 
-			require.Equalf(t, http.StatusOK, newItems[0].StatusCode,
-				"new arch must succeed with ENABLE_CONN_POOL=%s: the pooling "+
-					"layer must promote the second positional argument of bare "+
-					"requests.<method>() calls to the matching keyword before "+
-					"forwarding to the session. Got StatusCode=%d, Error=%q, Output=%v",
-				tc.enableConnPool, newItems[0].StatusCode, newItems[0].Error, newItems[0].Output)
-			require.Equalf(t, "hello", newItems[0].Output["echo"],
-				"new arch (ENABLE_CONN_POOL=%s) must round-trip the positional "+
-					"params dict identically to old arch (expected echo=%q)",
-				tc.enableConnPool, "hello")
+			events := []types.TransformerEvent{makeEvent("msg-1", versionID)}
+
+			t.Log("Sending request to old architecture...")
+			oldResp := env.OldClient.Transform(context.Background(), events)
+			t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+			t.Log("Sending request to new architecture...")
+			newResp := env.NewClient.Transform(context.Background(), events)
+			t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+			require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+			require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+			require.Equal(t, 1, len(newResp.Events), "new arch: 1 success event expected")
+			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+
+			// Round-trip sanity check: the echo server must have seen
+			// ``?q=hello`` on both stacks, which means the positional
+			// dict was forwarded as the ``params`` keyword under the hood.
+			require.Equal(t, "hello", oldResp.Events[0].Output["echo"],
+				"old arch must forward the positional params dict as ?q=hello")
+			require.Equalf(t, "hello", newResp.Events[0].Output["echo"],
+				"new arch (ENABLE_CONN_POOL=%s) must forward the positional params "+
+					"dict as ?q=hello", tc.enableConnPool)
+
+			// Strict parity: every field of the two responses must match.
+			diff, equal := oldResp.Equal(&newResp)
+			require.Truef(t, equal,
+				"ENABLE_CONN_POOL=%s: old and new architectures must produce "+
+					"identical responses for bare requests.get(url, params_dict):\n%s",
+				tc.enableConnPool, diff)
+
+			env.assertRetryCountsMatch(t)
 		})
 	}
 }
