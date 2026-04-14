@@ -2345,12 +2345,11 @@ def transformBatch(events, metadata):
 			// Locks the contract that a slow/hung geolocation backend is
 			// distinguished from a slow user HTTP call: it must propagate as
 			// a retryable HTTP 503 (GeolocationServerError → retry) rather
-			// than a per-event 400. The mock service blocks for 1s while
-			// GEOLOCATION_TIMEOUT_SECS=0.5, so the geolocation session
-			// deadline fires first and raises GeolocationServerError
-			// (BaseException), which bypasses the user-code except-Exception
-			// and surfaces as retryable. SANDBOX_HTTP_TIMEOUT_S does NOT
-			// apply to internal geolocation traffic — see
+			// than a per-event 400. The mock service blocks for longer than
+			// GEOLOCATION_TIMEOUT_SECS, so the geolocation session
+			// deadline fires and raises GeolocationServerError (BaseException),
+			// which bypasses the user-code except-Exception and surfaces as retryable.
+			// SANDBOX_HTTP_TIMEOUT_S does NOT apply to internal geolocation traffic — see
 			// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
 			name:      "GeoTimeout",
 			versionID: "bc-geo-timeout-v1",
