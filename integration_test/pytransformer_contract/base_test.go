@@ -97,13 +97,7 @@ def transformEvent(event, metadata):
 	t.Logf("Config backend at %s", configBackend.URL)
 
 	t.Log("Starting openfaas-flask-base container...")
-	openFaasContainer, openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
-	defer func() {
-		if err := pool.Purge(openFaasContainer); err != nil {
-			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
-		}
-	}()
-	waitForOpenFaasFlask(t, pool, openFaasURL)
+	openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
 
 	t.Log("Starting mock OpenFaaS gateway...")
 	mockGateway, openFaaSInvocations := newMockOpenFaaSGateway(t, func() string { return openFaasURL })

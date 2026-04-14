@@ -2083,13 +2083,7 @@ def transformEvent(event, metadata):
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL)
-				t.Cleanup(func() {
-					if err := pool.Purge(container); err != nil {
-						t.Logf("Failed to purge openfaas-flask-base: %v", err)
-					}
-				})
-				waitForOpenFaasFlask(t, pool, openFaasURL)
+				openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL)
 
 				// Point the mock gateway to this subtest's openfaas container.
 				setGatewayTarget(openFaasURL)

@@ -401,12 +401,15 @@ func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Se
 // startOpenFaasFlask starts an openfaas-flask-base container with transformation code
 // loaded at startup via --vid and --config-backend-url. Optional extra environment
 // variables can be passed (e.g. "geolocation_url=http://...").
-// Returns the container resource and the URL to reach it from the host.
+//
+// The container is purged via “t.Cleanup“ and the function blocks until the
+// fwatchdog health endpoint is responsive, so callers get a URL that is
+// immediately ready to serve requests.
 func startOpenFaasFlask(
 	t *testing.T, pool *dockertest.Pool,
 	versionID, configBackendURL string,
 	extraEnv ...string,
-) (*dockertest.Resource, string) {
+) string {
 	t.Helper()
 	const containerPort = "8080"
 	cfg := newContainerConfig(t, containerPort)
@@ -427,7 +430,16 @@ func startOpenFaasFlask(
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start openfaas-flask-base container")
-	return container, cfg.url(container, containerPort)
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
+		}
+	})
+
+	openFaasURL := cfg.url(container, containerPort)
+	waitForOpenFaasFlask(t, pool, openFaasURL)
+	return openFaasURL
 }
 
 // startRudderTransformer starts a rudder-transformer container configured to use

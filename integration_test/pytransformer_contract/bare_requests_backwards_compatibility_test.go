@@ -88,13 +88,7 @@ def transformEvent(event, metadata):
 	// across both new-arch subtests.
 
 	t.Log("Starting openfaas-flask-base (old arch backend)...")
-	openFaasContainer, openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(openFaasContainer); err != nil {
-			t.Logf("Failed to purge openfaas-flask-base: %v", err)
-		}
-	})
-	waitForOpenFaasFlask(t, pool, openFaasURL)
+	openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
 
 	t.Log("Starting mock OpenFaaS gateway...")
 	mockGateway, _ := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
