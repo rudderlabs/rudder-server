@@ -22,35 +22,39 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
-// TestGeoTimeoutWithShorterHTTPTimeoutCap locks the contract that a slow
-// geolocation backend is retried even when SANDBOX_HTTP_TIMEOUT_S is shorter
-// than GEOLOCATION_TIMEOUT_SECS.
+// TestSandboxHTTPTimeoutDoesNotCapGeolocation locks the contract that
+// SANDBOX_HTTP_TIMEOUT_S (the user-HTTP wall-clock cap) does NOT apply to
+// internal geolocation traffic. The two timeouts are independent: geolocation
+// calls are bound exclusively by GEOLOCATION_TIMEOUT_SECS.
 //
-// The test distinguishes this from a user code HTTP timeout (400,
-// non-retryable) by verifying that the response carries a 503 status and
-// that the client's retry counter increments.
-func TestGeoTimeoutWithShorterHTTPTimeoutCap(t *testing.T) {
+// Scenario: a geolocation backend that replies in 300 ms, with
+// SANDBOX_HTTP_TIMEOUT_S=0.1 s (user cap is SHORTER than the geo response)
+// and GEOLOCATION_TIMEOUT_SECS=0.5 s. Under the contract, the geolocation
+// call must succeed:
+//
+//   - The 300 ms server reply is faster than the 500 ms geolocation budget.
+//   - The 100 ms sandbox cap is intended for user HTTP traffic and MUST NOT
+//     shadow the internal geolocation deadline.
+func TestSandboxHTTPTimeoutDoesNotCapGeolocation(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
 
-	const versionID = "geo-short-http-timeout-v1"
+	const versionID = "geo-cap-isolation-v1"
 
-	// Mock geolocation server that responds after 300 ms — well above the
-	// 100 ms HTTP cap but below the 500 ms geolocation timeout.
-	// The urllib3 wall-clock cap fires at 100 ms, before the server answers.
-	mockGeo, mockGeoCfg := newConfigurableMockGeolocationService(t)
-	mockGeoCfg.setSlow(300 * time.Millisecond)
+	// Geolocation mock that replies after 300 ms with a real JSON body.
+	// Placed between the 100 ms sandbox cap and the 500 ms geolocation
+	// budget so only the correct deadline can govern the call.
+	mockGeo, geoCalls := newSlowGeolocationServer(t, 200*time.Millisecond)
 
 	entries := map[string]configBackendEntry{
 		versionID: {code: `
 def transformEvent(event, metadata):
-    try:
-        result = geolocation("1.2.3.4")
-        event["geo"] = result
-    except Exception as e:
-        # Must NOT reach this branch
-        event["geo_error"] = str(e)
+    # If the sandbox HTTP cap leaked into the internal session, geolocation()
+    # would raise GeolocationServerError (retryable 503) — the test would
+    # never observe a successful event.
+    result = geolocation("1.2.3.4")
+    event["geo_country"] = result["country"]
     return event
 `},
 	}
@@ -60,10 +64,13 @@ def transformEvent(event, metadata):
 
 	container, pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		// geolocation URL must be reachable from inside the container
 		"GEOLOCATION_URL="+mockGeo.URL,
-		// HTTP cap is intentionally shorter than GEOLOCATION_TIMEOUT_SECS
+		// The user HTTP cap is intentionally SHORTER than the geo reply
+		// (100 ms < 300 ms). If the cap were applied to internal traffic,
+		// the geolocation call would time out at 100 ms.
 		"SANDBOX_HTTP_TIMEOUT_S=0.1",
+		// The geolocation budget is LARGER than the geo reply (500 ms >
+		// 300 ms) so the only legal outcome is success.
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
 	)
 	t.Cleanup(func() {
@@ -73,8 +80,8 @@ def transformEvent(event, metadata):
 	})
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
-	// Build a new-arch client with limited retries so the test terminates
-	// quickly and we can inspect the retry counter.
+	// Limited-retry client so a regression (which would trip retries) is
+	// visible within a bounded test runtime.
 	newStats, err := memstats.New()
 	require.NoError(t, err)
 	conf := config.New()
@@ -87,31 +94,40 @@ def transformEvent(event, metadata):
 	conf.Set("Transformer.Client.UserTransformer.retryRudderErrors.maxInterval", 1*time.Millisecond)
 	client := usertransformer.New(conf, logger.NOP, newStats)
 
-	events := []types.TransformerEvent{makeEvent("msg-geo-short-1", versionID)}
+	events := []types.TransformerEvent{makeEvent("msg-geo-iso-1", versionID)}
 	resp := client.Transform(context.Background(), events)
 
-	// The geolocation() call times out (urllib3 HTTP cap fires at 100 ms).
-	// GeolocationServerError bypasses the user's except-Exception block, so
-	// no success event is produced.
-	require.Len(t, resp.Events, 0,
-		"geolocation timeout must NOT produce a success event: "+
-			"GeolocationServerError must bypass user except-Exception")
+	// Happy path: geolocation returned within its 500 ms budget and the
+	// transformation produced a successful event.
+	require.Empty(t, resp.FailedEvents,
+		"geolocation call must succeed when the geo reply (300 ms) is within "+
+			"GEOLOCATION_TIMEOUT_SECS (500 ms); SANDBOX_HTTP_TIMEOUT_S (100 ms) "+
+			"must NOT apply to internal traffic")
+	require.Len(t, resp.Events, 1,
+		"exactly one successful event must be produced")
+	require.Equal(t, http.StatusOK, resp.Events[0].StatusCode)
 
-	// The worker returns 503 retryable.  After 2 retries the client gives up
-	// and surfaces the failure in FailedEvents.
-	require.Len(t, resp.FailedEvents, 1,
-		"geolocation timeout must surface as a failed event after retries are exhausted")
-	require.Contains(t, resp.FailedEvents[0].Error, "503",
-		"failed event must carry the 503 error from the retried geolocation timeout")
+	// The user code copies result["country"] into the event — verifying the
+	// geolocation body round-trips confirms the call actually completed
+	// (and wasn't retried into success by a different code path).
+	require.Equal(t, "IT", resp.Events[0].Output["geo_country"],
+		"successful geolocation response must reach user code intact")
 
-	// Verify that 2 retries actually happened — this is what proves the
-	// failure was treated as a geolocation timeout (retryable) and NOT as a
-	// user code HTTP timeout (non-retryable 400, zero retries).
+	// No retries: the client must NOT have retried anything. Under the
+	// pre-fix buggy behavior, the sandbox cap would fire at 100 ms, raise
+	// GeolocationServerError, and trigger the retry counter here.
 	retriesCounter := newStats.GetByName("processor_user_transformer_http_retries")
-	require.Len(t, retriesCounter, 1,
-		"http_retries counter must be recorded")
-	require.EqualValues(t, 2, retriesCounter[0].Value,
-		"geolocation timeout must trigger exactly 2 retries before failing")
+	if len(retriesCounter) > 0 {
+		require.EqualValues(t, 0, retriesCounter[0].Value,
+			"no retries must occur — any retry indicates the user HTTP cap "+
+				"leaked into the internal geolocation session")
+	}
+
+	// Exactly one geolocation call reached the mock: no redundant retries,
+	// no duplicate traffic.
+	require.EqualValues(t, 1, geoCalls.Load(),
+		"geolocation backend must be called exactly once for a successful "+
+			"transformation")
 }
 
 // TestUserHTTPTimeoutCapping verifies the urllib3 wall-clock cap behaviour for
@@ -341,6 +357,36 @@ def transformEvent(event, metadata):
 				"same host must reuse the pooled TCP connection "+
 				"(server-side StateNew count: want 1)")
 	})
+}
+
+// newSlowGeolocationServer creates an httptest server that serves the
+// pytransformer's /geoip/* contract: a JSON body containing a "country"
+// field, delayed by `delay` before responding. Returns the server and an
+// atomic counter of /geoip/* hits (health pings are not counted).
+func newSlowGeolocationServer(t *testing.T, delay time.Duration) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	calls := &atomic.Int64{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Ignore health pings so the counter reflects only real geo calls.
+		if r.URL.Path == "/" || r.URL.Path == "/health" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		calls.Add(1)
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+		body := []byte(`{"country": "IT"}`)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, calls
 }
 
 // newSlowServer creates an HTTP server that delays every response by delay.

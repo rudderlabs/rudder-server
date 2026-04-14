@@ -2358,11 +2358,12 @@ def transformBatch(events, metadata):
 			// distinguished from a slow user HTTP call: it must propagate as
 			// a retryable HTTP 503 (GeolocationServerError → retry) rather
 			// than a per-event 400. The mock service blocks for 1s while
-			// the pytransformer container is configured with a 0.5s cap, so
-			// either the urllib3 wall-clock patch or the geolocation
-			// session timeout fires first — both routes wrap the timeout in
-			// GeolocationServerError(BaseException), which bypasses the
-			// user-code except-Exception and surfaces as retryable.
+			// GEOLOCATION_TIMEOUT_SECS=0.5, so the geolocation session
+			// deadline fires first and raises GeolocationServerError
+			// (BaseException), which bypasses the user-code except-Exception
+			// and surfaces as retryable. SANDBOX_HTTP_TIMEOUT_S does NOT
+			// apply to internal geolocation traffic — see
+			// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
 			name:      "GeoTimeout",
 			versionID: "bc-geo-timeout-v1",
 			config: configBackendEntry{code: `
@@ -2452,11 +2453,11 @@ def transformEvent(event, metadata):
 	})
 
 	// Start shared rudder-pytransformer with configurable mock geolocation URL.
-	// SANDBOX_HTTP_TIMEOUT_S is set short so the GeoTimeout subtest's slow
-	// handler (1s delay) trips the urllib3 wall-clock cap quickly. Other
-	// subtests in this suite trigger failures via 5xx / connection reset and
-	// don't depend on the timeout magnitude, so the lower cap is safe for
-	// the whole shared container.
+	// GEOLOCATION_TIMEOUT_SECS=0.5 governs the GeoTimeout subtest's 1s mock
+	// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_TIMEOUT_S is kept
+	// low as a guard for any future subtest exercising user HTTP traffic; it
+	// does NOT affect geolocation calls — see
+	// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
 	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL,
 		"GEOLOCATION_URL="+geoURL,
 		"SANDBOX_HTTP_TIMEOUT_S=0.5",

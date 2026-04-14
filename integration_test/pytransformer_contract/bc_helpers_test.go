@@ -693,7 +693,7 @@ func (c *mockGeoConfig) setConnectionClose() {
 
 // setSlow makes the mock /geoip/* handler block for "delay" before responding
 // with HTTP 200. Used to simulate a hung geolocation backend so the
-// pytransformer's per-request timeout (or its urllib3 wall-clock cap) fires.
+// pytransformer's GEOLOCATION_TIMEOUT_SECS deadline fires.
 func (c *mockGeoConfig) setSlow(delay time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
