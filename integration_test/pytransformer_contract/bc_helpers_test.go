@@ -483,6 +483,7 @@ func startRudderPytransformer(
 	for _, e := range extraEnv {
 		env = append(env, toContainerURL(e))
 	}
+
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
@@ -492,6 +493,13 @@ func startRudderPytransformer(
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-pytransformer container")
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge pytransformer container: %v", err)
+		}
+	})
+
 	return container, cfg.url(container, containerPort)
 }
 

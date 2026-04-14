@@ -73,11 +73,6 @@ def transformEvent(event, metadata):
 		// 300 ms) so the only legal outcome is success.
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
 	)
-	t.Cleanup(func() {
-		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge pytransformer container: %v", err)
-		}
-	})
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	// Limited-retry client so a regression (which would trip retries) is
@@ -150,69 +145,60 @@ func TestUserHTTPTimeoutCapping(t *testing.T) {
 	pool.MaxWait = 2 * time.Minute
 
 	const (
-		versionBigger  = "user-timeout-bigger-v1"
-		versionSmaller = "user-timeout-smaller-v1"
+		versionBiggerTimeout  = "user-timeout-bigger-v1"
+		versionSmallerTimeout = "user-timeout-smaller-v1"
 	)
 
-	// slowSrv3s: responds after 3s — longer than SANDBOX_HTTP_TIMEOUT_S (2s)
-	// but shorter than the user's requested timeout (10s).  Our cap fires.
-	slowSrv3s, _ := newSlowServer(t, 3*time.Second)
-
-	// slowSrv1s: responds after 1s — longer than the user's requested timeout
-	// (0.5s) but shorter than SANDBOX_HTTP_TIMEOUT_S (2s).  User's cap fires.
-	slowSrv1s, _ := newSlowServer(t, 1*time.Second)
+	slowServer, calls := newSlowServer(t, 2*time.Second)
 
 	entries := map[string]configBackendEntry{
-		versionBigger: {code: fmt.Sprintf(`
+		versionBiggerTimeout: {code: fmt.Sprintf(`
 import requests
 
 def transformEvent(event, metadata):
-    # timeout=10 — user wants 10 s, but SANDBOX_HTTP_TIMEOUT_S=2 caps it.
+    # timeout=5 — user wants 5s, but SANDBOX_HTTP_TIMEOUT_S=1 caps it.
     # Timeout intentionally not caught — propagates as per-event status 400.
-    resp = requests.get("%s/data", timeout=10)
+    resp = requests.get("%s/data", timeout=5)
     event["status"] = resp.status_code
     return event
-`, toContainerURL(slowSrv3s.URL))},
+`, toContainerURL(slowServer.URL))},
 
-		versionSmaller: {code: fmt.Sprintf(`
+		versionSmallerTimeout: {code: fmt.Sprintf(`
 import requests
 
 def transformEvent(event, metadata):
-    # timeout=0.5 — user's cap is smaller than SANDBOX_HTTP_TIMEOUT_S=2.
+    # timeout=0.1 — user's cap is smaller than SANDBOX_HTTP_TIMEOUT_S=2.
     # Timeout intentionally not caught — propagates as per-event status 400.
-    resp = requests.get("%s/data", timeout=0.5)
+    resp = requests.get("%s/data", timeout=0.1)
     event["status"] = resp.status_code
     return event
-`, toContainerURL(slowSrv1s.URL))},
+`, toContainerURL(slowServer.URL))},
 	}
 
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	// SANDBOX_HTTP_TIMEOUT_S=2: our cap is between the user's bigger (10s)
-	// and smaller (0.5s) values, so both subtests can verify the correct cap.
+	// SANDBOX_HTTP_TIMEOUT_S=1: our cap is between the user's bigger (5s)
+	// and smaller (0.1s) values, so both subtests can verify the correct cap.
 	container, pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		"SANDBOX_HTTP_TIMEOUT_S=2",
+		"SANDBOX_HTTP_TIMEOUT_S=1",
 	)
-	t.Cleanup(func() {
-		if err := pool.Purge(container); err != nil {
-			t.Logf("Failed to purge pytransformer container: %v", err)
-		}
-	})
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	t.Run("OurCapHonouredWhenUserTimeoutIsBigger", func(t *testing.T) {
-		// The user passes timeout=10 s, but the server only replies after 3s.
-		// Our cap (2s) fires first.  The transformation fails with a 400
+		// Reset calls before test
+		calls.Store(0)
+		// The user passes timeout=5s, but the server only replies after 2s.
+		// Our cap (1s) fires first. The transformation fails with a 400
 		// per-event error (non-retryable user code HTTP timeout).
-		events := []types.TransformerEvent{makeEvent("msg-bigger-1", versionBigger)}
+		events := []types.TransformerEvent{makeEvent("msg-bigger-1", versionBiggerTimeout)}
 		status, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status,
 			"/customTransform HTTP response must be 200 (per-event errors are in the payload)")
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusBadRequest, items[0].StatusCode,
-			"our cap (2s) must fire before user timeout (10s) when server takes 3s")
+			"our cap (1s) must fire before user timeout (5s) when server takes > 1s")
 		// The error message should mention a timeout — both ReadTimeout and
 		// ConnectTimeout carry "timeout" or "timed out" in their string.
 		require.NotEmpty(t, items[0].Error,
@@ -222,21 +208,25 @@ def transformEvent(event, metadata):
 		// The event must appear in the failed payload, not silently swallowed.
 		require.Empty(t, items[0].Output,
 			"a timed-out event must not carry a successful output")
+		require.EqualValues(t, 1, calls.Load())
 	})
 
 	t.Run("UserTimeoutHonouredWhenSmallerThanCap", func(t *testing.T) {
-		// The user passes timeout=0.5 s; the server replies after 1s.
-		// The user's cap fires first (0.5s < our 2s cap < server's 1s delay).
-		events := []types.TransformerEvent{makeEvent("msg-smaller-1", versionSmaller)}
+		// Reset calls before test
+		calls.Store(0)
+		// The user passes timeout=0.1 s; the server replies after 2s.
+		// The user's cap fires first (0.5s < our 1s cap < server's 2s delay).
+		events := []types.TransformerEvent{makeEvent("msg-smaller-1", versionSmallerTimeout)}
 		status, items := sendRawTransform(t, pyURL, events)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusBadRequest, items[0].StatusCode,
-			"user timeout (0.5s) must fire before our cap (2s) when server takes 1s")
+			"user timeout (0.1s) must fire before our cap (1s) when server takes > 1s")
 		require.NotEmpty(t, items[0].Error,
 			"timeout error must be propagated as a non-empty per-event error")
 		require.Empty(t, items[0].Output,
 			"a timed-out event must not carry a successful output")
+		require.EqualValues(t, 1, calls.Load())
 	})
 }
 
@@ -292,11 +282,6 @@ def transformEvent(event, metadata):
 			// affinity.
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
-		t.Cleanup(func() {
-			if err := pool.Purge(noPoolContainer); err != nil {
-				t.Logf("Failed to purge no-pool pytransformer: %v", err)
-			}
-		})
 		waitForHealthy(t, pool, noPoolURL, "pytransformer (no-pool)", noPoolContainer)
 
 		before := newConns.Load()
@@ -330,11 +315,6 @@ def transformEvent(event, metadata):
 			// Single worker to guarantee the same session handles both requests.
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
-		t.Cleanup(func() {
-			if err := pool.Purge(poolContainer); err != nil {
-				t.Logf("Failed to purge with-pool pytransformer: %v", err)
-			}
-		})
 		waitForHealthy(t, pool, poolURL, "pytransformer (with-pool)", poolContainer)
 
 		before := newConns.Load()

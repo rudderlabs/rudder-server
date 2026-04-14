@@ -73,7 +73,6 @@ def transformEvent(event, metadata):
 		"DNS_CACHE_ENABLED=true",
 		"DNS_CACHE_TTL_S=300",
 	)
-	t.Cleanup(func() { _ = pool.Purge(container) })
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	// requireCorrectServer asserts that the response contains a single
@@ -223,7 +222,6 @@ def transformEvent(event, metadata):
 		t, pool, configBackend.URL,
 		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
-	t.Cleanup(func() { _ = pool.Purge(container) })
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	t.Run("OverrideResolvesToCorrectServer", func(t *testing.T) {
@@ -316,7 +314,6 @@ def transformEvent(event, metadata):
 		"DNS_CACHE_TTL_S=300",
 		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
-	t.Cleanup(func() { _ = pool.Purge(container) })
 	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	// Interleave requests between override and cached paths

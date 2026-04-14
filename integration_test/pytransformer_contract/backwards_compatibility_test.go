@@ -2063,12 +2063,7 @@ def transformEvent(event, metadata):
 	})
 
 	// Start shared rudder-pytransformer.
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer: %v", err)
-		}
-	})
+	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 
 	// Wait for shared services to be healthy.
 	t.Log("Waiting for shared services to be healthy...")

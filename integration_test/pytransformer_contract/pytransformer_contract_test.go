@@ -87,12 +87,7 @@ def transformEvent(event, metadata):
 	defer pyConfigBackend.Close()
 
 	// 4. Start rudder-pytransformer container
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, pyConfigBackend.URL)
-	defer func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge pytransformer container: %v", err)
-		}
-	}()
+	_, pyTransformerURL := startRudderPytransformer(t, pool, pyConfigBackend.URL)
 	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	// 6. Create mock transformer for features and destination transforms

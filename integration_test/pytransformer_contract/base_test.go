@@ -119,12 +119,7 @@ def transformEvent(event, metadata):
 	}()
 
 	t.Log("Starting rudder-pytransformer container...")
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
-	defer func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer container: %v", err)
-		}
-	}()
+	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 
 	t.Log("Waiting for transformers to be healthy...")
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")

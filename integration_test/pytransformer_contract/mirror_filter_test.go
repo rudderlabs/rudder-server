@@ -77,7 +77,6 @@ def transformEvent(event, metadata):
 		pyFilteredContainer, pyFilteredURL = startRudderPytransformer(
 			t, pool, configBackend.URL, "MIRROR_FILTER_ENABLED=true",
 		)
-		t.Cleanup(func() { _ = pool.Purge(pyFilteredContainer) })
 		waitForHealthy(t, pool, pyFilteredURL, "pytransformer-filtered", pyFilteredContainer)
 	})
 	wg.Go(func() {
@@ -85,7 +84,6 @@ def transformEvent(event, metadata):
 		pyNormalContainer, pyNormalURL = startRudderPytransformer(
 			t, pool, configBackend.URL,
 		)
-		t.Cleanup(func() { _ = pool.Purge(pyNormalContainer) })
 		waitForHealthy(t, pool, pyNormalURL, "pytransformer-normal", pyNormalContainer)
 	})
 	wg.Wait()
