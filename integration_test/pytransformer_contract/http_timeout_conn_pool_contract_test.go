@@ -62,7 +62,7 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	container, pyURL := startRudderPytransformer(
+	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
 		"GEOLOCATION_URL="+mockGeo.URL,
 		// The user HTTP cap is intentionally SHORTER than the geo reply
@@ -73,7 +73,6 @@ def transformEvent(event, metadata):
 		// 300 ms) so the only legal outcome is success.
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
 	)
-	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	// Limited-retry client so a regression (which would trip retries) is
 	// visible within a bounded test runtime.
@@ -180,11 +179,10 @@ def transformEvent(event, metadata):
 
 	// SANDBOX_HTTP_TIMEOUT_S=1: our cap is between the user's bigger (5s)
 	// and smaller (0.1s) values, so both subtests can verify the correct cap.
-	container, pyURL := startRudderPytransformer(
+	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
 		"SANDBOX_HTTP_TIMEOUT_S=1",
 	)
-	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	t.Run("OurCapHonouredWhenUserTimeoutIsBigger", func(t *testing.T) {
 		// Reset calls before test
@@ -274,7 +272,7 @@ def transformEvent(event, metadata):
 		// ENABLE_CONN_POOL=false (default): bare requests.get() creates a
 		// temporary Session per call, then closes it — so every call opens a
 		// fresh TCP connection even against a keep-alive-capable server.
-		noPoolContainer, noPoolURL := startRudderPytransformer(
+		noPoolURL := startRudderPytransformer(
 			t, pool, configBackend.URL,
 			"ENABLE_CONN_POOL=false",
 			// Single worker so both requests hit the same subprocess and
@@ -282,7 +280,6 @@ def transformEvent(event, metadata):
 			// affinity.
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
-		waitForHealthy(t, pool, noPoolURL, "pytransformer (no-pool)", noPoolContainer)
 
 		before := newConns.Load()
 
@@ -308,14 +305,13 @@ def transformEvent(event, metadata):
 		// ENABLE_CONN_POOL=true: bare requests.get() routes through the
 		// persistent user session.  The TCP connection established for the
 		// first request is kept in the pool and reused for the second.
-		poolContainer, poolURL := startRudderPytransformer(
+		poolURL := startRudderPytransformer(
 			t, pool, configBackend.URL,
 			"ENABLE_CONN_POOL=true",
 			"USER_CONN_POOL_MAX_SIZE=1",
 			// Single worker to guarantee the same session handles both requests.
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
-		waitForHealthy(t, pool, poolURL, "pytransformer (with-pool)", poolContainer)
 
 		before := newConns.Load()
 

@@ -1353,12 +1353,11 @@ def transformEvent(event, metadata):
 	})
 
 	// Start shared rudder-pytransformer with geolocation URL.
-	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
 
 	// Wait for shared services to be healthy.
 	t.Log("Waiting for shared services to be healthy...")
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	// Run subtests sequentially.
 	for _, st := range subtests {
@@ -1614,11 +1613,10 @@ def transformBatch(events, metadata):
 	})
 
 	// Start shared rudder-pytransformer (WITHOUT geolocation URL).
-	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
+	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 
 	t.Log("Waiting for shared services to be healthy...")
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
@@ -2448,7 +2446,7 @@ def transformEvent(event, metadata):
 	// low as a guard for any future subtest exercising user HTTP traffic; it
 	// does NOT affect geolocation calls — see
 	// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
-	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL,
+	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL,
 		"GEOLOCATION_URL="+geoURL,
 		"SANDBOX_HTTP_TIMEOUT_S=0.5",
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
@@ -2457,7 +2455,6 @@ def transformEvent(event, metadata):
 	// Wait for shared services to be healthy.
 	t.Log("Waiting for shared services to be healthy...")
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	// Run subtests sequentially.
 	for _, st := range subtests {

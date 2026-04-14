@@ -68,12 +68,11 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	container, pyURL := startRudderPytransformer(
+	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
 		"DNS_CACHE_ENABLED=true",
 		"DNS_CACHE_TTL_S=300",
 	)
-	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	// requireCorrectServer asserts that the response contains a single
 	// successfully transformed event whose external.server field matches
@@ -218,11 +217,10 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	container, pyURL := startRudderPytransformer(
+	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
 		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
-	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	t.Run("OverrideResolvesToCorrectServer", func(t *testing.T) {
 		events := []types.TransformerEvent{makeEvent("msg-override-1", versionID)}
@@ -308,13 +306,12 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	container, pyURL := startRudderPytransformer(
+	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
 		"DNS_CACHE_ENABLED=true",
 		"DNS_CACHE_TTL_S=300",
 		"DNS_OVERRIDES=custom-api.test,"+hostIP,
 	)
-	waitForHealthy(t, pool, pyURL, "pytransformer", container)
 
 	// Interleave requests between override and cached paths
 	var wg sync.WaitGroup

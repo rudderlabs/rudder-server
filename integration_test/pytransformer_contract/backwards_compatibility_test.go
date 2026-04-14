@@ -2063,12 +2063,11 @@ def transformEvent(event, metadata):
 	})
 
 	// Start shared rudder-pytransformer.
-	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
+	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 
 	// Wait for shared services to be healthy.
 	t.Log("Waiting for shared services to be healthy...")
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	// Run subtests sequentially. Each subtest with python code spins up its own
 	// openfaas-flask-base since openfaas loads code at startup.

@@ -119,11 +119,10 @@ def transformEvent(event, metadata):
 	}()
 
 	t.Log("Starting rudder-pytransformer container...")
-	_, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
+	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
 
 	t.Log("Waiting for transformers to be healthy...")
 	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
 
 	// Old architecture: PYTHON_TRANSFORM_URL is empty, so the client falls through
 	// to USER_TRANSFORM_URL for python transformations (same as production before pytransformer).

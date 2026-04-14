@@ -87,8 +87,7 @@ def transformEvent(event, metadata):
 	defer pyConfigBackend.Close()
 
 	// 4. Start rudder-pytransformer container
-	_, pyTransformerURL := startRudderPytransformer(t, pool, pyConfigBackend.URL)
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+	pyTransformerURL := startRudderPytransformer(t, pool, pyConfigBackend.URL)
 
 	// 6. Create mock transformer for features and destination transforms
 	// This handles everything except /customTransform (which goes to pytransformer)

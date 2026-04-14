@@ -464,7 +464,7 @@ func startRudderPytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL string,
 	extraEnv ...string,
-) (*dockertest.Resource, string) {
+) string {
 	t.Helper()
 	const containerPort = "8080"
 	cfg := newContainerConfig(t, containerPort)
@@ -500,7 +500,10 @@ func startRudderPytransformer(
 		}
 	})
 
-	return container, cfg.url(container, containerPort)
+	pyURL := cfg.url(container, containerPort)
+	waitForHealthy(t, pool, pyURL, "rudder-pytransformer", container)
+
+	return pyURL
 }
 
 // waitForHealthy polls a service's /health endpoint until it returns 200 OK.
