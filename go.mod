@@ -90,14 +90,14 @@ require (
 	github.com/rudderlabs/rudder-go-kit v0.74.2
 	github.com/rudderlabs/rudder-observability-kit v0.0.6
 	github.com/rudderlabs/rudder-schemas v0.11.0
-	github.com/rudderlabs/rudder-transformer/go v1.129.1
+	github.com/rudderlabs/rudder-transformer/go v1.129.2
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.25.2
 	github.com/samber/lo v1.53.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/segmentio/ksuid v1.0.4
-	github.com/snowflakedb/gosnowflake v1.19.0
+	github.com/snowflakedb/gosnowflake v1.19.1
 	github.com/sony/gobreaker v1.0.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.10.0
