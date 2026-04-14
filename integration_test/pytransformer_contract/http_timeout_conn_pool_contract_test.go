@@ -335,6 +335,132 @@ def transformEvent(event, metadata):
 	})
 }
 
+// TestSlowDripBodyFiresSandboxHTTPTimeout locks in the contract that a server
+// which flushes response headers quickly and then drips the body one byte at
+// a time must NOT pin a sandbox worker for longer than SANDBOX_HTTP_TIMEOUT_S.
+//
+// Scenario:
+//   - Body is 30 chunks × 200 ms = 6.0 s of wall-clock drip.
+//   - SANDBOX_HTTP_TIMEOUT_S = 1 s.
+//   - SANDBOX_TRANSFORMATION_TIMEOUT_S is set high enough that the
+//     subprocess-level SIGVTALRM safety net does NOT fire first — otherwise
+//     we would be measuring the wrong timeout.
+//
+// Legal outcomes are narrow: the per-event statusCode must be 400 (HTTP
+// timeout surfaces as a user-code failure), and the request must complete
+// well inside the full 6s body duration. Anything else means the slow-drip
+// body is still capable of pinning the worker.
+func TestSlowDripBodyFiresSandboxHTTPTimeout(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const versionID = "slow-drip-body-v1"
+
+	slowSrv := newSlowDripBodyServer(t, 30, 200*time.Millisecond)
+
+	entries := map[string]configBackendEntry{
+		versionID: {code: fmt.Sprintf(`
+import requests
+
+def transformEvent(event, metadata):
+    # No explicit timeout — let SANDBOX_HTTP_TIMEOUT_S cap the wall-clock budget.
+    resp = requests.get("%s/drip")
+    event["status"] = resp.status_code
+    event["body_len"] = len(resp.content)
+    return event
+`, toContainerURL(slowSrv.URL))},
+	}
+
+	configBackend := newContractConfigBackend(t, entries)
+	t.Cleanup(configBackend.Close)
+
+	// SANDBOX_HTTP_TIMEOUT_S=1 < 6s body drip → our cap must fire.
+	// SANDBOX_TRANSFORMATION_TIMEOUT_S=20 / SANDBOX_PROCESS_TIMEOUT_S=30 keep
+	// the subprocess-level deadlines far above any plausible cap firing time,
+	// so the only thing that can cause a per-event 400 here is the HTTP-level
+	// wall-clock deadline we are testing.
+	pyURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"SANDBOX_HTTP_TIMEOUT_S=1",
+		"SANDBOX_TRANSFORMATION_TIMEOUT_S=20",
+		"SANDBOX_PROCESS_TIMEOUT_S=30",
+	)
+
+	events := []types.TransformerEvent{makeEvent("msg-slow-drip-1", versionID)}
+
+	start := time.Now()
+	status, items := sendRawTransform(t, pyURL, events)
+	elapsed := time.Since(start)
+	t.Logf("slow-drip request elapsed: %s", elapsed)
+
+	require.Equal(t, http.StatusOK, status,
+		"/customTransform HTTP response must be 200 (per-event errors live in the payload)")
+	require.Len(t, items, 1, "exactly one per-event result expected")
+
+	require.Equal(t, http.StatusBadRequest, items[0].StatusCode,
+		"slow-drip body must fire SANDBOX_HTTP_TIMEOUT_S and surface as a 400 per-event error; "+
+			"statusCode=%d error=%q", items[0].StatusCode, items[0].Error)
+	require.NotEmpty(t, items[0].Error,
+		"timeout error message must be propagated to the caller")
+	require.Empty(t, items[0].Output,
+		"a timed-out event must not carry a successful transformation output")
+
+	// Wall-clock budget: the pre-fix path would pin the worker for the full
+	// 6s body duration. Post-fix the cap must fire within ~1s + overhead,
+	// comfortably below 4s — and critically far below the 6s drip ceiling.
+	// Using 4 s as the bound keeps the assertion resilient to normal Docker
+	// container-start jitter while still catching any regression that
+	// reverts the deadline wrapper.
+	require.Less(t, elapsed, 4*time.Second,
+		"SANDBOX_HTTP_TIMEOUT_S must cap the wall-clock budget for slow-drip "+
+			"body reads; elapsed=%s (pre-fix would be ~6s)", elapsed)
+}
+
+// newSlowDripBodyServer creates an httptest server that flushes response
+// headers immediately, then trickles the body one byte at a time using
+// HTTP/1.1 chunked transfer encoding, pausing “delay“ between each chunk.
+//
+// The header flush happens before any sleep so urllib3's “urlopen“ (which
+// caps the time-to-first-byte) returns fast — the attack surface is the body
+// read phase. The connection is closed after the final chunk so the test
+// server shuts down cleanly when the httptest.Server is torn down.
+func newSlowDripBodyServer(t *testing.T, chunks int, delay time.Duration) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		// ``Connection: close`` prevents the handler from hanging in a
+		// keep-alive loop after the response completes — important for
+		// clean test shutdown when the client succeeds in reading the
+		// whole body (the bypass / happy path).
+		w.Header().Set("Connection", "close")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("response writer is not a flusher")
+			return
+		}
+		// Flush headers immediately so urlopen returns fast. Everything
+		// after this point exercises the body-read deadline.
+		flusher.Flush()
+		for i := 0; i < chunks; i++ {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				// Client gave up (deadline fired upstream). Stop dripping
+				// to free the handler goroutine promptly.
+				return
+			}
+			if _, err := w.Write([]byte("a")); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 // newSlowGeolocationServer creates an httptest server that serves the
 // pytransformer's /geoip/* contract: a JSON body containing a "country"
 // field, delayed by `delay` before responding. Returns the server and an
