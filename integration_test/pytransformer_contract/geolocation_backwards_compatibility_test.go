@@ -2366,7 +2366,7 @@ def transformEvent(event, metadata):
         event["geo_error"] = str(e)
     return event
 `},
-			setup:               func() { mockGeoCfg.setSlow(1 * time.Second) },
+			setup:               func() { mockGeoCfg.setSlow(500 * time.Millisecond) },
 			skipRetryCountMatch: true,
 			run: func(t *testing.T, env *bcTestEnv) {
 				const versionID = "bc-geo-timeout-v1"
@@ -2448,8 +2448,8 @@ def transformEvent(event, metadata):
 	// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
 	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL,
 		"GEOLOCATION_URL="+geoURL,
-		"SANDBOX_HTTP_TIMEOUT_S=0.5",
-		"GEOLOCATION_TIMEOUT_SECS=0.5",
+		"SANDBOX_HTTP_TIMEOUT_S=0.1",
+		"GEOLOCATION_TIMEOUT_SECS=0.1",
 	)
 
 	// Wait for shared services to be healthy.
