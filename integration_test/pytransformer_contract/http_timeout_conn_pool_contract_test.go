@@ -22,69 +22,9 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
-// newSlowServer creates an HTTP server that delays every response by delay.
-// Returns the server (already started) and an atomic call counter.
-// The handler responds HTTP 200 with `{"ok": true}` after the delay,
-// or stops early if the request context is cancelled (client gave up).
-func newSlowServer(t *testing.T, delay time.Duration) (*httptest.Server, *atomic.Int64) {
-	t.Helper()
-	calls := &atomic.Int64{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		select {
-		case <-time.After(delay):
-		case <-r.Context().Done():
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ok": true}`))
-	}))
-	t.Cleanup(srv.Close)
-	return srv, calls
-}
-
-// newConnectionCountingServer creates an HTTP server that uses ConnState to
-// count the number of new TCP connections it accepts.  Every time the Go HTTP
-// server transitions a connection to http.StateNew (i.e. a fresh TCP handshake
-// completed), the atomic counter is incremented.  Subsequent HTTP requests on
-// the same keep-alive TCP connection do NOT trigger http.StateNew, so the
-// counter is a reliable proxy for "how many distinct TCP connections were
-// opened."
-//
-// The handler responds HTTP 200 with a small JSON body and sets
-// Content-Length so the client knows the response is complete and can keep
-// the connection alive for the next request without chunked transfer.
-func newConnectionCountingServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
-	t.Helper()
-	newConns := &atomic.Int64{}
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body := []byte(`{"ok": true}`)
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(body)
-	})
-	srv := httptest.NewUnstartedServer(handler)
-	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
-		if state == http.StateNew {
-			newConns.Add(1)
-		}
-	}
-	srv.Start()
-	t.Cleanup(srv.Close)
-	return srv, newConns
-}
-
 // TestGeoTimeoutWithShorterHTTPTimeoutCap locks the contract that a slow
 // geolocation backend is retried even when SANDBOX_HTTP_TIMEOUT_S is shorter
 // than GEOLOCATION_TIMEOUT_SECS.
-//
-// When the urllib3 wall-clock cap fires during a geolocation() call, the
-// resulting ReadTimeoutError is caught by the geolocation() function and
-// re-raised as GeolocationServerError (a BaseException subclass). This
-// bypasses the user's `except Exception` block and surfaces to the worker as
-// a retryable HTTP 503 — identical to the behaviour when
-// GEOLOCATION_TIMEOUT_SECS fires first.
 //
 // The test distinguishes this from a user code HTTP timeout (400,
 // non-retryable) by verifying that the response carries a 503 status and
@@ -97,8 +37,8 @@ func TestGeoTimeoutWithShorterHTTPTimeoutCap(t *testing.T) {
 	const versionID = "geo-short-http-timeout-v1"
 
 	// Mock geolocation server that responds after 300 ms — well above the
-	// 100 ms HTTP cap but below the 500 ms geolocation timeout.  The urllib3
-	// wall-clock cap fires at 100 ms, before the server answers.
+	// 100 ms HTTP cap but below the 500 ms geolocation timeout.
+	// The urllib3 wall-clock cap fires at 100 ms, before the server answers.
 	mockGeo, mockGeoCfg := newConfigurableMockGeolocationService(t)
 	mockGeoCfg.setSlow(300 * time.Millisecond)
 
@@ -109,9 +49,7 @@ def transformEvent(event, metadata):
         result = geolocation("1.2.3.4")
         event["geo"] = result
     except Exception as e:
-        # Must NOT reach this branch: GeolocationServerError inherits
-        # BaseException, so it bypasses except-Exception and propagates
-        # to the worker as a retryable 503.
+        # Must NOT reach this branch
         event["geo_error"] = str(e)
     return event
 `},
@@ -403,4 +341,57 @@ def transformEvent(event, metadata):
 				"same host must reuse the pooled TCP connection "+
 				"(server-side StateNew count: want 1)")
 	})
+}
+
+// newSlowServer creates an HTTP server that delays every response by delay.
+// Returns the server (already started) and an atomic call counter.
+// The handler responds HTTP 200 with `{"ok": true}` after the delay,
+// or stops early if the request context is cancelled (client gave up).
+func newSlowServer(t *testing.T, delay time.Duration) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	calls := &atomic.Int64{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		select {
+		case <-time.After(delay):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok": true}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, calls
+}
+
+// newConnectionCountingServer creates an HTTP server that uses ConnState to
+// count the number of new TCP connections it accepts.  Every time the Go HTTP
+// server transitions a connection to http.StateNew (i.e. a fresh TCP handshake
+// completed), the atomic counter is incremented.  Subsequent HTTP requests on
+// the same keep-alive TCP connection do NOT trigger http.StateNew, so the
+// counter is a reliable proxy for "how many distinct TCP connections were
+// opened."
+//
+// The handler responds HTTP 200 with a small JSON body and sets
+// Content-Length so the client knows the response is complete and can keep
+// the connection alive for the next request without chunked transfer.
+func newConnectionCountingServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	newConns := &atomic.Int64{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := []byte(`{"ok": true}`)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	})
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
+	t.Cleanup(srv.Close)
+	return srv, newConns
 }
