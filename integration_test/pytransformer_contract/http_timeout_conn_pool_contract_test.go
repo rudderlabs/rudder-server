@@ -281,7 +281,8 @@ def transformEvent(event, metadata):
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
-		before := newConns.Load()
+		// Reset newConns before sending events
+		newConns.Store(0)
 
 		ev1 := makeEvent("msg-nopool-1", versionID)
 		status1, items1 := sendRawTransform(t, noPoolURL, []types.TransformerEvent{ev1})
@@ -295,8 +296,7 @@ def transformEvent(event, metadata):
 		require.Len(t, items2, 1)
 		require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
 
-		delta := newConns.Load() - before
-		require.EqualValues(t, 2, delta,
+		require.EqualValues(t, 2, newConns.Load(),
 			"with ENABLE_CONN_POOL=false, each bare requests.get() must open "+
 				"a fresh TCP connection (server-side StateNew count: want 2)")
 	})
@@ -313,7 +313,8 @@ def transformEvent(event, metadata):
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
-		before := newConns.Load()
+		// Reset newConns before sending events
+		newConns.Store(0)
 
 		ev1 := makeEvent("msg-pool-1", versionID)
 		status1, items1 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev1})
@@ -327,8 +328,7 @@ def transformEvent(event, metadata):
 		require.Len(t, items2, 1)
 		require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
 
-		delta := newConns.Load() - before
-		require.EqualValues(t, 1, delta,
+		require.EqualValues(t, 1, newConns.Load(),
 			"with ENABLE_CONN_POOL=true, the second bare requests.get() to the "+
 				"same host must reuse the pooled TCP connection "+
 				"(server-side StateNew count: want 1)")
