@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.26.1
+go 1.26.2
 
 // Addressing snyk vulnerabilities in indirect dependencies
 // When upgrading a dependency, please make sure that
@@ -26,7 +26,7 @@ require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alexeyco/simpletable v1.0.0
 	github.com/allisson/go-pglock/v3 v3.2.0
-	github.com/apache/pulsar-client-go v0.18.0
+	github.com/apache/pulsar-client-go v0.19.0
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.45.23
@@ -86,18 +86,18 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.3+incompatible
 	github.com/rudderlabs/bing-ads-go-sdk v0.2.3
 	github.com/rudderlabs/compose-test v0.1.3
-	github.com/rudderlabs/keydb v1.3.6
+	github.com/rudderlabs/keydb v1.4.0
 	github.com/rudderlabs/rudder-go-kit v0.74.2
-	github.com/rudderlabs/rudder-observability-kit v0.0.6
+	github.com/rudderlabs/rudder-observability-kit v0.0.7
 	github.com/rudderlabs/rudder-schemas v0.11.0
-	github.com/rudderlabs/rudder-transformer/go v1.129.1
+	github.com/rudderlabs/rudder-transformer/go v1.130.0
 	github.com/rudderlabs/sql-tunnels v0.1.7
 	github.com/rudderlabs/sqlconnect-go v1.25.2
 	github.com/samber/lo v1.53.0
 	github.com/segmentio/go-hll v1.0.1
 	github.com/segmentio/kafka-go v0.4.50
 	github.com/segmentio/ksuid v1.0.4
-	github.com/snowflakedb/gosnowflake v1.19.0
+	github.com/snowflakedb/gosnowflake v1.19.1
 	github.com/sony/gobreaker v1.0.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.10.0
