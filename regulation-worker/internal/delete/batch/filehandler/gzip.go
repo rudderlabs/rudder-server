@@ -1,15 +1,19 @@
 package filehandler
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -106,4 +110,114 @@ func (h *GZIPLocalFileHandler) getDeletePattern(attribute model.User) (string, e
 	default:
 		return "", fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
 	}
+}
+
+func (h *GZIPLocalFileHandler) RemoveIdentityRE(_ context.Context, attributes []model.User) error {
+	key, err := h.idFieldName()
+	if err != nil {
+		return err
+	}
+	re, err := regexp.Compile(fmt.Sprintf(`"%s": *"([^"]*)"`, key))
+	if err != nil {
+		return fmt.Errorf("compiling id extractor regex: %w", err)
+	}
+
+	suppress := make(map[string]struct{}, len(attributes))
+	for _, a := range attributes {
+		suppress[a.ID] = struct{}{}
+	}
+
+	var out bytes.Buffer
+	scanner := bufio.NewScanner(bytes.NewReader(h.records))
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		drop := false
+		rest := line
+		for {
+			loc := re.FindSubmatchIndex(rest)
+			if loc == nil {
+				break
+			}
+			if _, found := suppress[string(rest[loc[2]:loc[3]])]; found {
+				drop = true
+				break
+			}
+			rest = rest[loc[1]:]
+		}
+		if !drop {
+			out.Write(line)
+		}
+	}
+
+	h.records = out.Bytes()
+	return nil
+}
+
+func (h *GZIPLocalFileHandler) idFieldName() (string, error) {
+	switch h.casing {
+	case SnakeCase:
+		return "user_id", nil
+	case CamelCase:
+		return "userId", nil
+	case UpperCase:
+		return "USER_ID", nil
+	default:
+		return "", fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
+	}
+}
+
+// RemoveIdentityPureGo is the proposed shell-injection-free replacement for
+// GZIPLocalFileHandler.RemoveIdentity. It decodes each NDJSON line and drops
+// records whose configured id field matches any entry in attributes.
+func (h *GZIPLocalFileHandler) RemoveIdentityPureGo(_ context.Context, attributes []model.User) error {
+	var fieldName string
+	switch h.casing {
+	case SnakeCase:
+		fieldName = "user_id"
+	case CamelCase:
+		fieldName = "userId"
+	case UpperCase:
+		fieldName = "USER_ID"
+	default:
+		return fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
+	}
+
+	suppress := make(map[string]struct{}, len(attributes))
+	for _, a := range attributes {
+		suppress[a.ID] = struct{}{}
+	}
+
+	var out bytes.Buffer
+	scanner := bufio.NewScanner(bytes.NewReader(h.records))
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+
+		drop := false
+		var obj map[string]json.RawMessage
+		if err := jsonrs.Unmarshal(line, &obj); err == nil {
+			if raw, ok := obj[fieldName]; ok {
+				var id string
+				if err := jsonrs.Unmarshal(raw, &id); err == nil {
+					if _, found := suppress[id]; found {
+						drop = true
+					}
+				}
+			}
+		}
+
+		if drop {
+			continue
+		}
+		out.Write(line)
+		out.WriteByte('\n')
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	h.records = out.Bytes()
+	return nil
 }
