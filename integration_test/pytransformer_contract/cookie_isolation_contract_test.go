@@ -1,6 +1,7 @@
 package pytransformer_contract
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -187,18 +190,59 @@ def transformEvent(event, metadata):
 		parallelRequests, newConns.Load())
 }
 
-// TestConnectionPoolRequestOptionIsolation verifies that per-request options
-// sent through bare requests calls never become defaults on the pooled user
-// session.
+// TestConnectionPoolRequestOptionIsolation locks the cross-architecture
+// contract that per-request options attached to a bare “requests.<verb>“
+// call never become defaults on the user-facing HTTP session.
+//
+// The goal is parity, not a one-sided property check. The same transformation
+// code runs through three stacks:
+//
+//  1. Old arch — rudder-transformer + openfaas-flask-base (vanilla
+//     “requests“ inside the OpenFaaS container).
+//  2. New arch, “ENABLE_CONN_POOL=false“ — rudder-pytransformer with the
+//     pooling wrapper disabled, so bare “requests.get“ spins up a
+//     throwaway “Session“ per call just like the old arch.
+//  3. New arch, “ENABLE_CONN_POOL=true“ — rudder-pytransformer routing
+//     every bare call through a shared “StatelessPooledSession“ pinned
+//     to a single TCP socket. This is the path that could regress if the
+//     pooling wrapper ever started persisting “headers“ / “auth“ /
+//     “params“ / “cookies“ / “hooks“ onto the shared session.
+//
+// Every configuration must produce the exact same “types.Response“, so any
+// drift introduced by the pooling layer surfaces via “oldResp.Equal(&newResp)“.
+//
+// The batch of transformation events is larger than one so the assertion
+// covers cross-transformation isolation on the shared session, not only
+// cross-call isolation within one transformation.
+//
+// In the “ConnPoolEnabled“ case the echo server's “ConnState“ counter
+// is also asserted: with “SANDBOX_POOL_MAX_SIZE=1“ and
+// “USER_CONN_POOL_MAX_SIZE=1“ every HTTP call the transformations make
+// MUST flow through one kept-alive socket, otherwise the test is not
+// actually exercising the shared-session path and the isolation assertion
+// is vacuously true.
 func TestConnectionPoolRequestOptionIsolation(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
 
-	const versionID = "request-options-isolation-v1"
+	const (
+		versionID = "request-options-isolation-v1"
+		// Each event makes 2 sequential HTTP calls. ``numEvents`` > 1 so the
+		// batch exercises isolation ACROSS transformations sharing the
+		// pooled session, not just across sequential calls inside one
+		// transformation.
+		numEvents = 3
+	)
 
-	echoSrv := newSessionDefaultsEchoServer(t)
+	echoSrv, newConns := newSessionDefaultsEchoServer(t)
 
+	// User code: every ``transformEvent`` invocation issues two sequential
+	// requests. The first primes a vanilla ``requests.Session`` with every
+	// per-request option ``requests`` supports; the second issues a bare
+	// GET. If any option persisted to session state — on the old-arch
+	// vanilla session OR the new-arch ``StatelessPooledSession`` — the
+	// second call would observe it and the parity check would fail.
 	code := fmt.Sprintf(`
 import requests
 
@@ -229,6 +273,14 @@ def transformEvent(event, metadata):
     event["first_query"] = first_data["query"]
     event["first_cookie"] = first_data["cookie"]
     event["first_hook_ran"] = first.headers.get("X-Hook-Ran", "")
+    # Proof-of-mechanism (not a persistence check): the echo server sends
+    # Set-Cookie: server_cookie=secret on every response, and the requests
+    # library parses it into the per-RESPONSE cookie jar (first.cookies is
+    # a RequestsCookieJar bound to the response, not to the session). If
+    # this field were ever empty the parity / isolation assertions below
+    # would be vacuously true, so the Go test explicitly requires it to
+    # equal "secret" on both stacks — mirrors the proof-of-leak-channel
+    # check in TestConnectionPoolCookieIsolation.
     event["first_response_cookie"] = first.cookies.get("server_cookie", "")
 
     event["second_status"] = second.status_code
@@ -245,33 +297,196 @@ def transformEvent(event, metadata):
 	})
 	t.Cleanup(configBackend.Close)
 
-	pyURL := startRudderPytransformer(
-		t, pool, configBackend.URL,
-		"ENABLE_CONN_POOL=true",
-		"SANDBOX_POOL_MAX_SIZE=1",
-		"USER_CONN_POOL_MAX_SIZE=1",
-	)
+	// --- Old architecture (rudder-transformer + openfaas-flask-base) ---
+	//
+	// Shared across every new-arch subtest so it becomes the reference
+	// behaviour each ``ENABLE_CONN_POOL`` value must match. Mirrors the
+	// setup in TestBareRequestsPositionalParamsContract.
 
-	event := makeEvent("msg-request-options-isolation", versionID)
-	status, items := sendRawTransform(t, pyURL, []types.TransformerEvent{event})
-	require.Equal(t, http.StatusOK, status)
-	require.Len(t, items, 1)
-	require.Equal(t, http.StatusOK, items[0].StatusCode, "event must succeed: %s", items[0].Error)
+	t.Log("Starting openfaas-flask-base (old arch backend)...")
+	openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
 
-	require.Equal(t, float64(http.StatusOK), items[0].Output["first_status"])
-	require.Equal(t, "1", items[0].Output["first_x_leak"])
-	require.NotEmpty(t, items[0].Output["first_authorization"], "first request must carry auth")
-	require.Equal(t, "leak=1", items[0].Output["first_query"])
-	require.Equal(t, "client_cookie=1", items[0].Output["first_cookie"])
-	require.Equal(t, "1", items[0].Output["first_hook_ran"])
-	require.Equal(t, "secret", items[0].Output["first_response_cookie"])
+	t.Log("Starting mock OpenFaaS gateway...")
+	mockGateway, _ := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
+	t.Cleanup(mockGateway.Close)
 
-	require.Equal(t, float64(http.StatusOK), items[0].Output["second_status"])
-	require.Empty(t, items[0].Output["second_x_leak"], "header must not carry into the next request")
-	require.Empty(t, items[0].Output["second_authorization"], "auth must not carry into the next request")
-	require.Empty(t, items[0].Output["second_query"], "params must not carry into the next request")
-	require.Empty(t, items[0].Output["second_cookie"], "cookies must not carry into the next request")
-	require.Empty(t, items[0].Output["second_hook_ran"], "response hook must not carry into the next request")
+	t.Log("Starting rudder-transformer (old arch frontend)...")
+	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
+	t.Cleanup(func() {
+		if err := pool.Purge(transformerContainer); err != nil {
+			t.Logf("Failed to purge rudder-transformer: %v", err)
+		}
+	})
+	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+
+	events := make([]types.TransformerEvent, numEvents)
+	for i := range events {
+		events[i] = makeEvent(fmt.Sprintf("msg-req-opt-iso-%d", i), versionID)
+	}
+
+	// --- New architecture (rudder-pytransformer) ---
+	//
+	// Parameterized over both values of ``ENABLE_CONN_POOL``:
+	//   - ``false``: bare calls hit the throwaway-session path (same as
+	//     old arch, isolation is trivial).
+	//   - ``true``: bare calls route through ``StatelessPooledSession``;
+	//     this is the path under test.
+	// Every case must match the old arch field-for-field.
+	newArchCases := []struct {
+		name           string
+		enableConnPool string
+		extraEnv       []string
+		// assertOneConn is only meaningful when the pool is enabled: the
+		// ConnState counter on the echo server must observe exactly one
+		// new TCP socket across every HTTP call the transformations make.
+		assertOneConn bool
+	}{
+		{
+			name:           "ConnPoolDisabled",
+			enableConnPool: "false",
+			// No pool-size pins: without ``ENABLE_CONN_POOL`` bare
+			// ``requests.get`` creates a throwaway Session per call, so
+			// pinning the pool size would be misleading decoration.
+			extraEnv:      nil,
+			assertOneConn: false,
+		},
+		{
+			name:           "ConnPoolEnabled",
+			enableConnPool: "true",
+			// Pin subprocess + pool count to 1 so every event and every
+			// HTTP call is forced through the SAME
+			// ``StatelessPooledSession``. This is the worst case for
+			// option leakage and the only configuration where
+			// ``newConns == 1`` is provable.
+			extraEnv: []string{
+				"SANDBOX_POOL_MAX_SIZE=1",
+				"USER_CONN_POOL_MAX_SIZE=1",
+			},
+			assertOneConn: true,
+		},
+	}
+
+	for _, tc := range newArchCases {
+		t.Run(tc.name, func(t *testing.T) {
+			pyEnv := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraEnv...)
+			t.Logf("Starting rudder-pytransformer with %v...", pyEnv)
+			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, pyEnv...)
+
+			// Fresh env per subtest so memstats retry counters don't bleed
+			// between runs — memstats accumulates and cannot be reset.
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
+
+			t.Log("Sending batch to old arch (openfaas-flask-base)...")
+			oldResp := env.OldClient.Transform(context.Background(), events)
+			t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+
+			// Only the NEW-arch run's TCP activity counts toward the pool
+			// reuse assertion — reset the counter so every connection the
+			// old-arch stack (openfaas-flask-base) opened to the shared
+			// echo server is excluded.
+			newConns.Store(0)
+
+			t.Log("Sending batch to new arch (rudder-pytransformer)...")
+			newResp := env.NewClient.Transform(context.Background(), events)
+			t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+
+			require.Equalf(t, numEvents, len(oldResp.Events), "old arch: all %d events must succeed", numEvents)
+			require.Empty(t, oldResp.FailedEvents, "old arch: no failed events expected")
+			require.Equalf(t, numEvents, len(newResp.Events),
+				"new arch (ENABLE_CONN_POOL=%s): all %d events must succeed",
+				tc.enableConnPool, numEvents)
+			require.Empty(t, newResp.FailedEvents, "new arch: no failed events expected")
+
+			// Proof-of-mechanism: every event on BOTH stacks must have
+			// carried the full set of per-request options on its first
+			// call. Without these checks, a regression that stopped the
+			// mock echo from observing any single option would make the
+			// isolation parity check below vacuously true for that option.
+			for _, resp := range []*types.Response{&oldResp, &newResp} {
+				for _, ev := range resp.Events {
+					require.Equalf(t, "1", ev.Output["first_x_leak"],
+						"msg=%s: first request must carry X-Leak header",
+						ev.Metadata.MessageID)
+					// Exact match (rather than NotEmpty) — base64("user:pass").
+					// A malformed Authorization header would still be
+					// non-empty but would silently diverge from the
+					// old-arch reference.
+					require.Equalf(t, "Basic dXNlcjpwYXNz", ev.Output["first_authorization"],
+						"msg=%s: first request must carry Basic user:pass auth",
+						ev.Metadata.MessageID)
+					require.Equalf(t, "leak=1", ev.Output["first_query"],
+						"msg=%s: first request must carry params",
+						ev.Metadata.MessageID)
+					require.Equalf(t, "client_cookie=1", ev.Output["first_cookie"],
+						"msg=%s: first request must carry Cookie",
+						ev.Metadata.MessageID)
+					require.Equalf(t, "1", ev.Output["first_hook_ran"],
+						"msg=%s: response hook must have stamped X-Hook-Ran",
+						ev.Metadata.MessageID)
+					require.Equalf(t, "secret", ev.Output["first_response_cookie"],
+						"msg=%s: echo server must have sent Set-Cookie and requests must have parsed it — otherwise the parity check below is vacuous",
+						ev.Metadata.MessageID)
+				}
+			}
+
+			// Core isolation assertion: the second bare GET, issued without
+			// any options, must see NONE of the state the first call
+			// attached. Vanilla ``requests.Session`` does not persist
+			// per-request kwargs, so the old arch passes this trivially;
+			// ``StatelessPooledSession`` must match that guarantee on the
+			// new-arch pooled path. Per-field asserts keep failure output
+			// actionable; ``Equal`` below is the strict parity catch-all.
+			for _, resp := range []*types.Response{&oldResp, &newResp} {
+				for _, ev := range resp.Events {
+					require.Emptyf(t, ev.Output["second_x_leak"],
+						"msg=%s: header must not carry into the next request",
+						ev.Metadata.MessageID)
+					require.Emptyf(t, ev.Output["second_authorization"],
+						"msg=%s: auth must not carry into the next request",
+						ev.Metadata.MessageID)
+					require.Emptyf(t, ev.Output["second_query"],
+						"msg=%s: params must not carry into the next request",
+						ev.Metadata.MessageID)
+					require.Emptyf(t, ev.Output["second_cookie"],
+						"msg=%s: cookies must not carry into the next request",
+						ev.Metadata.MessageID)
+					require.Emptyf(t, ev.Output["second_hook_ran"],
+						"msg=%s: response hook must not carry into the next request",
+						ev.Metadata.MessageID)
+				}
+			}
+
+			// Strict parity: old arch and new arch must produce identical
+			// responses field-for-field. Any divergence the per-field
+			// asserts above missed (e.g. a difference in ``Metadata``,
+			// ``StatTags``, or an Output key that was added to the
+			// transformation code but not to this test) surfaces here.
+			diff, equal := oldResp.Equal(&newResp)
+			require.Truef(t, equal,
+				"ENABLE_CONN_POOL=%s: old and new architectures must produce identical responses:\n%s",
+				tc.enableConnPool, diff)
+
+			env.assertRetryCountsMatch(t)
+
+			if tc.assertOneConn {
+				// With ``ENABLE_CONN_POOL=true``, ``SANDBOX_POOL_MAX_SIZE=1``
+				// and ``USER_CONN_POOL_MAX_SIZE=1`` every one of the
+				// ``numEvents * 2`` HTTP calls must have been served by
+				// the SAME kept-alive socket. A count > 1 means the pool
+				// silently failed to reuse the connection and the test no
+				// longer exercises the shared-session path — the
+				// isolation assertion above becomes meaningless (each
+				// call would be getting a fresh session). Mirrors the
+				// same-shape assertion in TestConnectionPoolCookieIsolation.
+				require.EqualValuesf(t, 1, newConns.Load(),
+					"expected exactly 1 new TCP connection for %d pooled requests, got %d — the pool must reuse a single kept-alive socket",
+					numEvents*2, newConns.Load())
+			}
+		})
+	}
 }
 
 // newCookieEchoServer returns an HTTP server that, on every request:
@@ -312,22 +527,49 @@ func newCookieEchoServer(t *testing.T) (*httptest.Server, *atomic.Int64, *atomic
 	return srv, hits, newConns
 }
 
-func newSessionDefaultsEchoServer(t *testing.T) *httptest.Server {
+// newSessionDefaultsEchoServer returns an HTTP server used by the per-request
+// option isolation contract. Every response:
+//   - Echoes the incoming “X-Leak“ / “Authorization“ / query string /
+//     “Cookie“ headers back as JSON so user transformation code can prove
+//     which options reached the server.
+//   - Stamps “Set-Cookie: server_cookie=secret“ so the caller can verify
+//     the mock leak channel exists (see the “first_response_cookie“
+//     proof-of-mechanism check in “TestConnectionPoolRequestOptionIsolation“).
+//   - Sets “Content-Length“ so the client can keep-alive the TCP socket
+//     without chunked transfer.
+//
+// The “ConnState“ hook counts “http.StateNew“ transitions into the
+// returned “*atomic.Int64“ so the test can assert that the pytransformer
+// pooled session reused a single kept-alive connection across every call —
+// the same technique “newCookieEchoServer“ uses.
+func newSessionDefaultsEchoServer(t *testing.T) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body := []byte(fmt.Sprintf(
-			`{"x_leak": %q, "authorization": %q, "query": %q, "cookie": %q}`,
-			r.Header.Get("X-Leak"),
-			r.Header.Get("Authorization"),
-			r.URL.RawQuery,
-			r.Header.Get("Cookie"),
-		))
+	newConns := &atomic.Int64{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := jsonrs.Marshal(map[string]string{
+			"x_leak":        r.Header.Get("X-Leak"),
+			"authorization": r.Header.Get("Authorization"),
+			"query":         r.URL.RawQuery,
+			"cookie":        r.Header.Get("Cookie"),
+		})
+		if err != nil {
+			t.Errorf("sessionDefaultsEchoServer: failed to marshal body: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.Header().Set("Set-Cookie", "server_cookie=secret; Path=/")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
-	}))
+	})
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	srv.Start()
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, newConns
 }
