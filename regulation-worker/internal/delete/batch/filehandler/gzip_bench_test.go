@@ -117,17 +117,17 @@ func BenchmarkRemoveIdentityRE(b *testing.B) {
 
 // BenchmarkRemoveIdentityPureGo
 // BenchmarkRemoveIdentityPureGo/records=1000/users=1/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=1000/users=1/hit=10%-12         	    1124	   1020458 ns/op	 134.24 MB/s	 1425519 B/op	   20814 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=1000/users=1/hit=10%-12         	    7198	    151627 ns/op	 903.47 MB/s	  563106 B/op	    2014 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=1000/users=10/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=1000/users=10/hit=10%-12        	    1132	   1016534 ns/op	 134.76 MB/s	 1425967 B/op	   20817 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=1000/users=10/hit=10%-12        	    7791	    140989 ns/op	 971.64 MB/s	  563561 B/op	    2017 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=10000/users=1/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=10000/users=1/hit=10%-12        	     122	   9767601 ns/op	 142.19 MB/s	13022326 B/op	  208017 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=10000/users=1/hit=10%-12        	     981	   1211181 ns/op	1146.72 MB/s	 4398249 B/op	   20017 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=10000/users=10/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=10000/users=10/hit=10%-12       	     123	   9610322 ns/op	 144.52 MB/s	13022736 B/op	  208020 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=10000/users=10/hit=10%-12       	     987	   1169327 ns/op	1187.77 MB/s	 4398699 B/op	   20020 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=10000/users=100/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=10000/users=100/hit=10%-12      	     122	   9740143 ns/op	 142.69 MB/s	13025771 B/op	  208020 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=10000/users=100/hit=10%-12      	     960	   1255105 ns/op	1107.31 MB/s	 4401739 B/op	   20020 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=100000/users=10/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=100000/users=10/hit=10%-12      	      12	  89935003 ns/op	 156.55 MB/s	144233781 B/op	 1918024 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=100000/users=10/hit=10%-12      	     106	  11176147 ns/op	1259.73 MB/s	59289715 B/op	  200024 allocs/op
 func BenchmarkRemoveIdentityPureGo(b *testing.B) {
 	ctx := context.Background()
 	for _, sc := range benchScenarios {

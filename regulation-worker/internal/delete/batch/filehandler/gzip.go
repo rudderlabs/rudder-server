@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rudderlabs/rudder-go-kit/jsonrs"
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -148,6 +147,7 @@ func (h *GZIPLocalFileHandler) RemoveIdentityRE(_ context.Context, attributes []
 		}
 		if !drop {
 			out.Write(line)
+			out.WriteByte('\n')
 		}
 	}
 
@@ -196,20 +196,8 @@ func (h *GZIPLocalFileHandler) RemoveIdentityPureGo(_ context.Context, attribute
 	for scanner.Scan() {
 		line := scanner.Bytes()
 
-		drop := false
-		var obj map[string]json.RawMessage
-		if err := jsonrs.Unmarshal(line, &obj); err == nil {
-			if raw, ok := obj[fieldName]; ok {
-				var id string
-				if err := jsonrs.Unmarshal(raw, &id); err == nil {
-					if _, found := suppress[id]; found {
-						drop = true
-					}
-				}
-			}
-		}
-
-		if drop {
+		id := jsonparser.GetStringOrEmpty(line, fieldName)
+		if _, found := suppress[id]; found {
 			continue
 		}
 		out.Write(line)
