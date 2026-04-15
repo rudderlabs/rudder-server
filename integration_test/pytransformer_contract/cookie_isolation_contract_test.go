@@ -334,41 +334,21 @@ def transformEvent(event, metadata):
 	// Every case must match the old arch field-for-field.
 	newArchCases := []struct {
 		name           string
-		enableConnPool string
-		extraEnv       []string
-		// assertOneConn is only meaningful when the pool is enabled: the
-		// ConnState counter on the echo server must observe exactly one
-		// new TCP socket across every HTTP call the transformations make.
-		assertOneConn bool
+		enableConnPool bool
 	}{
-		{
-			name:           "ConnPoolDisabled",
-			enableConnPool: "false",
-			// No pool-size pins: without ``ENABLE_CONN_POOL`` bare
-			// ``requests.get`` creates a throwaway Session per call, so
-			// pinning the pool size would be misleading decoration.
-			extraEnv:      nil,
-			assertOneConn: false,
-		},
-		{
-			name:           "ConnPoolEnabled",
-			enableConnPool: "true",
-			// Pin subprocess + pool count to 1 so every event and every
-			// HTTP call is forced through the SAME
-			// ``StatelessPooledSession``. This is the worst case for
-			// option leakage and the only configuration where
-			// ``newConns == 1`` is provable.
-			extraEnv: []string{
-				"SANDBOX_POOL_MAX_SIZE=1",
-				"USER_CONN_POOL_MAX_SIZE=1",
-			},
-			assertOneConn: true,
-		},
+		{name: "ConnPoolDisabled", enableConnPool: false},
+		{name: "ConnPoolEnabled", enableConnPool: true},
 	}
 
 	for _, tc := range newArchCases {
 		t.Run(tc.name, func(t *testing.T) {
-			pyEnv := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraEnv...)
+			pyEnv := []string{"ENABLE_CONN_POOL=" + strconv.FormatBool(tc.enableConnPool)}
+			if tc.enableConnPool {
+				pyEnv = append(pyEnv,
+					"SANDBOX_POOL_MAX_SIZE=1",
+					"USER_CONN_POOL_MAX_SIZE=1",
+				)
+			}
 			t.Logf("Starting rudder-pytransformer with %v...", pyEnv)
 			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, pyEnv...)
 
@@ -396,7 +376,7 @@ def transformEvent(event, metadata):
 			require.Equalf(t, numEvents, len(oldResp.Events), "old arch: all %d events must succeed", numEvents)
 			require.Empty(t, oldResp.FailedEvents, "old arch: no failed events expected")
 			require.Equalf(t, numEvents, len(newResp.Events),
-				"new arch (ENABLE_CONN_POOL=%s): all %d events must succeed",
+				"new arch (ENABLE_CONN_POOL=%t): all %d events must succeed",
 				tc.enableConnPool, numEvents)
 			require.Empty(t, newResp.FailedEvents, "new arch: no failed events expected")
 
@@ -466,12 +446,12 @@ def transformEvent(event, metadata):
 			// transformation code but not to this test) surfaces here.
 			diff, equal := oldResp.Equal(&newResp)
 			require.Truef(t, equal,
-				"ENABLE_CONN_POOL=%s: old and new architectures must produce identical responses:\n%s",
+				"ENABLE_CONN_POOL=%t: old and new architectures must produce identical responses:\n%s",
 				tc.enableConnPool, diff)
 
 			env.assertRetryCountsMatch(t)
 
-			if tc.assertOneConn {
+			if tc.enableConnPool {
 				// With ``ENABLE_CONN_POOL=true``, ``SANDBOX_POOL_MAX_SIZE=1``
 				// and ``USER_CONN_POOL_MAX_SIZE=1`` every one of the
 				// ``numEvents * 2`` HTTP calls must have been served by
