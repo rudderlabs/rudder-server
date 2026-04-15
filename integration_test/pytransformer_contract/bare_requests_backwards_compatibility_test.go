@@ -33,8 +33,8 @@ import (
 // method shares the module-level signature, so the pooling layer must
 // forward positional arguments verbatim and must NOT re-promote them to
 // keywords (doing so makes “requests.post(url, body, json_payload)“
-// raise “TypeError: got multiple values for argument 'data'“ — the B2
-// blocker). The contract is:
+// raise “TypeError: got multiple values for argument 'data'“). The
+// contract is:
 //
 //  1. Old arch (rudder-transformer + openfaas-flask-base): user code runs
 //     against vanilla “requests“, so every two-positional call reaches
@@ -159,7 +159,7 @@ def transformEvent(event, metadata):
 
 	// Every verb that accepts a second positional argument must survive
 	// the pooling bridge. GET exercises the params-promotion path; the
-	// rest exercise the verbatim forwarding path that the B2 fix restored.
+	// rest exercise the verbatim forwarding path.
 	verbCases := []struct {
 		verb   string
 		method string // HTTP method the echo server should observe
@@ -201,7 +201,7 @@ def transformEvent(event, metadata):
 					require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
 					require.Equalf(t, 1, len(newResp.Events),
 						"new arch (ENABLE_CONN_POOL=%s, verb=%s): 1 success event "+
-							"expected — a buggy pooling wrapper raises TypeError "+
+							"expected — incorrect argument forwarding raises TypeError "+
 							"before the HTTP call and fails the event instead",
 						tc.enableConnPool, vc.verb)
 					require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
@@ -257,9 +257,8 @@ def transformEvent(event, metadata):
 // “session.post(url, json_payload, data=body)“ — which binds
 // “json_payload“ to “data“ and then collides with the promoted
 // keyword, raising “TypeError: post() got multiple values for argument
-// 'data'“. The bug was silent until “ENABLE_CONN_POOL=true“ and a
-// three-positional “post“ call happened to reach the wrapper — exactly
-// the rollout we're aiming at.
+// 'data'“. The failure only appears when “ENABLE_CONN_POOL=true“ and a
+// three-positional “post“ call reaches the wrapper.
 //
 // This contract pins the correct behaviour: the old arch (vanilla
 // “requests“) accepts this call shape; every new-arch configuration must
@@ -289,8 +288,8 @@ func TestBareRequestsPostThreePositionalArgsContract(t *testing.T) {
 
 	// User code exercising the three-positional “post“ form. The second
 	// positional is the request body (“data“), the third is the JSON
-	// payload (“json“). A buggy pooling wrapper raises “TypeError“
-	// before the server is hit; the healthy path echoes the body back.
+	// payload (“json“). Incorrect argument forwarding raises “TypeError“
+	// before the server is hit; the correct path echoes the body back.
 	code := fmt.Sprintf(`
 import requests
 
@@ -334,9 +333,9 @@ def transformEvent(event, metadata):
 		{
 			name:           "ConnPoolEnabled",
 			enableConnPool: "true",
-			// Pin pool + subprocess count to 1 so the buggy code path
-			// (if reintroduced) cannot be masked by a cold subprocess
-			// bypassing the pool wrapper.
+			// Pin pool + subprocess count to 1 so incorrect argument
+			// forwarding cannot be masked by a cold subprocess bypassing
+			// the pool wrapper.
 			extraPytransEnv: []string{
 				"USER_CONN_POOL_MAX_SIZE=1",
 				"SANDBOX_POOL_MAX_SIZE=1",
@@ -369,7 +368,7 @@ def transformEvent(event, metadata):
 			require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
 			require.Equalf(t, 1, len(newResp.Events),
 				"new arch (ENABLE_CONN_POOL=%s): 1 success event expected — a "+
-					"buggy pooling wrapper raises TypeError before the HTTP "+
+					"bad pooling wrapper raises TypeError before the HTTP "+
 					"call and fails the event instead",
 				tc.enableConnPool)
 			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")

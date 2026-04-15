@@ -160,7 +160,7 @@ def transformEvent(event, metadata):
 		require.Empty(t, r.receivedCookie,
 			"request %d observed leaked cookie %q — the shared pooled "+
 				"user session must not carry Set-Cookie state across "+
-				"transformations (Bug 1 in rudder-pytransformer bugs.md)",
+				"transformations",
 			r.idx, r.receivedCookie)
 	}
 
@@ -180,12 +180,98 @@ def transformEvent(event, metadata):
 	// ``TestConnectionPoolBehavior/ConnectionReusedWhenPoolEnabled``:
 	// ``http.StateNew`` fires exactly once per TCP handshake, so a
 	// count > 1 means the pool failed to reuse the connection and the
-	// test no longer exercises the "shared session" path that Bug 1
-	// lived on.
+	// test no longer exercises the shared-session path.
 	require.EqualValues(t, 1, newConns.Load(),
 		"expected exactly 1 new TCP connection for %d pooled requests, "+
 			"got %d — the pool must reuse a single kept-alive socket",
 		parallelRequests, newConns.Load())
+}
+
+// TestConnectionPoolRequestOptionIsolation verifies that per-request options
+// sent through bare requests calls never become defaults on the pooled user
+// session.
+func TestConnectionPoolRequestOptionIsolation(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	pool.MaxWait = 2 * time.Minute
+
+	const versionID = "request-options-isolation-v1"
+
+	echoSrv := newSessionDefaultsEchoServer(t)
+
+	code := fmt.Sprintf(`
+import requests
+
+
+def hook(response, **kwargs):
+    response.headers["X-Hook-Ran"] = "1"
+    return response
+
+
+def transformEvent(event, metadata):
+    first = requests.get(
+        "%s/check",
+        params={"leak": "1"},
+        headers={"X-Leak": "1"},
+        auth=("user", "pass"),
+        cookies={"client_cookie": "1"},
+        hooks={"response": [hook]},
+        timeout=2,
+    )
+    first_data = first.json()
+
+    second = requests.get("%s/check", timeout=2)
+    second_data = second.json()
+
+    event["first_status"] = first.status_code
+    event["first_x_leak"] = first_data["x_leak"]
+    event["first_authorization"] = first_data["authorization"]
+    event["first_query"] = first_data["query"]
+    event["first_cookie"] = first_data["cookie"]
+    event["first_hook_ran"] = first.headers.get("X-Hook-Ran", "")
+    event["first_response_cookie"] = first.cookies.get("server_cookie", "")
+
+    event["second_status"] = second.status_code
+    event["second_x_leak"] = second_data["x_leak"]
+    event["second_authorization"] = second_data["authorization"]
+    event["second_query"] = second_data["query"]
+    event["second_cookie"] = second_data["cookie"]
+    event["second_hook_ran"] = second.headers.get("X-Hook-Ran", "")
+    return event
+`, toContainerURL(echoSrv.URL), toContainerURL(echoSrv.URL))
+
+	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
+		versionID: {code: code},
+	})
+	t.Cleanup(configBackend.Close)
+
+	pyURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"ENABLE_CONN_POOL=true",
+		"SANDBOX_POOL_MAX_SIZE=1",
+		"USER_CONN_POOL_MAX_SIZE=1",
+	)
+
+	event := makeEvent("msg-request-options-isolation", versionID)
+	status, items := sendRawTransform(t, pyURL, []types.TransformerEvent{event})
+	require.Equal(t, http.StatusOK, status)
+	require.Len(t, items, 1)
+	require.Equal(t, http.StatusOK, items[0].StatusCode, "event must succeed: %s", items[0].Error)
+
+	require.Equal(t, float64(http.StatusOK), items[0].Output["first_status"])
+	require.Equal(t, "1", items[0].Output["first_x_leak"])
+	require.NotEmpty(t, items[0].Output["first_authorization"], "first request must carry auth")
+	require.Equal(t, "leak=1", items[0].Output["first_query"])
+	require.Equal(t, "client_cookie=1", items[0].Output["first_cookie"])
+	require.Equal(t, "1", items[0].Output["first_hook_ran"])
+	require.Equal(t, "secret", items[0].Output["first_response_cookie"])
+
+	require.Equal(t, float64(http.StatusOK), items[0].Output["second_status"])
+	require.Empty(t, items[0].Output["second_x_leak"], "header must not carry into the next request")
+	require.Empty(t, items[0].Output["second_authorization"], "auth must not carry into the next request")
+	require.Empty(t, items[0].Output["second_query"], "params must not carry into the next request")
+	require.Empty(t, items[0].Output["second_cookie"], "cookies must not carry into the next request")
+	require.Empty(t, items[0].Output["second_hook_ran"], "response hook must not carry into the next request")
 }
 
 // newCookieEchoServer returns an HTTP server that, on every request:
@@ -224,4 +310,24 @@ func newCookieEchoServer(t *testing.T) (*httptest.Server, *atomic.Int64, *atomic
 	srv.Start()
 	t.Cleanup(srv.Close)
 	return srv, hits, newConns
+}
+
+func newSessionDefaultsEchoServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := []byte(fmt.Sprintf(
+			`{"x_leak": %q, "authorization": %q, "query": %q, "cookie": %q}`,
+			r.Header.Get("X-Leak"),
+			r.Header.Get("Authorization"),
+			r.URL.RawQuery,
+			r.Header.Get("Cookie"),
+		))
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		w.Header().Set("Set-Cookie", "server_cookie=secret; Path=/")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
 }
