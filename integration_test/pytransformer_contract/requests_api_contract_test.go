@@ -17,40 +17,41 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
 
-// TestRequestsApiModuleContract locks the contract that user code importing
-// HTTP helpers from “requests.api“ (the submodule where the functions are
-// defined) produces identical results to the standard “import requests;
-// requests.get(url)“ path on both architectures.
+// TestRequestsModuleWrapperContract locks the contract that user code
+// accessing HTTP helpers through alternative module paths produces
+// identical results to the standard "import requests; requests.get(url)"
+// path on both architectures.
 //
-// “requests.__init__“ does “from .api import get, post, ...“ so the
-// top-level names and the submodule names start as the same object.
-// pytransformer's “wrap_requests_methods“ must rebind both namespaces;
-// otherwise “from requests.api import get“ or “requests.api.get(url)“
-// bypasses metrics and connection-pool wrappers.
+// pytransformer's "wrap_requests_methods" must rebind names on both
+// "requests" and "requests.api", and must also wrap
+// "requests.request" — the verb-parameterized entry point. Without
+// this, any of the following user-code patterns bypass metrics and
+// connection-pool wrappers:
 //
-// The test exercises two user-code import styles:
-//   - “from requests.api import get“ — binds at import time
-//   - “requests.api.get(url)“ — attribute chain resolved at call time
+//   - "from requests.api import get" — binds at import time
+//   - "requests.api.get(url)" — attribute chain resolved at call time
+//   - "requests.request("GET", url)" — verb-parameterized entry point
 //
-// Both must produce the same output as the old architecture (vanilla
-// “requests“) under every “ENABLE_CONN_POOL“ setting.
+// All three must produce the same output as the old architecture
+// (vanilla "requests") under every "ENABLE_CONN_POOL" setting.
 //
-// Under “ENABLE_CONN_POOL=true“, an additional “ConnectionReuse“ subtest
-// proves that the calls actually flow through the pooling wrapper by sending
-// two sequential requests and asserting that the server observed a single TCP
-// handshake (connection reuse). Without the wrapper, vanilla
-// “requests.api.get“ creates a throwaway “Session“ per call and opens a
-// fresh TCP connection each time — so “newConns == 1“ can only be true if
-// the call went through the persistent pooled session installed by the
-// wrapper.
-func TestRequestsApiModuleContract(t *testing.T) {
+// Under "ENABLE_CONN_POOL=true", additional "ConnectionReuse" subtests
+// prove that the calls actually flow through the pooling wrapper by
+// sending two sequential requests and asserting that the server
+// observed a single TCP handshake (connection reuse). Without the
+// wrapper, vanilla "requests.api.get" / "requests.request" creates a
+// throwaway "Session" per call and opens a fresh TCP connection each
+// time — so "newConns == 1" can only be true if the call went through
+// the persistent pooled session installed by the wrapper.
+func TestRequestsModuleWrapperContract(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
 
 	const (
-		parityVersionID = "requests-api-module-v1"
-		reuseVersionID  = "requests-api-reuse-v1"
+		parityVersionID       = "requests-wrapper-parity-v1"
+		reuseApiVersionID     = "requests-wrapper-reuse-api-v1"
+		reuseRequestVersionID = "requests-wrapper-reuse-request-v1"
 	)
 
 	echo := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +61,7 @@ func TestRequestsApiModuleContract(t *testing.T) {
 	}))
 	t.Cleanup(echo.Close)
 
-	// Connection-counting echo server for the ConnectionReuse subtest.
+	// Connection-counting echo server for the ConnectionReuse subtests.
 	// ConnState fires StateNew exactly once per TCP handshake, so
 	// newConns == 1 after two HTTP calls proves the second call reused
 	// the pooled connection instead of opening a fresh one.
@@ -81,8 +82,7 @@ func TestRequestsApiModuleContract(t *testing.T) {
 	t.Cleanup(countingEcho.Close)
 
 	// Dispatcher user code: the "style" field in the incoming event
-	// selects between ``from requests.api import get`` and the dotted
-	// ``requests.api.get`` attribute-chain path.
+	// selects between the three alternative import / call paths.
 	parityCode := fmt.Sprintf(`
 import requests
 from requests.api import get as api_get
@@ -94,6 +94,8 @@ def transformEvent(event, metadata):
         resp = api_get(url, params={"q": "hello", "style": style}, timeout=5)
     elif style == "dotted":
         resp = requests.api.get(url, params={"q": "hello", "style": style}, timeout=5)
+    elif style == "request":
+        resp = requests.request("GET", url, params={"q": "hello", "style": style}, timeout=5)
     else:
         raise ValueError("unknown style: " + repr(style))
     body = resp.json()
@@ -102,10 +104,10 @@ def transformEvent(event, metadata):
     return event
 `, toContainerURL(echo.URL))
 
-	// Separate code for the connection-reuse subtest — hits the
-	// counting server via ``from requests.api import get`` so we can
-	// assert that the pooling wrapper is actually in the call path.
-	reuseCode := fmt.Sprintf(`
+	// Separate code for each connection-reuse subtest — each hits the
+	// counting server through a single call path so we can assert that
+	// the pooling wrapper is actually in the call path.
+	reuseApiCode := fmt.Sprintf(`
 from requests.api import get
 
 def transformEvent(event, metadata):
@@ -114,9 +116,19 @@ def transformEvent(event, metadata):
     return event
 `, toContainerURL(countingEcho.URL))
 
+	reuseRequestCode := fmt.Sprintf(`
+import requests
+
+def transformEvent(event, metadata):
+    resp = requests.request("GET", "%s/reuse-check", timeout=5)
+    event["echo"] = resp.json()["echo"]
+    return event
+`, toContainerURL(countingEcho.URL))
+
 	configBackend := newContractConfigBackend(t, map[string]configBackendEntry{
-		parityVersionID: {code: parityCode},
-		reuseVersionID:  {code: reuseCode},
+		parityVersionID:       {code: parityCode},
+		reuseApiVersionID:     {code: reuseApiCode},
+		reuseRequestVersionID: {code: reuseRequestCode},
 	})
 	t.Cleanup(configBackend.Close)
 
@@ -161,6 +173,7 @@ def transformEvent(event, metadata):
 	}{
 		{style: "from_import"},
 		{style: "dotted"},
+		{style: "request"},
 	}
 
 	for _, tc := range newArchCases {
@@ -204,48 +217,57 @@ def transformEvent(event, metadata):
 					diff, equal := oldResp.Equal(&newResp)
 					require.Truef(t, equal,
 						"ENABLE_CONN_POOL=%s, style=%s: old and new architectures "+
-							"must produce identical responses for requests.api import:\n%s",
+							"must produce identical responses:\n%s",
 						tc.enableConnPool, sc.style, diff)
 
 					env.assertRetryCountsMatch(t)
 				})
 			}
 
-			// Prove that ``from requests.api import get`` actually goes
-			// through the connection-pool wrapper, not just that it
-			// returns the correct response. With ENABLE_CONN_POOL=true,
-			// a wrapped call routes through a persistent pooled Session
-			// that keeps TCP connections alive across requests. An
-			// unwrapped call (vanilla ``requests.api.get``) creates a
-			// throwaway Session per invocation — every call opens a
-			// fresh TCP connection. Asserting that two sequential calls
-			// produced only one server-side TCP handshake (StateNew)
-			// proves the pooled Session was used, which is only possible
-			// if ``requests.api.get`` was rebound to the wrapper.
+			// Prove that the alternative call paths actually flow through
+			// the connection-pool wrapper, not just that they return the
+			// correct response. With ENABLE_CONN_POOL=true, a wrapped call
+			// routes through a persistent pooled Session that keeps TCP
+			// connections alive across requests. An unwrapped call (vanilla
+			// requests.api.get / requests.request) creates a throwaway
+			// Session per invocation — every call opens a fresh TCP
+			// connection. Asserting that two sequential calls produced only
+			// one server-side TCP handshake (StateNew) proves the pooled
+			// Session was used, which is only possible if the function was
+			// rebound to the wrapper.
 			if tc.enableConnPool == "true" {
-				t.Run("ConnectionReuse", func(t *testing.T) {
-					newConns.Store(0)
+				reuseCases := []struct {
+					name      string
+					versionID string
+				}{
+					{name: "from_requests.api_import_get", versionID: reuseApiVersionID},
+					{name: "requests.request", versionID: reuseRequestVersionID},
+				}
+				for _, rc := range reuseCases {
+					t.Run("ConnectionReuse/"+rc.name, func(t *testing.T) {
+						newConns.Store(0)
 
-					ev1 := makeEvent("msg-reuse-1", reuseVersionID)
-					status1, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
-					require.Equal(t, http.StatusOK, status1)
-					require.Len(t, items1, 1)
-					require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
+						ev1 := makeEvent("msg-reuse-1", rc.versionID)
+						status1, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
+						require.Equal(t, http.StatusOK, status1)
+						require.Len(t, items1, 1)
+						require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
 
-					ev2 := makeEvent("msg-reuse-2", reuseVersionID)
-					status2, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
-					require.Equal(t, http.StatusOK, status2)
-					require.Len(t, items2, 1)
-					require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
+						ev2 := makeEvent("msg-reuse-2", rc.versionID)
+						status2, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
+						require.Equal(t, http.StatusOK, status2)
+						require.Len(t, items2, 1)
+						require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
 
-					require.EqualValues(t, 1, newConns.Load(),
-						"with ENABLE_CONN_POOL=true, two sequential "+
-							"``from requests.api import get; get(url)`` calls "+
-							"must reuse the same TCP connection (server-side "+
-							"StateNew count: want 1). A count of 2 means the "+
-							"calls bypassed the pooling wrapper and each "+
-							"created a throwaway Session.")
-				})
+						require.EqualValues(t, 1, newConns.Load(),
+							"with ENABLE_CONN_POOL=true, two sequential calls "+
+								"via %s must reuse the same TCP connection "+
+								"(server-side StateNew count: want 1). A count "+
+								"of 2 means the calls bypassed the pooling "+
+								"wrapper and each created a throwaway Session.",
+							rc.name)
+					})
+				}
 			}
 		})
 	}
