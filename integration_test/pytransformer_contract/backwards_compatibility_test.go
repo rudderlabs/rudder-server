@@ -2054,20 +2054,17 @@ def transformEvent(event, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer.
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	})
-
-	// Start shared rudder-pytransformer.
-	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
-
-	// Wait for shared services to be healthy.
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	wg.Go(func() {
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
+	})
+	wg.Wait()
 
 	// Run subtests sequentially. Each subtest with python code spins up its own
 	// openfaas-flask-base since openfaas loads code at startup.

@@ -1344,20 +1344,17 @@ def transformEvent(event, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer.
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	})
-
-	// Start shared rudder-pytransformer with geolocation URL.
-	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
-
-	// Wait for shared services to be healthy.
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	wg.Go(func() {
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
+	})
+	wg.Wait()
 
 	// Run subtests sequentially.
 	for _, st := range subtests {
@@ -1598,19 +1595,17 @@ def transformBatch(events, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer (WITHOUT geolocation URL).
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	})
-
-	// Start shared rudder-pytransformer (WITHOUT geolocation URL).
-	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
-
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	wg.Go(func() {
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
+	})
+	wg.Wait()
 
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
@@ -2419,29 +2414,27 @@ def transformEvent(event, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer.
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-
-	// Start shared rudder-pytransformer with configurable mock geolocation URL.
-	// GEOLOCATION_TIMEOUT_SECS=0.5 governs the GeoTimeout subtest's 1s mock
-	// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_TIMEOUT_S is kept
-	// low as a guard for any future subtest exercising user HTTP traffic; it
-	// does NOT affect geolocation calls — see
-	// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
-	pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL,
-		"GEOLOCATION_URL="+geoURL,
-		"SANDBOX_HTTP_TIMEOUT_S=0.1",
-		"GEOLOCATION_TIMEOUT_SECS=0.1",
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
 	)
-
-	// Wait for shared services to be healthy.
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
+	})
+	wg.Go(func() {
+		// Start shared rudder-pytransformer with configurable mock geolocation URL.
+		// GEOLOCATION_TIMEOUT_SECS=0.5 governs the GeoTimeout subtest's 1s mock
+		// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_TIMEOUT_S is kept
+		// low as a guard for any future subtest exercising user HTTP traffic; it
+		// does NOT affect geolocation calls — see
+		// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL,
+			"GEOLOCATION_URL="+geoURL,
+			"SANDBOX_HTTP_TIMEOUT_S=0.1",
+			"GEOLOCATION_TIMEOUT_SECS=0.1",
+		)
+	})
+	wg.Wait()
 
 	// Run subtests sequentially.
 	for _, st := range subtests {

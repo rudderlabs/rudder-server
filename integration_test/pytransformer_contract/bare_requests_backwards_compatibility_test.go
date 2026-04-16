@@ -119,13 +119,7 @@ def transformEvent(event, metadata):
 	t.Cleanup(mockGateway.Close)
 
 	t.Log("Starting rudder-transformer (old arch frontend)...")
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 
 	// --- New architecture (rudder-pytransformer) ---
 	//
@@ -312,13 +306,7 @@ def transformEvent(event, metadata):
 	t.Cleanup(mockGateway.Close)
 
 	t.Log("Starting rudder-transformer (old arch frontend)...")
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
-	})
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
+	transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 
 	newArchCases := []struct {
 		name            string

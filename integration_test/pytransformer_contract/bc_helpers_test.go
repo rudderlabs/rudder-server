@@ -448,7 +448,7 @@ func startOpenFaasFlask(
 func startRudderTransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL, openfaasGatewayURL string,
-) (*dockertest.Resource, string) {
+) string {
 	t.Helper()
 	const containerPort = "9090"
 	cfg := newContainerConfig(t, containerPort)
@@ -465,7 +465,17 @@ func startRudderTransformer(
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-transformer container")
-	return container, cfg.url(container, containerPort)
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge rudder-transformer: %v", err)
+		}
+	})
+
+	transformerURL := cfg.url(container, containerPort)
+	waitForHealthy(t, pool, transformerURL, "rudder-transformer", container)
+
+	return transformerURL
 }
 
 // startRudderPytransformer starts a rudder-pytransformer container configured
