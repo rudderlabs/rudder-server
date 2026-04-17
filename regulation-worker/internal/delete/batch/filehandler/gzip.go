@@ -1,7 +1,6 @@
 package filehandler
 
 import (
-	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -126,12 +125,19 @@ func (h *GZIPLocalFileHandler) RemoveIdentityRE(_ context.Context, attributes []
 		suppress[a.ID] = struct{}{}
 	}
 
-	var out bytes.Buffer
-	scanner := bufio.NewScanner(bytes.NewReader(h.records))
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	w := 0
+	data := h.records
+	for len(data) > 0 {
+		n := bytes.IndexByte(data, '\n')
+		var line []byte
+		if n < 0 {
+			line = data
+			data = nil
+		} else {
+			line = data[:n+1]
+			data = data[n+1:]
+		}
 
-	for scanner.Scan() {
-		line := scanner.Bytes()
 		drop := false
 		rest := line
 		for {
@@ -146,12 +152,11 @@ func (h *GZIPLocalFileHandler) RemoveIdentityRE(_ context.Context, attributes []
 			rest = rest[loc[1]:]
 		}
 		if !drop {
-			out.Write(line)
-			out.WriteByte('\n')
+			copy(h.records[w:], line)
+			w += len(line)
 		}
 	}
-
-	h.records = out.Bytes()
+	h.records = h.records[:w]
 	return nil
 }
 
@@ -172,16 +177,9 @@ func (h *GZIPLocalFileHandler) idFieldName() (string, error) {
 // GZIPLocalFileHandler.RemoveIdentity. It decodes each NDJSON line and drops
 // records whose configured id field matches any entry in attributes.
 func (h *GZIPLocalFileHandler) RemoveIdentityPureGo(_ context.Context, attributes []model.User) error {
-	var fieldName string
-	switch h.casing {
-	case SnakeCase:
-		fieldName = "user_id"
-	case CamelCase:
-		fieldName = "userId"
-	case UpperCase:
-		fieldName = "USER_ID"
-	default:
-		return fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
+	fieldName, err := h.idFieldName()
+	if err != nil {
+		return err
 	}
 
 	suppress := make(map[string]struct{}, len(attributes))
@@ -189,23 +187,26 @@ func (h *GZIPLocalFileHandler) RemoveIdentityPureGo(_ context.Context, attribute
 		suppress[a.ID] = struct{}{}
 	}
 
-	var out bytes.Buffer
-	scanner := bufio.NewScanner(bytes.NewReader(h.records))
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Bytes()
+	w := 0
+	data := h.records
+	for len(data) > 0 {
+		n := bytes.IndexByte(data, '\n')
+		var line []byte
+		if n < 0 {
+			line = data
+			data = nil
+		} else {
+			line = data[:n+1]
+			data = data[n+1:]
+		}
 
 		id := jsonparser.GetStringOrEmpty(line, fieldName)
 		if _, found := suppress[id]; found {
 			continue
 		}
-		out.Write(line)
-		out.WriteByte('\n')
+		copy(h.records[w:], line)
+		w += len(line)
 	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	h.records = out.Bytes()
+	h.records = h.records[:w]
 	return nil
 }

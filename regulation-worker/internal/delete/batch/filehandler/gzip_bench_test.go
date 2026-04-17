@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -88,6 +89,30 @@ var benchScenarios = []struct {
 	{"records=100000/users=10/hit=10%", 100000, 10, 10},
 }
 
+// buildLargePayloadRecords generates NDJSON lines of ~1 KB each by padding
+// properties with extra data, simulating realistic large event payloads.
+func buildLargePayloadRecords(numRecords, suppressEvery int, suppressedIDs []string) ([]byte, []model.User) {
+	padding := strings.Repeat("x", 800)
+	var buf bytes.Buffer
+	buf.Grow(numRecords * 1024)
+	for i := 0; i < numRecords; i++ {
+		var id string
+		if suppressEvery > 0 && i%suppressEvery == 0 {
+			id = suppressedIDs[i%len(suppressedIDs)]
+		} else {
+			id = fmt.Sprintf("keep-user-%d", i)
+		}
+		fmt.Fprintf(&buf,
+			`{"user_id": %q, "event": "track", "properties": {"page": "home", "idx": %d, "padding": "%s"}, "context": {"app": {"name": "rudder-bench"}}}`+"\n",
+			id, i, padding)
+	}
+	users := make([]model.User, len(suppressedIDs))
+	for i, id := range suppressedIDs {
+		users[i] = model.User{ID: id}
+	}
+	return buf.Bytes(), users
+}
+
 func makeSuppressedIDs(n int) []string {
 	ids := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -140,17 +165,17 @@ func BenchmarkRemoveIdentity(b *testing.B) {
 
 // BenchmarkRemoveIdentityRE
 // BenchmarkRemoveIdentityRE/records=1000/users=1/hit=10%
-// BenchmarkRemoveIdentityRE/records=1000/users=1/hit=10%-12         	    2467	    453139 ns/op	 302.32 MB/s	         0.6155 peak-heap-MB	  570112 B/op	    1050 allocs/op
+// BenchmarkRemoveIdentityRE/records=1000/users=1/hit=10%-12         	    2970	    394019 ns/op	 347.68 MB/s	         0.2423 peak-heap-MB	  176908 B/op	    1036 allocs/op
 // BenchmarkRemoveIdentityRE/records=1000/users=10/hit=10%
-// BenchmarkRemoveIdentityRE/records=1000/users=10/hit=10%-12        	    2689	    436403 ns/op	 313.91 MB/s	         0.6156 peak-heap-MB	  570273 B/op	    1053 allocs/op
+// BenchmarkRemoveIdentityRE/records=1000/users=10/hit=10%-12        	    2955	    393509 ns/op	 348.13 MB/s	         0.2438 peak-heap-MB	  177243 B/op	    1039 allocs/op
 // BenchmarkRemoveIdentityRE/records=10000/users=1/hit=10%
-// BenchmarkRemoveIdentityRE/records=10000/users=1/hit=10%-12        	     259	   4330492 ns/op	 320.72 MB/s	         4.132 peak-heap-MB	 4433996 B/op	   10097 allocs/op
+// BenchmarkRemoveIdentityRE/records=10000/users=1/hit=10%-12        	     292	   3992584 ns/op	 347.87 MB/s	         1.749 peak-heap-MB	 1733646 B/op	   10074 allocs/op
 // BenchmarkRemoveIdentityRE/records=10000/users=10/hit=10%
-// BenchmarkRemoveIdentityRE/records=10000/users=10/hit=10%-12       	     267	   4343849 ns/op	 319.74 MB/s	         4.170 peak-heap-MB	 4433766 B/op	   10099 allocs/op
+// BenchmarkRemoveIdentityRE/records=10000/users=10/hit=10%-12       	     290	   4008821 ns/op	 346.46 MB/s	         1.747 peak-heap-MB	 1734717 B/op	   10077 allocs/op
 // BenchmarkRemoveIdentityRE/records=10000/users=100/hit=10%
-// BenchmarkRemoveIdentityRE/records=10000/users=100/hit=10%-12      	     262	   4417182 ns/op	 314.63 MB/s	         4.172 peak-heap-MB	 4436619 B/op	   10100 allocs/op
+// BenchmarkRemoveIdentityRE/records=10000/users=100/hit=10%-12      	     284	   4113713 ns/op	 337.84 MB/s	         1.751 peak-heap-MB	 1738253 B/op	   10078 allocs/op
 // BenchmarkRemoveIdentityRE/records=100000/users=10/hit=10%
-// BenchmarkRemoveIdentityRE/records=100000/users=10/hit=10%-12      	      24	  47840227 ns/op	 294.29 MB/s	        53.56 peak-heap-MB	61798302 B/op	  104239 allocs/op
+// BenchmarkRemoveIdentityRE/records=100000/users=10/hit=10%-12      	      26	  44146639 ns/op	 318.91 MB/s	        16.60 peak-heap-MB	17965420 B/op	  103892 allocs/op
 func BenchmarkRemoveIdentityRE(b *testing.B) {
 	ctx := context.Background()
 	for _, sc := range benchScenarios {
@@ -182,23 +207,110 @@ func BenchmarkRemoveIdentityRE(b *testing.B) {
 
 // BenchmarkRemoveIdentityPureGo
 // BenchmarkRemoveIdentityPureGo/records=1000/users=1/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=1000/users=1/hit=10%-12         	    6938	    146518 ns/op	 934.98 MB/s	         0.5340 peak-heap-MB	  563187 B/op	    2014 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=1000/users=1/hit=10%-12         	   12310	     95045 ns/op	1441.33 MB/s	         0.1586 peak-heap-MB	  171278 B/op	    2001 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=1000/users=10/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=1000/users=10/hit=10%-12        	    7092	    141906 ns/op	 965.36 MB/s	         0.5379 peak-heap-MB	  563640 B/op	    2017 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=1000/users=10/hit=10%-12        	   12943	     92809 ns/op	1476.06 MB/s	         0.1605 peak-heap-MB	  171733 B/op	    2004 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=10000/users=1/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=10000/users=1/hit=10%-12        	    1000	   1162690 ns/op	1194.55 MB/s	         4.079 peak-heap-MB	 4402641 B/op	   20037 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=10000/users=1/hit=10%-12        	    1230	    923831 ns/op	1503.40 MB/s	         1.628 peak-heap-MB	 1714033 B/op	   20017 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=10000/users=10/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=10000/users=10/hit=10%-12       	    1008	   1151765 ns/op	1205.88 MB/s	         3.425 peak-heap-MB	 4403062 B/op	   20039 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=10000/users=10/hit=10%-12       	    1267	    903366 ns/op	1537.46 MB/s	         1.631 peak-heap-MB	 1714449 B/op	   20019 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=10000/users=100/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=10000/users=100/hit=10%-12      	     939	   1254340 ns/op	1107.99 MB/s	         4.059 peak-heap-MB	 4406426 B/op	   20041 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=10000/users=100/hit=10%-12      	    1192	    977520 ns/op	1421.75 MB/s	         1.635 peak-heap-MB	 1717583 B/op	   20020 allocs/op
 // BenchmarkRemoveIdentityPureGo/records=100000/users=10/hit=10%
-// BenchmarkRemoveIdentityPureGo/records=100000/users=10/hit=10%-12      	      93	  11219436 ns/op	1254.87 MB/s	        53.41 peak-heap-MB	59927303 B/op	  202175 allocs/op
+// BenchmarkRemoveIdentityPureGo/records=100000/users=10/hit=10%-12      	     118	   9021817 ns/op	1560.54 MB/s	        16.48 peak-heap-MB	17428971 B/op	  201699 allocs/op
 func BenchmarkRemoveIdentityPureGo(b *testing.B) {
 	ctx := context.Background()
 	for _, sc := range benchScenarios {
 		ids := makeSuppressedIDs(sc.numSuppressed)
 		records, users := buildBenchRecords(sc.numRecords, sc.suppressEvery, ids)
 		b.Run(sc.name, func(b *testing.B) {
+			b.SetBytes(int64(len(records)))
+			b.ReportAllocs()
+
+			peak := measurePeakHeap(func() {
+				h := NewGZIPLocalFileHandler(SnakeCase)
+				h.records = append(h.records[:0], records...)
+				if err := h.RemoveIdentityPureGo(ctx, users); err != nil {
+					b.Fatal(err)
+				}
+			})
+			b.ReportMetric(float64(peak)/(1024*1024), "peak-heap-MB")
+
+			for i := 0; i < b.N; i++ {
+				h := NewGZIPLocalFileHandler(SnakeCase)
+				h.records = append(h.records[:0], records...)
+				if err := h.RemoveIdentityPureGo(ctx, users); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// Large-file benchmarks with ~1 KB payloads.
+// Sed is excluded — it would take hours at these sizes.
+// The 2 GB scenario requires ~6 GB of free RAM (input + output buffer + copy).
+// Run with: go test -run=^$ -bench=BenchmarkLargeFile -benchtime=1x -timeout=30m
+var largeFileScenarios = []struct {
+	name          string
+	numRecords    int
+	numSuppressed int
+	suppressEvery int
+}{
+	{"payload=1KB/file=100MB/users=10", 100_000, 10, 10},
+	{"payload=1KB/file=500MB/users=10", 500_000, 10, 10},
+	{"payload=1KB/file=2GB/users=10", 2_000_000, 10, 10},
+}
+
+// BenchmarkLargeFileRE
+// BenchmarkLargeFileRE/payload=1KB/file=100MB/users=10
+// BenchmarkLargeFileRE/payload=1KB/file=100MB/users=10-12         	      10	 108496904 ns/op	 880.94 MB/s	        93.91 peak-heap-MB	119556855 B/op	  158007 allocs/op
+// BenchmarkLargeFileRE/payload=1KB/file=500MB/users=10
+// BenchmarkLargeFileRE/payload=1KB/file=500MB/users=10-12         	       1	3001397083 ns/op	 159.51 MB/s	       472.0 peak-heap-MB	1532448960 B/op	 3399653 allocs/op
+// BenchmarkLargeFileRE/payload=1KB/file=2GB/users=10
+// BenchmarkLargeFileRE/payload=1KB/file=2GB/users=10-12           	       1	10531107333 ns/op	 182.08 MB/s	      1890 peak-heap-MB	6141554528 B/op	13599653 allocs/op
+func BenchmarkLargeFileRE(b *testing.B) {
+	ctx := context.Background()
+	for _, sc := range largeFileScenarios {
+		ids := makeSuppressedIDs(sc.numSuppressed)
+		b.Run(sc.name, func(b *testing.B) {
+			records, users := buildLargePayloadRecords(sc.numRecords, sc.suppressEvery, ids)
+			b.SetBytes(int64(len(records)))
+			b.ReportAllocs()
+
+			peak := measurePeakHeap(func() {
+				h := NewGZIPLocalFileHandler(SnakeCase)
+				h.records = append(h.records[:0], records...)
+				if err := h.RemoveIdentityRE(ctx, users); err != nil {
+					b.Fatal(err)
+				}
+			})
+			b.ReportMetric(float64(peak)/(1024*1024), "peak-heap-MB")
+
+			for i := 0; i < b.N; i++ {
+				h := NewGZIPLocalFileHandler(SnakeCase)
+				h.records = append(h.records[:0], records...)
+				if err := h.RemoveIdentityRE(ctx, users); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkLargeFilePureGo
+// BenchmarkLargeFilePureGo/payload=1KB/file=100MB/users=10
+// BenchmarkLargeFilePureGo/payload=1KB/file=100MB/users=10-12         	      78	  14604888 ns/op	6544.31 MB/s	        94.07 peak-heap-MB	101443087 B/op	  208716 allocs/op
+// BenchmarkLargeFilePureGo/payload=1KB/file=500MB/users=10
+// BenchmarkLargeFilePureGo/payload=1KB/file=500MB/users=10-12         	       1	1372806458 ns/op	 348.73 MB/s	       471.8 peak-heap-MB	1532283536 B/op	 4399542 allocs/op
+// BenchmarkLargeFilePureGo/payload=1KB/file=2GB/users=10
+// BenchmarkLargeFilePureGo/payload=1KB/file=2GB/users=10-12           	       1	8917455042 ns/op	 215.03 MB/s	      1897 peak-heap-MB	6155796264 B/op	17599557 allocs/op
+func BenchmarkLargeFilePureGo(b *testing.B) {
+	ctx := context.Background()
+	for _, sc := range largeFileScenarios {
+		ids := makeSuppressedIDs(sc.numSuppressed)
+		b.Run(sc.name, func(b *testing.B) {
+			records, users := buildLargePayloadRecords(sc.numRecords, sc.suppressEvery, ids)
 			b.SetBytes(int64(len(records)))
 			b.ReportAllocs()
 

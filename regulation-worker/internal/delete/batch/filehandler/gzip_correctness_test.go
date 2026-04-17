@@ -209,12 +209,12 @@ func TestRemoveIdentityPureGo_IgnoresNestedKeys(t *testing.T) {
 	require.Equal(t, string(input), string(got))
 }
 
-// TestRemoveIdentityPureGo_EmitsTrailingNewline documents that PureGo always
-// appends a newline per emitted record, even if the final input line lacked
-// one.
-func TestRemoveIdentityPureGo_EmitsTrailingNewline(t *testing.T) {
+// TestRemoveIdentityPureGo_PreservesInputFormat documents that in-place
+// compaction preserves the input faithfully — if the final line lacks a
+// trailing newline, the output does too.
+func TestRemoveIdentityPureGo_PreservesInputFormat(t *testing.T) {
 	input := []byte(`{"user_id": "a"}` + "\n" + `{"user_id": "b"}`)
 	got, err := runRemoveIdentityPureGo(t.Context(), SnakeCase, input, []model.User{{ID: "a"}})
 	require.NoError(t, err)
-	require.Equal(t, `{"user_id": "b"}`+"\n", string(got))
+	require.Equal(t, `{"user_id": "b"}`, string(got))
 }
