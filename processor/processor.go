@@ -3737,20 +3737,26 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 
 	proc.logger.Debugn("Processor DB Read size", logger.NewIntField("maxEventsToProcess", int64(proc.config.maxEventsToProcess.Load())))
 
-	queryParams := jobsdb.GetQueryParams{
-		CustomValFilters: []string{proc.config.GWCustomVal},
-		JobsLimit:        proc.config.maxEventsToProcess.Load(),
-		EventsLimit:      proc.config.maxEventsToProcess.Load(),
-		PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
-	}
-	proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-
-	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
-	}, proc.sendQueryRetryStats)
-	if err != nil {
-		proc.logger.Errorn("Failed to get unprocessed jobs from DB", obskit.Error(err))
-		panic(err)
+	var (
+		jobs jobsdb.JobsResult
+		err  error
+	)
+	for query := true; query; { // keep trying to get unprocessed jobs while no jobs are returned because ds limits are being reached
+		queryParams := jobsdb.GetQueryParams{
+			CustomValFilters: []string{proc.config.GWCustomVal},
+			JobsLimit:        proc.config.maxEventsToProcess.Load(),
+			EventsLimit:      proc.config.maxEventsToProcess.Load(),
+			PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
+		}
+		proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
+		jobs, err = misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
+		}, proc.sendQueryRetryStats)
+		if err != nil {
+			proc.logger.Errorn("Failed to get unprocessed jobs from DB", obskit.Error(err))
+			panic(err)
+		}
+		query = len(jobs.Jobs) == 0 && jobs.DSLimitsReached
 	}
 
 	dbReadTime := time.Since(s)
@@ -3758,25 +3764,19 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
-	if len(unprocessedList.Jobs) > 0 {
-		firstJob = unprocessedList.Jobs[0]
-		lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
+	if len(jobs.Jobs) > 0 {
+		firstJob = jobs.Jobs[0]
+		lastJob = jobs.Jobs[len(jobs.Jobs)-1]
 	}
 	proc.pipelineDelayStats(partition, firstJob, lastJob)
 
-	// check if there is work to be done
-	if len(unprocessedList.Jobs) == 0 {
-		proc.logger.Debugn("Processor DB Read Complete. No GW Jobs to process.")
-		return unprocessedList
-	}
-
 	proc.logger.Debugn("Processor DB Read Complete",
-		logger.NewIntField("unprocessedJobs", int64(len(unprocessedList.Jobs))),
-		logger.NewIntField("totalEvents", int64(unprocessedList.EventsCount)))
-	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
-	proc.stats.statReadStageCount(partition).Count(len(unprocessedList.Jobs))
+		logger.NewIntField("unprocessedJobs", int64(len(jobs.Jobs))),
+		logger.NewIntField("totalEvents", int64(jobs.EventsCount)))
+	proc.stats.statGatewayDBR(partition).Count(len(jobs.Jobs))
+	proc.stats.statReadStageCount(partition).Count(len(jobs.Jobs))
 
-	return unprocessedList
+	return jobs
 }
 
 func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error {
