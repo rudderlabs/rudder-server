@@ -1077,7 +1077,7 @@ func (jd *Handle) loadConfig() {
 	// jobMinRowsLeftMigrateThreshold: A DS with a low number of pending rows should be eligible for migration if the number of pending rows are
 	// less than jobMinRowsLeftMigrateThreshold percent of maxDSSize (e.g. if jobMinRowsLeftMigrateThreshold is 0.5
 	// then DSs that have less than 50% of maxDSSize pending rows are eligible for migration)
-	jd.conf.migration.jobMinRowsLeftMigrateThreshold = jd.config.GetReloadableFloat64Var(0.4, jd.configKeys("jobMinRowsLeftMigrateThreshold")...)
+	jd.conf.migration.jobMinRowsLeftMigrateThreshold = jd.config.GetReloadableFloat64Var(0.6, jd.configKeys("jobMinRowsLeftMigrateThreshold")...)
 	// maxMigrateOnce: Maximum number of DSs that are migrated together into one destination
 	jd.conf.migration.maxMigrateOnce = jd.config.GetReloadableIntVar(10, 1, jd.configKeys("maxMigrateOnce")...)
 	// maxMigrateDSProbe: Maximum number of DSs that are checked from left to right if they are eligible for migration
@@ -1281,12 +1281,12 @@ func (jd *Handle) doRefreshDSList(l lock.LockToken) (dataSetTList, error) {
 	// report table count metrics before shrinking the datasetList
 	jd.statTableCount.Gauge(len(jd.datasetList))
 
-	// if the owner of this jobsdb is a writer, then shrinking datasetList to have only last two datasets
-	// this shrank datasetList is used to compute DSRangeList
-	// This is done because, writers don't care about the left datasets in the sorted datasetList
+	// If the owner of this jobsdb is a writer, then shrinking datasetList to have only last dataset
+	// which is being written to.
+	// Writers only write to the last dataset and if this dataset is full, then create a new dataset.
 	if jd.ownerType == Write {
-		if len(jd.datasetList) > 2 {
-			jd.datasetList = jd.datasetList[len(jd.datasetList)-2 : len(jd.datasetList)]
+		if len(jd.datasetList) > 1 {
+			jd.datasetList = jd.datasetList[len(jd.datasetList)-1 : len(jd.datasetList)]
 		}
 	}
 

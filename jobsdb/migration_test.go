@@ -653,6 +653,88 @@ func Test_GetColumnConversion(t *testing.T) {
 	})
 }
 
+func TestMigrationMaxDSSizeGuard(t *testing.T) {
+	_ = startPostgres(t)
+
+	// newJobDB creates a Handle with the given maxDSSize and jobMinRowsLeftMigrateThreshold.
+	newJobDB := func(t *testing.T, maxDSSize int, threshold float64) (*Handle, chan time.Time, *config.Config) {
+		t.Helper()
+		c := config.New()
+		c.Set("JobsDB.maxDSSize", maxDSSize)
+		c.Set("JobsDB.jobMinRowsLeftMigrateThreshold", threshold)
+		triggerAddNewDS := make(chan time.Time)
+		jd := &Handle{
+			TriggerAddNewDS:  func() <-chan time.Time { return triggerAddNewDS },
+			TriggerMigrateDS: func() <-chan time.Time { return make(chan time.Time) },
+			config:           c,
+		}
+		require.NoError(t, jd.Setup(ReadWrite, true, strings.ToLower(rand.String(5))))
+		t.Cleanup(jd.TearDown)
+		return jd, triggerAddNewDS, c
+	}
+
+	// addDS stores `jobs` with len(jobs)-pending marked as succeeded, then triggers addNewDS.
+	// Jobs must be a slice of a larger pre-created slice so that their pre-set IDs match the
+	// DB-assigned IDs (which start at 1 and increment globally per table).
+	addDS := func(t *testing.T, jd *Handle, trigger chan time.Time, jobs []*JobT, pending int) {
+		t.Helper()
+		require.NoError(t, jd.Store(context.Background(), jobs))
+		if terminal := len(jobs) - pending; terminal > 0 {
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "executing")))
+			require.NoError(t, jd.UpdateJobStatus(context.Background(), genJobStatuses(jobs[:terminal], "succeeded")))
+		}
+		trigger <- time.Now()
+		trigger <- time.Now()
+	}
+
+	t.Run("accumulation stops before exceeding maxDSSize", func(t *testing.T) {
+		// maxDSSize=10, threshold=0.7 → pair threshold=7
+		// DS1..DS4: 3 pending each (needsPair since 3 < 7)
+		// DS5: last DS (exempt)
+		//
+		// getMigrationList walk:
+		//   DS1 → waiting
+		//   DS2 → pair: 3+3=6 ≤ 10, pendingJobsCount=6
+		//   DS3 → piggyback: 6+3=9 ≤ 10, pendingJobsCount=9
+		//   DS4 → piggyback: 9+3=12 > 10 → break
+		// expected: migrateFrom=[DS1,DS2,DS3], pendingJobsCount=9 ≤ maxDSSize
+		jd, trigger, c := newJobDB(t, 10, 0.7)
+		allJobs := genJobs(defaultWorkspaceID, "test", 50, 1) // 4 regular DSes + 1 last, 10 jobs each
+		for i := range 4 {
+			addDS(t, jd, trigger, allJobs[i*10:(i+1)*10], 3)
+		}
+		require.NoError(t, jd.Store(context.Background(), allJobs[40:]))
+
+		dsList := jd.getDSList()
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
+
+		result, err := jd.getMigrationList(dsList, nil)
+		require.NoError(t, err)
+		require.Len(t, result.migrateFrom, 3)
+		require.Equal(t, 9, result.pendingJobsCount)
+		require.LessOrEqual(t, result.pendingJobsCount, 10)
+	})
+
+	t.Run("pair exceeding maxDSSize is discarded", func(t *testing.T) {
+		// maxDSSize=10, threshold=0.7 → pair threshold=7
+		// DS1: 6 pending (needsPair since 6 < 7)
+		// DS2: 6 pending → 6+6=12 > maxDSSize → waiting cleared, nothing migrates
+		// DS3: last DS (exempt)
+		jd, trigger, c := newJobDB(t, 10, 0.7)
+		allJobs := genJobs(defaultWorkspaceID, "test", 30, 1) // 2 regular DSes + 1 last, 10 jobs each
+		addDS(t, jd, trigger, allJobs[:10], 6)
+		addDS(t, jd, trigger, allJobs[10:20], 6)
+		require.NoError(t, jd.Store(context.Background(), allJobs[20:]))
+
+		dsList := jd.getDSList()
+		c.Set("JobsDB."+jd.tablePrefix+"."+"maxMigrateDSProbe", len(dsList))
+
+		result, err := jd.getMigrationList(dsList, nil)
+		require.NoError(t, err)
+		require.Empty(t, result.migrateFrom)
+	})
+}
+
 func TestMigrationSkipsDatasets(t *testing.T) {
 	config.Reset()
 	c := config.New()
