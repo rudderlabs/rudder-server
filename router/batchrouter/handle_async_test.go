@@ -818,7 +818,6 @@ func TestAsyncDestinationManager(t *testing.T) {
 		<-done
 		require.EqualValues(t, 1, statsStore.Get("async_failed_job_count", stats.Tags{}).LastValue())
 	})
-
 	t.Run("SendJobsToStorage", func(t *testing.T) {
 		t.Run("Invalid Destination", func(t *testing.T) {
 			destType := "SOME_INVALID_DESTINATION_TYPE"
