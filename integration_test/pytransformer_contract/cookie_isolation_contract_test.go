@@ -482,7 +482,7 @@ func newCookieEchoServer(t *testing.T) (*httptest.Server, *atomic.Int64, *atomic
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := hits.Add(1)
 		incoming := r.Header.Get("Cookie")
-		body := []byte(fmt.Sprintf(`{"received_cookie": %q}`, incoming))
+		body := fmt.Appendf(nil, `{"received_cookie": %q}`, incoming)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		// Unique cookie per response

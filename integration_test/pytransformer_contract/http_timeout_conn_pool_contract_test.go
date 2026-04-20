@@ -572,7 +572,7 @@ func newSlowDripBodyServer(t *testing.T, chunks int, delay time.Duration) *httpt
 		// Flush headers immediately so urlopen returns fast. Everything
 		// after this point exercises the body-read deadline.
 		flusher.Flush()
-		for i := 0; i < chunks; i++ {
+		for range chunks {
 			select {
 			case <-time.After(delay):
 			case <-r.Context().Done():
