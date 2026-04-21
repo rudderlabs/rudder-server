@@ -205,7 +205,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 		if err != nil {
 			panic(err)
 		}
-		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, statusList, jobIDConnectionDetailsMap)
+		routerutils.UpdateProcessedEventsMetrics(stats.Default, module, brt.destType, drainList, jobIDConnectionDetailsMap)
 		for destID, destDrainStat := range drainStatsbyDest {
 			stats.Default.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 				"destType":    brt.destType,
