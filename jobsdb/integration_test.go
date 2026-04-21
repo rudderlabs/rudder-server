@@ -781,11 +781,12 @@ func TestJobsDB(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		trigger() // jobs_3, jobs_4 & jobs_5 will be migrated to jobs_5_1
+		trigger() // jobs_3 & jobs_4 will be migrated to jobs_4_1; jobs_5 stays because adding it would exceed maxDSSize
 		dsList = getDSList()
-		require.Lenf(t, dsList, 2, "dsList length is not 1, got %+v", dsList)
-		require.Equal(t, prefix+"_jobs_5_1", dsList[0].JobTable) // 12 jobs
-		require.Equal(t, prefix+"_jobs_6", dsList[1].JobTable)   // 0 jobs
+		require.Lenf(t, dsList, 3, "dsList length is not 2, got %+v", dsList)
+		require.Equal(t, prefix+"_jobs_4_1", dsList[0].JobTable) // 8 jobs
+		require.Equal(t, prefix+"_jobs_5", dsList[1].JobTable)   // 4 jobs
+		require.Equal(t, prefix+"_jobs_6", dsList[2].JobTable)   // 0 jobs
 
 		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
 			CustomValFilters: []string{customVal},

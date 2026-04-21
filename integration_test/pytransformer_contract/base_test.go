@@ -2,6 +2,7 @@ package pytransformer_contract
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -97,38 +98,24 @@ def transformEvent(event, metadata):
 	t.Logf("Config backend at %s", configBackend.URL)
 
 	t.Log("Starting openfaas-flask-base container...")
-	openFaasContainer, openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
-	defer func() {
-		if err := pool.Purge(openFaasContainer); err != nil {
-			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
-		}
-	}()
-	waitForOpenFaasFlask(t, pool, openFaasURL)
+	openFaasURL := startOpenFaasFlask(t, pool, versionID, configBackend.URL)
 
 	t.Log("Starting mock OpenFaaS gateway...")
 	mockGateway, openFaaSInvocations := newMockOpenFaaSGateway(t, func() string { return openFaasURL })
 	defer mockGateway.Close()
 	t.Logf("Mock OpenFaaS gateway at %s", mockGateway.URL)
 
-	t.Log("Starting rudder-transformer container...")
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	defer func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer container: %v", err)
-		}
-	}()
-
-	t.Log("Starting rudder-pytransformer container...")
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
-	defer func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer container: %v", err)
-		}
-	}()
-
-	t.Log("Waiting for transformers to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
+	})
+	wg.Go(func() {
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
+	})
+	wg.Wait()
 
 	// Old architecture: PYTHON_TRANSFORM_URL is empty, so the client falls through
 	// to USER_TRANSFORM_URL for python transformations (same as production before pytransformer).
