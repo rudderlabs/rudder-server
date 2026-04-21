@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -130,36 +129,29 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 	}
 
 	batchSize := sh.config.FailedRecordsInsertBatchSize
-	defaultFailedRecordsBatchSize := 5000
-	maxQweryParamsForPostgres := 65535
-	if batchSize <= 0 || batchSize > (maxQweryParamsForPostgres/3) {
-		batchSize = defaultFailedRecordsBatchSize
+	if batchSize <= 0 {
+		batchSize = 5000
 	}
 
 	for start := 0; start < len(records); start += batchSize {
 		end := min(start+batchSize, len(records))
 		batch := records[start:end]
 
-		var sb strings.Builder
-		args := make([]any, 0, len(batch)*3)
-		sb.WriteString(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES `)
+		ids := make([]string, len(batch))
+		recordIDs := make([]string, len(batch))
+		codes := make([]int64, len(batch))
 		for i, rec := range batch {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			paramIdx := i*3 + 1
-			sb.WriteString("($")
-			sb.WriteString(strconv.Itoa(paramIdx))
-			sb.WriteString(",$")
-			sb.WriteString(strconv.Itoa(paramIdx + 1))
-			sb.WriteString(",$")
-			sb.WriteString(strconv.Itoa(paramIdx + 2))
-			sb.WriteByte(')')
-			args = append(args, id, rec.Record, rec.Code)
+			ids[i] = id
+			recordIDs[i] = string(rec.Record)
+			codes[i] = int64(rec.Code)
 		}
-		sb.WriteString(` ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
 
-		if _, err := tx.ExecContext(ctx, sb.String(), args...); err != nil {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code)
+			SELECT * FROM unnest($1::varchar(27)[], $2::text[], $3::numeric(4)[])
+			ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`,
+			pq.Array(ids), pq.Array(recordIDs), pq.Array(codes),
+		); err != nil {
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}
 	}
