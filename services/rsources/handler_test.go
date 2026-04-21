@@ -155,7 +155,7 @@ var _ = Describe("Using sources handler", func() {
 		It("should be able to add and get failed records in multiple batches", func() {
 			handler := sh.(*sourcesHandler)
 			previous := handler.config.FailedRecordsInsertBatchSize
-			handler.config.FailedRecordsInsertBatchSize = 3 // force multiple batches
+			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
 			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
 
 			jobRunId := newJobRunId()

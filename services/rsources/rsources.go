@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -205,7 +206,7 @@ type JobServiceConfig struct {
 	SharedConn                   string
 	SubscriptionTargetConn       string
 	SkipFailedRecordsCollection  bool
-	FailedRecordsInsertBatchSize int
+	FailedRecordsInsertBatchSize config.ValueLoader[int]
 	Log                          logger.Logger
 	ShouldSetupSharedDB          bool
 }
