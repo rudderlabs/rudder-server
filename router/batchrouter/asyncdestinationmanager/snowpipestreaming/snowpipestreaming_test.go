@@ -1981,7 +1981,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}
 	})
 
-	t.Run("processPollImportInfos", func(t *testing.T) {
+	t.Run("provideInProgressImportInfos", func(t *testing.T) {
 		tests := []struct {
 			name                       string
 			infos                      []*importInfo
@@ -2452,7 +2452,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 					createChannelOutputMap: tt.mockCreateChannelResponses,
 				}
 
-				inProgressInfos := sm.processPollImportInfos(context.Background(), tt.infos)
+				inProgressInfos := sm.provideInProgressImportInfos(context.Background(), tt.infos)
 
 				// Assert expected in progress state
 				assert.Equal(t, tt.expectedInProgress, len(inProgressInfos) > 0, "Expected inProgress state mismatch")

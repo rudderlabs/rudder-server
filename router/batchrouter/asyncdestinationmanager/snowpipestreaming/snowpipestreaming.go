@@ -160,6 +160,8 @@ func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
 func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	m.logger.Infon("Uploading data to snowpipe streaming destination")
 
+	// Avoid using the Manager's context here.
+	// Instead, use a background context so that inflight requests don't get cancelled.
 	ctx := context.Background()
 
 	var destConf destConfig
@@ -574,6 +576,8 @@ func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedRea
 func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
+	// Avoid using the Manager's context here.
+	// Instead, use a background context so that inflight requests don't get cancelled.
 	ctx := context.Background()
 
 	var importInfos []*importInfo
@@ -592,7 +596,7 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 		}
 	}
 
-	inProgressInfos := m.processPollImportInfos(ctx, importInfos)
+	inProgressInfos := m.provideInProgressImportInfos(ctx, importInfos)
 	if len(inProgressInfos) > 0 {
 		m.stats.pollingInProgress.Increment()
 
@@ -608,6 +612,12 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 
 			// Fail events which are still in progress after the threshold
 			if duration > threshold {
+				m.logger.Warnn("Stuck snowpipe pipeline detected",
+					logger.NewDurationField("duration", duration),
+					logger.NewDurationField("threshold", threshold),
+					logger.NewStringField("importID", pollInput.ImportId),
+				)
+
 				for _, info := range inProgressInfos {
 					info.Failed = true
 					info.Reason = fmt.Sprintf("events still in progress after threshold: %d > %d", duration, threshold)
@@ -634,7 +644,9 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 	return m.buildPollStatusResponse(updatedImportInfos, failedImports)
 }
 
-func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInfo) []*importInfo {
+// provideInProgressImportInfos provides the import infos that are in progress.
+// It also updates the polledImportInfoMap with the import infos when the import reaches the terminal state.
+func (m *Manager) provideInProgressImportInfos(ctx context.Context, infos []*importInfo) []*importInfo {
 	var inProgressInfos []*importInfo
 
 	for i := range infos {
