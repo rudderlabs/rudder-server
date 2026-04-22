@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"net/http"
 	"strconv"
 	"testing"
@@ -25,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager/common"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -866,5 +868,82 @@ func TestAsyncDestinationManager(t *testing.T) {
 			})
 			require.Error(t, err)
 		})
+	})
+
+	t.Run("setMultipleJobStatus marks failed jobs as drained when retry limit is reached", func(t *testing.T) {
+		mockCtrl := gomock.NewController(t)
+		mockBatchRouterJobsDB := mocksJobsDB.NewMockJobsDB(mockCtrl)
+
+		batchRouter := defaultHandle(destType)
+		batchRouter.jobsDB = mockBatchRouterJobsDB
+		batchRouter.rsourcesService = rsources.NewNoOpService()
+		batchRouter.maxFailedCountForJob = config.SingleValueLoader(1)
+		batchRouter.retryTimeWindow = config.SingleValueLoader(time.Nanosecond)
+		batchRouter.destinationsMap["destinationID"] = &routerutils.DestinationWithSources{
+			Destination: backendconfig.DestinationT{ID: "destinationID"},
+			Sources: []backendconfig.SourceT{
+				{ID: "sourceID", WorkspaceID: "workspaceID"},
+			},
+		}
+
+		jobID := int64(101)
+		jobParameters := []byte(`{"source_id":"sourceID","destination_id":"destinationID","workspaceId":"workspaceID"}`)
+		firstAttempt := time.Now().Add(-1 * time.Hour)
+
+		mockBatchRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) error {
+			return f(jobsdb.EmptyUpdateSafeTx())
+		})
+		mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, tx any, statuses []*jobsdb.JobStatusT) {
+			require.Len(t, statuses, 1)
+			require.Equal(t, jobID, statuses[0].JobID)
+			require.Equal(t, jobsdb.Aborted.State, statuses[0].JobState)
+			require.Equal(t, routerutils.DRAIN_ERROR_CODE, statuses[0].ErrorCode)
+		}).Return(nil)
+
+		batchRouter.setMultipleJobStatus(setMultipleJobStatusParams{
+			asyncJobMetadata: asyncJobMetadata{
+				AttemptNums:       map[int64]int{jobID: 1},
+				FirstAttemptedAts: map[int64]time.Time{jobID: firstAttempt},
+				JobParameters:     map[int64]stdjson.RawMessage{jobID: jobParameters},
+				PartitionIDs:      map[int64]string{jobID: "partition-1"},
+			},
+			AsyncOutput: common.AsyncUploadOutput{
+				DestinationID: "destinationID",
+				FailedJobIDs:  []int64{jobID},
+				FailedReason:  "transient failure",
+			},
+		})
+	})
+
+	t.Run("prepareJobStatusList marks failed jobs as drained when retry limit is reached", func(t *testing.T) {
+		batchRouter := defaultHandle(destType)
+		batchRouter.maxFailedCountForJob = config.SingleValueLoader(1)
+		batchRouter.retryTimeWindow = config.SingleValueLoader(time.Nanosecond)
+
+		importingList := []*jobsdb.JobT{
+			{
+				JobID: 201,
+				LastJobStatus: jobsdb.JobStatusT{
+					AttemptNum:    1,
+					ErrorResponse: []byte(`{"firstAttemptedAt":"2024-01-01T00:00:00.000Z"}`),
+				},
+				Parameters:  []byte(`{"source_id":"sourceID","destination_id":"destinationID"}`),
+				WorkspaceId: "workspaceID",
+				PartitionID: "partition-1",
+				CustomVal:   destType,
+			},
+		}
+
+		statusList, abortedJobsList, _ := batchRouter.prepareJobStatusList(
+			importingList,
+			jobsdb.JobStatusT{JobState: jobsdb.Failed.State, ErrorCode: "500", ErrorResponse: []byte(`{"error":"failed"}`)},
+			"sourceID",
+			"destinationID",
+		)
+
+		require.Len(t, statusList, 1)
+		require.Len(t, abortedJobsList, 1)
+		require.Equal(t, jobsdb.Aborted.State, statusList[0].JobState)
+		require.Equal(t, routerutils.DRAIN_ERROR_CODE, statusList[0].ErrorCode)
 	})
 }
