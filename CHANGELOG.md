@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.1](https://github.com/rudderlabs/rudder-server/compare/v1.73.0...v1.73.1) (2026-04-22)
+
+
+### Bug Fixes
+
+* batch router drained events metrics ([#6898](https://github.com/rudderlabs/rudder-server/issues/6898)) ([ae9f0c0](https://github.com/rudderlabs/rudder-server/commit/ae9f0c03458dfc16b614243d5a79751e75ded107))
+
 ## [1.73.0](https://github.com/rudderlabs/rudder-server/compare/v1.72.0...v1.73.0) (2026-04-13)
 
 

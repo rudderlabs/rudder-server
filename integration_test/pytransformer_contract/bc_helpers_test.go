@@ -401,12 +401,15 @@ func newMockOpenFaaSGateway(t *testing.T, getTarget func() string) (*httptest.Se
 // startOpenFaasFlask starts an openfaas-flask-base container with transformation code
 // loaded at startup via --vid and --config-backend-url. Optional extra environment
 // variables can be passed (e.g. "geolocation_url=http://...").
-// Returns the container resource and the URL to reach it from the host.
+//
+// The container is purged via “t.Cleanup“ and the function blocks until the
+// fwatchdog health endpoint is responsive, so callers get a URL that is
+// immediately ready to serve requests.
 func startOpenFaasFlask(
 	t *testing.T, pool *dockertest.Pool,
 	versionID, configBackendURL string,
 	extraEnv ...string,
-) (*dockertest.Resource, string) {
+) string {
 	t.Helper()
 	const containerPort = "8080"
 	cfg := newContainerConfig(t, containerPort)
@@ -427,7 +430,16 @@ func startOpenFaasFlask(
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start openfaas-flask-base container")
-	return container, cfg.url(container, containerPort)
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge openfaas-flask-base container: %v", err)
+		}
+	})
+
+	openFaasURL := cfg.url(container, containerPort)
+	waitForOpenFaasFlask(t, pool, openFaasURL)
+	return openFaasURL
 }
 
 // startRudderTransformer starts a rudder-transformer container configured to use
@@ -436,7 +448,7 @@ func startOpenFaasFlask(
 func startRudderTransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL, openfaasGatewayURL string,
-) (*dockertest.Resource, string) {
+) string {
 	t.Helper()
 	const containerPort = "9090"
 	cfg := newContainerConfig(t, containerPort)
@@ -453,7 +465,17 @@ func startRudderTransformer(
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-transformer container")
-	return container, cfg.url(container, containerPort)
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge rudder-transformer: %v", err)
+		}
+	})
+
+	transformerURL := cfg.url(container, containerPort)
+	waitForHealthy(t, pool, transformerURL, "rudder-transformer", container)
+
+	return transformerURL
 }
 
 // startRudderPytransformer starts a rudder-pytransformer container configured
@@ -464,7 +486,7 @@ func startRudderPytransformer(
 	t *testing.T, pool *dockertest.Pool,
 	configBackendURL string,
 	extraEnv ...string,
-) (*dockertest.Resource, string) {
+) string {
 	t.Helper()
 	const containerPort = "8080"
 	cfg := newContainerConfig(t, containerPort)
@@ -483,6 +505,7 @@ func startRudderPytransformer(
 	for _, e := range extraEnv {
 		env = append(env, toContainerURL(e))
 	}
+
 	container, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
 		Tag:          "main", // todo: use latest after merging https://github.com/rudderlabs/rudder-pytransformer/pull/76
@@ -492,7 +515,17 @@ func startRudderPytransformer(
 		PortBindings: cfg.PortBindings,
 	}, cfg.hostConfigFn)
 	require.NoError(t, err, "failed to start rudder-pytransformer container")
-	return container, cfg.url(container, containerPort)
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge pytransformer container: %v", err)
+		}
+	})
+
+	pyURL := cfg.url(container, containerPort)
+	waitForHealthy(t, pool, pyURL, "rudder-pytransformer", container)
+
+	return pyURL
 }
 
 // waitForHealthy polls a service's /health endpoint until it returns 200 OK.
@@ -673,6 +706,7 @@ type mockGeoConfig struct {
 	mu         sync.Mutex
 	statusCode int
 	closeConn  bool
+	delay      time.Duration
 }
 
 func (c *mockGeoConfig) setResponse(statusCode int) {
@@ -680,12 +714,25 @@ func (c *mockGeoConfig) setResponse(statusCode int) {
 	defer c.mu.Unlock()
 	c.statusCode = statusCode
 	c.closeConn = false
+	c.delay = 0
 }
 
 func (c *mockGeoConfig) setConnectionClose() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.closeConn = true
+	c.delay = 0
+}
+
+// setSlow makes the mock /geoip/* handler block for "delay" before responding
+// with HTTP 200. Used to simulate a hung geolocation backend so the
+// pytransformer's GEOLOCATION_TIMEOUT_SECS deadline fires.
+func (c *mockGeoConfig) setSlow(delay time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.statusCode = http.StatusOK
+	c.closeConn = false
+	c.delay = delay
 }
 
 // newConfigurableMockGeolocationService creates a mock geolocation HTTP server
@@ -705,6 +752,7 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 		cfg.mu.Lock()
 		code := cfg.statusCode
 		closeConn := cfg.closeConn
+		delay := cfg.delay
 		cfg.mu.Unlock()
 
 		if closeConn {
@@ -718,6 +766,15 @@ func newConfigurableMockGeolocationService(t *testing.T) (*httptest.Server, *moc
 			} else {
 				t.Log("MockGeolocation: failed to hijack connection")
 				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				// Client gave up — stop waiting so we don't leak a goroutine.
 				return
 			}
 		}

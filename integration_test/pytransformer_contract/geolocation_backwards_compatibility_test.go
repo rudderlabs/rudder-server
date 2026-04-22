@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
@@ -1343,26 +1344,17 @@ def transformEvent(event, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer.
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	})
-
-	// Start shared rudder-pytransformer with geolocation URL.
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
-	t.Cleanup(func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer: %v", err)
-		}
+	wg.Go(func() {
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
 	})
-
-	// Wait for shared services to be healthy.
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+	wg.Wait()
 
 	// Run subtests sequentially.
 	for _, st := range subtests {
@@ -1371,13 +1363,7 @@ def transformEvent(event, metadata):
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
-				t.Cleanup(func() {
-					if err := pool.Purge(container); err != nil {
-						t.Logf("Failed to purge openfaas-flask-base: %v", err)
-					}
-				})
-				waitForOpenFaasFlask(t, pool, openFaasURL)
+				openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
 
 				setGatewayTarget(openFaasURL)
 			}
@@ -1609,25 +1595,17 @@ def transformBatch(events, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer (WITHOUT geolocation URL).
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	})
-
-	// Start shared rudder-pytransformer (WITHOUT geolocation URL).
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer: %v", err)
-		}
+	wg.Go(func() {
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL)
 	})
-
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+	wg.Wait()
 
 	for _, st := range subtests {
 		t.Run(st.name, func(t *testing.T) {
@@ -1635,13 +1613,7 @@ def transformBatch(events, metadata):
 
 			if st.config.code != "" {
 				// Start openfaas WITHOUT geolocation URL (not configured test).
-				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL)
-				t.Cleanup(func() {
-					if err := pool.Purge(container); err != nil {
-						t.Logf("Failed to purge openfaas-flask-base: %v", err)
-					}
-				})
-				waitForOpenFaasFlask(t, pool, openFaasURL)
+				openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL)
 
 				setGatewayTarget(openFaasURL)
 			}
@@ -2352,6 +2324,63 @@ def transformBatch(events, metadata):
 				}
 			},
 		},
+		{
+			// Locks the contract that a slow/hung geolocation backend is
+			// distinguished from a slow user HTTP call: it must propagate as
+			// a retryable HTTP 503 (GeolocationServerError → retry) rather
+			// than a per-event 400. The mock service blocks for longer than
+			// GEOLOCATION_TIMEOUT_SECS, so the geolocation session
+			// deadline fires and raises GeolocationServerError (BaseException),
+			// which bypasses the user-code except-Exception and surfaces as retryable.
+			// SANDBOX_HTTP_TIMEOUT_S does NOT apply to internal geolocation traffic — see
+			// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
+			name:      "GeoTimeout",
+			versionID: "bc-geo-timeout-v1",
+			config: configBackendEntry{code: `
+def transformEvent(event, metadata):
+    try:
+        result = geolocation("1.2.3.4")
+        event["geo"] = result
+    except Exception as e:
+        # New arch must NOT reach this branch — GeolocationServerError
+        # inherits BaseException so it bypasses except-Exception and
+        # propagates to the worker as a retryable 503.
+        event["geo_error"] = str(e)
+    return event
+`},
+			setup:               func() { mockGeoCfg.setSlow(500 * time.Millisecond) },
+			skipRetryCountMatch: true,
+			run: func(t *testing.T, env *bcTestEnv) {
+				const versionID = "bc-geo-timeout-v1"
+
+				events := []types.TransformerEvent{
+					makeEvent("msg-1", versionID),
+				}
+
+				// Old arch: openfaas-flask-base catches the timeout via
+				// `except Exception` so the user code records geo_error
+				// and the event succeeds.
+
+				// New arch: timeout → GeolocationServerError →
+				// HTTP 503 + X-Rudder-Should-Retry → retries exhausted →
+				// failed event (with the user's `event["geo_error"]`
+				// branch never executed).
+				newResp := env.NewClient.Transform(context.Background(), events)
+				t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+				require.Len(t, newResp.Events, 0,
+					"new arch: slow geolocation must NOT produce a success event "+
+						"(GeolocationServerError must bypass user except-Exception)")
+				require.Len(t, newResp.FailedEvents, 1,
+					"new arch: slow geolocation must surface as a failed event after retries")
+				require.Contains(t, newResp.FailedEvents[0].Error,
+					"transformer returned status code: 503",
+					"new arch: failed event must carry the correct error message")
+
+				retriesCounter := env.NewStats.GetByName("processor_user_transformer_http_retries")
+				require.Len(t, retriesCounter, 1)
+				require.EqualValues(t, 2, retriesCounter[0].Value)
+			},
+		},
 	}
 
 	pool, err := dockertest.NewPool("")
@@ -2385,26 +2414,27 @@ def transformBatch(events, metadata):
 	mockGateway, _ := newMockOpenFaaSGateway(t, getGatewayTarget)
 	t.Cleanup(mockGateway.Close)
 
-	// Start shared rudder-transformer.
-	transformerContainer, transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
-	t.Cleanup(func() {
-		if err := pool.Purge(transformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-transformer: %v", err)
-		}
+	var (
+		wg                               sync.WaitGroup
+		transformerURL, pyTransformerURL string
+	)
+	wg.Go(func() {
+		transformerURL = startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 	})
-
-	// Start shared rudder-pytransformer with configurable mock geolocation URL.
-	pyTransformerContainer, pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, "GEOLOCATION_URL="+geoURL)
-	t.Cleanup(func() {
-		if err := pool.Purge(pyTransformerContainer); err != nil {
-			t.Logf("Failed to purge rudder-pytransformer: %v", err)
-		}
+	wg.Go(func() {
+		// Start shared rudder-pytransformer with configurable mock geolocation URL.
+		// GEOLOCATION_TIMEOUT_SECS=0.5 governs the GeoTimeout subtest's 1s mock
+		// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_TIMEOUT_S is kept
+		// low as a guard for any future subtest exercising user HTTP traffic; it
+		// does NOT affect geolocation calls — see
+		// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
+		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL,
+			"GEOLOCATION_URL="+geoURL,
+			"SANDBOX_HTTP_TIMEOUT_S=0.1",
+			"GEOLOCATION_TIMEOUT_SECS=0.1",
+		)
 	})
-
-	// Wait for shared services to be healthy.
-	t.Log("Waiting for shared services to be healthy...")
-	waitForHealthy(t, pool, transformerURL, "rudder-transformer")
-	waitForHealthy(t, pool, pyTransformerURL, "rudder-pytransformer")
+	wg.Wait()
 
 	// Run subtests sequentially.
 	for _, st := range subtests {
@@ -2416,13 +2446,7 @@ def transformBatch(events, metadata):
 
 			if st.config.code != "" {
 				t.Logf("Starting openfaas-flask-base for %s (versionID=%s)...", st.name, st.versionID)
-				container, openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
-				t.Cleanup(func() {
-					if err := pool.Purge(container); err != nil {
-						t.Logf("Failed to purge openfaas-flask-base: %v", err)
-					}
-				})
-				waitForOpenFaasFlask(t, pool, openFaasURL)
+				openFaasURL := startOpenFaasFlask(t, pool, st.versionID, configBackend.URL, "geolocation_url="+geoURL)
 
 				setGatewayTarget(openFaasURL)
 			}

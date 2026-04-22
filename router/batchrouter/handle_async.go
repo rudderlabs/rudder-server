@@ -150,6 +150,7 @@ func (brt *Handle) prepareJobStatusList(importingList []*jobsdb.JobT, defaultSta
 		if defaultStatus.JobState == jobsdb.Failed.State {
 			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
+				status.ErrorCode = routerutils.DRAIN_ERROR_CODE
 				abortedJobsList = append(abortedJobsList, job)
 			}
 		}
@@ -800,6 +801,7 @@ func (brt *Handle) setMultipleJobStatus(params setMultipleJobStatusParams) {
 
 			if brt.retryLimitReached(&status) {
 				status.JobState = jobsdb.Aborted.State
+				status.ErrorCode = routerutils.DRAIN_ERROR_CODE
 				completedJobsList = append(completedJobsList, brt.createFakeJob(jobId, jobParameters))
 			}
 			statusList = append(statusList, &status)
