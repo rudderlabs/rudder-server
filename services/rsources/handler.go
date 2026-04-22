@@ -128,10 +128,7 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
 	}
 
-	batchSize := 5000
-	if sh.config.FailedRecordsInsertBatchSize != nil && sh.config.FailedRecordsInsertBatchSize.Load() > 0 {
-		batchSize = sh.config.FailedRecordsInsertBatchSize.Load()
-	}
+	batchSize := max(1, sh.config.FailedRecordsInsertBatchSize.Load())
 
 	for start := 0; start < len(records); start += batchSize {
 		end := min(start+batchSize, len(records))

@@ -247,45 +247,50 @@ type Gauger interface {
 	Gauge(any)
 }
 
-func NewJobService(config JobServiceConfig, stats stats.Stats) (JobService, error) {
-	if config.Log == nil {
-		config.Log = logger.NewLogger().Child("rsources")
+func NewJobService(jobServiceConfig JobServiceConfig, stats stats.Stats) (JobService, error) {
+	if jobServiceConfig.Log == nil {
+		jobServiceConfig.Log = logger.NewLogger().Child("rsources")
 	}
-	if config.MaxPoolSize <= 2 {
-		config.MaxPoolSize = 2 // minimum 2 connections in the pool for proper startup
+	if jobServiceConfig.MaxPoolSize <= 2 {
+		jobServiceConfig.MaxPoolSize = 2 // minimum 2 connections in the pool for proper startup
 	}
-	if config.MinPoolSize <= 0 {
-		config.MinPoolSize = 1
+	if jobServiceConfig.MinPoolSize <= 0 {
+		jobServiceConfig.MinPoolSize = 1
 	}
 	var (
 		localDB, sharedDB *sql.DB
 		err               error
 	)
 
-	localDB, err = sql.Open("postgres", config.LocalConn)
+	localDB, err = sql.Open("postgres", jobServiceConfig.LocalConn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local postgresql connection pool: %w", err)
 	}
-	localDB.SetMaxOpenConns(config.MaxPoolSize)
+	localDB.SetMaxOpenConns(jobServiceConfig.MaxPoolSize)
 	err = stats.RegisterCollector(collectors.NewDatabaseSQLStats("rsources-local", localDB))
 	if err != nil {
 		return nil, fmt.Errorf("register local database stats collector: %w", err)
 	}
-	if config.SharedConn != "" {
-		sharedDB, err = sql.Open("postgres", config.SharedConn)
+	if jobServiceConfig.SharedConn != "" {
+		sharedDB, err = sql.Open("postgres", jobServiceConfig.SharedConn)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shared postgresql connection pool: %w", err)
 		}
-		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
-		sharedDB.SetMaxIdleConns(config.MinPoolSize)
+		sharedDB.SetMaxOpenConns(jobServiceConfig.MaxPoolSize)
+		sharedDB.SetMaxIdleConns(jobServiceConfig.MinPoolSize)
 		err = stats.RegisterCollector(collectors.NewDatabaseSQLStats("rsources-shared", sharedDB))
 		if err != nil {
 			return nil, fmt.Errorf("register shared database stats collector: %w", err)
 		}
 	}
+
+	if jobServiceConfig.FailedRecordsInsertBatchSize == nil {
+		jobServiceConfig.FailedRecordsInsertBatchSize = config.SingleValueLoader(5000)
+	}
+
 	handler := &sourcesHandler{
-		log:      config.Log,
-		config:   config,
+		log:      jobServiceConfig.Log,
+		config:   jobServiceConfig,
 		localDB:  localDB,
 		sharedDB: sharedDB,
 	}
