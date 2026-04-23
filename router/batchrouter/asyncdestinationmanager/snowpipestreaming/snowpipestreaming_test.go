@@ -1803,7 +1803,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
 		require.True(t, first.InProgress)
 
-		now = now.Add(1 * time.Hour) // default threshold is 30 minutes
+		now = now.Add(1 * time.Hour)
 		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
 		require.False(t, second.InProgress)
 		require.True(t, second.Complete)

@@ -160,8 +160,9 @@ func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
 func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	m.logger.Infon("Uploading data to snowpipe streaming destination")
 
-	// Avoid using the Manager's context here.
+	// We don't want to use the Manager's context here because it might be cancelled while the upload is in progress.
 	// Instead, use a background context so that inflight requests don't get cancelled.
+	// HTTP client and SQL connection are both honouring the timeout, so we don't need to worry about them.
 	ctx := context.Background()
 
 	var destConf destConfig
@@ -576,8 +577,9 @@ func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedRea
 func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
-	// Avoid using the Manager's context here.
+	// We don't want to use the Manager's context here because it might be cancelled while the upload is in progress.
 	// Instead, use a background context so that inflight requests don't get cancelled.
+	// HTTP client and SQL connection are both honouring the timeout, so we don't need to worry about them.
 	ctx := context.Background()
 
 	var importInfos []*importInfo
@@ -601,31 +603,28 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 		m.stats.pollingInProgress.Increment()
 
 		// Check for stuck pipeline batch
-		now := m.Now()
 		if m.pollingStartTime.IsZero() {
-			m.pollingStartTime = now
-
+			m.pollingStartTime = m.Now()
 			return common.PollStatusResponse{InProgress: true}
-		} else {
-			duration := now.Sub(m.pollingStartTime)
-			threshold := m.config.stuckPipelineThreshold.Load()
+		}
 
-			// Fail events which are still in progress after the threshold
-			if duration > threshold {
-				m.logger.Warnn("Stuck snowpipe pipeline detected",
-					logger.NewDurationField("duration", duration),
-					logger.NewDurationField("threshold", threshold),
-					logger.NewStringField("importID", pollInput.ImportId),
-				)
+		duration := m.Now().Sub(m.pollingStartTime)
+		threshold := m.config.stuckPipelineThreshold.Load()
 
-				for _, info := range inProgressInfos {
-					info.Failed = true
-					info.Reason = fmt.Sprintf("events still in progress after threshold: %d > %d", duration, threshold)
-					m.polledImportInfoMap[info.ChannelID] = info
-				}
-			} else {
-				return common.PollStatusResponse{InProgress: true}
-			}
+		// Fail events which are still in progress after the threshold
+		if duration <= threshold {
+			return common.PollStatusResponse{InProgress: true}
+		}
+
+		m.logger.Warnn("Stuck snowpipe pipeline detected",
+			logger.NewDurationField("duration", duration),
+			logger.NewDurationField("threshold", threshold),
+			logger.NewStringField("importID", pollInput.ImportId),
+		)
+		for _, info := range inProgressInfos {
+			info.Failed = true
+			info.Reason = fmt.Sprintf("events still in progress after threshold: %d > %d", duration, threshold)
+			m.polledImportInfoMap[info.ChannelID] = info
 		}
 	}
 
