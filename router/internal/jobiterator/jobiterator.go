@@ -112,21 +112,27 @@ func (ji *Iterator) HasNext() bool {
 	}
 
 	// try to fetch some more jobs
-	var err error
+	var (
+		jobs *jobsdb.MoreJobsResult
+		err  error
+	)
 	ji.params.JobsLimit = ji.state.jobsLimit
 
 	ji.state.stats.QueryCount++
-	allJobsResult, err := ji.getJobsFn(context.Background(), ji.params, ji.state.continuationToken)
-	if err != nil {
-		panic(err)
+	for query := true; query; { // for getting the first page, keep trying to get jobs while no jobs are returned because ds limits are being reached
+		jobs, err = ji.getJobsFn(context.Background(), ji.params, ji.state.continuationToken)
+		if err != nil {
+			panic(err)
+		}
+		query = ji.state.stats.QueryCount == 1 && len(jobs.Jobs) == 0 && jobs.LimitsReached
 	}
-	ji.state.jobs = allJobsResult.Jobs
-	ji.state.continuationToken = allJobsResult.More
+	ji.state.jobs = jobs.Jobs
+	ji.state.continuationToken = jobs.More
 	jobCount := len(ji.state.jobs)
 	ji.state.jobsLimit -= jobCount
 	ji.state.stats.TotalJobs += jobCount
 	if !ji.state.stats.LimitsReached {
-		ji.state.stats.LimitsReached = allJobsResult.LimitsReached
+		ji.state.stats.LimitsReached = jobs.LimitsReached
 	}
 
 	// reset state

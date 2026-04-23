@@ -128,18 +128,26 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		return fmt.Errorf("scanning rsources_failed_keys_v2 id: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code) VALUES ($1, $2, $3) ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stmt.Close() }()
+	batchSize := max(1, sh.config.FailedRecordsInsertBatchSize.Load())
 
-	for i := range records {
-		if _, err = stmt.ExecContext(
-			ctx,
-			id,
-			records[i].Record,
-			records[i].Code,
+	for start := 0; start < len(records); start += batchSize {
+		end := min(start+batchSize, len(records))
+		batch := records[start:end]
+
+		ids := make([]string, len(batch))
+		recordIDs := make([]string, len(batch))
+		codes := make([]int64, len(batch))
+		for i, rec := range batch {
+			ids[i] = id
+			recordIDs[i] = string(rec.Record)
+			codes[i] = int64(rec.Code)
+		}
+
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO rsources_failed_keys_v2_records (id, record_id, code)
+			SELECT * FROM unnest($1::varchar(27)[], $2::text[], $3::numeric(4)[])
+			ON CONFLICT (id, record_id) DO UPDATE SET ts = NOW()`,
+			pq.Array(ids), pq.Array(recordIDs), pq.Array(codes),
 		); err != nil {
 			return fmt.Errorf("inserting into rsources_failed_keys_v2_records: %w", err)
 		}

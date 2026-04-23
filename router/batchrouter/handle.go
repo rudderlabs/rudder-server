@@ -201,14 +201,17 @@ func (brt *Handle) getWorkerJobs(partition string) (workerJobs []*DestinationJob
 	}
 	brt.isolationStrategy.AugmentQueryParams(partition, &queryParams)
 
-	toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
-	}, brt.sendQueryRetryStats)
-	if err != nil {
-		brt.logger.Errorn("BRT: Error while reading from DB", obskit.DestinationType(brt.destType), obskit.Error(err))
-		panic(err)
+	for query := true; query; { // keep trying to get jobs while no jobs are returned because ds limits are being reached
+		toProcess, err := misc.QueryWithRetriesAndNotify(context.Background(), brt.jobdDBQueryRequestTimeout.Load(), brt.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return brt.jobsDB.GetJobs(ctx, []string{jobsdb.Failed.State, jobsdb.Unprocessed.State}, queryParams)
+		}, brt.sendQueryRetryStats)
+		if err != nil {
+			brt.logger.Errorn("BRT: Error while reading from DB", obskit.DestinationType(brt.destType), obskit.Error(err))
+			panic(err)
+		}
+		jobs = toProcess.Jobs
+		query = len(jobs) == 0 && toProcess.DSLimitsReached
 	}
-	jobs = toProcess.Jobs
 
 	brtQueryStat.Since(queryStart)
 	sort.Slice(jobs, func(i, j int) bool {

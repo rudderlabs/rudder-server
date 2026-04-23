@@ -67,26 +67,19 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, allEntries)
 	defer configBackend.Close()
 
-	var (
-		pyFilteredContainer, pyNormalContainer *dockertest.Resource
-		pyFilteredURL, pyNormalURL             string
-	)
+	var pyFilteredURL, pyNormalURL string
 	wg := sync.WaitGroup{}
 	wg.Go(func() {
 		// Start pytransformer WITH mirror filter enabled
-		pyFilteredContainer, pyFilteredURL = startRudderPytransformer(
+		pyFilteredURL = startRudderPytransformer(
 			t, pool, configBackend.URL, "MIRROR_FILTER_ENABLED=true",
 		)
-		t.Cleanup(func() { _ = pool.Purge(pyFilteredContainer) })
-		waitForHealthy(t, pool, pyFilteredURL, "pytransformer-filtered", pyFilteredContainer)
 	})
 	wg.Go(func() {
 		// Start pytransformer WITHOUT mirror filter (default)
-		pyNormalContainer, pyNormalURL = startRudderPytransformer(
+		pyNormalURL = startRudderPytransformer(
 			t, pool, configBackend.URL,
 		)
-		t.Cleanup(func() { _ = pool.Purge(pyNormalContainer) })
-		waitForHealthy(t, pool, pyNormalURL, "pytransformer-normal", pyNormalContainer)
 	})
 	wg.Wait()
 
