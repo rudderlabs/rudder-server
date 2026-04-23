@@ -206,10 +206,11 @@ func makeEvent(messageID, versionID string) types.TransformerEvent {
 			"event":     "Test Event",
 		},
 		Metadata: types.Metadata{
-			SourceID:      "src-1",
-			DestinationID: "dest-1",
-			WorkspaceID:   "ws-1",
-			MessageID:     messageID,
+			SourceID:         "src-1",
+			DestinationID:    "dest-1",
+			WorkspaceID:      "ws-1",
+			MessageID:        messageID,
+			TransformationID: versionID,
 		},
 		Destination: backendconfig.DestinationT{
 			Transformations: []backendconfig.TransformationT{
