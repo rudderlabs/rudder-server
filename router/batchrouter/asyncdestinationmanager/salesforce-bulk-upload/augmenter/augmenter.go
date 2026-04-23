@@ -45,6 +45,7 @@ func (s *requestAugmenter) Augment(r *http.Request, body []byte, secret json.Raw
 	// format -> Authorization : OAuth <accessToken>
 	r.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 	r.URL.Host = instanceURL
+	r.Host = instanceURL
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
 }
