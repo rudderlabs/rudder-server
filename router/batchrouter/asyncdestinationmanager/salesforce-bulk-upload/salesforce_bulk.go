@@ -35,6 +35,7 @@ func NewManager(
 	backendConfig backendconfig.BackendConfig,
 ) (common.AsyncDestinationManager, error) {
 	httpClientTimeout := conf.GetDurationVar(30, time.Second, "SalesforceBulkUpload.httpClientTimeout")
+	logRequestsDestIDs := conf.GetReloadableStringSliceVar(nil, "BatchRouter.SALESFORCE_BULK_UPLOAD.logRequests.destinationIDs")
 	cache := oauthv2.NewOauthTokenCache()
 	childLogger := logger.Child("salesforcebulkupload").Withn(obskit.DestinationID(destination.ID), obskit.WorkspaceID(destination.WorkspaceID))
 
@@ -47,7 +48,7 @@ func NewManager(
 	client := oauthv2httpclient.NewOAuthHttpClient(originalHttpClient, oauthv2common.RudderFlowDelivery, &cache, backendConfig, func(responseBody []byte) (string, error) {
 		return augmenter.GetAuthErrorCategoryForSalesforce(responseBody), nil
 	}, optionalArgs)
-	apiService := newAPIService(childLogger, destination, client)
+	apiService := newAPIService(childLogger, destination, client, logRequestsDestIDs)
 	u := NewUploader(conf, childLogger, statsFactory, apiService, destination)
 	return u, nil
 }

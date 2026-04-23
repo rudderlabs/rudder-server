@@ -41,9 +41,10 @@ type APIServiceInterface interface {
 }
 
 type apiService struct {
-	logger      logger.Logger
-	destination *backendconfig.DestinationT
-	client      *http.Client
+	logger             logger.Logger
+	destination        *backendconfig.DestinationT
+	client             *http.Client
+	logRequestsDestIDs config.ValueLoader[[]string]
 }
 
 type SalesforceJobInfo struct {
