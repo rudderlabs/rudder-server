@@ -28,6 +28,7 @@ func TestRequestAugmenter_Augment(t *testing.T) {
 			validateFunc: func(t *testing.T, r *http.Request) {
 				require.Equal(t, "Bearer test_token_123", r.Header.Get("Authorization"))
 				require.Equal(t, "test.salesforce.com", r.URL.Host)
+				require.Equal(t, "test.salesforce.com", r.Host)
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
 				require.Equal(t, []byte(`{"test":"data"}`), bodyBytes)
@@ -40,6 +41,7 @@ func TestRequestAugmenter_Augment(t *testing.T) {
 			validateFunc: func(t *testing.T, r *http.Request) {
 				require.Equal(t, "Bearer token_456", r.Header.Get("Authorization"))
 				require.Equal(t, "custom.salesforce.com", r.URL.Host)
+				require.Equal(t, "custom.salesforce.com", r.Host)
 				bodyBytes, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
 				require.Equal(t, []byte(`{"key":"value"}`), bodyBytes)
@@ -263,6 +265,7 @@ func TestRequestAugmenter_Augment_RequestModification(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, "newhost.salesforce.com", req.URL.Host)
+		require.Equal(t, "newhost.salesforce.com", req.Host)
 		require.Equal(t, "/path", req.URL.Path)
 		require.Equal(t, "query=value", req.URL.RawQuery)
 		require.Equal(t, "Bearer test_token", req.Header.Get("Authorization"))
