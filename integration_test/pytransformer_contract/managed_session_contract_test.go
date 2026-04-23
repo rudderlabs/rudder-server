@@ -2,8 +2,11 @@ package pytransformer_contract
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -11,7 +14,11 @@ import (
 	"time"
 
 	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/require"
+
+	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
+	"github.com/rudderlabs/rudder-go-kit/testhelper/docker/resource/registry"
 
 	"github.com/rudderlabs/rudder-server/processor/types"
 )
@@ -524,6 +531,389 @@ def transformEvent(event, metadata):
 				"connections under CONN_POOL_PER_TRANSFORMATION=true; want 2, got %d",
 			newConns.Load())
 	})
+
+	// userHTTPEntryPoints drives the ManagedPool convergence test: every
+	// user HTTP entry point must land on the platform's pooled session. The
+	// two variants differ only in the Python code served by the config
+	// backend; everything else — server, env, assertions — is shared to
+	// keep the scenarios honest.
+	userHTTPEntryPoints := []struct {
+		name    string
+		codeFmt string // %[1]s is substituted with the container-reachable server URL.
+	}{
+		{
+			// Bare ``requests.get`` — the path wired up by Task 2 connection
+			// pooling. Included here so scenario 2's convergence assertion
+			// covers both entry points end-to-end.
+			name: "BareRequestsGet",
+			codeFmt: `
+import requests
+
+def transformEvent(event, metadata):
+    r = requests.get("%[1]s/data")
+    event["status"] = r.status_code
+    return event
+`,
+		},
+		{
+			// Customer 3CRQYhrDplkTP3nHlLq5VYlNWJh pattern: module-level
+			// ``requests.Session`` + ``HTTPAdapter(max_retries=Retry(...))``
+			// mounted on a prefix. Before ManagedSession this path bypassed
+			// ``get_user_session()`` entirely.
+			name: "ModuleLevelSessionWithMount",
+			codeFmt: `
+import requests
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+retry_strategy = Retry(total=3, status_forcelist=[500], allowed_methods=['GET'])
+adapter = HTTPAdapter(max_retries=retry_strategy)
+http = requests.Session()
+http.mount("%[1]s", adapter)
+
+def transformEvent(event, metadata):
+    r = http.get("%[1]s/data")
+    event["status"] = r.status_code
+    return event
+`,
+		},
+	}
+
+	t.Run("UserHttpFlowsThroughManagedPool", func(t *testing.T) {
+		// Scenario 2: every user HTTP entry point — bare ``requests.get``
+		// and user-created ``requests.Session`` — must converge on the
+		// platform's pooled session. Before ManagedSession, user Sessions
+		// skipped ``get_user_session()`` so the ``user_session_count`` gauge
+		// and ``managed_session_created_total`` counter were stuck at 0
+		// even when traffic was flowing. The primary observability fix is
+		// captured by scraping Prometheus directly from the container: the
+		// gauge is non-zero for the transformation_id and
+		// ``managed_session_created_total`` tracks Session constructions.
+		//
+		// The two variants reuse the same harness (same connection-counting
+		// server, same env, same assertions). Only the Python transformation
+		// code changes so we exercise both entry points through the same
+		// contract.
+		for _, variant := range userHTTPEntryPoints {
+			t.Run(variant.name, func(t *testing.T) {
+				versionID := "mgd-flows-" + variant.name
+				const eventsPerRun = 3
+
+				countSrv, newConns := newConnectionCountingServer(t)
+				serverURL := toContainerURL(countSrv.URL)
+
+				entries := map[string]configBackendEntry{
+					versionID: {code: fmt.Sprintf(variant.codeFmt, serverURL)},
+				}
+				configBackend := newContractConfigBackend(t, entries)
+				t.Cleanup(configBackend.Close)
+
+				pyURL, metricsURL := startRudderPytransformerWithMetrics(
+					t, pool, configBackend.URL,
+					"ENABLE_CONN_POOL=true",
+					"USER_CONN_POOL_MAX_SIZE=1",
+					"CONN_POOL_PER_TRANSFORMATION=true",
+					"SANDBOX_POOL_MAX_SIZE=1",
+					"SANDBOX_HTTP_TIMEOUT_S=5",
+				)
+
+				newConns.Store(0)
+				evs := make([]types.TransformerEvent, eventsPerRun)
+				for i := range evs {
+					evs[i] = makeEvent(fmt.Sprintf("msg-%s-%d", variant.name, i), versionID)
+				}
+				status, items := sendRawTransform(t, pyURL, evs)
+				require.Equal(t, http.StatusOK, status)
+				require.Len(t, items, eventsPerRun)
+				for i, it := range items {
+					require.Equal(t, http.StatusOK, it.StatusCode,
+						"event %d must succeed: error=%q", i, it.Error)
+				}
+
+				// Primary observability assertion — the gauge that was
+				// stuck at 0 before the managed-session fix must now
+				// reflect the pooled user session for this transformation.
+				gauge := scrapePytransformerMetric(t, metricsURL,
+					"user_session_count", map[string]string{"transformation_id": versionID})
+				require.Greater(t, gauge, float64(0),
+					"user_session_count{transformation_id=%q} must be > 0 after %d events; "+
+						"before the fix user Sessions bypassed the pool so this metric "+
+						"stayed at 0 even when traffic was flowing",
+					versionID, eventsPerRun)
+
+				// Secondary: managed_session_created_total should fire
+				// only for the Session variant. The bare ``requests.get``
+				// entry point doesn't construct a ManagedSession — it
+				// dispatches through the shared pooled session directly.
+				created := scrapePytransformerMetric(t, metricsURL,
+					"managed_session_created_total", map[string]string{"transformation_id": versionID})
+				if variant.name == "ModuleLevelSessionWithMount" {
+					require.GreaterOrEqual(t, created, float64(1),
+						"managed_session_created_total must fire for module-level "+
+							"Session() constructions; got %v", created)
+				}
+
+				// Wire-observable cross-check: with USER_CONN_POOL_MAX_SIZE=1,
+				// sequential calls must reuse a single pooled TCP connection.
+				// This is consistent with the gauge reading non-zero and
+				// gives a belt-and-braces signal alongside the metric.
+				require.EqualValues(t, 1, newConns.Load(),
+					"expected a single pooled TCP connection across %d events; "+
+						"server saw %d StateNew transitions (pool bypass would produce more)",
+					eventsPerRun, newConns.Load())
+			})
+		}
+	})
+
+	t.Run("AdapterPoolMaxsizeIgnored", func(t *testing.T) {
+		// Scenario 6: ``HTTPAdapter(pool_maxsize=N)`` must be ignored —
+		// pool sizing is governed by ``USER_CONN_POOL_MAX_SIZE``, not by
+		// user-supplied adapter kwargs. Without the ignore, a customer
+		// could mount ``HTTPAdapter(pool_maxsize=100)`` and override the
+		// platform's bound, breaking the single-connection guarantee used
+		// for rollout risk sizing.
+		//
+		// The wire-observable signal alone doesn't distinguish "we
+		// ignored it" from "serial calls happen to reuse one connection
+		// anyway", so we assert both the TCP count AND the
+		// ``managed_session_mount_ignored_total{dropped_attr="pool_maxsize"}``
+		// counter. The latter is the plan's primary assertion for this
+		// scenario.
+		const versionID = "mgd-pool-maxsize-ignored-v1"
+		const eventsPerRun = 3
+
+		countSrv, newConns := newConnectionCountingServer(t)
+		serverURL := toContainerURL(countSrv.URL)
+
+		code := fmt.Sprintf(`
+import requests
+from requests.adapters import HTTPAdapter
+
+adapter = HTTPAdapter(pool_maxsize=100, pool_connections=50, max_retries=0)
+http = requests.Session()
+http.mount("%[1]s", adapter)
+
+def transformEvent(event, metadata):
+    r = http.get("%[1]s/data")
+    event["status"] = r.status_code
+    return event
+`, serverURL)
+
+		entries := map[string]configBackendEntry{
+			versionID: {code: code},
+		}
+		configBackend := newContractConfigBackend(t, entries)
+		t.Cleanup(configBackend.Close)
+
+		pyURL, metricsURL := startRudderPytransformerWithMetrics(
+			t, pool, configBackend.URL,
+			"ENABLE_CONN_POOL=true",
+			"USER_CONN_POOL_MAX_SIZE=1",
+			"CONN_POOL_PER_TRANSFORMATION=true",
+			"SANDBOX_POOL_MAX_SIZE=1",
+			"SANDBOX_HTTP_TIMEOUT_S=5",
+		)
+
+		newConns.Store(0)
+		evs := make([]types.TransformerEvent, eventsPerRun)
+		for i := range evs {
+			evs[i] = makeEvent(fmt.Sprintf("msg-pool-maxsize-%d", i), versionID)
+		}
+		status, items := sendRawTransform(t, pyURL, evs)
+		require.Equal(t, http.StatusOK, status)
+		require.Len(t, items, eventsPerRun)
+		for i, it := range items {
+			require.Equal(t, http.StatusOK, it.StatusCode,
+				"event %d must succeed: error=%q", i, it.Error)
+		}
+
+		// Pool size must respect USER_CONN_POOL_MAX_SIZE=1, not the
+		// customer's pool_maxsize=100. Sequential calls reuse a single
+		// pooled TCP connection.
+		require.EqualValues(t, 1, newConns.Load(),
+			"USER_CONN_POOL_MAX_SIZE=1 must cap connections regardless of "+
+				"user-supplied pool_maxsize=100; server saw %d StateNew transitions",
+			newConns.Load())
+
+		// Primary assertion — the drop was recorded, so operators can
+		// surface customers that were relying on the ignored kwarg.
+		dropped := scrapePytransformerMetric(t, metricsURL,
+			"managed_session_mount_ignored_total",
+			map[string]string{
+				"transformation_id": versionID,
+				"dropped_attr":      "pool_maxsize",
+			})
+		require.GreaterOrEqual(t, dropped, float64(1),
+			"managed_session_mount_ignored_total{transformation_id=%q,"+
+				"dropped_attr=\"pool_maxsize\"} must fire when user mounts "+
+				"HTTPAdapter(pool_maxsize=100); got %v", versionID, dropped)
+
+		// pool_connections was also non-default, so its drop must also
+		// be recorded. Belt-and-braces that the loop over dropped attrs
+		// actually emits a label-value per attr rather than collapsing.
+		droppedConn := scrapePytransformerMetric(t, metricsURL,
+			"managed_session_mount_ignored_total",
+			map[string]string{
+				"transformation_id": versionID,
+				"dropped_attr":      "pool_connections",
+			})
+		require.GreaterOrEqual(t, droppedConn, float64(1),
+			"managed_session_mount_ignored_total{dropped_attr=\"pool_connections\"} "+
+				"must fire for non-default pool_connections=50; got %v", droppedConn)
+	})
+}
+
+// startRudderPytransformerWithMetrics is startRudderPytransformer plus the
+// Prometheus metrics port wired through to the host. Contract tests that
+// scrape counters (e.g. “user_session_count“, “managed_session_*“) go
+// through this helper instead of startRudderPytransformer, whose signature
+// returns only the API URL to keep existing tests unchanged.
+func startRudderPytransformerWithMetrics(
+	t *testing.T, pool *dockertest.Pool,
+	configBackendURL string,
+	extraEnv ...string,
+) (pyURL, metricsURL string) {
+	t.Helper()
+	const (
+		apiContainerPort     = "8080"
+		metricsContainerPort = "9091"
+	)
+
+	cfg := newContainerConfig(t, apiContainerPort)
+
+	// On macOS (bridge networking) the metrics port needs an explicit
+	// binding — it defaults to 9091 inside the container and is not
+	// reachable otherwise. On Linux (host networking) we allocate a free
+	// port on the host and pass it via ``METRICS_PORT`` so the container
+	// doesn't clash with any sibling pytransformer containers sharing
+	// the namespace.
+	env := []string{
+		"CONFIG_BACKEND_URL=" + toContainerURL(configBackendURL),
+		"UVICORN_PORT=" + cfg.portStr(apiContainerPort),
+	}
+
+	var linuxMetricsHostPort string
+	if runtime.GOOS == "darwin" {
+		cfg.PortBindings[docker.Port(metricsContainerPort+"/tcp")] = []docker.PortBinding{
+			{HostIP: "127.0.0.1", HostPort: "0"},
+		}
+		env = append(env, "METRICS_PORT="+metricsContainerPort)
+	} else {
+		freePort, err := kithelper.GetFreePort()
+		require.NoError(t, err)
+		linuxMetricsHostPort = strconv.Itoa(freePort)
+		env = append(env, "METRICS_PORT="+linuxMetricsHostPort)
+	}
+
+	for _, e := range extraEnv {
+		env = append(env, toContainerURL(e))
+	}
+
+	container, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository:   "422074288268.dkr.ecr.us-east-1.amazonaws.com/rudderstack/rudder-pytransformer",
+		Tag:          "main",
+		Auth:         registry.AuthConfiguration(),
+		Env:          env,
+		ExtraHosts:   cfg.ExtraHosts,
+		PortBindings: cfg.PortBindings,
+	}, cfg.hostConfigFn)
+	require.NoError(t, err, "failed to start rudder-pytransformer container")
+
+	t.Cleanup(func() {
+		if err := pool.Purge(container); err != nil {
+			t.Logf("Failed to purge pytransformer container: %v", err)
+		}
+	})
+
+	pyURL = cfg.url(container, apiContainerPort)
+	waitForHealthy(t, pool, pyURL, "rudder-pytransformer", container)
+
+	if runtime.GOOS == "darwin" {
+		metricsURL = fmt.Sprintf("http://%s:%s",
+			container.GetBoundIP(metricsContainerPort+"/tcp"),
+			container.GetPort(metricsContainerPort+"/tcp"),
+		)
+	} else {
+		metricsURL = "http://localhost:" + linuxMetricsHostPort
+	}
+
+	return pyURL, metricsURL
+}
+
+// scrapePytransformerMetric fetches /metrics from the pytransformer
+// Prometheus endpoint and returns the value of the sample matching the
+// given metric name and label set. Missing metric or missing label
+// combination returns 0; an HTTP failure fails the test.
+//
+// The parser is deliberately line-oriented and label-order agnostic —
+// Prometheus text format guarantees one sample per line but not a stable
+// label ordering, so we normalise both sides into a map before comparing.
+func scrapePytransformerMetric(
+	t *testing.T, metricsURL, name string, wantLabels map[string]string,
+) float64 {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, metricsURL+"/metrics", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err, "scrape %s failed", metricsURL)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "metrics endpoint returned non-200")
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	// Pattern: NAME{k="v",k2="v2"} VALUE  (whitespace-separated, optional
+	// trailing comment which we ignore). Restricting the leading name
+	// match to ``^<name>[{ ]`` avoids accidental matches on metrics that
+	// share a prefix (e.g. managed_session_created vs
+	// managed_session_created_total).
+	pattern := regexp.MustCompile(
+		`^` + regexp.QuoteMeta(name) + `(?:\{([^}]*)\})?\s+([0-9eE.+\-]+)`,
+	)
+	labelPattern := regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"`)
+
+	for _, line := range splitLines(string(body)) {
+		if line == "" || line[0] == '#' {
+			continue
+		}
+		m := pattern.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		labels := map[string]string{}
+		for _, lm := range labelPattern.FindAllStringSubmatch(m[1], -1) {
+			labels[lm[1]] = lm[2]
+		}
+		matched := true
+		for k, v := range wantLabels {
+			if labels[k] != v {
+				matched = false
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		val, err := strconv.ParseFloat(m[2], 64)
+		require.NoError(t, err, "failed to parse metric value %q", m[2])
+		return val
+	}
+	return 0
+}
+
+func splitLines(s string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		out = append(out, s[start:])
+	}
+	return out
 }
 
 // newSequencedServer returns an HTTP server that replies with the provided
