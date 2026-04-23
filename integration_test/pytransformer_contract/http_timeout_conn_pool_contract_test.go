@@ -228,21 +228,28 @@ def transformEvent(event, metadata):
 	})
 }
 
-// TestConnectionPoolBehavior verifies that the ENABLE_CONN_POOL feature flag
-// controls whether bare requests.get() calls reuse TCP connections.
+// TestConnectionPoolBehavior verifies bare requests.get() TCP-reuse behaviour
+// against the ENABLE_CONN_POOL feature flag.
 //
-//   - ENABLE_CONN_POOL=false (default): each call opens a fresh TCP connection.
-//   - ENABLE_CONN_POOL=true:            repeated calls to the same host reuse
-//     the pooled TCP connection.
+// Historical note: the flag originally gated pooling of the bare-requests path
+// (ENABLE_CONN_POOL=false => fresh connection per call, because
+// requests.get() would construct a throwaway Session with its own
+// per-call adapter). Once ManagedSession was installed, every requests.Session
+// — including the throwaway one constructed inside requests.api.get — routes
+// through the platform's pooled session, so the flag no longer controls
+// whether pooling happens; it only controls which module-level wrapper is
+// bound on the `requests` module (a direct pool wrapper vs. the plain metrics
+// wrapper that goes through ManagedSession). Either way, sequential bare
+// requests.get() calls against the same host reuse the same pooled TCP
+// connection.
 //
-// SANDBOX_POOL_MAX_SIZE=1 ensures a single worker subprocess handles every
-// request, so the per-process user session (and its connection pool) is shared
-// across the two sequential test requests.
+// The two subtests below therefore both assert "TCP reuse under
+// SANDBOX_POOL_MAX_SIZE=1" — confirming that pooling is a property of the
+// platform, not of a feature flag.
 //
 // Connection reuse is verified server-side using the Go http.Server ConnState
-// hook: http.StateNew fires exactly once per TCP handshake.  Two requests on
-// a kept-alive connection produce only one StateNew event; two requests on
-// fresh connections produce two.
+// hook: http.StateNew fires exactly once per TCP handshake. Two requests on a
+// kept-alive connection produce only one StateNew event.
 func TestConnectionPoolBehavior(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -268,16 +275,25 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	t.Run("NewConnectionPerRequestWhenPoolDisabled", func(t *testing.T) {
-		// ENABLE_CONN_POOL=false (default): bare requests.get() creates a
-		// temporary Session per call, then closes it — so every call opens a
-		// fresh TCP connection even against a keep-alive-capable server.
+	t.Run("ConnectionReusedWhenPoolDisabled", func(t *testing.T) {
+		// ENABLE_CONN_POOL=false: bare requests.get() flows through the
+		// plain metrics wrapper, which calls requests.api.get() — and
+		// that internally spins up a Session. Since Session is rebound
+		// to ManagedSession at import time, the throwaway Session still
+		// routes .send() through the platform's pooled session, so
+		// sequential calls reuse the same TCP connection.
+		//
+		// This test used to expect 2 StateNew events (fresh conn per
+		// call), which was correct before ManagedSession made pooling
+		// unconditional for any Session-backed call. The flag no longer
+		// disables pooling for user HTTP — it only swaps which wrapper
+		// is installed on `requests.*` at import time, and both paths
+		// end up on the same pool.
 		noPoolURL := startRudderPytransformer(
 			t, pool, configBackend.URL,
 			"ENABLE_CONN_POOL=false",
-			// Single worker so both requests hit the same subprocess and
-			// the absence of a persistent pool is not masked by subprocess
-			// affinity.
+			// Single worker so both requests hit the same subprocess
+			// and share the same per-tid pooled session.
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -296,15 +312,18 @@ def transformEvent(event, metadata):
 		require.Len(t, items2, 1)
 		require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
 
-		require.EqualValues(t, 2, newConns.Load(),
-			"with ENABLE_CONN_POOL=false, each bare requests.get() must open "+
-				"a fresh TCP connection (server-side StateNew count: want 2)")
+		require.EqualValues(t, 1, newConns.Load(),
+			"even with ENABLE_CONN_POOL=false, bare requests.get() reuses the "+
+				"platform's pooled TCP connection because the throwaway Session "+
+				"created by requests.api.get is a ManagedSession and routes through "+
+				"get_user_session() (server-side StateNew count: want 1)")
 	})
 
 	t.Run("ConnectionReusedWhenPoolEnabled", func(t *testing.T) {
-		// ENABLE_CONN_POOL=true: bare requests.get() routes through the
-		// persistent user session.  The TCP connection established for the
-		// first request is kept in the pool and reused for the second.
+		// ENABLE_CONN_POOL=true: bare requests.get() is replaced by the
+		// direct pooling wrapper, which calls get_user_session() without
+		// the ManagedSession detour. Same observable: the second call
+		// reuses the first call's pooled TCP connection.
 		poolURL := startRudderPytransformer(
 			t, pool, configBackend.URL,
 			"ENABLE_CONN_POOL=true",
