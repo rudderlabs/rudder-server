@@ -623,7 +623,7 @@ func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.Pol
 		)
 		for _, info := range inProgressInfos {
 			info.Failed = true
-			info.Reason = fmt.Sprintf("events still in progress after threshold: %d > %d", duration, threshold)
+			info.Reason = fmt.Sprintf("events still in progress after threshold: %s > %s", duration, threshold)
 			m.polledImportInfoMap[info.ChannelID] = info
 		}
 	}

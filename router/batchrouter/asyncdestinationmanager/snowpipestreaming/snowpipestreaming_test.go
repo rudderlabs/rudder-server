@@ -1809,7 +1809,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.True(t, second.Complete)
 		require.Equal(t, http.StatusOK, second.StatusCode)
 		require.True(t, second.HasFailed)
-		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"events still in progress after threshold: 3600000000000 > 900000000000","count":2}]`)
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"events still in progress after threshold: 1h0m0s > 15m0s","count":2}]`)
 	})
 
 	t.Run("GetUploadStats", func(t *testing.T) {
