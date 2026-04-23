@@ -160,9 +160,9 @@ func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
 func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	m.logger.Infon("Uploading data to snowpipe streaming destination")
 
-	// We don't want to use the Manager's context here because it might be cancelled while the upload is in progress.
-	// Instead, use a background context so that inflight requests don't get cancelled.
-	// HTTP client and SQL connection are both honouring the timeout, so we don't need to worry about them.
+	// Don't use Manager context here: it may be cancelled while polling/upload is in flight.
+	// Cancelling in-flight requests can leave final state unknown and trigger retries, causing duplicate events.
+	// Use a background context; request-level timeouts on HTTP/SQL still bound execution.
 	ctx := context.Background()
 
 	var destConf destConfig
@@ -577,9 +577,9 @@ func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedRea
 func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
 
-	// We don't want to use the Manager's context here because it might be cancelled while the upload is in progress.
-	// Instead, use a background context so that inflight requests don't get cancelled.
-	// HTTP client and SQL connection are both honouring the timeout, so we don't need to worry about them.
+	// Don't use Manager context here: it may be cancelled while polling/upload is in flight.
+	// Cancelling in-flight requests can leave final state unknown and trigger retries, causing duplicate events.
+	// Use a background context; request-level timeouts on HTTP/SQL still bound execution.
 	ctx := context.Background()
 
 	var importInfos []*importInfo
