@@ -15,7 +15,7 @@ import (
 )
 
 // TestBareRequestsPositionalParamsContract locks the contract that valid
-// user code calling bare “requests“ helpers with a second positional
+// user code calling bare "requests" helpers with a second positional
 // argument produces identical results on both architectures, regardless
 // of the pytransformer connection-pool feature flag.
 //
@@ -39,15 +39,13 @@ import (
 //  1. Old arch (rudder-transformer + openfaas-flask-base): user code runs
 //     against vanilla “requests“, so every two-positional call reaches
 //     the backend with the expected shape.
-//  2. New arch (rudder-pytransformer), “ENABLE_CONN_POOL=false“: bare
-//     calls reach “requests“ unmodified, same as old arch.
-//  3. New arch (rudder-pytransformer), “ENABLE_CONN_POOL=true“: bare
-//     calls flow through the pooled “Session“. GET goes through the
-//     params-promotion bridge; POST/PUT/PATCH are forwarded verbatim.
-//     The observable result stays identical to the other two paths.
+//  2. New arch (rudder-pytransformer): bare calls flow through the
+//     pooled “Session“. GET goes through the params-promotion bridge;
+//     POST/PUT/PATCH are forwarded verbatim. The observable result stays
+//     identical to the old arch.
 //
-// Every verb × every new-arch configuration: the old-arch and new-arch
-// responses must compare equal field-for-field via “types.Response.Equal“.
+// Every verb: the old-arch and new-arch responses must compare equal
+// field-for-field via “types.Response.Equal“.
 func TestBareRequestsPositionalParamsContract(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -123,33 +121,15 @@ def transformEvent(event, metadata):
 
 	// --- New architecture (rudder-pytransformer) ---
 	//
-	// Exercised twice — once with the connection pool disabled (bare
-	// ``requests.<method>`` calls reach the underlying helpers untouched)
-	// and once with it enabled (bare calls are routed through a shared
-	// pooled ``Session``). Both configurations must match the old-arch
-	// reference for every verb.
-	newArchCases := []struct {
-		name            string
-		enableConnPool  string
-		extraPytransEnv []string
-	}{
-		{
-			name:            "ConnPoolDisabled",
-			enableConnPool:  "false",
-			extraPytransEnv: nil,
-		},
-		{
-			name:           "ConnPoolEnabled",
-			enableConnPool: "true",
-			// Pin pool + subprocess count to 1 so a single long-lived
-			// user session handles every call: no subprocess affinity
-			// or pool recycling can influence the outcome.
-			extraPytransEnv: []string{
-				"USER_CONN_POOL_MAX_SIZE=1",
-				"SANDBOX_POOL_MAX_SIZE=1",
-			},
-		},
-	}
+	// Bare ``requests.<method>`` calls are routed through a per-
+	// transformation pooled ``Session``. Pin pool + subprocess count
+	// to 1 so a single long-lived user session handles every call: no
+	// subprocess affinity or pool recycling can influence the outcome.
+	pyTransformerURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"USER_CONN_POOL_MAX_SIZE=1",
+		"SANDBOX_POOL_MAX_SIZE=1",
+	)
 
 	// Every verb that accepts a second positional argument must survive
 	// the pooling bridge. GET exercises the params-promotion path; the
@@ -164,73 +144,63 @@ def transformEvent(event, metadata):
 		{verb: "patch", method: "PATCH"},
 	}
 
-	for _, tc := range newArchCases {
-		t.Run(tc.name, func(t *testing.T) {
-			pyEnv := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraPytransEnv...)
-			t.Logf("Starting rudder-pytransformer with %v...", pyEnv)
-			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, pyEnv...)
+	for _, vc := range verbCases {
+		t.Run(vc.verb, func(t *testing.T) {
+			// Fresh env per verb so memstats retry counters don't bleed between subtests (memstats accumulates
+			// and cannot be reset).
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
 
-			for _, vc := range verbCases {
-				t.Run(vc.verb, func(t *testing.T) {
-					// Fresh env per verb so memstats retry counters don't bleed between subtests (memstats accumulates
-					// and cannot be reset).
-					env := newBCTestEnv(t, transformerURL, pyTransformerURL,
-						withFailOnError(),
-						withLimitedRetryableHTTPRetries(),
-					)
+			event := makeEvent("msg-"+vc.verb, versionID)
+			event.Message["verb"] = vc.verb
+			events := []types.TransformerEvent{event}
 
-					event := makeEvent("msg-"+vc.verb, versionID)
-					event.Message["verb"] = vc.verb
-					events := []types.TransformerEvent{event}
+			t.Log("Sending request to old architecture...")
+			oldResp := env.OldClient.Transform(context.Background(), events)
+			t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
 
-					t.Log("Sending request to old architecture...")
-					oldResp := env.OldClient.Transform(context.Background(), events)
-					t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+			t.Log("Sending request to new architecture...")
+			newResp := env.NewClient.Transform(context.Background(), events)
+			t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-					t.Log("Sending request to new architecture...")
-					newResp := env.NewClient.Transform(context.Background(), events)
-					t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+			require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+			require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+			require.Equalf(t, 1, len(newResp.Events),
+				"new arch (verb=%s): 1 success event expected — incorrect "+
+					"argument forwarding raises TypeError before the HTTP "+
+					"call and fails the event instead",
+				vc.verb)
+			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-					require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-					require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-					require.Equalf(t, 1, len(newResp.Events),
-						"new arch (ENABLE_CONN_POOL=%s, verb=%s): 1 success event "+
-							"expected — incorrect argument forwarding raises TypeError "+
-							"before the HTTP call and fails the event instead",
-						tc.enableConnPool, vc.verb)
-					require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+			// Round-trip sanity check: the echo server must have
+			// seen ``q=hello`` on both stacks, which means the
+			// positional dict was forwarded correctly whether
+			// that happens via the GET params-promotion bridge
+			// or verbatim positional forwarding for the body
+			// verbs.
+			require.Equal(t, "hello", oldResp.Events[0].Output["echo"],
+				"old arch must forward the positional dict as q=hello")
+			require.Equalf(t, "hello", newResp.Events[0].Output["echo"],
+				"new arch (verb=%s) must forward the positional dict as q=hello",
+				vc.verb)
 
-					// Round-trip sanity check: the echo server must have
-					// seen ``q=hello`` on both stacks, which means the
-					// positional dict was forwarded correctly whether
-					// that happens via the GET params-promotion bridge
-					// or verbatim positional forwarding for the body
-					// verbs.
-					require.Equal(t, "hello", oldResp.Events[0].Output["echo"],
-						"old arch must forward the positional dict as q=hello")
-					require.Equalf(t, "hello", newResp.Events[0].Output["echo"],
-						"new arch (ENABLE_CONN_POOL=%s, verb=%s) must forward the "+
-							"positional dict as q=hello", tc.enableConnPool, vc.verb)
+			// Method sanity: the echo server must also have seen
+			// the right HTTP verb, proving that the pooling
+			// wrapper dispatched to the right Session method and
+			// didn't silently downgrade to GET.
+			require.Equalf(t, vc.method, newResp.Events[0].Output["method"],
+				"new arch: echo server must have observed HTTP %s", vc.method)
 
-					// Method sanity: the echo server must also have seen
-					// the right HTTP verb, proving that the pooling
-					// wrapper dispatched to the right Session method and
-					// didn't silently downgrade to GET.
-					require.Equalf(t, vc.method, newResp.Events[0].Output["method"],
-						"new arch (ENABLE_CONN_POOL=%s): echo server must have "+
-							"observed HTTP %s", tc.enableConnPool, vc.method)
+			// Strict parity: every field of the two responses must match.
+			diff, equal := oldResp.Equal(&newResp)
+			require.Truef(t, equal,
+				"verb=%s: old and new architectures must produce identical "+
+					"responses for bare requests.%s(url, positional_dict):\n%s",
+				vc.verb, vc.verb, diff)
 
-					// Strict parity: every field of the two responses must match.
-					diff, equal := oldResp.Equal(&newResp)
-					require.Truef(t, equal,
-						"ENABLE_CONN_POOL=%s, verb=%s: old and new architectures "+
-							"must produce identical responses for bare "+
-							"requests.%s(url, positional_dict):\n%s",
-						tc.enableConnPool, vc.verb, vc.verb, diff)
-
-					env.assertRetryCountsMatch(t)
-				})
-			}
+			env.assertRetryCountsMatch(t)
 		})
 	}
 }
@@ -251,12 +221,10 @@ def transformEvent(event, metadata):
 // “session.post(url, json_payload, data=body)“ — which binds
 // “json_payload“ to “data“ and then collides with the promoted
 // keyword, raising “TypeError: post() got multiple values for argument
-// 'data'“. The failure only appears when “ENABLE_CONN_POOL=true“ and a
-// three-positional “post“ call reaches the wrapper.
+// 'data'“.
 //
 // This contract pins the correct behaviour: the old arch (vanilla
-// “requests“) accepts this call shape; every new-arch configuration must
-// too.
+// “requests“) accepts this call shape; the new arch must too.
 func TestBareRequestsPostThreePositionalArgsContract(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -308,75 +276,48 @@ def transformEvent(event, metadata):
 	t.Log("Starting rudder-transformer (old arch frontend)...")
 	transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 
-	newArchCases := []struct {
-		name            string
-		enableConnPool  string
-		extraPytransEnv []string
-	}{
-		{
-			name:            "ConnPoolDisabled",
-			enableConnPool:  "false",
-			extraPytransEnv: nil,
-		},
-		{
-			name:           "ConnPoolEnabled",
-			enableConnPool: "true",
-			// Pin pool + subprocess count to 1 so incorrect argument
-			// forwarding cannot be masked by a cold subprocess bypassing
-			// the pool wrapper.
-			extraPytransEnv: []string{
-				"USER_CONN_POOL_MAX_SIZE=1",
-				"SANDBOX_POOL_MAX_SIZE=1",
-			},
-		},
-	}
+	// Pin pool + subprocess count to 1 so incorrect argument forwarding
+	// cannot be masked by a cold subprocess bypassing the pool wrapper.
+	pyTransformerURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"USER_CONN_POOL_MAX_SIZE=1",
+		"SANDBOX_POOL_MAX_SIZE=1",
+	)
 
-	for _, tc := range newArchCases {
-		t.Run(tc.name, func(t *testing.T) {
-			pyEnv := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraPytransEnv...)
-			t.Logf("Starting rudder-pytransformer with %v...", pyEnv)
-			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, pyEnv...)
+	env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+		withFailOnError(),
+		withLimitedRetryableHTTPRetries(),
+	)
 
-			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
-				withFailOnError(),
-				withLimitedRetryableHTTPRetries(),
-			)
+	events := []types.TransformerEvent{makeEvent("msg-1", versionID)}
 
-			events := []types.TransformerEvent{makeEvent("msg-1", versionID)}
+	t.Log("Sending request to old architecture...")
+	oldResp := env.OldClient.Transform(context.Background(), events)
+	t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
 
-			t.Log("Sending request to old architecture...")
-			oldResp := env.OldClient.Transform(context.Background(), events)
-			t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+	t.Log("Sending request to new architecture...")
+	newResp := env.NewClient.Transform(context.Background(), events)
+	t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-			t.Log("Sending request to new architecture...")
-			newResp := env.NewClient.Transform(context.Background(), events)
-			t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+	require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+	require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+	require.Equal(t, 1, len(newResp.Events),
+		"new arch: 1 success event expected — a bad pooling wrapper raises "+
+			"TypeError before the HTTP call and fails the event instead")
+	require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-			require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-			require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-			require.Equalf(t, 1, len(newResp.Events),
-				"new arch (ENABLE_CONN_POOL=%s): 1 success event expected — a "+
-					"bad pooling wrapper raises TypeError before the HTTP "+
-					"call and fails the event instead",
-				tc.enableConnPool)
-			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+	// Round-trip sanity check: the echo server must have seen the raw
+	// body on both stacks, which means the second positional bound to
+	// ``data`` and the call completed.
+	require.Equal(t, "raw=payload", oldResp.Events[0].Output["received"],
+		"old arch must forward the positional body as the request payload")
+	require.Equal(t, "raw=payload", newResp.Events[0].Output["received"],
+		"new arch must forward the positional body as the request payload")
 
-			// Round-trip sanity check: the echo server must have seen
-			// the raw body on both stacks, which means the second
-			// positional bound to ``data`` and the call completed.
-			require.Equal(t, "raw=payload", oldResp.Events[0].Output["received"],
-				"old arch must forward the positional body as the request payload")
-			require.Equalf(t, "raw=payload", newResp.Events[0].Output["received"],
-				"new arch (ENABLE_CONN_POOL=%s) must forward the positional "+
-					"body as the request payload", tc.enableConnPool)
+	diff, equal := oldResp.Equal(&newResp)
+	require.Truef(t, equal,
+		"old and new architectures must produce identical responses for "+
+			"bare requests.post(url, body, json_payload):\n%s", diff)
 
-			diff, equal := oldResp.Equal(&newResp)
-			require.Truef(t, equal,
-				"ENABLE_CONN_POOL=%s: old and new architectures must produce "+
-					"identical responses for bare requests.post(url, body, json_payload):\n%s",
-				tc.enableConnPool, diff)
-
-			env.assertRetryCountsMatch(t)
-		})
-	}
+	env.assertRetryCountsMatch(t)
 }

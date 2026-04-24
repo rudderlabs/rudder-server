@@ -521,14 +521,12 @@ def transformEvent(event, metadata):
 	})
 
 	t.Run("SessionCloseIsNoOp", func(t *testing.T) {
-		// Session.close() must not tear down the platform's pooled
-		// session: a second Session() created after the close must
-		// still issue requests successfully and must reuse the same
-		// underlying pooled TCP connection (proving the pool stayed
-		// alive across the user's close).
+		// Session.close() must not tear down the platform's pooled session: a second Session() created after the close
+		// must still issue requests successfully and must reuse the same underlying pooled TCP connection (proving the
+		// pool stayed alive across the user's close).
 		//
-		// Two Session constructions happen in the transformation, so
-		// managed_session_created_total must increment by at least 2.
+		// Two Session constructions happen in the transformation, so managed_session_created_total must increment by
+		// at least 2.
 		const versionID = "mgd-close-noop-v1"
 
 		trackSrv, newConns := newConnectionCountingServer(t)
@@ -554,9 +552,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=true",
 			"USER_CONN_POOL_MAX_SIZE=1",
-			"CONN_POOL_PER_TRANSFORMATION=true",
 			"SANDBOX_HTTP_TIMEOUT_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
@@ -582,21 +578,18 @@ def transformEvent(event, metadata):
 				"in managed_session_created_total >= 2")
 	})
 
-	t.Run("ManagedSessionPartitionedPerTransformationVersion", func(t *testing.T) {
-		// With per-transformation connection pooling enabled, two
-		// transformation_version_ids served by the same worker must
-		// use distinct TCP connections even though both open a
-		// Session against the same host. Confirms the partitioning
-		// guarantee extends to user-created Sessions (not just the
-		// bare requests.* path exercised elsewhere).
+	t.Run("ManagedSessionSharedAcrossTransformations", func(t *testing.T) {
+		// Pytransformer runs one container per customer, so in-process isolation between transformation is not needed:
+		// two transformation_version_ids served by the same worker share the process-wide pooled session — exactly
+		// one TCP connection to the target host across both events.
 		//
-		// Also asserts managed_session_created_total and
-		// user_session_count are both attributable per tid — the
-		// partition must show up in observability, not just on the
-		// wire.
+		// Each Session() construction still produces an attributable managed_session_created_total sample under its own
+		// transformation_id (the counter measures "user code constructed a Session", not "the pool was created").
+		// The user_session_count gauge reports a single sample under the "shared" label because the pooled session is
+		// process-wide.
 		const (
-			versionIDAlpha = "mgd-part-alpha"
-			versionIDBeta  = "mgd-part-beta"
+			versionIDAlpha = "mgd-shared-alpha"
+			versionIDBeta  = "mgd-shared-beta"
 		)
 
 		trackSrv, newConns := newConnectionCountingServer(t)
@@ -621,8 +614,6 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=true",
-			"CONN_POOL_PER_TRANSFORMATION=true",
 			"USER_CONN_POOL_MAX_SIZE=1",
 			"SANDBOX_POOL_MAX_SIZE=1",
 			"SANDBOX_HTTP_TIMEOUT_S=5",
@@ -642,31 +633,43 @@ def transformEvent(event, metadata):
 		require.Len(t, itemsB, 1)
 		require.Equal(t, http.StatusOK, itemsB[0].StatusCode)
 
-		require.EqualValues(t, 2, newConns.Load(),
-			"two version_ids through the same worker must open two distinct TCP "+
-				"connections under CONN_POOL_PER_TRANSFORMATION=true; want 2, got %d",
+		require.EqualValues(t, 1, newConns.Load(),
+			"two version_ids through the same worker must share a single TCP "+
+				"connection through the process-shared pool; want 1, got %d",
 			newConns.Load())
 
 		requireMetricAtLeast(t, metricsURL,
 			"managed_session_created_total",
 			map[string]string{"transformation_id": versionIDAlpha},
 			1,
-			"alpha's Session must be attributable under its own transformation_id label")
+			"alpha's Session() construction must fire managed_session_created_total "+
+				"under its own transformation_id label")
 		requireMetricAtLeast(t, metricsURL,
 			"managed_session_created_total",
 			map[string]string{"transformation_id": versionIDBeta},
 			1,
-			"beta's Session must be attributable under its own transformation_id label")
+			"beta's Session() construction must fire managed_session_created_total "+
+				"under its own transformation_id label")
+		// The pooled session is process-shared: user_session_count is
+		// always emitted under the "shared" label, never per-tid.
 		requireMetricGreater(t, metricsURL,
+			"user_session_count",
+			map[string]string{"transformation_id": "shared"},
+			0,
+			"user_session_count must be > 0 under the \"shared\" label once "+
+				"either transformation drives traffic through the pool")
+		requireMetricEquals(t, metricsURL,
 			"user_session_count",
 			map[string]string{"transformation_id": versionIDAlpha},
 			0,
-			"user_session_count must be > 0 for alpha (pooled session in use under its tid)")
-		requireMetricGreater(t, metricsURL,
+			"user_session_count must NOT be emitted under the per-tid label — "+
+				"the pool is process-shared, not per-tid")
+		requireMetricEquals(t, metricsURL,
 			"user_session_count",
 			map[string]string{"transformation_id": versionIDBeta},
 			0,
-			"user_session_count must be > 0 for beta (pooled session in use under its tid)")
+			"user_session_count must NOT be emitted under the per-tid label — "+
+				"the pool is process-shared, not per-tid")
 	})
 
 	// userHTTPEntryPoints feeds the UserHttpFlowsThroughManagedPool
@@ -710,25 +713,17 @@ def transformEvent(event, metadata):
 	}
 
 	t.Run("UserHttpFlowsThroughManagedPool", func(t *testing.T) {
-		// Every user HTTP entry point — bare requests.get and a
-		// user-created Session — must converge on the platform's
-		// pooled session. The primary signal is the user_session_count
-		// gauge: it must be > 0 for the transformation_id after any
-		// user HTTP call reaches transformEvent.
+		// Every user HTTP entry point — bare requests.get and a user-created Session — must converge on the platform's
+		// shared pooled session. The primary signal is the user_session_count gauge: it must be > 0 under the "shared"
+		// label after any user HTTP call reaches transformEvent (regardless of the caller's transformation_id).
 		//
-		// The Session variant (module-level pattern common in
-		// customer code) additionally locks in build-time metric
-		// labeling: module-level requests.Session() must increment
-		// managed_session_created_total under the real tid, never
-		// under "unknown". Per-customer attribution on the Managed
-		// Sessions dashboard depends on that.
+		// The Session variant (module-level pattern common in customer code) additionally locks in build-time metric
+		// labeling: module-level requests.Session() must increment managed_session_created_total under the real tid, never
+		// under "unknown". Per-customer attribution on the Managed Sessions dashboard depends on that.
 		//
-		// The bare variant must NOT increment managed_session_created
-		// because no user Session is constructed — only the internal
-		// pooled session path is exercised. That negative assertion
-		// keeps the counter semantically clean ("user code created
-		// a Session"), not accidentally tripped by every bare
-		// requests.get.
+		// The bare variant must NOT increment managed_session_created because no user Session is constructed — only the
+		// internal pooled session path is exercised. That negative assertion keeps the counter semantically clean
+		// ("user code created a Session"), not accidentally tripped by every bare requests.get.
 		for _, variant := range userHTTPEntryPoints {
 			t.Run(variant.name, func(t *testing.T) {
 				versionID := "mgd-flows-" + variant.name
@@ -745,9 +740,7 @@ def transformEvent(event, metadata):
 
 				pyURL, metricsURL := startRudderPytransformerWithMetrics(
 					t, pool, configBackend.URL,
-					"ENABLE_CONN_POOL=true",
 					"USER_CONN_POOL_MAX_SIZE=1",
-					"CONN_POOL_PER_TRANSFORMATION=true",
 					"SANDBOX_POOL_MAX_SIZE=1",
 					"SANDBOX_HTTP_TIMEOUT_S=5",
 				)
@@ -766,14 +759,22 @@ def transformEvent(event, metadata):
 				}
 
 				// Primary observability assertion: every user HTTP
-				// entry point must cause user_session_count to reflect
-				// a pooled user session for this transformation.
+				// entry point must cause user_session_count to flip
+				// non-zero under the shared label. The pool is
+				// process-shared, so the gauge is never emitted under
+				// a per-tid label.
 				requireMetricGreater(t, metricsURL,
+					"user_session_count",
+					map[string]string{"transformation_id": "shared"},
+					0,
+					"user_session_count{\"shared\"} must be > 0 after user HTTP runs; "+
+						"a 0 here means the entry point bypassed the pool")
+				requireMetricEquals(t, metricsURL,
 					"user_session_count",
 					map[string]string{"transformation_id": versionID},
 					0,
-					"user_session_count must be > 0 after user HTTP runs; "+
-						"a 0 here means the entry point bypassed the pool")
+					"user_session_count must NOT be emitted under the per-tid label — "+
+						"the pool is process-shared")
 
 				// Wire-observable cross-check: with USER_CONN_POOL_MAX_SIZE=1,
 				// sequential calls must reuse a single pooled TCP connection.
@@ -822,25 +823,18 @@ def transformEvent(event, metadata):
 	})
 
 	t.Run("AdapterPoolMaxsizeIgnored", func(t *testing.T) {
-		// HTTPAdapter(pool_maxsize=N, pool_connections=M) kwargs that
-		// govern connection-pool sizing must be silently ignored —
-		// pool sizing is governed by the platform's
-		// USER_CONN_POOL_MAX_SIZE, not by user-supplied adapter
-		// kwargs. Without the ignore, a user could mount
-		// HTTPAdapter(pool_maxsize=100) and override the platform's
+		// HTTPAdapter(pool_maxsize=N, pool_connections=M) kwargs that govern connection-pool sizing must be silently
+		// ignored — pool sizing is governed by the platform's USER_CONN_POOL_MAX_SIZE, not by user-supplied adapter
+		// kwargs. Without the ignore, a user could mount HTTPAdapter(pool_maxsize=100) and override the platform's
 		// single-connection bound.
 		//
-		// Wire signal: sequential calls must fit in a single pooled
-		// TCP connection (USER_CONN_POOL_MAX_SIZE=1).
+		// Wire signal: sequential calls must fit in a single pooled TCP connection (USER_CONN_POOL_MAX_SIZE=1).
 		//
-		// Metric signal: each dropped kwarg must fire
-		// managed_session_mount_ignored_total with the matching
-		// dropped_attr label, so operators can surface customers
-		// whose configuration got ignored.
+		// Metric signal: each dropped kwarg must fire managed_session_mount_ignored_total with the matching
+		// dropped_attr label, so operators can surface customers whose configuration got ignored.
 		//
 		// The mount is at module scope (common customer pattern);
-		// the real transformation_id must flow through the
-		// build-time path into the counter labels.
+		// the real transformation_id must flow through the build-time path into the counter labels.
 		const versionID = "mgd-pool-maxsize-ignored-v1"
 		const eventsPerRun = 3
 
@@ -869,9 +863,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=true",
 			"USER_CONN_POOL_MAX_SIZE=1",
-			"CONN_POOL_PER_TRANSFORMATION=true",
 			"SANDBOX_POOL_MAX_SIZE=1",
 			"SANDBOX_HTTP_TIMEOUT_S=5",
 		)
