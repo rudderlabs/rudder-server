@@ -48,7 +48,7 @@ func TestManagedSessionContract(t *testing.T) {
 		//
 		// The platform passes the customer's Retry(total=5) policy to
 		// urllib3 unmodified — the per-call wall-clock budget
-		// (SANDBOX_HTTP_CALL_BUDGET_S) is what bounds total time, not a
+		// (SANDBOX_HTTP_BUDGET_S) is what bounds total time, not a
 		// retry-count clamp. Here the server returns 200 on attempt #2
 		// well within the budget, so all 5 of the customer's retry slots
 		// remain available; we simply observe 2 attempts because the
@@ -92,7 +92,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -125,17 +125,17 @@ def transformEvent(event, metadata):
 			"http.mount(HTTPAdapter(...)) must increment managed_session_mount_total")
 	})
 
-	t.Run("CumulativeWallClockBoundedByCallBudget", func(t *testing.T) {
+	t.Run("CumulativeWallClockBoundedByTransformationBudget", func(t *testing.T) {
 		// A user transformation asks for up to 10 retries with
-		// backoff_factor=2.0 against an always-503 upstream. Without a
-		// per-call wall-clock cap the customer's policy would burn
-		// 2 + 4 + 8 + ... seconds of backoff sleep — pinning the worker
-		// for ~30s. SANDBOX_HTTP_CALL_BUDGET_S must bound BOTH the
-		// per-attempt timeout AND the inter-attempt backoff so total
-		// wall-clock per session.send() stays within the budget,
-		// regardless of how many retries the customer configured or
-		// how aggressive their backoff curve is.
-		const versionID = "mgd-call-budget-v1"
+		// backoff_factor=2.0 against an always-503 upstream. Without the
+		// per-transformation wall-clock cap the customer's policy would
+		// burn 2 + 4 + 8 + ... seconds of backoff sleep — pinning the
+		// worker for ~30s. SANDBOX_HTTP_BUDGET_S must bound BOTH the
+		// per-attempt timeout AND the inter-attempt backoff so cumulative
+		// wall-clock for the whole transform_fn stays within the budget,
+		// regardless of how many retries the customer configured or how
+		// aggressive their backoff curve is.
+		const versionID = "mgd-tx-budget-v1"
 
 		always500, _ := newAlways500Server(t)
 		serverURL := toContainerURL(always500.URL)
@@ -184,7 +184,7 @@ def transformEvent(event, metadata):
 		const budgetSeconds = 2
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			fmt.Sprintf("SANDBOX_HTTP_CALL_BUDGET_S=%d", budgetSeconds),
+			fmt.Sprintf("SANDBOX_HTTP_BUDGET_S=%d", budgetSeconds),
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -272,7 +272,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -325,7 +325,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -384,7 +384,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -447,7 +447,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -507,7 +507,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -569,7 +569,7 @@ def transformEvent(event, metadata):
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
 			"USER_CONN_POOL_MAX_SIZE=1",
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -632,7 +632,7 @@ def transformEvent(event, metadata):
 			t, pool, configBackend.URL,
 			"USER_CONN_POOL_MAX_SIZE=1",
 			"SANDBOX_POOL_MAX_SIZE=1",
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 		)
 
 		newConns.Store(0)
@@ -758,7 +758,7 @@ def transformEvent(event, metadata):
 					t, pool, configBackend.URL,
 					"USER_CONN_POOL_MAX_SIZE=1",
 					"SANDBOX_POOL_MAX_SIZE=1",
-					"SANDBOX_HTTP_CALL_BUDGET_S=5",
+					"SANDBOX_HTTP_BUDGET_S=5",
 				)
 
 				newConns.Store(0)
@@ -881,7 +881,7 @@ def transformEvent(event, metadata):
 			t, pool, configBackend.URL,
 			"USER_CONN_POOL_MAX_SIZE=1",
 			"SANDBOX_POOL_MAX_SIZE=1",
-			"SANDBOX_HTTP_CALL_BUDGET_S=5",
+			"SANDBOX_HTTP_BUDGET_S=5",
 		)
 
 		newConns.Store(0)

@@ -2332,8 +2332,8 @@ def transformBatch(events, metadata):
 			// GEOLOCATION_TIMEOUT_SECS, so the geolocation session
 			// deadline fires and raises GeolocationServerError (BaseException),
 			// which bypasses the user-code except-Exception and surfaces as retryable.
-			// SANDBOX_HTTP_CALL_BUDGET_S does NOT apply to internal geolocation traffic — see
-			// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
+			// SANDBOX_HTTP_BUDGET_S does NOT apply to internal geolocation traffic — see
+			// TestSandboxHTTPBudgetDoesNotCapGeolocation.
 			name:      "GeoTimeout",
 			versionID: "bc-geo-timeout-v1",
 			config: configBackendEntry{code: `
@@ -2424,13 +2424,13 @@ def transformEvent(event, metadata):
 	wg.Go(func() {
 		// Start shared rudder-pytransformer with configurable mock geolocation URL.
 		// GEOLOCATION_TIMEOUT_SECS=0.5 governs the GeoTimeout subtest's 1s mock
-		// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_CALL_BUDGET_S is kept
+		// delay (500 ms < 1 s → retryable 503). SANDBOX_HTTP_BUDGET_S is kept
 		// low as a guard for any future subtest exercising user HTTP traffic; it
 		// does NOT affect geolocation calls — see
-		// TestSandboxHTTPTimeoutDoesNotCapGeolocation.
+		// TestSandboxHTTPBudgetDoesNotCapGeolocation.
 		pyTransformerURL = startRudderPytransformer(t, pool, configBackend.URL,
 			"GEOLOCATION_URL="+geoURL,
-			"SANDBOX_HTTP_CALL_BUDGET_S=0.1",
+			"SANDBOX_HTTP_BUDGET_S=0.1",
 			"GEOLOCATION_TIMEOUT_SECS=0.1",
 		)
 	})
