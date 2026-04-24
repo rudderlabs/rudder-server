@@ -332,6 +332,8 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 			req.Header.Set("X-Feature-Gzip-Support", "?1")
 			// Header to let transformer know that the client understands event filter code
 			req.Header.Set("X-Feature-Filter-Code", "?1")
+			u.log.Infon("setting host for http-client", logger.NewStringField("host", labels.WorkspaceID))
+			req.Host = labels.WorkspaceID
 
 			resp, reqErr = u.client.Do(req)
 			defer func() { httputil.CloseResponse(resp) }()
