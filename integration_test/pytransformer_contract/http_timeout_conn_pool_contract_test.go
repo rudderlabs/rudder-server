@@ -23,12 +23,12 @@ import (
 )
 
 // TestSandboxHTTPTimeoutDoesNotCapGeolocation locks the contract that
-// SANDBOX_HTTP_TIMEOUT_S (the user-HTTP wall-clock cap) does NOT apply to
+// SANDBOX_HTTP_CALL_BUDGET_S (the user-HTTP wall-clock cap) does NOT apply to
 // internal geolocation traffic. The two timeouts are independent: geolocation
 // calls are bound exclusively by GEOLOCATION_TIMEOUT_SECS.
 //
 // Scenario: a geolocation backend that replies in 300 ms, with
-// SANDBOX_HTTP_TIMEOUT_S=0.1 s (user cap is SHORTER than the geo response)
+// SANDBOX_HTTP_CALL_BUDGET_S=0.1 s (user cap is SHORTER than the geo response)
 // and GEOLOCATION_TIMEOUT_SECS=0.5 s. Under the contract, the geolocation
 // call must succeed:
 //
@@ -68,7 +68,7 @@ def transformEvent(event, metadata):
 		// The user HTTP cap is intentionally SHORTER than the geo reply
 		// (100 ms < 300 ms). If the cap were applied to internal traffic,
 		// the geolocation call would time out at 100 ms.
-		"SANDBOX_HTTP_TIMEOUT_S=0.1",
+		"SANDBOX_HTTP_CALL_BUDGET_S=0.1",
 		// The geolocation budget is LARGER than the geo reply (500 ms >
 		// 300 ms) so the only legal outcome is success.
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
@@ -95,7 +95,7 @@ def transformEvent(event, metadata):
 	// transformation produced a successful event.
 	require.Empty(t, resp.FailedEvents,
 		"geolocation call must succeed when the geo reply (300 ms) is within "+
-			"GEOLOCATION_TIMEOUT_SECS (500 ms); SANDBOX_HTTP_TIMEOUT_S (100 ms) "+
+			"GEOLOCATION_TIMEOUT_SECS (500 ms); SANDBOX_HTTP_CALL_BUDGET_S (100 ms) "+
 			"must NOT apply to internal traffic")
 	require.Len(t, resp.Events, 1,
 		"exactly one successful event must be produced")
@@ -127,16 +127,16 @@ def transformEvent(event, metadata):
 // TestUserHTTPTimeoutCapping verifies the urllib3 wall-clock cap behaviour for
 // user-initiated HTTP calls:
 //
-//   - When the user passes a timeout that is larger than SANDBOX_HTTP_TIMEOUT_S,
+//   - When the user passes a timeout that is larger than SANDBOX_HTTP_CALL_BUDGET_S,
 //     the sandbox cap is honoured (our cap fires, not the user's).
-//   - When the user passes a timeout that is smaller than SANDBOX_HTTP_TIMEOUT_S,
+//   - When the user passes a timeout that is smaller than SANDBOX_HTTP_CALL_BUDGET_S,
 //     the user's timeout is honoured (user's fires, not ours).
 //
 // Both cases result in a non-retryable 400 per-event error (user code HTTP
 // timeout is not retried) — in contrast to the retryable 503 from a
 // geolocation timeout.
 //
-// A single pytransformer container (SANDBOX_HTTP_TIMEOUT_S=2) is shared by
+// A single pytransformer container (SANDBOX_HTTP_CALL_BUDGET_S=2) is shared by
 // both subtests.
 func TestUserHTTPTimeoutCapping(t *testing.T) {
 	pool, err := dockertest.NewPool("")
@@ -155,7 +155,7 @@ func TestUserHTTPTimeoutCapping(t *testing.T) {
 import requests
 
 def transformEvent(event, metadata):
-    # timeout=5 — user wants 5s, but SANDBOX_HTTP_TIMEOUT_S=1 caps it.
+    # timeout=5 — user wants 5s, but SANDBOX_HTTP_CALL_BUDGET_S=1 caps it.
     # Timeout intentionally not caught — propagates as per-event status 400.
     resp = requests.get("%s/data", timeout=5)
     event["status"] = resp.status_code
@@ -166,7 +166,7 @@ def transformEvent(event, metadata):
 import requests
 
 def transformEvent(event, metadata):
-    # timeout=0.1 — user's cap is smaller than SANDBOX_HTTP_TIMEOUT_S=2.
+    # timeout=0.1 — user's cap is smaller than SANDBOX_HTTP_CALL_BUDGET_S=2.
     # Timeout intentionally not caught — propagates as per-event status 400.
     resp = requests.get("%s/data", timeout=0.1)
     event["status"] = resp.status_code
@@ -177,11 +177,11 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	// SANDBOX_HTTP_TIMEOUT_S=1: our cap is between the user's bigger (5s)
+	// SANDBOX_HTTP_CALL_BUDGET_S=1: our cap is between the user's bigger (5s)
 	// and smaller (0.1s) values, so both subtests can verify the correct cap.
 	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		"SANDBOX_HTTP_TIMEOUT_S=1",
+		"SANDBOX_HTTP_CALL_BUDGET_S=1",
 	)
 
 	t.Run("OurCapHonouredWhenUserTimeoutIsBigger", func(t *testing.T) {
@@ -371,11 +371,11 @@ def transformEvent(event, metadata):
 
 // TestSlowDripBodyFiresSandboxHTTPTimeout locks in the contract that a server
 // which flushes response headers quickly and then drips the body one byte at
-// a time must NOT pin a sandbox worker for longer than SANDBOX_HTTP_TIMEOUT_S.
+// a time must NOT pin a sandbox worker for longer than SANDBOX_HTTP_CALL_BUDGET_S.
 //
 // Scenario:
 //   - Body is 30 chunks × 200 ms = 6.0 s of wall-clock drip.
-//   - SANDBOX_HTTP_TIMEOUT_S = 1 s.
+//   - SANDBOX_HTTP_CALL_BUDGET_S = 1 s.
 //   - SANDBOX_TRANSFORMATION_TIMEOUT_S is set high enough that the
 //     subprocess-level SIGVTALRM safety net does NOT fire first — otherwise
 //     we would be measuring the wrong timeout.
@@ -398,7 +398,7 @@ func TestSlowDripBodyFiresSandboxHTTPTimeout(t *testing.T) {
 import requests
 
 def transformEvent(event, metadata):
-    # No explicit timeout — let SANDBOX_HTTP_TIMEOUT_S cap the wall-clock budget.
+    # No explicit timeout — let SANDBOX_HTTP_CALL_BUDGET_S cap the wall-clock budget.
     resp = requests.get("%s/drip")
     event["status"] = resp.status_code
     event["body_len"] = len(resp.content)
@@ -409,14 +409,14 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	// SANDBOX_HTTP_TIMEOUT_S=1 < 6s body drip → our cap must fire.
+	// SANDBOX_HTTP_CALL_BUDGET_S=1 < 6s body drip → our cap must fire.
 	// SANDBOX_TRANSFORMATION_TIMEOUT_S=20 / SANDBOX_PROCESS_TIMEOUT_S=30 keep
 	// the subprocess-level deadlines far above any plausible cap firing time,
 	// so the only thing that can cause a per-event 400 here is the HTTP-level
 	// wall-clock deadline we are testing.
 	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		"SANDBOX_HTTP_TIMEOUT_S=1",
+		"SANDBOX_HTTP_CALL_BUDGET_S=1",
 		"SANDBOX_TRANSFORMATION_TIMEOUT_S=20",
 		"SANDBOX_PROCESS_TIMEOUT_S=30",
 	)
@@ -433,7 +433,7 @@ def transformEvent(event, metadata):
 	require.Len(t, items, 1, "exactly one per-event result expected")
 
 	require.Equal(t, http.StatusBadRequest, items[0].StatusCode,
-		"slow-drip body must fire SANDBOX_HTTP_TIMEOUT_S and surface as a 400 per-event error; "+
+		"slow-drip body must fire SANDBOX_HTTP_CALL_BUDGET_S and surface as a 400 per-event error; "+
 			"statusCode=%d error=%q", items[0].StatusCode, items[0].Error)
 	require.NotEmpty(t, items[0].Error,
 		"timeout error message must be propagated to the caller")
@@ -448,7 +448,7 @@ def transformEvent(event, metadata):
 	// container-start jitter while still catching any regression that
 	// reverts the deadline wrapper.
 	require.Less(t, elapsed, 4*time.Second,
-		"SANDBOX_HTTP_TIMEOUT_S must cap the wall-clock budget for slow-drip "+
+		"SANDBOX_HTTP_CALL_BUDGET_S must cap the wall-clock budget for slow-drip "+
 			"body reads; elapsed=%s (uncapped would be ~6s)", elapsed)
 }
 

@@ -46,12 +46,13 @@ func TestManagedSessionContract(t *testing.T) {
 		// the first attempt and 200 on the second, so a correctly
 		// honoured retry budget produces exactly 2 attempts.
 		//
-		// The platform clamps Retry.total down to its own cap, so even
-		// if the user asks for 5 retries we must see no more than
-		// (cap + 1) attempts on the wire — and the clamp must show up
-		// on the managed_session_mount_ignored_total counter under
-		// dropped_attr="max_retries_beyond_budget" so operators can
-		// surface customers whose retry policy got tightened.
+		// The platform passes the customer's Retry(total=5) policy to
+		// urllib3 unmodified — the per-call wall-clock budget
+		// (SANDBOX_HTTP_CALL_BUDGET_S) is what bounds total time, not a
+		// retry-count clamp. Here the server returns 200 on attempt #2
+		// well within the budget, so all 5 of the customer's retry slots
+		// remain available; we simply observe 2 attempts because the
+		// retry succeeded.
 		//
 		// Also asserts the label-only propagation of the build-time
 		// transformation_id: module-level Session() and mount() fire
@@ -91,7 +92,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -103,7 +104,7 @@ def transformEvent(event, metadata):
 			"transform must succeed after one retry: error=%q", items[0].Error)
 
 		require.EqualValues(t, 2, attempts.Load(),
-			"expected exactly 2 attempts (initial 500 + 1 retry, clamped by the platform cap); got %d",
+			"expected exactly 2 attempts (initial 500 + 1 successful retry under the user's total=5 policy); got %d",
 			attempts.Load())
 
 		requireMetricAtLeast(t, metricsURL,
@@ -119,50 +120,56 @@ def transformEvent(event, metadata):
 			"no module-level Session sample should leak to the anonymous 'unknown' bucket")
 		requireMetricAtLeast(t, metricsURL,
 			"managed_session_mount_total",
-			map[string]string{"transformation_id": versionID, "has_retries": "true"},
+			map[string]string{"transformation_id": versionID},
 			1,
-			"http.mount(HTTPAdapter(max_retries=Retry(...))) must increment "+
-				"managed_session_mount_total with has_retries=true")
-		requireMetricAtLeast(t, metricsURL,
-			"managed_session_mount_ignored_total",
-			map[string]string{"transformation_id": versionID, "dropped_attr": "max_retries_beyond_budget"},
-			1,
-			"user asked for Retry(total=5), platform clamps to its own cap; the clamp "+
-				"must show up as managed_session_mount_ignored_total{dropped_attr=max_retries_beyond_budget}")
+			"http.mount(HTTPAdapter(...)) must increment managed_session_mount_total")
 	})
 
-	t.Run("RetryBudgetBoundedByManagedCap", func(t *testing.T) {
-		// A user transformation asks for up to 10 retries against an
-		// always-500 upstream. The platform clamps Retry.total to its
-		// own wall-clock-safe cap, so the server must see at most
-		// cap+1 attempts — never the full 11 the user asked for.
-		//
-		// The clamp must also be observable on the mount_ignored
-		// counter so operators can reach out to customers whose retry
-		// policy was effectively overridden.
-		const versionID = "mgd-retry-bounded-v1"
+	t.Run("CumulativeWallClockBoundedByCallBudget", func(t *testing.T) {
+		// A user transformation asks for up to 10 retries with
+		// backoff_factor=2.0 against an always-503 upstream. Without a
+		// per-call wall-clock cap the customer's policy would burn
+		// 2 + 4 + 8 + ... seconds of backoff sleep — pinning the worker
+		// for ~30s. SANDBOX_HTTP_CALL_BUDGET_S must bound BOTH the
+		// per-attempt timeout AND the inter-attempt backoff so total
+		// wall-clock per session.send() stays within the budget,
+		// regardless of how many retries the customer configured or
+		// how aggressive their backoff curve is.
+		const versionID = "mgd-call-budget-v1"
 
-		always500, attempts := newAlways500Server(t)
+		always500, _ := newAlways500Server(t)
 		serverURL := toContainerURL(always500.URL)
 
 		entries := map[string]configBackendEntry{
 			versionID: {code: fmt.Sprintf(`
+import time
 import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
 def transformEvent(event, metadata):
     s = requests.Session()
+    # Aggressive policy: 10 retries, doubling backoff (2s, 4s, 8s, 16s, ...).
+    # Without a cumulative call budget this would pin the worker for ~30s+
+    # of inter-attempt sleep alone.
     s.mount("%[1]s", HTTPAdapter(max_retries=Retry(
-        total=10, status_forcelist=[500], backoff_factor=0.01, allowed_methods=['GET'])))
-    # urllib3 raises on retry-budget exhaustion against status_forcelist; catching
-    # lets the transformation succeed so the test can assert on attempt bounds.
+        total=10, status_forcelist=[503], backoff_factor=2.0, allowed_methods=['GET'])))
+    # The exact exception (or response) urllib3 surfaces after the budget
+    # expires depends on which counter exhausted last and whether the call
+    # ended on a status retry vs a timeout. The test only cares that
+    # whatever happens, it happens fast — so swallow everything and surface
+    # the python-level wall-clock for the s.get() call (excludes IPC and
+    # transformation startup overhead, which aren't under the budget).
+    start = time.monotonic()
     try:
-        s.get("%[1]s/data")
-        event["exhausted"] = False
-    except requests.exceptions.RetryError as exc:
-        event["exhausted"] = True
+        resp = s.get("%[1]s/data")
+        event["status"] = resp.status_code
+    except Exception as exc:
+        # RestrictedPython forbids access to attributes starting with "_"
+        # (including dunders like __name__), so surface the exception as
+        # a plain string rather than type(exc).__name__.
         event["err"] = str(exc)[:200]
+    event["elapsed_s"] = time.monotonic() - start
     return event
 `, serverURL)},
 		}
@@ -170,29 +177,48 @@ def transformEvent(event, metadata):
 		configBackend := newContractConfigBackend(t, entries)
 		t.Cleanup(configBackend.Close)
 
+		// Budget = 2s. First inter-attempt backoff sleep would normally
+		// be 2s and the full curve sums to >60s for 10 retries; with
+		// the budget the deadline caps both the per-attempt timeout and
+		// the sleeps, so the call cannot exceed the budget.
+		const budgetSeconds = 2
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			fmt.Sprintf("SANDBOX_HTTP_CALL_BUDGET_S=%d", budgetSeconds),
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
-		events := []types.TransformerEvent{makeEvent("msg-retry-bounded-1", versionID)}
-		start := time.Now()
+		events := []types.TransformerEvent{makeEvent("msg-call-budget-1", versionID)}
 		status, items := sendRawTransform(t, pyURL, events)
-		elapsed := time.Since(start)
 		require.Equal(t, http.StatusOK, status)
 		require.Len(t, items, 1)
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
-			"transformation catches the exhaustion, so status must be 200: error=%q", items[0].Error)
-		require.Equal(t, true, items[0].Output["exhausted"],
-			"retry budget must have been exhausted (always-500 upstream)")
+			"transformation must succeed (it catches every exception): error=%q", items[0].Error)
 
-		require.LessOrEqual(t, attempts.Load(), int64(2),
-			"attempts must be bounded by the platform cap (<= 2); got %d "+
-				"(user asked for total=10)", attempts.Load())
-		require.Less(t, elapsed, 3*time.Second,
-			"bounded retries must complete fast; elapsed=%s (a 10-retry loop would take longer)",
-			elapsed)
+		// Wall-clock bound — the sole invariant this test locks in.
+		// Customer configured total=10 with backoff_factor=2.0, which
+		// without a cumulative budget would spend 2+4+8+16+... seconds
+		// of inter-attempt sleep alone (>60s for 10 retries). With the
+		// budget those sleeps get capped by the deadline and the full
+		// retry/backoff sequence cannot run to completion.
+		//
+		// We intentionally do NOT assert on attempt count: once the
+		// budget is exhausted the per-attempt timeout shrinks to a
+		// sub-millisecond value so remaining attempts fail fast, but on
+		// a fast local server with keep-alive they can still complete
+		// successfully in <1ms each. What matters is that the fast path
+		// adds negligible wall-clock — i.e. that the sleep sequence the
+		// customer configured cannot run.
+		//
+		// We measure inside the transformation rather than around the HTTP
+		// POST so container startup, IPC, and transformation compile time
+		// (none of which are under the budget) don't poison the assertion.
+		elapsedS, ok := items[0].Output["elapsed_s"].(float64)
+		require.True(t, ok, "transformation must surface elapsed_s as a float; output=%v", items[0].Output)
+		maxElapsedS := float64(budgetSeconds) * 2.0
+		require.Less(t, elapsedS, maxElapsedS,
+			"per-call wall-clock must be bounded by the budget; elapsed=%.2fs budget=%ds "+
+				"(unbounded retry+backoff would take >60s)", elapsedS, budgetSeconds)
 
 		requireMetricAtLeast(t, metricsURL,
 			"managed_session_created_total",
@@ -201,16 +227,9 @@ def transformEvent(event, metadata):
 			"in-function requests.Session() must increment managed_session_created_total")
 		requireMetricAtLeast(t, metricsURL,
 			"managed_session_mount_total",
-			map[string]string{"transformation_id": versionID, "has_retries": "true"},
+			map[string]string{"transformation_id": versionID},
 			1,
-			"mounting an adapter with max_retries=Retry(...) must fire managed_session_mount_total "+
-				"with has_retries=true")
-		requireMetricAtLeast(t, metricsURL,
-			"managed_session_mount_ignored_total",
-			map[string]string{"transformation_id": versionID, "dropped_attr": "max_retries_beyond_budget"},
-			1,
-			"Retry(total=10) clamped to the platform cap must fire "+
-				"managed_session_mount_ignored_total{dropped_attr=max_retries_beyond_budget}")
+			"mounting an adapter must fire managed_session_mount_total")
 	})
 
 	t.Run("SessionVerifyFalseIgnoredAtWire", func(t *testing.T) {
@@ -253,7 +272,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -306,7 +325,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -365,7 +384,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -389,14 +408,11 @@ def transformEvent(event, metadata):
 
 	t.Run("MountPrefixIsolation", func(t *testing.T) {
 		// A retry policy mounted for prefix A must not apply to
-		// prefix B. Against two always-500 servers, prefix A sees
-		// cap+1 attempts (its retry policy is honoured up to the
-		// clamp), prefix B sees exactly 1 attempt (no mount, no
-		// retries, the 500 surfaces as a plain response).
-		//
-		// The mount counter must fire once with has_retries=true
-		// (only one prefix got a Retry-carrying adapter), confirming
-		// per-prefix isolation on the observability side.
+		// prefix B. Against two always-500 servers, prefix A's
+		// Retry(total=2) yields exactly 3 attempts (1 initial + 2
+		// retries — honoured verbatim under the call budget), prefix
+		// B sees exactly 1 attempt (no mount, no retries, the 500
+		// surfaces as a plain response).
 		const versionID = "mgd-mount-prefix-iso-v1"
 
 		always500A, hitsA := newAlways500Server(t)
@@ -414,7 +430,7 @@ URL_B = "%s"
 def transformEvent(event, metadata):
     s = requests.Session()
     s.mount(URL_A, HTTPAdapter(max_retries=Retry(
-        total=5, status_forcelist=[500], backoff_factor=0.01, allowed_methods=['GET'])))
+        total=2, status_forcelist=[500], backoff_factor=0.01, allowed_methods=['GET'])))
     try:
         s.get(URL_A + "/a")
         event["a_exhausted"] = False
@@ -431,7 +447,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -444,18 +460,18 @@ def transformEvent(event, metadata):
 		require.Equal(t, http.StatusOK, items[0].StatusCode,
 			"transformation must succeed: error=%q", items[0].Error)
 		require.Equal(t, true, items[0].Output["a_exhausted"],
-			"prefix A must have exhausted its clamped retry budget")
+			"prefix A must have exhausted its retry budget")
 
-		require.EqualValues(t, 2, hitsA.Load(),
-			"prefix A: 1 initial + 1 retry (clamped by the platform cap); got %d", hitsA.Load())
+		require.EqualValues(t, 3, hitsA.Load(),
+			"prefix A: 1 initial + 2 user-configured retries; got %d", hitsA.Load())
 		require.EqualValues(t, 1, hitsB.Load(),
 			"prefix B: no mounted retry policy — exactly 1 attempt; got %d", hitsB.Load())
 
 		requireMetricEquals(t, metricsURL,
 			"managed_session_mount_total",
-			map[string]string{"transformation_id": versionID, "has_retries": "true"},
+			map[string]string{"transformation_id": versionID},
 			1,
-			"exactly one mount carried retries (for prefix A); the mount counter must reflect that")
+			"exactly one mount happened in this transformation (for prefix A)")
 	})
 
 	t.Run("HeadersAndAuthPreserved", func(t *testing.T) {
@@ -491,7 +507,7 @@ def transformEvent(event, metadata):
 
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -553,7 +569,7 @@ def transformEvent(event, metadata):
 		pyURL, metricsURL := startRudderPytransformerWithMetrics(
 			t, pool, configBackend.URL,
 			"USER_CONN_POOL_MAX_SIZE=1",
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 			"SANDBOX_POOL_MAX_SIZE=1",
 		)
 
@@ -616,7 +632,7 @@ def transformEvent(event, metadata):
 			t, pool, configBackend.URL,
 			"USER_CONN_POOL_MAX_SIZE=1",
 			"SANDBOX_POOL_MAX_SIZE=1",
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 		)
 
 		newConns.Store(0)
@@ -742,7 +758,7 @@ def transformEvent(event, metadata):
 					t, pool, configBackend.URL,
 					"USER_CONN_POOL_MAX_SIZE=1",
 					"SANDBOX_POOL_MAX_SIZE=1",
-					"SANDBOX_HTTP_TIMEOUT_S=5",
+					"SANDBOX_HTTP_CALL_BUDGET_S=5",
 				)
 
 				newConns.Store(0)
@@ -813,10 +829,10 @@ def transformEvent(event, metadata):
 					// land under the real tid.
 					requireMetricAtLeast(t, metricsURL,
 						"managed_session_mount_total",
-						map[string]string{"transformation_id": versionID, "has_retries": "true"},
+						map[string]string{"transformation_id": versionID},
 						1,
-						"module-level http.mount(HTTPAdapter(max_retries=Retry(...))) must "+
-							"increment managed_session_mount_total with has_retries=true")
+						"module-level http.mount(HTTPAdapter(...)) must increment "+
+							"managed_session_mount_total under the real tid")
 				}
 			})
 		}
@@ -865,7 +881,7 @@ def transformEvent(event, metadata):
 			t, pool, configBackend.URL,
 			"USER_CONN_POOL_MAX_SIZE=1",
 			"SANDBOX_POOL_MAX_SIZE=1",
-			"SANDBOX_HTTP_TIMEOUT_S=5",
+			"SANDBOX_HTTP_CALL_BUDGET_S=5",
 		)
 
 		newConns.Store(0)
