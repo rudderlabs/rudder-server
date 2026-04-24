@@ -11,17 +11,23 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/rudderlabs/rudder-go-kit/jsonparser"
+
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
 
 type GZIPLocalFileHandler struct {
-	records []byte
-	casing  Case
+	records        []byte
+	casing         Case
+	nativeDeletion bool
+	idFieldPath    []string
 }
 
-func NewGZIPLocalFileHandler(casing Case) *GZIPLocalFileHandler {
+func NewGZIPLocalFileHandler(casing Case, nativeDeletion bool, idFieldPath []string) *GZIPLocalFileHandler {
 	return &GZIPLocalFileHandler{
-		casing: casing,
+		casing:         casing,
+		nativeDeletion: nativeDeletion,
+		idFieldPath:    idFieldPath,
 	}
 }
 
@@ -71,6 +77,13 @@ func (h *GZIPLocalFileHandler) Write(_ context.Context, path string) error {
 }
 
 func (h *GZIPLocalFileHandler) RemoveIdentity(ctx context.Context, attributes []model.User) error {
+	if h.nativeDeletion {
+		return h.removeIdentityNative(attributes)
+	}
+	return h.removeIdentitySed(ctx, attributes)
+}
+
+func (h *GZIPLocalFileHandler) removeIdentitySed(ctx context.Context, attributes []model.User) error {
 	var filteredContent []byte
 
 	patterns := make([]string, len(attributes))
@@ -106,4 +119,38 @@ func (h *GZIPLocalFileHandler) getDeletePattern(attribute model.User) (string, e
 	default:
 		return "", fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
 	}
+}
+
+func (h *GZIPLocalFileHandler) removeIdentityNative(attributes []model.User) error {
+	if len(h.idFieldPath) == 0 {
+		return fmt.Errorf("id field path cannot be empty for native deletion")
+	}
+
+	suppress := make(map[string]struct{}, len(attributes))
+	for _, a := range attributes {
+		suppress[a.ID] = struct{}{}
+	}
+
+	w := 0
+	data := h.records
+	for len(data) > 0 {
+		n := bytes.IndexByte(data, '\n')
+		var line []byte
+		if n < 0 {
+			line = data
+			data = nil
+		} else {
+			line = data[:n+1]
+			data = data[n+1:]
+		}
+
+		id := jsonparser.GetStringOrEmpty(line, h.idFieldPath...)
+		if _, found := suppress[id]; found {
+			continue
+		}
+		copy(h.records[w:], line)
+		w += len(line)
+	}
+	h.records = h.records[:w]
+	return nil
 }
