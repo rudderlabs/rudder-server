@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -1115,14 +1116,7 @@ func formatLabelsForMessage(labels map[string]string) string {
 	for k, v := range labels {
 		parts = append(parts, fmt.Sprintf("%s=%q", k, v))
 	}
-	out := ""
-	for i, p := range parts {
-		if i > 0 {
-			out += ","
-		}
-		out += p
-	}
-	return out
+	return strings.Join(parts, ",")
 }
 
 func splitLines(s string) []string {
