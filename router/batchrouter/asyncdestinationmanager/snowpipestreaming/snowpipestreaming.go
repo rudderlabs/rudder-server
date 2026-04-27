@@ -64,7 +64,7 @@ func New(
 	m.config.client.maxHTTPIdleConnections = conf.GetIntVar(5, 1, "SnowpipeStreaming.Client.maxHTTPIdleConnections")
 	m.config.client.maxIdleConnDuration = conf.GetDurationVar(30, time.Second, "SnowpipeStreaming.Client.maxIdleConnDuration")
 	m.config.client.disableKeepAlives = conf.GetBoolVar(true, "SnowpipeStreaming.Client.disableKeepAlives")
-	m.config.client.timeoutDuration = conf.GetDurationVar(300, time.Second, "SnowpipeStreaming.Client.timeout")
+	m.config.client.timeoutDuration = conf.GetDurationVar(60, time.Second, "SnowpipeStreaming.Client.timeout")
 	m.config.client.retryWaitMin = conf.GetDurationVar(100, time.Millisecond, "SnowpipeStreaming.Client.retryWaitMin")
 	m.config.client.retryWaitMax = conf.GetDurationVar(10, time.Second, "SnowpipeStreaming.Client.retryWaitMax")
 	m.config.client.retryMax = conf.GetIntVar(5, 1, "SnowpipeStreaming.Client.retryMax")
@@ -115,6 +115,9 @@ func New(
 		if err != nil {
 			return nil, fmt.Errorf("creating snowflake manager: %w", err)
 		}
+		sf.SetConnectionTimeout(whutils.GetConnectionTimeout(
+			modelWarehouse.Type, modelWarehouse.Destination.ID,
+		))
 		err = sf.Setup(ctx, modelWarehouse, whutils.NewNoOpUploader())
 		if err != nil {
 			return nil, fmt.Errorf("setting up snowflake manager: %w", err)
@@ -154,8 +157,13 @@ func (m *Manager) Transform(job *jobsdb.JobT) (string, error) {
 // It reads events from the file, groups them by table, and sends them to Snowpipe.
 // It returns the IDs of the importing and failed jobs.
 // In case of failure, it aborts the jobs and returns the aborted job IDs.
-func (m *Manager) Upload(ctx context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
+func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationStruct) common.AsyncUploadOutput {
 	m.logger.Infon("Uploading data to snowpipe streaming destination")
+
+	// Don't use Manager context here: it may be cancelled while polling/upload is in flight.
+	// Cancelling in-flight requests can leave final state unknown and trigger retries, causing duplicate events.
+	// Use a background context; request-level timeouts on HTTP/SQL still bound execution.
+	ctx := context.Background()
 
 	var destConf destConfig
 	err := destConf.Decode(asyncDest.Destination.Config)
@@ -566,8 +574,13 @@ func (m *Manager) failedJobs(asyncDest *common.AsyncDestinationStruct, failedRea
 // For the once which have reached the terminal state (success or failure), it caches the import infos in polledImportInfoMap. Later if Poll is called again, it does not need to do the status check again.
 // Once all the imports have reached the terminal state, if any imports have failed, it deletes the channels for those imports.
 // It returns a PollStatusResponse indicating if any imports are still in progress or if any have failed or succeeded
-func (m *Manager) Poll(ctx context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
+func (m *Manager) Poll(_ context.Context, pollInput common.AsyncPoll) common.PollStatusResponse {
 	m.logger.Infon("Polling started")
+
+	// Don't use Manager context here: it may be cancelled while polling/upload is in flight.
+	// Cancelling in-flight requests can leave final state unknown and trigger retries, causing duplicate events.
+	// Use a background context; request-level timeouts on HTTP/SQL still bound execution.
+	ctx := context.Background()
 
 	var importInfos []*importInfo
 	err := jsonrs.Unmarshal([]byte(pollInput.ImportId), &importInfos)
@@ -585,25 +598,34 @@ func (m *Manager) Poll(ctx context.Context, pollInput common.AsyncPoll) common.P
 		}
 	}
 
-	if anyInProgress := m.processPollImportInfos(ctx, importInfos); anyInProgress {
+	inProgressInfos := m.provideInProgressImportInfos(ctx, importInfos)
+	if len(inProgressInfos) > 0 {
 		m.stats.pollingInProgress.Increment()
 
 		// Check for stuck pipeline batch
-		now := m.Now()
 		if m.pollingStartTime.IsZero() {
-			m.pollingStartTime = now
-		} else {
-			duration := now.Sub(m.pollingStartTime)
-			threshold := m.config.stuckPipelineThreshold.Load()
-			if duration > threshold {
-				m.logger.Warnn("Stuck snowpipe pipeline detected",
-					logger.NewDurationField("duration", duration),
-					logger.NewDurationField("threshold", threshold),
-					logger.NewStringField("importID", pollInput.ImportId),
-				)
-			}
+			m.pollingStartTime = m.Now()
+			return common.PollStatusResponse{InProgress: true}
 		}
-		return common.PollStatusResponse{InProgress: true}
+
+		duration := m.Now().Sub(m.pollingStartTime)
+		threshold := m.config.stuckPipelineThreshold.Load()
+
+		// Fail events which are still in progress after the threshold
+		if duration <= threshold {
+			return common.PollStatusResponse{InProgress: true}
+		}
+
+		m.logger.Warnn("Stuck snowpipe pipeline detected",
+			logger.NewDurationField("duration", duration),
+			logger.NewDurationField("threshold", threshold),
+			logger.NewStringField("importID", pollInput.ImportId),
+		)
+		for _, info := range inProgressInfos {
+			info.Failed = true
+			info.Reason = fmt.Sprintf("events still in progress after threshold: %s > %s", duration, threshold)
+			m.polledImportInfoMap[info.ChannelID] = info
+		}
 	}
 
 	updatedImportInfos := lo.Map(importInfos, func(item *importInfo, index int) *importInfo {
@@ -621,8 +643,11 @@ func (m *Manager) Poll(ctx context.Context, pollInput common.AsyncPoll) common.P
 	return m.buildPollStatusResponse(updatedImportInfos, failedImports)
 }
 
-func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInfo) bool {
-	var anyInProgress bool
+// provideInProgressImportInfos provides the import infos that are in progress.
+// It also updates the polledImportInfoMap with the import infos when the import reaches the terminal state.
+func (m *Manager) provideInProgressImportInfos(ctx context.Context, infos []*importInfo) []*importInfo {
+	var inProgressInfos []*importInfo
+
 	for i := range infos {
 		info := infos[i]
 
@@ -647,11 +672,11 @@ func (m *Manager) processPollImportInfos(ctx context.Context, infos []*importInf
 		}
 		if !inProgress {
 			m.polledImportInfoMap[info.ChannelID] = info
+		} else {
+			inProgressInfos = append(inProgressInfos, info)
 		}
-
-		anyInProgress = anyInProgress || inProgress
 	}
-	return anyInProgress
+	return inProgressInfos
 }
 
 func (m *Manager) getImportStatus(ctx context.Context, info *importInfo) (bool, error) {
@@ -802,7 +827,8 @@ func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.
 
 	// Unexpected case - should not reach here based on the logic
 	log.Warnn("Unexpected polling state encountered")
-	return true, nil
+	return false, fmt.Errorf("unexpected polling state encountered, latestCommittedOffset=%d, latestInsertedOffset=%d, expectedOffset=%d",
+		latestCommittedOffset, latestInsertedOffset, expectedOffset)
 }
 
 func convertToInt(a string) (int64, error) {

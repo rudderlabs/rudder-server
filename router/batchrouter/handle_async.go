@@ -321,6 +321,10 @@ func (brt *Handle) pollAsyncStatus(ctx context.Context) {
 			destinationsMap := brt.destinationsMap
 			brt.configSubscriberMu.RUnlock()
 			for destinationID := range destinationsMap {
+				if ctx.Err() != nil {
+					brt.logger.Infon("pollAsyncStatus context done", obskit.DestinationType(brt.destType))
+					return
+				}
 				brt.logger.Debugn("pollAsyncStatus Started", obskit.DestinationType(brt.destType))
 				jobsResult, err := brt.getImportingJobs(ctx, func(gqp *jobsdb.GetQueryParams) {
 					gqp.ParameterFilters = []jobsdb.ParameterFilterT{{Name: "destination_id", Value: destinationID}}
@@ -404,6 +408,10 @@ func (brt *Handle) asyncUploadWorker(ctx context.Context) {
 				_, ok := brt.asyncDestinationStruct[destinationID]
 				if !ok || brt.asyncDestinationStruct[destinationID].UploadInProgress {
 					continue
+				}
+				if ctx.Err() != nil {
+					brt.logger.Infon("asyncUploadWorker context done", obskit.DestinationType(brt.destType))
+					return
 				}
 
 				timeElapsed := time.Since(brt.asyncDestinationStruct[destinationID].CreatedAt)
