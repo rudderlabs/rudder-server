@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.2](https://github.com/rudderlabs/rudder-server/compare/v1.73.1...v1.73.2) (2026-04-23)
+
+
+### Bug Fixes
+
+* add correct host for salesforceBU destination ([#6906](https://github.com/rudderlabs/rudder-server/issues/6906)) ([e73a82c](https://github.com/rudderlabs/rudder-server/commit/e73a82c72989cc12d0b17d9cd35fec380b85f746))
+
 ## [1.73.1](https://github.com/rudderlabs/rudder-server/compare/v1.73.0...v1.73.1) (2026-04-22)
 
 

@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1748,6 +1749,69 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, 6, statusCalls) // 4 channels + 1 for polling in progress + 1 for recreation
 	})
 
+	// Unexpected polling state encountered mark events as failed
+	t.Run("Poll marks imports as failed when unexpected polling state is encountered", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "1005", LatestInsertedOffset: "1003"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+		output := sm.Poll(context.Background(), common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.True(t, output.Complete)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, output.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"unexpected polling state encountered, latestCommittedOffset=1005, latestInsertedOffset=1003, expectedOffset=1003","count":2}]`)
+	})
+
+	t.Run("Poll marks in-progress imports as failed after threshold", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		sm := New(config.New(), logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-products-channel": func() (*model.StatusResponse, error) {
+					return &model.StatusResponse{Valid: true, Success: true, Offset: "0", LatestInsertedOffset: "1003"}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+		}
+
+		now := time.Now().UTC()
+		sm.now = func() time.Time { return now }
+
+		first := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.True(t, first.InProgress)
+
+		now = now.Add(1 * time.Hour)
+		second := sm.Poll(context.Background(), common.AsyncPoll{ImportId: importID})
+		require.False(t, second.InProgress)
+		require.True(t, second.Complete)
+		require.Equal(t, http.StatusOK, second.StatusCode)
+		require.True(t, second.HasFailed)
+		require.JSONEq(t, second.FailedJobParameters, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"events still in progress after threshold: 1h0m0s > 15m0s","count":2}]`)
+	})
+
 	t.Run("GetUploadStats", func(t *testing.T) {
 		tests := []struct {
 			name                  string
@@ -1917,7 +1981,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}
 	})
 
-	t.Run("processPollImportInfos", func(t *testing.T) {
+	t.Run("provideInProgressImportInfos", func(t *testing.T) {
 		tests := []struct {
 			name                       string
 			infos                      []*importInfo
@@ -2388,10 +2452,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 					createChannelOutputMap: tt.mockCreateChannelResponses,
 				}
 
-				anyInProgress := sm.processPollImportInfos(context.Background(), tt.infos)
+				inProgressInfos := sm.provideInProgressImportInfos(context.Background(), tt.infos)
 
 				// Assert expected in progress state
-				assert.Equal(t, tt.expectedInProgress, anyInProgress, "Expected inProgress state mismatch")
+				assert.Equal(t, tt.expectedInProgress, len(inProgressInfos) > 0, "Expected inProgress state mismatch")
 
 				// Assert expected cache size
 				assert.Len(t, sm.polledImportInfoMap, tt.expectedCacheSize, "Expected cache size mismatch")

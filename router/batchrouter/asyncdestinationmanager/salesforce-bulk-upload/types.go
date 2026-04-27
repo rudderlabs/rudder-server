@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	ApiVersion = "v62.0"
-	ApiBaseURL = "https://default.salesforce.com/services/data/" + ApiVersion
-	CSVDir     = "/tmp/rudder-async-destination-logs"
+	ApiVersion  = "v62.0"
+	ApiBasePath = "/services/data/" + ApiVersion
+	ApiBaseURL  = "https://oauth-placeholder.invalid" + ApiBasePath
+	CSVDir      = "/tmp/rudder-async-destination-logs"
 )
 
 type Uploader struct {
