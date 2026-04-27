@@ -52,7 +52,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -100,7 +100,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -158,7 +158,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -215,7 +215,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 						Multiplier:      2.0,
 					},
 				}
-				client := NewClient(clientConfig)
+				client := NewClient("testClient", clientConfig)
 
 				req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 				require.NoError(t, err)
@@ -261,7 +261,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -303,7 +303,7 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -344,7 +344,7 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -393,7 +393,7 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -440,7 +440,7 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -482,7 +482,7 @@ func TestClient_RetryDisabled(t *testing.T) {
 				Enabled: false, // Explicitly disable retries
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
