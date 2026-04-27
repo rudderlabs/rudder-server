@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.74.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.73.0...v1.74.0-rc.1) (2026-04-27)
+
+
+### Features
+
+* add configurable batch size for bulk inserting failed rsources records ([#6873](https://github.com/rudderlabs/rudder-server/issues/6873)) ([d8f6ea0](https://github.com/rudderlabs/rudder-server/commit/d8f6ea011c0cadd1d36954b309ed09ec6aed0151))
+* add native deletion support for identity removal in gzip files ([#6896](https://github.com/rudderlabs/rudder-server/issues/6896)) ([c1e27d0](https://github.com/rudderlabs/rudder-server/commit/c1e27d03c77d069800af77c8ec99d10c93c2823f))
+* deep job pickups when no results cache is cold ([#6850](https://github.com/rudderlabs/rudder-server/issues/6850)) ([03e9d88](https://github.com/rudderlabs/rudder-server/commit/03e9d8859d19f235f66f2667f9ae9962fb78fd67))
+* **jobsdb:** improve migration compaction ([#6844](https://github.com/rudderlabs/rudder-server/issues/6844)) ([b7f2b9f](https://github.com/rudderlabs/rudder-server/commit/b7f2b9f933ad832c586acb790f035171af66d775))
+
+
+### Bug Fixes
+
+* add correct host for salesforceBU destination ([#6906](https://github.com/rudderlabs/rudder-server/issues/6906)) ([2430cb4](https://github.com/rudderlabs/rudder-server/commit/2430cb4c15e1e514c922072d973280456e7e149d))
+* batch router drained events metrics ([#6898](https://github.com/rudderlabs/rudder-server/issues/6898)) ([c5b2927](https://github.com/rudderlabs/rudder-server/commit/c5b29271dee4fac10433f79519eff6ea7b75003b))
+* build action failing ([#6899](https://github.com/rudderlabs/rudder-server/issues/6899)) ([691a812](https://github.com/rudderlabs/rudder-server/commit/691a812c08c3bfc3cb7b593e6becdb72bd49a875))
+* snowpipe struck scenarios ([#6895](https://github.com/rudderlabs/rudder-server/issues/6895)) ([35b07a8](https://github.com/rudderlabs/rudder-server/commit/35b07a8a0be760349f8db6b76525e37359df873b))
+* use tid instead of vid ([#6908](https://github.com/rudderlabs/rudder-server/issues/6908)) ([954dcf7](https://github.com/rudderlabs/rudder-server/commit/954dcf72970e6649044503dcc3808e5ea802b6ba))
+
+
+### Miscellaneous
+
+* avoid marshalling proc error job payloads ([#6872](https://github.com/rudderlabs/rudder-server/issues/6872)) ([145826b](https://github.com/rudderlabs/rudder-server/commit/145826b19dba2c14241fc0f875a7c0f3afea4644))
+* bump build-scan-push-action from v2.1.0 to v2.2.0 ([#6903](https://github.com/rudderlabs/rudder-server/issues/6903)) ([e917f9b](https://github.com/rudderlabs/rudder-server/commit/e917f9bf79ac24596ad01e568107980a063de015))
+* contract tests for dns regressions and overrides ([#6864](https://github.com/rudderlabs/rudder-server/issues/6864)) ([b105678](https://github.com/rudderlabs/rudder-server/commit/b105678975636657a29e9abc959884340c750bef))
+* pin and bump action refs (SEC-171) ([#6863](https://github.com/rudderlabs/rudder-server/issues/6863)) ([8089953](https://github.com/rudderlabs/rudder-server/commit/8089953c766566ff2acce7ae1a3b5129c75f542a))
+* pytransformer pooling contract tests ([#6883](https://github.com/rudderlabs/rudder-server/issues/6883)) ([0530c8c](https://github.com/rudderlabs/rudder-server/commit/0530c8cc73c6f913a15c985024fb477517979023))
+* scope workflow permissions to least privilege (SEC-167) ([#6911](https://github.com/rudderlabs/rudder-server/issues/6911)) ([5600dbe](https://github.com/rudderlabs/rudder-server/commit/5600dbe1055868f450b9182814fd859b681170db))
+* update Slack notification method in scheduled release workflow ([#6879](https://github.com/rudderlabs/rudder-server/issues/6879)) ([3b67dcb](https://github.com/rudderlabs/rudder-server/commit/3b67dcb061984b614394226d60a220906c9a0e9e))
+* **vuln:** zizmor --fix=all findings (SEC-199) ([#6905](https://github.com/rudderlabs/rudder-server/issues/6905)) ([d8cc34f](https://github.com/rudderlabs/rudder-server/commit/d8cc34fa4f166b5bd2c52483255c24a11a65ce74))
+
 ## [1.73.2](https://github.com/rudderlabs/rudder-server/compare/v1.73.1...v1.73.2) (2026-04-23)
 
 
