@@ -21,6 +21,7 @@ const (
 	StatusMirrorFiltered      = 297
 	TransformerRequestFailure = 909
 	TransformerRequestTimeout = 919
+	TransformerUnavailable    = 920
 )
 
 func IsJobTerminated(status int) bool {

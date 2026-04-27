@@ -3,13 +3,16 @@ package user_transformer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -261,6 +264,10 @@ func (u *Client) sendBatch(
 				u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(1)
 				return fmt.Errorf("control plane not reachable")
 			}
+			if statusCode == transformerutils.TransformerUnavailable {
+				return fmt.Errorf("transformer unavailable")
+			}
+
 			u.stat.NewStat("processor_control_plane_down", stats.GaugeType).Gauge(0)
 			return nil
 		},
@@ -389,6 +396,12 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 	if err != nil {
 		u.log.Errorn("User transformation post error",
 			append(labels.ToLoggerFields(), obskit.Error(err))...)
+
+		if isTransientError(err, resp) {
+			u.stat.NewTaggedStat("processor_user_transformer_transient_errors", stats.CountType, labels.ToStatsTag()).Increment()
+			return fmt.Appendf(nil, "transformer unavailable: %s", err), transformerutils.TransformerUnavailable, nil
+		}
+
 		if u.config.failOnUserTransformTimeout.Load() && os.IsTimeout(err) {
 			return fmt.Appendf(nil, "transformer request timed out: %s", err), transformerutils.TransformerRequestTimeout, nil
 		} else if u.config.failOnError.Load() {
@@ -416,4 +429,32 @@ func (u *Client) userTransformURL(language, versionID string) string {
 		return u.config.pythonTransformationURL + "/customTransform"
 	}
 	return u.config.userTransformationURL + "/customTransform"
+}
+
+// isTransientError returns true for transient errors that mean the deployment isn't ready yet.
+// These are the symptoms of zero endpoints / pod not yet ready / kube-proxy refusing.
+func isTransientError(err error, resp *http.Response) bool {
+	if err != nil {
+		// Connection refused — Service has no endpoints (deployment at 0 replicas).
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			return true
+		}
+		// DNS not resolved yet (rare; Service should always exist).
+		var dnsErr *net.DNSError
+		if errors.As(err, &dnsErr) {
+			return true
+		}
+		// Generic dial / timeout / temporary network error.
+		var netErr net.Error
+		if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+			return true
+		}
+		return false
+	}
+	// Pod is up but not ready — readinessProbe failing routes to 503 from kube-proxy if no ready endpoints.
+	if resp != nil && (resp.StatusCode == http.StatusServiceUnavailable ||
+		resp.StatusCode == http.StatusBadGateway) {
+		return true
+	}
+	return false
 }
