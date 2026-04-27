@@ -152,6 +152,43 @@ var _ = Describe("Using sources handler", func() {
 			Expect(failedRecords.Paging).To(BeNil(), "last page should have no paging")
 		})
 
+		It("should be able to add and get failed records in multiple batches", func() {
+			handler := sh.(*sourcesHandler)
+			previous := handler.config.FailedRecordsInsertBatchSize
+			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
+			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
+
+			jobRunId := newJobRunId()
+			records := make([]FailedRecord, 7)
+			expectedRecords := make([]FailedRecord, 7)
+			for i := range records {
+				record := fmt.Appendf(nil, `{"record-%d": "id-%d"}`, i+1, i+1)
+				records[i] = FailedRecord{Record: record, Code: i + 1}
+				expectedRecords[i] = FailedRecord{Record: record, Code: i + 1}
+			}
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, records)
+
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: defaultJobTargetKey.TaskRunID,
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: defaultJobTargetKey.SourceID,
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID:      defaultJobTargetKey.DestinationID,
+							Records: expectedRecords,
+						}},
+					}},
+				}},
+			}))
+		})
+
 		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
 			handler := sh.(*sourcesHandler)
 			previous := handler.config.SkipFailedRecordsCollection

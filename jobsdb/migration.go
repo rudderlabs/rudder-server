@@ -476,14 +476,8 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 			}
 		}
 
-		var idxCheck bool
-		if jd.ownerType == Read {
-			// if jobsdb owner is read, exempting the last two datasets from migration.
-			// This is done to avoid dsList conflicts between reader and writer
-			idxCheck = idx == len(dsList)-1 || idx == len(dsList)-2
-		} else {
-			idxCheck = idx == len(dsList)-1
-		}
+		// exempting the last dataset from migration since it is the one being currently written to.
+		idxCheck := idx == len(dsList)-1
 
 		if liveDSCount >= jd.conf.migration.maxMigrateOnce.Load() || result.pendingJobsCount >= maxDSSize || idxCheck {
 			break
@@ -503,9 +497,6 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 		)
 
 		if migrate {
-			if result.firstEligible == nil {
-				result.firstEligible = dsindex.MustParse(ds.Index)
-			}
 			if !needsPair {
 				result.migrateFrom = append(result.migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 				result.insertBeforeDS = dsList[idx+1]
@@ -513,12 +504,19 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 				liveDSCount++
 			} else {
 				if waiting != nil { // have another dataset waiting for a pair
-					result.migrateFrom = append(result.migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
-					result.insertBeforeDS = dsList[idx+1]
-					result.pendingJobsCount += waiting.numJobsPending + recordsLeft
-					liveDSCount += 2
-					waiting = nil
+					if waiting.numJobsPending+recordsLeft > maxDSSize {
+						waiting = nil
+					} else {
+						result.migrateFrom = append(result.migrateFrom, *waiting, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
+						result.insertBeforeDS = dsList[idx+1]
+						result.pendingJobsCount += waiting.numJobsPending + recordsLeft
+						liveDSCount += 2
+						waiting = nil
+					}
 				} else if result.pendingJobsCount > 0 { // we already know that we'll be migrating another dataset with pending jobs, so can add this one too
+					if result.pendingJobsCount+recordsLeft > maxDSSize {
+						break // adding this dataset would exceed maxDSSize, leave it for the next migration cycle
+					}
 					result.migrateFrom = append(result.migrateFrom, dsWithPendingJobCount{ds: ds, numJobsPending: recordsLeft})
 					result.insertBeforeDS = dsList[idx+1]
 					result.pendingJobsCount += recordsLeft
@@ -540,11 +538,8 @@ func (jd *Handle) getMigrationList(dsList []dataSetT, skipBefore *dsindex.Index)
 		}
 		migrateDSProbeCount++
 	}
-	// if we didn't find any eligible datasets, reset firstEligible to nil to avoid confusion,
-	// since a non-nil firstEligible with an empty migrateFrom slice would be contradictory,
-	// e.g. the case of needsPair without a pair actually being found.
-	if len(result.migrateFrom) == 0 {
-		result.firstEligible = nil
+	if len(result.migrateFrom) > 0 {
+		result.firstEligible = dsindex.MustParse(result.migrateFrom[0].ds.Index)
 	}
 	return result, nil
 }

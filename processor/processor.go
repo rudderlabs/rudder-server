@@ -276,11 +276,22 @@ type MetricMetadata struct {
 	trackingPlanVersion     int
 }
 
+// procErrorJob wraps a jobsdb.JobT with the original parsed events,
+// avoiding an expensive marshal/unmarshal round-trip through EventPayload.
+type procErrorJob struct {
+	*jobsdb.JobT
+	events []types.SingularEventT
+}
+
+func procErrorJobs(jobs []procErrorJob) []*jobsdb.JobT {
+	return lo.Map(jobs, func(j procErrorJob, _ int) *jobsdb.JobT { return j.JobT })
+}
+
 type NonSuccessfulTransformationMetrics struct {
-	failedJobs       []*jobsdb.JobT
+	failedJobs       []procErrorJob
 	failedMetrics    []*reportingtypes.PUReportedMetric
 	failedCountMap   map[string]int64
-	filteredJobs     []*jobsdb.JobT
+	filteredJobs     []procErrorJob
 	filteredMetrics  []*reportingtypes.PUReportedMetric
 	filteredCountMap map[string]int64
 }
@@ -1014,7 +1025,7 @@ func getSourceAndDestIDsFromKey(key string) (sourceID, destID string) {
 	return fields[0], fields[1]
 }
 
-func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
+func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]procErrorJob) {
 	for destID, jobs := range jobsByDestID {
 		if !proc.destDebugger.HasUploadEnabled(destID) {
 			continue
@@ -1033,22 +1044,16 @@ func (proc *Handle) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.
 			procErr = strconv.Quote(procErr)
 			statusCode := fmt.Sprint(params["status_code"])
 			sentAt := time.Now().Format(misc.RFC3339Milli)
-			events := make([]map[string]any, 0)
-			err = jsonrs.Unmarshal(job.EventPayload, &events)
-			if err != nil {
-				proc.logger.Errorn("Error while UnMarshaling live event payload", obskit.Error(err))
-				continue
-			}
-			for i := range events {
-				event := &events[i]
-				eventPayload, err := jsonrs.Marshal(*event)
+			for i := range job.events {
+				event := job.events[i]
+				eventPayload, err := jsonrs.Marshal(event)
 				if err != nil {
 					proc.logger.Errorn("Error while Marshaling live event payload", obskit.Error(err))
 					continue
 				}
 
-				eventName := stringify.Any(gjson.GetBytes(eventPayload, "event").String())
-				eventType := stringify.Any(gjson.GetBytes(eventPayload, "type").String())
+				eventName := stringify.Any(event["event"])
+				eventType := stringify.Any(event["type"])
 				deliveryStatus := destinationdebugger.DeliveryStatusT{
 					EventName:     eventName,
 					EventType:     eventType,
@@ -1411,12 +1416,12 @@ func (proc *Handle) getTransformationMetrics(
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	metadataByMessageID map[string]*types.Metadata,
 	inPU, pu string,
-) ([]*jobsdb.JobT, []*reportingtypes.PUReportedMetric, map[string]int64) {
+) ([]procErrorJob, []*reportingtypes.PUReportedMetric, map[string]int64) {
 	metrics := make([]*reportingtypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*reportingtypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]map[string]*reportingtypes.StatusDetail)
 	countMap := make(map[string]int64)
-	var jobs []*jobsdb.JobT
+	var jobs []procErrorJob
 	statFunc := procErrorCountsStat
 	if state == jobsdb.Filtered.State {
 		statFunc = procFilteredCountStat
@@ -1429,11 +1434,6 @@ func (proc *Handle) getTransformationMetrics(
 				return eventsByMessageID[msgID].SingularEvent
 			},
 		)
-		payload, err := jsonrs.Marshal(messages)
-		if err != nil {
-			proc.logger.Errorn("[Processor: getTransformationMetrics] Failed to unmarshal list of failed events", obskit.Error(err))
-			continue
-		}
 
 		for _, messageID := range failedEvent.Metadata.GetMessagesIDs() {
 			message := eventsByMessageID[messageID].SingularEvent
@@ -1493,17 +1493,18 @@ func (proc *Handle) getTransformationMetrics(
 			marshalledParams = []byte(`{"error": "Processor failed to marshal params"}`)
 		}
 
-		newFailedJob := jobsdb.JobT{
-			UUID:         id,
-			EventPayload: payload,
-			Parameters:   marshalledParams,
-			CreatedAt:    time.Now(),
-			ExpireAt:     time.Now(),
-			CustomVal:    commonMetaData.DestinationType,
-			UserID:       failedEvent.Metadata.RudderID,
-			WorkspaceId:  failedEvent.Metadata.WorkspaceID,
-		}
-		jobs = append(jobs, &newFailedJob)
+		jobs = append(jobs, procErrorJob{
+			JobT: &jobsdb.JobT{
+				UUID:        id,
+				Parameters:  marshalledParams,
+				CreatedAt:   time.Now(),
+				ExpireAt:    time.Now(),
+				CustomVal:   commonMetaData.DestinationType,
+				UserID:      failedEvent.Metadata.RudderID,
+				WorkspaceId: failedEvent.Metadata.WorkspaceID,
+			},
+			events: messages,
+		})
 
 		statFunc(commonMetaData.DestinationType, pu, strconv.Itoa(failedEvent.StatusCode))
 	}
@@ -2558,7 +2559,7 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 		defer proc.stats.statDtransformStageCount(partition).Count(len(in.statusList))
 	}
 
-	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
+	procErrorJobsByDestID := make(map[string][]procErrorJob)
 	var batchDestJobs []*jobsdb.JobT
 	var destJobs []*jobsdb.JobT
 	var droppedJobs []*jobsdb.JobT
@@ -2604,8 +2605,8 @@ func (proc *Handle) destinationTransformStage(partition string, in *userTransfor
 		droppedJobs = append(droppedJobs, o.droppedJobs...)
 		routerDestIDs = lo.Assign(routerDestIDs, o.routerDestIDs)
 		in.reportMetrics = append(in.reportMetrics, o.reportMetrics...)
-		for k, v := range o.errorsPerDestID {
-			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], v...)
+		for k, jobs := range o.errorsPerDestID {
+			procErrorJobsByDestID[k] = append(procErrorJobsByDestID[k], jobs...)
 		}
 	}
 
@@ -2639,7 +2640,7 @@ type storeMessage struct {
 	batchDestJobs       []*jobsdb.JobT
 	droppedJobs         []*jobsdb.JobT
 
-	procErrorJobsByDestID map[string][]*jobsdb.JobT
+	procErrorJobsByDestID map[string][]procErrorJob
 	routerDestIDs         []string
 
 	reportMetrics  []*reportingtypes.PUReportedMetric
@@ -2660,8 +2661,8 @@ func (sm *storeMessage) merge(subJob *storeMessage) {
 	sm.batchDestJobs = append(sm.batchDestJobs, subJob.batchDestJobs...)
 	sm.droppedJobs = append(sm.droppedJobs, subJob.droppedJobs...)
 
-	for id, job := range subJob.procErrorJobsByDestID {
-		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
+	for id, jobs := range subJob.procErrorJobsByDestID {
+		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], jobs...)
 	}
 	sm.routerDestIDs = append(sm.routerDestIDs, subJob.routerDestIDs...)
 
@@ -2947,7 +2948,7 @@ type destTransformOutput struct {
 	reportMetrics   []*reportingtypes.PUReportedMetric
 	destJobs        []*jobsdb.JobT
 	batchDestJobs   []*jobsdb.JobT
-	errorsPerDestID map[string][]*jobsdb.JobT
+	errorsPerDestID map[string][]procErrorJob
 	routerDestIDs   map[string]struct{}
 	droppedJobs     []*jobsdb.JobT
 }
@@ -2957,7 +2958,7 @@ type userTransformAndFilterOutput struct {
 	eventsToTransform     []types.TransformerEvent
 	commonMetaData        *types.Metadata
 	reportMetrics         []*reportingtypes.PUReportedMetric
-	procErrorJobsByDestID map[string][]*jobsdb.JobT
+	procErrorJobsByDestID map[string][]procErrorJob
 	droppedJobs           []*jobsdb.JobT
 	eventsByMessageID     map[string]types.SingularEventWithReceivedAt
 	srcAndDestKey         string
@@ -2979,7 +2980,7 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	commonMetaData := eventList[0].Metadata.CommonMetadata()
 
 	reportMetrics := make([]*reportingtypes.PUReportedMetric, 0)
-	procErrorJobsByDestID := make(map[string][]*jobsdb.JobT)
+	procErrorJobsByDestID := make(map[string][]procErrorJob)
 	droppedJobs := make([]*jobsdb.JobT, 0)
 
 	proc.config.configSubscriberLock.RLock()
@@ -3224,10 +3225,9 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 			var successCountMetadataMap map[string]MetricMetadata
 			eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.USER_TRANSFORMER)
 			nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.USER_TRANSFORMER)
-			droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventList), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
-			if _, ok := procErrorJobsByDestID[destID]; !ok {
-				procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-			}
+			allNonSuccess := append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)
+			droppedJobs = append(droppedJobs, proc.getDroppedJobs(response, eventList)...)
+			droppedJobs = append(droppedJobs, procErrorJobs(allNonSuccess)...)
 			procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 			userTransformationStat.numOutputSuccessEvents.Count(len(eventsToTransform))
 			userTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
@@ -3315,10 +3315,9 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	var successCountMap map[string]int64
 	var successCountMetadataMap map[string]MetricMetadata
 	nonSuccessMetrics := proc.getNonSuccessfulMetrics(response, eventList, commonMetaData, eventsByMessageID, inPU, reportingtypes.EVENT_FILTER)
-	droppedJobs = append(droppedJobs, append(proc.getDroppedJobs(response, eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
-	if _, ok := procErrorJobsByDestID[destID]; !ok {
-		procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-	}
+	allNonSuccess := append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)
+	droppedJobs = append(droppedJobs, proc.getDroppedJobs(response, eventsToTransform)...)
+	droppedJobs = append(droppedJobs, procErrorJobs(allNonSuccess)...)
 	procErrorJobsByDestID[destID] = append(procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 	eventsToTransform, successMetrics, successCountMap, successCountMetadataMap = proc.getTransformerEvents(response, commonMetaData, eventsByMessageID, destination, connection, inPU, reportingtypes.EVENT_FILTER)
 	proc.logger.Debugn("Supported messages filtering output size", logger.NewIntField("eventCount", int64(len(eventsToTransform))))
@@ -3408,11 +3407,9 @@ func (proc *Handle) destTransform(ctx context.Context, data userTransformAndFilt
 			destTransformationStat.numOutputSuccessEvents.Count(len(response.Events))
 			destTransformationStat.numOutputFailedEvents.Count(len(nonSuccessMetrics.failedJobs))
 			destTransformationStat.numOutputFilteredEvents.Count(len(nonSuccessMetrics.filteredJobs))
-			data.droppedJobs = append(data.droppedJobs, append(proc.getDroppedJobs(response, data.eventsToTransform), append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)...)...)
-
-			if _, ok := data.procErrorJobsByDestID[destID]; !ok {
-				data.procErrorJobsByDestID[destID] = make([]*jobsdb.JobT, 0)
-			}
+			allNonSuccess := append(nonSuccessMetrics.failedJobs, nonSuccessMetrics.filteredJobs...)
+			data.droppedJobs = append(data.droppedJobs, proc.getDroppedJobs(response, data.eventsToTransform)...)
+			data.droppedJobs = append(data.droppedJobs, procErrorJobs(allNonSuccess)...)
 			data.procErrorJobsByDestID[destID] = append(data.procErrorJobsByDestID[destID], nonSuccessMetrics.failedJobs...)
 
 			// REPORTING - PROCESSOR metrics - START
@@ -3737,20 +3734,26 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 
 	proc.logger.Debugn("Processor DB Read size", logger.NewIntField("maxEventsToProcess", int64(proc.config.maxEventsToProcess.Load())))
 
-	queryParams := jobsdb.GetQueryParams{
-		CustomValFilters: []string{proc.config.GWCustomVal},
-		JobsLimit:        proc.config.maxEventsToProcess.Load(),
-		EventsLimit:      proc.config.maxEventsToProcess.Load(),
-		PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
-	}
-	proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
-
-	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
-	}, proc.sendQueryRetryStats)
-	if err != nil {
-		proc.logger.Errorn("Failed to get unprocessed jobs from DB", obskit.Error(err))
-		panic(err)
+	var (
+		jobs jobsdb.JobsResult
+		err  error
+	)
+	for query := true; query; { // keep trying to get unprocessed jobs while no jobs are returned because ds limits are being reached
+		queryParams := jobsdb.GetQueryParams{
+			CustomValFilters: []string{proc.config.GWCustomVal},
+			JobsLimit:        proc.config.maxEventsToProcess.Load(),
+			EventsLimit:      proc.config.maxEventsToProcess.Load(),
+			PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit.Load()),
+		}
+		proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
+		jobs, err = misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout.Load(), proc.jobdDBMaxRetries.Load(), func(ctx context.Context) (jobsdb.JobsResult, error) {
+			return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
+		}, proc.sendQueryRetryStats)
+		if err != nil {
+			proc.logger.Errorn("Failed to get unprocessed jobs from DB", obskit.Error(err))
+			panic(err)
+		}
+		query = len(jobs.Jobs) == 0 && jobs.DSLimitsReached
 	}
 
 	dbReadTime := time.Since(s)
@@ -3758,25 +3761,19 @@ func (proc *Handle) getJobsStage(ctx context.Context, partition string) jobsdb.J
 
 	var firstJob *jobsdb.JobT
 	var lastJob *jobsdb.JobT
-	if len(unprocessedList.Jobs) > 0 {
-		firstJob = unprocessedList.Jobs[0]
-		lastJob = unprocessedList.Jobs[len(unprocessedList.Jobs)-1]
+	if len(jobs.Jobs) > 0 {
+		firstJob = jobs.Jobs[0]
+		lastJob = jobs.Jobs[len(jobs.Jobs)-1]
 	}
 	proc.pipelineDelayStats(partition, firstJob, lastJob)
 
-	// check if there is work to be done
-	if len(unprocessedList.Jobs) == 0 {
-		proc.logger.Debugn("Processor DB Read Complete. No GW Jobs to process.")
-		return unprocessedList
-	}
-
 	proc.logger.Debugn("Processor DB Read Complete",
-		logger.NewIntField("unprocessedJobs", int64(len(unprocessedList.Jobs))),
-		logger.NewIntField("totalEvents", int64(unprocessedList.EventsCount)))
-	proc.stats.statGatewayDBR(partition).Count(len(unprocessedList.Jobs))
-	proc.stats.statReadStageCount(partition).Count(len(unprocessedList.Jobs))
+		logger.NewIntField("unprocessedJobs", int64(len(jobs.Jobs))),
+		logger.NewIntField("totalEvents", int64(jobs.EventsCount)))
+	proc.stats.statGatewayDBR(partition).Count(len(jobs.Jobs))
+	proc.stats.statReadStageCount(partition).Count(len(jobs.Jobs))
 
-	return unprocessedList
+	return jobs
 }
 
 func (proc *Handle) markExecuting(ctx context.Context, partition string, jobs []*jobsdb.JobT) error {

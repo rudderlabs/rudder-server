@@ -13,7 +13,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   check-schedule:
@@ -22,7 +22,7 @@ jobs:
       should_run: ${{ steps.check.outputs.should_run }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
 
@@ -64,9 +64,11 @@ jobs:
     needs: check-schedule
     if: needs.check-schedule.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@58077d3c7e43986b6b15fba718e8ea69e387dfcc # v2.15.1
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
         with:
           egress-policy: audit
 
@@ -146,32 +148,20 @@ jobs:
       - name: Notify Slack
         uses: slackapi/slack-github-action@af78098f536edbc4de71162a307590698245be95 # v3.0.1
         with:
-          channel-id: ${{ secrets.SLACK_NOTIFICATIONS_CHANNEL_ID }}
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_NOTIFICATIONS_BOT_TOKEN }}
           payload: |
-            {
-              "blocks": [
-                {
-                  "type": "header",
-                  "text": {
-                    "type": "plain_text",
-                    "text": "${{ steps.create-branch.outputs.created == 'true' && format('Release Cut: v{0}', steps.version.outputs.version) || format('Release Cut Skipped: v{0}', steps.version.outputs.version) }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "${{ steps.create-branch.outputs.created == 'true' && format('*Branch:* `{0}`\n*Version:* `{1}`\n*Cut from:* `master`', steps.version.outputs.branch, steps.version.outputs.version) || format('Branch `{0}` already exists. No action taken.', steps.version.outputs.branch) }}"
-                  }
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "${{ steps.create-prerelease-branch.outputs.created == 'true' && format('*Prerelease Branch:* `{0}`', steps.version.outputs.prerelease_branch) || format('Prerelease branch `{0}` already exists. No action taken.', steps.version.outputs.prerelease_branch) }}"
-                  }
-                }
-              ]
-            }
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_NOTIFICATIONS_BOT_TOKEN }}
+            channel: ${{ secrets.SLACK_NOTIFICATIONS_CHANNEL_ID }}
+            blocks:
+              - type: header
+                text:
+                  type: plain_text
+                  text: "${{ steps.create-branch.outputs.created == 'true' && format('Release Cut: v{0}', steps.version.outputs.version) || format('Release Cut Skipped: v{0}', steps.version.outputs.version) }}"
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "${{ steps.create-branch.outputs.created == 'true' && format('*Branch:* `{0}`\n*Version:* `{1}`\n*Cut from:* `master`', steps.version.outputs.branch, steps.version.outputs.version) || format('Branch `{0}` already exists. No action taken.', steps.version.outputs.branch) }}"
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "${{ steps.create-prerelease-branch.outputs.created == 'true' && format('*Prerelease Branch:* `{0}`', steps.version.outputs.prerelease_branch) || format('Prerelease branch `{0}` already exists. No action taken.', steps.version.outputs.prerelease_branch) }}"
