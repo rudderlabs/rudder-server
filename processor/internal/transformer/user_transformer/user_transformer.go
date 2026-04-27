@@ -382,7 +382,7 @@ func (u *Client) doPost(ctx context.Context, rawJSON []byte, url string, labels 
 		backoff.WithMaxTries(uint(u.config.maxRetry.Load()+1)),
 		backoff.WithNotify(func(err error, t time.Duration) {
 			retryCount++
-			u.stat.NewStat("processor_user_transformer_http_retries", stats.CountType).Increment()
+			u.stat.NewTaggedStat("processor_user_transformer_http_retries", stats.CountType, labels.ToStatsTag()).Increment()
 			u.log.Warnn(
 				"JS HTTP connection error",
 				append(
@@ -446,7 +446,7 @@ func isTransientError(err error, resp *http.Response) bool {
 		}
 		// Generic dial / timeout / temporary network error.
 		var netErr net.Error
-		if errors.As(err, &netErr) && (netErr.Timeout() || netErr.Temporary()) {
+		if errors.As(err, &netErr) && netErr.Timeout() {
 			return true
 		}
 		return false
