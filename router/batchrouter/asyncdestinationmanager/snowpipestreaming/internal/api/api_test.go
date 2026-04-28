@@ -459,4 +459,78 @@ func TestAPI(t *testing.T) {
 			require.Nil(t, res)
 		})
 	})
+
+	t.Run("Get Bulk Status", func(t *testing.T) {
+		snowpipeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, http.MethodGet, r.Method)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			require.Equal(t, "/channels/bulk-status?channelIds=channel-id&channelIds=invalid-channel-id", r.URL.String())
+
+			_, err := w.Write([]byte(`{
+				"success": true,
+				"statuses": {
+					"channel-id": {"success": true, "offset": "5", "latestInsertedOffset": "5", "valid": true}
+				},
+				"notFound": ["invalid-channel-id"]
+			}`))
+			require.NoError(t, err)
+		}))
+		defer snowpipeServer.Close()
+
+		ctx := context.Background()
+		manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, snowpipeServer.Client())
+
+		t.Run("Success", func(t *testing.T) {
+			res, err := manager.GetBulkStatus(ctx, []string{"channel-id", "invalid-channel-id"})
+			require.NoError(t, err)
+			require.Equal(t, &model.BulkStatusResponse{
+				Success: true,
+				Statuses: map[string]*model.StatusResponse{
+					"channel-id": {
+						Success:              true,
+						Offset:               "5",
+						LatestInsertedOffset: "5",
+						Valid:                true,
+					},
+				},
+				NotFound: []string{"invalid-channel-id"},
+			}, res)
+		})
+
+		t.Run("Request failure", func(t *testing.T) {
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
+				err: errors.New("bad client"),
+				response: &http.Response{
+					StatusCode: http.StatusOK,
+				},
+			})
+			res, err := manager.GetBulkStatus(ctx, []string{"channel-id"})
+			require.Error(t, err)
+			require.Nil(t, res)
+		})
+
+		t.Run("Request failure (non 200's status code)", func(t *testing.T) {
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
+				response: &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{}`))},
+				},
+			})
+			res, err := manager.GetBulkStatus(ctx, []string{"channel-id"})
+			require.Error(t, err)
+			require.Nil(t, res)
+		})
+
+		t.Run("Request failure (invalid response)", func(t *testing.T) {
+			manager := api.New(config.New(), stats.NOP, snowpipeServer.URL, &mockRequestDoer{
+				response: &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       nopReadCloser{Reader: bytes.NewReader([]byte(`{abd}`))},
+				},
+			})
+			res, err := manager.GetBulkStatus(ctx, []string{"channel-id"})
+			require.Error(t, err)
+			require.Nil(t, res)
+		})
+	})
 }
