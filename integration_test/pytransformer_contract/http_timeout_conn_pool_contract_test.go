@@ -22,20 +22,20 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/usertransformer"
 )
 
-// TestSandboxHTTPTimeoutDoesNotCapGeolocation locks the contract that
-// SANDBOX_HTTP_TIMEOUT_S (the user-HTTP wall-clock cap) does NOT apply to
-// internal geolocation traffic. The two timeouts are independent: geolocation
+// TestSandboxHTTPBudgetDoesNotCapGeolocation locks the contract that
+// SANDBOX_HTTP_BUDGET_S (the user-HTTP wall-clock cap) does NOT apply to
+// internal geolocation traffic. The two budgets are independent: geolocation
 // calls are bound exclusively by GEOLOCATION_TIMEOUT_SECS.
 //
 // Scenario: a geolocation backend that replies in 300 ms, with
-// SANDBOX_HTTP_TIMEOUT_S=0.1 s (user cap is SHORTER than the geo response)
+// SANDBOX_HTTP_BUDGET_S=0.1 s (user cap is SHORTER than the geo response)
 // and GEOLOCATION_TIMEOUT_SECS=0.5 s. Under the contract, the geolocation
 // call must succeed:
 //
 //   - The 300 ms server reply is faster than the 500 ms geolocation budget.
 //   - The 100 ms sandbox cap is intended for user HTTP traffic and MUST NOT
 //     shadow the internal geolocation deadline.
-func TestSandboxHTTPTimeoutDoesNotCapGeolocation(t *testing.T) {
+func TestSandboxHTTPBudgetDoesNotCapGeolocation(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
@@ -68,7 +68,7 @@ def transformEvent(event, metadata):
 		// The user HTTP cap is intentionally SHORTER than the geo reply
 		// (100 ms < 300 ms). If the cap were applied to internal traffic,
 		// the geolocation call would time out at 100 ms.
-		"SANDBOX_HTTP_TIMEOUT_S=0.1",
+		"SANDBOX_HTTP_BUDGET_S=0.1",
 		// The geolocation budget is LARGER than the geo reply (500 ms >
 		// 300 ms) so the only legal outcome is success.
 		"GEOLOCATION_TIMEOUT_SECS=0.5",
@@ -95,7 +95,7 @@ def transformEvent(event, metadata):
 	// transformation produced a successful event.
 	require.Empty(t, resp.FailedEvents,
 		"geolocation call must succeed when the geo reply (300 ms) is within "+
-			"GEOLOCATION_TIMEOUT_SECS (500 ms); SANDBOX_HTTP_TIMEOUT_S (100 ms) "+
+			"GEOLOCATION_TIMEOUT_SECS (500 ms); SANDBOX_HTTP_BUDGET_S (100 ms) "+
 			"must NOT apply to internal traffic")
 	require.Len(t, resp.Events, 1,
 		"exactly one successful event must be produced")
@@ -127,16 +127,16 @@ def transformEvent(event, metadata):
 // TestUserHTTPTimeoutCapping verifies the urllib3 wall-clock cap behaviour for
 // user-initiated HTTP calls:
 //
-//   - When the user passes a timeout that is larger than SANDBOX_HTTP_TIMEOUT_S,
+//   - When the user passes a timeout that is larger than SANDBOX_HTTP_BUDGET_S,
 //     the sandbox cap is honoured (our cap fires, not the user's).
-//   - When the user passes a timeout that is smaller than SANDBOX_HTTP_TIMEOUT_S,
+//   - When the user passes a timeout that is smaller than SANDBOX_HTTP_BUDGET_S,
 //     the user's timeout is honoured (user's fires, not ours).
 //
 // Both cases result in a non-retryable 400 per-event error (user code HTTP
 // timeout is not retried) — in contrast to the retryable 503 from a
 // geolocation timeout.
 //
-// A single pytransformer container (SANDBOX_HTTP_TIMEOUT_S=2) is shared by
+// A single pytransformer container (SANDBOX_HTTP_BUDGET_S=2) is shared by
 // both subtests.
 func TestUserHTTPTimeoutCapping(t *testing.T) {
 	pool, err := dockertest.NewPool("")
@@ -155,7 +155,7 @@ func TestUserHTTPTimeoutCapping(t *testing.T) {
 import requests
 
 def transformEvent(event, metadata):
-    # timeout=5 — user wants 5s, but SANDBOX_HTTP_TIMEOUT_S=1 caps it.
+    # timeout=5 — user wants 5s, but SANDBOX_HTTP_BUDGET_S=1 caps it.
     # Timeout intentionally not caught — propagates as per-event status 400.
     resp = requests.get("%s/data", timeout=5)
     event["status"] = resp.status_code
@@ -166,7 +166,7 @@ def transformEvent(event, metadata):
 import requests
 
 def transformEvent(event, metadata):
-    # timeout=0.1 — user's cap is smaller than SANDBOX_HTTP_TIMEOUT_S=2.
+    # timeout=0.1 — user's cap is smaller than SANDBOX_HTTP_BUDGET_S=2.
     # Timeout intentionally not caught — propagates as per-event status 400.
     resp = requests.get("%s/data", timeout=0.1)
     event["status"] = resp.status_code
@@ -177,11 +177,11 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	// SANDBOX_HTTP_TIMEOUT_S=1: our cap is between the user's bigger (5s)
+	// SANDBOX_HTTP_BUDGET_S=1: our cap is between the user's bigger (5s)
 	// and smaller (0.1s) values, so both subtests can verify the correct cap.
 	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		"SANDBOX_HTTP_TIMEOUT_S=1",
+		"SANDBOX_HTTP_BUDGET_S=1",
 	)
 
 	t.Run("OurCapHonouredWhenUserTimeoutIsBigger", func(t *testing.T) {
@@ -228,21 +228,16 @@ def transformEvent(event, metadata):
 	})
 }
 
-// TestConnectionPoolBehavior verifies that the ENABLE_CONN_POOL feature flag
-// controls whether bare requests.get() calls reuse TCP connections.
+// TestConnectionPoolBehavior verifies bare requests.get() TCP reuse.
 //
-//   - ENABLE_CONN_POOL=false (default): each call opens a fresh TCP connection.
-//   - ENABLE_CONN_POOL=true:            repeated calls to the same host reuse
-//     the pooled TCP connection.
+// Pooling of user HTTP traffic is mandatory: every call through
+// requests.get/post/... routes through the process-shared pooled
+// session, so sequential calls against the same host reuse the same
+// TCP connection.
 //
-// SANDBOX_POOL_MAX_SIZE=1 ensures a single worker subprocess handles every
-// request, so the per-process user session (and its connection pool) is shared
-// across the two sequential test requests.
-//
-// Connection reuse is verified server-side using the Go http.Server ConnState
-// hook: http.StateNew fires exactly once per TCP handshake.  Two requests on
-// a kept-alive connection produce only one StateNew event; two requests on
-// fresh connections produce two.
+// Connection reuse is verified server-side using the Go http.Server
+// ConnState hook: http.StateNew fires exactly once per TCP handshake.
+// Two requests on a kept-alive connection produce only one StateNew event.
 func TestConnectionPoolBehavior(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -250,8 +245,6 @@ func TestConnectionPoolBehavior(t *testing.T) {
 
 	const versionID = "conn-pool-check-v1"
 
-	// A single connection-counting server shared by both subtests.
-	// Each subtest reads the delta to avoid interference.
 	trackSrv, newConns := newConnectionCountingServer(t)
 
 	entries := map[string]configBackendEntry{
@@ -268,112 +261,68 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	t.Run("NewConnectionPerRequestWhenPoolDisabled", func(t *testing.T) {
-		// ENABLE_CONN_POOL=false (default): bare requests.get() creates a
-		// temporary Session per call, then closes it — so every call opens a
-		// fresh TCP connection even against a keep-alive-capable server.
-		noPoolURL := startRudderPytransformer(
-			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=false",
-			// Single worker so both requests hit the same subprocess and
-			// the absence of a persistent pool is not masked by subprocess
-			// affinity.
-			"SANDBOX_POOL_MAX_SIZE=1",
-		)
+	poolURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"USER_CONN_POOL_MAX_SIZE=1",
+		// Single worker so both requests hit the same subprocess
+		// and share the same pooled session.
+		"SANDBOX_POOL_MAX_SIZE=1",
+	)
 
-		// Reset newConns before sending events
-		newConns.Store(0)
+	newConns.Store(0)
 
-		ev1 := makeEvent("msg-nopool-1", versionID)
-		status1, items1 := sendRawTransform(t, noPoolURL, []types.TransformerEvent{ev1})
-		require.Equal(t, http.StatusOK, status1)
-		require.Len(t, items1, 1)
-		require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
+	ev1 := makeEvent("msg-pool-1", versionID)
+	status1, items1 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev1})
+	require.Equal(t, http.StatusOK, status1)
+	require.Len(t, items1, 1)
+	require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
 
-		ev2 := makeEvent("msg-nopool-2", versionID)
-		status2, items2 := sendRawTransform(t, noPoolURL, []types.TransformerEvent{ev2})
-		require.Equal(t, http.StatusOK, status2)
-		require.Len(t, items2, 1)
-		require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
+	ev2 := makeEvent("msg-pool-2", versionID)
+	status2, items2 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev2})
+	require.Equal(t, http.StatusOK, status2)
+	require.Len(t, items2, 1)
+	require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
 
-		require.EqualValues(t, 2, newConns.Load(),
-			"with ENABLE_CONN_POOL=false, each bare requests.get() must open "+
-				"a fresh TCP connection (server-side StateNew count: want 2)")
-	})
-
-	t.Run("ConnectionReusedWhenPoolEnabled", func(t *testing.T) {
-		// ENABLE_CONN_POOL=true: bare requests.get() routes through the
-		// persistent user session.  The TCP connection established for the
-		// first request is kept in the pool and reused for the second.
-		poolURL := startRudderPytransformer(
-			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=true",
-			"USER_CONN_POOL_MAX_SIZE=1",
-			// Single worker to guarantee the same session handles both requests.
-			"SANDBOX_POOL_MAX_SIZE=1",
-		)
-
-		// Reset newConns before sending events
-		newConns.Store(0)
-
-		ev1 := makeEvent("msg-pool-1", versionID)
-		status1, items1 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev1})
-		require.Equal(t, http.StatusOK, status1)
-		require.Len(t, items1, 1)
-		require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
-
-		ev2 := makeEvent("msg-pool-2", versionID)
-		status2, items2 := sendRawTransform(t, poolURL, []types.TransformerEvent{ev2})
-		require.Equal(t, http.StatusOK, status2)
-		require.Len(t, items2, 1)
-		require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
-
-		require.EqualValues(t, 1, newConns.Load(),
-			"with ENABLE_CONN_POOL=true, the second bare requests.get() to the "+
-				"same host must reuse the pooled TCP connection "+
-				"(server-side StateNew count: want 1)")
-	})
+	require.EqualValues(t, 1, newConns.Load(),
+		"the second bare requests.get() to the same host must reuse the "+
+			"pooled TCP connection (server-side StateNew count: want 1)")
 }
 
-// TestConnectionPoolPerTransformationIsolation locks the contract that when
-// CONN_POOL_PER_TRANSFORMATION=true (the default), two sequential
-// /customTransform requests with different transformationVersionIds — served
-// by the SAME worker subprocess (SANDBOX_POOL_MAX_SIZE=1) against the SAME
-// host — must NOT share a TCP connection. The subtest with the flag off is
-// the negative control: with partitioning disabled, the same two requests
-// collapse onto the process-wide pooled session and must share the socket.
+// TestConnectionPoolSharedAcrossTransformations locks the contract that
+// two sequential /customTransform requests with different
+// transformationVersionIds — served by the SAME worker subprocess
+// (SANDBOX_POOL_MAX_SIZE=1) against the SAME host — SHARE a TCP
+// connection.
 //
-// This prevents cross-version TLS-related connection state from carrying
-// over: if two transformations can ever share a connection pool, a
-// “verify=False“ socket warmed by one of them can be silently reused by a
-// default-“verify=True“ call from the other, bypassing certificate
-// validation. Partitioning the pooled session by
-// “transformation_version_id“ means no two transformations ever share an
-// “HTTPConnectionPool“ in the first place.
+// Pytransformer is deployed one container per customer, so in-process
+// isolation between versions of the same tenant is not a requirement:
+// a single process-shared pooled session serves every transformation
+// in a subprocess. TLS / cookie footguns that could otherwise leak via
+// shared session state are handled by “StatelessPooledSession“
+// (strips cookies) and “ManagedSession“ (rejects TLS defaults,
+// honours per-request “verify=“ / “cert=“).
 //
 // Connection reuse is verified server-side using the Go http.Server
 // ConnState hook: http.StateNew fires exactly once per TCP handshake.
-// Two requests on partitioned sessions produce two StateNew events;
-// two requests on the shared session produce one.
-func TestConnectionPoolPerTransformationIsolation(t *testing.T) {
+// Two requests across version_ids on the same kept-alive socket
+// produce a single StateNew event.
+func TestConnectionPoolSharedAcrossTransformations(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
 
 	const (
-		versionIDAlpha = "partition-iso-alpha"
-		versionIDBeta  = "partition-iso-beta"
+		versionIDAlpha = "shared-pool-alpha"
+		versionIDBeta  = "shared-pool-beta"
 	)
 
-	// A single counting server reused across both subtests. Each
-	// subtest resets the counter first so it sees a clean delta.
 	trackSrv, newConns := newConnectionCountingServer(t)
 
 	// Both versions hit the same URL. The transformation code is
 	// identical — the ONLY thing that differs is the versionID they
-	// are registered under, so any connection reuse observed on the
-	// server side must have come from a pooled session shared across
-	// version_ids.
+	// are registered under, so observing a single TCP connection
+	// server-side is direct evidence that both tids use the same
+	// underlying pool.
 	code := fmt.Sprintf(`
 import requests
 
@@ -391,94 +340,51 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	t.Run("DistinctConnectionPerVersionWhenPartitioned", func(t *testing.T) {
-		// CONN_POOL_PER_TRANSFORMATION=true is the default, but set
-		// it explicitly so the subtest is self-describing and a
-		// future default change does not silently flip the semantics.
-		partURL := startRudderPytransformer(
-			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=true",
-			"CONN_POOL_PER_TRANSFORMATION=true",
-			"USER_CONN_POOL_MAX_SIZE=1",
-			// Pin to a single worker so both events land in the same
-			// subprocess — otherwise the "shared pool" hypothesis is
-			// not exercised at all and the assertion is vacuous.
-			"SANDBOX_POOL_MAX_SIZE=1",
-		)
+	sharedURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"USER_CONN_POOL_MAX_SIZE=1",
+		// Pin to a single worker so both events land in the same
+		// subprocess — otherwise the shared-pool hypothesis is not
+		// exercised at all and the assertion is vacuous.
+		"SANDBOX_POOL_MAX_SIZE=1",
+	)
 
-		newConns.Store(0)
+	newConns.Store(0)
 
-		ev1 := makeEvent("msg-part-alpha", versionIDAlpha)
-		status1, items1 := sendRawTransform(t, partURL, []types.TransformerEvent{ev1})
-		require.Equal(t, http.StatusOK, status1)
-		require.Len(t, items1, 1)
-		require.Equal(t, http.StatusOK, items1[0].StatusCode, "alpha request must succeed")
+	ev1 := makeEvent("msg-shared-alpha", versionIDAlpha)
+	status1, items1 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev1})
+	require.Equal(t, http.StatusOK, status1)
+	require.Len(t, items1, 1)
+	require.Equal(t, http.StatusOK, items1[0].StatusCode, "alpha request must succeed")
 
-		ev2 := makeEvent("msg-part-beta", versionIDBeta)
-		status2, items2 := sendRawTransform(t, partURL, []types.TransformerEvent{ev2})
-		require.Equal(t, http.StatusOK, status2)
-		require.Len(t, items2, 1)
-		require.Equal(t, http.StatusOK, items2[0].StatusCode, "beta request must succeed")
+	ev2 := makeEvent("msg-shared-beta", versionIDBeta)
+	status2, items2 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev2})
+	require.Equal(t, http.StatusOK, status2)
+	require.Len(t, items2, 1)
+	require.Equal(t, http.StatusOK, items2[0].StatusCode, "beta request must succeed")
 
-		require.EqualValues(t, 2, newConns.Load(),
-			"with CONN_POOL_PER_TRANSFORMATION=true, two requests under "+
-				"distinct transformation_version_ids must open two TCP "+
-				"connections even through the same worker subprocess — "+
-				"server-side StateNew count: want 2, got %d", newConns.Load())
-	})
-
-	t.Run("SharedConnectionAcrossVersionsWhenDisabled", func(t *testing.T) {
-		// Negative control: with the escape hatch engaged, the two
-		// version_ids must collapse back onto the shared session. If
-		// this subtest also sees 2 new connections, the partitioning
-		// test above is passing for the wrong reason (e.g. pooling
-		// broken in both modes).
-		sharedURL := startRudderPytransformer(
-			t, pool, configBackend.URL,
-			"ENABLE_CONN_POOL=true",
-			"CONN_POOL_PER_TRANSFORMATION=false",
-			"USER_CONN_POOL_MAX_SIZE=1",
-			"SANDBOX_POOL_MAX_SIZE=1",
-		)
-
-		newConns.Store(0)
-
-		ev1 := makeEvent("msg-shared-alpha", versionIDAlpha)
-		status1, items1 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev1})
-		require.Equal(t, http.StatusOK, status1)
-		require.Len(t, items1, 1)
-		require.Equal(t, http.StatusOK, items1[0].StatusCode, "alpha request must succeed")
-
-		ev2 := makeEvent("msg-shared-beta", versionIDBeta)
-		status2, items2 := sendRawTransform(t, sharedURL, []types.TransformerEvent{ev2})
-		require.Equal(t, http.StatusOK, status2)
-		require.Len(t, items2, 1)
-		require.Equal(t, http.StatusOK, items2[0].StatusCode, "beta request must succeed")
-
-		require.EqualValues(t, 1, newConns.Load(),
-			"with CONN_POOL_PER_TRANSFORMATION=false, both version_ids "+
-				"must share the shared pooled session and reuse a single "+
-				"TCP connection — server-side StateNew count: want 1, "+
-				"got %d", newConns.Load())
-	})
+	require.EqualValues(t, 1, newConns.Load(),
+		"two requests under distinct transformation_version_ids must share "+
+			"a single TCP connection through the process-shared pool — "+
+			"server-side StateNew count: want 1, got %d", newConns.Load())
 }
 
-// TestSlowDripBodyFiresSandboxHTTPTimeout locks in the contract that a server
+// TestSlowDripBodyFiresSandboxHTTPBudget locks in the contract that a server
 // which flushes response headers quickly and then drips the body one byte at
-// a time must NOT pin a sandbox worker for longer than SANDBOX_HTTP_TIMEOUT_S.
+// a time must NOT pin a sandbox worker for longer than SANDBOX_HTTP_BUDGET_S.
 //
 // Scenario:
 //   - Body is 30 chunks × 200 ms = 6.0 s of wall-clock drip.
-//   - SANDBOX_HTTP_TIMEOUT_S = 1 s.
+//   - SANDBOX_HTTP_BUDGET_S = 1 s.
 //   - SANDBOX_TRANSFORMATION_TIMEOUT_S is set high enough that the
 //     subprocess-level SIGVTALRM safety net does NOT fire first — otherwise
-//     we would be measuring the wrong timeout.
+//     we would be measuring the wrong budget.
 //
 // Legal outcomes are narrow: the per-event statusCode must be 400 (HTTP
 // timeout surfaces as a user-code failure), and the request must complete
 // well inside the full 6s body duration. Anything else means the slow-drip
 // body is still capable of pinning the worker.
-func TestSlowDripBodyFiresSandboxHTTPTimeout(t *testing.T) {
+func TestSlowDripBodyFiresSandboxHTTPBudget(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 	pool.MaxWait = 2 * time.Minute
@@ -492,7 +398,7 @@ func TestSlowDripBodyFiresSandboxHTTPTimeout(t *testing.T) {
 import requests
 
 def transformEvent(event, metadata):
-    # No explicit timeout — let SANDBOX_HTTP_TIMEOUT_S cap the wall-clock budget.
+    # No explicit timeout — let SANDBOX_HTTP_BUDGET_S cap the wall-clock budget.
     resp = requests.get("%s/drip")
     event["status"] = resp.status_code
     event["body_len"] = len(resp.content)
@@ -503,14 +409,14 @@ def transformEvent(event, metadata):
 	configBackend := newContractConfigBackend(t, entries)
 	t.Cleanup(configBackend.Close)
 
-	// SANDBOX_HTTP_TIMEOUT_S=1 < 6s body drip → our cap must fire.
+	// SANDBOX_HTTP_BUDGET_S=1 < 6s body drip → our cap must fire.
 	// SANDBOX_TRANSFORMATION_TIMEOUT_S=20 / SANDBOX_PROCESS_TIMEOUT_S=30 keep
 	// the subprocess-level deadlines far above any plausible cap firing time,
 	// so the only thing that can cause a per-event 400 here is the HTTP-level
 	// wall-clock deadline we are testing.
 	pyURL := startRudderPytransformer(
 		t, pool, configBackend.URL,
-		"SANDBOX_HTTP_TIMEOUT_S=1",
+		"SANDBOX_HTTP_BUDGET_S=1",
 		"SANDBOX_TRANSFORMATION_TIMEOUT_S=20",
 		"SANDBOX_PROCESS_TIMEOUT_S=30",
 	)
@@ -527,7 +433,7 @@ def transformEvent(event, metadata):
 	require.Len(t, items, 1, "exactly one per-event result expected")
 
 	require.Equal(t, http.StatusBadRequest, items[0].StatusCode,
-		"slow-drip body must fire SANDBOX_HTTP_TIMEOUT_S and surface as a 400 per-event error; "+
+		"slow-drip body must fire SANDBOX_HTTP_BUDGET_S and surface as a 400 per-event error; "+
 			"statusCode=%d error=%q", items[0].StatusCode, items[0].Error)
 	require.NotEmpty(t, items[0].Error,
 		"timeout error message must be propagated to the caller")
@@ -542,7 +448,7 @@ def transformEvent(event, metadata):
 	// container-start jitter while still catching any regression that
 	// reverts the deadline wrapper.
 	require.Less(t, elapsed, 4*time.Second,
-		"SANDBOX_HTTP_TIMEOUT_S must cap the wall-clock budget for slow-drip "+
+		"SANDBOX_HTTP_BUDGET_S must cap the wall-clock budget for slow-drip "+
 			"body reads; elapsed=%s (uncapped would be ~6s)", elapsed)
 }
 

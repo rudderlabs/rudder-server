@@ -33,16 +33,16 @@ import (
 //   - "requests.request("GET", url)" — verb-parameterized entry point
 //
 // All three must produce the same output as the old architecture
-// (vanilla "requests") under every "ENABLE_CONN_POOL" setting.
+// (vanilla "requests").
 //
-// Under "ENABLE_CONN_POOL=true", additional "ConnectionReuse" subtests
-// prove that the calls actually flow through the pooling wrapper by
-// sending two sequential requests and asserting that the server
-// observed a single TCP handshake (connection reuse). Without the
-// wrapper, vanilla "requests.api.get" / "requests.request" creates a
-// throwaway "Session" per call and opens a fresh TCP connection each
-// time — so "newConns == 1" can only be true if the call went through
-// the persistent pooled session installed by the wrapper.
+// Additional "ConnectionReuse" subtests prove that the calls actually
+// flow through the pooling wrapper by sending two sequential requests
+// and asserting that the server observed a single TCP handshake
+// (connection reuse). Without the wrapper, vanilla
+// "requests.api.get" / "requests.request" creates a throwaway
+// "Session" per call and opens a fresh TCP connection each time — so
+// "newConns == 1" can only be true if the call went through the
+// persistent pooled session installed by the wrapper.
 func TestRequestsModuleWrapperContract(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -142,25 +142,13 @@ def transformEvent(event, metadata):
 	t.Log("Starting rudder-transformer (old arch frontend)...")
 	transformerURL := startRudderTransformer(t, pool, configBackend.URL, mockGateway.URL)
 
-	newArchCases := []struct {
-		name            string
-		enableConnPool  string
-		extraPytransEnv []string
-	}{
-		{
-			name:            "ConnPoolDisabled",
-			enableConnPool:  "false",
-			extraPytransEnv: nil,
-		},
-		{
-			name:           "ConnPoolEnabled",
-			enableConnPool: "true",
-			extraPytransEnv: []string{
-				"USER_CONN_POOL_MAX_SIZE=1",
-				"SANDBOX_POOL_MAX_SIZE=1",
-			},
-		},
-	}
+	// Pin pool + subprocess count to 1 so the ConnectionReuse subtests
+	// actually exercise the shared pooled session.
+	pyTransformerURL := startRudderPytransformer(
+		t, pool, configBackend.URL,
+		"USER_CONN_POOL_MAX_SIZE=1",
+		"SANDBOX_POOL_MAX_SIZE=1",
+	)
 
 	styleCases := []struct {
 		style string
@@ -170,99 +158,87 @@ def transformEvent(event, metadata):
 		{style: "request"},
 	}
 
-	for _, tc := range newArchCases {
-		t.Run(tc.name, func(t *testing.T) {
-			pyEnv := append([]string{"ENABLE_CONN_POOL=" + tc.enableConnPool}, tc.extraPytransEnv...)
-			t.Logf("Starting rudder-pytransformer with %v...", pyEnv)
-			pyTransformerURL := startRudderPytransformer(t, pool, configBackend.URL, pyEnv...)
+	for _, sc := range styleCases {
+		t.Run(sc.style, func(t *testing.T) {
+			env := newBCTestEnv(t, transformerURL, pyTransformerURL,
+				withFailOnError(),
+				withLimitedRetryableHTTPRetries(),
+			)
 
-			for _, sc := range styleCases {
-				t.Run(sc.style, func(t *testing.T) {
-					env := newBCTestEnv(t, transformerURL, pyTransformerURL,
-						withFailOnError(),
-						withLimitedRetryableHTTPRetries(),
-					)
+			event := makeEvent("msg-"+sc.style, parityVersionID)
+			event.Message["style"] = sc.style
+			events := []types.TransformerEvent{event}
 
-					event := makeEvent("msg-"+sc.style, parityVersionID)
-					event.Message["style"] = sc.style
-					events := []types.TransformerEvent{event}
+			t.Log("Sending request to old architecture...")
+			oldResp := env.OldClient.Transform(context.Background(), events)
+			t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
 
-					t.Log("Sending request to old architecture...")
-					oldResp := env.OldClient.Transform(context.Background(), events)
-					t.Logf("Old arch: Events=%d, FailedEvents=%d", len(oldResp.Events), len(oldResp.FailedEvents))
+			t.Log("Sending request to new architecture...")
+			newResp := env.NewClient.Transform(context.Background(), events)
+			t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
 
-					t.Log("Sending request to new architecture...")
-					newResp := env.NewClient.Transform(context.Background(), events)
-					t.Logf("New arch: Events=%d, FailedEvents=%d", len(newResp.Events), len(newResp.FailedEvents))
+			require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
+			require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
+			require.Equalf(t, 1, len(newResp.Events),
+				"new arch (style=%s): 1 success event expected", sc.style)
+			require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
 
-					require.Equal(t, 1, len(oldResp.Events), "old arch: 1 success event expected")
-					require.Equal(t, 0, len(oldResp.FailedEvents), "old arch: no failed events expected")
-					require.Equalf(t, 1, len(newResp.Events),
-						"new arch (ENABLE_CONN_POOL=%s, style=%s): 1 success event expected",
-						tc.enableConnPool, sc.style)
-					require.Equal(t, 0, len(newResp.FailedEvents), "new arch: no failed events expected")
+			require.Equal(t, "hello", oldResp.Events[0].Output["echo"],
+				"old arch must echo q=hello")
+			require.Equalf(t, "hello", newResp.Events[0].Output["echo"],
+				"new arch (style=%s) must echo q=hello", sc.style)
 
-					require.Equal(t, "hello", oldResp.Events[0].Output["echo"],
-						"old arch must echo q=hello")
-					require.Equalf(t, "hello", newResp.Events[0].Output["echo"],
-						"new arch (ENABLE_CONN_POOL=%s, style=%s) must echo q=hello",
-						tc.enableConnPool, sc.style)
+			diff, equal := oldResp.Equal(&newResp)
+			require.Truef(t, equal,
+				"style=%s: old and new architectures must produce identical responses:\n%s",
+				sc.style, diff)
 
-					diff, equal := oldResp.Equal(&newResp)
-					require.Truef(t, equal,
-						"ENABLE_CONN_POOL=%s, style=%s: old and new architectures "+
-							"must produce identical responses:\n%s",
-						tc.enableConnPool, sc.style, diff)
+			env.assertRetryCountsMatch(t)
+		})
+	}
 
-					env.assertRetryCountsMatch(t)
-				})
-			}
+	// Prove that the alternative call paths actually flow through the
+	// connection-pool wrapper, not just that they return the correct
+	// response. A wrapped call routes through the process-shared pooled
+	// Session that keeps TCP connections alive across requests. An
+	// unwrapped call (vanilla requests.api.get / requests.request)
+	// creates a throwaway Session per invocation — every call opens a
+	// fresh TCP connection. Asserting that two sequential calls produced
+	// AT MOST one server-side TCP handshake (StateNew) proves the pooled
+	// Session was used, which is only possible if the function was
+	// rebound to the wrapper. (The count can legitimately be 0 if an
+	// earlier subtest already warmed a connection to the shared
+	// countingEcho host; both subtests run against the same
+	// pyTransformerURL and thus the same subprocess-shared pool.)
+	reuseCases := []struct {
+		name      string
+		versionID string
+	}{
+		{name: "from_requests.api_import_get", versionID: reuseApiVersionID},
+		{name: "requests.request", versionID: reuseRequestVersionID},
+	}
+	for _, rc := range reuseCases {
+		t.Run("ConnectionReuse/"+rc.name, func(t *testing.T) {
+			newConns.Store(0)
 
-			// Prove that the alternative call paths actually flow through
-			// the connection-pool wrapper, not just that they return the
-			// correct response. With ENABLE_CONN_POOL=true, a wrapped call
-			// routes through a persistent pooled Session that keeps TCP
-			// connections alive across requests. An unwrapped call (vanilla
-			// requests.api.get / requests.request) creates a throwaway
-			// Session per invocation — every call opens a fresh TCP
-			// connection. Asserting that two sequential calls produced only
-			// one server-side TCP handshake (StateNew) proves the pooled
-			// Session was used, which is only possible if the function was
-			// rebound to the wrapper.
-			if tc.enableConnPool == "true" {
-				reuseCases := []struct {
-					name      string
-					versionID string
-				}{
-					{name: "from_requests.api_import_get", versionID: reuseApiVersionID},
-					{name: "requests.request", versionID: reuseRequestVersionID},
-				}
-				for _, rc := range reuseCases {
-					t.Run("ConnectionReuse/"+rc.name, func(t *testing.T) {
-						newConns.Store(0)
+			ev1 := makeEvent("msg-reuse-1", rc.versionID)
+			status1, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
+			require.Equal(t, http.StatusOK, status1)
+			require.Len(t, items1, 1)
+			require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
 
-						ev1 := makeEvent("msg-reuse-1", rc.versionID)
-						status1, items1 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev1})
-						require.Equal(t, http.StatusOK, status1)
-						require.Len(t, items1, 1)
-						require.Equal(t, http.StatusOK, items1[0].StatusCode, "first request must succeed")
+			ev2 := makeEvent("msg-reuse-2", rc.versionID)
+			status2, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
+			require.Equal(t, http.StatusOK, status2)
+			require.Len(t, items2, 1)
+			require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
 
-						ev2 := makeEvent("msg-reuse-2", rc.versionID)
-						status2, items2 := sendRawTransform(t, pyTransformerURL, []types.TransformerEvent{ev2})
-						require.Equal(t, http.StatusOK, status2)
-						require.Len(t, items2, 1)
-						require.Equal(t, http.StatusOK, items2[0].StatusCode, "second request must succeed")
-
-						require.EqualValues(t, 1, newConns.Load(),
-							"with ENABLE_CONN_POOL=true, two sequential calls "+
-								"via %s must reuse the same TCP connection "+
-								"(server-side StateNew count: want 1). A count "+
-								"of 2 means the calls bypassed the pooling "+
-								"wrapper and each created a throwaway Session.",
-							rc.name)
-					})
-				}
-			}
+			require.LessOrEqualf(t, newConns.Load(), int64(1),
+				"two sequential calls via %s must reuse the pooled TCP "+
+					"connection (server-side StateNew count: want <= 1, got %d). "+
+					"A count of 2 means the calls bypassed the pooling wrapper "+
+					"and each created a throwaway Session.",
+				rc.name, newConns.Load())
 		})
 	}
 }
