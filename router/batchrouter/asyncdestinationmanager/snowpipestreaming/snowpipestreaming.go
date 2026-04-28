@@ -38,6 +38,8 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+const maxInsertRequestSizeBytes = 16 * bytesize.MB
+
 func New(
 	conf *config.Config,
 	log logger.Logger,
@@ -203,7 +205,10 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	groupedEvents := lo.GroupBy(events, func(event *event) string {
 		return event.Message.Metadata.Table
 	})
-	uploadInfos := lo.MapToSlice(groupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
+
+	filteredGroupedEvents, overflowedEvents := m.filterOutEventsThatExceedMaxInsertRequestSize(groupedEvents)
+
+	uploadInfos := lo.MapToSlice(filteredGroupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
 		jobIDs := lo.Map(tableEvents, func(event *event, _ int) int64 {
 			return event.Metadata.JobID
 		})
@@ -273,6 +278,15 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
 	}
+	if len(overflowedEvents) > 0 {
+		failedJobIDs = append(failedJobIDs, lo.Map(overflowedEvents, func(event *event, _ int) int64 {
+			return event.Metadata.JobID
+		})...)
+		// If failed reason is not set, set it to the default reason
+		if failedReason == "" {
+			failedReason = fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes)
+		}
+	}
 
 	var importParameters json.RawMessage
 	if len(importInfos) > 0 {
@@ -324,11 +338,18 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 	scanner.Buffer(nil, int(m.config.maxBufferCapacity.Load()))
 
 	for scanner.Scan() {
+		line := scanner.Bytes()
+
 		var e event
-		if err := jsonrs.Unmarshal(scanner.Bytes(), &e); err != nil {
+		if err := jsonrs.Unmarshal(line, &e); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 		}
-		e.setUUIDTimestamp(formattedTS)
+		isUUIDTimestampSet := e.setUUIDTimestamp(formattedTS)
+
+		e.MessageDataByteSize = int64(len(gjson.GetBytes(line, "message.data").Raw))
+		if isUUIDTimestampSet {
+			e.MessageDataByteSize += int64(len(formattedTS))
+		}
 
 		events = append(events, &e)
 	}
@@ -336,6 +357,35 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 		return nil, fmt.Errorf("error reading from file: %w", err)
 	}
 	return events, nil
+}
+
+// filterOutEventsThatExceedMaxInsertRequestSize filters out events that exceed the max insert request size
+// and returns the filtered grouped events and the overflowed events.
+func (m *Manager) filterOutEventsThatExceedMaxInsertRequestSize(groupedEvents map[string][]*event) (map[string][]*event, []*event) {
+	filteredGroupedEvents := make(map[string][]*event, len(groupedEvents))
+	overflowedEvents := make([]*event, 0)
+	for tableName, tableEvents := range groupedEvents {
+		// Only account for the insert rows payload size:
+		// rows JSON = '[' + row1 + ',' + row2 + ... + ']'
+		eventsSize := int64(2) // '[' + ']'
+		kept := make([]*event, 0, len(tableEvents))
+		for _, event := range tableEvents {
+			eventSize := event.MessageDataByteSize
+			if len(kept) > 0 {
+				eventSize++ // ',' between rows
+			}
+			if eventsSize+eventSize > maxInsertRequestSizeBytes {
+				overflowedEvents = append(overflowedEvents, event)
+				continue
+			}
+			eventsSize += eventSize
+			kept = append(kept, event)
+		}
+		if len(kept) > 0 {
+			filteredGroupedEvents[tableName] = kept
+		}
+	}
+	return filteredGroupedEvents, overflowedEvents
 }
 
 // sendEventsToSnowpipe sends events to Snowpipe for the given table.
