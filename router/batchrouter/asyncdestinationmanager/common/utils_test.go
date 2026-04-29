@@ -23,32 +23,37 @@ func TestFormatCSVValue(t *testing.T) {
 		{name: "small fractional float preserved", input: 0.1, expected: "0.1"},
 		{name: "fractional float preserved", input: 1234.5, expected: "1234.5"},
 		{name: "empty array", input: []any{}, expected: "[]"},
-		{name: "string array", input: []any{"a", "b"}, expected: "[a b]"},
+		{name: "string array", input: []any{"a", "b"}, expected: "[\"a\",\"b\"]"},
 		{
 			name:     "array of large numbers without exponent",
 			input:    []any{float64(1234567890), float64(9876543210)},
-			expected: "[1234567890 9876543210]",
+			expected: "[1234567890,9876543210]",
 		},
 		{
-			name:     "mixed array with nil retains <nil> for nested null",
+			name:     "mixed array with nil renders as JSON null",
 			input:    []any{float64(1234567890), "abc", nil, true},
-			expected: "[1234567890 abc <nil> true]",
+			expected: "[1234567890,\"abc\",null,true]",
 		},
 		{
 			name:     "nested array",
 			input:    []any{[]any{float64(1), float64(2)}, []any{float64(3), float64(4)}},
-			expected: "[[1 2] [3 4]]",
+			expected: "[[1,2],[3,4]]",
 		},
-		{name: "empty map", input: map[string]any{}, expected: "map[]"},
+		{name: "empty map", input: map[string]any{}, expected: "{}"},
 		{
 			name:     "map with large numeric value",
 			input:    map[string]any{"id": float64(1234567890)},
-			expected: "map[id:1234567890]",
+			expected: "{\"id\":1234567890}",
 		},
 		{
 			name:     "map keys sorted deterministically",
 			input:    map[string]any{"b": float64(2), "a": float64(1)},
-			expected: "map[a:1 b:2]",
+			expected: "{\"a\":1,\"b\":2}",
+		},
+		{
+			name:     "map keys with null values",
+			input:    map[string]any{"b": float64(2), "a": float64(1), "c": nil},
+			expected: "{\"a\":1,\"b\":2,\"c\":null}",
 		},
 	}
 

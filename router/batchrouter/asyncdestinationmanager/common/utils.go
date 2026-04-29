@@ -3,9 +3,9 @@ package common
 import (
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
-	"strings"
+
+	"github.com/rudderlabs/rudder-go-kit/jsonrs"
 )
 
 var (
@@ -27,9 +27,9 @@ func IsAsyncDestination(destination string) bool {
 
 // FormatCSVValue stringifies a JSON-derived value for a CSV cell.
 // Top-level nil renders as an empty cell so destinations that treat empty
-// cells as null (e.g. Salesforce Bulk) get the expected semantics. All
-// other values go through stringify, which avoids scientific notation for
-// floats while preserving Go's default bracketed shape for arrays and maps.
+// cells as null (e.g. Salesforce Bulk) get the expected semantics. Floats
+// are rendered without scientific notation, and arrays/maps are emitted
+// as JSON so nested numbers stay plain and nested nulls become `null`.
 func FormatCSVValue(value any) string {
 	if value == nil {
 		return ""
@@ -39,27 +39,14 @@ func FormatCSVValue(value any) string {
 
 func stringify(value any) string {
 	switch v := value.(type) {
-	case nil:
-		return "<nil>"
 	case float64:
 		return strconv.FormatFloat(v, 'f', -1, 64)
-	case []any:
-		parts := make([]string, len(v))
-		for i, item := range v {
-			parts[i] = stringify(item)
+	case []any, map[string]any:
+		res, err := jsonrs.Marshal(value)
+		if err != nil {
+			return fmt.Sprintf("%v", value)
 		}
-		return "[" + strings.Join(parts, " ") + "]"
-	case map[string]any:
-		keys := make([]string, 0, len(v))
-		for k := range v {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		parts := make([]string, 0, len(keys))
-		for _, k := range keys {
-			parts = append(parts, k+":"+stringify(v[k]))
-		}
-		return "map[" + strings.Join(parts, " ") + "]"
+		return string(res)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

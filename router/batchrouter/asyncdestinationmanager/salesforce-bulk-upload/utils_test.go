@@ -393,7 +393,7 @@ func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) 
 
 	row := records[1]
 	require.Equal(t, "1234567890", row[indexOf(headers, "Account_Number")])
-	require.Equal(t, "[1234567890 9876543210]", row[indexOf(headers, "Account_IDs")])
+	require.Equal(t, "[1234567890,9876543210]", row[indexOf(headers, "Account_IDs")])
 }
 
 func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
