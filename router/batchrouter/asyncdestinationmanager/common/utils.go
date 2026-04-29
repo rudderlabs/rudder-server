@@ -30,24 +30,21 @@ func IsAsyncDestination(destination string) bool {
 // cells as null (e.g. Salesforce Bulk) get the expected semantics. Floats
 // are rendered without scientific notation, and arrays/maps are emitted
 // as JSON so nested numbers stay plain and nested nulls become `null`.
-func FormatCSVValue(value any) string {
+// Returns an error when JSON marshalling of a composite value fails.
+func FormatCSVValue(value any) (string, error) {
 	if value == nil {
-		return ""
+		return "", nil
 	}
-	return stringify(value)
-}
-
-func stringify(value any) string {
 	switch v := value.(type) {
 	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
+		return strconv.FormatFloat(v, 'f', -1, 64), nil
 	case []any, map[string]any:
-		res, err := jsonrs.Marshal(value)
+		b, err := jsonrs.Marshal(v)
 		if err != nil {
-			return fmt.Sprintf("%v", value)
+			return "", err
 		}
-		return string(res)
+		return string(b), nil
 	default:
-		return fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%v", v), nil
 	}
 }

@@ -104,7 +104,11 @@ func createCSVFile(
 		row := make([]string, len(headers))
 		for key, value := range job.Message {
 			if idx, ok := headerIndex[key]; ok {
-				row[idx] = common.FormatCSVValue(value)
+				formatted, err := common.FormatCSVValue(value)
+				if err != nil {
+					return "", nil, nil, fmt.Errorf("formatting CSV cell %q: %w", key, err)
+				}
+				row[idx] = formatted
 			}
 		}
 		jobID := int64(job.Metadata["job_id"].(float64))
