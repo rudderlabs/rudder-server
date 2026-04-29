@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/samber/lo"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -71,7 +73,6 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 		logger.NewStringField("prefix", b.Identifier()),
 	)
 	for limitsReached := true; limitsReached; {
-		var err error
 		select {
 		case <-moveTimeout:
 			// timeout reached, break out to switchover
@@ -81,12 +82,12 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 			)
 			limitsReached = false
 		default:
-			var movedCount int
-			movedCount, limitsReached, err = b.moveBufferedPartitions(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load())
+			movedCount, lr, err := b.moveBufferedPartitionsConcurrently(ctx, partitions, b.flushBatchSize.Load(), b.flushPayloadSize.Load(), b.flushMoveConcurrency.Load())
 			if err != nil {
 				return fmt.Errorf("moving buffered partitions: %w", err)
 			}
 			totalCount += movedCount
+			limitsReached = lr
 		}
 	}
 	// switchover
@@ -107,6 +108,50 @@ func (b *jobsDBPartitionBuffer) FlushBufferedPartitions(ctx context.Context, par
 		logger.NewIntField("totalCount", int64(totalCount)),
 	)
 	return nil
+}
+
+// moveBufferedPartitionsConcurrently distributes the given partition IDs across the requested number of goroutines, each calling moveBufferedPartitions on its share.
+// It returns the total moved count, whether any goroutine reached its limits, and the first encountered error.
+// All goroutines must finish before this returns, so the caller may safely re-read the concurrency setting between iterations.
+func (b *jobsDBPartitionBuffer) moveBufferedPartitionsConcurrently(ctx context.Context, partitionIDs []string, batchSize int, payloadSize int64, concurrency int) (count int, limitsReached bool, err error) {
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(partitionIDs) {
+		concurrency = len(partitionIDs)
+	}
+	chunkSize := (len(partitionIDs) + concurrency - 1) / concurrency
+	chunks := lo.Chunk(partitionIDs, chunkSize)
+
+	if len(chunks) == 1 {
+		return b.moveBufferedPartitions(ctx, chunks[0], batchSize, payloadSize)
+	}
+
+	var (
+		mu          sync.Mutex
+		totalMoved  int
+		anyLimitsLR bool
+	)
+	g, gCtx := errgroup.WithContext(ctx)
+	for _, chunk := range chunks {
+		g.Go(func() error {
+			moved, lr, err := b.moveBufferedPartitions(gCtx, chunk, batchSize, payloadSize)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			totalMoved += moved
+			if lr {
+				anyLimitsLR = true
+			}
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return 0, false, err
+	}
+	return totalMoved, anyLimitsLR, nil
 }
 
 // moveBufferedPartitions moves a batch of buffered jobs to the primary JobsDB for the given partition IDs. It returns whether any limits were reached during the fetch.
@@ -201,7 +246,7 @@ func (b *jobsDBPartitionBuffer) switchoverBufferedPartitions(ctx context.Context
 		// move any remaining buffered data
 		for limitsReached := true; limitsReached; {
 			var movedCount int
-			movedCount, limitsReached, err = b.moveBufferedPartitions(ctx, partitionIDs, batchSize, payloadSize)
+			movedCount, limitsReached, err = b.moveBufferedPartitionsConcurrently(ctx, partitionIDs, batchSize, payloadSize, b.flushMoveConcurrency.Load())
 			if err != nil {
 				return fmt.Errorf("moving buffered partitions during switchover: %w", err)
 			}

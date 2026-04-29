@@ -43,14 +43,15 @@ type jobsDBPartitionBuffer struct {
 	stats              stats.Stats
 
 	// configuration
-	differentBufferDBs bool                              // if having different reader/writer buffer DBs, we need to refresh buffered partitions on every Store
-	canStore           bool                              // indicates if Store operations are supported
-	canFlush           bool                              // indicates if Flush operations are supported
-	numPartitions      int                               // number of partitions used in partition function
-	flushBatchSize     config.ValueLoader[int]           // number of records to flush in a single batch
-	flushPayloadSize   config.ValueLoader[int64]         // total payload size (in bytes) to flush in a single batch
-	flushMoveTimeout   config.ValueLoader[time.Duration] // timeout for move operation, before forcing switchover
-	watchdogInterval   config.ValueLoader[time.Duration] // interval for watchdog to check for unbuffered partitions with buffered jobs
+	differentBufferDBs   bool                              // if having different reader/writer buffer DBs, we need to refresh buffered partitions on every Store
+	canStore             bool                              // indicates if Store operations are supported
+	canFlush             bool                              // indicates if Flush operations are supported
+	numPartitions        int                               // number of partitions used in partition function
+	flushBatchSize       config.ValueLoader[int]           // number of records to flush in a single batch
+	flushPayloadSize     config.ValueLoader[int64]         // total payload size (in bytes) to flush in a single batch
+	flushMoveTimeout     config.ValueLoader[time.Duration] // timeout for move operation, before forcing switchover
+	flushMoveConcurrency config.ValueLoader[int]           // number of goroutines distributing partitions during the move phase
+	watchdogInterval     config.ValueLoader[time.Duration] // interval for watchdog to check for unbuffered partitions with buffered jobs
 
 	// state
 	bufferedPartitionsMu      *golock.CASMutex                       // mutex to protect bufferedPartitionsVersion & bufferedPartitions
