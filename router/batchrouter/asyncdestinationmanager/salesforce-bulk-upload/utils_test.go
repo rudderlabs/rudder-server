@@ -365,6 +365,72 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 	})
 }
 
+func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) {
+	t.Parallel()
+	jobs := []common.AsyncJob{
+		{
+			Message: map[string]any{
+				"Email":          "user@example.com",
+				"Account_Number": float64(1234567890),
+				"Account_IDs":    []any{float64(1234567890), float64(9876543210)},
+			},
+			Metadata: map[string]any{"job_id": float64(1)},
+		},
+	}
+
+	csvFilePath, _, _, err := createCSVFile("test-dest-numeric", jobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
+
+	file, err := os.Open(csvFilePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+
+	records, err := csv.NewReader(file).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	require.Equal(t, []string{"Account_IDs", "Account_Number", "Email"}, records[0])
+	require.Equal(t, []string{"[1234567890,9876543210]", "1234567890", "user@example.com"}, records[1])
+}
+
+func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
+	jobs := []common.AsyncJob{
+		{
+			Message: map[string]any{
+				"Email":     "middle@example.com",
+				"FirstName": "Mid",
+				"LastName":  nil,
+				"Phone":     "555-0001",
+			},
+			Metadata: map[string]any{"job_id": float64(1)},
+		},
+		{
+			Message: map[string]any{
+				"Email":     "trailing@example.com",
+				"FirstName": "End",
+				"LastName":  "User",
+				"Phone":     nil,
+			},
+			Metadata: map[string]any{"job_id": float64(2)},
+		},
+	}
+
+	csvFilePath, _, _, err := createCSVFile("test-dest-null", jobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
+
+	file, err := os.Open(csvFilePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+
+	records, err := csv.NewReader(file).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 3)
+	require.Equal(t, []string{"Email", "FirstName", "LastName", "Phone"}, records[0])
+	require.Equal(t, []string{"middle@example.com", "Mid", "", "555-0001"}, records[1])
+	require.Equal(t, []string{"trailing@example.com", "End", "User", ""}, records[2])
+}
+
 func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {
 	t.Run("jobs with different fields get union of all fields in CSV", func(t *testing.T) {
 		jobs := []common.AsyncJob{
