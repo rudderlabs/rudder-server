@@ -3,6 +3,7 @@ package salesforcebulkupload
 import (
 	"encoding/csv"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -363,6 +364,116 @@ func TestSalesforceBulk_calculateHashFromRecord_Integration(t *testing.T) {
 		require.NotEqual(t, hash1, hash2,
 			"Different records should produce different hashes")
 	})
+}
+
+func TestSalesforceBulk_createCSVFile_NumericNoScientificNotation(t *testing.T) {
+	t.Parallel()
+	jobs := []common.AsyncJob{
+		{
+			Message: map[string]any{
+				"Email":          "user@example.com",
+				"Account_Number": float64(1234567890),
+				"Account_IDs":    []any{float64(1234567890), float64(9876543210)},
+			},
+			Metadata: map[string]any{"job_id": float64(1)},
+		},
+	}
+
+	csvFilePath, headers, _, err := createCSVFile("test-dest-numeric", jobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
+
+	file, err := os.Open(csvFilePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+
+	records, err := csv.NewReader(file).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	row := records[1]
+	require.Equal(t, "1234567890", row[indexOf(headers, "Account_Number")])
+	require.Equal(t, "[1234567890 9876543210]", row[indexOf(headers, "Account_IDs")])
+}
+
+func TestSalesforceBulk_createCSVFile_NullValues(t *testing.T) {
+	jobs := []common.AsyncJob{
+		{
+			Message: map[string]any{
+				"Email":     "middle@example.com",
+				"FirstName": "Mid",
+				"LastName":  nil,
+				"Phone":     "555-0001",
+			},
+			Metadata: map[string]any{"job_id": float64(1)},
+		},
+		{
+			Message: map[string]any{
+				"Email":     "trailing@example.com",
+				"FirstName": "End",
+				"LastName":  "User",
+				"Phone":     nil,
+			},
+			Metadata: map[string]any{"job_id": float64(2)},
+		},
+	}
+
+	csvFilePath, headers, _, err := createCSVFile("test-dest-null", jobs)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.Remove(csvFilePath) })
+
+	require.Equal(t, []string{"Email", "FirstName", "LastName", "Phone"}, headers)
+
+	raw, err := os.ReadFile(csvFilePath)
+	require.NoError(t, err)
+	rawStr := string(raw)
+
+	file, err := os.Open(csvFilePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+
+	records, err := csv.NewReader(file).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 3)
+
+	emailIdx := indexOf(records[0], "Email")
+	rowByEmail := func(email string) []string {
+		for _, r := range records[1:] {
+			if r[emailIdx] == email {
+				return r
+			}
+		}
+		t.Fatalf("row with email %q not found", email)
+		return nil
+	}
+
+	middle := rowByEmail("middle@example.com")
+	require.Equal(t, "", middle[indexOf(headers, "LastName")], "null in middle field should be empty cell")
+	require.Equal(t, "555-0001", middle[indexOf(headers, "Phone")])
+
+	trailing := rowByEmail("trailing@example.com")
+	require.Equal(t, "User", trailing[indexOf(headers, "LastName")])
+	require.Equal(t, "", trailing[indexOf(headers, "Phone")], "null in trailing field should be empty cell")
+
+	lines := strings.Split(strings.TrimRight(rawStr, "\n"), "\n")
+	require.Len(t, lines, 3)
+	for _, line := range lines[1:] {
+		if strings.HasPrefix(line, "middle@example.com") {
+			require.Contains(t, line, ",,", "middle null should serialize as `,,`")
+		}
+		if strings.HasPrefix(line, "trailing@example.com") {
+			require.True(t, strings.HasSuffix(line, ","), "trailing null should serialize as a trailing comma; got %q", line)
+		}
+	}
+}
+
+func indexOf(s []string, target string) int {
+	for i, v := range s {
+		if v == target {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestSalesforceBulk_createCSVFile_VaryingFields(t *testing.T) {

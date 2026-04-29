@@ -104,7 +104,7 @@ func createCSVFile(
 		row := make([]string, len(headers))
 		for key, value := range job.Message {
 			if idx, ok := headerIndex[key]; ok {
-				row[idx] = fmt.Sprintf("%v", value)
+				row[idx] = common.FormatCSVValue(value)
 			}
 		}
 		jobID := int64(job.Metadata["job_id"].(float64))
