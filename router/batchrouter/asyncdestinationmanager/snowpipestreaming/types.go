@@ -43,9 +43,10 @@ type (
 				retryWaitMax           time.Duration
 				retryMax               int
 			}
-			instanceID             string
-			maxBufferCapacity      config.ValueLoader[int64]
-			stuckPipelineThreshold config.ValueLoader[time.Duration]
+			instanceID                string
+			maxBufferCapacity         config.ValueLoader[int64]
+			stuckPipelineThreshold    config.ValueLoader[time.Duration]
+			maxInsertRequestSizeBytes config.ValueLoader[int64]
 		}
 
 		stats struct {

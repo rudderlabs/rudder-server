@@ -38,8 +38,6 @@ import (
 	whutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const maxInsertRequestSizeBytes = 16 * bytesize.MB
-
 func New(
 	conf *config.Config,
 	log logger.Logger,
@@ -73,6 +71,7 @@ func New(
 	m.config.instanceID = conf.GetStringVar("1", "INSTANCE_ID")
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
+	m.config.maxInsertRequestSizeBytes = conf.GetReloadableInt64Var(16*bytesize.MB, bytesize.B, "SnowpipeStreaming.maxInsertRequestSizeBytes")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -206,9 +205,10 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 		return event.Message.Metadata.Table
 	})
 
-	filteredGroupedEvents, overflowedEvents := m.filterOutEventsThatExceedMaxInsertRequestSize(groupedEvents)
+	maxInsertRequestSizeBytes := m.config.maxInsertRequestSizeBytes.Load()
+	includedGroupedEvents, overflowedEvents := splitEventsExceedingMaxInsertRequestSize(groupedEvents, maxInsertRequestSizeBytes)
 
-	uploadInfos := lo.MapToSlice(filteredGroupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
+	uploadInfos := lo.MapToSlice(includedGroupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
 		jobIDs := lo.Map(tableEvents, func(event *event, _ int) int64 {
 			return event.Metadata.JobID
 		})
@@ -359,10 +359,10 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 	return events, nil
 }
 
-// filterOutEventsThatExceedMaxInsertRequestSize filters out events that exceed the max insert request size
-// and returns the filtered grouped events and the overflowed events.
-func (m *Manager) filterOutEventsThatExceedMaxInsertRequestSize(groupedEvents map[string][]*event) (map[string][]*event, []*event) {
-	filteredGroupedEvents := make(map[string][]*event, len(groupedEvents))
+// splitEventsExceedingMaxInsertRequestSize splits grouped events into included and overflowed events
+// based on the configured max insert request size.
+func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event, maxInsertRequestSizeBytes int64) (map[string][]*event, []*event) {
+	includedGroupedEvents := make(map[string][]*event, len(groupedEvents))
 	overflowedEvents := make([]*event, 0)
 	for tableName, tableEvents := range groupedEvents {
 		// Only account for the insert rows payload size:
@@ -382,10 +382,10 @@ func (m *Manager) filterOutEventsThatExceedMaxInsertRequestSize(groupedEvents ma
 			kept = append(kept, event)
 		}
 		if len(kept) > 0 {
-			filteredGroupedEvents[tableName] = kept
+			includedGroupedEvents[tableName] = kept
 		}
 	}
-	return filteredGroupedEvents, overflowedEvents
+	return includedGroupedEvents, overflowedEvents
 }
 
 // sendEventsToSnowpipe sends events to Snowpipe for the given table.

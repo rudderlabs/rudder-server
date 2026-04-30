@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -140,8 +141,11 @@ func TestSnowpipeStreaming(t *testing.T) {
 		statsStore, err := memstats.New()
 		require.NoError(t, err)
 
+		maxInsertRequestSizeBytes := 16 * bytesize.MB
+
 		conf := config.New()
 		conf.Set("SnowpipeStreaming.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("SnowpipeStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
 
 		sm := New(conf, logger.NOP, statsStore, destination)
 		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
@@ -176,7 +180,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		// then ensure a later small row can still fit.
 		// MessageDataByteSize is computed from the marshalled insert row.
 		baseTS := "2023-05-12T04:36:50.199Z"
-		largeName := strings.Repeat("a", int(maxInsertRequestSizeBytes-20000))
+		largeName := strings.Repeat("a", int(maxInsertRequestSizeBytes-int64(20000)))
 		overflowName := strings.Repeat("b", 30000)
 
 		_, err = fmt.Fprintf(f,
