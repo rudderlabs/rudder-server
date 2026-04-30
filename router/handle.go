@@ -238,6 +238,14 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 	var reservedJobs []reservedJob
 	blockedOrderKeys := make(map[eventorder.BarrierKey]struct{})
 
+	// Total wall-clock time spent in findWorkerSlot across this pickup loop.
+	// Published once at the end so dashboards can spot pathological slot-resolution latency
+	// (e.g. when buffers saturate or the calculator gets expensive).
+	var findWorkerSlotDuration time.Duration
+	defer func() {
+		stats.Default.NewTaggedStat("router_pickup_find_worker_slot_time", stats.TimerType, stats.Tags{"destType": rt.destType, "partition": partition}).SendTiming(findWorkerSlotDuration)
+	}()
+
 	flushTime := time.Now()
 	shouldFlush := func() bool {
 		return len(statusList) > 0 && time.Since(flushTime) > rt.reloadableConfig.pickupFlushInterval.Load()
@@ -287,7 +295,9 @@ func (rt *Handle) pickup(ctx context.Context, partition string, workers []*worke
 			rt.logger.Errorn("Error occurred while unmarshalling job parameters. Panicking", obskit.Error(err))
 			panic(err)
 		}
+		findStart := time.Now()
 		workerJobSlot, err := rt.findWorkerSlot(ctx, workers, job, parameters, blockedOrderKeys)
+		findWorkerSlotDuration += time.Since(findStart)
 		if err == nil {
 			traceParent := jsonparser.GetStringOrEmpty(job.Parameters, "traceparent")
 			if traceParent != "" {
@@ -626,6 +636,24 @@ type workerJobSlot struct {
 	drainReason string
 }
 
+// reserveAnyWorkerSlot picks a random starting offset and walks the workers slice
+// with wrap-around, reserving the first worker that has a free slot. Returns nil if
+// no worker has capacity. ReserveSlot is the atomic decision point — there is no
+// pre-filter step (which would be redundant work and would race with the reservation).
+func reserveAnyWorkerSlot(workers []*worker) *reservedSlot {
+	n := len(workers)
+	if n == 0 {
+		return nil
+	}
+	start := rand.Intn(n)
+	for i := range n {
+		if slot := workers[(start+i)%n].ReserveSlot(); slot != nil {
+			return slot
+		}
+	}
+	return nil
+}
+
 func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jobsdb.JobT, parameters routerutils.JobParameters, blockedOrderKeys map[eventorder.BarrierKey]struct{}) (*workerJobSlot, error) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil, types.ErrContextCancelled
@@ -649,11 +677,11 @@ func (rt *Handle) findWorkerSlot(ctx context.Context, workers []*worker, job *jo
 	}
 	abortedJob, abortReason := rt.drainOrRetryLimitReached(job.CreatedAt, parameters.DestinationID, parameters.SourceJobRunID, &job.LastJobStatus) // if job's aborted, then send it to its worker right away
 	if eventOrderingDisabled {
-		availableWorkers := lo.Filter(workers, func(w *worker, _ int) bool { return w.AvailableSlots() > 0 })
-		if len(availableWorkers) == 0 {
-			return nil, types.ErrWorkerNoSlot
-		}
-		slot := availableWorkers[rand.Intn(len(availableWorkers))].ReserveSlot()
+		// Pick a random starting offset and walk the workers slice with wrap-around,
+		// reserving the first worker that has a free slot. ReserveSlot is the atomic
+		// decision point — checking AvailableSlots() first would be redundant work
+		// and would also leave a race window between the check and the reservation.
+		slot := reserveAnyWorkerSlot(workers)
 		if slot == nil {
 			return nil, types.ErrWorkerNoSlot
 		}

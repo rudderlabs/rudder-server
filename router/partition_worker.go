@@ -20,11 +20,13 @@ import (
 // newPartitionWorker creates a worker that is responsible for picking up jobs for a single partition (none, workspace, destination).
 // A partition worker uses multiple workers internally to process the jobs that are being picked up asynchronously.
 func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *partitionWorker {
+	samplerCtx, samplerCancel := context.WithCancel(context.Background())
 	pw := &partitionWorker{
 		logger:               rt.logger.Child("p-" + partition),
 		rt:                   rt,
 		partition:            partition,
 		ctx:                  ctx,
+		samplerCancel:        samplerCancel,
 		pickupBatchSizeGauge: newGaugeWithLastValue[int](stats.Default.NewTaggedStat("router_pickup_batch_size_gauge", stats.GaugeType, stats.Tags{"destType": rt.destType, "partition": partition})),
 	}
 	pw.g, _ = errgroup.WithContext(context.Background())
@@ -88,6 +90,25 @@ func newPartitionWorker(ctx context.Context, rt *Handle, partition string) *part
 		}))
 
 	}
+
+	// Sampler: refreshes each worker buffer's cached capacity once per second so the
+	// hot path (worker.AvailableSlots) doesn't have to invoke the calculator on every
+	// call. Stops when samplerCancel is called from Stop().
+	pw.g.Go(crash.Wrapper(func() error {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-samplerCtx.Done():
+				return nil
+			case <-ticker.C:
+				for _, w := range pw.workers {
+					w.workerBuffer.refreshCapacity()
+				}
+			}
+		}
+	}))
+
 	return pw
 }
 
@@ -102,6 +123,7 @@ type partitionWorker struct {
 	// state
 	ctx                  context.Context
 	g                    *errgroup.Group         // group against which all the workers are spawned
+	samplerCancel        context.CancelFunc      // stops the buffer-capacity sampler goroutine
 	pickupBatchSizeGauge GaugeWithLastValue[int] // gauge to track the pickup batch size used in the last pickup iteration
 	workers              []*worker               // workers that are responsible for processing the jobs
 
@@ -137,6 +159,7 @@ func (pw *partitionWorker) SleepDurations() (min, max time.Duration) {
 
 // Stop stops the partitioned worker by closing the input channel of all its internal workers and waiting for them to finish
 func (pw *partitionWorker) Stop() {
+	pw.samplerCancel()
 	for _, worker := range pw.workers {
 		worker.cancelFunc()
 		worker.workerBuffer.Close()
