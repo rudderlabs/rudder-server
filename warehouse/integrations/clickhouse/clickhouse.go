@@ -857,13 +857,35 @@ func (ch *Clickhouse) createUsersTable(ctx context.Context, name string, columns
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
 		engineOptions = fmt.Sprintf(`'/clickhouse/{cluster}/tables/%s/{database}/{table}', '{replica}'`, uuid.New().String())
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s PARTITION BY toDate(%s)`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), partitionField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v )  ENGINE = %s(%s) ORDER BY %s %s`, ch.Namespace, name, clusterClause, ch.ColumnsWithDataTypes(name, columns, notNullableColumns), engine, engineOptions, getSortKeyTuple(sortKeyFields), ch.partitionByClause())
 	ch.logger.Infon("CH: Creating table in clickhouse for ch",
 		logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
 		logger.NewStringField(logfield.Query, sqlStatement),
 	)
 	_, err = ch.DB.ExecContext(ctx, sqlStatement)
 	return err
+}
+
+func (ch *Clickhouse) partitionByClause() string {
+	return fmt.Sprintf(`PARTITION BY %s`, ch.partitionExpr())
+}
+
+func (ch *Clickhouse) partitionExpr() string {
+	partitionType := strings.ToLower(strings.TrimSpace(ch.Warehouse.GetStringDestinationConfig(ch.conf, model.PartitionTypeSetting)))
+	switch partitionType {
+	case "", "day":
+		return fmt.Sprintf(`toDate(%s)`, partitionField)
+	case "week":
+		return fmt.Sprintf(`toStartOfWeek(%s)`, partitionField)
+	case "month":
+		return fmt.Sprintf(`toStartOfMonth(%s)`, partitionField)
+	default:
+		ch.logger.Warnn("CH: Invalid partition type for clickhouse destination, defaulting to day",
+			logger.NewStringField("partitionType", partitionType),
+			logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
+		)
+		return fmt.Sprintf(`toDate(%s)`, partitionField)
+	}
 }
 
 func getSortKeyTuple(sortKeyFields []string) string {
@@ -910,7 +932,7 @@ func (ch *Clickhouse) CreateTable(ctx context.Context, tableName string, columns
 
 	var partitionByClause string
 	if _, ok := columns[partitionField]; ok {
-		partitionByClause = fmt.Sprintf(`PARTITION BY toDate(%s)`, partitionField)
+		partitionByClause = ch.partitionByClause()
 	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %q.%q %s ( %v ) ENGINE = %s(%s) %s %s`, ch.Namespace, tableName, clusterClause, ch.ColumnsWithDataTypes(tableName, columns, sortKeyFields), engine, engineOptions, orderByClause, partitionByClause)
