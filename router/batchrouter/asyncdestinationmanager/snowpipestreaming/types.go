@@ -47,7 +47,7 @@ type (
 			maxBufferCapacity      config.ValueLoader[int64]
 			stuckPipelineThreshold config.ValueLoader[time.Duration]
 			bulkStatusEnabled      config.ValueLoader[bool]
-			bulkStatusChannels     config.ValueLoader[int]
+			bulkStatusBatchSize    config.ValueLoader[int]
 		}
 
 		stats struct {

@@ -74,7 +74,7 @@ func New(
 	m.config.maxBufferCapacity = conf.GetReloadableInt64Var(512*bytesize.KB, bytesize.B, "SnowpipeStreaming.maxBufferCapacity")
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 	m.config.bulkStatusEnabled = conf.GetReloadableBoolVar(false, "SnowpipeStreaming.bulkStatusEnabled")
-	m.config.bulkStatusChannels = conf.GetReloadableIntVar(100, 1, "SnowpipeStreaming.bulkStatusChannels")
+	m.config.bulkStatusBatchSize = conf.GetReloadableIntVar(100, 1, "SnowpipeStreaming.bulkStatusBatchSize")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -847,9 +847,10 @@ func isInProgress(statusRes *model.StatusResponse, info *importInfo, log logger.
 
 func (m *Manager) getBulkStatus(ctx context.Context, channelIDs []string) (map[string]*model.StatusResponse, []string, error) {
 	statuses := make(map[string]*model.StatusResponse)
-	notFound := make([]string, 0)
 
-	channelIDChunks := lo.Chunk(channelIDs, m.config.bulkStatusChannels.Load())
+	var notFound []string
+
+	channelIDChunks := lo.Chunk(channelIDs, m.config.bulkStatusBatchSize.Load())
 	for i := range channelIDChunks {
 		channelIDChunk := channelIDChunks[i]
 		bulkStatusRes, err := m.api.GetBulkStatus(ctx, channelIDChunk)
@@ -872,20 +873,14 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 
 	statuses, notFound, err := m.getBulkStatus(ctx, channelIDs)
 	if err != nil {
-		for i := range infos {
-			info := infos[i]
-			info.FailedJobIds = nil
-			info.Failed = true
-			info.Reason = err.Error()
-			m.polledImportInfoMap[info.ChannelID] = info
-		}
-		return nil
+		// In case of failure, we return all the import infos to be polled again
+		m.logger.Warnn("Failed to get bulk status", obskit.Error(err))
+		return infos
 	}
 
-	notFoundMap := make(map[string]struct{}, len(notFound))
-	for _, channelID := range notFound {
-		notFoundMap[channelID] = struct{}{}
-	}
+	notFoundMap := lo.SliceToMap(notFound, func(channelID string) (string, struct{}) {
+		return channelID, struct{}{}
+	})
 
 	var inProgressInfos []*importInfo
 
@@ -895,7 +890,7 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 		info.Failed = false
 
 		if _, exists := notFoundMap[info.ChannelID]; exists {
-			recreatedStatusRes, recreateErr := m.handleChannelNotFoundPostBulkStatus(ctx, info)
+			recreatedStatusRes, recreateErr := m.handleChannelRecoveryPostBulkStatus(ctx, info, false)
 			if recreateErr != nil {
 				info.Failed = true
 				info.Reason = recreateErr.Error()
@@ -919,7 +914,7 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 
 		statusRes := statuses[info.ChannelID]
 		if !statusRes.Valid {
-			recreatedStatusRes, recreateErr := m.handleInvalidStatusResponsePostBulkStatus(ctx, info)
+			recreatedStatusRes, recreateErr := m.handleChannelRecoveryPostBulkStatus(ctx, info, true)
 			if recreateErr != nil {
 				info.Failed = true
 				info.Reason = recreateErr.Error()
@@ -937,6 +932,12 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 				inProgressInfos = append(inProgressInfos, info)
 				continue
 			}
+			m.polledImportInfoMap[info.ChannelID] = info
+			continue
+		}
+		if !statusRes.Success {
+			info.Failed = true
+			info.Reason = fmt.Sprintf("failed to get status with success: %t", statusRes.Success)
 			m.polledImportInfoMap[info.ChannelID] = info
 			continue
 		}
@@ -958,70 +959,20 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 	return inProgressInfos
 }
 
-func (m *Manager) handleChannelNotFoundPostBulkStatus(ctx context.Context, info *importInfo) (*model.StatusResponse, error) {
+func (m *Manager) handleChannelRecoveryPostBulkStatus(ctx context.Context, info *importInfo, deleteChannel bool) (*model.StatusResponse, error) {
 	log := m.logger.Withn(
 		logger.NewStringField("channelId", info.ChannelID),
 		logger.NewStringField("expectedOffset", info.Offset),
 		logger.NewStringField("table", info.Table),
+		logger.NewStringField("deleteChannel", strconv.FormatBool(deleteChannel)),
 	)
-	log.Infon("Handling channel not found post bulk status")
+	log.Infon("Handling channel recovery post bulk status")
 
-	var destConf destConfig
-	if decodeErr := destConf.Decode(m.destination.Config); decodeErr != nil {
-		return nil, fmt.Errorf("failed to decode destination config during channel recreation: %w", decodeErr)
-	}
-
-	req := buildCreateChannelRequest(m.destination.ID, m.config.instanceID, &destConf, info.Table)
-	recreatedChannel, recreateErr := m.api.CreateChannel(ctx, req)
-	if recreateErr != nil {
-		return nil, fmt.Errorf("recreating channel: %w", recreateErr)
-	}
-	m.channelCache.Store(info.Table, recreatedChannel)
-
-	m.logger.Infon("Recreated channel for polling", logger.NewStringField("channelID", recreatedChannel.ChannelID))
-
-	// The new channel id is not being associated with the import info. This is because even if we do that,
-	// it will update the in memory map and not the database
-	// So the next time we poll, we will get the old channel id and not the new one
-
-	statuses, notFound, err := m.getBulkStatus(ctx, []string{recreatedChannel.ChannelID})
-	if err != nil {
-		return nil, fmt.Errorf("getting status after channel recreation: %w", err)
-	}
-	if len(notFound) > 0 {
-		return nil, fmt.Errorf("channel not found after recreation: %s", strings.Join(notFound, ","))
-	}
-
-	recreatedStatusRes, ok := statuses[recreatedChannel.ChannelID]
-	if !ok {
-		return nil, fmt.Errorf("channel not found after recreation: %s", recreatedChannel.ChannelID)
-	}
-
-	log.Infon("Polled import info after recreation post bulk status",
-		logger.NewBoolField("success", recreatedStatusRes.Success),
-		logger.NewStringField("latestCommittedOffset", recreatedStatusRes.Offset),
-		logger.NewStringField("latestInsertedOffset", recreatedStatusRes.LatestInsertedOffset),
-		logger.NewBoolField("valid", recreatedStatusRes.Valid),
-	)
-
-	if !recreatedStatusRes.Valid || !recreatedStatusRes.Success {
-		return nil, fmt.Errorf("invalid status response after recreation with valid: %t, success: %t", recreatedStatusRes.Valid, recreatedStatusRes.Success)
-	}
-
-	return recreatedStatusRes, nil
-}
-
-func (m *Manager) handleInvalidStatusResponsePostBulkStatus(ctx context.Context, info *importInfo) (*model.StatusResponse, error) {
-	log := m.logger.Withn(
-		logger.NewStringField("channelId", info.ChannelID),
-		logger.NewStringField("expectedOffset", info.Offset),
-		logger.NewStringField("table", info.Table),
-	)
-	log.Infon("Handling invalid status response post bulk status")
-
-	// Delete the channel from the cache and the Snowpipe as it is invalid
-	if err := m.deleteChannel(ctx, info.Table, info.ChannelID); err != nil {
-		log.Warnn("Failed to delete channel", logger.NewStringField("table", info.Table), logger.NewStringField("channelID", info.ChannelID), obskit.Error(err))
+	if deleteChannel {
+		// Delete the channel from the cache and the Snowpipe as it is invalid
+		if err := m.deleteChannel(ctx, info.Table, info.ChannelID); err != nil {
+			log.Warnn("Failed to delete channel", logger.NewStringField("table", info.Table), logger.NewStringField("channelID", info.ChannelID), obskit.Error(err))
+		}
 	}
 
 	var destConf destConfig

@@ -1608,14 +1608,6 @@ func TestSnowpipeStreaming(t *testing.T) {
 					}, nil
 				},
 			},
-			// getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
-			// 	"test-products-channel": func() (*model.StatusResponse, error) {
-			// 		return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-			// 	},
-			// 	"test-users-channel": func() (*model.StatusResponse, error) {
-			// 		return &model.StatusResponse{Valid: false, Success: false, Offset: "0"}, nil
-			// 	},
-			// },
 			deleteChannelOutputMap: map[string]func() error{
 				"test-users-channel": func() error {
 					return nil
