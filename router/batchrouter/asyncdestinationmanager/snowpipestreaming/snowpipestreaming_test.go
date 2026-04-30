@@ -6,12 +6,15 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/bytesize"
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	"github.com/rudderlabs/rudder-go-kit/stats"
@@ -132,6 +135,82 @@ func TestSnowpipeStreaming(t *testing.T) {
 			"destinationId": "test-destination",
 			"status":        "failed",
 		}).LastValue())
+	})
+
+	t.Run("Upload filters out events that exceed max insert request size", func(t *testing.T) {
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		maxInsertRequestSizeBytes := 16 * bytesize.MB
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.maxBufferCapacity", int64(64*1024*1024))
+		conf.Set("SnowpipeStreaming.maxInsertRequestSizeBytes", maxInsertRequestSizeBytes)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.channelCache.Store("RUDDER_DISCARDS", rudderDiscardsChannelResponse)
+		sm.channelCache.Store("USERS", usersChannelResponse)
+
+		mockApi := &mockAPI{
+			insertOutputMap: map[string]func() (*model.InsertResponse, error){
+				"test-rudder-discards-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+				"test-users-channel": func() (*model.InsertResponse, error) {
+					return &model.InsertResponse{Success: true}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-rudder-discards-channel": func() error { return nil },
+				"test-users-channel":           func() error { return nil },
+			},
+			getStatusOutputMap: map[string]func() (*model.StatusResponse, error){
+				"test-rudder-discards-channel": func() (*model.StatusResponse, error) { return nil, assert.AnError },
+				"test-users-channel":           func() (*model.StatusResponse, error) { return nil, assert.AnError },
+			},
+		}
+		sm.api = mockApi
+
+		f, err := os.CreateTemp("", "snowpipe-streaming-chunking-*.txt")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = os.Remove(f.Name()) })
+		t.Cleanup(func() { _ = f.Close() })
+
+		// Fill the insert rows payload close to 16MB, make the next row overflow,
+		// then ensure a later small row can still fit.
+		// MessageDataByteSize is computed from the marshalled insert row.
+		baseTS := "2023-05-12T04:36:50.199Z"
+		largeName := strings.Repeat("a", int(maxInsertRequestSizeBytes-int64(20000)))
+		overflowName := strings.Repeat("b", 30000)
+
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":1,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1001}}`+"\n",
+			largeName, baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":2,"NAME":"%s","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1002}}`+"\n",
+			overflowName, baseTS,
+		)
+		require.NoError(t, err)
+		_, err = fmt.Fprintf(f,
+			`{"message":{"metadata":{"table":"USERS","columns":{"ID":"int","NAME":"string","AGE":"int","RECEIVED_AT":"datetime"}},"data":{"ID":3,"NAME":"small","AGE":30,"RECEIVED_AT":"%s"}},"metadata":{"job_id":1003}}`+"\n",
+			baseTS,
+		)
+		require.NoError(t, err)
+		require.NoError(t, f.Sync())
+
+		output := sm.Upload(context.Background(), &common.AsyncDestinationStruct{
+			Destination: destination,
+			FileName:    f.Name(),
+			Count:       3,
+		})
+
+		require.Equal(t, []int64{1001, 1003}, output.ImportingJobIDs)
+		require.Equal(t, 2, output.ImportingCount)
+		require.Equal(t, []int64{1002}, output.FailedJobIDs)
+		require.Equal(t, 1, output.FailedCount)
+		require.Equal(t, fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes), output.FailedReason)
 	})
 
 	t.Run("Upload not able to create discards channel", func(t *testing.T) {

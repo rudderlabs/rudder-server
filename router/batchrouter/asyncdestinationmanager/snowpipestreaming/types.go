@@ -43,9 +43,10 @@ type (
 				retryWaitMax           time.Duration
 				retryMax               int
 			}
-			instanceID             string
-			maxBufferCapacity      config.ValueLoader[int64]
-			stuckPipelineThreshold config.ValueLoader[time.Duration]
+			instanceID                string
+			maxBufferCapacity         config.ValueLoader[int64]
+			stuckPipelineThreshold    config.ValueLoader[time.Duration]
+			maxInsertRequestSizeBytes config.ValueLoader[int64]
 		}
 
 		stats struct {
@@ -80,6 +81,7 @@ type (
 		Metadata struct {
 			JobID int64 `json:"job_id"`
 		}
+		MessageDataByteSize int64 `json:"-"` // Added to track the size of message.data field in bytes
 	}
 
 	destConfig struct {
@@ -157,12 +159,14 @@ func (d *destConfig) Decode(m map[string]any) error {
 	return nil
 }
 
-func (e *event) setUUIDTimestamp(formattedTimestamp string) {
+func (e *event) setUUIDTimestamp(formattedTimestamp string) bool {
 	if e.Message.Metadata.Columns == nil {
-		return
+		return false
 	}
 	uuidTimestampColumn := whutils.ToProviderCase(whutils.SnowpipeStreaming, "uuid_ts")
 	if _, columnExists := e.Message.Metadata.Columns[uuidTimestampColumn]; columnExists {
 		e.Message.Data[uuidTimestampColumn] = formattedTimestamp
+		return true
 	}
+	return false
 }
