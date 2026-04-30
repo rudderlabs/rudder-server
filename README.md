@@ -52,7 +52,7 @@
 
 As the leading open source Customer Data Platform (CDP), [**RudderStack**](https://www.rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
 
-With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. It's easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
+With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. Its easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations make building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
 <p align="center">
   <a href="https://www.rudderstack.com/">
@@ -79,7 +79,7 @@ With RudderStack, you can build customer data pipelines that connect your whole 
 
 - **Production-ready**: Companies like Mattermost, IFTTT, Torpedo, Grofers, 1mg, Nana, OnceHub, and dozens of large companies use RudderStack for collecting their events.
 
-- **Seamless Integration**: RudderStack currently supports integration with over 90 popular [**tool**](https://www.rudderstack.com/docs/destinations/) and [**warehouse**](https://www.rudderstack.com/docs/data-warehouse-integrations/) destinations.
+- **Seamless Integration**: RudderStack currently supports integration with over 90 popular [**tools**](https://www.rudderstack.com/docs/destinations/) and [**warehouse**](https://www.rudderstack.com/docs/data-warehouse-integrations/) destinations.
 
 - **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, as RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
@@ -103,7 +103,7 @@ Once you have installed RudderStack, [**send test events**](https://www.rudderst
 
 ## Architecture
 
-RudderStack is an independent, stand-alone system with a dependency only on the database (PostgreSQL). Its backend is written in **Go** with a rich UI written in **React.js**.
+RudderStack is an independent, standalone system with only one dependency: the database (PostgreSQL). Its backend is written in **Go** with a rich UI written in **React.js**.
 
 A high-level view of RudderStack’s architecture is shown below:
 
@@ -113,9 +113,8 @@ For more details on the various architectural components, refer to our [**docume
 
 ## Contribute
 
-We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](https://github.com/rudderlabs/rudder-server/blob/master/CONTRIBUTING.md).
+We would love to see you contribute to RudderStack. Get more information on how to contribute [**here**](CONTRIBUTING.md).
 
 ## License
 
 RudderStack server is released under the [**Elastic License 2.0**](LICENSE).
-
