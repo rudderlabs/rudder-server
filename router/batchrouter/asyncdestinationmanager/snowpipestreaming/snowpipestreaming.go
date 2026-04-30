@@ -75,6 +75,7 @@ func New(
 	m.config.stuckPipelineThreshold = conf.GetReloadableDurationVar(15, time.Minute, "SnowpipeStreaming.stuckPipelineThresholdInMinutes")
 	m.config.bulkStatusEnabled = conf.GetReloadableBoolVar(false, "SnowpipeStreaming.bulkStatusEnabled")
 	m.config.bulkStatusBatchSize = conf.GetReloadableIntVar(100, 1, "SnowpipeStreaming.bulkStatusBatchSize")
+	m.config.maxInsertRequestSizeBytes = conf.GetReloadableInt64Var(16*bytesize.MB, bytesize.B, "SnowpipeStreaming.maxInsertRequestSizeBytes")
 
 	tags := stats.Tags{
 		"module":        "batch_router",
@@ -207,7 +208,11 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	groupedEvents := lo.GroupBy(events, func(event *event) string {
 		return event.Message.Metadata.Table
 	})
-	uploadInfos := lo.MapToSlice(groupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
+
+	maxInsertRequestSizeBytes := m.config.maxInsertRequestSizeBytes.Load()
+	includedGroupedEvents, overflowedEvents := splitEventsExceedingMaxInsertRequestSize(groupedEvents, maxInsertRequestSizeBytes)
+
+	uploadInfos := lo.MapToSlice(includedGroupedEvents, func(tableName string, tableEvents []*event) *uploadInfo {
 		jobIDs := lo.Map(tableEvents, func(event *event, _ int) int64 {
 			return event.Metadata.JobID
 		})
@@ -277,6 +282,15 @@ func (m *Manager) Upload(_ context.Context, asyncDest *common.AsyncDestinationSt
 	if discardImportInfo != nil {
 		importInfos = append(importInfos, discardImportInfo)
 	}
+	if len(overflowedEvents) > 0 {
+		failedJobIDs = append(failedJobIDs, lo.Map(overflowedEvents, func(event *event, _ int) int64 {
+			return event.Metadata.JobID
+		})...)
+		// If failed reason is not set, set it to the default reason
+		if failedReason == "" {
+			failedReason = fmt.Sprintf("some events were not uploaded because they exceeded the max insert request size: %d bytes", maxInsertRequestSizeBytes)
+		}
+	}
 
 	var importParameters json.RawMessage
 	if len(importInfos) > 0 {
@@ -328,11 +342,18 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 	scanner.Buffer(nil, int(m.config.maxBufferCapacity.Load()))
 
 	for scanner.Scan() {
+		line := scanner.Bytes()
+
 		var e event
-		if err := jsonrs.Unmarshal(scanner.Bytes(), &e); err != nil {
+		if err := jsonrs.Unmarshal(line, &e); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal event: %w", err)
 		}
-		e.setUUIDTimestamp(formattedTS)
+		isUUIDTimestampSet := e.setUUIDTimestamp(formattedTS)
+
+		e.MessageDataByteSize = int64(len(gjson.GetBytes(line, "message.data").Raw))
+		if isUUIDTimestampSet {
+			e.MessageDataByteSize += int64(len(formattedTS))
+		}
 
 		events = append(events, &e)
 	}
@@ -340,6 +361,35 @@ func (m *Manager) eventsFromFile(fileName string, eventsCount int) ([]*event, er
 		return nil, fmt.Errorf("error reading from file: %w", err)
 	}
 	return events, nil
+}
+
+// splitEventsExceedingMaxInsertRequestSize splits grouped events into included and overflowed events
+// based on the configured max insert request size.
+func splitEventsExceedingMaxInsertRequestSize(groupedEvents map[string][]*event, maxInsertRequestSizeBytes int64) (map[string][]*event, []*event) {
+	includedGroupedEvents := make(map[string][]*event, len(groupedEvents))
+	overflowedEvents := make([]*event, 0)
+	for tableName, tableEvents := range groupedEvents {
+		// Only account for the insert rows payload size:
+		// rows JSON = '[' + row1 + ',' + row2 + ... + ']'
+		eventsSize := int64(2) // '[' + ']'
+		kept := make([]*event, 0, len(tableEvents))
+		for _, event := range tableEvents {
+			eventSize := event.MessageDataByteSize
+			if len(kept) > 0 {
+				eventSize++ // ',' between rows
+			}
+			if eventsSize+eventSize > maxInsertRequestSizeBytes {
+				overflowedEvents = append(overflowedEvents, event)
+				continue
+			}
+			eventsSize += eventSize
+			kept = append(kept, event)
+		}
+		if len(kept) > 0 {
+			includedGroupedEvents[tableName] = kept
+		}
+	}
+	return includedGroupedEvents, overflowedEvents
 }
 
 // sendEventsToSnowpipe sends events to Snowpipe for the given table.
@@ -873,9 +923,8 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 
 	statuses, notFound, err := m.getBulkStatus(ctx, channelIDs)
 	if err != nil {
-		// In case of failure, we return all the import infos to be polled again
 		m.logger.Warnn("Failed to get bulk status", obskit.Error(err))
-		return infos
+		return infos // In case of failure, we return all the import infos to be polled again
 	}
 
 	notFoundMap := lo.SliceToMap(notFound, func(channelID string) (string, struct{}) {
@@ -889,64 +938,22 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 		info.FailedJobIds = nil
 		info.Failed = false
 
-		if _, exists := notFoundMap[info.ChannelID]; exists {
-			recreatedStatusRes, recreateErr := m.handleChannelRecoveryPostBulkStatus(ctx, info, false)
-			if recreateErr != nil {
-				info.Failed = true
-				info.Reason = recreateErr.Error()
-				m.polledImportInfoMap[info.ChannelID] = info
-				continue
-			}
-			inProgress, statusErr := isInProgress(recreatedStatusRes, info, m.logger)
-			if statusErr != nil {
-				info.Failed = true
-				info.Reason = statusErr.Error()
-				m.polledImportInfoMap[info.ChannelID] = info
-				continue
-			}
-			if inProgress {
-				inProgressInfos = append(inProgressInfos, info)
-				continue
-			}
-			m.polledImportInfoMap[info.ChannelID] = info
+		log := m.logger.Withn(
+			logger.NewStringField("channelId", info.ChannelID),
+			logger.NewStringField("expectedOffset", info.Offset),
+			logger.NewStringField("table", info.Table),
+		)
+		log.Infon("Resolving status response post bulk status")
+
+		statusRes, resolveErr := m.resolveStatusResponsePostBulkStatus(ctx, info, statuses, notFoundMap)
+		if resolveErr != nil {
+			m.markImportInfoFailed(info, resolveErr.Error())
 			continue
 		}
 
-		statusRes := statuses[info.ChannelID]
-		if !statusRes.Valid {
-			recreatedStatusRes, recreateErr := m.handleChannelRecoveryPostBulkStatus(ctx, info, true)
-			if recreateErr != nil {
-				info.Failed = true
-				info.Reason = recreateErr.Error()
-				m.polledImportInfoMap[info.ChannelID] = info
-				continue
-			}
-			inProgress, statusErr := isInProgress(recreatedStatusRes, info, m.logger)
-			if statusErr != nil {
-				info.Failed = true
-				info.Reason = statusErr.Error()
-				m.polledImportInfoMap[info.ChannelID] = info
-				continue
-			}
-			if inProgress {
-				inProgressInfos = append(inProgressInfos, info)
-				continue
-			}
-			m.polledImportInfoMap[info.ChannelID] = info
-			continue
-		}
-		if !statusRes.Success {
-			info.Failed = true
-			info.Reason = fmt.Sprintf("failed to get status with success: %t", statusRes.Success)
-			m.polledImportInfoMap[info.ChannelID] = info
-			continue
-		}
-
-		inProgress, statusErr := isInProgress(statusRes, info, m.logger)
+		inProgress, statusErr := isInProgress(statusRes, info, log)
 		if statusErr != nil {
-			info.Failed = true
-			info.Reason = statusErr.Error()
-			m.polledImportInfoMap[info.ChannelID] = info
+			m.markImportInfoFailed(info, statusErr.Error())
 			continue
 		}
 		if inProgress {
@@ -957,6 +964,35 @@ func (m *Manager) getNonProcessedImportInfosWithBulkStatus(ctx context.Context, 
 	}
 
 	return inProgressInfos
+}
+
+func (m *Manager) resolveStatusResponsePostBulkStatus(
+	ctx context.Context,
+	info *importInfo,
+	statuses map[string]*model.StatusResponse,
+	notFoundMap map[string]struct{},
+) (*model.StatusResponse, error) {
+	if _, exists := notFoundMap[info.ChannelID]; exists {
+		return m.handleChannelRecoveryPostBulkStatus(ctx, info, false)
+	}
+
+	statusRes, ok := statuses[info.ChannelID]
+	if !ok {
+		return nil, fmt.Errorf("channel not found in bulk status: %s", info.ChannelID)
+	}
+	if !statusRes.Valid {
+		return m.handleChannelRecoveryPostBulkStatus(ctx, info, true)
+	}
+	if !statusRes.Success {
+		return nil, fmt.Errorf("failed to get status with success: %t", statusRes.Success)
+	}
+	return statusRes, nil
+}
+
+func (m *Manager) markImportInfoFailed(info *importInfo, reason string) {
+	info.Failed = true
+	info.Reason = reason
+	m.polledImportInfoMap[info.ChannelID] = info
 }
 
 func (m *Manager) handleChannelRecoveryPostBulkStatus(ctx context.Context, info *importInfo, deleteChannel bool) (*model.StatusResponse, error) {
