@@ -2,6 +2,7 @@ package router
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/rudderlabs/rudder-go-kit/stats"
 	kitsync "github.com/rudderlabs/rudder-go-kit/sync"
@@ -10,10 +11,17 @@ import (
 // workerBuffer represents a buffer for a worker to hold jobs before processing.
 // It supports dynamic sizing based on a target size function
 // and allows reservation of slots to control job intake.
+//
+// The current capacity is cached in cachedCapacity and refreshed periodically by an
+// external sampler (see partitionWorker) via refreshCapacity(). The hot read path
+// (AvailableSlots) reads the cached value with an atomic load instead of invoking
+// the calculator on every call — this matters at high worker counts where the
+// calculator + stats observation dominate findWorkerSlot's cost.
 type workerBuffer struct {
 	maxCapacity    int
 	targetCapacity func() int
 	jobs           chan *workerJob
+	cachedCapacity atomic.Int64
 
 	stats        *workerBufferStats
 	mu           sync.RWMutex
@@ -39,6 +47,7 @@ func newWorkerBuffer(maxCapacity int, targetCapacity func() int, stats *workerBu
 		jobs:           make(chan *workerJob, maxCapacity),
 		stats:          stats,
 	}
+	wb.refreshCapacity()
 	return wb
 }
 
@@ -53,6 +62,7 @@ func newSimpleWorkerBuffer(capacity int) *workerBuffer {
 		jobs:           make(chan *workerJob, capacity),
 		stats:          nil,
 	}
+	wb.refreshCapacity()
 	return wb
 }
 
@@ -60,14 +70,13 @@ func (wb *workerBuffer) Jobs() <-chan *workerJob {
 	return wb.jobs
 }
 
-func (wb *workerBuffer) currentCapacity() int {
-	capacity := wb.targetCapacity()
-	if capacity < 1 {
-		return 1
-	}
-	if capacity > wb.maxCapacity {
-		capacity = wb.maxCapacity
-	}
+// refreshCapacity recomputes the buffer's target capacity (clamped to [1, maxCapacity]),
+// updates the cached value used by the AvailableSlots hot path, and observes stats.
+// It is invoked by an external sampler (typically once per second from partitionWorker)
+// and also from the constructor and tests; the returned int is the freshly computed value.
+func (wb *workerBuffer) refreshCapacity() int {
+	capacity := min(max(wb.targetCapacity(), 1), wb.maxCapacity)
+	wb.cachedCapacity.Store(int64(capacity))
 	if wb.stats != nil {
 		wb.stats.onceEvery.Do(func() {
 			wb.stats.currentCapacity.Observe(float64(capacity))
@@ -88,7 +97,7 @@ func (wb *workerBuffer) availableSlots() int {
 	if wb.closed {
 		return 0
 	}
-	available := wb.currentCapacity() - wb.reservations - len(wb.jobs)
+	available := int(wb.cachedCapacity.Load()) - wb.reservations - len(wb.jobs)
 	if available < 0 {
 		return 0
 	}
