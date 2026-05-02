@@ -20,9 +20,10 @@ import (
 
 func TestFlushBufferedPartitions(t *testing.T) {
 	const (
-		flushBatchSizeConfig   = "flushBatchSize"
-		flushPayloadSizeConfig = "flushPayloadSize"
-		flushMoveTimeoutConfig = "flushMoveTimeout"
+		flushBatchSizeConfig       = "flushBatchSize"
+		flushPayloadSizeConfig     = "flushPayloadSize"
+		flushMoveTimeoutConfig     = "flushMoveTimeout"
+		flushMoveConcurrencyConfig = "flushMoveConcurrency"
 	)
 	t.Run("readwrite", func(t *testing.T) {
 		setup := func(t *testing.T) (pb JobsDBPartitionBuffer, c *config.Config, sqlDB *sql.DB, bufferDB jobsdb.JobsDB) {
@@ -56,6 +57,7 @@ func TestFlushBufferedPartitions(t *testing.T) {
 				WithFlushBatchSize(c.GetReloadableIntVar(3, 1, flushBatchSizeConfig)),
 				WithFlushPayloadSize(c.GetReloadableInt64Var(100*bytesize.MB, 1, flushPayloadSizeConfig)),
 				WithFlushMoveTimeout(c.GetReloadableDurationVar(60, time.Second, flushMoveTimeoutConfig)),
+				WithFlushMoveConcurrency(c.GetReloadableIntVar(2, 1, flushMoveConcurrencyConfig)),
 			)
 			require.NoError(t, err)
 			return pb, c, pg.DB, bufferRW
@@ -324,6 +326,7 @@ func TestFlushBufferedPartitions(t *testing.T) {
 				WithFlushBatchSize(c.GetReloadableIntVar(3, 1, flushBatchSizeConfig)),
 				WithFlushPayloadSize(c.GetReloadableInt64Var(100*bytesize.MB, 1, flushPayloadSizeConfig)),
 				WithFlushMoveTimeout(c.GetReloadableDurationVar(60, time.Second, flushMoveTimeoutConfig)),
+				WithFlushMoveConcurrency(c.GetReloadableIntVar(2, 1, flushMoveConcurrencyConfig)),
 			)
 			require.NoError(t, err)
 			return pbw, pbr, c, pg.DB, bufferRO
