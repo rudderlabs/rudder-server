@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -65,17 +66,17 @@ type Client interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-func NewClient(config *ClientConfig) Client {
+func NewClient(name string, config *ClientConfig) Client {
 	switch config.ClientType {
 	case "httplb":
-		return buildHTTPLBClient(config)
+		return buildHTTPLBClient(name, config)
 	default:
-		return buildStandardClient(config)
+		return buildStandardClient(name, config)
 	}
 }
 
 // buildStandardClient creates a standard HTTP client with configuration applied
-func buildStandardClient(config *ClientConfig) Client {
+func buildStandardClient(name string, config *ClientConfig) Client {
 	transport := buildConfiguredTransport(config)
 	client := &http.Client{
 		Transport: transport,
@@ -84,13 +85,13 @@ func buildStandardClient(config *ClientConfig) Client {
 
 	retryableConfig := buildRetryableConfig(config)
 	if retryableConfig != nil {
-		return newRetryableHTTPClient(client, retryableConfig)
+		return newRetryableHTTPClient(name, client, retryableConfig)
 	}
 	return client
 }
 
 // buildHTTPLBClient creates an HTTP load balancer client
-func buildHTTPLBClient(config *ClientConfig) Client {
+func buildHTTPLBClient(name string, config *ClientConfig) Client {
 	transport := buildConfiguredTransport(config)
 
 	tr := &httplbtransport{
@@ -115,7 +116,7 @@ func buildHTTPLBClient(config *ClientConfig) Client {
 	retryableConfig := buildRetryableConfig(config)
 
 	if retryableConfig != nil {
-		return newRetryableHTTPClient(client, retryableConfig)
+		return newRetryableHTTPClient(name, client, retryableConfig)
 	}
 	return client
 }
@@ -199,18 +200,26 @@ func getRecycleTTL(config *ClientConfig) time.Duration {
 	return defaultRecycleTTL
 }
 
-func newRetryableHTTPClient(baseClient Client, retryableConfig *retryablehttp.Config) Client {
+func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *retryablehttp.Config) Client {
 	return retryablehttp.NewRetryableHTTPClient(
 		retryableConfig,
 		retryablehttp.WithHttpClient(baseClient),
-		retryablehttp.WithCustomRetryStrategy(func(resp *http.Response, err error) (bool, error) {
+		retryablehttp.WithCustomRetryStrategy(func(attempt int, resp *http.Response, err error) (bool, error) {
 			if err != nil {
 				return false, backoff.Permanent(err)
 			}
 			if resp.StatusCode == http.StatusServiceUnavailable &&
 				strings.ToLower(resp.Header.Get("X-Rudder-Should-Retry")) == "true" {
 				reason := resp.Header.Get("X-Rudder-Error-Reason")
-				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, stats.Tags{"reason": reason}).Count(1)
+				attemptTag := strconv.Itoa(attempt)
+				if attempt > 4 {
+					attemptTag = "5+"
+				}
+				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, stats.Tags{
+					"name":    name,
+					"reason":  reason,
+					"attempt": attemptTag,
+				}).Increment()
 				resp.Body.Close()
 				return true, fmt.Errorf("got retryable error response from transformer: %s", reason)
 			}
