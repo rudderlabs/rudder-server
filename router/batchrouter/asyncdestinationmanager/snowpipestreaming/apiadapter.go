@@ -16,6 +16,7 @@ const (
 	deleteChannelAPI = "delete_channel"
 	insertAPI        = "insert"
 	statusAPI        = "status"
+	bulkStatusAPI    = "bulk_status"
 )
 
 func newApiAdapter(
@@ -122,6 +123,21 @@ func (a *apiAdapter) GetStatus(ctx context.Context, channelID string) (*model.St
 	defer a.recordDuration(tags)()
 
 	resp, err := a.api.GetStatus(ctx, channelID)
+	if err != nil {
+		tags["success"] = "false"
+		return nil, err
+	}
+	tags["success"] = strconv.FormatBool(resp.Success)
+	return resp, nil
+}
+
+func (a *apiAdapter) GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
+	a.logger.Debugn("Getting bulk status", logger.NewIntField("channelCount", int64(len(channelIDs))))
+
+	tags := a.defaultTags(bulkStatusAPI)
+	defer a.recordDuration(tags)()
+
+	resp, err := a.api.GetBulkStatus(ctx, channelIDs)
 	if err != nil {
 		tags["success"] = "false"
 		return nil, err

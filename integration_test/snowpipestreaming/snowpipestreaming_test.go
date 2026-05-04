@@ -799,6 +799,99 @@ func TestSnowpipeStreaming(t *testing.T) {
 		cancel()
 		require.NoError(t, <-done)
 	})
+
+	t.Run("many table (bulk status enabled)", func(t *testing.T) {
+		postgresContainer, gatewayPort := initializeTestEnvironment(t)
+		namespace := testhelper.RandSchema()
+		backendConfigServer, source, destination := setupBackendConfigTestServer(t, credentials, namespace)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan error)
+		go func() {
+			defer close(done)
+			configOverrides := []lo.Tuple2[string, any]{
+				{A: "SnowpipeStreaming.bulkStatusEnabled", B: true},
+			}
+			done <- runRudderServer(ctx, cancel, gatewayPort, postgresContainer, backendConfigServer.URL, transformerURL, snowpipeClientsURL, t.TempDir(), configOverrides...)
+		}()
+
+		url := fmt.Sprintf("http://localhost:%d", gatewayPort)
+		health.WaitUntilReady(ctx, t, url+"/health", 60*time.Second, 10*time.Millisecond, t.Name())
+
+		warehouse := whutils.ModelWarehouse{
+			Namespace:   namespace,
+			Destination: destination,
+		}
+
+		t.Log("Creating schema and tables")
+		sm := snowflake.New(config.New(), logger.NOP, stats.NOP)
+		require.NoError(t, sm.Setup(ctx, warehouse, whutils.NewNoOpUploader()))
+		t.Cleanup(func() { sm.Cleanup(ctx) })
+		require.NoError(t, sm.CreateSchema(ctx))
+		t.Cleanup(func() { testhelper.DropSchema(t, sm.DB.DB, namespace) })
+
+		for i := range 10 {
+			eventFormat := func(int) string {
+				return fmt.Sprintf(`{"batch":[{"type":"track","userId":"%[1]s","event":"Product Reviewed %[1]s","properties":{"review_id":"86ac1cd43","product_id":"9578257311","rating":3,"review_body":"OK for the price. It works but the material feels flimsy."}, "timestamp":"2020-02-02T00:23:09.544Z","sentAt":"2020-02-02T00:23:09.544Z","originalTimestamp":"2020-02-02T00:23:09.544Z","receivedAt":"2020-02-02T00:23:09.544Z", "context":{"ip":"14.5.67.21"}}]}`,
+					strconv.Itoa(i+1),
+				)
+			}
+			require.NoError(t, sendEvents(5, eventFormat, "writekey1", url))
+		}
+
+		requireGatewayJobsCount(t, ctx, postgresContainer.DB, "succeeded", 5*10)
+		requireBatchRouterJobsCount(t, ctx, postgresContainer.DB, "succeeded", 2*5*10)
+
+		schema := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT table_name, column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS WHERE table_schema = '%s';`, namespace))
+		expectedSchema := lo.SliceToMap(
+			lo.RepeatBy(10, func(index int) string {
+				return "PRODUCT_REVIEWED_" + strconv.Itoa(index+1)
+			}),
+			func(tableName string) (string, map[string]string) {
+				return tableName, map[string]string{"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_PASSED_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "PRODUCT_ID": "TEXT", "RATING": "NUMBER", "RECEIVED_AT": "TIMESTAMP_TZ", "REVIEW_BODY": "TEXT", "REVIEW_ID": "TEXT", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"}
+			},
+		)
+		expectedSchema = lo.Assign(expectedSchema, map[string]map[string]string{
+			"TRACKS":          {"CONTEXT_DESTINATION_ID": "TEXT", "CONTEXT_DESTINATION_TYPE": "TEXT", "CONTEXT_IP": "TEXT", "CONTEXT_REQUEST_IP": "TEXT", "CONTEXT_PASSED_IP": "TEXT", "CONTEXT_SOURCE_ID": "TEXT", "CONTEXT_SOURCE_TYPE": "TEXT", "EVENT": "TEXT", "EVENT_TEXT": "TEXT", "ID": "TEXT", "ORIGINAL_TIMESTAMP": "TIMESTAMP_TZ", "RECEIVED_AT": "TIMESTAMP_TZ", "SENT_AT": "TIMESTAMP_TZ", "TIMESTAMP": "TIMESTAMP_TZ", "USER_ID": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+			"RUDDER_DISCARDS": {"COLUMN_NAME": "TEXT", "COLUMN_VALUE": "TEXT", "REASON": "TEXT", "RECEIVED_AT": "TIMESTAMP_TZ", "ROW_ID": "TEXT", "TABLE_NAME": "TEXT", "UUID_TS": "TIMESTAMP_TZ"},
+		})
+		require.Equal(t, expectedSchema, convertRecordsToSchema(schema))
+
+		for i := range 10 {
+			productIDIndex := i + 1
+			userID := strconv.Itoa(productIDIndex)
+			eventName := "Product Reviewed " + strconv.Itoa(productIDIndex)
+			tableName := strcase.ToSnake(eventName)
+			recordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ORIGINAL_TIMESTAMP, PRODUCT_ID, RATING, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), REVIEW_BODY, REVIEW_ID, SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "PRODUCT_REVIEWED_"+strconv.Itoa(productIDIndex)))
+			ts := timeutil.Now().Format("2006-01-02")
+
+			expectedProductReviewedRecords := [][]string{
+				{destination.ID, "SNOWPIPE_STREAMING", source.ID, source.SourceDefinition.Name, tableName, eventName, "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", userID, ts},
+				{destination.ID, "SNOWPIPE_STREAMING", source.ID, source.SourceDefinition.Name, tableName, eventName, "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", userID, ts},
+				{destination.ID, "SNOWPIPE_STREAMING", source.ID, source.SourceDefinition.Name, tableName, eventName, "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", userID, ts},
+				{destination.ID, "SNOWPIPE_STREAMING", source.ID, source.SourceDefinition.Name, tableName, eventName, "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", userID, ts},
+				{destination.ID, "SNOWPIPE_STREAMING", source.ID, source.SourceDefinition.Name, tableName, eventName, "2020-02-02T00:23:09Z", "9578257311", "3", ts, "OK for the price. It works but the material feels flimsy.", "86ac1cd43", "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", userID, ts},
+			}
+			require.ElementsMatch(t, expectedProductReviewedRecords, recordsFromDB)
+		}
+
+		trackRecordsFromDB := whth.RetrieveRecordsFromWarehouse(t, sm.DB.DB, fmt.Sprintf(`SELECT CONTEXT_DESTINATION_ID, CONTEXT_DESTINATION_TYPE, CONTEXT_SOURCE_ID, CONTEXT_SOURCE_TYPE, EVENT, EVENT_TEXT, ORIGINAL_TIMESTAMP, TO_CHAR(RECEIVED_AT, 'YYYY-MM-DD'), SENT_AT, TIMESTAMP, USER_ID, TO_CHAR(UUID_TS, 'YYYY-MM-DD') FROM %q.%q;`, namespace, "TRACKS"))
+		expectedTrackRecords := lo.RepeatBy(50, func(index int) []string {
+			productIDIndex := index/5 + 1
+			userID := strconv.Itoa(productIDIndex)
+			eventName := "Product Reviewed " + strconv.Itoa(productIDIndex)
+			tableName := strcase.ToSnake(eventName)
+			ts := timeutil.Now().Format("2006-01-02")
+
+			return []string{destination.ID, "SNOWPIPE_STREAMING", source.ID, source.SourceDefinition.Name, tableName, eventName, "2020-02-02T00:23:09Z", ts, "2020-02-02T00:23:09Z", "2020-02-02T00:23:09Z", userID, ts}
+		})
+		require.ElementsMatch(t, expectedTrackRecords, trackRecordsFromDB)
+
+		cancel()
+		require.NoError(t, <-done)
+	})
 	t.Run("schema modified after channel creation (schema deleted)", func(t *testing.T) {
 		postgresContainer, gatewayPort := initializeTestEnvironment(t)
 		namespace := testhelper.RandSchema()
@@ -1408,6 +1501,7 @@ func runRudderServer(
 	postgresContainer *postgres.Resource,
 	cbURL, transformerURL, snowpipeClientsURL,
 	tmpDir string,
+	configOverrides ...lo.Tuple2[string, any],
 ) (err error) {
 	config.Set("INSTANCE_ID", "1")
 	config.Set("CONFIG_BACKEND_URL", cbURL)
@@ -1442,6 +1536,9 @@ func runRudderServer(
 	config.Set("recovery.enabled", false)
 	config.Set("Profiler.Enabled", false)
 	config.Set("Gateway.enableSuppressUserFeature", false)
+	for _, override := range configOverrides {
+		config.Set(override.A, override.B)
+	}
 
 	defer func() {
 		if r := recover(); r != nil {

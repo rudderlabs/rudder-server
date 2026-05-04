@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ type mockAPI struct {
 	deleteChannelOutputMap map[string]func() error
 	insertOutputMap        map[string]func() (*model.InsertResponse, error)
 	getStatusOutputMap     map[string]func() (*model.StatusResponse, error)
+	getBulkStatusOutputMap map[string]func() (*model.BulkStatusResponse, error)
 }
 
 func (m *mockAPI) CreateChannel(_ context.Context, channelReq *model.CreateChannelRequest) (*model.ChannelResponse, error) {
@@ -52,6 +54,12 @@ func (m *mockAPI) Insert(_ context.Context, channelID string, _ *model.InsertReq
 
 func (m *mockAPI) GetStatus(_ context.Context, channelID string) (*model.StatusResponse, error) {
 	return m.getStatusOutputMap[channelID]()
+}
+
+func (m *mockAPI) GetBulkStatus(_ context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
+	slices.Sort(channelIDs)
+	channelIDsStr := strings.Join(channelIDs, ",")
+	return m.getBulkStatusOutputMap[channelIDsStr]()
 }
 
 var (
@@ -1586,6 +1594,343 @@ func TestSnowpipeStreaming(t *testing.T) {
 		}).LastValue())
 	})
 
+	t.Run("Poll status invalid, recreated channel but still status is invalid with bulk status enabled", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-products-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-users-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
+				},
+			},
+		}
+		output := sm.Poll(context.Background(), common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2}]`, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status invalid, recreated channel failed with bulk status enabled", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return nil, fmt.Errorf("failed to recreate channel")
+				},
+			},
+		}
+		output := sm.Poll(context.Background(), common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"recreating channel: failed to recreate channel","count":2}]`, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status invalid, recreated channel but getting status failed with bulk status enabled", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return nil, fmt.Errorf("failed to get status")
+				},
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return nil, fmt.Errorf("failed to get status")
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
+				},
+			},
+		}
+		output := sm.Poll(context.Background(), common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status after channel recreation: failed to get bulk status: failed to get status","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status after channel recreation: failed to get bulk status: failed to get status","count":2}]`, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status invalid, recreated channel and status is successful with bulk status enabled", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-products-channel": {Valid: true, Success: true, Offset: "1003"},
+						},
+					}, nil
+				},
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-users-channel": {Valid: true, Success: true, Offset: "1004"},
+						},
+					}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return nil
+				},
+				"test-products-channel": func() error {
+					return nil
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
+				},
+			},
+		}
+		output := sm.Poll(context.Background(), common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.False(t, output.HasFailed)
+		require.False(t, output.HasWarning)
+		require.Empty(t, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "succeeded",
+		}).LastValue())
+		require.Zero(t, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
+	t.Run("Poll status failed with deletion error with bulk status enabled", func(t *testing.T) {
+		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+
+		conf := config.New()
+		conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+
+		sm := New(conf, logger.NOP, statsStore, destination)
+		sm.api = &mockAPI{
+			getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+				"test-products-channel,test-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-products-channel": {Valid: false, Success: false, Offset: "0"},
+							"test-users-channel":    {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-products-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
+					return &model.BulkStatusResponse{
+						Success: true,
+						Statuses: map[string]*model.StatusResponse{
+							"test-recreated-users-channel": {Valid: false, Success: false, Offset: "0"},
+						},
+					}, nil
+				},
+			},
+			deleteChannelOutputMap: map[string]func() error{
+				"test-users-channel": func() error {
+					return assert.AnError
+				},
+				"test-products-channel": func() error {
+					return assert.AnError
+				},
+			},
+			createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+				"PRODUCTS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-products-channel"}, nil
+				},
+				"USERS": func() (*model.ChannelResponse, error) {
+					return &model.ChannelResponse{Success: true, Valid: true, ChannelID: "test-recreated-users-channel"}, nil
+				},
+			},
+		}
+		output := sm.Poll(context.Background(), common.AsyncPoll{
+			ImportId: importID,
+		})
+		require.False(t, output.InProgress)
+		require.Equal(t, http.StatusOK, output.StatusCode)
+		require.True(t, output.Complete)
+		require.True(t, output.HasFailed)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2}]`, output.FailedJobParameters)
+		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
+			"module":        "batch_router",
+			"workspaceId":   "test-workspace",
+			"destType":      "SNOWPIPE_STREAMING",
+			"destinationId": "test-destination",
+			"status":        "failed",
+		}).LastValue())
+	})
+
 	t.Run("Poll error", func(t *testing.T) {
 		importID := `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":false,"reason":"","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":false,"reason":"","count":2}]`
 		statsStore, err := memstats.New()
@@ -2563,6 +2908,172 @@ func TestSnowpipeStreaming(t *testing.T) {
 				}
 			})
 		}
+	})
+
+	t.Run("provideInProgressImportInfos with bulk status enabled", func(t *testing.T) {
+		t.Run("channel not found in bulk status triggers recreate and bulk re-poll", func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			conf := config.New()
+			conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+			sm := New(conf, logger.NOP, statsStore, destination)
+
+			bulkCallCount := 0
+			sm.api = &mockAPI{
+				getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1,test-channel-2": func() (*model.BulkStatusResponse, error) {
+						bulkCallCount++
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-2": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
+							NotFound: []string{"test-channel-1"},
+						}, nil
+					},
+					"test-recreated-channel-1": func() (*model.BulkStatusResponse, error) {
+						bulkCallCount++
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-recreated-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
+						}, nil
+					},
+				},
+				createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+					"USERS": func() (*model.ChannelResponse, error) {
+						return &model.ChannelResponse{
+							Success:   true,
+							Valid:     true,
+							ChannelID: "test-recreated-channel-1",
+						}, nil
+					},
+				},
+			}
+
+			infos := []*importInfo{
+				{
+					ChannelID: "test-channel-1",
+					Offset:    "100",
+					Table:     "USERS",
+					Count:     5,
+				},
+				{
+					ChannelID: "test-channel-2",
+					Offset:    "100",
+					Table:     "TRACKING",
+					Count:     5,
+				},
+			}
+
+			inProgressInfos := sm.provideInProgressImportInfos(context.Background(), infos)
+			require.Empty(t, inProgressInfos)
+			require.Len(t, sm.polledImportInfoMap, 2)
+			require.Contains(t, sm.polledImportInfoMap, "test-channel-1")
+			require.False(t, sm.polledImportInfoMap["test-channel-1"].Failed)
+			require.Contains(t, sm.polledImportInfoMap, "test-channel-2")
+			require.False(t, sm.polledImportInfoMap["test-channel-2"].Failed)
+			require.Equal(t, 2, bulkCallCount)
+		})
+
+		t.Run("invalid bulk status triggers delete and recreate with bulk re-poll", func(t *testing.T) {
+			statsStore, err := memstats.New()
+			require.NoError(t, err)
+
+			conf := config.New()
+			conf.Set("SnowpipeStreaming.bulkStatusEnabled", true)
+			sm := New(conf, logger.NOP, statsStore, destination)
+
+			bulkCallCount := 0
+			sm.api = &mockAPI{
+				getBulkStatusOutputMap: map[string]func() (*model.BulkStatusResponse, error){
+					"test-channel-1,test-channel-2": func() (*model.BulkStatusResponse, error) {
+						bulkCallCount++
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-channel-1": {
+									Valid:                false,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+								"test-channel-2": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
+						}, nil
+					},
+					"test-recreated-channel-1": func() (*model.BulkStatusResponse, error) {
+						bulkCallCount++
+						return &model.BulkStatusResponse{
+							Success: true,
+							Statuses: map[string]*model.StatusResponse{
+								"test-recreated-channel-1": {
+									Valid:                true,
+									Success:              true,
+									Offset:               "100",
+									LatestInsertedOffset: "100",
+								},
+							},
+						}, nil
+					},
+				},
+				deleteChannelOutputMap: map[string]func() error{
+					"test-channel-1": func() error {
+						return nil
+					},
+				},
+				createChannelOutputMap: map[string]func() (*model.ChannelResponse, error){
+					"USERS": func() (*model.ChannelResponse, error) {
+						return &model.ChannelResponse{
+							Success:   true,
+							Valid:     true,
+							ChannelID: "test-recreated-channel-1",
+						}, nil
+					},
+				},
+			}
+
+			infos := []*importInfo{
+				{
+					ChannelID: "test-channel-1",
+					Offset:    "100",
+					Table:     "USERS",
+					Count:     5,
+				},
+				{
+					ChannelID: "test-channel-2",
+					Offset:    "100",
+					Table:     "TRACKING",
+					Count:     5,
+				},
+			}
+
+			inProgressInfos := sm.provideInProgressImportInfos(context.Background(), infos)
+			require.Empty(t, inProgressInfos)
+			require.Len(t, sm.polledImportInfoMap, 2)
+			require.Contains(t, sm.polledImportInfoMap, "test-channel-1")
+			require.False(t, sm.polledImportInfoMap["test-channel-1"].Failed)
+			require.Contains(t, sm.polledImportInfoMap, "test-channel-2")
+			require.False(t, sm.polledImportInfoMap["test-channel-2"].Failed)
+			require.Equal(t, 2, bulkCallCount)
+		})
 	})
 }
 
