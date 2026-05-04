@@ -1741,20 +1741,10 @@ func TestSnowpipeStreaming(t *testing.T) {
 					}, nil
 				},
 				"test-recreated-products-channel": func() (*model.BulkStatusResponse, error) {
-					return &model.BulkStatusResponse{
-						Success: true,
-						Statuses: map[string]*model.StatusResponse{
-							"test-recreated-products-channel": {Valid: false, Success: false, Offset: "0"},
-						},
-					}, nil
+					return nil, fmt.Errorf("failed to get status")
 				},
 				"test-recreated-users-channel": func() (*model.BulkStatusResponse, error) {
-					return &model.BulkStatusResponse{
-						Success: true,
-						Statuses: map[string]*model.StatusResponse{
-							"test-recreated-users-channel": {Valid: false, Success: false, Offset: "0"},
-						},
-					}, nil
+					return nil, fmt.Errorf("failed to get status")
 				},
 			},
 			deleteChannelOutputMap: map[string]func() error{
@@ -1781,7 +1771,7 @@ func TestSnowpipeStreaming(t *testing.T) {
 		require.Equal(t, http.StatusOK, output.StatusCode)
 		require.True(t, output.Complete)
 		require.True(t, output.HasFailed)
-		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"invalid status response after recreation with valid: false, success: false","count":2}]`, output.FailedJobParameters)
+		require.JSONEq(t, `[{"channelId":"test-products-channel","offset":"1003","table":"PRODUCTS","failed":true,"reason":"getting status after channel recreation: failed to get bulk status: failed to get status","count":2},{"channelId":"test-users-channel","offset":"1004","table":"USERS","failed":true,"reason":"getting status after channel recreation: failed to get bulk status: failed to get status","count":2}]`, output.FailedJobParameters)
 		require.EqualValues(t, 4, statsStore.Get("snowpipe_streaming_jobs", stats.Tags{
 			"module":        "batch_router",
 			"workspaceId":   "test-workspace",
