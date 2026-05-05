@@ -464,7 +464,7 @@ func newSlowDripBodyServer(t *testing.T, chunks int, delay time.Duration) *httpt
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
-		// ``Connection: close`` prevents the handler from hanging in a
+		// `Connection: close` prevents the handler from hanging in a
 		// keep-alive loop after the response completes — important for
 		// clean test shutdown when the client succeeds in reading the
 		// whole body (the bypass / happy path).

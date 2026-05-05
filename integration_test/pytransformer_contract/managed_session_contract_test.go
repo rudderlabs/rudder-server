@@ -1018,7 +1018,7 @@ func scrapePytransformerMetric(
 
 	// Pattern: NAME{k="v",k2="v2"} VALUE  (whitespace-separated, optional
 	// trailing comment which we ignore). Restricting the leading name
-	// match to ``^<name>[{ ]`` avoids accidental matches on metrics that
+	// match to `^<name>[{ ]` avoids accidental matches on metrics that
 	// share a prefix (e.g. managed_session_created vs
 	// managed_session_created_total).
 	pattern := regexp.MustCompile(

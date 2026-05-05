@@ -140,9 +140,9 @@ sec: ## Run security checks
 	$(GO) run $(gitleaks) detect .
 	$(GO) run $(govulncheck) ./...
 
-.PHONY: bench-pyt
-bench-pyt:
-	go test -v -tags=ipc_benchmark -count=1 \
-		-run TestIPCBenchmark \
-		./integration_test/pytransformer_contract/ \
+.PHONY: bench-multi-threading
+bench-multi-threading:
+	go test -v -tags=threading_benchmark -count 1 \
+		-run TestThreadingBenchmark \
+		./integration_test/pytransformer_contract \
 		-timeout=15m

@@ -143,8 +143,8 @@ def transformEvent(event, metadata):
 	}
 
 	// PROOF THE LEAK CHANNEL EXISTS: every response MUST have carried a
-	// Set-Cookie ``leaky=secret_N`` header that the ``requests`` library
-	// parsed into ``resp.cookies``. Without this check, a regression that
+	// Set-Cookie `leaky=secret_N` header that the `requests` library
+	// parsed into `resp.cookies`. Without this check, a regression that
 	// silently stopped the mock from setting cookies would make the
 	// leak-detection assertion below vacuously true.
 	for _, r := range results {
@@ -178,8 +178,8 @@ def transformEvent(event, metadata):
 	// Exactly ONE new TCP connection: with USER_CONN_POOL_MAX_SIZE=1 and
 	// SANDBOX_POOL_MAX_SIZE=1 the pooled session must serve every
 	// invocation from the same kept-alive socket. This is the same
-	// server-side proof used in ``TestConnectionPoolBehavior``:
-	// ``http.StateNew`` fires exactly once per TCP handshake, so a
+	// server-side proof used in `TestConnectionPoolBehavior`:
+	// `http.StateNew` fires exactly once per TCP handshake, so a
 	// count > 1 means the pool failed to reuse the connection and the
 	// test no longer exercises the shared-session path.
 	require.EqualValues(t, 1, newConns.Load(),
@@ -222,7 +222,7 @@ func TestConnectionPoolRequestOptionIsolation(t *testing.T) {
 
 	const (
 		versionID = "request-options-isolation-v1"
-		// Each event makes 2 sequential HTTP calls. ``numEvents`` > 1 so the
+		// Each event makes 2 sequential HTTP calls. `numEvents` > 1 so the
 		// batch exercises isolation ACROSS transformations sharing the
 		// pooled session, not just across sequential calls inside one
 		// transformation.
@@ -231,11 +231,11 @@ func TestConnectionPoolRequestOptionIsolation(t *testing.T) {
 
 	echoSrv, newConns := newSessionDefaultsEchoServer(t)
 
-	// User code: every ``transformEvent`` invocation issues two sequential
-	// requests. The first primes a vanilla ``requests.Session`` with every
-	// per-request option ``requests`` supports; the second issues a bare
+	// User code: every `transformEvent` invocation issues two sequential
+	// requests. The first primes a vanilla `requests.Session` with every
+	// per-request option `requests` supports; the second issues a bare
 	// GET. If any option persisted to session state — on the old-arch
-	// vanilla session OR the new-arch ``StatelessPooledSession`` — the
+	// vanilla session OR the new-arch `StatelessPooledSession` — the
 	// second call would observe it and the parity check would fail.
 	code := fmt.Sprintf(`
 import requests
@@ -380,10 +380,10 @@ def transformEvent(event, metadata):
 
 	// Core isolation assertion: the second bare GET, issued without any
 	// options, must see NONE of the state the first call attached.
-	// Vanilla ``requests.Session`` does not persist per-request kwargs,
-	// so the old arch passes this trivially; ``StatelessPooledSession``
+	// Vanilla `requests.Session` does not persist per-request kwargs,
+	// so the old arch passes this trivially; `StatelessPooledSession`
 	// must match that guarantee on the new-arch pooled path. Per-field
-	// asserts keep failure output actionable; ``Equal`` below is the
+	// asserts keep failure output actionable; `Equal` below is the
 	// strict parity catch-all.
 	for _, resp := range []*types.Response{&oldResp, &newResp} {
 		for _, ev := range resp.Events {
@@ -407,7 +407,7 @@ def transformEvent(event, metadata):
 
 	// Strict parity: old arch and new arch must produce identical
 	// responses field-for-field. Any divergence the per-field asserts
-	// above missed (e.g. a difference in ``Metadata``, ``StatTags``, or
+	// above missed (e.g. a difference in `Metadata`, `StatTags`, or
 	// an Output key that was added to the transformation code but not
 	// to this test) surfaces here.
 	diff, equal := oldResp.Equal(&newResp)
@@ -416,8 +416,8 @@ def transformEvent(event, metadata):
 
 	env.assertRetryCountsMatch(t)
 
-	// With ``SANDBOX_POOL_MAX_SIZE=1`` and ``USER_CONN_POOL_MAX_SIZE=1``
-	// every one of the ``numEvents * 2`` HTTP calls must have been
+	// With `SANDBOX_POOL_MAX_SIZE=1` and `USER_CONN_POOL_MAX_SIZE=1`
+	// every one of the `numEvents * 2` HTTP calls must have been
 	// served by the SAME kept-alive socket. A count > 1 means the pool
 	// silently failed to reuse the connection and the test no longer
 	// exercises the shared-session path — the isolation assertion above
