@@ -91,8 +91,13 @@ func TestIPCBenchmark(t *testing.T) {
 	payload := buildBenchPayload(t, events)
 	t.Logf("Per-request payload (events + metadata, no code): %d bytes", len(payload))
 
-	warmup(t, "baseline", baselineEP.apiURL, payload, warmupRequests)
-	warmup(t, "optimized", optimizedEP.apiURL, payload, warmupRequests)
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		warmup(t, "baseline", baselineEP.apiURL, payload, warmupRequests)
+	})
+	wg.Go(func() {
+		warmup(t, "optimized", optimizedEP.apiURL, payload, warmupRequests)
+	})
 
 	loadDuration := time.Duration(durationSeconds) * time.Second
 
@@ -121,16 +126,21 @@ func TestIPCBenchmark(t *testing.T) {
 	t.Logf("Code size: %d bytes (~%.1f MB)   Events/req: %d   Concurrency: %d   Duration: %s",
 		codeSizeBytes, float64(codeSizeBytes)/1_000_000, eventsPerRequest, concurrency, loadDuration)
 	t.Logf("")
-	t.Logf("Image                                | RPS       | Mean lat | p50 lat | p95 lat | p99 lat | Failures")
-	t.Logf("-------------------------------------|-----------|----------|---------|---------|---------|---------")
+	t.Logf("%-37s | %8s | %9s | %9s | %9s | %9s | %s",
+		"Image", "RPS", "Mean lat", "p50 lat", "p95 lat", "p99 lat", "Failures")
+	t.Logf("%s-+-%s-+-%s-+-%s-+-%s-+-%s-+-%s",
+		strings.Repeat("-", 37), strings.Repeat("-", 8),
+		strings.Repeat("-", 9), strings.Repeat("-", 9),
+		strings.Repeat("-", 9), strings.Repeat("-", 9),
+		strings.Repeat("-", 8))
 	for _, r := range []benchResult{baselineResult, optimizedResult} {
-		t.Logf("%-37s| %9.1f | %8s | %7s | %7s | %7s | %d",
+		t.Logf("%-37s | %8.1f | %9s | %9s | %9s | %9s | %d",
 			"rudder-pytransformer:"+resultTag(r.label, baselineTag, optimizedTag),
 			r.rps(),
-			r.mean().Round(time.Microsecond),
-			r.percentile(50).Round(time.Microsecond),
-			r.percentile(95).Round(time.Microsecond),
-			r.percentile(99).Round(time.Microsecond),
+			fmtMs(r.mean()),
+			fmtMs(r.percentile(50)),
+			fmtMs(r.percentile(95)),
+			fmtMs(r.percentile(99)),
 			r.failures,
 		)
 	}
@@ -363,12 +373,12 @@ func runLoad(
 		latencies = make([]time.Duration, 0, int(duration.Seconds())*5_000*concurrency/16)
 	)
 
-	var wg sync.WaitGroup
-	wg.Add(concurrency)
-	start := time.Now()
+	var (
+		wg    sync.WaitGroup
+		start = time.Now()
+	)
 	for range concurrency {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			localLatencies := make([]time.Duration, 0, 1024)
 			for time.Now().Before(deadline) {
 				reqStart := time.Now()
@@ -396,14 +406,13 @@ func runLoad(
 			latMu.Lock()
 			latencies = append(latencies, localLatencies...)
 			latMu.Unlock()
-		}()
+		})
 	}
 	wg.Wait()
-	actualDuration := time.Since(start)
 
 	return benchResult{
 		label:       label,
-		duration:    actualDuration,
+		duration:    time.Since(start),
 		concurrency: concurrency,
 		successes:   successes.Load(),
 		failures:    failures.Load(),
@@ -497,6 +506,12 @@ func resultTag(label, baselineTag, optimizedTag string) string {
 		return baselineTag
 	}
 	return optimizedTag
+}
+
+// fmtMs formats a duration as a fixed-precision millisecond string ("22.23ms")
+// so the output table aligns regardless of magnitude.
+func fmtMs(d time.Duration) string {
+	return fmt.Sprintf("%.2fms", float64(d)/float64(time.Millisecond))
 }
 
 // envInt reads an integer env var with a fallback default.
