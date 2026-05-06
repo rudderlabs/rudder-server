@@ -3278,20 +3278,27 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 		eventsToTransform = eventList
 	}
 
-	// Hackathon: forward post-UT events with a non-empty userId to the alpha
-	// service. Fire-and-forget; never blocks the pipeline. Runs for both the
-	// user-transformed path and the pass-through path.
+	// Hackathon: build one batch of post-UT events for this src-dest pair and
+	// dispatch as a single POST to the alpha service. All events here share
+	// commonMetaData.WorkspaceID. Fire-and-forget; never blocks the pipeline.
+	// Runs for both the user-transformed path and the pass-through path.
+	alphaEvents := make([]alpha.IngestEvent, 0, len(eventsToTransform))
 	for i := range eventsToTransform {
 		ev := &eventsToTransform[i]
 		userID, _ := ev.Message["userId"].(string)
 		if userID == "" {
 			continue
 		}
-		proc.alphaDispatcher.Dispatch(alpha.Event{
-			EventName:   ev.Metadata.EventName,
-			MessageID:   ev.Metadata.MessageID,
-			WorkspaceID: ev.Metadata.WorkspaceID,
-			UserID:      userID,
+		alphaEvents = append(alphaEvents, alpha.IngestEvent{
+			UserID:    userID,
+			MessageID: ev.Metadata.MessageID,
+			EventName: ev.Metadata.EventName,
+		})
+	}
+	if len(alphaEvents) > 0 {
+		proc.alphaDispatcher.Dispatch(alpha.EventsRequest{
+			WorkspaceID: commonMetaData.WorkspaceID,
+			Events:      alphaEvents,
 		})
 	}
 
