@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/enterprise/trackedusers"
 	"github.com/rudderlabs/rudder-server/internal/enricher"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/processor/alpha"
 	"github.com/rudderlabs/rudder-server/processor/delayed"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -136,6 +137,7 @@ type Handle struct {
 	transformerFeaturesService transformerFeaturesService.FeaturesService
 	destDebugger               destinationdebugger.DestinationDebugger
 	transDebugger              transformationdebugger.TransformationDebugger
+	alphaDispatcher            *alpha.Dispatcher
 	isolationStrategy          isolation.Strategy
 	limiter                    struct {
 		read         kitsync.Limiter
@@ -433,6 +435,7 @@ func (proc *Handle) Setup(
 
 	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
+	proc.alphaDispatcher = alpha.NewDispatcher(proc.conf.GetString("ALPHA_SERVICE_URL", ""), proc.logger)
 	proc.backendConfig = backendConfig
 
 	proc.gatewayDB = gatewayDB
@@ -622,6 +625,13 @@ func (proc *Handle) Setup(
 	proc.config.asyncInit = misc.NewAsyncInit(1)
 	g.Go(crash.Wrapper(func() error {
 		proc.backendConfigSubscriber(ctx)
+		return nil
+	}))
+
+	// Hackathon: start the alpha-service dispatcher worker pool. No-op when
+	// ALPHA_SERVICE_URL is unset. Workers exit on ctx cancellation.
+	g.Go(crash.Wrapper(func() error {
+		proc.alphaDispatcher.Run(ctx)
 		return nil
 	}))
 
@@ -3266,6 +3276,23 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 	} else {
 		proc.logger.Debugn("No custom transformation")
 		eventsToTransform = eventList
+	}
+
+	// Hackathon: forward post-UT events with a non-empty userId to the alpha
+	// service. Fire-and-forget; never blocks the pipeline. Runs for both the
+	// user-transformed path and the pass-through path.
+	for i := range eventsToTransform {
+		ev := &eventsToTransform[i]
+		userID, _ := ev.Message["userId"].(string)
+		if userID == "" {
+			continue
+		}
+		proc.alphaDispatcher.Dispatch(alpha.Event{
+			EventName:   ev.Metadata.EventName,
+			MessageID:   ev.Metadata.MessageID,
+			WorkspaceID: ev.Metadata.WorkspaceID,
+			UserID:      userID,
+		})
 	}
 
 	if len(eventsToTransform) == 0 {
