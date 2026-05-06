@@ -40,8 +40,9 @@ No other fields. No nesting. No metadata wrapper.
 
 - Up to **10 attempts** per event.
 - **30 seconds** between attempts (constant delay, no backoff).
-- **5 second** per-request timeout.
-- Worst case: ~5 minutes per event before we give up. Designed to survive an alpha-service restart.
+- **60 second** per-request timeout.
+- If alpha is down (connection refused / fails fast): worst case ~5 minutes per event before we give up — designed to survive an alpha-service restart.
+- If alpha is up but hangs every request: worst case ~14.5 minutes per event (10×60s timeout + 9×30s delay).
 - After 10 failed attempts we drop the event and log a warning on our side. We do **not** persist or queue past that.
 
 This means: if you restart your service, expect duplicate deliveries of in-flight events. If you respond 5xx, we'll keep hammering you on a 30-second cadence until either you return 200 or we hit 10 attempts.

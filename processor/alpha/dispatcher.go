@@ -37,7 +37,7 @@ const (
 
 	// Per-request timeout. Short enough that hung requests don't extend the
 	// overall retry budget unreasonably.
-	requestTimeout = 5 * time.Second
+	requestTimeout = 60 * time.Second
 
 	// Rate-limit channel-full drop logs: log every Nth drop to avoid spam
 	// during sustained outages.

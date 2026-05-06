@@ -435,7 +435,7 @@ func (proc *Handle) Setup(
 
 	proc.setupReloadableVars()
 	proc.logger = logger.NewLogger().Child("processor")
-	proc.alphaDispatcher = alpha.NewDispatcher(proc.conf.GetString("ALPHA_SERVICE_URL", ""), proc.logger)
+	proc.alphaDispatcher = alpha.NewDispatcher(proc.conf.GetString("alphaServiceUrl", ""), proc.logger)
 	proc.backendConfig = backendConfig
 
 	proc.gatewayDB = gatewayDB
