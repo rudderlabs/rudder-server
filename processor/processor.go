@@ -3289,6 +3289,9 @@ func (proc *Handle) userTransformAndFilter(ctx context.Context, partition, srcAn
 		if userID == "" {
 			continue
 		}
+		if ev.Metadata.EventName == "" {
+			continue
+		}
 		alphaEvents = append(alphaEvents, alpha.IngestEvent{
 			UserID:    userID,
 			MessageID: ev.Metadata.MessageID,

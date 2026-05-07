@@ -52,7 +52,7 @@ Wire example:
 | `events`      | array  | One or more `IngestEvent`. Always non-empty (we skip the POST if there's nothing to send). |
 | `events[].userID`    | string | The end-user identifier from the original event. **Always non-empty** — we filter out events without a `userId` before batching. |
 | `events[].messageID` | string | RudderStack's per-event UUID. Stable across retries of the same batch. Treat as the natural primary key. |
-| `events[].eventName` | string | RudderStack event name (e.g. `"Order Completed"`). May be empty for some event types. |
+| `events[].eventName` | string | RudderStack event name (e.g. `"Order Completed"`). **Always non-empty** — we filter out events with an empty `eventName` before batching. |
 
 We do **not** send the optional `properties` field. It's never present in the JSON; alpha can rely on the `omitempty` semantics.
 
