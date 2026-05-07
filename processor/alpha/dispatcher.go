@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,11 @@ const (
 	// Rate-limit channel-full drop logs: log every Nth drop to avoid spam
 	// during sustained outages.
 	dropLogEveryN = 100
+
+	// maxLogBodyBytes caps how many bytes of any single body/header blob
+	// (request body, response body, response headers) we include in logs.
+	// Prevents a 500-with-huge-stacktrace × 10 retries from flooding logs.
+	maxLogBodyBytes = 4096
 )
 
 // IngestEvent is the per-event subset of a batch sent to the alpha service.
@@ -160,14 +166,35 @@ func (d *Dispatcher) postWithRetry(ctx context.Context, req EventsRequest) {
 		)
 		return
 	}
+	requestBody := truncate(string(body), maxLogBodyBytes)
+
 	var lastStatus int
 	var lastErr error
+	var lastRespBody string
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if ctx.Err() != nil {
 			return
 		}
-		status, err := d.postOnce(ctx, body)
+		start := time.Now()
+		status, respBody, respHeaders, err := d.postOnce(ctx, body)
+		latencyMs := time.Since(start).Milliseconds()
+
+		// Log every attempt with full request/response context.
+		fields := []logger.Field{
+			logger.NewStringField("workspaceId", req.WorkspaceID),
+			logger.NewIntField("eventCount", int64(len(req.Events))),
+			logger.NewIntField("attempt", int64(attempt)),
+			logger.NewIntField("status", int64(status)),
+			logger.NewStringField("requestBody", requestBody),
+			logger.NewStringField("responseBody", respBody),
+			logger.NewStringField("responseHeaders", respHeaders),
+			logger.NewIntField("latencyMs", latencyMs),
+		}
+		if err != nil {
+			fields = append(fields, logger.NewStringField("error", err.Error()))
+		}
 		if err == nil && status == http.StatusOK {
+			d.logger.Infon("alpha dispatcher: attempt response", fields...)
 			d.logger.Infon("alpha dispatcher: batch delivered",
 				logger.NewStringField("workspaceId", req.WorkspaceID),
 				logger.NewIntField("eventCount", int64(len(req.Events))),
@@ -175,7 +202,9 @@ func (d *Dispatcher) postWithRetry(ctx context.Context, req EventsRequest) {
 			)
 			return
 		}
-		lastStatus, lastErr = status, err
+		d.logger.Warnn("alpha dispatcher: attempt response", fields...)
+
+		lastStatus, lastErr, lastRespBody = status, err, respBody
 		if attempt == maxAttempts {
 			break
 		}
@@ -191,24 +220,36 @@ func (d *Dispatcher) postWithRetry(ctx context.Context, req EventsRequest) {
 		logger.NewIntField("attempts", int64(maxAttempts)),
 		logger.NewIntField("lastStatus", int64(lastStatus)),
 		logger.NewStringField("lastError", errString(lastErr)),
+		logger.NewStringField("lastResponseBody", lastRespBody),
 	)
 }
 
-func (d *Dispatcher) postOnce(ctx context.Context, body []byte) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewReader(body))
+// postOnce performs a single POST and returns the status code, truncated
+// response body, truncated JSON-encoded response headers, and any transport
+// error. A non-200 status is also reported as a non-nil error so callers can
+// retry uniformly, but respBody/respHeaders are still populated.
+func (d *Dispatcher) postOnce(ctx context.Context, body []byte) (status int, respBody, respHeaders string, err error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewReader(body))
 	if err != nil {
-		return 0, err
+		return 0, "", "", err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := d.client.Do(req)
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := d.client.Do(httpReq)
 	if err != nil {
-		return 0, err
+		return 0, "", "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, fmt.Errorf("non-200 status: %d", resp.StatusCode)
+
+	rawBody, _ := io.ReadAll(resp.Body)
+	respBody = truncate(string(rawBody), maxLogBodyBytes)
+	if hb, hErr := json.Marshal(resp.Header); hErr == nil {
+		respHeaders = truncate(string(hb), maxLogBodyBytes)
 	}
-	return resp.StatusCode, nil
+
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, respBody, respHeaders, fmt.Errorf("non-200 status: %d", resp.StatusCode)
+	}
+	return resp.StatusCode, respBody, respHeaders, nil
 }
 
 func errString(e error) string {
@@ -216,4 +257,13 @@ func errString(e error) string {
 		return ""
 	}
 	return e.Error()
+}
+
+// truncate returns s capped at max bytes; if truncated, an explicit suffix is
+// appended so logs make the truncation obvious.
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…(truncated)"
 }
