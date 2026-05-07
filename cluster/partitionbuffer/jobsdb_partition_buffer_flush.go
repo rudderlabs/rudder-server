@@ -128,21 +128,21 @@ func (b *jobsDBPartitionBuffer) moveBufferedPartitionsConcurrently(ctx context.C
 	}
 
 	var (
-		mu          sync.Mutex
-		totalMoved  int
-		anyLimitsLR bool
+		mu               sync.Mutex
+		totalMoved       int
+		anyLimitsReached bool
 	)
 	g, gCtx := errgroup.WithContext(ctx)
 	for _, chunk := range chunks {
 		g.Go(func() error {
-			moved, lr, err := b.moveBufferedPartitions(gCtx, chunk, batchSize, payloadSize)
+			moved, limitsReached, err := b.moveBufferedPartitions(gCtx, chunk, batchSize, payloadSize)
 			if err != nil {
 				return err
 			}
 			mu.Lock()
 			totalMoved += moved
-			if lr {
-				anyLimitsLR = true
+			if limitsReached {
+				anyLimitsReached = true
 			}
 			mu.Unlock()
 			return nil
@@ -151,7 +151,7 @@ func (b *jobsDBPartitionBuffer) moveBufferedPartitionsConcurrently(ctx context.C
 	if err := g.Wait(); err != nil {
 		return 0, false, err
 	}
-	return totalMoved, anyLimitsLR, nil
+	return totalMoved, anyLimitsReached, nil
 }
 
 // moveBufferedPartitions moves a batch of buffered jobs to the primary JobsDB for the given partition IDs. It returns whether any limits were reached during the fetch.
