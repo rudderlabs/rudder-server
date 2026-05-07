@@ -3,7 +3,9 @@
 package transformerclient
 
 import (
+	"context"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"strconv"
@@ -19,6 +21,21 @@ import (
 	"github.com/rudderlabs/rudder-go-kit/retryablehttp"
 	"github.com/rudderlabs/rudder-go-kit/stats"
 )
+
+type perpetualRetriesStatsTagsKey struct{}
+
+// WithPerpetualRetriesStatsTags returns a context carrying extra tags to be
+// added to the transformer_client_perpetual_retry_count stat for any request
+// made with this context. Callers are responsible for keeping tag cardinality
+// low.
+func WithPerpetualRetriesStatsTags(ctx context.Context, tags map[string]string) context.Context {
+	return context.WithValue(ctx, perpetualRetriesStatsTagsKey{}, tags)
+}
+
+func perpetualRetriesStatsTagsFromContext(ctx context.Context) map[string]string {
+	v, _ := ctx.Value(perpetualRetriesStatsTagsKey{}).(map[string]string)
+	return v
+}
 
 const (
 	defaultDisableKeepAlives   = true
@@ -215,11 +232,15 @@ func newRetryableHTTPClient(name string, baseClient Client, retryableConfig *ret
 				if attempt > 4 {
 					attemptTag = "5+"
 				}
-				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, stats.Tags{
+				tags := stats.Tags{
 					"name":    name,
 					"reason":  reason,
 					"attempt": attemptTag,
-				}).Increment()
+				}
+				if resp.Request != nil {
+					maps.Copy(tags, perpetualRetriesStatsTagsFromContext(resp.Request.Context()))
+				}
+				stats.Default.NewTaggedStat("transformer_client_perpetual_retry_count", stats.CountType, tags).Increment()
 				resp.Body.Close()
 				return true, fmt.Errorf("got retryable error response from transformer: %s", reason)
 			}

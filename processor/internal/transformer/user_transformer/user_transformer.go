@@ -116,6 +116,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	defer trackWg.Wait()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	ctx = transformerclient.WithPerpetualRetriesStatsTags(ctx, map[string]string{"language": transformationLanguage})
 
 	trackWg.Go(func() {
 		l := u.log.Withn(labels.ToLoggerFields()...)
