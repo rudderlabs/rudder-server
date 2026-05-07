@@ -105,6 +105,10 @@ func (d *Dispatcher) Dispatch(req EventsRequest) {
 	}
 	select {
 	case d.ch <- req:
+		d.logger.Infon("alpha dispatcher: batch queued",
+			logger.NewStringField("workspaceId", req.WorkspaceID),
+			logger.NewIntField("eventCount", int64(len(req.Events))),
+		)
 	default:
 		n := atomic.AddUint64(&d.dropCount, 1)
 		if n%dropLogEveryN == 1 {
@@ -164,6 +168,11 @@ func (d *Dispatcher) postWithRetry(ctx context.Context, req EventsRequest) {
 		}
 		status, err := d.postOnce(ctx, body)
 		if err == nil && status == http.StatusOK {
+			d.logger.Infon("alpha dispatcher: batch delivered",
+				logger.NewStringField("workspaceId", req.WorkspaceID),
+				logger.NewIntField("eventCount", int64(len(req.Events))),
+				logger.NewIntField("attempts", int64(attempt)),
+			)
 			return
 		}
 		lastStatus, lastErr = status, err
