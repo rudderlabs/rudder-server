@@ -135,9 +135,14 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		batch := records[start:end]
 
 		ids := make([]string, len(batch))
+		seenRecordIDs := make(map[string]struct{}, len(batch))
 		recordIDs := make([]string, len(batch))
 		codes := make([]int64, len(batch))
 		for i, rec := range batch {
+			if _, exists := seenRecordIDs[string(rec.Record)]; exists {
+				continue
+			}
+			seenRecordIDs[string(rec.Record)] = struct{}{}
 			ids[i] = id
 			recordIDs[i] = string(rec.Record)
 			codes[i] = int64(rec.Code)
