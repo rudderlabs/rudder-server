@@ -189,6 +189,79 @@ var _ = Describe("Using sources handler", func() {
 			}))
 		})
 
+		It("should dedup records with same record ids within a single batch", func() {
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+			})
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should not fail with cardinality violation when duplicates exist in the same batch")
+			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: defaultJobTargetKey.TaskRunID,
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: defaultJobTargetKey.SourceID,
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID: defaultJobTargetKey.DestinationID,
+							Records: []FailedRecord{
+								{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+								{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+							},
+						}},
+					}},
+				}},
+			}), "it should return only the unique records once")
+		})
+
+		It("should dedup records with same record ids spanning multiple batches", func() {
+			handler := sh.(*sourcesHandler)
+			previous := handler.config.FailedRecordsInsertBatchSize
+			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
+			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
+
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-3": "id-3"}`), Code: 3},
+			})
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should not fail with cardinality violation when duplicates exist across batches")
+			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: defaultJobTargetKey.TaskRunID,
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: defaultJobTargetKey.SourceID,
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID: defaultJobTargetKey.DestinationID,
+							Records: []FailedRecord{
+								{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+								{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+								{Record: []byte(`{"record-3": "id-3"}`), Code: 3},
+							},
+						}},
+					}},
+				}},
+			}), "it should return only the unique records once")
+		})
+
 		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
 			handler := sh.(*sourcesHandler)
 			previous := handler.config.SkipFailedRecordsCollection
