@@ -99,6 +99,10 @@ def transformEvent(event, metadata):
 		t, pool, configBackend.URL,
 		"ENABLE_THREAD_POOL_IO_BOUND=true",
 		"IO_THREAD_POOL_SIZE=8",
+		// Single-request windows so the warmup batch flips the classifier
+		// after one request; the default (50) would need 50 warmup hits per
+		// subprocess before any threaded path could fire.
+		"IO_BOUND_RECHECK_INTERVAL=1",
 		"SANDBOX_POOL_MAX_SIZE=4",
 		// Match the thread pool: each thread can claim one pooled without falling back to overflow sockets.
 		"USER_CONN_POOL_MAX_SIZE=8",
