@@ -243,13 +243,13 @@ def transformEvent(event, metadata):
 		"mode":              "single_event_threaded",
 	}
 	requireMetricGreater(t, metricsURL, "transformer_executions_total",
-		tidLabels, 0, "threaded execution must have fired at least once after warmup")
+		tidLabels, "threaded execution must have fired at least once after warmup")
 
 	// Detection counter: every subprocess that ran during warmup should have flipped is_io_bound.
 	// Asserting > 0 (not == 4) because any of the 4 subprocesses might not have picked up a
 	// warmup request if the pool's load balancer favoured a subset.
 	requireMetricGreater(t, metricsURL, "transformer_io_bound_detections_total",
-		map[string]string{"transformation_id": versionID}, 0,
+		map[string]string{"transformation_id": versionID},
 		"first-execution I/O detection must have fired during warmup — "+
 			"if this is 0 the L1 cache never flipped is_io_bound and "+
 			"every subsequent request would still run sequentially")

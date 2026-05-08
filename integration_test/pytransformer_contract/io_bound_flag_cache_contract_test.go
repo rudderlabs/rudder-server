@@ -136,7 +136,7 @@ def transformEvent(event, metadata):
 	// Operator-visibility piece: the counter ticks even though the L1 cache
 	// was full and no CachedTransformer was ever created for this key.
 	requireMetricGreater(t, metricsURL, "transformer_io_bound_detections_total",
-		map[string]string{"transformation_id": ioVersionID}, 0,
+		map[string]string{"transformation_id": ioVersionID},
 		"io_bound_detections must increment on detection even when "+
 			"_cache_put returned None — without the auxiliary flag cache "+
 			"the detection is silently discarded and operators never see it")
@@ -162,7 +162,7 @@ def transformEvent(event, metadata):
 		map[string]string{
 			"transformation_id": ioVersionID,
 			"mode":              "single_event_threaded",
-		}, 0,
+		},
 		"single_event_threaded execution must fire on the second I/O "+
 			"request — without the auxiliary flag cache the detection "+
 			"would be lost between requests and every batch would re-run "+
@@ -263,7 +263,7 @@ def transformEvent(event, metadata):
 			"I/O event %d per-event status must be 200 (error=%s)", i, item.Error)
 	}
 	requireMetricGreater(t, metricsURL, "transformer_io_bound_detections_total",
-		tidLabels, 0,
+		tidLabels,
 		"the I/O-heavy window must have promoted the classifier — "+
 			"if this is 0, ratio computation or window evaluation regressed")
 
@@ -282,7 +282,7 @@ def transformEvent(event, metadata):
 			"CPU event %d per-event status must be 200 (error=%s)", i, item.Error)
 	}
 	requireMetricGreater(t, metricsURL, "transformer_io_bound_demotions_total",
-		tidLabels, 0,
+		tidLabels,
 		"the CPU-heavy window must have demoted the classifier — without "+
 			"the True → False transition the threaded path stays armed for "+
 			"a workload that no longer benefits from it")

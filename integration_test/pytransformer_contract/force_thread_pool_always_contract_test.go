@@ -160,7 +160,7 @@ def transformEvent(event, metadata):
 		"mode":              "single_event_threaded",
 	}
 	requireMetricGreater(t, metricsURL, "transformer_executions_total",
-		tidThreaded, 0,
+		tidThreaded,
 		"FORCE_THREAD_POOL_ALWAYS=true must fire the threaded path on a "+
 			"CPU-only transformation; if this is 0 the override is not wired up")
 
@@ -189,7 +189,7 @@ def transformEvent(event, metadata):
 	// (d) Per-batch thread-pool size histogram has at least one sample —
 	// confirms _run_events_threaded ran (the metric is observed there only).
 	requireMetricGreater(t, metricsURL, "transformer_thread_pool_size_count",
-		map[string]string{"transformation_id": versionID}, 0,
+		map[string]string{"transformation_id": versionID},
 		"transformer_thread_pool_size must record at least one observation "+
 			"per threaded batch — a 0 here means _run_events_threaded was "+
 			"never invoked despite the executions_total counter")
