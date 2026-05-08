@@ -146,3 +146,10 @@ bench-multi-threading:
 		-run TestThreadingBenchmark \
 		./integration_test/pytransformer_contract \
 		-timeout=15m
+
+.PHONY: bench-threading-quadrants
+bench-threading-quadrants:
+	go test -v -tags=threading_benchmark -count 1 \
+		-run TestThreadingQuadrantsBenchmark \
+		./integration_test/pytransformer_contract \
+		-timeout=20m
