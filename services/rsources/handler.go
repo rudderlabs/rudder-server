@@ -486,8 +486,9 @@ func (sh *sourcesHandler) readDB() *sql.DB {
 	return sh.localDB
 }
 
-func (sh *sourcesHandler) init() error {
-	ctx := context.TODO()
+func (sh *sourcesHandler) init(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, config.GetDurationVar(60, time.Second, "Rsources.setupTimeout"))
+	defer cancel()
 	if sh.cleanupTrigger == nil {
 		sh.cleanupTrigger = func() <-chan time.Time {
 			return time.After(config.GetDurationVar(1, time.Hour, "Rsources.stats.cleanup.interval"))

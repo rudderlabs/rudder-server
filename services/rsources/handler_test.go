@@ -1058,7 +1058,7 @@ var _ = Describe("Using sources handler", func() {
 			sts, err := memstats.New()
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = NewJobService(badConfig, sts)
+			_, err = NewJobService(context.Background(), badConfig, sts)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 
@@ -1078,7 +1078,7 @@ var _ = Describe("Using sources handler", func() {
 			sts, err := memstats.New()
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = NewJobService(badConfig, sts)
+			_, err = NewJobService(context.Background(), badConfig, sts)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 	})
@@ -1190,7 +1190,7 @@ func createService(config JobServiceConfig) JobService {
 	sts, err := memstats.New()
 	Expect(err).NotTo(HaveOccurred())
 
-	service, err := NewJobService(config, sts)
+	service, err := NewJobService(context.Background(), config, sts)
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to create the service")
 	return service
 }

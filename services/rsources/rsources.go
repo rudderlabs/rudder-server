@@ -247,7 +247,7 @@ type Gauger interface {
 	Gauge(any)
 }
 
-func NewJobService(jobServiceConfig JobServiceConfig, stats stats.Stats) (JobService, error) {
+func NewJobService(ctx context.Context, jobServiceConfig JobServiceConfig, stats stats.Stats) (JobService, error) {
 	if jobServiceConfig.Log == nil {
 		jobServiceConfig.Log = logger.NewLogger().Child("rsources")
 	}
@@ -294,7 +294,7 @@ func NewJobService(jobServiceConfig JobServiceConfig, stats stats.Stats) (JobSer
 		localDB:  localDB,
 		sharedDB: sharedDB,
 	}
-	err = handler.init()
+	err = handler.init(ctx)
 	return handler, err
 }
 
