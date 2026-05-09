@@ -13,13 +13,18 @@ import (
 	"github.com/lib/pq"
 	"github.com/lib/pq/pqerror"
 	"github.com/segmentio/ksuid"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-go-kit/config"
 	"github.com/rudderlabs/rudder-go-kit/logger"
 	obskit "github.com/rudderlabs/rudder-observability-kit/go/labels"
 )
 
-const defaultRetentionPeriodInHours = 3 * 24
+const (
+	defaultRetentionPeriodInHours             = 3 * 24
+	defaultSharedRetentionBufferPeriodInHours = 24
+	sharedCleanupLockID                       = 100020002
+)
 
 // ErrOperationNotSupported sentinel error indicating an unsupported operation
 var ErrOperationNotSupported = errors.New("rsources: operation not supported")
@@ -31,11 +36,12 @@ var ErrInvalidPaginationToken = errors.New("rsources: invalid pagination token")
 var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 
 type sourcesHandler struct {
-	log            logger.Logger
-	config         JobServiceConfig
-	localDB        *sql.DB
-	sharedDB       *sql.DB
-	cleanupTrigger func() <-chan time.Time
+	log                  logger.Logger
+	config               JobServiceConfig
+	localDB              *sql.DB
+	sharedDB             *sql.DB
+	cleanupTrigger       func() <-chan time.Time
+	sharedCleanupTrigger func() <-chan time.Time
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
@@ -423,37 +429,101 @@ func (sh *sourcesHandler) DeleteJobStatus(ctx context.Context, jobRunId string, 
 }
 
 func (sh *sourcesHandler) CleanupLoop(ctx context.Context) error {
-	err := sh.doCleanupTables(ctx)
-	if err != nil {
-		return err
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-sh.cleanupTrigger():
-			err := sh.doCleanupTables(ctx)
-			if err != nil {
-				sh.log.Errorn("Failed to cleanup rsources tables", obskit.Error(err))
-				return err
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		if err := sh.doCleanupTables(ctx); err != nil {
+			return err
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-sh.cleanupTrigger():
+				if err := sh.doCleanupTables(ctx); err != nil {
+					sh.log.Errorn("Failed to cleanup rsources tables", obskit.Error(err))
+					return err
+				}
 			}
 		}
+	})
+	if sh.sharedDB != nil {
+		g.Go(func() error {
+			if err := sh.doCleanupSharedTables(ctx); err != nil {
+				sh.log.Errorn("Failed to cleanup shared rsources tables", obskit.Error(err))
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-sh.sharedCleanupTrigger():
+					if err := sh.doCleanupSharedTables(ctx); err != nil {
+						sh.log.Errorn("Failed to cleanup shared rsources tables", obskit.Error(err))
+					}
+				}
+			}
+		})
 	}
+	return g.Wait()
 }
 
 func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 	sh.log.Infon("Cleaning up rsources tables")
-	tx, err := sh.localDB.Begin()
+	tx, err := sh.localDB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	before := time.Now().Add(-config.GetDurationVar(defaultRetentionPeriodInHours, time.Hour, "Rsources.retention"))
+	if err := cleanupTablesBefore(ctx, tx, before); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return commitErr
+	}
+	sh.log.Infon("Finished cleaning up rsources tables")
+	return nil
+}
+
+// doCleanupSharedTables garbage collects rows orphaned in the shared db by nodes that left the cluster; gated by an advisory lock so only one node runs at a time.
+func (sh *sourcesHandler) doCleanupSharedTables(ctx context.Context) error {
+	if sh.sharedDB == nil {
+		return nil
+	}
+	tx, err := sh.sharedDB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var acquired bool
+	if err := tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock($1)`, sharedCleanupLockID).Scan(&acquired); err != nil {
+		return fmt.Errorf("acquiring shared cleanup advisory lock: %w", err)
+	}
+	if !acquired {
+		sh.log.Infon("Skipping shared rsources tables cleanup, another node holds the lock")
+		return nil
+	}
+
+	sh.log.Infon("Cleaning up shared rsources tables")
+	retention := config.GetDurationVar(defaultRetentionPeriodInHours, time.Hour, "Rsources.retention") +
+		config.GetDurationVar(defaultSharedRetentionBufferPeriodInHours, time.Hour, "Rsources.shared.retentionBuffer")
+	before := time.Now().Add(-retention)
+	if err := cleanupTablesBefore(ctx, tx, before); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	sh.log.Infon("Finished cleaning up shared rsources tables")
+	return nil
+}
+
+func cleanupTablesBefore(ctx context.Context, tx *sql.Tx, before time.Time) error {
 	if _, err := tx.ExecContext(ctx, `delete from "rsources_stats" where job_run_id in (
 		select lastUpdateToJobRunId.job_run_id from
 			(select job_run_id, max(ts) as mts from "rsources_stats" group by job_run_id) lastUpdateToJobRunId
 		where lastUpdateToJobRunId.mts <= $1
 	)`, before); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `WITH to_delete AS (
@@ -469,13 +539,8 @@ func (sh *sourcesHandler) doCleanupTables(ctx context.Context) error {
 		DELETE FROM "rsources_failed_keys_v2" WHERE id IN (SELECT id FROM to_delete) RETURNING id
 	)
 	DELETE FROM "rsources_failed_keys_v2_records" WHERE id IN (SELECT id FROM to_delete) RETURNING id`, before); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
-	if commitErr := tx.Commit(); commitErr != nil {
-		return commitErr
-	}
-	sh.log.Infon("Finished cleaning up rsources tables")
 	return nil
 }
 
@@ -491,6 +556,11 @@ func (sh *sourcesHandler) init() error {
 	if sh.cleanupTrigger == nil {
 		sh.cleanupTrigger = func() <-chan time.Time {
 			return time.After(config.GetDurationVar(1, time.Hour, "Rsources.stats.cleanup.interval"))
+		}
+	}
+	if sh.sharedCleanupTrigger == nil {
+		sh.sharedCleanupTrigger = func() <-chan time.Time {
+			return time.After(config.GetDurationVar(1, time.Hour, "Rsources.shared.cleanup.interval"))
 		}
 	}
 
