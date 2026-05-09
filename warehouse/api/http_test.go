@@ -856,11 +856,8 @@ func TestHTTPApi(t *testing.T) {
 			})
 
 			t.Run("fetch tables", func(t *testing.T) {
-				for _, u := range []string{
-					fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
-					fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL),
-				} {
-					req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader([]byte(`
+				u := fmt.Sprintf("%s/internal/v1/warehouse/fetch-tables", serverURL)
+				req, err := http.NewRequest(http.MethodGet, u, bytes.NewReader([]byte(`
 				{
 				  "connections": [
 					{
@@ -870,17 +867,16 @@ func TestHTTPApi(t *testing.T) {
 				  ]
 				}
 			`)))
-					require.NoError(t, err)
-					req.Header.Set("Content-Type", "application/json")
+				require.NoError(t, err)
+				req.Header.Set("Content-Type", "application/json")
 
-					resp, err := (&http.Client{}).Do(req)
-					require.NoError(t, err)
-					require.Equal(t, http.StatusOK, resp.StatusCode)
+				resp, err := (&http.Client{}).Do(req)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusOK, resp.StatusCode)
 
-					t.Cleanup(func() {
-						httputil.CloseResponse(resp)
-					})
-				}
+				t.Cleanup(func() {
+					httputil.CloseResponse(resp)
+				})
 			})
 
 			t.Run("jobs", func(t *testing.T) {
@@ -992,12 +988,6 @@ func TestHTTPApi(t *testing.T) {
 					{
 						name:   "jobs status",
 						url:    fmt.Sprintf("%s/v1/warehouse/jobs/status", serverURL),
-						method: http.MethodGet,
-						body:   nil,
-					},
-					{
-						name:   "fetch tables",
-						url:    fmt.Sprintf("%s/v1/warehouse/fetch-tables", serverURL),
 						method: http.MethodGet,
 						body:   nil,
 					},

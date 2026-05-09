@@ -614,8 +614,6 @@ func (gw *Handle) StartWebHandler(ctx context.Context) error {
 			r.Post("/pending-events", gw.whProxy.ServeHTTP)
 			r.Post("/trigger-upload", gw.whProxy.ServeHTTP)
 			r.Post("/jobs", gw.whProxy.ServeHTTP)
-			// TODO: Remove this endpoint once sources change is released
-			r.Get("/fetch-tables", gw.whProxy.ServeHTTP)
 
 			r.Get("/jobs/status", gw.whProxy.ServeHTTP)
 		})
