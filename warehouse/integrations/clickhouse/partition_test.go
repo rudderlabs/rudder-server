@@ -64,7 +64,9 @@ func TestPartitionExpr(t *testing.T) {
 				},
 			}
 
-			require.Equal(t, tc.want, ch.partitionExpr())
+			partitionExpr, err := ch.partitionExpr()
+			require.NoError(t, err)
+			require.Equal(t, tc.want, partitionExpr)
 		})
 	}
 }
