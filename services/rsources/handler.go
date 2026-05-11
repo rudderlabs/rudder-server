@@ -134,13 +134,18 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		end := min(start+batchSize, len(records))
 		batch := records[start:end]
 
-		ids := make([]string, len(batch))
-		recordIDs := make([]string, len(batch))
-		codes := make([]int64, len(batch))
-		for i, rec := range batch {
-			ids[i] = id
-			recordIDs[i] = string(rec.Record)
-			codes[i] = int64(rec.Code)
+		ids := make([]string, 0, len(batch))
+		seenRecordIDs := make(map[string]struct{}, len(batch))
+		recordIDs := make([]string, 0, len(batch))
+		codes := make([]int64, 0, len(batch))
+		for _, rec := range batch {
+			if _, exists := seenRecordIDs[string(rec.Record)]; exists {
+				continue
+			}
+			seenRecordIDs[string(rec.Record)] = struct{}{}
+			ids = append(ids, id)
+			recordIDs = append(recordIDs, string(rec.Record))
+			codes = append(codes, int64(rec.Code))
 		}
 
 		if _, err := tx.ExecContext(ctx,
