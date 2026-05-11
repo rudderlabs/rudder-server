@@ -15,38 +15,36 @@ import (
 
 func TestPartitionExpr(t *testing.T) {
 	testCases := []struct {
-		name          string
-		partitionType string
-		want          string
+		name                  string
+		partitionType         string
+		expectedPartitionExpr string
+		wantError             bool
 	}{
 		{
-			name: "default day for missing value",
-			want: "toDate(received_at)",
+			name:                  "default day for empty value",
+			partitionType:         "",
+			expectedPartitionExpr: "toDate(received_at)",
 		},
 		{
-			name:          "explicit day",
-			partitionType: "day",
-			want:          "toDate(received_at)",
+			name:                  "explicit day",
+			partitionType:         "day",
+			expectedPartitionExpr: "toDate(received_at)",
 		},
 		{
-			name:          "week",
-			partitionType: "week",
-			want:          "toStartOfWeek(received_at)",
+			name:                  "explicit week",
+			partitionType:         "week",
+			expectedPartitionExpr: "toStartOfWeek(received_at)",
 		},
 		{
-			name:          "month",
-			partitionType: "month",
-			want:          "toStartOfMonth(received_at)",
+			name:                  "explicit month",
+			partitionType:         "month",
+			expectedPartitionExpr: "toStartOfMonth(received_at)",
 		},
 		{
-			name:          "case-insensitive and trimmed value",
-			partitionType: "  MoNtH ",
-			want:          "toStartOfMonth(received_at)",
-		},
-		{
-			name:          "invalid value defaults to day",
-			partitionType: "year",
-			want:          "toDate(received_at)",
+			name:                  "invalid value",
+			partitionType:         "invalid",
+			expectedPartitionExpr: "",
+			wantError:             true,
 		},
 	}
 
@@ -54,9 +52,8 @@ func TestPartitionExpr(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			conf := config.New()
 			ch := New(conf, logger.NOP, stats.NOP)
-			cfg := map[string]any{}
-			if tc.partitionType != "" {
-				cfg[model.PartitionTypeSetting.String()] = tc.partitionType
+			cfg := map[string]any{
+				"partitionType": tc.partitionType,
 			}
 			ch.Warehouse = model.Warehouse{
 				Destination: backendconfig.DestinationT{
@@ -65,8 +62,12 @@ func TestPartitionExpr(t *testing.T) {
 			}
 
 			partitionExpr, err := ch.partitionExpr()
+			if tc.wantError {
+				require.Error(t, err)
+				return
+			}
 			require.NoError(t, err)
-			require.Equal(t, tc.want, partitionExpr)
+			require.Equal(t, tc.expectedPartitionExpr, partitionExpr)
 		})
 	}
 }

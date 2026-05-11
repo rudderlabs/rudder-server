@@ -889,7 +889,7 @@ func (ch *Clickhouse) partitionExpr() (string, error) {
 	case "month":
 		return fmt.Sprintf(`toStartOfMonth(%s)`, partitionField), nil
 	default:
-		ch.logger.Warnn("CH: Invalid partition type for clickhouse destination, defaulting to day",
+		ch.logger.Warnn("CH: Invalid partition type for clickhouse destination",
 			logger.NewStringField("partitionType", partitionType),
 			logger.NewStringField(logfield.DestinationID, ch.Warehouse.Destination.ID),
 		)
