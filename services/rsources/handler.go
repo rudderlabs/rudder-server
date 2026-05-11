@@ -134,10 +134,23 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 		end := min(start+batchSize, len(records))
 		batch := records[start:end]
 
-		ids := make([]string, len(batch))
-		recordIDs := make([]string, len(batch))
-		codes := make([]int64, len(batch))
-		for i, rec := range batch {
+		// Deduplicate by record payload within each insert batch to avoid
+		// cardinality violation on ON CONFLICT DO UPDATE.
+		uniqueBatch := make([]FailedRecord, 0, len(batch))
+		seen := make(map[string]struct{}, len(batch))
+		for _, rec := range batch {
+			recordID := string(rec.Record)
+			if _, ok := seen[recordID]; ok {
+				continue
+			}
+			seen[recordID] = struct{}{}
+			uniqueBatch = append(uniqueBatch, rec)
+		}
+
+		ids := make([]string, len(uniqueBatch))
+		recordIDs := make([]string, len(uniqueBatch))
+		codes := make([]int64, len(uniqueBatch))
+		for i, rec := range uniqueBatch {
 			ids[i] = id
 			recordIDs[i] = string(rec.Record)
 			codes[i] = int64(rec.Code)

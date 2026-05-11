@@ -189,6 +189,46 @@ var _ = Describe("Using sources handler", func() {
 			}))
 		})
 
+		It("should deduplicate duplicate failed records within a batch", func() {
+			handler := sh.(*sourcesHandler)
+			previous := handler.config.FailedRecordsInsertBatchSize
+			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
+			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
+
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+				{Record: []byte(`"record-1"`), Code: 101},
+				{Record: []byte(`"record-2"`), Code: 201},
+				{Record: []byte(`"record-1"`), Code: 102},
+				{Record: []byte(`"record-2"`), Code: 202},
+				{Record: []byte(`"record-3"`), Code: 301},
+			})
+
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
+			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: defaultJobTargetKey.TaskRunID,
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: defaultJobTargetKey.SourceID,
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID: defaultJobTargetKey.DestinationID,
+							Records: []FailedRecord{
+								{Record: []byte(`"record-1"`), Code: 101},
+								{Record: []byte(`"record-2"`), Code: 201},
+								{Record: []byte(`"record-3"`), Code: 301},
+							},
+						}},
+					}},
+				}},
+			}))
+		})
+
 		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
 			handler := sh.(*sourcesHandler)
 			previous := handler.config.SkipFailedRecordsCollection

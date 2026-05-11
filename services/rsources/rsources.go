@@ -285,7 +285,7 @@ func NewJobService(jobServiceConfig JobServiceConfig, stats stats.Stats) (JobSer
 	}
 
 	if jobServiceConfig.FailedRecordsInsertBatchSize == nil {
-		jobServiceConfig.FailedRecordsInsertBatchSize = config.SingleValueLoader(5000)
+		jobServiceConfig.FailedRecordsInsertBatchSize = config.SingleValueLoader(1)
 	}
 
 	handler := &sourcesHandler{
