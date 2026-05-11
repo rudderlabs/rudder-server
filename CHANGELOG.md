@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.75.0-rc.1](https://github.com/rudderlabs/rudder-server/compare/v1.74.0...v1.75.0-rc.1) (2026-05-11)
+
+
+### Miscellaneous
+
+* debug snowpipe streaming importing job size ([#6941](https://github.com/rudderlabs/rudder-server/issues/6941)) ([73d3bbe](https://github.com/rudderlabs/rudder-server/commit/73d3bbe4145e31fd13f23d94856424994b64c3ea))
+* filtering overflow events for snowpipe streaming above 16MB ([#6921](https://github.com/rudderlabs/rudder-server/issues/6921)) ([2e5192b](https://github.com/rudderlabs/rudder-server/commit/2e5192b52fc70bf6f0b078939299206b80f7b91d))
+* pyt managed session ([#6910](https://github.com/rudderlabs/rudder-server/issues/6910)) ([c7aa7c4](https://github.com/rudderlabs/rudder-server/commit/c7aa7c480c6080906dfeac067eb95d2df856b62a))
+* remove deprecated fetch-tables endpoint ([#6944](https://github.com/rudderlabs/rudder-server/issues/6944)) ([fdb2649](https://github.com/rudderlabs/rudder-server/commit/fdb2649e8c4b787e2152fb6b2a59aed8e6589a54))
+* sync release v1.74.0 to main branch ([#6920](https://github.com/rudderlabs/rudder-server/issues/6920)) ([e844f82](https://github.com/rudderlabs/rudder-server/commit/e844f82a937e050ea438e1c3bbb098060ba9a280))
+
 ## [1.74.0](https://github.com/rudderlabs/rudder-server/compare/v1.73.0...v1.74.0) (2026-04-27)
 
 
