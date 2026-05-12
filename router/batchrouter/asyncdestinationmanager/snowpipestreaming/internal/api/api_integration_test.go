@@ -49,7 +49,7 @@ func TestAPIIntegration(t *testing.T) {
 		}
 	}
 
-	t.Run("Create channel + Get channel + Insert data + Status", func(t *testing.T) {
+	t.Run("Create channel + Get channel + Insert data + Status/Bulk status", func(t *testing.T) {
 		testCases := []struct {
 			name              string
 			enableCompression bool
@@ -128,6 +128,16 @@ func TestAPIIntegration(t *testing.T) {
 					30*time.Second,
 					300*time.Millisecond,
 				)
+
+				t.Log("Checking bulk status")
+				require.Eventually(t, func() bool {
+					bulkStatusRes, err := snowpipeAPI.GetBulkStatus(ctx, []string{createChannelRes.ChannelID})
+					if err != nil {
+						t.Log("Error getting bulk status:", err)
+						return false
+					}
+					return bulkStatusRes.Statuses[createChannelRes.ChannelID].Offset == "8"
+				}, 30*time.Second, 300*time.Millisecond)
 
 				t.Log("Checking records in warehouse")
 				records := whth.RetrieveRecordsFromWarehouse(t, testConfig.db, fmt.Sprintf(`SELECT ID, NAME, EMAIL, AGE, ACTIVE, DOB FROM %q.%q ORDER BY ID;`, testConfig.namespace, testConfig.tableName))
