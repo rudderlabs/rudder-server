@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.1](https://github.com/rudderlabs/rudder-server/compare/v1.74.0...v1.74.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* salesforce bulk upload null and numeric CSV formatting ([#6923](https://github.com/rudderlabs/rudder-server/issues/6923)) ([dec04f3](https://github.com/rudderlabs/rudder-server/commit/dec04f33cfe759c06e0b28c0ba990c80e58a8f11))
+
 ## [1.74.0](https://github.com/rudderlabs/rudder-server/compare/v1.73.0...v1.74.0) (2026-04-27)
 
 
