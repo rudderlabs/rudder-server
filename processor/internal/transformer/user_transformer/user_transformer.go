@@ -45,7 +45,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log.Child("user_transformer")
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "UserTransformer"))
+	handle.client = transformerclient.NewClient("UserTransformer", transformerutils.TransformerClientConfig(conf, "UserTransformer"))
 	handle.config.userTransformationURL = handle.conf.GetStringVar(handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL"), "USER_TRANSFORM_URL")
 	handle.config.pythonTransformationURL = handle.conf.GetStringVar("", "PYTHON_TRANSFORM_URL")
 	handle.config.pythonTransformConfig = transformerutils.LoadPythonTransformConfig(conf)
@@ -116,6 +116,7 @@ func (u *Client) Transform(ctx context.Context, clientEvents []types.Transformer
 	defer trackWg.Wait()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	ctx = transformerclient.WithPerpetualRetriesStatsTags(ctx, map[string]string{"language": transformationLanguage})
 
 	trackWg.Go(func() {
 		l := u.log.Withn(labels.ToLoggerFields()...)

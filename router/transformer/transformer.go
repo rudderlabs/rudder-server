@@ -573,7 +573,7 @@ func (trans *handle) setup(destType string, destinationTimeout, transformTimeout
 	// Basically this timeout we will configure when we make final call to destination to send event
 	trans.destinationTimeout = destinationTimeout
 	// This client is used for Router Transformation
-	trans.client = transformerclient.NewClient(trans.transformerClientConfig())
+	trans.client = transformerclient.NewClient("RouterTransformer", trans.transformerClientConfig())
 	optionalArgs := &oauthv2httpclient.HttpClientOptionalArgs{
 		Locker:              locker,
 		Augmenter:           extensions.RouterHeaderAugmenter,
@@ -591,7 +591,7 @@ func (trans *handle) setup(destType string, destinationTimeout, transformTimeout
 		OAuthBreakerOptions: oauthv2.ConfigToOauthBreakerOptions("Router."+destType, conf),
 	}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
-	trans.proxyClient = transformerclient.NewClient(trans.transformerClientConfig())
+	trans.proxyClient = transformerclient.NewClient("TransformerProxy", trans.transformerClientConfig())
 	// This client is used for Transformer Proxy(delivered from transformer to destination) using oauthV2
 	trans.proxyClientOAuthV2 = oauthv2httpclient.NewOAuthHttpClient(&http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}, common.RudderFlowDelivery, cache, backendConfig, GetAuthErrorCategoryFromTransformProxyResponse, proxyClientOptionalArgs)
 	trans.stats = stats.Default

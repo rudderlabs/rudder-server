@@ -71,7 +71,7 @@ func New(conf *config.Config, log logger.Logger, stat stats.Stats, opts ...Opt) 
 	handle.conf = conf
 	handle.log = log
 	handle.stat = stat
-	handle.client = transformerclient.NewClient(transformerutils.TransformerClientConfig(conf, "DestinationTransformer"))
+	handle.client = transformerclient.NewClient("DestinationTransformer", transformerutils.TransformerClientConfig(conf, "DestinationTransformer"))
 	handle.config.destTransformationURL = handle.conf.GetStringVar("http://localhost:9090", "DEST_TRANSFORM_URL")
 	handle.config.timeoutDuration = conf.GetDurationVar(600, time.Second, "HttpClient.procTransformer.timeout")
 	handle.config.maxRetry = conf.GetReloadableIntVar(30, 1, "Processor.DestinationTransformer.maxRetry", "Processor.maxRetry")
