@@ -23,7 +23,7 @@ func TestWorkerBuffer(t *testing.T) {
 			wb := newWorkerBuffer(maxSize, targetSize, nil)
 
 			require.Equal(t, maxSize, wb.maxCapacity)
-			require.Equal(t, maxSize, wb.currentCapacity())
+			require.Equal(t, maxSize, wb.refreshCapacity())
 			require.Equal(t, 0, wb.reservations)
 			require.NotNil(t, wb.jobs)
 			require.Equal(t, maxSize, cap(wb.jobs))
@@ -34,20 +34,20 @@ func TestWorkerBuffer(t *testing.T) {
 			t.Run("minimum size", func(t *testing.T) {
 				wb := newWorkerBuffer(1, func() int { return 1 }, nil)
 				require.Equal(t, 1, wb.maxCapacity)
-				require.Equal(t, 1, wb.currentCapacity())
+				require.Equal(t, 1, wb.refreshCapacity())
 			})
 
 			t.Run("zero size", func(t *testing.T) {
 				wb := newWorkerBuffer(0, func() int { return 0 }, nil)
 				require.Equal(t, 1, wb.maxCapacity)
-				require.Equal(t, 1, wb.currentCapacity())
+				require.Equal(t, 1, wb.refreshCapacity())
 				require.Equal(t, 1, cap(wb.jobs))
 			})
 
 			t.Run("large size", func(t *testing.T) {
 				wb := newWorkerBuffer(1000, func() int { return 1000 }, nil)
 				require.Equal(t, 1000, wb.maxCapacity)
-				require.Equal(t, 1000, wb.currentCapacity())
+				require.Equal(t, 1000, wb.refreshCapacity())
 			})
 		})
 
@@ -68,21 +68,21 @@ func TestWorkerBuffer(t *testing.T) {
 			wb := newWorkerBuffer(20, func() int { return targetSize }, nil)
 
 			t.Run("initial size", func(t *testing.T) {
-				require.Equal(t, 10, wb.currentCapacity())
+				require.Equal(t, 10, wb.refreshCapacity())
 			})
 
 			t.Run("change target to smaller size", func(t *testing.T) {
 				targetSize = 5
-				require.Equal(t, 5, wb.currentCapacity())
+				require.Equal(t, 5, wb.refreshCapacity())
 			})
 
 			t.Run("change target to larger size", func(t *testing.T) {
 				targetSize = 15
-				require.Equal(t, 15, wb.currentCapacity())
+				require.Equal(t, 15, wb.refreshCapacity())
 			})
 
 			t.Run("target same size (no-op)", func(t *testing.T) {
-				require.Equal(t, 15, wb.currentCapacity())
+				require.Equal(t, 15, wb.refreshCapacity())
 			})
 		})
 
@@ -92,25 +92,25 @@ func TestWorkerBuffer(t *testing.T) {
 
 			t.Run("target equals maxSize", func(t *testing.T) {
 				targetSize = 10
-				require.Equal(t, 10, wb.currentCapacity())
+				require.Equal(t, 10, wb.refreshCapacity())
 			})
 
 			t.Run("target above maxSize (should cap)", func(t *testing.T) {
 				targetSize = 15
-				require.Equal(t, 10, wb.currentCapacity()) // should be capped to maxSize
+				require.Equal(t, 10, wb.refreshCapacity()) // should be capped to maxSize
 			})
 
 			t.Run("target minimum (1)", func(t *testing.T) {
 				targetSize = 1
-				require.Equal(t, 1, wb.currentCapacity())
+				require.Equal(t, 1, wb.refreshCapacity())
 			})
 
 			t.Run("target below 1 (should set to 1)", func(t *testing.T) {
 				targetSize = 0
-				require.Equal(t, 1, wb.currentCapacity())
+				require.Equal(t, 1, wb.refreshCapacity())
 
 				targetSize = -5
-				require.Equal(t, 1, wb.currentCapacity())
+				require.Equal(t, 1, wb.refreshCapacity())
 			})
 		})
 
@@ -134,7 +134,7 @@ func TestWorkerBuffer(t *testing.T) {
 					targetSizeMu.Unlock()
 
 					// Check that currentSize returns a valid value
-					current := wb.currentCapacity()
+					current := wb.refreshCapacity()
 					require.True(t, current >= 1)
 					require.True(t, current <= wb.maxCapacity)
 				}(i)
@@ -143,8 +143,8 @@ func TestWorkerBuffer(t *testing.T) {
 			wg.Wait()
 
 			// Verify final state is valid
-			require.True(t, wb.currentCapacity() >= 1)
-			require.True(t, wb.currentCapacity() <= wb.maxCapacity)
+			require.True(t, wb.refreshCapacity() >= 1)
+			require.True(t, wb.refreshCapacity() <= wb.maxCapacity)
 		})
 	})
 
@@ -205,7 +205,8 @@ func TestWorkerBuffer(t *testing.T) {
 			targetSize := 10
 			wb := newWorkerBuffer(10, func() int { return targetSize }, nil)
 
-			targetSize = 5 // change target size
+			targetSize = 5       // change target size
+			wb.refreshCapacity() // simulate the periodic sampler picking up the change
 			slots := wb.AvailableSlots()
 			require.Equal(t, 5, slots)
 		})
@@ -435,8 +436,8 @@ func TestWorkerBuffer(t *testing.T) {
 
 			// Verify invariants
 			require.True(t, wb.reservations >= 0)
-			require.True(t, wb.currentCapacity() >= 1)
-			require.True(t, wb.currentCapacity() <= wb.maxCapacity)
+			require.True(t, wb.refreshCapacity() >= 1)
+			require.True(t, wb.refreshCapacity() <= wb.maxCapacity)
 			require.True(t, len(wb.jobs) <= cap(wb.jobs))
 		})
 	})
@@ -477,8 +478,8 @@ func TestWorkerBuffer(t *testing.T) {
 			targetSize := 5
 			wb := newWorkerBuffer(10, func() int { return targetSize }, bufferStats)
 
-			// Call currentCapacity to trigger stats recording
-			capacity := wb.currentCapacity()
+			// Call refreshCapacity to trigger stats recording
+			capacity := wb.refreshCapacity()
 			require.Equal(t, 5, capacity)
 
 			// Verify metrics were recorded
@@ -513,15 +514,19 @@ func TestWorkerBuffer(t *testing.T) {
 			wb.jobs <- &job1
 			wb.jobs <- &job2
 
+			// Wait past the OnceEvery window so the next observation isn't throttled
+			// by the initial observation made in the constructor.
+			time.Sleep(20 * time.Millisecond)
 			// Trigger stats recording
-			wb.currentCapacity()
+			wb.refreshCapacity()
 
-			// Verify size metric reflects the added jobs
+			// Verify size metric reflects the added jobs (initial constructor observation
+			// recorded 0; the post-sleep call above records the current size of 2).
 			sizeMetrics := memStats.GetByName("worker_buffer_size")
 			require.Len(t, sizeMetrics, 1, "Expected exactly one size metric")
 			require.Equal(t, stats.Tags{"test": "dynamic"}, sizeMetrics[0].Tags)
-			require.Len(t, sizeMetrics[0].Values, 1, "Expected exactly one size observation")
-			require.Equal(t, float64(2), sizeMetrics[0].Values[0])
+			require.Len(t, sizeMetrics[0].Values, 2, "Expected initial + post-sleep observations")
+			require.Equal(t, float64(2), sizeMetrics[0].Values[1])
 		})
 
 		t.Run("stats track capacity changes", func(t *testing.T) {
@@ -538,12 +543,12 @@ func TestWorkerBuffer(t *testing.T) {
 			wb := newWorkerBuffer(20, func() int { return targetSize }, bufferStats)
 
 			// Record initial capacity
-			wb.currentCapacity()
+			wb.refreshCapacity()
 			time.Sleep(20 * time.Millisecond) // sleep for >onceEvery
 
 			// Change target size
 			targetSize = 15
-			wb.currentCapacity()
+			wb.refreshCapacity()
 
 			// Verify both capacity values were recorded
 			capacityMetrics := memStats.GetByName("worker_buffer_capacity")
@@ -566,9 +571,9 @@ func TestWorkerBuffer(t *testing.T) {
 
 			wb := newWorkerBuffer(10, func() int { return 5 }, bufferStats)
 
-			// Call currentCapacity multiple times rapidly
+			// Call refreshCapacity multiple times rapidly
 			for range 5 {
-				wb.currentCapacity()
+				wb.refreshCapacity()
 				time.Sleep(10 * time.Millisecond)
 			}
 
@@ -585,7 +590,7 @@ func TestWorkerBuffer(t *testing.T) {
 
 			// Should not panic when stats is nil
 			require.NotPanics(t, func() {
-				wb.currentCapacity()
+				wb.refreshCapacity()
 			})
 		})
 
@@ -594,7 +599,7 @@ func TestWorkerBuffer(t *testing.T) {
 
 			require.Nil(t, wb.stats)
 			require.NotPanics(t, func() {
-				wb.currentCapacity()
+				wb.refreshCapacity()
 			})
 		})
 
@@ -618,7 +623,7 @@ func TestWorkerBuffer(t *testing.T) {
 
 			var wg sync.WaitGroup
 
-			// Launch multiple goroutines that access currentCapacity concurrently
+			// Launch multiple goroutines that access refreshCapacity concurrently
 			for i := range 10 {
 				wg.Add(1)
 				go func(id int) {
@@ -632,7 +637,7 @@ func TestWorkerBuffer(t *testing.T) {
 					}
 
 					// Access current capacity
-					capacity := wb.currentCapacity()
+					capacity := wb.refreshCapacity()
 					require.True(t, capacity >= 1)
 					require.True(t, capacity <= wb.maxCapacity)
 
@@ -679,7 +684,7 @@ func TestWorkerBuffer(t *testing.T) {
 
 			time.Sleep(20 * time.Millisecond)
 			// Trigger stats recording after job usage
-			wb.currentCapacity()
+			wb.refreshCapacity()
 
 			// Verify metrics reflect the workflow
 			sizeMetrics := memStats.GetByName("worker_buffer_size")
