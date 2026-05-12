@@ -116,6 +116,13 @@ func WithFlushMoveTimeout(flushMoveTimeout config.ValueLoader[time.Duration]) Op
 	}
 }
 
+// WithFlushMoveConcurrency sets the number of goroutines that distribute partitions during the move phase of a flush
+func WithFlushMoveConcurrency(flushMoveConcurrency config.ValueLoader[int]) Opt {
+	return func(b *jobsDBPartitionBuffer) {
+		b.flushMoveConcurrency = flushMoveConcurrency
+	}
+}
+
 // WithWatchdogInterval sets the watchdog interval for the JobsDBPartitionBuffer
 func WithWatchdogInterval(watchdogInterval config.ValueLoader[time.Duration]) Opt {
 	return func(b *jobsDBPartitionBuffer) {
@@ -130,6 +137,7 @@ func NewJobsDBPartitionBuffer(ctx context.Context, opts ...Opt) (JobsDBPartition
 		flushBatchSize:       config.SingleValueLoader(20000),
 		flushPayloadSize:     config.SingleValueLoader(500 * bytesize.MB),
 		flushMoveTimeout:     config.SingleValueLoader(30 * time.Minute),
+		flushMoveConcurrency: config.SingleValueLoader(1),
 		watchdogInterval:     config.SingleValueLoader(5 * time.Minute),
 		bufferedPartitionsMu: golock.NewCASMutex(),
 		flushingPartitions:   make(map[string]struct{}),

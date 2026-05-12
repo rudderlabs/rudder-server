@@ -79,6 +79,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 	bufferFlushBatchSize := config.GetReloadableIntVar(2000, 1, "PartitionMigration.bufferFlushBatchSize")
 	bufferFlushPayloadSize := config.GetReloadableInt64Var(100, bytesize.MB, "PartitionMigration.bufferFlushPayloadSize")
 	bufferFlushMoveTimeout := config.GetReloadableDurationVar(30, time.Minute, "PartitionMigration.bufferFlushMoveTimeout")
+	bufferFlushMoveConcurrency := config.GetReloadableIntVar(1, 1, "PartitionMigration.bufferFlushMoveConcurrency")
 	bufferWatchdogInterval := config.GetReloadableDurationVar(5, time.Minute, "PartitionMigration.bufferWatchdogInterval")
 
 	// setup partition buffer for gateway jobsDB
@@ -132,6 +133,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
 		partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
 		partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+		partitionbuffer.WithFlushMoveConcurrency(bufferFlushMoveConcurrency),
 		partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
 	)
 	if err != nil {
@@ -157,6 +159,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
 		partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
 		partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+		partitionbuffer.WithFlushMoveConcurrency(bufferFlushMoveConcurrency),
 		partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
 	)
 	if err != nil {
@@ -182,6 +185,7 @@ func setupProcessorPartitionMigrator(ctx context.Context,
 		partitionbuffer.WithFlushBatchSize(bufferFlushBatchSize),
 		partitionbuffer.WithFlushPayloadSize(bufferFlushPayloadSize),
 		partitionbuffer.WithFlushMoveTimeout(bufferFlushMoveTimeout),
+		partitionbuffer.WithFlushMoveConcurrency(bufferFlushMoveConcurrency),
 		partitionbuffer.WithWatchdogInterval(bufferWatchdogInterval),
 	)
 	if err != nil {
