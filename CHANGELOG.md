@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.75.0](https://github.com/rudderlabs/rudder-server/compare/v1.74.0...v1.75.0) (2026-05-12)
+
+
+### Features
+
+* snowpipe batch status ([#6926](https://github.com/rudderlabs/rudder-server/issues/6926)) ([f00dd89](https://github.com/rudderlabs/rudder-server/commit/f00dd89f5463de3c6ce93e7dd3b97ac686c78d1d))
+* support clickhouse day week month partitions ([#6931](https://github.com/rudderlabs/rudder-server/issues/6931)) ([00ff494](https://github.com/rudderlabs/rudder-server/commit/00ff494f39f66380c9c4dfbae0bb31cd52106331))
+* support concurrency during partition migration flushing ([#6929](https://github.com/rudderlabs/rudder-server/issues/6929)) ([dd2f658](https://github.com/rudderlabs/rudder-server/commit/dd2f6585e0dc2922dafb8b031c01fe60bf977a16))
+
+
+### Bug Fixes
+
+* **router:** delays in finding worker slots when event ordering is disabled ([#6930](https://github.com/rudderlabs/rudder-server/issues/6930)) ([a7389f8](https://github.com/rudderlabs/rudder-server/commit/a7389f80de8eadfc2a0aad6bd47eb3c697be23d4))
+* rsources failed keys batch fails to be inserted with postgres error 21000 ([#6940](https://github.com/rudderlabs/rudder-server/issues/6940)) ([3c7a1ec](https://github.com/rudderlabs/rudder-server/commit/3c7a1ec638ad94af59680d8e629333f0751918e1))
+* salesforce bulk upload null and numeric CSV formatting ([#6923](https://github.com/rudderlabs/rudder-server/issues/6923)) ([5e67a45](https://github.com/rudderlabs/rudder-server/commit/5e67a458b15c53d8fe9ab47bbfb95f5b4a612287))
+
+
+### Miscellaneous
+
+* debug snowpipe streaming importing job size ([#6941](https://github.com/rudderlabs/rudder-server/issues/6941)) ([73d3bbe](https://github.com/rudderlabs/rudder-server/commit/73d3bbe4145e31fd13f23d94856424994b64c3ea))
+* filtering overflow events for snowpipe streaming above 16MB ([#6921](https://github.com/rudderlabs/rudder-server/issues/6921)) ([2e5192b](https://github.com/rudderlabs/rudder-server/commit/2e5192b52fc70bf6f0b078939299206b80f7b91d))
+* pyt managed session ([#6910](https://github.com/rudderlabs/rudder-server/issues/6910)) ([c7aa7c4](https://github.com/rudderlabs/rudder-server/commit/c7aa7c480c6080906dfeac067eb95d2df856b62a))
+* remove deprecated fetch-tables endpoint ([#6944](https://github.com/rudderlabs/rudder-server/issues/6944)) ([fdb2649](https://github.com/rudderlabs/rudder-server/commit/fdb2649e8c4b787e2152fb6b2a59aed8e6589a54))
+* sync release v1.74.0 to main branch ([#6920](https://github.com/rudderlabs/rudder-server/issues/6920)) ([e844f82](https://github.com/rudderlabs/rudder-server/commit/e844f82a937e050ea438e1c3bbb098060ba9a280))
+* workflow cleanup ([#6924](https://github.com/rudderlabs/rudder-server/issues/6924)) ([da7161d](https://github.com/rudderlabs/rudder-server/commit/da7161d06a2c217a914b4c1eb299084b699121ff))
+
 ## [1.74.1](https://github.com/rudderlabs/rudder-server/compare/v1.74.0...v1.74.1) (2026-04-29)
 
 
