@@ -54,7 +54,7 @@ func rudderCoreNodeSetup() error {
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
-func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool, stats stats.Stats) (rsources.JobService, error) {
+func NewRsourcesService(ctx context.Context, deploymentType deployment.Type, shouldSetupSharedDB bool, stats stats.Stats) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetIntVar(3, 1, "Rsources.MaxPoolSize")
 	rsourcesConfig.MinPoolSize = config.GetIntVar(1, 1, "Rsources.MinPoolSize")
@@ -82,7 +82,7 @@ func NewRsourcesService(deploymentType deployment.Type, shouldSetupSharedDB bool
 
 	rsourcesConfig.ShouldSetupSharedDB = shouldSetupSharedDB
 
-	return rsources.NewJobService(rsourcesConfig, stats)
+	return rsources.NewJobService(ctx, rsourcesConfig, stats)
 }
 
 func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {
