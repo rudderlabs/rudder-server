@@ -229,6 +229,39 @@ func (a *API) GetStatus(ctx context.Context, channelID string) (*model.StatusRes
 	}
 }
 
+// GetBulkStatus retrieves statuses for the given channel IDs.
+func (a *API) GetBulkStatus(ctx context.Context, channelIDs []string) (*model.BulkStatusResponse, error) {
+	bulkStatusURL := a.clientURL + "/channels/bulk-status"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bulkStatusURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating bulk status request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	queryParams := req.URL.Query()
+	for _, channelID := range channelIDs {
+		queryParams.Add("channelIds", channelID)
+	}
+	req.URL.RawQuery = queryParams.Encode()
+
+	resp, reqErr := a.requestDoer.Do(req)
+	if reqErr != nil {
+		return nil, fmt.Errorf("sending bulk status request: %w", reqErr)
+	}
+	defer func() { httputil.CloseResponse(resp) }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("invalid status code for bulk status: %d, body: %s", resp.StatusCode, string(mustRead(resp.Body)))
+	}
+
+	var res model.BulkStatusResponse
+	if err := jsonrs.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, fmt.Errorf("decoding bulk status response: %w", err)
+	}
+	return &res, nil
+}
+
 func gzippedReader(reqJSON []byte) (io.Reader, int, error) {
 	var b bytes.Buffer
 	gz := gzip.NewWriter(&b)

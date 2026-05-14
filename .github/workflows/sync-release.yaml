@@ -64,6 +64,7 @@ jobs:
         if: ${{ endsWith(env.RELEASE_TAG, '.0') }}
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ASSIGNEE: ${{ github.event.pull_request.merged_by.login }}
         run: |
           COMMIT_OVERRIDE=$(git rev-list --reverse --pretty="%s" --cherry-pick --right-only ${PR_BRANCH}...origin/master | grep -v "commit" | grep -v "chore: sync #" || echo "")
 
@@ -84,12 +85,13 @@ jobs:
           --body "$(cat body)" \
           --base master \
           --head $PR_BRANCH \
-          --assignee '${{ github.event.pull_request.merged_by.login }}'
+          --assignee "$ASSIGNEE"
 
       - name: create pull request for patch release
         if: ${{ ! endsWith(env.RELEASE_TAG, '.0') }}
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
+          ASSIGNEE: ${{ github.event.pull_request.merged_by.login }}
         run: |
           COMMIT_OVERRIDE=$(git rev-list --reverse --pretty="%s" --cherry-pick --right-only origin/master...${PR_BRANCH} | grep -v "commit" | grep -v "chore: release" || echo "")
 
@@ -108,4 +110,4 @@ jobs:
           --body "$(cat body)" \
           --base master \
           --head $PR_BRANCH \
-          --assignee '${{ github.event.pull_request.merged_by.login }}'
+          --assignee "$ASSIGNEE"

@@ -177,6 +177,14 @@ func (brt *Handle) updatePollStatusToDB(ctx context.Context, destinationID, sour
 		return statusList, err
 	}
 	importingList := list.Jobs
+	if len(importingList) != importingCount {
+		brt.logger.Warnn("[Batch Router] Mismatch in importing list and importing count",
+			obskit.DestinationID(destinationID),
+			obskit.SourceID(sourceID),
+			logger.NewIntField("importingListSize", int64(len(importingList))),
+			logger.NewIntField("importingCount", int64(importingCount)),
+		)
+	}
 	if pollResp.StatusCode == http.StatusOK && pollResp.Complete {
 		if !pollResp.HasFailed && !pollResp.HasWarning {
 			statusList, _, jobIDConnectionDetailsMap = brt.prepareJobStatusList(importingList, jobsdb.JobStatusT{JobState: jobsdb.Succeeded.State}, sourceID, destinationID)

@@ -189,6 +189,79 @@ var _ = Describe("Using sources handler", func() {
 			}))
 		})
 
+		It("should dedup records with same record ids within a single batch", func() {
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+			})
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should not fail with cardinality violation when duplicates exist in the same batch")
+			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: defaultJobTargetKey.TaskRunID,
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: defaultJobTargetKey.SourceID,
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID: defaultJobTargetKey.DestinationID,
+							Records: []FailedRecord{
+								{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+								{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+							},
+						}},
+					}},
+				}},
+			}), "it should return only the unique records once")
+		})
+
+		It("should dedup records with same record ids spanning multiple batches", func() {
+			handler := sh.(*sourcesHandler)
+			previous := handler.config.FailedRecordsInsertBatchSize
+			handler.config.FailedRecordsInsertBatchSize = config.GetReloadableIntVar(3, 1, "Rsources.failedRecordsInsertBatchSize")
+			defer func() { handler.config.FailedRecordsInsertBatchSize = previous }()
+
+			jobRunId := newJobRunId()
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []FailedRecord{
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+				{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+				{Record: []byte(`{"record-3": "id-3"}`), Code: 3},
+			})
+			jobFilters := JobFilter{
+				SourceID:  []string{defaultJobTargetKey.SourceID},
+				TaskRunID: []string{defaultJobTargetKey.TaskRunID},
+			}
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters, noPaging)
+			Expect(err).NotTo(HaveOccurred(), "it should not fail with cardinality violation when duplicates exist across batches")
+			Expect(failedRecords).To(Equal(JobFailedRecordsV2{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords[FailedRecord]{{
+					ID: defaultJobTargetKey.TaskRunID,
+					Sources: []SourceFailedRecords[FailedRecord]{{
+						ID: defaultJobTargetKey.SourceID,
+						Destinations: []DestinationFailedRecords[FailedRecord]{{
+							ID: defaultJobTargetKey.DestinationID,
+							Records: []FailedRecord{
+								{Record: []byte(`{"record-1": "id-1"}`), Code: 1},
+								{Record: []byte(`{"record-2": "id-2"}`), Code: 2},
+								{Record: []byte(`{"record-3": "id-3"}`), Code: 3},
+							},
+						}},
+					}},
+				}},
+			}), "it should return only the unique records once")
+		})
+
 		It("shouldn't be able to get failed records when failed records collection is disabled", func() {
 			handler := sh.(*sourcesHandler)
 			previous := handler.config.SkipFailedRecordsCollection
@@ -969,6 +1042,55 @@ var _ = Describe("Using sources handler", func() {
 			createService(configB)
 		})
 
+		It("should cleanup orphaned rows in the shared db older than the shared retention", func() {
+			ctx := context.Background()
+			jobRunId := newJobRunId()
+			oldTs := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+defaultSharedRetentionBufferPeriodInHours+1) * time.Hour)
+
+			insertOrphanRows(ctx, pgC.db, jobRunId, oldTs)
+
+			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
+
+			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{}))
+		})
+
+		It("should not cleanup shared db rows that are within the shared retention buffer", func() {
+			ctx := context.Background()
+			jobRunId := newJobRunId()
+			// older than local retention but within the shared retention buffer
+			midTs := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+1) * time.Hour)
+
+			insertOrphanRows(ctx, pgC.db, jobRunId, midTs)
+
+			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
+
+			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{stats: 1, keys: 1, records: 1}))
+		})
+
+		It("should skip shared cleanup when another node holds the advisory lock", func() {
+			ctx := context.Background()
+			jobRunId := newJobRunId()
+			oldTs := time.Now().Add(-time.Duration(defaultRetentionPeriodInHours+defaultSharedRetentionBufferPeriodInHours+1) * time.Hour)
+
+			insertOrphanRows(ctx, pgC.db, jobRunId, oldTs)
+
+			holdConn, err := pgC.db.Conn(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			holdTx, err := holdConn.BeginTx(ctx, nil)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = holdTx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, sharedCleanupLockID)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
+			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{stats: 1, keys: 1, records: 1}), "rows must survive while the lock is held")
+
+			Expect(holdTx.Rollback()).To(Succeed())
+			Expect(holdConn.Close()).To(Succeed())
+
+			Expect(serviceA.(*sourcesHandler).doCleanupSharedTables(ctx)).To(Succeed())
+			Expect(countSharedRows(ctx, pgC.db, jobRunId)).To(Equal(sharedRowCounts{}), "rows must be cleaned up after the lock is released")
+		})
+
 		It("shouldn't be able to create a service when wal_level=logical is not set on the local db", func() {
 			postgres4Hostname := randomString() + "-4"
 			pgD := newDBResource(pool, network.ID, postgres4Hostname)
@@ -985,7 +1107,7 @@ var _ = Describe("Using sources handler", func() {
 			sts, err := memstats.New()
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = NewJobService(badConfig, sts)
+			_, err = NewJobService(context.Background(), badConfig, sts)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 
@@ -1005,7 +1127,7 @@ var _ = Describe("Using sources handler", func() {
 			sts, err := memstats.New()
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = NewJobService(badConfig, sts)
+			_, err = NewJobService(context.Background(), badConfig, sts)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 	})
@@ -1117,7 +1239,7 @@ func createService(config JobServiceConfig) JobService {
 	sts, err := memstats.New()
 	Expect(err).NotTo(HaveOccurred())
 
-	service, err := NewJobService(config, sts)
+	service, err := NewJobService(context.Background(), config, sts)
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to create the service")
 	return service
 }
@@ -1129,6 +1251,39 @@ func addFailedRecords(db *sql.DB, jobRunId string, jobTargetKey JobTargetKey, sh
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to add failed records")
 	err = tx.Commit()
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to commit the transaction")
+}
+
+type sharedRowCounts struct {
+	stats, keys, records int
+}
+
+func insertOrphanRows(ctx context.Context, db *sql.DB, jobRunId string, ts time.Time) {
+	_, err := db.ExecContext(ctx, `INSERT INTO rsources_stats
+		(db_name, job_run_id, task_run_id, source_id, destination_id, in_count, out_count, failed_count, ts)
+		VALUES ('ghost', $1, 'task', 'source', 'destination', 1, 1, 0, $2)`,
+		jobRunId, ts)
+	Expect(err).NotTo(HaveOccurred())
+
+	keyId := ksuid.New().String()
+	_, err = db.ExecContext(ctx, `INSERT INTO rsources_failed_keys_v2
+		(id, db_name, job_run_id, task_run_id, source_id, destination_id, ts)
+		VALUES ($1, 'ghost', $2, 'task', 'source', 'destination', $3)`,
+		keyId, jobRunId, ts)
+	Expect(err).NotTo(HaveOccurred())
+
+	_, err = db.ExecContext(ctx, `INSERT INTO rsources_failed_keys_v2_records
+		(id, record_id, ts, code) VALUES ($1, 'record', $2, 0)`,
+		keyId, ts)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func countSharedRows(ctx context.Context, db *sql.DB, jobRunId string) sharedRowCounts {
+	var c sharedRowCounts
+	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_stats WHERE job_run_id = $1`, jobRunId).Scan(&c.stats)).To(Succeed())
+	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2 WHERE job_run_id = $1`, jobRunId).Scan(&c.keys)).To(Succeed())
+	Expect(db.QueryRowContext(ctx, `SELECT count(*) FROM rsources_failed_keys_v2_records r
+		JOIN rsources_failed_keys_v2 k ON k.id = r.id WHERE k.job_run_id = $1`, jobRunId).Scan(&c.records)).To(Succeed())
+	return c
 }
 
 func increment(db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {

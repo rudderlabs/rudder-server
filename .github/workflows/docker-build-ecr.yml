@@ -73,11 +73,14 @@ jobs:
 
       - name: Process image names
         id: process-images
+        env:
+          IMAGE_NAMES: ${{ inputs.image_names }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |          # Convert JSON array to multiline format with "name=" prefix
-          FORMATTED_IMAGES=$(echo '${{ inputs.image_names }}' | jq -r '.[] | "name=${{ steps.login-ecr.outputs.registry }}/\(.)"')
-          echo "formatted_images<<EOF" >> $GITHUB_OUTPUT
-          echo "$FORMATTED_IMAGES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          FORMATTED_IMAGES=$(echo "$IMAGE_NAMES" | jq -r --arg registry "$ECR_REGISTRY" '.[] | "name=\($registry)/\(.)"')
+          echo "formatted_images<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FORMATTED_IMAGES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Docker meta
         id: meta

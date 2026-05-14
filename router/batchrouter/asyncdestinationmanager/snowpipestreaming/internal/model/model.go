@@ -76,6 +76,12 @@ type (
 		Valid                bool   `json:"valid"`
 		LatestInsertedOffset string `json:"latestInsertedOffset"`
 	}
+
+	BulkStatusResponse struct {
+		Success  bool                       `json:"success"`
+		Statuses map[string]*StatusResponse `json:"statuses"`
+		NotFound []string                   `json:"notFound"`
+	}
 )
 
 func (c *ChannelResponse) UnmarshalJSON(data []byte) error {

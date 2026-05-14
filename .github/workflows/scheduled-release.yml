@@ -88,9 +88,11 @@ jobs:
 
       - name: Determine next version
         id: version
+        env:
+          VERSION_OVERRIDE: ${{ github.event.inputs.version }}
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$VERSION_OVERRIDE" ]; then
+            VERSION="$VERSION_OVERRIDE"
           else
             # Get the latest release tag (stable, non-prerelease)
             LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)

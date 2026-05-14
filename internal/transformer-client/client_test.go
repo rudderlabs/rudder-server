@@ -1,6 +1,7 @@
 package transformerclient
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-go-kit/stats"
+	"github.com/rudderlabs/rudder-go-kit/stats/memstats"
 	kithelper "github.com/rudderlabs/rudder-go-kit/testhelper"
 )
 
@@ -52,7 +55,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -100,7 +103,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -158,7 +161,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -215,7 +218,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 						Multiplier:      2.0,
 					},
 				}
-				client := NewClient(clientConfig)
+				client := NewClient("testClient", clientConfig)
 
 				req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 				require.NoError(t, err)
@@ -261,7 +264,7 @@ func TestClient_RetryBehavior(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -303,7 +306,7 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -344,7 +347,7 @@ func TestClient_ErrorsNotRetried(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -393,7 +396,7 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -440,7 +443,7 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 				Multiplier:      2.0,
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)
@@ -453,6 +456,121 @@ func TestClient_ConfigurableRetrySettings(t *testing.T) {
 		require.Equal(t, 1, requestCount, "Should make exactly 1 request due to very short MaxElapsedTime")
 
 		resp.Body.Close()
+	})
+}
+
+func TestClient_PerpetualRetriesStatsTags(t *testing.T) {
+	t.Run("merges context tags into perpetual retry stat", func(t *testing.T) {
+		var requestCount int
+		retryableResponses := 2
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			if requestCount <= retryableResponses {
+				w.Header().Set("X-Rudder-Should-Retry", "true")
+				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		originalStats := stats.Default
+		stats.Default = statsStore
+		defer func() { stats.Default = originalStats }()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1,
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     50 * time.Millisecond,
+				MaxElapsedTime:  5 * time.Second,
+				Multiplier:      2.0,
+			},
+		}
+		client := NewClient("testClient", clientConfig)
+
+		ctx := WithPerpetualRetriesStatsTags(context.Background(), map[string]string{"language": "python"})
+		req, err := http.NewRequestWithContext(ctx, "POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+
+		metrics := statsStore.GetByName("transformer_client_perpetual_retry_count")
+		require.Len(t, metrics, retryableResponses, "should have one perpetual retry stat per retryable response")
+		for i, m := range metrics {
+			require.Equal(t, "testClient", m.Tags["name"])
+			require.Equal(t, "temporary-overload", m.Tags["reason"])
+			require.Equal(t, "python", m.Tags["language"], "context tag should be propagated")
+			require.NotEmpty(t, m.Tags["attempt"], "attempt %d", i)
+		}
+	})
+
+	t.Run("does not add language tag when context has no extra tags", func(t *testing.T) {
+		var requestCount int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestCount++
+			if requestCount == 1 {
+				w.Header().Set("X-Rudder-Should-Retry", "true")
+				w.Header().Set("X-Rudder-Error-Reason", "temporary-overload")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		statsStore, err := memstats.New()
+		require.NoError(t, err)
+		originalStats := stats.Default
+		stats.Default = statsStore
+		defer func() { stats.Default = originalStats }()
+
+		clientConfig := &ClientConfig{
+			ClientTimeout: 10 * time.Second,
+			RetryRudderErrors: struct {
+				Enabled         bool
+				MaxRetry        int
+				InitialInterval time.Duration
+				MaxInterval     time.Duration
+				MaxElapsedTime  time.Duration
+				Multiplier      float64
+			}{
+				Enabled:         true,
+				MaxRetry:        -1,
+				InitialInterval: 10 * time.Millisecond,
+				MaxInterval:     50 * time.Millisecond,
+				MaxElapsedTime:  5 * time.Second,
+				Multiplier:      2.0,
+			},
+		}
+		client := NewClient("testClient", clientConfig)
+
+		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
+		require.NoError(t, err)
+
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+
+		metrics := statsStore.GetByName("transformer_client_perpetual_retry_count")
+		require.Len(t, metrics, 1)
+		require.NotContains(t, metrics[0].Tags, "language")
 	})
 }
 
@@ -482,7 +600,7 @@ func TestClient_RetryDisabled(t *testing.T) {
 				Enabled: false, // Explicitly disable retries
 			},
 		}
-		client := NewClient(clientConfig)
+		client := NewClient("testClient", clientConfig)
 
 		req, err := http.NewRequest("POST", server.URL, strings.NewReader("test data"))
 		require.NoError(t, err)

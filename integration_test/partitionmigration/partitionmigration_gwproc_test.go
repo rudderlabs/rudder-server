@@ -228,6 +228,7 @@ func testPartitionMigrationGatewayProcessorMode(t *testing.T, extraStressWorkspa
 		"PartitionMigration.Executor.BatchSize":                    "100",                                                     // let migrations do multiple small batches
 		"PartitionMigration.Executor.ChunkSize":                    "10",
 		"PartitionMigration.bufferFlushBatchSize":                  "100",
+		"PartitionMigration.bufferFlushMoveConcurrency":            "2",
 		"PartitionMigration.bufferWatchdogInterval":                "10s", // watch more frequently for surfacing potentials issues
 
 		"ETCD_HOSTS":            etcdResource.Hosts[0],
