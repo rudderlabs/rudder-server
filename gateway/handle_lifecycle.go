@@ -3,6 +3,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -495,8 +496,10 @@ func (gw *Handle) dbWriterWorkerProcess() {
 			} else {
 				err := gw.jobsDB.StoreInTx(ctx, tx, lo.Flatten(jobBatches))
 				if err != nil {
-					gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
-					gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
+					if !errors.Is(err, jobsdb.ErrStaleDsList) {
+						gw.logger.Errorn("Store into gateway db failed with error", obskit.Error(err))
+						gw.logger.Errorn("JobList", logger.NewIntField("jobBatchesCount", int64(len(jobBatches))))
+					}
 					return err
 				}
 			}

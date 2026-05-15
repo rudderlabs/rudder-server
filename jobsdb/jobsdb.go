@@ -61,7 +61,7 @@ import (
 	. "github.com/rudderlabs/rudder-server/utils/tx" //nolint:staticcheck
 )
 
-var errStaleDsList = errors.New("stale dataset list")
+var ErrStaleDsList = errors.New("stale dataset list")
 
 const (
 	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
@@ -109,11 +109,13 @@ type StoreSafeTx interface {
 	Tx() *Tx
 	SqlTx() *sql.Tx
 	storeSafeTxIdentifier() string
+	getLastDS() dataSetT
 }
 
 type storeSafeTx struct {
 	tx       *Tx
 	identity string
+	lastDS   dataSetT
 }
 
 func (r *storeSafeTx) storeSafeTxIdentifier() string {
@@ -126,6 +128,10 @@ func (r *storeSafeTx) Tx() *Tx {
 
 func (r *storeSafeTx) SqlTx() *sql.Tx {
 	return r.tx.Tx
+}
+
+func (r *storeSafeTx) getLastDS() dataSetT {
+	return r.lastDS
 }
 
 // EmptyStoreSafeTx returns an empty interface usable only for tests
@@ -607,7 +613,8 @@ type Handle struct {
 		numPartitions                  int // if zero or negative, no partitioning
 		partitionFunction              func(job *JobT) string
 		warnOnStatusMissingPartitionID config.ValueLoader[bool]
-		dbTablesVersion                int // version of the database tables schema (0 means latest)
+		holdDSListLockDuringStore      config.ValueLoader[bool] // escape hatch: hold the dsList read lock for the entire store callback
+		dbTablesVersion                int                      // version of the database tables schema (0 means latest)
 
 		migration struct {
 			maxMigrateOnce, maxMigrateDSProbe config.ValueLoader[int]
@@ -1096,6 +1103,10 @@ func (jd *Handle) loadConfig() {
 	// starting with false as default since initial set of migrated jobs will not have partitionID set
 	jd.conf.warnOnStatusMissingPartitionID = jd.config.GetReloadableBoolVar(false, jd.configKeys("warnOnStatusMissingPartitionID")...)
 
+	// Default false: snapshot lastDS and release the dsList read lock before running the store callback,
+	// so long-running stores don't block dsList writers. Flip to true to revert to holding the lock for the whole callback.
+	jd.conf.holdDSListLockDuringStore = jd.config.GetReloadableBoolVar(false, jd.configKeys("holdDSListLockDuringStore")...)
+
 	if jd.TriggerAddNewDS == nil {
 		jd.TriggerAddNewDS = func() <-chan time.Time {
 			return time.After(jd.conf.addNewDSLoopSleepDuration.Load())
@@ -1266,6 +1277,15 @@ Caller must have the dsListLock readlocked
 */
 func (jd *Handle) getDSList() dataSetTList {
 	return jd.datasetList
+}
+
+// getLastDS returns the last dataset in the list. Caller must have the dsListLock readlocked.
+func (jd *Handle) getLastDS() dataSetT {
+	list := jd.getDSList()
+	if len(list) == 0 {
+		return dataSetT{}
+	}
+	return list[len(list)-1]
 }
 
 // doRefreshDSList refreshes the ds list from the database
@@ -1818,31 +1838,42 @@ func (jd *Handle) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT
 }
 
 func (jd *Handle) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(ctx, func() error {
-		return jd.WithTx(ctx, func(tx *Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
+	return jd.inStoreSafeCtx(ctx, func(lastDS dataSetT) error {
+		return jd.WithTx(ctx, func(tx *Tx) error {
+			return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix, lastDS: lastDS})
+		})
 	})
 }
 
 func (jd *Handle) WithStoreSafeTxFromTx(ctx context.Context, tx *Tx, f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(ctx, func() error {
-		return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix})
+	return jd.inStoreSafeCtx(ctx, func(lastDS dataSetT) error {
+		return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix, lastDS: lastDS})
 	})
 }
 
-func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func() error) error {
-	// Only locks the list
+func (jd *Handle) inStoreSafeCtx(ctx context.Context, f func(lastDS dataSetT) error) error {
+	var lastDS dataSetT
 	op := func() error {
 		if !jd.dsListLock.RTryLockWithCtx(ctx) {
 			return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
 		}
-		defer jd.dsListLock.RUnlock()
-		return f()
+		lastDS = jd.getLastDS()
+		if jd.conf.holdDSListLockDuringStore.Load() {
+			defer jd.dsListLock.RUnlock()
+			return f(lastDS)
+		}
+		jd.dsListLock.RUnlock()
+		return f(lastDS)
 	}
 	for {
 		err := op()
-		if err != nil && errors.Is(err, errStaleDsList) {
-			jd.logger.Errorn("[JobsDB] :: Store failed. Retrying after refreshing DS cache", obskit.Error(errStaleDsList))
+		if err != nil && errors.Is(err, ErrStaleDsList) {
+			jd.logger.Warnn("[JobsDB] :: Stale dataset list detected, retrying after refreshing DS cache", obskit.Error(ErrStaleDsList))
 			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+				if jd.getLastDS().Index != lastDS.Index {
+					// The last dataset has already been refreshed, so we can just retry
+					return nil
+				}
 				err = jd.doRefreshDSRangeList(l)
 				if err != nil {
 					return fmt.Errorf("refreshing ds list: %w", err)
@@ -2155,27 +2186,36 @@ func (jd *Handle) doStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobL
 	if _, err := tx.ExecContext(ctx, savepointSql); err != nil {
 		return err
 	}
-	err := store()
-
-	var e *pq.Error
-	if err != nil && errors.As(err, &e) {
-		if e.Code == pgErrorCodeTableReadonly {
-			return errStaleDsList
+	sanitized := false
+	for {
+		err := store()
+		if err == nil {
+			return nil
 		}
-		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
-			if _, err := tx.ExecContext(ctx, rollbackSql); err != nil {
-				return err
+		var e *pq.Error
+		if !errors.As(err, &e) {
+			return err
+		}
+		if e.Code == pgErrorCodeTableReadonly {
+			if _, rbErr := tx.ExecContext(ctx, rollbackSql); rbErr != nil {
+				return rbErr
+			}
+			return ErrStaleDsList
+		}
+		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok && !sanitized {
+			if _, rbErr := tx.ExecContext(ctx, rollbackSql); rbErr != nil {
+				return rbErr
 			}
 			for i := range jobList {
-				err = jobList[i].sanitizeJSON()
-				if err != nil {
-					return fmt.Errorf("sanitizeJSON: %w", err)
+				if sErr := jobList[i].sanitizeJSON(); sErr != nil {
+					return fmt.Errorf("sanitizeJSON: %w", sErr)
 				}
 			}
-			return store()
+			sanitized = true
+			continue
 		}
+		return err
 	}
-	return err
 }
 
 type JobsResult struct {
@@ -3238,8 +3278,7 @@ func (jd *Handle) Store(ctx context.Context, jobList []*JobT) error {
 func (jd *Handle) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error {
 	storeCmd := func() error {
 		command := func() error {
-			dsList := jd.getDSList()
-			err := jd.internalStoreJobsInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
+			err := jd.internalStoreJobsInTx(ctx, tx.Tx(), tx.getLastDS(), jobList)
 			return err
 		}
 		err := executeDbRequest(ctx, jd, newWriteDbRequest("store", nil, command))
@@ -3276,11 +3315,10 @@ func (jd *Handle) StoreEachBatchRetryInTx(
 	)
 	storeCmd := func() error {
 		command := func() map[uuid.UUID]string {
-			dsList := jd.getDSList()
 			res, err = jd.internalStoreEachBatchRetryInTx(
 				ctx,
 				tx.Tx(),
-				dsList[len(dsList)-1],
+				tx.getLastDS(),
 				jobBatches,
 			)
 			return res
@@ -3320,7 +3358,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(ctx context.Context, tx *Tx, d
 		})
 		return errorMessagesMap, err
 	}
-	if errors.Is(err, errStaleDsList) {
+	if errors.Is(err, ErrStaleDsList) {
 		return nil, err
 	}
 	_, err = tx.ExecContext(ctx, rollbackSql)
@@ -3345,7 +3383,7 @@ func (jd *Handle) internalStoreEachBatchRetryInTx(ctx context.Context, tx *Tx, d
 
 		err = jd.doStoreJobsInTx(ctx, tx, ds, jobBatch)
 		if err != nil {
-			if errors.Is(err, errStaleDsList) {
+			if errors.Is(err, ErrStaleDsList) {
 				return nil, err
 			}
 			errorMessagesMap[jobBatch[0].UUID] = err.Error()
