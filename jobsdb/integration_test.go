@@ -517,7 +517,7 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		jobDBInspector := HandleInspector{Handle: &jobDB}
-		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
+		require.EqualValues(t, 2, len(jobDBInspector.getDSListSnapshot()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		jobs = genJobs(defaultWorkspaceID, customVal, 10, 1)
@@ -552,10 +552,10 @@ func TestJobsDB(t *testing.T) {
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		dsIndicesList := jobDBInspector.DSIndicesList()
-		require.EqualValues(t, "1_1", dsIndicesList[0])
-		require.EqualValues(t, "2", dsIndicesList[1])
-		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
+		dsIndicesList := jobDBInspector.getDSListSnapshot()
+		require.EqualValues(t, "1_1", dsIndicesList[0].Index)
+		require.EqualValues(t, "2", dsIndicesList[1].Index)
+		require.EqualValues(t, 2, len(jobDBInspector.getDSListSnapshot()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParams{
@@ -595,9 +595,7 @@ func TestJobsDB(t *testing.T) {
 		defer jobDB.TearDown()
 
 		getDSList := func() []dataSetT {
-			jobDB.dsListLock.RLock()
-			defer jobDB.dsListLock.RUnlock()
-			return jobDB.getDSList()
+			return jobDB.getDSListSnapshot()
 		}
 
 		jobs := genJobs(defaultWorkspaceID, customVal, 10, 1)
@@ -849,7 +847,7 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		jobDBInspector := HandleInspector{Handle: &jobDB}
-		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
+		require.EqualValues(t, 2, len(jobDBInspector.getDSListSnapshot()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
@@ -857,10 +855,10 @@ func TestJobsDB(t *testing.T) {
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		dsIndicesList := jobDBInspector.DSIndicesList()
-		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
-		require.EqualValues(t, "1_1", dsIndicesList[0])
-		require.EqualValues(t, "2", dsIndicesList[1])
+		dsIndicesList := jobDBInspector.getDSListSnapshot()
+		require.EqualValues(t, 2, len(jobDBInspector.getDSListSnapshot()))
+		require.EqualValues(t, "1_1", dsIndicesList[0].Index)
+		require.EqualValues(t, "2", dsIndicesList[1].Index)
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		// only non-terminal jobs should be migrated

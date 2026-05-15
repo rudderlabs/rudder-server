@@ -202,6 +202,7 @@ func TestPartitionMigrationEmbeddedMode(t *testing.T) {
 		"JobsDB.addNewDSLoopSleepDuration":      "1s",
 		"JobsDB.dsLimit":                        "2",
 		"JobsDB.refreshDSListLoopSleepDuration": "5s",
+		"JobsDB.nonBlockingCompletedDSDrop":     "true",
 	}
 	rsBinaryPath := filepath.Join(t.TempDir(), "rudder-server-binary")
 	rudderserver.BuildRudderServerBinary(t, "../../main.go", rsBinaryPath)

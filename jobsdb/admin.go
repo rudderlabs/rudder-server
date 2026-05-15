@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-go-kit/logger"
+
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 )
 
 /*
@@ -43,7 +45,7 @@ func (jd *Handle) deleteJobStatus() {
 				CustomValFilters: []string{jd.tablePrefix},
 			}).RecordDuration()()
 
-		dsList := jd.getDSList()
+		dsList := tx.getDSList()
 
 		for _, ds := range dsList {
 			if err := jd.deleteJobStatusDSInTx(tx.SqlTx(), ds); err != nil {
@@ -102,7 +104,7 @@ func (jd *Handle) failExecuting() {
 			&statTags{CustomValFilters: []string{jd.tablePrefix}},
 		).RecordDuration()()
 
-		dsList := jd.getDSList()
+		dsList := tx.getDSList()
 
 		for _, ds := range dsList {
 			err := jd.failExecutingDSInTx(tx.SqlTx(), ds)
@@ -136,8 +138,13 @@ func (jd *Handle) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT)
 	return err
 }
 
-func (jd *Handle) doCleanup(ctx context.Context) error {
-	if err := jd.abortOldJobs(ctx, jd.getDSList()); err != nil {
+// doCleanup performs cleanup of old jobs and journal entries. It requires a ds list lock token to ensure that the list does not change during the cleanup process.
+func (jd *Handle) doCleanup(ctx context.Context, l lock.LockToken) error {
+	if l == nil {
+		return fmt.Errorf("lock token is required for cleanup")
+	}
+	dsList, _ := jd.dsList.snapshot()
+	if err := jd.abortOldJobs(ctx, dsList); err != nil {
 		return fmt.Errorf("aborting old jobs: %w", err)
 	}
 
@@ -169,7 +176,7 @@ func (jd *Handle) doCleanup(ctx context.Context) error {
 }
 
 func (jd *Handle) abortOldJobs(ctx context.Context, dsList []dataSetT) error {
-	jobState := "aborted"
+	jobState := Aborted.State
 	maxAgeStatusResponse := `{"reason": "job max age exceeded"}`
 	maxAge := jd.conf.jobMaxAge.Load()
 	for _, ds := range dsList {
