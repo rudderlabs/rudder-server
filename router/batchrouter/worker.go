@@ -125,6 +125,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				finalReason = "source_not_found"
 			}
 
+			errResponse := routerutils.EnhanceJSON(job.LastJobStatus.ErrorResponse, "reason", finalReason)
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
 				AttemptNum:    job.LastJobStatus.AttemptNum + 1,
@@ -132,7 +133,7 @@ func (w *worker) scheduleJobs(destinationJobs *DestinationJobs) {
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     routerutils.DRAIN_ERROR_CODE,
-				ErrorResponse: routerutils.EnhanceJSON([]byte(`{}`), "reason", finalReason),
+				ErrorResponse: errResponse,
 				Parameters:    []byte(`{}`),
 				JobParameters: job.Parameters,
 				WorkspaceId:   job.WorkspaceId,

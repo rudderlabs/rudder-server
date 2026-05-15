@@ -399,8 +399,8 @@ var _ = Describe("BatchRouter", func() {
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Do(func(ctx context.Context, _ any, statuses []*jobsdb.JobStatusT) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 130)
-					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, "{\"reason\":\"source_not_found\"}", 4)
+					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": %q, "reason":"source_not_found"}`, attempt1.Format(misc.RFC3339Milli)), 130)
+					assertJobStatus(toRetryJobsList[1], statuses[1], jobsdb.Aborted.State, fmt.Sprintf(`{"firstAttemptedAt": %q, "reason":"source_not_found"}`, attempt2.Format(misc.RFC3339Milli)), 4)
 					cancel()
 				}).Return(nil)
 
