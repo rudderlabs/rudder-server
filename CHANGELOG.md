@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.1](https://github.com/rudderlabs/rudder-server/compare/v1.75.0...v1.75.1) (2026-05-15)
+
+
+### Bug Fixes
+
+* **batchrouter:** preserve prior LastJobStatus error on drain ([#6958](https://github.com/rudderlabs/rudder-server/issues/6958)) ([eaabb87](https://github.com/rudderlabs/rudder-server/commit/eaabb871d3ebc3c555af4d6de9083de173f6e549))
+
 ## [1.75.0](https://github.com/rudderlabs/rudder-server/compare/v1.74.0...v1.75.0) (2026-05-12)
 
 
